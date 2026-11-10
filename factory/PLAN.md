@@ -88,6 +88,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<sessionId>.jsonl`.
 
+- S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`.
+- S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7`.
+
 ## Waiting on the human
 
 (none)
