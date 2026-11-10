@@ -1,3 +1,22 @@
 package mods:{{slug}}@0.1.0;
 
-world {{slug}} {}
+/// The calls of this mod. Its page, agents and other mods call them.
+interface api {
+  /// Adds one to the count and returns the new count.
+  add: func() -> u32;
+  /// Returns the count.
+  get: func() -> u32;
+}
+
+/// The events of this mod. Another mod receives them when it exports
+/// this interface and the participant grants it.
+interface changes {
+  /// The count changed.
+  counted: func(count: u32);
+}
+
+world {{slug}} {
+  import watane:host/state@0.1.0;
+  import changes;
+  export api;
+}

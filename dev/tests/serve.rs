@@ -119,7 +119,8 @@ fn ac4_real_preview_serves_page_and_csp() {
     );
     let html = String::from_utf8(body).unwrap();
     assert!(html.contains("<script src=\"app.js\"></script>"));
-    assert_eq!(html.matches("<script").count(), 1);
+    assert!(html.contains("<script src=\"/watane.js\"></script>"));
+    assert_eq!(html.matches("<script").count(), 2);
     assert_eq!(
         get(&v, "app.js").1,
         fs::read(m.dir.join("ui/app.js")).unwrap()
@@ -292,4 +293,42 @@ fn stop_works_after_mod_folder_is_deleted() {
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["result"]["stopped"], false);
     assert!(!folder.exists());
+}
+
+fn call(v: &Value, function: &str) -> Value {
+    let page = v["pages"][0]["url"].as_str().unwrap();
+    let origin = page.trim_end_matches('/');
+    let authority = origin.strip_prefix("http://").unwrap();
+    let body = serde_json::json!({"fn": function, "args": null}).to_string();
+    let mut stream = TcpStream::connect(("127.0.0.1", port(v))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    write!(stream, "POST /call HTTP/1.1\r\nHost: {authority}\r\nOrigin: {origin}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes).unwrap();
+    let split = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let headers = String::from_utf8_lossy(&bytes[..split]);
+    assert!(
+        headers.starts_with("HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    serde_json::from_slice(&bytes[split + 4..]).unwrap()
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac9_real_counter_page_calls_logic() {
+    let m = Mod::new(true);
+    let first = m.serve();
+    let html = String::from_utf8(get(&first, "").1).unwrap();
+    assert!(html.contains("<script src=\"/watane.js\"></script>"));
+    assert!(html.contains("<script src=\"app.js\"></script>"));
+    assert_eq!(call(&first, "api.add"), serde_json::json!({"value":1}));
+    assert_eq!(call(&first, "api.add"), serde_json::json!({"value":2}));
+    assert_eq!(call(&first, "api.get"), serde_json::json!({"value":2}));
+    let second = m.serve();
+    assert_eq!(second["reused"], true);
+    assert_eq!(call(&second, "api.get"), serde_json::json!({"value":2}));
 }

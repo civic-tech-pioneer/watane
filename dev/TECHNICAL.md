@@ -222,7 +222,7 @@ Then one line `<command>: ok` or `<command>: failed`, the main fields of
 ```json
 {"slug": "reading-list", "dir": "/abs/reading-list", "files": ["AGENTS.md", "CLAUDE.md", "..."]}
 ```
-`files` are relative paths, sorted. `next`: `Edit wit/world.wit, logic/src/lib.rs, ui/ and tests/, then run: watane-dev test --json`.
+`files` are relative paths, sorted. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`.
 
 **check** (also the `check` field of `test`)
 ```json
@@ -370,7 +370,7 @@ After the replacement no `{{` may remain; a unit test checks this.
 | `logic/src/lib.rs` | `template/logic/src/lib.rs` |
 | `ui/index.html` | `template/ui/index.html` |
 | `ui/app.js` | `template/ui/app.js` |
-| `tests/counter.json` | `template/tests/counter.json` |
+| `tests/counter.json` (S4) | `template/tests/counter.json` |
 
 `new` writes no `deps.json` (absent means no provider) and no
 `logic/Cargo.lock` (the first build writes it, 6.4). If a write fails,
@@ -517,17 +517,21 @@ const show = (value) => { count.textContent = String(value); alert.textContent =
 const fail = (error) => { alert.textContent = error.message; };
 const read = () => watane.call('api.get').then(show, fail);
 document.getElementById('add').addEventListener('click', () => watane.call('api.add').then(show, fail));
-watane.on(read);   // the first message arrives when the stream opens, so this also reads at start
+read();
 ```
 
+S3 restores `watane.on(read)`; S2 reads once at startup because `/events`
+is not available yet.
+
 `template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
-with these sections in this order:
+with these sections in this order (S2 includes 1–6, 9 and 10; 7 and 8 join
+with their slices):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
    `watane-dev`; do not edit them.
 2. **Order of work**: edit `wit/world.wit`, then `logic/src/lib.rs`, then
-   `ui/`, then `tests/`; run `watane-dev test --json` until `ok` is true;
-   then `watane-dev serve --json` and give the page URL to the person.
+   `ui/`; run `watane-dev serve --json` until `ok` is true and give the
+   page URL to the person. Tests join in S4.
 3. **The world**: keep `package mods:{{slug}}@<version>;` and
    `world {{slug}}`; the version of the package line is the version of
    the mod. Each import is a grant that the participant approves, so import
@@ -560,7 +564,7 @@ with these sections in this order:
 9. **Results**: the envelope fields, the exit statuses, and the advice
    "read `errors[].fix`; for `build.compile` read `file` and `line`".
 10. **Rules**: do not ask questions; finish with a passing
-    `watane-dev test --json`.
+    `watane-dev serve --json` in S2 (`test` joins in S4).
 
 ## 5. Check
 
@@ -579,7 +583,7 @@ stage with an error.
    `ModError::Invalid` is one `mod.invalid` with its file; `ModError::Io`
    is `internal`.
 5. **Cargo manifest**: 5.2, when `logic/` exists.
-6. **Contract tests**: when the mod has a logic part, at least one
+6. **Contract tests** (S4; skipped in S2): when the mod has a logic part, at least one
    `tests/*.json`, else `mod.no_contract_tests`.
 7. **Warnings**: `ui.external`, `ui.inline_script`.
 
@@ -726,7 +730,7 @@ The runs, in order:
      `.wasm` file in `filenames`.
    - On a failure with no `compiler-message` error: `build.resolve` with
      the last 40 lines of standard error.
-6. **Reads**: dev reads the new `deps/<crate>-*.d` files (make syntax:
+6. **Reads** (DEV-S-10; deferred beyond S2): dev reads the new `deps/<crate>-*.d` files (make syntax:
    `target: dep dep ...`, with `\ ` for a space in a path). Every path in
    them must lie under the copy folder, the vendor folder, the sysroot or
    `<cache>/target`. Else one `build.reads_outside` for each path, and dev
@@ -736,7 +740,7 @@ The runs, in order:
    `watane_pkg::Mod::read(dir)?.check_component()`. Each violation is
    `build.imports`, and dev deletes `<mod>/logic.wasm` again.
 
-### 6.5 Reproducible output
+### 6.5 Reproducible output (DEV-S-12; deferred beyond S2)
 
 The output holds no path of the device: the copy, the target folder and the
 cargo home are under `<cache>` (remapped to `/watane-dev`), the crates under
@@ -871,7 +875,8 @@ fails stops the command. Each Problem of a provider gets the prefix
 
 ### 9.3 `serve`
 
-1. Run 9.2 for the mod.
+1. S2 runs check (5.1–5.3) and build (6.1–6.4) for the mod.
+   Unit and contract tests join in S4; provider traversal joins with `add`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
    (`reused` true). If it runs and `P/ready.json` is missing: stop it
@@ -1218,6 +1223,11 @@ gets local name = folder name and a page URL if it has `ui/`. It serves no
 page and no MCP. SIGTERM ends it (the default action).
 
 ## 16. Build plan
+
+- S2 cut (dev): the counter template has no `tests/`; check stage 6
+  (`mod.no_contract_tests`), unit tests and contract tests join in S4.
+  `serve` runs check and build only. DEV-S-10 outside reads and DEV-S-12
+  reproducible bytes are deferred; `env_clear()` and remap flags remain.
 
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|

@@ -53,6 +53,25 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     {
         return Err(vec![Problem::new(Code::UsageNotAMod,format!("{} is not a mod folder: it has no mod.toml",dir.display())).fix("Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>")]);
     }
+    for path in [
+        "wit",
+        "wit/deps",
+        "wit/deps/watane-host",
+        "wit/deps/watane-host/host.wit",
+    ] {
+        if fs::symlink_metadata(dir.join(path)).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(vec![
+                Problem::new(Code::ModSymlink, format!("{path} is a symbolic link"))
+                    .at(path, None, None)
+                    .fix("Replace it with a file"),
+            ]);
+        }
+    }
+    let host_wit = dir.join("wit/deps/watane-host/host.wit");
+    if fs::read(&host_wit).ok().as_deref() != Some(watane_host::HOST_WIT.as_bytes()) {
+        fs::create_dir_all(host_wit.parent().unwrap()).map_err(|e| vec![Problem::internal(e)])?;
+        fs::write(host_wit, watane_host::HOST_WIT).map_err(|e| vec![Problem::internal(e)])?;
+    }
     let errors = symlinks(dir).map_err(|e| vec![e])?;
     if !errors.is_empty() {
         return Err(errors);

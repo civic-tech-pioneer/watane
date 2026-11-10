@@ -52,7 +52,7 @@ pub fn run(cli: Cli) -> Outcome {
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
-                outcome.next = Some("Edit ui/, then run: watane-dev serve --json".into());
+                outcome.next = Some("Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json".into());
             }),
         Command::Check => dir
             .canonicalize()

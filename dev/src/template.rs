@@ -10,9 +10,18 @@ const FILES: &[(&str, &str)] = &[
     (".gitignore", include_str!("../template/.gitignore")),
     ("AGENTS.md", include_str!("../template/AGENTS.md")),
     ("CLAUDE.md", include_str!("../template/CLAUDE.md")),
+    (
+        "logic/Cargo.toml",
+        include_str!("../template/logic/Cargo.toml.tmpl"),
+    ),
+    (
+        "logic/src/lib.rs",
+        include_str!("../template/logic/src/lib.rs"),
+    ),
     ("mod.toml", include_str!("../template/mod.toml")),
     ("ui/app.js", include_str!("../template/ui/app.js")),
     ("ui/index.html", include_str!("../template/ui/index.html")),
+    ("wit/deps/watane-host/host.wit", watane_host::HOST_WIT),
     ("wit/world.wit", include_str!("../template/wit/world.wit")),
 ];
 pub fn render(text: &str, slug: &Slug) -> String {
@@ -21,6 +30,10 @@ pub fn render(text: &str, slug: &Slug) -> String {
     text.replace("{{slug}}", slug.as_str())
         .replace("{{crate}}", &slug.to_string().replace('-', "_"))
         .replace("{{title}}", &title)
+        .replace(
+            "{{crates}}",
+            "- wit-bindgen 0.63.0\n- serde 1.0.229\n- serde_json 1.0.154",
+        )
 }
 #[derive(Serialize)]
 pub struct NewReport {

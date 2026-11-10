@@ -13,7 +13,7 @@ fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
     )
 }
 #[test]
-fn ac1_new_page_template_envelope() {
+fn ac1_new_counter_template_envelope() {
     let temp = tempfile::tempdir().unwrap();
     let (code, value) = run(temp.path(), &["--json", "new", "hello"]);
     assert_eq!(code, 0);
@@ -49,9 +49,12 @@ fn ac1_new_page_template_envelope() {
         ".gitignore",
         "AGENTS.md",
         "CLAUDE.md",
+        "logic/Cargo.toml",
+        "logic/src/lib.rs",
         "mod.toml",
         "ui/app.js",
         "ui/index.html",
+        "wit/deps/watane-host/host.wit",
         "wit/world.wit",
     ];
     assert_eq!(value["result"]["files"], json!(files));
@@ -70,12 +73,26 @@ fn ac1_new_page_template_envelope() {
     walk(&root, &root, &mut actual);
     actual.sort();
     assert_eq!(actual, files);
+    for file in &actual {
+        assert!(!fs::read_to_string(root.join(file)).unwrap().contains("{{"));
+    }
+    assert_eq!(
+        fs::read_to_string(root.join(".gitignore")).unwrap(),
+        "logic.wasm\nlogic/target/\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("wit/deps/watane-host/host.wit")).unwrap(),
+        watane_host::HOST_WIT
+    );
     assert!(
         fs::read_to_string(root.join("wit/world.wit"))
             .unwrap()
             .starts_with("package mods:hello@0.1.0;")
     );
-    assert_eq!(value["next"], "Edit ui/, then run: watane-dev serve --json");
+    assert_eq!(
+        value["next"],
+        "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json"
+    );
 }
 #[test]
 fn ac2_existing_and_invalid_slug_change_nothing() {
@@ -149,9 +166,12 @@ fn ac1_ac3_public_reports_are_typed() {
             ".gitignore",
             "AGENTS.md",
             "CLAUDE.md",
+            "logic/Cargo.toml",
+            "logic/src/lib.rs",
             "mod.toml",
             "ui/app.js",
             "ui/index.html",
+            "wit/deps/watane-host/host.wit",
             "wit/world.wit"
         ])
     );

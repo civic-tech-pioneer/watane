@@ -2645,9 +2645,11 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "clap",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
+ "toml 1.2.1+spec-1.1.0",
  "ureq",
  "watane-host",
  "watane-pkg",
