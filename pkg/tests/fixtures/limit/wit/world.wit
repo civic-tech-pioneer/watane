@@ -1,0 +1,3 @@
+package mods:hello@0.1.0;
+interface deep { type t = list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<list<u8>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>; }
+world hello {}

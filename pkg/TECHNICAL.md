@@ -134,8 +134,8 @@ wit/world.wit".
 ### 4.3 `deps.json`
 
 A JSON object, at most 64 KiB and 32 members. Each key is
-`mods:<slug>` of one provider. Each value is the publisher key text, or
-`null` for a local provider.
+`mods:<slug>` of one provider; duplicate keys are refused. Each value is
+the publisher key text, or `null` for a local provider.
 
 ```json
 {
@@ -225,7 +225,7 @@ parse, the cross checks that need it are skipped. Tests check `rule` and
 | `export` | `wit/world.wit` | an export that 4.5 refuses |
 | `provider` | `deps.json` | a call or subscription whose package has no member; a member that no call or subscription uses; a member for the mod's own package; the provider package has not exactly one world; a called interface that the provider's world does not export; a subscribed interface that the provider's world does not import |
 | `http` | `mod.toml` | `wasi:http/outgoing-handler` imported with no `[http] hosts`, or hosts listed without that import |
-| `parts` | the folder | a rule of 4.6 |
+| `parts` | `.` (the mod folder) | a rule of 4.6 |
 | `component` | `logic.wasm` | a rule of 4.9 (only in `check_component`) |
 
 ### 4.8 `add_provider` (step 2)
@@ -817,3 +817,5 @@ Each answer below is the one that this specification uses.
 12. **Version rule details**: section 5.2; no pre-release versions.
 13. **An imported interface with only types** is a call grant by spec §3.
     Answer: kept; `host` links it with no functions.
+14. **Folder-level violation paths** (pkg, host, dev): `parts` uses `file = "."`, the relative path of the mod folder, so diagnostics need no absolute path or empty-string convention.
+15. **Duplicate provider keys** (pkg, host, dev): `deps.json` refuses duplicate object keys instead of silently choosing a publisher; section 4.3 makes this explicit.

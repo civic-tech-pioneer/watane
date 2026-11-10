@@ -1,0 +1,4 @@
+name = "Hello"
+summary = "Says hello."
+[http]
+hosts = ["b.example", "a.example"]

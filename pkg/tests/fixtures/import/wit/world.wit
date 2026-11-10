@@ -1,0 +1,2 @@
+package mods:hello@0.1.0;
+world hello { import wasi:keyvalue/store@0.2.0; }

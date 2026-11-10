@@ -1,0 +1,3 @@
+package mods:tags@0.1.0;
+interface api {}
+world tags { export api; }

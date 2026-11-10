@@ -1,0 +1,2 @@
+package watane:host@0.1.0;
+interface caller { who: func() -> string; }
