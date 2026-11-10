@@ -35,14 +35,26 @@ what the last slice taught usually changes it.
 
 ## 3. Hand out a slice
 
-Mark it `in flight` in `PLAN.md` and commit. Start a new session in its own worktree on branch
-`slice/<id>`, with the prompt `/foreman <id>` and the sketch (in the desktop app:
-`start_session` with a worktree; in a terminal: `git worktree add ../watane-wt/<id> -b slice/<id>`,
-then `claude "/foreman <id>"` there).
+Mark it `in flight` in `PLAN.md` and commit. Then start the foreman as a background CLI session,
+never through the desktop app: the app refuses to start a session on a turn that another
+session's message started, and that is every turn while the human is away.
 
-In the desktop app, put your own session id in the prompt (`get_session` with `self`), then detach
-the new session at once (`detach_session`). Each turn end of an attached session wakes you, which
-costs a full turn for no news; the foreman's `SendMessage` still reaches you.
+```bash
+git worktree add .claude/worktrees/<id> -b slice/<id> main
+cd .claude/worktrees/<id> && claude --bg --model claude-opus-5-5 --permission-mode auto \
+  "/foreman <id> ... (the sketch's place in PLAN.md, and: report to the session named '<your name>')"
+```
+
+`<your name>` is the name `ListAgents` gives for you; a background session reaches you by that
+name, not by an app session id. `--bg` prints a short id: put it, and the full `sessionId` from
+`claude agents --json`, on the slice's line in `PLAN.md`. The transcript stays at
+`~/.claude/projects/<worktree folder>/<sessionId>.jsonl` for later analysis.
+Never run `claude rm`, and never delete those transcripts.
+
+Then start a background watch that ends when the foreman's process does, so a foreman that dies
+without reporting still wakes you:
+`while claude agents --json | grep -q '"<sessionId>"'; do sleep 60; done`.
+The human follows a foreman with `claude logs <id>` or `claude attach <id>`.
 
 ## 4. Questions: decide or escalate
 
@@ -58,8 +70,8 @@ If 1 or 2 holds but the question does not block: tell the foreman to build the o
 the others open, and escalate in parallel. Never let a foreman wait idle on the human.
 
 When you decide: the foreman edits the spec that owns the fact, and you add one line under
-`Deputy decisions` in `PLAN.md` (the human may veto). When you escalate: ask with
-`AskUserQuestion` if the human is in the session; else add it under `Waiting on the human`.
+`Deputy decisions` in `PLAN.md` (the human may veto). When you escalate: add it under `Waiting on
+the human` and go on; use `AskUserQuestion` only on a turn that the human's own message started.
 Either way: one question, its options, your recommendation, and the cost to undo each.
 
 ## 5. Accept a delivery
@@ -68,7 +80,8 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
 1. Check it: the user-sim said `ACCEPTED`, and the branch is rebased on `main`.
 2. `git merge --ff-only slice/<id>` on `main`. If that fails, send the foreman "rebase on main
    and run the tests again".
-3. Remove its worktree and branch. Mark the slice done in `PLAN.md` with one digest line (what a
+3. `claude stop <id>`, then remove its worktree and branch (the transcript stays). Mark the slice
+   done in `PLAN.md` with one digest line (what a
    person can now do), and copy its decisions and friction lines there. Commit.
 4. Report to the human: one line per slice, decisions first.
 
