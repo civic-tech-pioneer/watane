@@ -12,7 +12,8 @@ pub(super) fn headers(response: &reqwest::Response) {
         ("cross-origin-resource-policy", "same-origin"),
         ("cache-control", "no-store"),
     ] {
-        assert_eq!(response.headers()[name], value, "{name}");
+        let values: Vec<_> = response.headers().get_all(name).iter().collect();
+        assert_eq!(values, [value], "{name}");
     }
 }
 
@@ -205,9 +206,9 @@ async fn ac1_watane_js_is_the_host_library_with_page_headers() {
     let response = client.get(format!("{origin}/call")).send().await.unwrap();
     call_error(response, 405, "bad_request").await;
     let response = client.get(format!("{origin}/events")).send().await.unwrap();
-    assert_eq!(response.status(), 404);
+    assert_eq!(response.status(), 200);
     headers(&response);
-    assert_eq!(response.text().await.unwrap(), "not found");
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -261,7 +262,6 @@ async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
         "/%",
         "/app.js/",
         "/call",
-        "/events",
         "/watane.js",
         "/api/status",
     ] {
