@@ -106,3 +106,65 @@ fn ac8_json_argument_errors_use_envelope() {
     assert_eq!(v["schema"], 1);
     assert_eq!(v["errors"][0]["code"], "usage.args");
 }
+
+#[test]
+fn ac8_public_outcome_types_match_section_12() {
+    use watane_dev::outcome::{Class, Code, Outcome, Problem};
+    for (code, class, status, text) in [
+        (Code::ModInvalid, Class::Mod, 1, "mod.invalid"),
+        (Code::UsageArgs, Class::Usage, 2, "usage.args"),
+        (Code::EnvWataneMissing, Class::Env, 3, "env.watane_missing"),
+        (Code::HostRefused, Class::Refused, 4, "host.refused"),
+        (Code::Internal, Class::Internal, 5, "internal"),
+    ] {
+        assert_eq!(code.class(), class);
+        assert_eq!(code, code);
+        assert_eq!(serde_json::to_value(code).unwrap(), text);
+        let problem = Problem::new(code, "message").at("ui/app.js", Some(12), Some(5));
+        let cloned = problem.clone();
+        let outcome = Outcome::new("check", None).fail(vec![cloned]);
+        let command: &'static str = outcome.command;
+        assert_eq!(command, "check");
+        assert_eq!(outcome.exit_code(), status);
+        assert_eq!(
+            serde_json::to_value(problem).unwrap(),
+            json!({"code":text,"message":"message","file":"ui/app.js","line":12,"column":5,"fix":null})
+        );
+    }
+}
+
+#[test]
+fn ac1_ac3_public_reports_are_typed() {
+    use watane_dev::{
+        check::{CheckReport, ProviderReport},
+        template::{NewReport, new_mod},
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("hello");
+    let created: NewReport = new_mod(&dir, "hello").unwrap();
+    assert_eq!(created.slug, "hello");
+    assert_eq!(
+        serde_json::to_value(created).unwrap()["files"],
+        json!([
+            ".gitignore",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "mod.toml",
+            "ui/app.js",
+            "ui/index.html",
+            "wit/world.wit"
+        ])
+    );
+    let (_, report): (_, CheckReport) = watane_dev::check::check(&dir).unwrap();
+    assert_eq!(report.slug, "hello");
+    assert!(report.providers.is_empty());
+    let provider = ProviderReport {
+        slug: "books".into(),
+        publisher: None,
+        path: Some("../books".into()),
+    };
+    assert_eq!(
+        serde_json::to_value(provider).unwrap(),
+        json!({"slug":"books","publisher":null,"path":"../books"})
+    );
+}

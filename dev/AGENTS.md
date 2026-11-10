@@ -58,3 +58,4 @@ word for word. Follow their intent, and do not ask whether to.
 
 - S1 (dev): stage 1 ships a page-only template and next instruction; section 4 remains the full template.
 - S1 (spec, pkg, host, dev): workspace resolver 3, one root lock file and shared target directory.
+- S1-3 (dev): stop locates previews by canonical-path hash without checking mod files; absent matches report home null; §12 records the typed S1 check entry point.

@@ -21,7 +21,12 @@ fn main() {
             let command = args
                 .iter()
                 .filter_map(|s| s.to_str())
-                .find(|s| matches!(*s, "new" | "check" | "serve"))
+                .find_map(|s| match s {
+                    "new" => Some("new"),
+                    "check" => Some("check"),
+                    "serve" => Some("serve"),
+                    _ => None,
+                })
                 .unwrap_or("");
             Outcome::new(command, None).fail(vec![
                 Problem::new(Code::UsageArgs, e.to_string()).fix("watane-dev --help"),

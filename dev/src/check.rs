@@ -1,5 +1,5 @@
 use crate::outcome::{Code, Problem};
-use serde_json::{Value, json};
+use serde::Serialize;
 use std::{fs, path::Path};
 use watane_pkg::{Mod, ModError};
 fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
@@ -14,7 +14,7 @@ fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
                 let file = path.strip_prefix(root).unwrap().to_string_lossy();
                 errors.push(
                     Problem::new(Code::ModSymlink, format!("{file} is a symbolic link"))
-                        .at(file.to_string())
+                        .at(file.to_string(), None, None)
                         .fix("Replace it with a file"),
                 );
             } else if kind.is_dir()
@@ -27,7 +27,27 @@ fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
     errors.sort_by(|a, b| a.file.cmp(&b.file));
     Ok(errors)
 }
-pub fn check(dir: &Path) -> Result<(Mod, Value), Vec<Problem>> {
+#[derive(Serialize)]
+pub struct ProviderReport {
+    pub slug: String,
+    pub publisher: Option<String>,
+    pub path: Option<String>,
+}
+#[derive(Serialize)]
+pub struct CheckReport {
+    pub slug: String,
+    pub version: String,
+    pub name: String,
+    pub page: bool,
+    pub logic: bool,
+    pub grants: Vec<String>,
+    pub exports: Vec<String>,
+    pub events: Vec<String>,
+    pub calls: Vec<String>,
+    pub subscriptions: Vec<String>,
+    pub providers: Vec<ProviderReport>,
+}
+pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     if fs::symlink_metadata(dir.join("mod.toml"))
         .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
     {
@@ -49,16 +69,38 @@ pub fn check(dir: &Path) -> Result<(Mod, Value), Vec<Problem>> {
                         v.message
                     ),
                 )
-                .at(v.file.clone())
+                .at(v.file.clone(), None, None)
                 .fix(format!("Correct {} according to the reported rule", v.file))
             })
             .collect(),
-        ModError::Io { path, source } => vec![Problem::internal(source).at(path.to_string_lossy())],
+        ModError::Io { path, source } => {
+            vec![Problem::internal(source).at(path.to_string_lossy(), None, None)]
+        }
     })?;
     let w = m.world();
     let strings = |items: &[watane_pkg::InterfaceName]| {
         items.iter().map(ToString::to_string).collect::<Vec<_>>()
     };
-    let report = json!({"slug":m.slug(),"version":m.version(),"name":m.name(),"page":m.page().is_some(),"logic":m.logic().is_some(),"grants":m.grants().iter().map(ToString::to_string).collect::<Vec<_>>(),"exports":strings(&w.exports),"events":strings(&w.events),"calls":strings(&w.calls),"subscriptions":strings(&w.subscriptions),"providers":m.deps().iter().map(|(slug,publisher)|json!({"slug":slug,"publisher":publisher,"path":null})).collect::<Vec<_>>()});
+    let report = CheckReport {
+        slug: m.slug().to_string(),
+        version: m.version().to_string(),
+        name: m.name().to_string(),
+        page: m.page().is_some(),
+        logic: m.logic().is_some(),
+        grants: m.grants().iter().map(ToString::to_string).collect(),
+        exports: strings(&w.exports),
+        events: strings(&w.events),
+        calls: strings(&w.calls),
+        subscriptions: strings(&w.subscriptions),
+        providers: m
+            .deps()
+            .iter()
+            .map(|(slug, publisher)| ProviderReport {
+                slug: slug.to_string(),
+                publisher: publisher.map(ToString::to_string),
+                path: None,
+            })
+            .collect(),
+    };
     Ok((m, report))
 }

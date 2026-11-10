@@ -202,6 +202,16 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
     }
     let deadline = Instant::now() + Duration::from_secs(10);
     while home.join("run.json").exists() {
+        let alive = Command::new("/bin/kill")
+            .arg("-0")
+            .arg(run.pid.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(Problem::internal)?;
+        if !alive.success() {
+            break;
+        }
         if Instant::now() >= deadline {
             return Err(
                 Problem::new(Code::EnvPreviewStart, "preview did not stop in 10 seconds")
@@ -213,15 +223,37 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
     Ok(true)
 }
 pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
-    let (m, _) = check::check(dir)?;
     let work = || -> Result<Value, Problem> {
-        let folder = folder(dir, env, m.slug().as_str());
-        let home = folder.join("home");
-        let stopped = stop_home(&home)?;
-        match fs::remove_dir_all(&folder) {
-            Ok(()) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        let dir = dir.canonicalize().map_err(Problem::internal)?;
+        let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
+        let suffix = format!("-{}", &hash[..8]);
+        let entries = match fs::read_dir(env.cache.join("previews")) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(json!({"stopped":false,"home":null}));
+            }
             Err(e) => return Err(Problem::internal(e)),
+        };
+        let mut folders = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(Problem::internal)?;
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.ends_with(&suffix))
+                && entry.file_type().map_err(Problem::internal)?.is_dir()
+            {
+                folders.push(entry.path());
+            }
+        }
+        folders.sort();
+        let mut home = None;
+        let mut stopped = false;
+        for folder in folders {
+            let preview_home = folder.join("home");
+            stopped |= stop_home(&preview_home)?;
+            home.get_or_insert(preview_home);
+            fs::remove_dir_all(&folder).map_err(Problem::internal)?;
         }
         Ok(json!({"stopped":stopped,"home":home}))
     };

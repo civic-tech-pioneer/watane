@@ -1,6 +1,10 @@
 use crate::outcome::{Code, Problem};
-use serde_json::{Value, json};
-use std::{fs, path::Path, str::FromStr};
+use serde::Serialize;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use watane_pkg::Slug;
 const FILES: &[(&str, &str)] = &[
     (".gitignore", include_str!("../template/.gitignore")),
@@ -18,7 +22,13 @@ pub fn render(text: &str, slug: &Slug) -> String {
         .replace("{{crate}}", &slug.to_string().replace('-', "_"))
         .replace("{{title}}", &title)
 }
-pub fn new_mod(dir: &Path, slug: &str) -> Result<Value, Problem> {
+#[derive(Serialize)]
+pub struct NewReport {
+    pub slug: String,
+    pub dir: PathBuf,
+    pub files: Vec<String>,
+}
+pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
     let slug=Slug::from_str(slug).map_err(|e|Problem::new(Code::UsageSlug,format!("{slug:?} is not a valid slug: {e}")).fix("Use lowercase words of letters and digits joined by \"-\", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list"))?;
     if let Err(e) = fs::create_dir(dir) {
         return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
@@ -40,9 +50,11 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<Value, Problem> {
         let _ = fs::remove_dir_all(dir);
         return Err(Problem::internal(e));
     }
-    Ok(
-        json!({"slug":slug,"dir":dir.canonicalize().map_err(Problem::internal)?,"files":FILES.iter().map(|(name,_)|name).collect::<Vec<_>>()}),
-    )
+    Ok(NewReport {
+        slug: slug.to_string(),
+        dir: dir.canonicalize().map_err(Problem::internal)?,
+        files: FILES.iter().map(|(name, _)| (*name).to_string()).collect(),
+    })
 }
 #[cfg(test)]
 mod tests {

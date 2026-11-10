@@ -895,6 +895,13 @@ fails stops the command. Each Problem of a provider gets the prefix
 
 ### 9.4 `serve --stop`
 
+Stopping never runs `check` or reads the mod's manifest or world. Canonicalize
+its folder, compute h8 as in section 3, and find `<cache>/previews/*-<h8>`.
+Apply the steps below to every matching preview folder `P`, so stopping also
+works after broken edits or a slug change. Report `stopped` true if any host
+was stopped; `home` is the first matching home in sorted path order, or null
+when no preview folder matches.
+
 1. `RunInfo::read(P/home)`; if none, or the host does not answer with
    `home` = `P/home` in `/api/status`, go to step 4 with `stopped` false.
 2. Run `kill -TERM <pid>`.
@@ -1014,6 +1021,9 @@ impl Env { pub fn from_process() -> Result<Env, Problem>; }
 pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem>;
 pub fn render(text: &str, slug: &watane_pkg::Slug) -> String;
 
+// S1 has no allowlist or builder stages: its check entry point is
+// check(dir: &Path) -> Result<(watane_pkg::Mod, CheckReport), Vec<Problem>>.
+// The full-pipeline signature below joins with those later stages.
 // check.rs
 pub struct Findings { pub errors: Vec<Problem>, pub warnings: Vec<Problem> }
 #[derive(Serialize)] pub struct ProviderReport { pub slug: String, pub publisher: Option<String>, pub path: Option<String> }

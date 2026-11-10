@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(into = "&'static str")]
 pub enum Code {
     UsageArgs,
     UsageNotAMod,
@@ -32,22 +33,32 @@ impl Code {
             Self::Internal => "internal",
         }
     }
-    pub fn class(self) -> u8 {
+    pub fn class(self) -> Class {
         match self {
-            Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => 2,
-            Self::EnvWataneMissing | Self::EnvPreviewStart => 3,
-            Self::ModInvalid | Self::ModSymlink => 1,
-            Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => 4,
-            Self::Internal => 5,
+            Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => {
+                Class::Usage
+            }
+            Self::EnvWataneMissing | Self::EnvPreviewStart => Class::Env,
+            Self::ModInvalid | Self::ModSymlink => Class::Mod,
+            Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => Class::Refused,
+            Self::Internal => Class::Internal,
         }
     }
 }
-impl Serialize for Code {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
+impl From<Code> for &'static str {
+    fn from(code: Code) -> Self {
+        code.as_str()
     }
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Class {
+    Mod = 1,
+    Usage = 2,
+    Env = 3,
+    Refused = 4,
+    Internal = 5,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct Problem {
     pub code: Code,
     pub message: String,
@@ -67,8 +78,10 @@ impl Problem {
             fix: None,
         }
     }
-    pub fn at(mut self, file: impl Into<String>) -> Self {
+    pub fn at(mut self, file: impl Into<String>, line: Option<u32>, column: Option<u32>) -> Self {
         self.file = Some(file.into());
+        self.line = line;
+        self.column = column;
         self
     }
     pub fn fix(mut self, fix: impl Into<String>) -> Self {
@@ -83,7 +96,7 @@ impl Problem {
 #[derive(Debug, Serialize)]
 pub struct Outcome {
     pub schema: u32,
-    pub command: String,
+    pub command: &'static str,
     pub ok: bool,
     pub dir: Option<PathBuf>,
     pub result: Option<serde_json::Value>,
@@ -92,10 +105,10 @@ pub struct Outcome {
     pub next: Option<String>,
 }
 impl Outcome {
-    pub fn new(command: impl Into<String>, dir: Option<PathBuf>) -> Self {
+    pub fn new(command: &'static str, dir: Option<PathBuf>) -> Self {
         Self {
             schema: 1,
-            command: command.into(),
+            command,
             ok: true,
             dir,
             result: None,
@@ -110,7 +123,7 @@ impl Outcome {
         self
     }
     pub fn exit_code(&self) -> u8 {
-        self.errors.first().map_or(0, |e| e.code.class())
+        self.errors.first().map_or(0, |e| e.code.class() as u8)
     }
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).expect("outcome serializes")

@@ -48,13 +48,12 @@ pub fn run(cli: Cli) -> Outcome {
     };
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
-        Command::New { slug } => {
-            template::new_mod(&dir, &slug)
-                .map_err(|e| vec![e])
-                .inspect(|_| {
-                    outcome.next = Some("Edit ui/, then run: watane-dev serve --json".into());
-                })
-        }
+        Command::New { slug } => template::new_mod(&dir, &slug)
+            .map_err(|e| vec![e])
+            .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
+            .inspect(|_| {
+                outcome.next = Some("Edit ui/, then run: watane-dev serve --json".into());
+            }),
         Command::Check => dir
             .canonicalize()
             .or_else(|e| match e.kind() {
@@ -64,7 +63,9 @@ pub fn run(cli: Cli) -> Outcome {
             })
             .and_then(|dir| {
                 outcome.dir = Some(dir.clone());
-                check::check(&dir).map(|(_, v)| v)
+                check::check(&dir).and_then(|(_, report)| {
+                    serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])
+                })
             }),
         Command::Serve { stop } => dir
             .canonicalize()

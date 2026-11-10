@@ -190,3 +190,87 @@ fn stop_with_unreadable_run_json_is_not_running() {
     assert_eq!(v["result"]["stopped"], false);
     assert!(!folder.exists());
 }
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac6_stop_works_after_mod_files_are_broken() {
+    for file in ["mod.toml", "wit/world.wit"] {
+        let m = Mod::new(true);
+        let preview = m.serve();
+        let original = fs::read(m.dir.join(file)).unwrap();
+        fs::write(m.dir.join(file), "broken [").unwrap();
+        let (code, value) = m.run(&["serve", "--stop", "--json"]);
+        // Restore for cleanup even if this regression assertion fails.
+        fs::write(m.dir.join(file), original).unwrap();
+        assert_eq!(code, 0, "{value}");
+        assert_eq!(
+            value["result"],
+            serde_json::json!({"stopped":true,"home":preview["home"]})
+        );
+        assert!(TcpStream::connect(("127.0.0.1", port(&preview))).is_err());
+        assert!(
+            !PathBuf::from(preview["home"].as_str().unwrap())
+                .parent()
+                .unwrap()
+                .exists()
+        );
+    }
+}
+
+#[test]
+fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
+    use std::{net::TcpListener, process::Stdio, time::Instant};
+    let m = Mod::new(false);
+    let hash = blake3::hash(m.dir.canonicalize().unwrap().as_os_str().as_encoded_bytes()).to_hex();
+    let folder = m
+        .temp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(format!("cache/previews/hello-{}", &hash[..8]));
+    let home = folder.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mut child = Command::new("/bin/sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    fs::write(
+        home.join("run.json"),
+        serde_json::to_vec(
+            &serde_json::json!({"watane":1,"pid":child.id(),"port":port,"mode":"preview"}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let reaper = std::thread::spawn(move || child.wait().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+        }
+        assert!(request.starts_with(b"GET /api/status "));
+        let body =
+            serde_json::json!({"watane":1,"mode":"preview","home":home,"port":port,"app":false})
+                .to_string();
+        write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+    });
+    let started = Instant::now();
+    let (code, value) = m.run(&["serve", "--stop", "--json"]);
+    server.join().unwrap();
+    reaper.join().unwrap();
+    assert_eq!(code, 0, "{value}");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(value["result"]["stopped"], true);
+    assert!(!folder.exists());
+}
