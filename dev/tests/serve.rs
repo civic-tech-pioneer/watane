@@ -332,3 +332,59 @@ fn ac9_real_counter_page_calls_logic() {
     assert_eq!(second["reused"], true);
     assert_eq!(call(&second, "api.get"), serde_json::json!({"value":2}));
 }
+
+fn edited_counter() -> (Mod, Value, Vec<u8>) {
+    let m = Mod::new(true);
+    let first = m.serve();
+    assert_eq!(call(&first, "api.add"), serde_json::json!({"value": 1}));
+    assert_eq!(call(&first, "api.add"), serde_json::json!({"value": 2}));
+
+    let logic = m.dir.join("logic/src/lib.rs");
+    let source = fs::read_to_string(&logic).unwrap();
+    assert_eq!(source.matches("count.saturating_add(1)").count(), 1);
+    fs::write(
+        &logic,
+        source.replace("count.saturating_add(1)", "count.saturating_add(10)"),
+    )
+    .unwrap();
+    let html = fs::read_to_string(m.dir.join("ui/index.html")).unwrap();
+    assert!(html.contains("<h1>Hello</h1>"));
+    let edited = html
+        .replace("<h1>Hello</h1>", "<h1>Add ten</h1>")
+        .into_bytes();
+    fs::write(m.dir.join("ui/index.html"), &edited).unwrap();
+
+    let second = m.serve();
+    assert_eq!(second["reused"], true);
+    assert_eq!(second["api"], first["api"]);
+    assert_eq!(second["home"], first["home"]);
+    assert_eq!(second["pages"][0]["local"], first["pages"][0]["local"]);
+    let (headers, body) = get(&second, "");
+    assert!(headers.starts_with("HTTP/1.1 200"));
+    assert_eq!(body, edited);
+    assert_eq!(call(&second, "api.get"), serde_json::json!({"value": 2}));
+    assert_eq!(call(&second, "api.add"), serde_json::json!({"value": 12}));
+    (m, second, edited)
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac2_edit_keeps_data_and_updates_logic_and_page() {
+    let (_m, _, _) = edited_counter();
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac3_broken_build_leaves_running_revision_and_count() {
+    let (m, preview, previous_html) = edited_counter();
+    fs::write(m.dir.join("logic/src/lib.rs"), "fn broken( {").unwrap();
+    fs::write(m.dir.join("ui/index.html"), "<h1>Unbuilt revision</h1>").unwrap();
+    let (code, value) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["errors"][0]["code"], "build.compile");
+    let (headers, body) = get(&preview, "");
+    assert!(headers.starts_with("HTTP/1.1 200"));
+    assert_eq!(body, previous_html);
+    assert_eq!(call(&preview, "api.get"), serde_json::json!({"value": 12}));
+}

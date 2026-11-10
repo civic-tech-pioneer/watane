@@ -188,3 +188,28 @@ fn ac1_ac3_public_reports_are_typed() {
         json!({"slug":"books","publisher":null,"path":"../books"})
     );
 }
+
+#[test]
+fn ac1_new_page_subscribes_to_counted_and_changed() {
+    let temp = tempfile::tempdir().unwrap();
+    let (code, value) = run(temp.path(), &["new", "hello", "--json"]);
+    assert_eq!(code, 0, "{value}");
+    let expected = "const count = document.getElementById('count');
+const alert = document.getElementById('error');
+const show = (value) => { count.textContent = String(value); alert.textContent = ''; };
+const fail = (error) => { alert.textContent = error.message; };
+const read = () => watane.call('api.get').then(show, fail);
+document.getElementById('add').addEventListener('click', () => watane.call('api.add').then(show, fail));
+watane.on((message) => {
+  if (message.type === 'event' && message.function === 'counted') show(message.args.count);
+  else if (message.type === 'changed') read();
+});
+";
+    assert_eq!(
+        fs::read_to_string(temp.path().join("hello/ui/app.js")).unwrap(),
+        expected
+    );
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
+    assert!(spec.contains(&format!("`template/ui/app.js`:\n```js\n{expected}```")));
+}

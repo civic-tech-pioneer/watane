@@ -519,11 +519,15 @@ const show = (value) => { count.textContent = String(value); alert.textContent =
 const fail = (error) => { alert.textContent = error.message; };
 const read = () => watane.call('api.get').then(show, fail);
 document.getElementById('add').addEventListener('click', () => watane.call('api.add').then(show, fail));
-read();
+watane.on((message) => {
+  if (message.type === 'event' && message.function === 'counted') show(message.args.count);
+  else if (message.type === 'changed') read();
+});
 ```
 
-S3 restores `watane.on(read)`; S2 reads once at startup because `/events`
-is not available yet.
+`counted` events carry the count directly; `changed` triggers a read.
+The stream also dispatches `changed` when it opens, so no separate first
+read is needed (host 8.4–8.5).
 
 `template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
 with these sections in this order (S2 includes 1–6, 9 and 10; 7 and 8 join
