@@ -248,7 +248,9 @@ does not yet pass `Mod::read`.
 Needed only when the mod has a logic part; otherwise it returns `Ok`.
 
 1. `logic.wasm` exists, is a regular file, and is at most 64 MiB.
-2. `wit_parser::decoding::decode(bytes)` inside `catch_unwind` gives
+2. The bytes start with the WebAssembly component header
+   (`00 61 73 6d 0d 00 01 00`), and
+   `wit_parser::decoding::decode(bytes)` inside `catch_unwind` gives
    `DecodedWasm::Component(resolve, world)`. Anything else: "logic.wasm is
    not a WebAssembly component".
 3. Each import of that world is an interface whose name is an import of
@@ -819,3 +821,4 @@ Each answer below is the one that this specification uses.
     Answer: kept; `host` links it with no functions.
 14. **Folder-level violation paths** (pkg, host, dev): `parts` uses `file = "."`, the relative path of the mod folder, so diagnostics need no absolute path or empty-string convention.
 15. **Duplicate provider keys** (pkg, host, dev): `deps.json` refuses duplicate object keys instead of silently choosing a publisher; section 4.3 makes this explicit.
+16. **Component versus core module** (pkg, host, dev): `wit-parser` 0.254.2 decodes an empty core module as `DecodedWasm::Component`; section 4.9 checks the component header explicitly before decoding.

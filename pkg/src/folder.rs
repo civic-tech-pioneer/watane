@@ -456,6 +456,46 @@ impl Mod {
     pub fn logic(&self) -> Option<PathBuf> {
         self.logic.then(|| self.dir.join("logic.wasm"))
     }
+    // World's grant classification omits caller and type-only host/WASI names.
+    // Reuse the WIT reader's path, size and nesting checks before resolving them.
+    pub(crate) fn component_imports(&self) -> Result<BTreeSet<String>, ModError> {
+        let mut violations = Vec::new();
+        let files = inspect(&self.dir, &mut violations)?;
+        if !violations.is_empty() {
+            return Err(ModError::Invalid(violations));
+        }
+        let contract = world::read(&self.dir, &files, &mut violations)?;
+        if !violations.is_empty() {
+            return Err(ModError::Invalid(violations));
+        }
+        if contract.is_none() {
+            return Err(invalid(
+                Rule::Wit,
+                "wit/world.wit",
+                "could not read the contract",
+            ));
+        }
+        let parsed = std::panic::catch_unwind(|| {
+            let mut resolve = wit_parser::Resolve::default();
+            let (package, _) = resolve.push_dir(self.dir.join("wit")).ok()?;
+            let world = resolve.select_world(&[package], None).ok()?;
+            Some(
+                resolve.worlds[world]
+                    .imports
+                    .keys()
+                    .map(|key| resolve.name_world_key(key))
+                    .collect(),
+            )
+        });
+        match parsed {
+            Ok(Some(imports)) => Ok(imports),
+            _ => Err(invalid(
+                Rule::Wit,
+                "wit/world.wit",
+                "could not resolve component imports",
+            )),
+        }
+    }
     pub fn grants(&self) -> Vec<Grant> {
         let w = self.world();
         let mut grants = Vec::new();

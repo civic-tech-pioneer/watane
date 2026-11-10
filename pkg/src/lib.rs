@@ -1,3 +1,4 @@
+mod component;
 mod deps;
 mod folder;
 mod grant;
