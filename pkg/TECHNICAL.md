@@ -381,12 +381,14 @@ The package id is `blake3(all bytes)`.
 ### 6.4 Pack, decode and unpack
 
 `pack(dir, include_source)`:
-1. `Mod::read(dir)?` and `check_component()?`.
-2. Walk the paths of 6.1 with `symlink_metadata`. Skip each entry whose
+1. Walk the paths of 6.1 with `symlink_metadata`. Skip each entry whose
    name starts with `.`. Refuse a symbolic link (`PackageError::Symlink`),
    anything that is not a regular file or a directory, and a name outside
    6.2 (`PackageError::Path`). Never walk outside these paths, so
    `logic/target/`, `.git/` and `.cargo/` are never read.
+2. `Mod::read(dir)?` and `check_component()?`. The path walk comes first
+   so selected links and special files are refused as package errors before
+   any mod parser or file read can reach them.
 3. Sort, check 6.2 and the limits, write the bytes of 6.3. Stop when the
    size passes the limit.
 4. Return `Package::from_bytes` of the result, so pack only gives what
@@ -822,3 +824,4 @@ Each answer below is the one that this specification uses.
 14. **Folder-level violation paths** (pkg, host, dev): `parts` uses `file = "."`, the relative path of the mod folder, so diagnostics need no absolute path or empty-string convention.
 15. **Duplicate provider keys** (pkg, host, dev): `deps.json` refuses duplicate object keys instead of silently choosing a publisher; section 4.3 makes this explicit.
 16. **Component versus core module** (pkg, host, dev): `wit-parser` 0.254.2 decodes an empty core module as `DecodedWasm::Component`; section 4.9 checks the component header explicitly before decoding.
+17. **Package preflight** (pkg, host, dev, dist): section 6.4 walks selected paths before `Mod::read`, preserving `PackageError::Symlink` and refusing special files before opening them; the byte format and mod checks are unchanged.

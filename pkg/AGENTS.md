@@ -54,3 +54,7 @@ word for word. Follow their intent, and do not ask whether to.
   with a proposed signature, use the proposal, and go on.
 - If the spec is unclear, decide the simplest answer that keeps the formats
   stable, record it in section 15, and go on.
+
+## Spec gaps
+
+- S7 (pkg, host, dev, dist): package path preflight precedes mod validation so selected links and special files receive package errors before being opened (TECHNICAL.md §6.4, §15.17).

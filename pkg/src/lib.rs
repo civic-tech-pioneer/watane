@@ -4,6 +4,7 @@ mod folder;
 mod grant;
 mod meta;
 mod names;
+mod package;
 mod world;
 
 pub use deps::Deps;
@@ -13,4 +14,5 @@ pub use names::{
     HttpHost, InterfaceName, NameError, PackageId, PublisherKey, ReleaseRef, Slug, Version,
     compatible,
 };
+pub use package::{MAX_PACKAGE_BYTES, Package, PackageError, pack};
 pub use world::World;
