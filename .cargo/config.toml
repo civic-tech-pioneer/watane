@@ -1,0 +1,3 @@
+# One build folder for every subsystem: shared dependencies build once (Colos ran out of disk with one per worktree).
+[build]
+target-dir = "target"

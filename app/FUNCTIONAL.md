@@ -1,0 +1,156 @@
+# app: functional specification
+
+What the app does, free of implementation. "The app" is the desktop
+application of FUNCTIONAL.md section 1. Ids `APP-F-<n>`. Each `Traces:`
+line cites spec/FUNCTIONAL.md. Step 1 needs nothing from the app (J1 uses a
+preview). Steps 4 and 5 are sketched only, so that no design blocks them.
+
+## Step 2: Run together
+
+### Start and launcher
+
+- **APP-F-1** When the app starts, the app shall open the home of the participant, run its host in the app process, and serve the host on the loopback interface. Traces: F-APP-1, J2.
+- **APP-F-2** If the app cannot open the home, then the app shall show the cause, run no mod, and accept no request. Traces: F-QUAL-3.
+- **APP-F-3** The app shall show a launcher with one entry for each installed mod. When no mod is installed, the launcher shall show no entry. Traces: F-APP-1, J2.
+- **APP-F-4** The app shall show the consent mark of the home in the header of each app view. Traces: F-APP-4.
+
+### Mod views
+
+- **APP-F-5** When the participant opens a mod that has a page, the app shall show that page in a window of its own. The window shall load the origin that the host serves for that mod. Traces: F-APP-3, F-RUN-4.
+- **APP-F-6** The app shall title each mod window with the name of the mod and its publisher, or "local". The page shall not change this title. Traces: F-APP-3.
+- **APP-F-7** When the participant opens a mod whose window is open, the app shall focus that window and open no second one. Traces: F-APP-3.
+- **APP-F-8** A mod window shall reach no app command and no plugin command. Traces: F-RUN-4, F-APP-4.
+- **APP-F-9** If a mod page tries to navigate to another origin, open a new window, or start a download, then the app shall refuse it. Traces: F-RUN-4.
+- **APP-F-10** Each mod window shall start with empty web storage and keep none after it closes. Traces: F-RUN-4, F-INST-5.
+- **APP-F-11** When the participant disables or removes a mod, the app shall close the window of that mod before it asks the host. Traces: F-INST-5, J2.
+
+### Consent
+
+- **APP-F-12** When the host or dist asks for a confirmation, the app shall show the request in the consent view. The app shall answer "approve" only when the participant approves in that view. Traces: F-APP-4, F-AGENT-4, F-INST-2.
+- **APP-F-13** The app shall answer confirmations inside its process. No request from outside the process shall answer one. Traces: F-AGENT-4.
+- **APP-F-14** The consent view shall stay above every mod window, on every desktop space, and take the focus when it opens. Traces: F-APP-4.
+- **APP-F-15** The consent view shall show the consent mark of the home. Traces: F-APP-4.
+- **APP-F-16** The approve control shall accept no input until 800 ms after the consent view last got the focus. The approve control shall not be the default control. Traces: F-APP-4.
+- **APP-F-17** The app shall show one request at a time, in the order of arrival.
+- **APP-F-18** If the participant closes the consent view, or the app quits, or a request has no answer for 10 minutes, then the app shall answer "deny" to that request. Traces: F-AGENT-4, W19.
+- **APP-F-19** For an install plan, the consent view shall show each mod in the order of install, with its name, version, publisher (with "signature verified") or "local", the version it replaces if any, each grant in words with each new grant marked, and the provider mods it uses. The participant shall be able to withhold each grant; the app shall then approve only the other grants. Traces: F-INST-1, F-INST-2, F-INST-3, F-INST-4, F-INST-7, J2.
+
+### Manage mods
+
+- **APP-F-20** When the participant chooses one or more mod folders, the app shall ask the host for a plan of all of them and install the plan after consent. Traces: F-INST-1, F-INST-2, F-INST-4, J2.
+- **APP-F-21** If a plan needs a provider that is not installed and not supplied, then the app shall name each missing provider and install nothing. Traces: F-INST-4, F-QUAL-3.
+- **APP-F-22** The app shall show, for each mod, its name, version, publisher or "local", grants in words, page origin and package id. Traces: F-APP-5.
+- **APP-F-23** The participant shall be able to open, disable, enable and remove each mod, withdraw each grant, and give back a withdrawn or withheld grant. Traces: F-INST-5, J2.
+- **APP-F-24** When the participant removes a mod, the app shall ask whether to delete its data, with "keep data" as the default. Traces: F-INST-5.
+
+### Agents
+
+- **APP-F-25** The participant shall be able to define a toolset: a name and a choice of calls of installed mods. The app shall name each call by the tool name that the host gives it. Traces: F-AGENT-1, F-AGENT-3.
+- **APP-F-26** When the participant asks for a token for a toolset and an agent handle, the app shall get one from the host and show it once, with the MCP address of the toolset. Traces: F-AGENT-2, W6.
+- **APP-F-27** The app shall list the active tokens without their secret, and end a token when the participant asks. Traces: F-AGENT-2.
+
+## Step 3: Publish
+
+- **APP-F-28** At the first start, the app shall create the identity of the participant, with no network contact. Traces: F-APP-2, J3.
+- **APP-F-29** The app shall show the identity as the profile name and the key fingerprint. The participant shall be able to set the profile name, after consent, and the web address of the site folder. The app shall show the site folder and the link to the own channel. Traces: F-PUB-1, F-PUB-3, J3.
+- **APP-F-30** When the participant asks for a backup, the app shall ask for a passphrase twice, refuse a passphrase shorter than 12 characters or two that differ, and write the backup to a file the participant chooses. Traces: F-APP-6.
+- **APP-F-31** When the participant restores a backup with its passphrase, the app shall replace the identity, and then ask for the link to the own channel or the statement that this identity never published. If the own channel already holds a statement, then the app shall refuse the restore and name the cause. Traces: F-APP-6, F-PUB-7.
+- **APP-F-32** When a local program asks to publish a package, the app shall ask dist to publish it after consent, and answer with the release, the site folder and the link. Traces: F-PUB-2, F-PUB-3, F-AGENT-4, J3, W13.
+- **APP-F-33** For a signature, the consent view shall show the kind of statement, the signer, and its details: for a release, the mod, the version, the package id and whether the source is included; for a withdrawal, the release and the reason; for a profile, the name. Traces: F-AGENT-4, F-PUB-4, F-PUB-5.
+- **APP-F-34** When the participant enters a link, the app shall follow its channel. When the link names a release, the app shall fetch that release, plan its install with each provider fetched, and install it after consent. Traces: F-PUB-6, F-INST-6, F-INST-4, J3.
+- **APP-F-35** The app shall show the publisher of each published mod by its profile name and key fingerprint, with "signature verified". Traces: F-APP-3, F-APP-5, J3.
+- **APP-F-36** The app shall refresh each followed channel at start, every 10 minutes and on request. Traces: F-PUB-6, F-QUAL-1.
+- **APP-F-37** If a refresh, a fetch or a verification fails, then the app shall show the channel or the release with the cause that dist names. If a channel is compromised, then the app shall show it as compromised. Traces: F-PUB-7, F-QUAL-3, J3.
+
+## Step 4: Find (sketch)
+
+- **APP-F-38** The participant shall be able to choose indexes, search them by text, publisher and interface, and install a result after consent. Traces: F-FIND-2, F-FIND-3, F-FIND-4, J4.
+- **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. Traces: F-INST-7, J4.
+- **APP-F-40** When a refresh reports a withdrawn installed version, the app shall tell the participant and offer the newest version that is not withdrawn. Traces: F-INST-8, J4.
+
+## Step 5: Build on (sketch)
+
+- **APP-F-41** When the host asks the participant to pick a provider, the consent view shall list the mods whose interface fits, and answer with the one the participant picks. Traces: F-BUILD-3, J5.
+- **APP-F-42** The app shall show the release a mod derives from, and the mods that derive from a mod. Traces: F-BUILD-1, F-BUILD-4.
+
+## Acceptance scenarios
+
+Each scenario is a test (TECHNICAL.md section 9 names the test).
+
+**S1 Empty start** (APP-F-1, APP-F-3, APP-F-4). Given a new home, when the
+app starts, then the launcher shows no mod entry, the header shows two mark
+words, and `<home>/mods/` holds no mod.
+
+**S2 Install two local mods** (APP-F-12, APP-F-19, APP-F-20). Given the
+built folders `reading-list` and `recommendations` (which calls and
+subscribes to `reading-list`), when the participant chooses both, then the
+consent view lists `reading-list` before `recommendations`, both "local",
+with the grant texts of TECHNICAL.md section 4; and when the participant
+approves, then both appear in the launcher and in `<home>/mods/`.
+
+**S2b Withhold a grant** (APP-F-19). Given the plan of S2, when the
+participant unchecks the storage grant of `reading-list` and approves, then
+the details of `reading-list` show that grant as not granted.
+
+**S3 Deny** (APP-F-12, APP-F-18). Given an open install request, when the
+participant closes the consent view, then the request gets "deny" and
+`<home>/mods/` is unchanged.
+
+**S4 Approve delay** (APP-F-16). Given a consent view that got the focus at
+time t, when approve is clicked at t + 100 ms, then no answer goes out; when
+it is clicked at t + 900 ms, then "approve" goes out.
+
+**S5 Stays above** (APP-F-14). Given an open mod window, when a request
+arrives, then the consent window is always-on-top, visible on all spaces and
+focused, and the mod window is not always-on-top.
+
+**S6 Hostile page** (APP-F-8, APP-F-9, APP-F-10). Given the installed
+fixture mod `hostile`, when its page runs its attacks, then no app command
+handler runs for a label `mod-*`, no plugin command succeeds, the test
+listener gets no connection, no new window exists, the window URL stays on
+its origin, and `<home>/mods/` is unchanged.
+
+**S7 Fresh storage** (APP-F-10). Given a mod page that wrote localStorage,
+when its window closes and opens again, then localStorage is empty.
+
+**S8 Close on disable** (APP-F-11). Given an open mod window, when the
+participant disables the mod, then the window no longer exists.
+
+**S9 Withdraw a grant** (APP-F-23, J2). Given `recommendations` with its
+call grant, when the participant withdraws it and adds a book in
+`reading-list`, then the `recommendations` page shows its "not granted"
+text. When the participant gives the grant back and approves, then the page
+shows the book again.
+
+**S10 Remove** (APP-F-24). Given `recommendations`, when the participant
+removes it and chooses "delete data", then its folder in `<home>/mods/`
+does not exist; after a new install of the same folder, its state is empty.
+
+**S11 Token** (APP-F-25, APP-F-26, APP-F-27). Given a toolset `reader` with
+the list tool of `reading-list`, when the participant asks for a token for
+handle `claude`, then an MCP `tools/call` of that tool with that token
+succeeds; and after the participant ends the token, the same call is
+refused as unauthorized.
+
+**S12 Identity** (APP-F-28, APP-F-30, APP-F-31). Given a new home with the
+network disabled, when the app starts, then an identity exists. When the
+participant saves a backup and restores it on a second new home, and states
+that the identity never published, then both homes show the same
+fingerprint. When the second home has published, then a restore is refused
+with the cause.
+
+**S13 Publish** (APP-F-32, APP-F-33). Given a packed mod, when a local
+program sends its bytes in `POST /api/publish`, then the consent view shows
+"release", the slug, the version and the package id; after approve, the
+answer is 200 with the release, the site folder and the link; after deny,
+the answer is 403 with code `refused` and the site folder is unchanged.
+
+**S14 Install from a link** (APP-F-34, APP-F-35, J3). Given Alice's site
+folder on a local static server and her link, when Bob enters the link,
+then his consent view shows Alice's profile name, her fingerprint and
+"signature verified"; after approve, the mod runs in Bob's app.
+
+**S15 Tampered file** (APP-F-37, J3). Given Alice's site folder on a local
+static server, when a byte of the package file changes before Bob enters
+the link, then Bob's app shows a cause that names the hash mismatch and
+installs nothing.
