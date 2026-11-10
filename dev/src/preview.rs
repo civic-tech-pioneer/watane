@@ -224,7 +224,8 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
 }
 pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
     let work = || -> Result<Value, Problem> {
-        let dir = dir.canonicalize().map_err(Problem::internal)?;
+        // A deleted mod folder keeps its absolute path, so its preview can still stop.
+        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
         let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
         let suffix = format!("-{}", &hash[..8]);
         let entries = match fs::read_dir(env.cache.join("previews")) {

@@ -274,3 +274,22 @@ fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
     assert_eq!(value["result"]["stopped"], true);
     assert!(!folder.exists());
 }
+
+#[test]
+fn stop_works_after_mod_folder_is_deleted() {
+    let m = Mod::new(false);
+    let dir = m.dir.canonicalize().unwrap();
+    let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
+    let folder = m
+        .temp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(format!("cache/previews/hello-{}", &hash[..8]));
+    fs::create_dir_all(folder.join("home")).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+    let (code, value) = m.run(&["--dir", dir.to_str().unwrap(), "serve", "--stop", "--json"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["result"]["stopped"], false);
+    assert!(!folder.exists());
+}
