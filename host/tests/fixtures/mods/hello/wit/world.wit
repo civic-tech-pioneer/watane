@@ -1,0 +1,3 @@
+package mods:hello@0.1.0;
+
+world hello {}

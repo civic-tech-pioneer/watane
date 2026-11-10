@@ -358,12 +358,15 @@ another name. A preview home has none of them (W5).
 `$HOME/.watane`. It does not create the directory.
 
 `Host::open(home, mode, limits)`:
-1. If `home` does not exist or is an empty directory, create it with
-   `home.json` for `mode`. Else read `home.json`; a missing or unknown file
-   is `bad_home`; another mode is `mode_mismatch`.
-2. `File::try_lock` on `lock` (std, Rust 1.89+); failure is `busy`.
-3. Empty `staging/`. Delete each `mods/<x>` that `installed.json` does not
-   name, and each `mods/*.new` and `mods/*.old`.
+1. Create the directory if absent. Hold `File::try_lock` on `lock` (std,
+   Rust 1.89+) before reading or creating the marker; a held lock is `busy`.
+2. If no entry other than `lock` exists, create `home.json` for `mode`.
+   Else read `home.json`; a missing or unknown file is `bad_home`; another
+   mode is `mode_mismatch`.
+3. Empty `staging/`. Restore `mods/<local>.old` if it matches the committed
+   package and `mods/<local>` does not. Delete each `mods/<x>` that
+   `installed.json` does not name, and each remaining `mods/*.new` and
+   `mods/*.old`.
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
@@ -1192,6 +1195,39 @@ compromised OS; a fault in Wasmtime.
 
 ## 15. Build plan
 
+### S1 page-only cut
+
+The first slice builds only preview homes, folder installation, static pages,
+the status and install routes, and the program. Logic parts are refused with
+`invalid_mod` and "logic parts arrive in a later step". There is no state,
+toolset, token, MCP or home mode. The ready line has null `mcp` and `token`.
+Until runtime limits and modes join, `Host::open(home: &Path)` opens a preview,
+and `Host::serve(port: u16)` serves it. The full signatures in 2.1 join with
+their stages. The fixed view types in 2.1 and 2.4 already keep their full fields.
+`Host::install_folders(&[PathBuf], port: u16)` is the page-only catalog
+transaction used by the program and install route. `Served::ready()` builds
+the fixed Ready value from the running server and catalog.
+The program accepts `--preview`, `--port`, repeated `--install`, and
+`--version`; other arguments, including no arguments, are `usage` errors.
+
+Until pkg has pack/unpack, install validates the source with `Mod::read`,
+copies `mod.toml`, optional `deps.json`, `wit/` and `ui/` into a random staging
+directory, and reads that copy with `Mod::read`. The copy refuses links and
+special files. Its package id is `PackageId::of` over the copied files in
+sorted relative-path order, each encoded as path bytes, NUL, byte length as
+u64 little-endian, then contents. These two temporary steps carry `ponytail`
+comments in code. Grants and links are empty. Equal package ids do not write
+the catalog. The only dependencies are pkg, axum, tokio (including signals),
+serde, serde_json, thiserror, getrandom, and dev reqwest and tempfile.
+S1 fixtures are plain page folders. The Wasm fixture build script of 13.1
+joins with runtime fixtures; S1 requires build, test, clippy and fmt checks.
+
+Startup holds the lock before reading or creating the home marker. The ready
+line follows the atomic write of `run.json`, so a reader can use either as a
+startup signal. On recovery, restore a `.old` directory when it matches the
+committed catalog package and the current directory does not; then remove
+uncommitted directories. This preserves the commit point of 4.3.
+
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
 | 1 Runtime core | engine, limits, epoch ticker, `Ctx`, state store, `watane:host` interfaces, JSON encoding, top-level call; fixtures `counter`, `echo`, `hog` | none | load a mod through a crate-private `RawMod { local, identity, package, component bytes, grants, links }` built by the test | `tests/json.rs`, S4 to S9 pass |
@@ -1285,3 +1321,10 @@ Each answer below is used in this file.
 - **Q11** Two mods that use each other need each other's WIT in
   `wit/deps/`. If `wit-parser` refuses that cycle, the cycle check (4.2
   step 8) and the hop limit stay as defence. Confirm at pkg stage 3.
+- **Q12 (host, dev, pkg)** S1 uses the page-only cut in section 15, with
+  folder copy and a temporary package digest until pkg pack/unpack joins.
+  Its preview has no token; dev consumes the fixed Ready and RunInfo types.
+- **Q13 (host)** Recovery in 3.1 must restore committed `.old` bytes before
+  deleting leftovers; otherwise an interrupted update can lose the old mod.
+- **Q14 (host)** Hold the home lock before marker initialization, so two
+  simultaneous starts cannot race to create `home.json`.
