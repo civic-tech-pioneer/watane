@@ -57,11 +57,9 @@ name, not by an app session id. `--bg` prints a short id: put it, and the full `
 `~/.claude/projects/<worktree folder>/<sessionId>.jsonl` for later analysis.
 Never run `claude rm`, and never delete those transcripts.
 
-Then start a background watch (Bash `run_in_background`) that ends when the foreman stops
-working or waits on a permission prompt, so a dead or stuck foreman still wakes you. Ended
-sessions stay listed as `idle`, so watch the state, not the listing:
-`while claude agents --json | python3 -c "import json,sys; sys.exit(0 if any(a.get('sessionId')=='<sessionId>' and (a.get('state') or a.get('status')) in ('working','idle') for a in json.load(sys.stdin)) else 1)"; do sleep 60; done`.
-An `idle` foreman that sent no report for hours: read its transcript.
+Then run `factory/watch.sh <sessionId>` with Bash `run_in_background`. It returns when the
+foreman's process exits or waits on a permission prompt, so a dead or stuck foreman still wakes
+you. An `idle` foreman that sent no report for hours: read its transcript.
 The human follows a foreman with `claude logs <id>` or `claude attach <id>`.
 
 ## 4. Questions: decide or escalate
