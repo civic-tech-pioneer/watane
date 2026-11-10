@@ -40,6 +40,10 @@ Mark it `in flight` in `PLAN.md` and commit. Start a new session in its own work
 `start_session` with a worktree; in a terminal: `git worktree add ../watane-wt/<id> -b slice/<id>`,
 then `claude "/foreman <id>"` there).
 
+In the desktop app, put your own session id in the prompt (`get_session` with `self`), then detach
+the new session at once (`detach_session`). Each turn end of an attached session wakes you, which
+costs a full turn for no news; the foreman's `SendMessage` still reaches you.
+
 ## 4. Questions: decide or escalate
 
 Foremen send you the questions they cannot settle inside their slice. Answer as the deputy, from

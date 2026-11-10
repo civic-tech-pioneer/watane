@@ -60,7 +60,7 @@ Decide yourself what stays inside this slice and is cheap to undo: a choice insi
 subsystem, a spec that is unclear but whose intent is plain. Edit the spec that owns the fact,
 in place, and note the decision for your report.
 
-Contact the product owner (the session that started you) only for what stops your progress:
+Contact the product owner (the session id in your prompt; send with `SendMessage`) only for what stops your progress:
 a question about a public interface between subsystems, a format on disk or on the wire, a
 security boundary, or anything outside the sketch, that no option you can build keeps open.
 Give one question, its options, your recommendation and the cost to undo each. Every other such
