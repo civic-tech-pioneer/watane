@@ -1222,9 +1222,10 @@ serde, serde_json, thiserror, getrandom, and dev reqwest and tempfile.
 S1 fixtures are plain page folders. The Wasm fixture build script of 13.1
 joins with runtime fixtures; S1 requires build, test, clippy and fmt checks.
 
-Startup holds the lock before reading or creating the home marker. The ready
-line follows the atomic write of `run.json`, so a reader can use either as a
-startup signal. On recovery, restore a `.old` directory when it matches the
+Startup holds the lock before reading or creating the home marker. `run.json`
+is written atomically once the server listens; the `--install` folders are
+installed after that, and the ready line follows them. So `run.json` signals a
+listening server, and only the ready line signals that the initial mods are in. On recovery, restore a `.old` directory when it matches the
 committed catalog package and the current directory does not; then remove
 uncommitted directories. This preserves the commit point of 4.3.
 

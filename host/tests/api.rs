@@ -34,13 +34,19 @@ async fn ac2_status_and_api_guards() {
             "forbidden"
         );
     }
+    let port = preview.ready.port;
     for host in [
-        "evil.example",
-        "localhost",
-        "localhost:1",
-        "HELLO.localhost:1",
+        "evil.example".to_owned(),
+        format!("evil.example:{port}"),
+        format!("hello.localhost.evil.example:{port}"),
+        format!("x.hello.localhost:{port}"),
+        format!("hello.localhost:{}", port.wrapping_add(1)),
+        format!("localhost:{port}.evil.example"),
+        "localhost".to_owned(),
+        "localhost:1".to_owned(),
+        "HELLO.localhost:1".to_owned(),
     ] {
-        let response = client.get(&url).header("Host", host).send().await.unwrap();
+        let response = client.get(&url).header("Host", &host).send().await.unwrap();
         assert_eq!(response.status(), 421);
         assert_eq!(
             response.headers()["content-type"],

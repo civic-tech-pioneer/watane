@@ -63,7 +63,7 @@ async fn main() {
     let args = match arguments() {
         Ok(Some(args)) => args,
         Ok(None) => {
-            println!("watane 0.1.0");
+            println!("watane {}", env!("CARGO_PKG_VERSION"));
             return;
         }
         Err(message) => {
