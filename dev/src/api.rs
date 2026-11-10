@@ -11,7 +11,8 @@ pub struct Client {
 }
 impl Client {
     pub fn for_home(home: &Path) -> Result<Option<Self>, Problem> {
-        let Some(run) = RunInfo::read(home).map_err(Problem::internal)? else {
+        // An unreadable run.json names no host to talk to (9.4 step 1).
+        let Some(run) = RunInfo::read(home).ok().flatten() else {
             return Ok(None);
         };
         if run.watane != 1 || run.mode != "preview" {

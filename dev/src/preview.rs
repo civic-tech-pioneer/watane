@@ -187,7 +187,7 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
     if Client::for_home(home)?.is_none() {
         return Ok(false);
     }
-    let Some(run) = RunInfo::read(home).map_err(Problem::internal)? else {
+    let Some(run) = RunInfo::read(home).ok().flatten() else {
         return Ok(false);
     };
     let status = Command::new("/bin/kill")

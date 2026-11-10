@@ -173,3 +173,20 @@ fn ac7_missing_host_has_environment_error_and_fix() {
         "Install watane, or set WATANE_BIN to the program"
     );
 }
+#[test]
+fn stop_with_unreadable_run_json_is_not_running() {
+    let m = Mod::new(false);
+    let hash = blake3::hash(m.dir.canonicalize().unwrap().to_str().unwrap().as_bytes()).to_hex();
+    let folder = m
+        .temp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(format!("cache/previews/hello-{}", &hash[..8]));
+    fs::create_dir_all(folder.join("home")).unwrap();
+    fs::write(folder.join("home/run.json"), "not json").unwrap();
+    let (c, v) = m.run(&["serve", "--stop", "--json"]);
+    assert_eq!(c, 0, "{v}");
+    assert_eq!(v["result"]["stopped"], false);
+    assert!(!folder.exists());
+}

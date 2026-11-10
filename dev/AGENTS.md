@@ -17,7 +17,7 @@ scripts/vendor.sh                       # once: the allowlist crates (needs the 
 cargo build
 cargo test                              # stages 0-4
 cargo test --features fake-host         # adds serve, install, publish against fake-watane
-WATANE_BIN=../host/target/debug/watane cargo test --features fake-host -- --include-ignored
+cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test --features fake-host -- --include-ignored
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check                       # the toolchain needs: rustup target add wasm32-wasip2
 ```

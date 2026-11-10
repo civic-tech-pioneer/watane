@@ -44,3 +44,16 @@ fn ac3_check_page_mod_and_rejections() {
     assert_eq!(v["errors"][0]["code"], "mod.symlink");
     assert_eq!(v["errors"][0]["file"], "link");
 }
+#[test]
+fn check_missing_dir_and_git_symlink() {
+    let t = tempfile::tempdir().unwrap();
+    let (c, v) = run(t.path(), &["--dir", "nowhere", "check", "--json"]);
+    assert_eq!(c, 2);
+    assert_eq!(v["errors"][0]["code"], "usage.not_a_mod");
+    assert_eq!(run(t.path(), &["new", "hello", "--json"]).0, 0);
+    let dir = t.path().join("hello");
+    fs::create_dir(dir.join(".git")).unwrap();
+    std::os::unix::fs::symlink("missing", dir.join(".git/link")).unwrap();
+    let (c, v) = run(&dir, &["check", "--json"]);
+    assert_eq!(c, 0, "{v}");
+}

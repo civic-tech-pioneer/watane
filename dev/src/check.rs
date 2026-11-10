@@ -17,7 +17,9 @@ fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
                         .at(file.to_string())
                         .fix("Replace it with a file"),
                 );
-            } else if kind.is_dir() {
+            } else if kind.is_dir()
+                && !matches!(path.strip_prefix(root), Ok(p) if p == Path::new(".git") || p == Path::new("logic/target"))
+            {
                 stack.push(path);
             }
         }

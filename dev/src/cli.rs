@@ -57,14 +57,22 @@ pub fn run(cli: Cli) -> Outcome {
         }
         Command::Check => dir
             .canonicalize()
-            .map_err(|e| vec![Problem::internal(e)])
+            .or_else(|e| match e.kind() {
+                // A missing folder has no mod.toml: check reports usage.not_a_mod.
+                std::io::ErrorKind::NotFound => Ok(dir.clone()),
+                _ => Err(vec![Problem::internal(e)]),
+            })
             .and_then(|dir| {
                 outcome.dir = Some(dir.clone());
                 check::check(&dir).map(|(_, v)| v)
             }),
         Command::Serve { stop } => dir
             .canonicalize()
-            .map_err(|e| vec![Problem::internal(e)])
+            .or_else(|e| match e.kind() {
+                // A missing folder has no mod.toml: check reports usage.not_a_mod.
+                std::io::ErrorKind::NotFound => Ok(dir.clone()),
+                _ => Err(vec![Problem::internal(e)]),
+            })
             .and_then(|dir| {
                 outcome.dir = Some(dir.clone());
                 let env = Env::from_process().map_err(|e| vec![e])?;
