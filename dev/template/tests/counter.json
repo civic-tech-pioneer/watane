@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {"call": "api.get", "returns": 0},
+    {"call": "api.add", "returns": 1,
+     "emits": [{"event": "changes.counted", "args": {"count": 1}}]},
+    {"call": "api.add", "returns": 2},
+    {"call": "api.get", "returns": 2}
+  ]
+}

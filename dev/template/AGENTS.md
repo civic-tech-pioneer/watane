@@ -7,6 +7,7 @@
 | logic/Cargo.toml | You: allowed dependencies |
 | logic/src/lib.rs | You: logic |
 | ui/ | You: page and scripts |
+| tests/*.json | You: contract tests |
 | wit/deps/, deps.json, .watane-dev.json | watane-dev; do not edit |
 | logic.wasm, logic/Cargo.lock | watane-dev builds these |
 | AGENTS.md, CLAUDE.md | Keep these guides |
@@ -14,7 +15,8 @@
 ## Order of work
 
 Edit wit/world.wit, then logic/src/lib.rs, then ui/. Run
-`watane-dev serve --json` until ok is true and give result.pages[0].url
+`watane-dev test --json` until ok is true, then run
+`watane-dev serve --json` and give result.pages[0].url
 to the person.
 
 ## The world
@@ -52,6 +54,24 @@ Records are JSON objects; option is null or the value; variants are
 "case" or {"case": payload}; result is {"ok": v} or {"err": e}.
 Read once at startup and refresh after your page's calls.
 
+## Tests
+
+Unit tests run as WebAssembly with no files, no environment and no host
+imports: test pure functions there. A panic ends the whole unit test run;
+tests after it are counted in not_run. Fix the failure and run test again.
+Keep at least one tests/*.json file for a logic part. Each contract file
+starts with fresh state. Steps call an exported function and assert its
+return value or failure; emits checks the events in order. For example:
+
+```json
+{"steps": [{"call": "api.add", "returns": 1,
+            "emits": [{"event": "changes.counted", "args": {"count": 1}}]}]}
+```
+
+Contract execution, provider fakes and event delivery arrive with links
+to their guide and examples in a later slice. This slice runs unit tests;
+result.contract is null.
+
 ## Results
 
 With --json every command prints one envelope: schema (1), command, ok,
@@ -63,4 +83,4 @@ Exit statuses: 0 success, 1 mod, 2 usage, 3 environment, 4 refusal,
 ## Rules
 
 Work autonomously; do not ask questions. Finish with a passing
-`watane-dev serve --json`.
+`watane-dev test --json`, then `watane-dev serve --json`.

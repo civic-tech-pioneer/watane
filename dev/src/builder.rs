@@ -160,7 +160,7 @@ fn compiler_problem(message: &Value, copy: &Path, slug: &Slug) -> Problem {
             .as_str()
             .unwrap_or("Rust compilation failed"),
     )
-    .fix("Correct the Rust error at the reported location and run serve again");
+    .fix("Correct the Rust error at the reported location and run the command again");
     if let Some(span) = message["spans"]
         .as_array()
         .and_then(|spans| spans.iter().find(|s| s["is_primary"] == true))
@@ -188,10 +188,7 @@ fn compiler_problem(message: &Value, copy: &Path, slug: &Slug) -> Problem {
     }
     problem
 }
-/// The caller runs check first. Only checked sources enter the cache copy.
-pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<Problem>> {
-    let started = Instant::now();
-    let destination = dir.join("logic.wasm");
+pub(crate) fn build_lock(slug: &Slug, ctx: &BuildCtx<'_>) -> Result<fs::File, Vec<Problem>> {
     for folder in ["build", "target", "cargo-home", "tmp"] {
         fs::create_dir_all(ctx.env.cache.join(folder)).map_err(|e| vec![Problem::internal(e)])?;
     }
@@ -202,44 +199,117 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
         .open(ctx.env.cache.join(format!("build/{slug}.lock")))
         .map_err(|e| vec![Problem::internal(e)])?;
     lock.lock().map_err(|e| vec![Problem::internal(e)])?;
+    Ok(lock)
+}
+
+// Called under build_lock by both build and unit compilation. Only checked sources enter here.
+pub(crate) fn prepare(
+    dir: &Path,
+    slug: &Slug,
+    ctx: &BuildCtx<'_>,
+) -> Result<(PathBuf, bool), Vec<Problem>> {
+    allowlist::verify_vendor(ctx.vendor, ctx.allow).map_err(|e| vec![e])?;
+    let copy = ctx.env.cache.join("build").join(slug.as_str());
+    if copy.exists() {
+        fs::remove_dir_all(&copy).map_err(|e| vec![Problem::internal(e)])?;
+    }
+    fs::create_dir_all(copy.join("logic")).map_err(|e| vec![Problem::internal(e)])?;
+    copy_tree(&dir.join("wit"), &copy.join("wit"), false).map_err(|e| vec![e])?;
+    copy_tree(&dir.join("logic/src"), &copy.join("logic/src"), true).map_err(|e| vec![e])?;
+    fs::copy(dir.join("logic/Cargo.toml"), copy.join("logic/Cargo.toml"))
+        .map_err(|e| vec![Problem::internal(e)])?;
+    let generated = cargo(ctx, &copy, &["generate-lockfile"])
+        .output()
+        .map_err(|e| vec![Problem::internal(e)])?;
+    if !generated.status.success() {
+        return Err(vec![resolve_problem(&generated.stderr, ctx.allow)]);
+    }
+    let lock_text = fs::read_to_string(copy.join("logic/Cargo.lock"))
+        .map_err(|e| vec![Problem::internal(e)])?;
+    let manifest = fs::read_to_string(copy.join("logic/Cargo.toml"))
+        .map_err(|e| vec![Problem::internal(e)])?;
+    check_lock(&lock_text, &manifest, ctx.allow).map_err(|e| vec![e])?;
+    let lock_updated = fs::read_to_string(dir.join("logic/Cargo.lock"))
+        .ok()
+        .as_deref()
+        != Some(&lock_text);
+    if lock_updated {
+        fs::write(dir.join("logic/Cargo.lock"), &lock_text)
+            .map_err(|e| vec![Problem::internal(e)])?;
+    }
+    Ok((copy, lock_updated))
+}
+
+pub(crate) fn compile(
+    ctx: &BuildCtx<'_>,
+    copy: &Path,
+    slug: &Slug,
+    args: &[&str],
+) -> Result<Vec<PathBuf>, Vec<Problem>> {
+    let output = cargo(ctx, copy, args)
+        .output()
+        .map_err(|e| vec![Problem::internal(e)])?;
+    let mut errors = Vec::new();
+    let mut artifacts = Vec::new();
+    for line in output.stdout.split(|b| *b == b'\n') {
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+        if value["reason"] == "compiler-message" && value["message"]["level"] == "error" {
+            errors.push(compiler_problem(&value["message"], copy, slug));
+        }
+        if value["reason"] == "compiler-artifact"
+            && if args[0] == "test" {
+                value["profile"]["test"] == true
+            } else {
+                value["target"]["kind"]
+                    .as_array()
+                    .is_some_and(|k| k.iter().any(|v| v == "cdylib"))
+            }
+            && value["manifest_path"]
+                .as_str()
+                .is_some_and(|p| Path::new(p) == copy.join("logic/Cargo.toml"))
+        {
+            let artifact = if args[0] == "test" {
+                value["executable"].as_str()
+            } else {
+                value["filenames"].as_array().and_then(|files| {
+                    files
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .find(|p| p.ends_with(".wasm"))
+                })
+            };
+            if let Some(path) = artifact {
+                artifacts.push(PathBuf::from(path));
+            }
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    if !output.status.success() {
+        return Err(vec![resolve_problem(&output.stderr, ctx.allow)]);
+    }
+    Ok(artifacts)
+}
+
+/// The caller runs check first. Only checked sources enter the cache copy.
+pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<Problem>> {
+    let started = Instant::now();
+    let destination = dir.join("logic.wasm");
+    let _lock = build_lock(slug, ctx)?;
     let work = || -> Result<Built, Vec<Problem>> {
         match fs::remove_file(&destination) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(vec![Problem::internal(e)]),
         }
-        allowlist::verify_vendor(ctx.vendor, ctx.allow).map_err(|e| vec![e])?;
-        let copy = ctx.env.cache.join("build").join(slug.as_str());
-        if copy.exists() {
-            fs::remove_dir_all(&copy).map_err(|e| vec![Problem::internal(e)])?;
-        }
-        fs::create_dir_all(copy.join("logic")).map_err(|e| vec![Problem::internal(e)])?;
-        copy_tree(&dir.join("wit"), &copy.join("wit"), false).map_err(|e| vec![e])?;
-        copy_tree(&dir.join("logic/src"), &copy.join("logic/src"), true).map_err(|e| vec![e])?;
-        fs::copy(dir.join("logic/Cargo.toml"), copy.join("logic/Cargo.toml"))
-            .map_err(|e| vec![Problem::internal(e)])?;
-        let generated = cargo(ctx, &copy, &["generate-lockfile"])
-            .output()
-            .map_err(|e| vec![Problem::internal(e)])?;
-        if !generated.status.success() {
-            return Err(vec![resolve_problem(&generated.stderr, ctx.allow)]);
-        }
-        let lock_text = fs::read_to_string(copy.join("logic/Cargo.lock"))
-            .map_err(|e| vec![Problem::internal(e)])?;
-        let manifest = fs::read_to_string(copy.join("logic/Cargo.toml"))
-            .map_err(|e| vec![Problem::internal(e)])?;
-        check_lock(&lock_text, &manifest, ctx.allow).map_err(|e| vec![e])?;
-        let lock_updated = fs::read_to_string(dir.join("logic/Cargo.lock"))
-            .ok()
-            .as_deref()
-            != Some(&lock_text);
-        if lock_updated {
-            fs::write(dir.join("logic/Cargo.lock"), &lock_text)
-                .map_err(|e| vec![Problem::internal(e)])?;
-        }
-        let output = cargo(
+        let (copy, lock_updated) = prepare(dir, slug, ctx)?;
+        let artifacts = compile(
             ctx,
             &copy,
+            slug,
             &[
                 "build",
                 "--locked",
@@ -249,45 +319,9 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
                 "--message-format",
                 "json",
             ],
-        )
-        .output()
-        .map_err(|e| vec![Problem::internal(e)])?;
-        let mut errors = Vec::new();
-        let mut artifact = None;
-        for line in output.stdout.split(|b| *b == b'\n') {
-            let Ok(value) = serde_json::from_slice::<Value>(line) else {
-                continue;
-            };
-            if value["reason"] == "compiler-message" && value["message"]["level"] == "error" {
-                errors.push(compiler_problem(&value["message"], &copy, slug));
-            }
-            if value["reason"] == "compiler-artifact"
-                && value["target"]["kind"]
-                    .as_array()
-                    .is_some_and(|k| k.iter().any(|v| v == "cdylib"))
-                && value["manifest_path"]
-                    .as_str()
-                    .is_some_and(|p| Path::new(p) == copy.join("logic/Cargo.toml"))
-            {
-                artifact = value["filenames"]
-                    .as_array()
-                    .and_then(|files| {
-                        files
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .find(|p| p.ends_with(".wasm"))
-                    })
-                    .map(PathBuf::from);
-            }
-        }
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-        if !output.status.success() {
-            return Err(vec![resolve_problem(&output.stderr, ctx.allow)]);
-        }
+        )?;
         // ponytail: DEV-S-10 outside-read scanning of .d files is deferred beyond S2.
-        let artifact = artifact.ok_or_else(|| {
+        let artifact = artifacts.first().ok_or_else(|| {
             vec![Problem::internal(
                 "cargo produced no cdylib WebAssembly artifact",
             )]

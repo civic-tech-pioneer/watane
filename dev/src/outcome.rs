@@ -20,6 +20,9 @@ pub enum Code {
     ModCargoKey,
     ModDependency,
     ModLogicFile,
+    ModNoContractTests,
+    TestUnit,
+    TestUnitLimit,
     BuildResolve,
     BuildCompile,
     BuildImports,
@@ -45,6 +48,9 @@ impl Code {
             Self::ModCargoKey => "mod.cargo_key",
             Self::ModDependency => "mod.dependency",
             Self::ModLogicFile => "mod.logic_file",
+            Self::ModNoContractTests => "mod.no_contract_tests",
+            Self::TestUnit => "test.unit",
+            Self::TestUnitLimit => "test.unit_limit",
             Self::BuildResolve => "build.resolve",
             Self::BuildCompile => "build.compile",
             Self::BuildImports => "build.imports",
@@ -66,6 +72,9 @@ impl Code {
             | Self::ModCargoKey
             | Self::ModDependency
             | Self::ModLogicFile
+            | Self::ModNoContractTests
+            | Self::TestUnit
+            | Self::TestUnitLimit
             | Self::BuildResolve
             | Self::BuildCompile
             | Self::BuildImports => Class::Mod,

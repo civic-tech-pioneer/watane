@@ -19,6 +19,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../template/logic/src/lib.rs"),
     ),
     ("mod.toml", include_str!("../template/mod.toml")),
+    (
+        "tests/counter.json",
+        include_str!("../template/tests/counter.json"),
+    ),
     ("ui/app.js", include_str!("../template/ui/app.js")),
     ("ui/index.html", include_str!("../template/ui/index.html")),
     ("wit/deps/watane-host/host.wit", watane_host::HOST_WIT),

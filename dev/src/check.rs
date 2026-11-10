@@ -149,6 +149,36 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
             return Err(errors);
         }
     }
+    if m.logic().is_some() {
+        let has_tests = match fs::read_dir(dir.join("tests")) {
+            Ok(entries) => {
+                let mut found = false;
+                for entry in entries {
+                    let entry = entry.map_err(|e| vec![Problem::internal(e)])?;
+                    if entry.path().extension().is_some_and(|e| e == "json")
+                        && entry
+                            .file_type()
+                            .map_err(|e| vec![Problem::internal(e)])?
+                            .is_file()
+                    {
+                        found = true;
+                    }
+                }
+                found
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(vec![Problem::internal(e)]),
+        };
+        if !has_tests {
+            return Err(vec![
+                Problem::new(
+                    Code::ModNoContractTests,
+                    "the mod has a logic part and no contract test",
+                )
+                .fix("Add tests/<name>.json (see AGENTS.md)"),
+            ]);
+        }
+    }
     let w = m.world();
     let strings = |items: &[watane_pkg::InterfaceName]| {
         items.iter().map(ToString::to_string).collect::<Vec<_>>()
@@ -177,16 +207,37 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     Ok((m, report))
 }
 
-fn cargo_key(key: &str) -> Problem {
+fn manifest_line(text: &str, key: &str) -> Option<u32> {
+    let root = toml::de::DeTable::parse(text).ok()?;
+    let mut table = root.get_ref();
+    let mut parts = key.split('.').peekable();
+    while let Some(part) = parts.next() {
+        let (key, value) = table
+            .iter()
+            .find(|(key, _)| key.get_ref().as_ref() == part)?;
+        if parts.peek().is_none() {
+            return (text[..key.span().start]
+                .bytes()
+                .filter(|b| *b == b'\n')
+                .count()
+                + 1)
+            .try_into()
+            .ok();
+        }
+        table = value.get_ref().as_table()?;
+    }
+    None
+}
+fn cargo_key(text: &str, key: &str) -> Problem {
     Problem::new(Code::ModCargoKey, format!("logic/Cargo.toml: `{key}` is not allowed or has an invalid value"))
-        .at("logic/Cargo.toml", None, None)
+        .at("logic/Cargo.toml", manifest_line(text, key), None)
         .fix("Remove it or correct its value. Allowed: package.{name,version,edition,publish,description,license,authors}, lib.crate-type = [\"cdylib\"], dependencies, dev-dependencies, empty workspace")
 }
 pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
     let table: toml::Table = match toml::from_str(text) {
         Ok(table) => table,
         Err(e) => {
-            let mut error = cargo_key("manifest").fix(format!("Correct the TOML: {e}"));
+            let mut error = cargo_key(text, "manifest").fix(format!("Correct the TOML: {e}"));
             if let Some(prefix) = e.span().and_then(|span| text.get(..span.start)) {
                 error.line = (prefix.bytes().filter(|b| *b == b'\n').count() + 1)
                     .try_into()
@@ -203,7 +254,7 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
         match section.as_str() {
             "package" => {
                 let Some(package) = value.as_table() else {
-                    errors.push(cargo_key(section));
+                    errors.push(cargo_key(text, section));
                     continue;
                 };
                 for (key, value) in package {
@@ -214,27 +265,27 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
                         _ => false,
                     };
                     if !valid {
-                        errors.push(cargo_key(&format!("package.{key}")));
+                        errors.push(cargo_key(text, &format!("package.{key}")));
                     }
                 }
             }
             "lib" => {
                 let Some(lib) = value.as_table() else {
-                    errors.push(cargo_key(section));
+                    errors.push(cargo_key(text, section));
                     continue;
                 };
                 for key in lib.keys().filter(|k| k.as_str() != "crate-type") {
-                    errors.push(cargo_key(&format!("lib.{key}")));
+                    errors.push(cargo_key(text, &format!("lib.{key}")));
                 }
             }
             "workspace" => {
                 if !value.as_table().is_some_and(|t| t.is_empty()) {
-                    errors.push(cargo_key(section));
+                    errors.push(cargo_key(text, section));
                 }
             }
             "dependencies" | "dev-dependencies" => {
                 let Some(deps) = value.as_table() else {
-                    errors.push(cargo_key(section));
+                    errors.push(cargo_key(text, section));
                     continue;
                 };
                 for (name, value) in deps {
@@ -249,7 +300,7 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
                                 _ => false,
                             };
                             if !valid {
-                                errors.push(cargo_key(&format!("{section}.{name}.{key}")));
+                                errors.push(cargo_key(text, &format!("{section}.{name}.{key}")));
                             }
                         }
                         dep.get("version").and_then(toml::Value::as_str)
@@ -273,13 +324,17 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
                                 Code::ModDependency,
                                 format!("dependency `{name}` {detail}"),
                             )
-                            .at("logic/Cargo.toml", None, None)
+                            .at(
+                                "logic/Cargo.toml",
+                                manifest_line(text, &format!("{section}.{name}")),
+                                None,
+                            )
                             .fix(format!("Use only: {}", allow.crates())),
                         );
                     }
                 }
             }
-            _ => errors.push(cargo_key(section)),
+            _ => errors.push(cargo_key(text, section)),
         }
     }
     let cdylib = table
@@ -287,10 +342,10 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
         .and_then(|l| l.get("crate-type"))
         .and_then(toml::Value::as_array);
     if !cdylib.is_some_and(|a| a.len() == 1 && a[0].as_str() == Some("cdylib")) {
-        errors.push(cargo_key("lib.crate-type"));
+        errors.push(cargo_key(text, "lib.crate-type"));
     }
     if !table.contains_key("workspace") {
-        errors.push(cargo_key("workspace"));
+        errors.push(cargo_key(text, "workspace"));
     }
     errors
 }

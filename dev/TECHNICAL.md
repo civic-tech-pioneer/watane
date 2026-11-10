@@ -66,8 +66,8 @@ toml = "1"
 semver = "1"
 blake3 = "1.8"
 ureq = { version = "3", default-features = false, features = ["json"] }
-wasmtime = "48.0.8"
-wasmtime-wasi = "48.0.8"
+wasmtime = { version = "=48.0.8", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
+wasmtime-wasi = { version = "=48.0.8", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
@@ -81,8 +81,8 @@ required-features = ["fake-host"]
 ```
 
 Version notes:
-- S2 adds `toml` and `semver` to the S1 manifest. Direct `wasmtime`
-  dependencies join when dev runs unit tests as Wasm.
+- S2 adds `toml` and `semver` to the S1 manifest. S4-2 adds direct `wasmtime`
+  dependencies to run unit tests as Wasm.
 - `wasmtime` and `wasmtime-wasi` are the versions of `watane-host` (48,
   the long-term-support line). The APIs used in section 7
   (`component::Linker::define_unknown_imports_as_traps`,
@@ -250,10 +250,12 @@ provider.
               "failures": [{"file": "tests/counter.json", "step": 2, "call": "api.add",
                             "message": "...", "expected": 1, "got": 2}]}}
 ```
+S4-2 leaves `contract` null; S4-3 supplies contract execution.
 A part that did not run is null. `build`, `unit` and `contract` are null
 for a mod with no logic part. `not_run` counts the tests after a test that
 aborted the run (7.2). In a failure, `expected` and `got` are JSON values
-or null. `next` on success: `watane-dev serve --json`.
+or null. `next` on success: `watane-dev serve --json`; on failure:
+`watane-dev test --json`.
 
 **serve**
 ```json
@@ -530,14 +532,14 @@ The stream also dispatches `changed` when it opens, so no separate first
 read is needed (host 8.4–8.5).
 
 `template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
-with these sections in this order (S2 includes 1–6, 9 and 10; 7 and 8 join
-with their slices):
+with these sections in this order (S4-2 includes 1–7, 9 and 10; section 8
+joins with its slice):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
    `watane-dev`; do not edit them.
 2. **Order of work**: edit `wit/world.wit`, then `logic/src/lib.rs`, then
-   `ui/`; run `watane-dev serve --json` until `ok` is true and give the
-   page URL to the person. Tests join in S4.
+   `ui/`; run `watane-dev test --json` until `ok` is true, then
+   `watane-dev serve --json` and give the page URL to the person.
 3. **The world**: keep `package mods:{{slug}}@<version>;` and
    `world {{slug}}`; the version of the package line is the version of
    the mod. Each import is a grant that the participant approves, so import
@@ -562,15 +564,15 @@ with their slices):
 7. **Tests**: unit tests run as WebAssembly with no files, no environment
    and no host imports: test pure functions there. A panic ends the whole
    unit test run, so the tests after it do not run. Contract tests: the
-   form of 8.1 in short, with one example with a fake, one with `emits`,
-   and one with `deliver`.
+   form of 8.1 in short, with an `emits` example. Contract execution,
+   fake and `deliver` examples arrive in S4-3 with links.
 8. **Building on another mod**: `watane-dev add <mod folder> --json`, then
    copy the needed lines of `result.imports` or `result.subscriptions`
    into the world.
 9. **Results**: the envelope fields, the exit statuses, and the advice
    "read `errors[].fix`; for `build.compile` read `file` and `line`".
 10. **Rules**: do not ask questions; finish with a passing
-    `watane-dev serve --json` in S2 (`test` joins in S4).
+    `watane-dev test --json`, then `watane-dev serve --json`.
 
 ## 5. Check
 
@@ -589,14 +591,16 @@ stage with an error.
    `ModError::Invalid` is one `mod.invalid` with its file; `ModError::Io`
    is `internal`.
 5. **Cargo manifest**: 5.2, when `logic/` exists.
-6. **Contract tests** (S4; skipped in S2): when the mod has a logic part, at least one
-   `tests/*.json`, else `mod.no_contract_tests`.
+6. **Contract tests** (S4-2): when the mod has a logic part, at least one
+   regular `tests/*.json` file (not in subfolders), else `mod.no_contract_tests`.
 7. **Warnings**: `ui.external`, `ui.inline_script`.
 
 ### 5.2 `logic/Cargo.toml`
 
 dev parses it with `toml` into a `toml::Table` and allows only these keys.
 Any other key, at any level, is `mod.cargo_key` with its dotted path.
+`mod.cargo_key` and `mod.dependency` include the offending key's line,
+using the TOML parser's key spans; a missing required key has no line.
 
 | Key | Allowed value |
 |---|---|
@@ -764,28 +768,38 @@ cache; it is the maker's own choice and can change the output.
 
 ### 7.1 Build and run
 
-1. dev deletes `<cache>/target/wasm32-wasip2/debug/deps/<crate>-*.d`, then
-   runs `cargo test <common> --locked --no-run --target wasm32-wasip2 --message-format json`
+1. Under the same per-slug build lock, dev prepares a fresh checked cache
+   copy and verified lock as in 6.3–6.4, then runs `cargo test <common> --locked --no-run --target wasm32-wasip2 --message-format json`
    (after 6.4 step 1). Compiler errors: as 6.4 step 5. The test binaries
    are the `executable` fields of `compiler-artifact` messages with
-   `profile.test` true. dev applies the reads check of 6.4 step 6 to the
-   new `debug/deps/<crate>-*.d` files before it runs any binary.
+   `profile.test` true. The reads check of 6.4 step 6, including deleting and scanning the new
+   `debug/deps/<crate>-*.d` files, remains deferred with DEV-S-10.
 2. dev runs each binary as a `wasi:cli/command` component in Wasmtime:
    - `Config`: `epoch_interruption(true)`. A thread calls
      `engine.increment_epoch()` every 100 ms; the store deadline is
      `WATANE_DEV_UNIT_SECONDS × 10` ticks, with `epoch_deadline_trap()`.
-   - `Store` limiter: `StoreLimitsBuilder::new().memory_size(512 << 20)`.
-   - `Linker`: `wasmtime_wasi::p2::add_to_linker_sync`, then
-     `define_unknown_imports_as_traps(&component)`, so a call to
-     `watane:host` or to a provider traps instead of failing to link.
-   - `WasiCtx::builder()`: args `["test", "--test-threads=1"]`, stdout and
+   - `Store` limiter: `StoreLimitsBuilder::new().memory_size(512 << 20)`
+     with `trap_on_grow_failure(true)`; shared Wasm memories are disabled.
+   - `Linker`: `wasmtime_wasi::p2::add_to_linker_sync`, then register
+     trapping functions for non-WASI imports, so a call to `watane:host`
+     or to a provider traps instead of failing to link. In 48.0.8,
+     `define_unknown_imports_as_traps(&component)` also stubs resource
+     aliases inside already linked WASI interfaces (for example
+     monotonic-clock's `pollable`), causing mismatched resource identities.
+     Dev therefore leaves typed WASI instances intact; this grants no
+     capability. Unsupported WASI imports fail to link.
+   - `WasiCtx::builder()`: args `["test", "--test-threads=1", "--nocapture"]`, stdout and
      stderr each a `MemoryOutputPipe::new(1 << 20)`, no environment, no
      preopened folder, no network (the default denies every address),
-     empty stdin.
+     empty stdin. TCP, UDP and IP name lookup are explicitly disabled.
    - `p2::bindings::sync::Command::instantiate` then
      `wasi_cli_run().call_run(&mut store)`.
 
 ### 7.2 Reading the output
+
+`--nocapture` sends panic diagnostics to the pipe before an abort; default
+libtest capture would lose them. The parser follows the current test across
+any intervening stdout from that test until its status or an abort.
 
 libtest prints `running <n> tests`, then `test <name> ... ok|FAILED|ignored`.
 On `wasm32-wasip2` a panic aborts the whole binary (panic strategy
@@ -796,7 +810,9 @@ and the message. dev reports:
   message and the location mapped to the mod folder;
 - `not_run` = n − passed − failed − ignored;
 - the epoch trap as `test.unit_limit` naming the last started test; a
-  memory failure as `test.unit_limit`.
+  memory failure as `test.unit_limit`. Reports retain the counts and failed
+  test even on a limit. Failure classification is private to `UnitFailure`
+  and is not serialized.
 
 ## 8. Contract tests
 
@@ -1208,7 +1224,7 @@ independent tool. Integration tests run the binary
 | `envelope.rs` | DEV-S-1, 2, 3, 32 | the template file list as a literal; the envelope keys as a literal set |
 | `check.rs` | DEV-S-5, 6, 7, 8 | the codes of the table of 2.2 |
 | `builder.rs` | DEV-S-4, 9, 10, 11, 12, 13 | S-4: the test counts `#[test]` in `logic/src/lib.rs` with a regex and the steps in `tests/*.json` with `serde_json`, and loads `logic.wasm` with `wasmtime::component::Component` to find `mods:<slug>/api@0.1.0` among the exports; S-9: a fake toolchain folder whose `bin/cargo` writes a marker file if it runs; S-10: a secret file of random bytes in a temp folder, then a byte search over every file of the mod folder; S-12: the same template at two paths with two caches, `assert_eq!` of the bytes, and a search for `$HOME`, both caches and both mod paths (raw and canonical); S-13: run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'` on macOS or `unshare -rn` on Linux, ignored with a reason where neither works |
-| `unit_tests.rs` | DEV-S-14, 15, 16 | fixture tests in `tests/fixtures/unit/` that assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound |
+| `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
 | `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; fixture `tests/fixtures/recommendations/` (pkg section 9) imports `mods:reading-list/books` |
 | `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone |
 | `install_publish.rs` | DEV-S-25 to 31 | S-25: `deps.json` and the files of `wit/deps/a/` read by the test; the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
@@ -1240,17 +1256,18 @@ page and no MCP. SIGTERM ends it (the default action).
 
 ## 16. Build plan
 
-- S2 cut (dev): the counter template has no `tests/`; check stage 6
-  (`mod.no_contract_tests`), unit tests and contract tests join in S4.
-  `serve` runs check and build only. DEV-S-10 outside reads and DEV-S-12
-  reproducible bytes are deferred; `env_clear()` and remap flags remain.
+- S4-2 (dev): the counter template includes `tests/counter.json`; check
+  stage 6 and Wasmtime unit tests are implemented. `test` runs check, build
+  and unit tests; its contract part stays null until S4-3. `serve` runs
+  check and build only until S4-3. DEV-S-10 outside reads and DEV-S-12
+  reproducible bytes remain deferred; `env_clear()` and remap flags remain.
 
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|
 | 0 | crate, `cli`, `outcome`, `env`, text and JSON output, exit statuses | — | — | S-32 for `check` outside a mod: `usage.not_a_mod`, status 2 |
 | 1 | `template`, `new`, `check` (5.1 to 5.3) | pkg stages 2 and 3: `Slug`, `Mod::read`, `Violation`, `Grant`, `World` | without pkg: a local slug regex and dev's own rules; the `mod.invalid` path is a test `#[ignore = "needs watane-pkg"]` | S-1, 2, 3, 5, 6, 7, 8; the template passes `Mod::read`. S1 ships the page-only cut: `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `mod.toml`, `wit/world.wit`, `ui/index.html`, `ui/app.js`; no logic, host WIT or tests; `new.next` is `Edit ui/, then run: watane-dev serve --json` |
 | 2 | `allowlist`, `scripts/vendor.sh`, `toolchain`, `builder` | host: `HOST_WIT`; pkg stage 4: `check_component` | `HOST_WIT` as a local const copied from `spec/TECHNICAL.md` section 4, marked for removal; `check_component` behind one fn, with an ignored test | S-9 to 13; the template builds |
-| 3 | `unit` | — | — | S-14 to 16; S-4 without the contract part |
+| 3 | `unit`, `test` pipeline, check stage 6, template contract file | — | — | S4-2: S-14 to 16, S-20 check; S-4 with `contract: null` |
 | 4 | `contract`, `json_eq` | host stage 5: `Harness` | `run_steps` tested with closures; integration tests ignored | S-17 to 20; S-4 complete |
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
 | 6 (step 2) | `deps`, `add`, `install` | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
