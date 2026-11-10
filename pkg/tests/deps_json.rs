@@ -31,6 +31,14 @@ fn ac2_deps_json() {
         "{}\n"
     );
     assert!(!dir.path().join("deps.json.tmp").exists());
+    // A temporary file left by an interrupted write does not block the next one.
+    fs::write(dir.path().join("deps.json.tmp"), "stale").unwrap();
+    deps.write(dir.path()).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("deps.json")).unwrap(),
+        "{}\n"
+    );
+    assert!(!dir.path().join("deps.json.tmp").exists());
     for bad in [
         "[]",
         "null",

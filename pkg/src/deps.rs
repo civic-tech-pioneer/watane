@@ -58,7 +58,11 @@ impl Deps {
             .map_err(|e| invalid(Rule::DepsJson, "deps.json", e.to_string()))?;
         text.push('\n');
         let temp = dir.join("deps.json.tmp");
-        // A pre-existing temporary link must never redirect this write.
+        // A stale temporary file (or link) is removed, never followed, and never blocks the write.
+        match fs::remove_file(&temp) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(&temp, e)),
+            _ => (),
+        }
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)

@@ -127,11 +127,16 @@ fn ac3_rules_symlinks_never_followed() {
         dir.path().join("deps.json.tmp"),
     )
     .unwrap();
-    assert!(Deps::default().write(dir.path()).is_err());
+    Deps::default().write(dir.path()).unwrap();
     assert_eq!(
         fs::read_to_string(outside.path().join("sentinel")).unwrap(),
         "unchanged"
     );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("deps.json")).unwrap(),
+        "{}\n"
+    );
+    assert!(fs::symlink_metadata(dir.path().join("deps.json.tmp")).is_err());
 }
 
 #[test]
