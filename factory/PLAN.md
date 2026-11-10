@@ -10,32 +10,7 @@ Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
 Step 1 (Make, J1). A first cut; the product owner refines each sketch before it hands it out.
 
 - [x] **S1 Hello page.** Delivered 2026-11-10 (main `bacecdc`). Sol runs: pkg 1, host 1, dev 2.
-- [~] **S2 The page calls its logic.** (branch `slice/s2`) A coding agent runs `watane-dev new
-  hello` and `serve --json`; Alice opens the page, clicks its button, and sees the count go up.
-  - Outcomes (user-sim, on the real programs):
-    1. `check --json` on a new mod is `ok` and reports the export `mods:hello/api@0.1.0`, the event
-       interface `mods:hello/changes@0.1.0` and the storage grant.
-    2. `serve --json` builds `logic.wasm` offline, from the allowlist that ships with dev, and
-       exits 0. The page's script loads `/watane.js` and calls `api.add`; a POST to `/call` on the
-       page origin, as `watane.js` sends it, returns 1, then 2; `api.get` returns 2.
-    3. With `logic/build.rs` added, or `rand` in `[dependencies]`, `serve --json` exits 1 with
-       `mod.logic_file` or `mod.dependency` naming the item, and cargo did not run.
-    4. A compile error in `logic/src/lib.rs` gives exit 1 and `build.compile` with that file and
-       its line.
-    5. An export with an endless loop fails its `/call` within the time limit; the next call
-       to another export still answers.
-  - Touches: pkg (stage 4, `Mod::check_component`), host (stage 1 runtime core: engine, limits,
-    epoch ticker, state store, `watane:host/state` and `caller`, the JSON encoding, top-level call;
-    from stage 3: `POST /call`, `/watane.js`; `HOST_WIT`; install accepts a logic part), dev
-    (stage 2: allowlist, `scripts/vendor.sh`, toolchain, builder; the template becomes the counter
-    of dev §4, without `tests/`).
-  - Interfaces it creates: `HOST_WIT`, `check_component`, the `/call` body and the JSON encoding
-    (host 6.9, 8.2), `watane.js`, the state store in a home, where dev finds the vendored allowlist.
-  - May fake: `changes::counted` is accepted and delivered nowhere until events land. `serve`
-    runs check and build only; unit and contract tests join in S4.
-  - Leaves out: events, links between mods, unit and contract tests, toolsets, the outside-read
-    check and reproducible bytes of the build (DEV-S-10, DEV-S-12; they matter from step 3), home
-    mode.
+- [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
 - [ ] **S3 An edit keeps the data.** The agent changes `lib.rs` and the page; `serve` again
   installs the new revision in the running preview; the count is still there (DEV-S-22); a page
   sees the `counted` event. Parts: host (update keeps state by identity, page event bus,
@@ -65,14 +40,29 @@ The human may veto each one.
 - S1: `serve --stop` finds the preview by the mod path's hash alone, so it works on a broken or
   deleted mod folder.
 - S1: `deps.json` refuses duplicate keys; a folder-level violation names file `.` (pkg §15).
+- S2: `Host::open(home, Limits)` until home mode; `Caller` is only `Page`; no depth or hop limits yet.
+- S2: event imports are linked as no-ops until S3; the storage grant check inside state waits for
+  `revoke`.
+- S2: install copies `logic.wasm` with the folder, then `check_component` and compile; mods with
+  calls or subscriptions to other mods are refused until links land.
+- S2: the engine turns Wasm threads off and refuses shared memory (host Q15 to Q17).
+- S2: `check_component` checks the component header before decoding (pkg §15 item 16).
+- S2: `serve` runs check and build only; the outside-read check and reproducible bytes wait
+  (`ponytail`).
 
 ## Friction
 
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
+- S2: a brief left out the subsystem's error-code module (`dev/src/outcome.rs`); Sol stopped
+  halfway. Briefs should always allow it.
+- S2: Sol's sandbox refuses nested `sandbox-exec`, so DEV-S-13 runs only in the validator.
+- S2: host program tests with 2 s and 10 s limits fail now and then under heavy load.
 
 ## Digest
 
 - S1: a coding agent runs `watane-dev new hello`, `check` and `serve --json`, opens
   `http://hello.localhost:<port>/` and sees the page; an edit shows after `serve` again;
   `serve --stop` ends the preview.
+- S2: the template is a counter; Alice clicks Add on the page and the count goes up, stored by the
+  host; a runaway export is stopped and the mod keeps answering.
