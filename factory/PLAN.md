@@ -38,6 +38,44 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
   that shows in the running preview.
 
+## Stage coverage
+
+One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
+step that needs it. Status: `open`, `part` (what is missing), `done` (slice). A step is done only
+when its journey passes and every stage of that step is `done`, or a deputy decision moves the
+rest to a later step. Leftover `ponytail:` comments count as missing parts (`git grep ponytail:`).
+
+| Subsystem | Stage | Step | Status |
+|---|---|---|---|
+| pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
+| pkg | 4 component | 1 | done (S2) |
+| pkg | 5 package (pack, unpack) | 1 | open; host's temporary digest waits on it |
+| pkg | 6 add_provider | 2 | open |
+| pkg | 7 release | 3 | open |
+| host | 1 runtime core | 1 | done (S2) |
+| host | 2 links and events | 1, 2 | part: page bus in S3; links, delivery, hops in step 2 |
+| host | 3 server and pages | 1 | part: `/events` in S3; `tests/hostile.rs` page rows |
+| host | 4 tools (toolsets, tokens, MCP) | 1 | open (S5) |
+| host | 5 catalog and home | 1, 2 | part: preview folder install only; `Harness` (S4); plan, grants, update, remove, home mode in step 2 |
+| host | 6 program | 1 | part (S1): S1 to S3 tests not all checked |
+| dev | 0 cli, outcome | 1 | done (S1) |
+| dev | 1 template, new, check | 1 | part (S1, S2): template `tests/` and check stage 6 in S4 |
+| dev | 2 allowlist, toolchain, builder | 1 | part (S2): DEV-S-10 outside reads, DEV-S-12 reproducible bytes |
+| dev | 3 unit | 1 | open (S4) |
+| dev | 4 contract | 1 | open (S4) |
+| dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` only (S1, S2) |
+| dev | 6 deps, add, install | 2 | open |
+| dev | 7 publish | 3 | open |
+| app | A shell | 2 | open |
+| app | B host | 2 | open |
+| app | F Linux | 2 | open |
+| app | C dist | 3 | open |
+| app | D find | 4 | open |
+| app | E build on | 5 | open |
+| log | L1 to L5 | 3 | open |
+| dist | S1 to S5 | 3 | open |
+| dist | S6 find | 4 | open |
+
 ## Waiting on the human
 
 (none)

@@ -10,7 +10,8 @@ goes to a foreman session. You alone edit `factory/PLAN.md`, on `main`.
 
 Priority of truth: `spec/VISION.md` > `spec/FUNCTIONAL.md` > `spec/TECHNICAL.md` > a subsystem's
 `VISION`/`FUNCTIONAL`/`TECHNICAL` > code. The order of work is VISION's steps 1 to 5; a step is
-done when its journey (J1 to J5) passes on the real programs.
+done when its journey (J1 to J5) passes on the real programs and every stage of that step in
+`Stage coverage` (`PLAN.md`) is `done`, or moved to a later step by a deputy decision.
 
 ## 1. The loop
 
@@ -32,6 +33,11 @@ In `PLAN.md` a sketch holds:
 
 Keep it a sketch: the foreman writes the task briefs. Re-read the sketch after each delivery;
 what the last slice taught usually changes it.
+
+Before you sketch a step's journey slice, read `Stage coverage` in `PLAN.md`. Each stage of the
+current step that is not `done` goes into a slice first, as the part of a story that needs it.
+A stage that no story of the step needs still gets a slice: its story is its "Done when" tests
+passing on the real programs.
 
 ## 3. Hand out a slice
 
@@ -82,7 +88,8 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
    and run the tests again".
 3. `claude stop <id>`, then remove its worktree and branch (the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a
-   person can now do), and copy its decisions and friction lines there. Commit.
+   person can now do), and copy its decisions and friction lines there. Update `Stage coverage`:
+   each stage the slice finished or advanced, and each `ponytail:` it left. Commit.
 4. Report to the human: one line per slice, decisions first.
 
 `BLOCKED <id>`: treat its question by section 4, then resume that foreman or re-cut the slice.
