@@ -97,7 +97,6 @@ async fn call_response(
     struct Call {
         #[serde(rename = "fn")]
         function: String,
-        #[serde(deserialize_with = "Value::deserialize")]
         args: Value,
     }
     let body: serde_json::Map<String, Value> = match serde_json::from_slice(&bytes) {
