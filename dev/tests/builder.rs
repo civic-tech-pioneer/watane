@@ -156,6 +156,8 @@ fn ac6_build_with_network_denied() {
         String::from_utf8_lossy(&o.stdout),
         String::from_utf8_lossy(&o.stderr)
     );
+    // An empty filter match also exits 0: require that the build test ran.
+    assert!(String::from_utf8_lossy(&o.stdout).contains("1 passed"));
 }
 
 #[test]
