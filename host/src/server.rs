@@ -165,6 +165,9 @@ async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> R
     if let Some(label) = host.strip_suffix(&format!(".localhost:{}", state.port))
         && let Ok(local) = LocalName::parse(label)
     {
+        if request.uri().path() == "/call" {
+            return pages::call(&state.host, local, state.port, request).await;
+        }
         let method = request.method().clone();
         let path = request.uri().path().to_owned();
         return match tokio::task::spawn_blocking(move || {

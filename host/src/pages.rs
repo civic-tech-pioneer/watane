@@ -1,10 +1,13 @@
-use crate::{Host, LocalName};
+use crate::{Caller, Host, LocalName, api};
 use axum::{
-    body::Body,
-    http::{Method, StatusCode, header},
+    Json,
+    body::{Body, to_bytes},
+    http::{Method, Request, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use std::{fs, path::Path};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::{fs, path::Path, sync::Arc};
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'";
 
@@ -44,16 +47,94 @@ pub(crate) fn respond(host: &Host, local: &LocalName, method: &Method, encoded: 
     secure(response)
 }
 
-fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Response {
-    let catalog = host
-        .catalog
+pub(crate) async fn call(
+    host: &Arc<Host>,
+    local: LocalName,
+    port: u16,
+    request: Request<Body>,
+) -> Response {
+    if !available(host, &local) {
+        return not_found();
+    }
+    secure(call_response(host, local, port, request).await)
+}
+
+async fn call_response(
+    host: &Arc<Host>,
+    local: LocalName,
+    port: u16,
+    request: Request<Body>,
+) -> Response {
+    if request.method() != Method::POST {
+        let mut response = api::error(405, "bad_request", "use POST");
+        response
+            .headers_mut()
+            .insert(header::ALLOW, header::HeaderValue::from_static("POST"));
+        return response;
+    }
+    let origin = format!("http://{local}.localhost:{port}");
+    let mut origins = request.headers().get_all(header::ORIGIN).iter();
+    if origins.next().and_then(|v| v.to_str().ok()) != Some(origin.as_str())
+        || origins.next().is_some()
+    {
+        return api::error(403, "forbidden", "Origin must match the mod origin");
+    }
+    if !request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("application/json"))
+    {
+        return api::error(415, "bad_request", "use application/json");
+    }
+    let bytes = match to_bytes(request.into_body(), 1 << 20).await {
+        Ok(bytes) => bytes,
+        Err(e) => return api::error(413, "bad_request", e),
+    };
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Call {
+        #[serde(rename = "fn")]
+        function: String,
+        #[serde(deserialize_with = "Value::deserialize")]
+        args: Value,
+    }
+    let body: serde_json::Map<String, Value> = match serde_json::from_slice(&bytes) {
+        Ok(body) => body,
+        Err(e) => return api::error(400, "bad_request", e),
+    };
+    let call: Call = match serde_json::from_value(Value::Object(body)) {
+        Ok(call) => call,
+        Err(e) => return api::error(400, "bad_request", e),
+    };
+    if !matches!(call.args, Value::Object(_) | Value::Array(_) | Value::Null) {
+        return api::error(400, "bad_request", "args must be an object, array or null");
+    }
+    match host
+        .call_async(Caller::Page, local, call.function, call.args)
+        .await
+    {
+        Ok(value) => Json(json!({"value":value})).into_response(),
+        Err(error) => (
+            StatusCode::from_u16(error.status()).expect("valid call status"),
+            Json(json!({"error":error})),
+        )
+            .into_response(),
+    }
+}
+
+fn available(host: &Host, local: &LocalName) -> bool {
+    host.catalog
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !catalog
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .mods
         .iter()
-        .any(|m| &m.local == local && m.enabled && m.error.is_none() && m.page.is_some())
-    {
+        .any(|m| &m.local == local && m.enabled && m.error.is_none())
+}
+
+fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Response {
+    if !available(host, local) {
         return not_found();
     }
     if method != Method::GET && method != Method::HEAD {
@@ -66,7 +147,18 @@ fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Respo
     let Some(path) = decode_path(encoded) else {
         return not_found();
     };
-    if matches!(path.as_str(), "/call" | "/events" | "/watane.js") {
+    if path == "/watane.js" {
+        let mut response = (
+            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            crate::WATANE_JS,
+        )
+            .into_response();
+        response
+            .headers_mut()
+            .insert(header::CONTENT_LENGTH, crate::WATANE_JS.len().into());
+        return response;
+    }
+    if matches!(path.as_str(), "/call" | "/events") {
         return not_found();
     }
     let Some(relative) = path.strip_prefix('/') else {

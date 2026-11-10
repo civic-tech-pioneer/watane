@@ -1,4 +1,5 @@
 pub const HOST_WIT: &str = include_str!("../wit/host.wit");
+pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod api;
 mod catalog;

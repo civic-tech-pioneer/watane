@@ -13,6 +13,7 @@ use tempfile::TempDir;
 use watane_host::{Ready, RunInfo};
 
 mod api;
+mod hostile;
 mod pages;
 
 struct Preview {
@@ -126,6 +127,41 @@ fn copy_hello() -> TempDir {
         fs::copy(fixture("hello").join(file), dir.path().join(file)).unwrap();
     }
     dir
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac5_program_installs_counter_and_wires_page_calls() {
+    let home = tempfile::tempdir().unwrap();
+    let counter = fixture("counter");
+    let mut preview =
+        Preview::start_with(home.path(), &["--install".as_ref(), counter.as_os_str()]);
+    assert_eq!(preview.ready.mods.len(), 1);
+    assert_eq!(preview.ready.mods[0].local.to_string(), "counter");
+    let origin = format!("http://counter.localhost:{}", preview.ready.port);
+    assert_eq!(
+        preview.ready.mods[0].page.as_deref(),
+        Some(format!("{origin}/").as_str())
+    );
+    let response = preview
+        .client("counter.localhost", "127.0.0.1")
+        .post(format!("{origin}/call"))
+        .header("Origin", &origin)
+        .json(&json!({"fn":"api.add","args":null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json::<Value>().await.unwrap(), json!({"value":1}));
+    preview.stop();
+    let preview_home = tempfile::tempdir().unwrap();
+    let mut preview = Preview::start(preview_home.path());
+    let response = preview.install(&counter).await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["installed"][0]["has_logic"],
+        true
+    );
+    preview.stop();
 }
 
 #[test]
