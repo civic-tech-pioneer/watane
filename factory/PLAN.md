@@ -1,10 +1,13 @@
 # Plan
 
-The foreman's state. A new session continues from here. Newest digest line last.
+The product owner's state; only the product owner edits it, on `main`. A new session continues
+from here. Newest digest line last.
 
 ## Slices
 
-Step 1 (Make, J1). A first cut; the foreman refines each slice before it starts.
+Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
+
+Step 1 (Make, J1). A first cut; the product owner refines each sketch before it hands it out.
 
 - [ ] **S1 Hello page.** A coding agent runs `watane-dev new hello` and `watane-dev serve --json`,
   opens the URL, and sees the template page. Parts: pkg (slug, `Mod::read` for a page-only mod),

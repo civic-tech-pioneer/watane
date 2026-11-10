@@ -63,33 +63,42 @@ the lineage tried to be.
 ## 2. The setup
 
 ```text
-foreman (Claude, /foreman)      product owner and your deputy; holds factory/PLAN.md
-  └─ per slice: 1 to 4 tasks, one per subsystem
-       ├─ implementer  Codex, gpt-6.1-sol, effort per task     factory/impl.sh
-       ├─ validator    Claude Opus 5.5                          .claude/agents/validator.md
-       │     round 1: return findings -> Sol resumes the same session
-       │     round 2+: fixes small things itself
-  └─ user-sim (Claude Opus 5.5) acts as the story's person on the real programs
-       failure -> red regression test -> fix task (green, refactor) -> validator -> user-sim again
+product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN.md
+  │  sketches one slice ahead; hands it out when no slice in flight touches the same subsystems
+  └─ foreman (Claude, /foreman <slice>, own session, worktree on slice/<id>)
+       ├─ per task (1 to 4, one per subsystem):
+       │    implementer  Codex, gpt-6.1-sol, effort per task     factory/impl.sh
+       │    validator    Claude Opus 5.5                          .claude/agents/validator.md
+       │       round 1: return findings -> Sol resumes the same session
+       │       round 2+: fixes small things itself
+       ├─ user-sim (Claude Opus 5.5) acts as the story's person on the real programs
+       │    failure -> red regression test -> fix task (green, refactor) -> validator -> user-sim again
+       └─ DELIVERED -> product owner merges --ff-only, removes the worktree, hands out the next slice
 ```
 
 | File | Purpose |
 |---|---|
-| `.claude/skills/foreman/SKILL.md` | The loop: cut a slice, brief, build, validate, accept, decide or escalate |
+| `.claude/skills/product-owner/SKILL.md` | The loop: sketch, hand out, answer questions, merge, escalate |
+| `.claude/skills/foreman/SKILL.md` | One slice end to end: brief, build, validate, user-sim, deliver |
 | `.claude/agents/validator.md` | Acceptance coverage, architectural fit, simplicity; fix or return |
 | `.claude/agents/user-sim.md` | Accepts a slice as its user; turns each failure into a red test |
 | `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback |
 | `factory/implementer.md` | Sol's standing instructions (test-first, fixed interface, report format) |
 | `factory/PLAN.md` | Slices, open questions, deputy decisions, friction, digest |
-| `factory/tasks/` | One brief per task |
-| `factory/runs/` | Sol logs, session ids and `ledger.jsonl` |
-| `.cargo/config.toml` | One shared `target/` for all subsystems |
+| `factory/tasks/` | One brief per task, committed on the slice branch |
+| `factory/runs/` | Sol logs, session ids and `ledger.jsonl`, in the main checkout (not in git) |
 
-Escalation rule (SKILL section 5). The foreman decides as your deputy. It escalates only when it is
-not confident, when the answer is costly to revert across subsystems, or when the question blocks
-everything and no stub keeps the options open. Even then it builds the open option and carries on.
+Questions go up in two hops. The foreman decides what stays inside its slice and is cheap to
+undo; the rest goes to the product owner. The product owner escalates to you only when it is not
+confident, when the answer is costly to revert across subsystems, or when the question blocks
+everything and no stub keeps the options open. Even then the slice builds the open option and
+carries on.
+
+Sol runs in Codex's own sandbox with network on. Codex refuses writes inside `.git` unless each git
+folder is named, so `impl.sh` names the worktree's git folder and the shared one. A resumed Codex
+session gets the same settings. Both were tested from a worktree on 2026-11-10.
 
 ## 3. Start
 
-From `watane/`, in Claude Code: `/foreman`. It refines slice S1 in `PLAN.md`, writes the task briefs
-and runs them.
+From `watane/` on `main`, in Claude Code: `/product-owner`. It refines slice S1 in `PLAN.md` and
+hands it to a foreman session.
