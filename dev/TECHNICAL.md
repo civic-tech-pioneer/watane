@@ -1212,7 +1212,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|
 | 0 | crate, `cli`, `outcome`, `env`, text and JSON output, exit statuses | — | — | S-32 for `check` outside a mod: `usage.not_a_mod`, status 2 |
-| 1 | `template`, `new`, `check` (5.1 to 5.3) | pkg stages 2 and 3: `Slug`, `Mod::read`, `Violation`, `Grant`, `World` | without pkg: a local slug regex and dev's own rules; the `mod.invalid` path is a test `#[ignore = "needs watane-pkg"]` | S-1, 2, 3, 5, 6, 7, 8; the template passes `Mod::read` |
+| 1 | `template`, `new`, `check` (5.1 to 5.3) | pkg stages 2 and 3: `Slug`, `Mod::read`, `Violation`, `Grant`, `World` | without pkg: a local slug regex and dev's own rules; the `mod.invalid` path is a test `#[ignore = "needs watane-pkg"]` | S-1, 2, 3, 5, 6, 7, 8; the template passes `Mod::read`. S1 ships the page-only cut: `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `mod.toml`, `wit/world.wit`, `ui/index.html`, `ui/app.js`; no logic, host WIT or tests; `new.next` is `Edit ui/, then run: watane-dev serve --json` |
 | 2 | `allowlist`, `scripts/vendor.sh`, `toolchain`, `builder` | host: `HOST_WIT`; pkg stage 4: `check_component` | `HOST_WIT` as a local const copied from `spec/TECHNICAL.md` section 4, marked for removal; `check_component` behind one fn, with an ignored test | S-9 to 13; the template builds |
 | 3 | `unit` | — | — | S-14 to 16; S-4 without the contract part |
 | 4 | `contract`, `json_eq` | host stage 5: `Harness` | `run_steps` tested with closures; integration tests ignored | S-17 to 20; S-4 complete |

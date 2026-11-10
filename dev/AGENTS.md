@@ -53,3 +53,8 @@ word for word. Follow their intent, and do not ask whether to.
 - Follow the "Fake until it exists" column of TECHNICAL 16. Mark each test that needs the sibling `#[ignore = "needs <crate or program>"]`.
 - If a sibling gives an item under another name or shape, use the sibling's and update TECHNICAL 14.
 - If you need something no sibling offers, do not build it in dev. Add it to the owner's spec, record it under TECHNICAL 14 and 17, fake it, and go on.
+
+## Spec gaps resolved
+
+- S1 (dev): stage 1 ships a page-only template and next instruction; section 4 remains the full template.
+- S1 (spec, pkg, host, dev): workspace resolver 3, one root lock file and shared target directory.

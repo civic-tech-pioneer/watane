@@ -1,0 +1,153 @@
+use serde::Serialize;
+use std::path::PathBuf;
+#[derive(Debug, Clone, Copy)]
+pub enum Code {
+    UsageArgs,
+    UsageNotAMod,
+    UsageSlug,
+    UsageExists,
+    EnvWataneMissing,
+    EnvPreviewStart,
+    ModInvalid,
+    ModSymlink,
+    HostDeclined,
+    HostRefused,
+    HostNoAnswer,
+    Internal,
+}
+impl Code {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UsageArgs => "usage.args",
+            Self::UsageNotAMod => "usage.not_a_mod",
+            Self::UsageSlug => "usage.slug",
+            Self::UsageExists => "usage.exists",
+            Self::EnvWataneMissing => "env.watane_missing",
+            Self::EnvPreviewStart => "env.preview_start",
+            Self::ModInvalid => "mod.invalid",
+            Self::ModSymlink => "mod.symlink",
+            Self::HostDeclined => "host.declined",
+            Self::HostRefused => "host.refused",
+            Self::HostNoAnswer => "host.no_answer",
+            Self::Internal => "internal",
+        }
+    }
+    pub fn class(self) -> u8 {
+        match self {
+            Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => 2,
+            Self::EnvWataneMissing | Self::EnvPreviewStart => 3,
+            Self::ModInvalid | Self::ModSymlink => 1,
+            Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => 4,
+            Self::Internal => 5,
+        }
+    }
+}
+impl Serialize for Code {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+#[derive(Debug, Serialize)]
+pub struct Problem {
+    pub code: Code,
+    pub message: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub fix: Option<String>,
+}
+impl Problem {
+    pub fn new(code: Code, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            file: None,
+            line: None,
+            column: None,
+            fix: None,
+        }
+    }
+    pub fn at(mut self, file: impl Into<String>) -> Self {
+        self.file = Some(file.into());
+        self
+    }
+    pub fn fix(mut self, fix: impl Into<String>) -> Self {
+        self.fix = Some(fix.into());
+        self
+    }
+    pub fn internal(error: impl ToString) -> Self {
+        Self::new(Code::Internal, error.to_string())
+            .fix("Check the paths and permissions, then run the command again")
+    }
+}
+#[derive(Debug, Serialize)]
+pub struct Outcome {
+    pub schema: u32,
+    pub command: String,
+    pub ok: bool,
+    pub dir: Option<PathBuf>,
+    pub result: Option<serde_json::Value>,
+    pub errors: Vec<Problem>,
+    pub warnings: Vec<Problem>,
+    pub next: Option<String>,
+}
+impl Outcome {
+    pub fn new(command: impl Into<String>, dir: Option<PathBuf>) -> Self {
+        Self {
+            schema: 1,
+            command: command.into(),
+            ok: true,
+            dir,
+            result: None,
+            errors: vec![],
+            warnings: vec![],
+            next: None,
+        }
+    }
+    pub fn fail(mut self, errors: Vec<Problem>) -> Self {
+        self.ok = false;
+        self.errors = errors;
+        self
+    }
+    pub fn exit_code(&self) -> u8 {
+        self.errors.first().map_or(0, |e| e.code.class())
+    }
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).expect("outcome serializes")
+    }
+    pub fn to_text(&self) -> String {
+        let mut text = String::new();
+        for (kind, items) in [("error", &self.errors), ("warning", &self.warnings)] {
+            for e in items {
+                text.push_str(&format!("{kind}[{}]: {}\n", e.code.as_str(), e.message));
+                if let Some(f) = &e.file {
+                    text.push_str(&format!("  --> {f}"));
+                    if let Some(l) = e.line {
+                        text.push_str(&format!(":{l}"));
+                        if let Some(c) = e.column {
+                            text.push_str(&format!(":{c}"));
+                        }
+                    }
+                    text.push('\n');
+                }
+                if let Some(f) = &e.fix {
+                    text.push_str(&format!("  fix: {f}\n"));
+                }
+            }
+        }
+        text.push_str(&format!(
+            "{}: {}\n",
+            self.command,
+            if self.ok { "ok" } else { "failed" }
+        ));
+        if let Some(serde_json::Value::Object(fields)) = &self.result {
+            for (k, v) in fields {
+                text.push_str(&format!("{k}: {v}\n"));
+            }
+        }
+        if let Some(next) = &self.next {
+            text.push_str(&format!("next: {next}\n"));
+        }
+        text
+    }
+}

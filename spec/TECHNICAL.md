@@ -45,7 +45,9 @@ Rules:
 - The inner modules of a subsystem are its own business (its `TECHNICAL.md`).
 - Each subsystem is one crate `watane-<name>` at the root of its folder.
   The root `Cargo.toml` is a workspace: a subsystem's crate becomes a member
-  when it is created. A dependency on a sibling is a path dependency
+  when it is created. The workspace uses resolver `3`, one root `Cargo.lock`
+  and the shared root `target/`; S1 members are `pkg`, `host`, and `dev`.
+  A dependency on a sibling is a path dependency
   (`{ path = "../pkg" }`).
   One version of Wasmtime (48.0.8) and of each wasm-tools crate is in the build.
 

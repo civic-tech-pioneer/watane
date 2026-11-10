@@ -1,0 +1,37 @@
+use clap::Parser;
+use watane_dev::{
+    cli::Cli,
+    outcome::{Code, Outcome, Problem},
+};
+fn main() {
+    let args: Vec<_> = std::env::args_os().collect();
+    let json = args.iter().any(|s| s == "--json");
+    let outcome = match Cli::try_parse_from(&args) {
+        Ok(cli) => watane_dev::cli::run(cli),
+        Err(e)
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            print!("{e}");
+            return;
+        }
+        Err(e) => {
+            let command = args
+                .iter()
+                .filter_map(|s| s.to_str())
+                .find(|s| matches!(*s, "new" | "check" | "serve"))
+                .unwrap_or("");
+            Outcome::new(command, None).fail(vec![
+                Problem::new(Code::UsageArgs, e.to_string()).fix("watane-dev --help"),
+            ])
+        }
+    };
+    if json {
+        println!("{}", outcome.to_json());
+    } else {
+        print!("{}", outcome.to_text());
+    }
+    std::process::exit(i32::from(outcome.exit_code()));
+}

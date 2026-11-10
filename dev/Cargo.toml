@@ -1,0 +1,18 @@
+[package]
+name = "watane-dev"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[dependencies]
+watane-pkg = { path = "../pkg" }
+watane-host = { path = "../host" }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1.8"
+ureq = { version = "3", default-features = false, features = ["json"] }
+
+[dev-dependencies]
+tempfile = "3"
