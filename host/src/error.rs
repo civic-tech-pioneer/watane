@@ -60,3 +60,83 @@ impl From<serde_json::Error> for HostError {
         Self::Internal(error.to_string())
     }
 }
+
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct CallError {
+    pub code: CallCode,
+    pub message: String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallCode {
+    BadRequest,
+    NoMod,
+    NoFunction,
+    Disabled,
+    NotGranted,
+    Trap,
+    Limit(Limit),
+    Internal,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Limit {
+    Fuel,
+    Memory,
+    Time,
+    Depth,
+    StateSize,
+    StateQuota,
+}
+impl CallError {
+    pub(crate) fn new(code: CallCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+    pub(crate) fn internal(error: impl std::fmt::Display) -> Self {
+        Self::new(CallCode::Internal, error.to_string())
+    }
+    pub(crate) fn limit(limit: Limit, message: impl Into<String>) -> Self {
+        Self::new(CallCode::Limit(limit), message)
+    }
+    pub fn status(&self) -> u16 {
+        match self.code {
+            CallCode::BadRequest => 400,
+            CallCode::NoMod | CallCode::NoFunction => 404,
+            CallCode::Disabled => 409,
+            CallCode::NotGranted | CallCode::Trap | CallCode::Limit(_) => 422,
+            CallCode::Internal => 500,
+        }
+    }
+}
+impl serde::Serialize for CallError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let code = match self.code {
+            CallCode::BadRequest => "bad_request",
+            CallCode::NoMod => "no_mod",
+            CallCode::NoFunction => "no_function",
+            CallCode::Disabled => "disabled",
+            CallCode::NotGranted => "not_granted",
+            CallCode::Trap => "trap",
+            CallCode::Limit(_) => "limit",
+            CallCode::Internal => "internal",
+        };
+        let mut out = serializer.serialize_struct(
+            "CallError",
+            if matches!(self.code, CallCode::Limit(_)) {
+                3
+            } else {
+                2
+            },
+        )?;
+        out.serialize_field("code", code)?;
+        if let CallCode::Limit(limit) = self.code {
+            out.serialize_field("limit", &limit)?;
+        }
+        out.serialize_field("message", &self.message)?;
+        out.end()
+    }
+}

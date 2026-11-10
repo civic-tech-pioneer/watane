@@ -1,7 +1,7 @@
 use crate::{HostError, LocalName, home};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -52,6 +52,7 @@ pub enum LinkKind {
 #[derive(Debug, Default)]
 pub(crate) struct Catalog {
     generation: u64,
+    pub components: BTreeMap<LocalName, std::sync::Arc<crate::runtime::Compiled>>,
     pub mods: Vec<InstalledMod>,
 }
 
@@ -93,10 +94,10 @@ fn invalid(input: &Path, reason: impl ToString) -> HostError {
     }
 }
 
-fn page_mod(dir: &Path) -> Result<Mod, HostError> {
+fn preview_mod(dir: &Path) -> Result<Mod, HostError> {
     let m = Mod::read(dir).map_err(|e| invalid(dir, e))?;
-    if m.logic().is_some() || !m.world().exports.is_empty() || !m.world().subscriptions.is_empty() {
-        return Err(invalid(dir, "logic parts arrive in a later step"));
+    if !m.world().calls.is_empty() || !m.world().subscriptions.is_empty() {
+        return Err(invalid(dir, "links between mods arrive in a later step"));
     }
     Ok(m)
 }
@@ -114,17 +115,24 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
         release: None,
         origin: m.origin().cloned(),
         enabled: true,
-        has_logic: false,
+        has_logic: m.logic().is_some(),
         // A relative marker becomes the origin URL at the transport boundary.
         page: m.page().map(|_| "/".into()),
-        grants: vec![],
+        grants: m
+            .grants()
+            .into_iter()
+            .map(|grant| GrantState {
+                grant,
+                granted: true,
+            })
+            .collect(),
         links: vec![],
         error: None,
     }
 }
 
 impl Catalog {
-    pub fn open(home: &Path) -> Result<Self, HostError> {
+    pub fn open(home: &Path, engine: &wasmtime::Engine) -> Result<Self, HostError> {
         let disk = match fs::read(home.join("installed.json")) {
             Ok(bytes) => serde_json::from_slice::<DiskCatalog>(&bytes)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => DiskCatalog {
@@ -147,8 +155,8 @@ impl Catalog {
             if !names.insert(r.local.clone()) || !identities.insert(r.identity.clone()) {
                 return Err(bad("duplicate installed mod"));
             }
-            if r.release.is_some() || !r.grants.is_empty() || !r.links.is_empty() {
-                return Err(bad("this preview supports only page-only local mods"));
+            if r.release.is_some() || !r.links.is_empty() {
+                return Err(bad("this preview supports only local mods without links"));
             }
             let current = home.join("mods").join(r.local.as_ref());
             let old = current.with_extension("old");
@@ -169,6 +177,7 @@ impl Catalog {
             }
         }
         let mut mods = Vec::new();
+        let mut components = BTreeMap::new();
         for r in disk.mods {
             let slug: Slug = r
                 .identity
@@ -177,8 +186,18 @@ impl Catalog {
                 .parse()
                 .map_err(|_| bad("invalid preview identity"))?;
             let dir = home.join("mods").join(r.local.as_ref());
-            let mut installed = match page_mod(&dir) {
-                Ok(m) if m.slug() == &slug => view(&m, r.local.clone(), r.package.clone()),
+            let mut installed = match preview_mod(&dir) {
+                Ok(m) if m.slug() == &slug => {
+                    let mut installed = view(&m, r.local.clone(), r.package.clone());
+                    match crate::runtime::compile(engine, &m) {
+                        Ok(Some(component)) => {
+                            components.insert(installed.local.clone(), component);
+                        }
+                        Ok(None) => (),
+                        Err(e) => installed.error = Some(e.to_string()),
+                    }
+                    installed
+                }
                 result => InstalledMod {
                     local: r.local,
                     identity: r.identity,
@@ -206,11 +225,13 @@ impl Catalog {
                 },
             };
             installed.enabled = r.enabled;
+            installed.grants = r.grants;
             mods.push(installed);
         }
         mods.sort_by(|a, b| a.local.cmp(&b.local));
         Ok(Self {
             generation: disk.generation,
+            components,
             mods,
         })
     }
@@ -220,12 +241,13 @@ impl Catalog {
         home: &Path,
         folders: &[PathBuf],
         port: u16,
+        engine: &wasmtime::Engine,
     ) -> Result<Vec<InstalledMod>, HostError> {
         let mut prepared = Vec::new();
         let mut seen = BTreeSet::new();
         let mut names: BTreeSet<_> = self.mods.iter().map(|m| m.local.clone()).collect();
         for folder in folders {
-            let source = page_mod(folder)?;
+            let source = preview_mod(folder)?;
             let identity = format!("local/{}", source.slug());
             if !seen.insert(identity.clone()) {
                 return Err(invalid(folder, "twice in one plan"));
@@ -233,10 +255,11 @@ impl Catalog {
             let staging = Stage::new(home)?;
             // ponytail: replace this copy and reread with pack(dir,false) + unpack.
             copy_folder(folder, &staging.0)?;
-            let m = page_mod(&staging.0)?;
+            let m = preview_mod(&staging.0)?;
             if m.slug() != source.slug() {
                 return Err(invalid(folder, "slug changed during staging"));
             }
+            let component = crate::runtime::compile(engine, &m)?;
             let package = digest(&staging.0)?;
             let old = self.mods.iter().find(|m| m.identity == identity);
             let local = match old {
@@ -249,14 +272,14 @@ impl Catalog {
             if let Some(old) = old {
                 installed.enabled = old.enabled;
             }
-            prepared.push((staging, installed, unchanged));
+            prepared.push((staging, installed, unchanged, component));
         }
         prepared.sort_by(|a, b| a.1.local.cmp(&b.1.local));
         let mut next = self.mods.clone();
         let mut moved: Vec<(PathBuf, bool)> = Vec::new();
-        let changed = prepared.iter().any(|(_, _, unchanged)| !unchanged);
+        let changed = prepared.iter().any(|(_, _, unchanged, _)| !unchanged);
         let transaction = (|| -> Result<(), HostError> {
-            for (staging, installed, unchanged) in &prepared {
+            for (staging, installed, unchanged, _) in &prepared {
                 if *unchanged {
                     continue;
                 }
@@ -302,6 +325,15 @@ impl Catalog {
             }
             return Err(error);
         }
+        for (_, installed, unchanged, component) in &prepared {
+            if !unchanged {
+                self.components.remove(&installed.local);
+                if let Some(component) = component {
+                    self.components
+                        .insert(installed.local.clone(), component.clone());
+                }
+            }
+        }
         self.mods = next;
         if changed {
             self.generation += 1;
@@ -313,7 +345,7 @@ impl Catalog {
         }
         Ok(prepared
             .into_iter()
-            .map(|(_, mut m, _)| {
+            .map(|(_, mut m, _, _)| {
                 m.page = m
                     .page
                     .map(|_| format!("http://{}.localhost:{port}/", m.local));
@@ -369,12 +401,16 @@ fn files(dir: &Path) -> Result<Vec<String>, HostError> {
         "deps.json".to_owned(),
         "wit".to_owned(),
         "ui".to_owned(),
+        "logic.wasm".to_owned(),
     ];
     while let Some(relative) = stack.pop() {
         let path = dir.join(&relative);
         let metadata = match fs::symlink_metadata(&path) {
             Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound && relative == "deps.json" => {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::NotFound
+                    && matches!(relative.as_str(), "deps.json" | "logic.wasm" | "ui") =>
+            {
                 continue;
             }
             Err(e) => return Err(invalid(dir, e)),

@@ -1,0 +1,9 @@
+package mods:hog@0.1.0;
+interface api {
+  spin: func();
+  grow: func(pages: u32);
+  probe: func() -> list<string>;
+  ping: func() -> string;
+  fresh: func() -> u32;
+}
+world hog { export api; }

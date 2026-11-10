@@ -87,7 +87,7 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
     use tokio::signal::unix::{SignalKind, signal};
     let mut term = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
-    let host = Host::open(&args.home)?;
+    let host = Host::open(&args.home, watane_host::Limits::default())?;
     let served = host.serve(args.port).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {

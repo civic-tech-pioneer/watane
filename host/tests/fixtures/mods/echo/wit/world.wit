@@ -1,0 +1,37 @@
+package mods:echo@0.1.0;
+interface api {
+  record entry { n: u32, note: option<string> }
+  variant choice { idle, number(u32) }
+  enum status { open, done }
+  flags bits { read, write, execute }
+  id-bool: func(x: bool) -> bool;
+  id-u8: func(x: u8) -> u8;
+  id-u16: func(x: u16) -> u16;
+  id-u32: func(x: u32) -> u32;
+  id-u64: func(x: u64) -> u64;
+  id-s8: func(x: s8) -> s8;
+  id-s16: func(x: s16) -> s16;
+  id-s32: func(x: s32) -> s32;
+  id-s64: func(x: s64) -> s64;
+  id-f32: func(x: f32) -> f32;
+  id-f64: func(x: f64) -> f64;
+  id-char: func(x: char) -> char;
+  id-string: func(x: string) -> string;
+  id-list: func(x: list<u8>) -> list<u8>;
+  id-tuple: func(x: tuple<u8, string>) -> tuple<u8, string>;
+  id-record: func(x: entry) -> entry;
+  id-variant: func(x: choice) -> choice;
+  id-enum: func(x: status) -> status;
+  id-flags: func(x: bits) -> bits;
+  id-option: func(x: option<u32>) -> option<u32>;
+  id-result: func(x: result<u32, string>) -> result<u32, string>;
+  id-unit-result: func(x: result) -> result;
+  opt-opt: func(x: option<option<u32>>);
+  put: func(key: string, value: list<u8>);
+  read: func(key: string) -> option<list<u8>>;
+  delete: func(key: string);
+  put-twice: func();
+  nan: func() -> f64;
+  infinity: func() -> f32;
+}
+world echo { import watane:host/state@0.1.0; export api; }

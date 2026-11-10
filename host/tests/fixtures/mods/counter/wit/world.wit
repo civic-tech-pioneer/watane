@@ -1,0 +1,14 @@
+package mods:counter@0.1.0;
+interface api {
+  add: func() -> u32;
+  add-then-fail: func();
+  get: func() -> u32;
+  who: func() -> string;
+}
+interface changes { counted: func(count: u32); }
+world counter {
+  import watane:host/state@0.1.0;
+  import watane:host/caller@0.1.0;
+  import changes;
+  export api;
+}

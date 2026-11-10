@@ -1136,9 +1136,9 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 
 | Fixture | World |
 |---|---|
-| `counter` | import state; export `api { add: func() -> u32; add-then-fail: func(); get: func() -> u32; }`; `ui/index.html`, `ui/app.js` |
-| `echo` | export `api` with one identity function per row of 6.9 (`id-u8`, `id-s64`, `id-f64`, `id-char`, `id-string`, `id-list`, `id-tuple`, `id-record`, `id-variant`, `id-enum`, `id-flags`, `id-option`, `id-result`), and `opt-opt: func(x: option<option<u32>>)` |
-| `hog` | export `api { spin: func(); grow: func(pages: u32); probe: func() -> list<string>; }` |
+| `counter` | import state and caller; import own-package outlet `changes { counted: func(count: u32); }`, called by `add`; export `api { add: func() -> u32; add-then-fail: func(); get: func() -> u32; who: func() -> string; }`; `ui/index.html`, `ui/app.js` |
+| `echo` | import state; export `api` with identity functions for bool, each integer width, f32, f64, char, string, list, tuple, record, variant, enum, flags, option and result (with and without payloads); `opt-opt: func(x: option<option<u32>>)`, `put`, `read`, `delete`, `put-twice` for state limits and isolation, `nan` and `infinity` for float output |
+| `hog` | export `api { spin: func(); grow: func(pages: u32); probe: func() -> list<string>; ping: func() -> string; fresh: func() -> u32; }`; `ping` checks recovery after a limit; `fresh` checks that instances share no globals |
 | `list` | import state, caller, outlet `events { added: func(title: string); }`; export `items { add: func(title: string); all: func() -> list<string>; who: func() -> string; }` |
 | `recs` | `deps.json` `{"mods:list": null}`; import state, `mods:list/items`, outlet `events { suggested: func(title: string); }`; export `mods:list/events` (subscription, stores each title), `api { suggest: func() -> string; received: func() -> list<string>; ping: func() -> string; who-of-list: func() -> string; }` |
 | `loop-a`, `loop-b` | each: outlet `events { ping: func(n: u32); }`, subscribes to the other's `events`, counts receipts in state and re-emits; `loop-a` exports `api { start: func(); count: func() -> u32; }`, `loop-b` exports `api { count: func() -> u32; }` |
@@ -1228,6 +1228,23 @@ installed after that, and the ready line follows them. So `run.json` signals a
 listening server, and only the ready line signals that the initial mods are in. On recovery, restore a `.old` directory when it matches the
 committed catalog package and the current directory does not; then remove
 uncommitted directories. This preserves the commit point of 4.3.
+
+### S2 cut
+
+`Host::open(home: &Path, limits: Limits)` still opens only a preview.
+Runtime core runs top-level calls with `Caller::Page`. Install copies
+`logic.wasm`, includes it in the temporary package digest, checks the staged
+component with pkg, and compiles it before the catalog commit. Open compiles
+installed components again. Links between mods are refused for this slice.
+Own-package outlets link as no-ops; events land in S3. Preview grants each
+declared grant. The state import's Storage grant check joins with revoke;
+FUNCTIONAL S5 waits for that step. Undeclared imports fail installation.
+The engine also sets `wasm_threads(false)`: Wasmtime's resource limiter
+cannot bound shared memories. No accepted linear memory bypasses the limiter.
+The added runtime dependencies are wasmtime and wasmtime-wasi 48.0.8,
+redb 4.5 for state, and blake3 1.8 for state identity keys.
+State opens lazily on the first logic call, or at open when its database
+already exists, so an empty page-only home needs no state directory.
 
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
@@ -1329,3 +1346,9 @@ Each answer below is used in this file.
   deleting leftovers; otherwise an interrupted update can lose the old mod.
 - **Q14 (host)** Hold the home lock before marker initialization, so two
   simultaneous starts cannot race to create `home.json`.
+
+- **Q15 (host, dev)** S2 adds the runtime cut above. Page-only homes create state only when logic first runs; outlets do nothing until S3.
+
+- **Q16 (host)** Wasmtime 48 runs canonical post-return inside `Func::call`; its deprecated `post_return` method has no effect. S2 relies on the automatic cleanup.
+
+- **Q17 (host)** Disable Wasm threads in the S2 engine. Wasmtime 48 does not invoke `ResourceLimiter` for shared memories, so accepting them would bypass the memory bound of section 14.
