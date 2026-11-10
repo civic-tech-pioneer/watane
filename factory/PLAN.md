@@ -11,28 +11,36 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 
 - [x] **S1 Hello page.** Delivered 2026-11-10 (main `bacecdc`). Sol runs: pkg 1, host 1, dev 2.
 - [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
-- [~] **S3 An edit keeps the data.** (branch `slice/s3`) The agent changes the counter's logic and
-  page while Alice has it open; `serve` again shows the new revision with the same count, and the
-  page updates by itself when the count changes.
+- [x] **S3 An edit keeps the data.** Delivered 2026-11-10 (main `c883171`). Sol runs: host 1, dev 1.
+- [~] **S4 The agent fixes a failing test.** (branch `slice/s4`; foreman: see `Foremen` below)
+  The agent breaks the counter's `add`, runs `watane-dev test`, reads the result, fixes the code,
+  and the tests pass.
   - Outcomes (user-sim, on the real programs):
-    1. After two `api.add`, change `lib.rs` to add 10 and edit `ui/index.html`; `serve --json` gives
-       `reused: true`, the page returns the new bytes, `api.get` returns 2, the next `api.add` 12.
-    2. Two pages open on the mod (headless browser): an Add in one shows the new count in both,
-       through the `counted` event; the template's `app.js` uses `watane.on`.
-    3. An `/events` stream on the page origin delivers each `counted` event with its count, in
-       order.
-    4. An edit that breaks the build: `serve --json` exits 1 with `build.compile`, and the running
-       preview still serves the old revision and its count.
-  - Touches: host (update of an installed mod keeps state by identity, the page event bus and
-    `GET /events`, `watane.on` in `watane.js`, outlet imports emit instead of no-op), dev (`serve`
-    reuse with a logic part, template `app.js`).
-  - Interfaces it creates: the `/events` wire format and `watane.on` (host 8.x, 9).
-  - Leaves out: delivery to other mods and subscriptions (step 2), toolsets, home mode.
-- [ ] **S4 The agent fixes a failing test.** `watane-dev test` runs unit and contract tests; a broken
-  export gives a result the agent can act on (`errors`, `next`), and the fix makes it pass.
-  Parts: host (`Harness`), dev (unit, contract, fakes).
-  Also from S2's user-sim: `mod.dependency` and `mod.cargo_key` give `line: null` for
-  `logic/Cargo.toml`; a `/call` without `Origin` gets a 403 that does not name the header.
+    1. On a new mod, `test --json` exits 0; unit `passed` equals the `#[test]` functions in
+       `logic/src/lib.rs`, contract `passed` equals the steps in `tests/*.json` (DEV-S-4).
+    2. With `add` changed to add 2, `test --json` exits 1 with `test.contract`: file, step, call
+       `api.add`, expected and got; `next` is the command to run again. The fix makes it pass.
+    3. A unit test `fails_on_purpose` gives `test.unit` naming it; an endless unit test gives
+       `test.unit_limit` within the limit plus 5 s; a unit test cannot read `/` or the
+       environment, and writes no file (DEV-S-14 to 16).
+    4. Without `tests/*.json`, `test` exits 1 with `mod.no_contract_tests`; `serve` runs `test`
+       first and starts no preview for a mod whose tests fail.
+    5. `mod.dependency` and `mod.cargo_key` give their line in `logic/Cargo.toml`; a `/call`
+       without `Origin` gets a 403 whose message names the missing header (S2 user-sim).
+  - Touches: host (stage 5 part: `Harness`, `Fakes`, `Outcome`, `EventRecord`; the 403 message),
+    dev (stage 3 unit, stage 4 contract and `json_eq`, template `tests/counter.json`, check
+    stage 6, line numbers for `logic/Cargo.toml`).
+  - Interfaces it creates: `Harness` and its types (host → dev); the contract test file (dev 8.1).
+  - Leaves out: fakes for other packages and `deliver` steps (DEV-S-18, the `deliver` part of
+    DEV-S-19): they need links (step 2). `emits` steps are in.
+- [~] **S7 Pack a mod.** (branch `slice/s7`; runs beside S4: it touches only pkg) pkg stage 5: a
+  mod folder packs into one package and unpacks to the same folder.
+  - Outcomes: pkg's `pack_*`, `decode_refusals`, `unpack` and `round_trip` tests pass (pkg §11);
+    the template mod from `watane-dev new` packs twice to equal bytes and the same `PackageId`;
+    unpack refuses each hostile form of pkg §6 (traversal, links, size, duplicate paths).
+  - Touches: pkg only. Creates `pack`, `Package`, `PackageId::of`, `unpack`, `MAX_PACKAGE_BYTES`.
+  - Leaves out: the host's switch from its temporary digest to `pack` (two `ponytail` in
+    `host/src/catalog.rs`): a later slice that touches host does it.
 - [ ] **S5 The agent reads through a toolset.** The preview prints a toolset token; an MCP client lists
   the mod's exports and calls one. Parts: host (toolsets, MCP).
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
@@ -49,12 +57,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 |---|---|---|---|
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
-| pkg | 5 package (pack, unpack) | 1 | open; host's temporary digest waits on it |
+| pkg | 5 package (pack, unpack) | 1 | open; host's temporary digest waits on it (2 `ponytail` in `catalog.rs`) |
 | pkg | 6 add_provider | 2 | open |
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
-| host | 2 links and events | 1, 2 | part: page bus in S3; links, delivery, hops in step 2 |
-| host | 3 server and pages | 1 | part: `/events` in S3; `tests/hostile.rs` page rows |
+| host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
+| host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`): `tests/hostile.rs` page rows |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | open (S5) |
 | host | 5 catalog and home | 1, 2 | part: preview folder install only; `Harness` (S4); plan, grants, update, remove, home mode in step 2 |
 | host | 6 program | 1 | part (S1): S1 to S3 tests not all checked |
@@ -75,6 +83,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | log | L1 to L5 | 3 | open |
 | dist | S1 to S5 | 3 | open |
 | dist | S6 find | 4 | open |
+
+## Foremen
+
+Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<sessionId>.jsonl`.
 
 ## Waiting on the human
 
@@ -102,6 +114,11 @@ The human may veto each one.
 - S2: `check_component` checks the component header before decoding (pkg §15 item 16).
 - S2: `serve` runs check and build only; the outside-read check and reproducible bytes wait
   (`ponytail`).
+- S3: events reach only the emitter's own pages (`changed` and the events); subscribers wait for
+  links. The page bus lives in `Host` (broadcast, 1024). host adds `tokio-stream` 0.1 for SSE.
+- S3: the outbox holds JSON, not WIT values with hops (host Q18; revisit with subscribers).
+- S3: ending streams on disable or remove, and hop and delivery limits, wait (host §15 S3 cut).
+- S3: pages reload only when the package id changes.
 
 ## Friction
 
@@ -110,7 +127,9 @@ The human may veto each one.
 - S2: a brief left out the subsystem's error-code module (`dev/src/outcome.rs`); Sol stopped
   halfway. Briefs should always allow it.
 - S2: Sol's sandbox refuses nested `sandbox-exec`, so DEV-S-13 runs only in the validator.
-- S2: host program tests with 2 s and 10 s limits fail now and then under heavy load.
+- S2, S3: host program tests with 2 s and 10 s limits fail now and then under heavy load (2x).
+- S3: the brief did not say S2's `/events`-404 tests would change; Sol left them red.
+- S3: nested `sandbox-exec` still runs only in the validator (2x).
 
 ## Digest
 
@@ -119,3 +138,5 @@ The human may veto each one.
   `serve --stop` ends the preview.
 - S2: the template is a counter; Alice clicks Add on the page and the count goes up, stored by the
   host; a runaway export is stopped and the mod keeps answering.
+- S3: the agent edits logic and page while Alice has it open; `serve` reloads her pages with the
+  new revision and the same count; every open page updates by itself.
