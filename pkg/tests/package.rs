@@ -320,8 +320,12 @@ fn ac4_decode_refusals() {
     bad_magic[0] = 0;
     let mut version = raw(&HELLO);
     version[8] = 2;
-    let mut count = raw(&[]);
-    count[9..13].copy_from_slice(&4097u32.to_be_bytes());
+    // 4097 well-formed, sorted records: only the count bound can refuse them.
+    let names: Vec<_> = (0..4097).map(|i| format!("ui/{i:04}")).collect();
+    let count = raw(&names
+        .iter()
+        .map(|p| (p.as_str(), b"".as_slice()))
+        .collect::<Vec<_>>());
     let mut trailing = raw(&HELLO);
     trailing.push(0);
     for bytes in [
@@ -434,7 +438,7 @@ fn ac5_unpack_existing_symlink_is_unchanged() {
 
 #[test]
 fn ac4_package_limits() {
-    // A sparse input must be refused from metadata before any large read.
+    // A sparse input at the limit is refused, not packed.
     let dir = hello();
     fs::File::create(dir.path().join("ui/large"))
         .unwrap()
