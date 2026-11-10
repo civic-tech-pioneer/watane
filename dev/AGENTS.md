@@ -16,7 +16,7 @@ JSON results are the product: a coding agent reads them and acts alone.
 scripts/vendor.sh                       # once: the allowlist crates (needs the registry cache or network)
 cargo build
 cargo test                              # stages 0-4
-cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test --test serve -- --ignored
+cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test -- --include-ignored
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check                       # the toolchain needs: rustup target add wasm32-wasip2
 ```
@@ -64,4 +64,4 @@ word for word. Follow their intent, and do not ask whether to.
 - S2 (dev): cargo target directory uses shared build.target-dir config; generate-lockfile has no --target-dir argument.
 
 - S3-2 (dev): the counter page displays counted event values and reads on changed, including stream open (host 8.4–8.5).
-- S3-2 (dev): validation commands use the current crate; fake-host is not implemented yet, and real-host tests run in serve with --ignored; the separately ignored network-denied builder test needs sandbox-exec permission.
+- S3-2 (dev): the fake-host feature does not exist yet; the commands run the real-host tests with WATANE_BIN and --include-ignored.
