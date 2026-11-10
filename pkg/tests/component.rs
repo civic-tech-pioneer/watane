@@ -236,3 +236,26 @@ fn ac6_truncated_components_never_panic() {
         assert_eq!(v[0].message, "logic.wasm is not a WebAssembly component");
     }
 }
+
+#[test]
+fn subscriptions_are_expected_exports() {
+    let other = "package mods:other@0.1.0; interface events { tick: func(); } world other { import events; }";
+    let items = "export api; export mods:other/events@0.1.0;";
+    let dir = folder(items);
+    put(dir.path(), "wit/deps/other/events.wit", other);
+    put(dir.path(), "deps.json", r#"{"mods:other": null}"#);
+    put(dir.path(), "logic.wasm", component(items, &[other]));
+    let m = Mod::read(dir.path()).unwrap();
+    assert!(m.check_component().is_ok());
+    put(dir.path(), "logic.wasm", component("export api;", &[]));
+    let v = violations(&m);
+    assert_eq!(v.len(), 1, "{v:?}");
+    assert!(v[0].message.contains("mods:other/events@0.1.0"), "{v:?}");
+}
+
+#[test]
+fn unbuilt_logic_is_a_component_violation() {
+    let dir = folder("export api;");
+    let v = violations(&Mod::read(dir.path()).unwrap());
+    assert_eq!(v.len(), 1, "{v:?}");
+}
