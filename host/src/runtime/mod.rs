@@ -20,6 +20,7 @@ pub(crate) struct Ctx {
     caller: String,
     stderr: wasmtime_wasi::p2::pipe::MemoryOutputPipe,
     deadline: Instant,
+    outbox: Vec<crate::bus::Emission>,
 }
 #[derive(Clone, Debug)]
 struct Function {
@@ -120,6 +121,7 @@ impl Compiled {
     pub fn call(
         &self,
         host: &crate::Host,
+        local: &crate::LocalName,
         identity: &str,
         caller: &crate::Caller,
         function: &str,
@@ -142,7 +144,7 @@ impl Compiled {
             .entry(identity.into())
             .or_default()
             .clone();
-        let _guard = loop {
+        let guard = loop {
             let now = Instant::now();
             if now >= deadline {
                 return Err(CallError::limit(
@@ -191,7 +193,11 @@ impl Compiled {
             })
         })();
         let value = result.map_err(|e| limits::classify(e, &stderr))?;
-        store.into_data().state.commit()?;
+        let ctx = store.into_data();
+        let changed = ctx.state.commit()?;
+        let publication = host.bus.publication();
+        drop(guard);
+        crate::bus::deliver(&publication, local, ctx.outbox, changed);
         Ok(value)
     }
 }

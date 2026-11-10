@@ -2,6 +2,7 @@ pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod api;
+mod bus;
 mod catalog;
 mod error;
 mod home;
@@ -31,6 +32,7 @@ pub struct Host {
     limits: Limits,
     state: state::State,
     call_locks: Mutex<std::collections::BTreeMap<String, Arc<Mutex<()>>>>,
+    bus: bus::PageBus,
 }
 
 impl Host {
@@ -40,6 +42,7 @@ impl Host {
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
         let host = Arc::new(Self {
+            bus: bus::PageBus::new(1024),
             state,
             call_locks: Mutex::new(std::collections::BTreeMap::new()),
             engine,
@@ -98,7 +101,7 @@ impl Host {
             })?;
             (compiled, m.identity.clone())
         };
-        compiled.call(self, &identity, caller, function, args)
+        compiled.call(self, local, &identity, caller, function, args)
     }
     pub async fn call_async(
         self: &Arc<Self>,
@@ -133,10 +136,22 @@ impl Host {
         folders: &[PathBuf],
         port: u16,
     ) -> Result<Vec<InstalledMod>, HostError> {
-        self.catalog
+        let mut catalog = self
+            .catalog
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .install(self.home(), folders, port, &self.engine)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let before: std::collections::BTreeMap<_, _> = catalog
+            .mods
+            .iter()
+            .map(|m| (m.identity.clone(), m.package.clone()))
+            .collect();
+        let installed = catalog.install(self.home(), folders, port, &self.engine)?;
+        for m in &installed {
+            if before.get(&m.identity).is_some_and(|id| id != &m.package) {
+                self.bus.send(&m.local, bus::RELOAD);
+            }
+        }
+        Ok(installed)
     }
 }
 

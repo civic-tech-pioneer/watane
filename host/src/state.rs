@@ -102,10 +102,11 @@ impl Transaction {
     pub fn delete(&mut self, key: String) {
         self.overlay.insert(key, None);
     }
-    pub fn commit(self) -> Result<(), CallError> {
+    pub fn commit(self) -> Result<bool, CallError> {
         if self.overlay.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
+        let mut changed = false;
         let txn = self.db.begin_write().map_err(CallError::internal)?;
         {
             let name = format!("s/{}", self.id);
@@ -125,6 +126,7 @@ impl Transaction {
                 if old == value {
                     continue;
                 }
+                changed = true;
                 if let Some(old) = old {
                     size -= (key.len() + old.len()) as u64;
                 }
@@ -151,6 +153,7 @@ impl Transaction {
                 .insert(self.id.as_str(), size)
                 .map_err(CallError::internal)?;
         }
-        txn.commit().map_err(CallError::internal)
+        txn.commit().map_err(CallError::internal)?;
+        Ok(changed)
     }
 }

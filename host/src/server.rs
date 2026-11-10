@@ -10,6 +10,7 @@ use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
 pub(crate) struct ServerState {
     pub host: Arc<Host>,
     pub port: u16,
+    pub shutdown: watch::Receiver<bool>,
 }
 
 #[derive(Debug)]
@@ -49,9 +50,11 @@ impl Host {
             }
         }
         let (v4, v6, port) = listeners.ok_or(HostError::PortInUse(requested))?;
+        let (shutdown, rx) = watch::channel(false);
         let router = Router::new().fallback(dispatch).with_state(ServerState {
             host: self.clone(),
             port,
+            shutdown: rx.clone(),
         });
         home::write_json(
             &self.home().join("run.json"),
@@ -62,7 +65,6 @@ impl Host {
                 mode: "preview".into(),
             },
         )?;
-        let (shutdown, rx) = watch::channel(false);
         let mut tasks = Vec::new();
         for listener in [v4, v6] {
             let router = router.clone();
@@ -167,6 +169,9 @@ async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> R
     {
         if request.uri().path() == "/call" {
             return pages::call(&state.host, local, state.port, request).await;
+        }
+        if request.uri().path() == "/events" {
+            return pages::events(&state.host, local, state.port, request, state.shutdown);
         }
         let method = request.method().clone();
         let path = request.uri().path().to_owned();

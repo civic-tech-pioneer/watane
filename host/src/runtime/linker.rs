@@ -65,8 +65,23 @@ pub(super) fn linker(
                     ))
                     .into());
                 }
-                // ponytail: events land in S3
-                interface.func_new(name, |_, _, _, _| Ok(()))?;
+                let event_interface = outlet.to_string();
+                let event_function = name.to_owned();
+                interface.func_new(name, move |mut ctx, ty, values, _| {
+                    let args = ty
+                        .params()
+                        .zip(values)
+                        .map(|((name, _), value)| {
+                            Ok((name.to_owned(), super::json::encode(value)?))
+                        })
+                        .collect::<Result<serde_json::Map<_, _>, CallError>>()?;
+                    ctx.data_mut().outbox.push(crate::bus::Emission {
+                        interface: event_interface.clone(),
+                        function: event_function.clone(),
+                        args: args.into(),
+                    });
+                    Ok(())
+                })?;
             }
         }
     }
@@ -94,6 +109,7 @@ pub(super) fn store(
         caller,
         stderr,
         deadline,
+        outbox: Vec::new(),
     };
     let mut store = Store::new(engine, ctx);
     store.limiter(|ctx| &mut ctx.limiter);

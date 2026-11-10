@@ -132,6 +132,39 @@ fn available(host: &Host, local: &LocalName) -> bool {
         .any(|m| &m.local == local && m.enabled && m.error.is_none())
 }
 
+pub(crate) fn events(
+    host: &Host,
+    local: LocalName,
+    port: u16,
+    request: Request<Body>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Response {
+    if !available(host, &local) {
+        return not_found();
+    }
+    let response = if request.method() != Method::GET {
+        let mut response = api::error(405, "bad_request", "use GET");
+        response
+            .headers_mut()
+            .insert(header::ALLOW, header::HeaderValue::from_static("GET"));
+        response
+    } else {
+        let origin = format!("http://{local}.localhost:{port}");
+        let mut origins = request.headers().get_all(header::ORIGIN).iter();
+        if origins
+            .next()
+            .is_some_and(|v| v.to_str().ok() != Some(origin.as_str()))
+            || origins.next().is_some()
+        {
+            api::error(403, "forbidden", "Origin must match the mod origin")
+        } else {
+            host.bus
+                .response(local, shutdown, std::time::Duration::from_secs(15))
+        }
+    };
+    secure(response)
+}
+
 fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Response {
     if !available(host, local) {
         return not_found();

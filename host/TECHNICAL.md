@@ -68,7 +68,7 @@ target `wasm32-wasip2`.
 | `src/runtime/json.rs` | JSON to WIT values, JSON Schema, WIT type text |
 | `src/runtime/http.rs` | the network grant hooks |
 | `src/state.rs` | redb store and transactions (section 7) |
-| `src/events.rs` | outbox, delivery, page bus (section 9) |
+| `src/bus.rs` | outbox records, delivery, page bus and SSE adapter (section 9) |
 | `src/server.rs` | bind, routing by `Host` header, guards, `Served` (section 8) |
 | `src/pages.rs` | files, headers, `/call`, `/events` |
 | `src/watane.js` | the page library (section 8.5) |
@@ -1236,15 +1236,30 @@ Runtime core runs top-level calls with `Caller::Page`. Install copies
 `logic.wasm`, includes it in the temporary package digest, checks the staged
 component with pkg, and compiles it before the catalog commit. Open compiles
 installed components again. Links between mods are refused for this slice.
-Own-package outlets link as no-ops; events land in S3. Preview grants each
-declared grant. The state import's Storage grant check joins with revoke;
-FUNCTIONAL S5 waits for that step. Undeclared imports fail installation.
+Preview grants each declared grant. The state import's Storage grant check
+joins with revoke; FUNCTIONAL S5 waits for that step. Undeclared imports
+fail installation.
 The engine also sets `wasm_threads(false)`: Wasmtime's resource limiter
 cannot bound shared memories. No accepted linear memory bypasses the limiter.
 The added runtime dependencies are wasmtime and wasmtime-wasi 48.0.8,
 redb 4.5 for state, and blake3 1.8 for state identity keys.
 State opens lazily on the first logic call, or at open when its database
 already exists, so an empty page-only home needs no state directory.
+
+### S3 cut
+
+Outlets queue named JSON arguments in the call's outbox. A successful state
+commit publishes the events to the emitter's pages, then `changed` if bytes
+changed. Publication reserves the bus before releasing the call lock, then
+sends with no mod lock held, so concurrent calls keep commit order. The host
+owns one broadcast channel with capacity 1024. `/events` filters by local
+name, recovers from lag with `changed`, pings after 15 idle seconds, and ends
+on server shutdown. Updates with a different package id keep identity and
+local name, and send `reload` after the catalog commit and registry swap.
+The SSE adapter uses `tokio-stream` 0.1 with `sync`: Axum requires a Stream
+and does not re-export the trait; the wrappers supply it and channel polling.
+Subscribers, links, hop and delivery counting, enable/disable/remove,
+MCP, toolsets, Harness and participant homes wait for their catalog stages.
 
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
@@ -1347,8 +1362,10 @@ Each answer below is used in this file.
 - **Q14 (host)** Hold the home lock before marker initialization, so two
   simultaneous starts cannot race to create `home.json`.
 
-- **Q15 (host, dev)** S2 adds the runtime cut above. Page-only homes create state only when logic first runs; outlets do nothing until S3.
+- **Q15 (host, dev)** S2 adds the runtime cut above. Page-only homes create state only when logic first runs; S3 adds outlet delivery to pages.
 
 - **Q16 (host)** Wasmtime 48 runs canonical post-return inside `Func::call`; its deprecated `post_return` method has no effect. S2 relies on the automatic cleanup.
 
 - **Q17 (host)** Disable Wasm threads in the S2 engine. Wasmtime 48 does not invoke `ResourceLimiter` for shared memories, so accepting them would bypass the memory bound of section 14.
+
+- **Q18 (host)** S3 uses a call-local JSON outbox and a shared page bus; subscribers and catalog lifecycle operations wait for links. State commit returns whether stored bytes changed, and bus publication preserves commit order.
