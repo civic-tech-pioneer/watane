@@ -33,18 +33,14 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
   - Interfaces it creates: `Harness` and its types (host → dev); the contract test file (dev 8.1).
   - Leaves out: fakes for other packages and `deliver` steps (DEV-S-18, the `deliver` part of
     DEV-S-19): they need links (step 2). `emits` steps are in.
-- [~] **S7 Pack a mod.** (branch `slice/s7`; runs beside S4: it touches only pkg) pkg stage 5: a
-  mod folder packs into one package and unpacks to the same folder.
-  - Outcomes: pkg's `pack_*`, `decode_refusals`, `unpack` and `round_trip` tests pass (pkg §11);
-    the template mod from `watane-dev new` packs twice to equal bytes and the same `PackageId`;
-    unpack refuses each hostile form of pkg §6 (traversal, links, size, duplicate paths).
-  - Touches: pkg only. Creates `pack`, `Package`, `PackageId::of`, `unpack`, `MAX_PACKAGE_BYTES`.
-  - Leaves out: the host's switch from its temporary digest to `pack` (two `ponytail` in
-    `host/src/catalog.rs`): a later slice that touches host does it.
 - [ ] **S5 The agent reads through a toolset.** The preview prints a toolset token; an MCP client lists
   the mod's exports and calls one. Parts: host (toolsets, MCP).
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
   that shows in the running preview.
+- [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
+  Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
+  link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
+  a failed unpack cleanup hides the first error; no `O_NOFOLLOW` against a walk-then-read race.
 
 ## Stage coverage
 
@@ -57,7 +53,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 |---|---|---|---|
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
-| pkg | 5 package (pack, unpack) | 1 | open; host's temporary digest waits on it (2 `ponytail` in `catalog.rs`) |
+| pkg | 5 package (pack, unpack) | 1 | done (S7); host still uses its temporary digest (2 `ponytail` in `catalog.rs`) |
 | pkg | 6 add_provider | 2 | open |
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
@@ -89,7 +85,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<sessionId>.jsonl`.
 
 - S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`.
-- S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7`.
+- S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
 
@@ -122,6 +118,8 @@ The human may veto each one.
 - S3: the outbox holds JSON, not WIT values with hops (host Q18; revisit with subscribers).
 - S3: ending streams on disable or remove, and hop and delivery limits, wait (host §15 S3 cut).
 - S3: pages reload only when the package id changes.
+- S7: `pack` checks paths (links, special files, names) before `Mod::read`, so a link gives
+  `PackageError::Symlink` and special files are never opened (pkg §6.4, §15.17).
 
 ## Friction
 
@@ -133,6 +131,9 @@ The human may veto each one.
 - S2, S3: host program tests with 2 s and 10 s limits fail now and then under heavy load (2x).
 - S3: the brief did not say S2's `/events`-404 tests would change; Sol left them red.
 - S3: nested `sandbox-exec` still runs only in the validator (2x).
+- S7: the foreman tried `git push`; the repository has no remote.
+- S7: there is no command that only builds `logic.wasm`; and Homebrew's `cargo` comes before
+  rustup's on this machine's PATH, without `wasm32-wasip2`.
 
 ## Digest
 
@@ -143,3 +144,5 @@ The human may veto each one.
   host; a runaway export is stopped and the mod keeps answering.
 - S3: the agent edits logic and page while Alice has it open; `serve` reloads her pages with the
   new revision and the same count; every open page updates by itself.
+- S7: a mod folder packs into one canonical package with a stable id and unpacks to the same
+  folder; hostile packages are refused.
