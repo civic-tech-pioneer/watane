@@ -32,7 +32,12 @@ pub fn render(text: &str, slug: &Slug) -> String {
         .replace("{{title}}", &title)
         .replace(
             "{{crates}}",
-            "- wit-bindgen 0.63.0\n- serde 1.0.229\n- serde_json 1.0.154",
+            &crate::allowlist::Allowlist::embedded()
+                .direct()
+                .iter()
+                .map(|(name, version)| format!("- {name} {version}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
 }
 #[derive(Serialize)]

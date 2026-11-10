@@ -21,6 +21,9 @@ impl Env {
             }
         };
         fs::create_dir_all(&cache).map_err(Problem::internal)?;
+        for folder in ["cargo-home", "tmp", "build", "target"] {
+            fs::create_dir_all(cache.join(folder)).map_err(Problem::internal)?;
+        }
         Ok(Self {
             cache: cache.canonicalize().map_err(Problem::internal)?,
         })

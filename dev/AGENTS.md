@@ -62,3 +62,4 @@ word for word. Follow their intent, and do not ask whether to.
 
 - S2 cut (dev): counter template has no tests/; check stage 6, unit and contract tests join in S4; serve runs check and build only.
 - S2 (dev): page reads once at startup; S3 restores watane.on(read); outside reads (DEV-S-10) and reproducible bytes (DEV-S-12) are deferred.
+- S2 (dev): cargo target directory uses shared build.target-dir config; generate-lockfile has no --target-dir argument.

@@ -1,8 +1,11 @@
-use crate::outcome::{Code, Problem};
+use crate::{
+    allowlist::Allowlist,
+    outcome::{Code, Problem},
+};
 use serde::Serialize;
 use std::{fs, path::Path};
 use watane_pkg::{Mod, ModError};
-fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
+fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
     let mut stack = vec![root.to_path_buf()];
     let mut errors = Vec::new();
     while let Some(dir) = stack.pop() {
@@ -17,10 +20,51 @@ fn symlinks(root: &Path) -> Result<Vec<Problem>, Problem> {
                         .at(file.to_string(), None, None)
                         .fix("Replace it with a file"),
                 );
-            } else if kind.is_dir()
-                && !matches!(path.strip_prefix(root), Ok(p) if p == Path::new(".git") || p == Path::new("logic/target"))
-            {
-                stack.push(path);
+            } else {
+                let relative = path.strip_prefix(root).unwrap();
+                if relative.starts_with("logic")
+                    && relative != Path::new("logic")
+                    && !relative.starts_with("logic/target")
+                {
+                    let allowed = if kind.is_dir() {
+                        relative.starts_with("logic/src")
+                    } else {
+                        kind.is_file()
+                            && (matches!(
+                                relative.to_str(),
+                                Some("logic/Cargo.toml" | "logic/Cargo.lock")
+                            ) || (relative.starts_with("logic/src")
+                                && relative.extension().is_some_and(|e| e == "rs")))
+                    };
+                    if !allowed {
+                        let file = relative.to_string_lossy();
+                        let reason = if relative == Path::new("logic/build.rs") {
+                            "the builder runs no build script"
+                        } else if relative.starts_with("logic/.cargo") {
+                            "the builder uses no cargo configuration of the mod"
+                        } else if matches!(
+                            relative.to_str(),
+                            Some("logic/rust-toolchain" | "logic/rust-toolchain.toml")
+                        ) {
+                            "the builder chooses the toolchain"
+                        } else {
+                            "only Cargo.toml, Cargo.lock and src/**/*.rs are built"
+                        };
+                        errors.push(
+                            Problem::new(
+                                Code::ModLogicFile,
+                                format!("{file} is not allowed: {reason}"),
+                            )
+                            .at(file.to_string(), None, None)
+                            .fix(format!("Remove {file}")),
+                        );
+                    }
+                }
+                if kind.is_dir()
+                    && !matches!(path.strip_prefix(root), Ok(p) if p == Path::new(".git") || p == Path::new("logic/target"))
+                {
+                    stack.push(path);
+                }
             }
         }
     }
@@ -72,7 +116,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
         fs::create_dir_all(host_wit.parent().unwrap()).map_err(|e| vec![Problem::internal(e)])?;
         fs::write(host_wit, watane_host::HOST_WIT).map_err(|e| vec![Problem::internal(e)])?;
     }
-    let errors = symlinks(dir).map_err(|e| vec![e])?;
+    let errors = files(dir).map_err(|e| vec![e])?;
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -96,6 +140,15 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
             vec![Problem::internal(source).at(path.to_string_lossy(), None, None)]
         }
     })?;
+    if dir.join("logic").exists() {
+        let path = dir.join("logic/Cargo.toml");
+        let text = fs::read_to_string(&path)
+            .map_err(|e| vec![Problem::internal(e).at("logic/Cargo.toml", None, None)])?;
+        let errors = check_manifest(&text, &Allowlist::embedded());
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+    }
     let w = m.world();
     let strings = |items: &[watane_pkg::InterfaceName]| {
         items.iter().map(ToString::to_string).collect::<Vec<_>>()
@@ -122,4 +175,398 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
             .collect(),
     };
     Ok((m, report))
+}
+
+fn cargo_key(key: &str) -> Problem {
+    Problem::new(Code::ModCargoKey, format!("logic/Cargo.toml: `{key}` is not allowed or has an invalid value"))
+        .at("logic/Cargo.toml", None, None)
+        .fix("Remove it or correct its value. Allowed: package.{name,version,edition,publish,description,license,authors}, lib.crate-type = [\"cdylib\"], dependencies, dev-dependencies, empty workspace")
+}
+pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
+    let table: toml::Table = match toml::from_str(text) {
+        Ok(table) => table,
+        Err(e) => {
+            let mut error = cargo_key("manifest").fix(format!("Correct the TOML: {e}"));
+            if let Some(prefix) = e.span().and_then(|span| text.get(..span.start)) {
+                error.line = (prefix.bytes().filter(|b| *b == b'\n').count() + 1)
+                    .try_into()
+                    .ok();
+                error.column = (prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1)
+                    .try_into()
+                    .ok();
+            }
+            return vec![error];
+        }
+    };
+    let mut errors = Vec::new();
+    for (section, value) in &table {
+        match section.as_str() {
+            "package" => {
+                let Some(package) = value.as_table() else {
+                    errors.push(cargo_key(section));
+                    continue;
+                };
+                for (key, value) in package {
+                    let valid = match key.as_str() {
+                        "name" | "version" => value.is_str(),
+                        "edition" => matches!(value.as_str(), Some("2021" | "2024")),
+                        "publish" | "description" | "license" | "authors" => true,
+                        _ => false,
+                    };
+                    if !valid {
+                        errors.push(cargo_key(&format!("package.{key}")));
+                    }
+                }
+            }
+            "lib" => {
+                let Some(lib) = value.as_table() else {
+                    errors.push(cargo_key(section));
+                    continue;
+                };
+                for key in lib.keys().filter(|k| k.as_str() != "crate-type") {
+                    errors.push(cargo_key(&format!("lib.{key}")));
+                }
+            }
+            "workspace" => {
+                if !value.as_table().is_some_and(|t| t.is_empty()) {
+                    errors.push(cargo_key(section));
+                }
+            }
+            "dependencies" | "dev-dependencies" => {
+                let Some(deps) = value.as_table() else {
+                    errors.push(cargo_key(section));
+                    continue;
+                };
+                for (name, value) in deps {
+                    let requirement = if let Some(dep) = value.as_table() {
+                        for (key, value) in dep {
+                            let valid = match key.as_str() {
+                                "version" => true,
+                                "features" => value
+                                    .as_array()
+                                    .is_some_and(|a| a.iter().all(toml::Value::is_str)),
+                                "default-features" => value.is_bool(),
+                                _ => false,
+                            };
+                            if !valid {
+                                errors.push(cargo_key(&format!("{section}.{name}.{key}")));
+                            }
+                        }
+                        dep.get("version").and_then(toml::Value::as_str)
+                    } else {
+                        value.as_str()
+                    };
+                    let version = allow.version_of(name);
+                    let valid = version.zip(requirement).is_some_and(|(version, req)| {
+                        semver::VersionReq::parse(req).is_ok_and(|req| req.matches(version))
+                    });
+                    if !valid {
+                        let detail = match (version, requirement) {
+                            (None, _) => "is not in the allowlist".to_string(),
+                            (_, None) => "must be a version requirement".to_string(),
+                            (Some(version), Some(req)) => {
+                                format!("requires {req}, the allowlist has {version}")
+                            }
+                        };
+                        errors.push(
+                            Problem::new(
+                                Code::ModDependency,
+                                format!("dependency `{name}` {detail}"),
+                            )
+                            .at("logic/Cargo.toml", None, None)
+                            .fix(format!("Use only: {}", allow.crates())),
+                        );
+                    }
+                }
+            }
+            _ => errors.push(cargo_key(section)),
+        }
+    }
+    let cdylib = table
+        .get("lib")
+        .and_then(|l| l.get("crate-type"))
+        .and_then(toml::Value::as_array);
+    if !cdylib.is_some_and(|a| a.len() == 1 && a[0].as_str() == Some("cdylib")) {
+        errors.push(cargo_key("lib.crate-type"));
+    }
+    if !table.contains_key("workspace") {
+        errors.push(cargo_key("workspace"));
+    }
+    errors
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+    #[test]
+    fn ac3_invalid_toml_names_file_and_line() {
+        let allow = crate::allowlist::Allowlist::embedded();
+        let errors = check_manifest("[package]\nname = @\n", &allow);
+        assert_eq!(errors[0].code.as_str(), "mod.cargo_key");
+        assert_eq!(errors[0].file.as_deref(), Some("logic/Cargo.toml"));
+        assert_eq!(errors[0].line, Some(2));
+        assert_eq!(errors[0].column, Some(8));
+    }
+    #[test]
+    fn ac3_twenty_literal_manifests() {
+        let allow = crate::allowlist::Allowlist::embedded();
+        let cases: [(&str, &[(&str, &str)]); 20] = [
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[lib]
+crate-type = ["cdylib"]
+[workspace]
+"#,
+                &[],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde_json = "1"
+[workspace]
+"#,
+                &[],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde = {version = "=1.0.229", features = ["derive"], default-features = false}
+[workspace]
+"#,
+                &[],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dev-dependencies]
+serde_json = {version = "^1.0.154"}
+[workspace]
+"#,
+                &[],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+build = false
+links = "native"
+[lib]
+crate-type = ["cdylib"]
+[workspace]
+"#,
+                &[
+                    ("mod.cargo_key", "package.build"),
+                    ("mod.cargo_key", "package.links"),
+                ],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[build-dependencies]
+[workspace]
+"#,
+                &[("mod.cargo_key", "build-dependencies")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+proc-macro = true
+[workspace]
+"#,
+                &[("mod.cargo_key", "lib.proc-macro")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[patch.crates-io]
+[replace]
+[workspace]
+"#,
+                &[("mod.cargo_key", "patch"), ("mod.cargo_key", "replace")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[profile.release]
+opt-level = 2
+[features]
+custom = []
+[workspace]
+"#,
+                &[("mod.cargo_key", "features"), ("mod.cargo_key", "profile")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[target.'cfg(unix)'.dependencies]
+[workspace]
+"#,
+                &[("mod.cargo_key", "target")],
+            ),
+            (
+                r#"cargo-features = []
+[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[workspace]
+"#,
+                &[("mod.cargo_key", "cargo-features")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde_json = {version = "1", path = "../evil", git = "https://example.invalid", registry = "elsewhere", package = "evil", optional = true}
+[workspace]
+"#,
+                &[
+                    ("mod.cargo_key", "dependencies.serde_json.git"),
+                    ("mod.cargo_key", "dependencies.serde_json.optional"),
+                    ("mod.cargo_key", "dependencies.serde_json.package"),
+                    ("mod.cargo_key", "dependencies.serde_json.path"),
+                    ("mod.cargo_key", "dependencies.serde_json.registry"),
+                ],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+rand = "0.9"
+[workspace]
+"#,
+                &[("mod.dependency", "rand")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde_json = "2"
+[workspace]
+"#,
+                &[("mod.dependency", "serde_json")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde = {features = ["derive"]}
+[workspace]
+"#,
+                &[("mod.dependency", "serde")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["rlib"]
+[workspace]
+"#,
+                &[("mod.cargo_key", "lib.crate-type")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[workspace]
+members = []
+"#,
+                &[("mod.cargo_key", "workspace")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+edition = "2018"
+[lib]
+crate-type = ["cdylib"]
+[workspace]
+"#,
+                &[("mod.cargo_key", "package.edition")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+serde_json = 1
+[workspace]
+"#,
+                &[("mod.dependency", "serde_json")],
+            ),
+            (
+                r#"[package]
+name = "hello"
+version = "0.1.0"
+[lib]
+crate-type = ["cdylib"]
+"#,
+                &[("mod.cargo_key", "workspace")],
+            ),
+        ];
+        for (manifest, expected) in cases {
+            let errors = check_manifest(manifest, &allow);
+            let actual: Vec<_> = errors.iter().map(|e| e.code.as_str()).collect();
+            let codes: Vec<_> = expected.iter().map(|(code, _)| *code).collect();
+            assert_eq!(actual, codes, "{manifest}");
+            for (error, (_, key)) in errors.iter().zip(expected) {
+                assert!(
+                    error.message.contains(key),
+                    "{} should name {key}",
+                    error.message
+                );
+                assert_eq!(error.file.as_deref(), Some("logic/Cargo.toml"));
+                assert!(error.fix.is_some());
+            }
+        }
+    }
 }

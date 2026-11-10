@@ -81,6 +81,8 @@ required-features = ["fake-host"]
 ```
 
 Version notes:
+- S2 adds `toml` and `semver` to the S1 manifest. Direct `wasmtime`
+  dependencies join when dev runs unit tests as Wasm.
 - `wasmtime` and `wasmtime-wasi` are the versions of `watane-host` (48,
   the long-term-support line). The APIs used in section 7
   (`component::Linker::define_unknown_imports_as_traps`,
@@ -696,13 +698,16 @@ All cargo runs use one command builder, `builder::cargo(...)`:
 ```text
 --manifest-path <cache>/build/<slug>/logic/Cargo.toml
 --offline
---target-dir <cache>/target
+--config build.target-dir="<cache>/target"
 --config source.crates-io.replace-with="watane-allowlist"
 --config source.watane-allowlist.directory="<vendor>"
 --config target.wasm32-wasip2.rustflags=["--remap-path-prefix=<cache>=/watane-dev","--remap-path-prefix=<vendor>=/vendor","--remap-path-prefix=<sysroot>=/toolchain"]
 --config profile.release.debug=false
 --config profile.release.codegen-units=1
 ```
+
+`build.target-dir` is a config value shared by both runs;
+`generate-lockfile` does not accept a `--target-dir` argument.
 
 The rustflags are under `[target.wasm32-wasip2]`, because target
 rustflags elsewhere would hide `build.rustflags` (colos commit 33d5fb6).
@@ -718,7 +723,8 @@ The runs, in order:
    `env.allowlist`.
 3. If the new lock differs from `<mod>/logic/Cargo.lock`, dev writes it
    there; `lock_updated` is true.
-4. dev deletes `<cache>/target/wasm32-wasip2/release/deps/<crate>-*.d`
+4. Before the reads check (deferred in S2), dev deletes
+   `<cache>/target/wasm32-wasip2/release/deps/<crate>-*.d`
    (`<crate>`: the package name with `-` replaced by `_`).
 5. `cargo build <common> --locked --release --target wasm32-wasip2 --message-format json`.
    dev reads standard output line by line as JSON:
@@ -1026,9 +1032,9 @@ impl Env { pub fn from_process() -> Result<Env, Problem>; }
 pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem>;
 pub fn render(text: &str, slug: &watane_pkg::Slug) -> String;
 
-// S1 has no allowlist or builder stages: its check entry point is
+// S2 embeds its allowlist in check; the check entry point remains
 // check(dir: &Path) -> Result<(watane_pkg::Mod, CheckReport), Vec<Problem>>.
-// The full-pipeline signature below joins with those later stages.
+// The full-pipeline Findings signature below joins with warnings later.
 // check.rs
 pub struct Findings { pub errors: Vec<Problem>, pub warnings: Vec<Problem> }
 #[derive(Serialize)] pub struct ProviderReport { pub slug: String, pub publisher: Option<String>, pub path: Option<String> }
@@ -1185,7 +1191,7 @@ independent tool. Integration tests run the binary
 | template | `render` leaves no `{{`; `{{crate}}` of `a-b-c` is `a_b_c` | literal strings |
 | check | `check_manifest` on 20 literal manifests (each refused key of 5.2, each allowed form) | a table of (manifest, expected codes) in the test |
 | allowlist | parse the embedded lock; `verify_vendor` on a temp vendor with one wrong checksum, one missing and one extra folder | literal crate names; expected `env.allowlist` |
-| builder | `outside_reads` on literal `.d` texts, also with `\ `; quoting of a path with `"` and a space | literal paths |
+| builder | S2: cargo configuration quoting of a path with `"` and a space, environment whitelist; later: `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
 | unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
 | contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0` | literal expected failures |
 | json_eq | key order, numbers, nesting | literal pairs |
@@ -1203,6 +1209,12 @@ independent tool. Integration tests run the binary
 | `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone |
 | `install_publish.rs` | DEV-S-25 to 31 | S-25: `deps.json` and the files of `wit/deps/a/` read by the test; the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
 | `journey_j1.rs` | J1 on the real programs | `new` → break a contract → `test` fails with `test.contract` → restore → `test` ok → `serve` → page and MCP read → change `ui/` → `serve` → new bytes, same count |
+
+S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
+component with `watane_pkg::Mod::check_component()`. S-4, S-10 and S-12
+join with their later slices. The network-denied build test may be ignored
+with the OS refusal reason when nested sandboxing is unavailable; it runs
+on a validator with permission to create the sandbox.
 
 Tests that need the real `watane` (S-21, 22, 23, J1) are
 `#[ignore = "needs WATANE_BIN"]` and read `WATANE_BIN`. With the feature

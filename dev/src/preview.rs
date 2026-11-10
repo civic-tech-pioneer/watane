@@ -138,6 +138,19 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
 }
 pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
+    if dir.join("logic").is_dir() {
+        let toolchain = crate::toolchain::find(env).map_err(|e| vec![e])?;
+        let allow = crate::allowlist::Allowlist::embedded();
+        let vendor = crate::allowlist::vendor_dir().map_err(|e| vec![e])?;
+        let ctx = crate::builder::BuildCtx {
+            env,
+            toolchain: &toolchain,
+            vendor: &vendor,
+            allow: &allow,
+        };
+        crate::builder::build(dir, m.slug(), &ctx)?;
+    }
+
     let work = || -> Result<Value, Problem> {
         let folder = folder(dir, env, m.slug().as_str());
         let home = folder.join("home");

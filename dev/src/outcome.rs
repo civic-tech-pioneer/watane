@@ -14,6 +14,15 @@ pub enum Code {
     HostDeclined,
     HostRefused,
     HostNoAnswer,
+    EnvToolchain,
+    EnvNoWasmTarget,
+    EnvAllowlist,
+    ModCargoKey,
+    ModDependency,
+    ModLogicFile,
+    BuildResolve,
+    BuildCompile,
+    BuildImports,
     Internal,
 }
 impl Code {
@@ -30,6 +39,15 @@ impl Code {
             Self::HostDeclined => "host.declined",
             Self::HostRefused => "host.refused",
             Self::HostNoAnswer => "host.no_answer",
+            Self::EnvToolchain => "env.toolchain",
+            Self::EnvNoWasmTarget => "env.no_wasm_target",
+            Self::EnvAllowlist => "env.allowlist",
+            Self::ModCargoKey => "mod.cargo_key",
+            Self::ModDependency => "mod.dependency",
+            Self::ModLogicFile => "mod.logic_file",
+            Self::BuildResolve => "build.resolve",
+            Self::BuildCompile => "build.compile",
+            Self::BuildImports => "build.imports",
             Self::Internal => "internal",
         }
     }
@@ -38,8 +56,19 @@ impl Code {
             Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => {
                 Class::Usage
             }
-            Self::EnvWataneMissing | Self::EnvPreviewStart => Class::Env,
-            Self::ModInvalid | Self::ModSymlink => Class::Mod,
+            Self::EnvWataneMissing
+            | Self::EnvPreviewStart
+            | Self::EnvToolchain
+            | Self::EnvNoWasmTarget
+            | Self::EnvAllowlist => Class::Env,
+            Self::ModInvalid
+            | Self::ModSymlink
+            | Self::ModCargoKey
+            | Self::ModDependency
+            | Self::ModLogicFile
+            | Self::BuildResolve
+            | Self::BuildCompile
+            | Self::BuildImports => Class::Mod,
             Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => Class::Refused,
             Self::Internal => Class::Internal,
         }
