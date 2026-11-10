@@ -11,13 +11,28 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 
 - [x] **S1 Hello page.** Delivered 2026-11-10 (main `bacecdc`). Sol runs: pkg 1, host 1, dev 2.
 - [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
-- [ ] **S3 An edit keeps the data.** The agent changes `lib.rs` and the page; `serve` again
-  installs the new revision in the running preview; the count is still there (DEV-S-22); a page
-  sees the `counted` event. Parts: host (update keeps state by identity, page event bus,
-  `/events`), dev (reuse). Re-sketch after S2.
+- [~] **S3 An edit keeps the data.** (branch `slice/s3`) The agent changes the counter's logic and
+  page while Alice has it open; `serve` again shows the new revision with the same count, and the
+  page updates by itself when the count changes.
+  - Outcomes (user-sim, on the real programs):
+    1. After two `api.add`, change `lib.rs` to add 10 and edit `ui/index.html`; `serve --json` gives
+       `reused: true`, the page returns the new bytes, `api.get` returns 2, the next `api.add` 12.
+    2. Two pages open on the mod (headless browser): an Add in one shows the new count in both,
+       through the `counted` event; the template's `app.js` uses `watane.on`.
+    3. An `/events` stream on the page origin delivers each `counted` event with its count, in
+       order.
+    4. An edit that breaks the build: `serve --json` exits 1 with `build.compile`, and the running
+       preview still serves the old revision and its count.
+  - Touches: host (update of an installed mod keeps state by identity, the page event bus and
+    `GET /events`, `watane.on` in `watane.js`, outlet imports emit instead of no-op), dev (`serve`
+    reuse with a logic part, template `app.js`).
+  - Interfaces it creates: the `/events` wire format and `watane.on` (host 8.x, 9).
+  - Leaves out: delivery to other mods and subscriptions (step 2), toolsets, home mode.
 - [ ] **S4 The agent fixes a failing test.** `watane-dev test` runs unit and contract tests; a broken
   export gives a result the agent can act on (`errors`, `next`), and the fix makes it pass.
   Parts: host (`Harness`), dev (unit, contract, fakes).
+  Also from S2's user-sim: `mod.dependency` and `mod.cargo_key` give `line: null` for
+  `logic/Cargo.toml`; a `/call` without `Origin` gets a 403 that does not name the header.
 - [ ] **S5 The agent reads through a toolset.** The preview prints a toolset token; an MCP client lists
   the mod's exports and calls one. Parts: host (toolsets, MCP).
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
