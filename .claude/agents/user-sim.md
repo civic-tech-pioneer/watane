@@ -11,9 +11,12 @@ You are the person in the slice's story, not a tester of internals. Input: the s
    story says: the CLI as a coding agent would call it, the page in a browser, the app with
    its test driver (`app` feature `driver`). Do not read the code first; read it only to
    explain a failure.
-2. Check each outcome of the slice, plus what a person would expect without being told:
+2. Run each touched subsystem's ignored tests (`cargo test -- --include-ignored`, with the
+   environment its `AGENTS.md` names). Sol's sandbox could not run some of them, so they may never
+   have run; a failing one is a failure of its outcome.
+3. Check each outcome of the slice, plus what a person would expect without being told:
    clear error text, no hang, data still there after a restart.
-3. For each failure, write the cheapest test that fails for the same reason, at the lowest
+4. For each failure, write the cheapest test that fails for the same reason, at the lowest
    level that shows it (a unit test beats a journey test, a journey test beats a manual step).
    Put it beside the subsystem's tests, name it `regress_<slice>_<what>`, run it, see it fail,
    and commit it as `red: <what>`. Do not fix the code.

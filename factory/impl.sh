@@ -4,7 +4,8 @@
 #   factory/impl.sh <task> resume     same Codex session; the feedback is read from stdin
 # The brief's header sets `Subsystem: <folder>` and `Effort: <low|medium|high|xhigh>`.
 # Run it from the slice's worktree. Output goes to factory/runs/ of the main checkout, so it survives
-# the worktree: <task>.{jsonl,last.md,session}, and one line per run in ledger.jsonl.
+# the worktree: <task>.{jsonl,last.md,session}, and one line per run in ledger.jsonl. A new run of a
+# task that ran before first moves the old files to <task>.<n>.*, so no log is lost.
 set -u
 F=$(cd "$(dirname "$0")" && pwd); W=$(dirname "$F")
 G=$(git -C "$W" rev-parse --path-format=absolute --git-common-dir); GD=$(git -C "$W" rev-parse --absolute-git-dir)
@@ -22,6 +23,11 @@ OPTS=(-m gpt-6.1-sol -c "model_reasoning_effort=\"${EFFORT:-medium}\"" -c 'sandb
       # Given as -c, not --add-dir, because `codex exec resume` takes only -c.
       -c "sandbox_workspace_write.writable_roots=[\"$W\",\"$G\",\"$GD\",\"$R\",\"${CARGO_HOME:-$HOME/.cargo}\"]")
 cd "$W/$SUB" || exit 2  # resume runs in the current folder
+if [ "$MODE" = new ] && [ -e "$R/$ID.jsonl" ]; then
+  N=1; while [ -e "$R/$ID.$N.jsonl" ]; do N=$((N+1)); done
+  for X in jsonl last.md session; do [ -e "$R/$ID.$X" ] && mv "$R/$ID.$X" "$R/$ID.$N.$X"; done
+fi
+L0=$(cat "$R/$ID.jsonl" 2>/dev/null | wc -l)  # resume appends: this run's lines start after L0
 T0=$(date +%s)
 if [ "$MODE" = resume ]; then
   SID=$(cat "$R/$ID.session") || exit 2
@@ -31,7 +37,9 @@ else
     codex exec "${OPTS[@]}" - > "$R/$ID.jsonl" 2>&1; RC=$?
   grep -m1 -o '"thread_id":"[^"]*"' "$R/$ID.jsonl" | cut -d'"' -f4 > "$R/$ID.session"
 fi
-printf '{"task":"%s","mode":"%s","effort":"%s","start":%s,"end":%s,"exit":%s}\n' \
-  "$ID" "$MODE" "${EFFORT:-medium}" "$T0" "$(date +%s)" "$RC" >> "$R/ledger.jsonl"
+# Codex's token usage of this run, from its last turn.completed; null when the run never finished a turn.
+U=$(tail -n +$((L0+1)) "$R/$ID.jsonl" | grep '"turn.completed"' | tail -1 | grep -o '"usage":{[^}]*}')
+printf '{"task":"%s","mode":"%s","effort":"%s","start":%s,"end":%s,"exit":%s,%s}\n' \
+  "$ID" "$MODE" "${EFFORT:-medium}" "$T0" "$(date +%s)" "$RC" "${U:-\"usage\":null}" >> "$R/ledger.jsonl"
 echo "$ID $MODE exit=$RC"; tail -5 "$R/$ID.last.md" 2>/dev/null
 exit $RC

@@ -34,8 +34,12 @@ Effort for Sol 6.1:
 
 ## 2. Build and validate one task
 
-1. `factory/impl.sh <task>` (in the background). Tasks with no dependency on each other may run
-   at the same time.
+1. `factory/impl.sh <task>` (in the background). At most one agent (Sol or a validator) works in
+   a worktree at a time. To run tasks with no dependency on each other at the same time, give each
+   extra task its own worktree: `git worktree add -b slice/<id>-<n> ../<id>-<n>`, then run
+   `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
+   fast-forward `slice/<id>` to it, and remove the worktree and branch (each worktree has its own
+   `target/`).
 2. Read its last message. `BLOCKED` or `QUESTIONS` go to section 4 first.
 3. Run the `validator` agent with the task id, the round and the commit range.
    - `PASS`: the task is done.

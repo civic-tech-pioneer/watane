@@ -12,11 +12,19 @@ Work in the task's subsystem folder.
 1. **Acceptance.** For each acceptance criterion, find the test that proves it. Read the test:
    does it fail if the behaviour is missing or wrong (no tautology, no mock of the thing under
    test, an oracle that does not call the code under test)? Run the tests, clippy and fmt from
-   the subsystem's `AGENTS.md`. Check that no earlier test was weakened (`git diff`).
+   the subsystem's `AGENTS.md`, and the ignored tests too (`-- --include-ignored`, with the
+   environment `AGENTS.md` names, such as `WATANE_BIN`): Sol's sandbox cannot run some of them
+   (`sandbox-exec`, network, a real sibling program), so you may be the first to run them. A test
+   you cannot run either is `not run` in your table, never `pass`. Check that no earlier test was
+   weakened (`git diff`).
 2. **Fit.** Read `../spec/TECHNICAL.md` sections 2 and 6 and the subsystem's `TECHNICAL.md`.
    Flag: a dependency outside the "Depends on" cell; a type or rule redefined that another
    subsystem owns; a weaker security boundary; code in the wrong module; a public API that
    differs from the spec without a spec change.
+   **Unplanned files.** Compare `git diff --stat` with the brief's `## Files`; the implementer
+   should list the extra ones under `UNLISTED FILES`. For each, be strict: was the change needed,
+   or did a listed file, the sibling that owns the fact, or a smaller change do it better? Return
+   an edit that has a better alternative; name the accepted ones under `UNLISTED:`.
 3. **Simplicity.** Flag: an abstraction with one user, a seam or option "for later", a
    dependency that a few lines replace, dead code, code no criterion needs.
 
@@ -32,5 +40,6 @@ Reply with:
 - the first line: `PASS <commit>`, `RETURN <commit>` or `ESCALATE <commit>`;
 - a table: criterion, test, result;
 - `FIXED:` what you changed, one line each;
+- `UNLISTED:` each file outside the brief that you accepted, and why;
 - `RETURN:` numbered findings for the implementer, each with file:line and the expected result;
 - `ESCALATE:` the question, the options, and what each costs to undo.
