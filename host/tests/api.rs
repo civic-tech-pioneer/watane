@@ -148,11 +148,16 @@ async fn ac3_install_page_folder_and_reject_invalid_inputs() {
     assert_eq!(response.status(), 422);
     let error = response.json::<Value>().await.unwrap();
     assert_eq!(error["error"]["code"], "invalid_mod");
+    let pkg_text = watane_pkg::Mod::read(logic.path())
+        .unwrap()
+        .check_component()
+        .unwrap_err()
+        .to_string();
     assert!(
         error["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("logic parts arrive in a later step")
+            .contains(&pkg_text)
     );
     assert_eq!(
         fs::read_dir(home.path().join("staging")).unwrap().count(),
