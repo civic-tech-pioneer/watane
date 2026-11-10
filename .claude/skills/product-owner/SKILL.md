@@ -18,6 +18,7 @@ done when its journey (J1 to J5) passes on the real programs.
 2. Hand out a sketched slice when no slice in flight touches the same subsystems (section 3).
    Disjoint slices may run at the same time; otherwise wait for the delivery.
 3. While slices are in flight: answer their questions (section 4) and sketch the next one.
+   A foreman's turn ending is not news: pass nothing to the human until it delivers or blocks.
 4. On a delivery: accept it (section 5), then go to 1.
 
 ## 2. Sketch a slice

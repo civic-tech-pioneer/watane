@@ -60,11 +60,15 @@ Decide yourself what stays inside this slice and is cheap to undo: a choice insi
 subsystem, a spec that is unclear but whose intent is plain. Edit the spec that owns the fact,
 in place, and note the decision for your report.
 
-Send the rest to the product owner (the session that started you): a public interface between
-subsystems, a format on disk or on the wire, a security boundary, anything outside the sketch,
-or anything you cannot answer with confidence. Give one question, its options, your
-recommendation and the cost to undo each. While you wait, build what does not depend on it, or
-the option that keeps the others open. If no product owner session exists, ask the human.
+Contact the product owner (the session that started you) only for what stops your progress:
+a question about a public interface between subsystems, a format on disk or on the wire, a
+security boundary, or anything outside the sketch, that no option you can build keeps open.
+Give one question, its options, your recommendation and the cost to undo each. Every other such
+question you settle yourself: build the option that keeps the others open, and list it under
+decisions in your report. If no product owner session exists, ask the human.
+
+Send no progress updates. While a background run works, end your turn with no message: the
+product owner sees the turn end and needs nothing from it.
 
 ## 5. Deliver
 
