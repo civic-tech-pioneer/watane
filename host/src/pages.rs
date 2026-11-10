@@ -74,9 +74,14 @@ async fn call_response(
     }
     let origin = format!("http://{local}.localhost:{port}");
     let mut origins = request.headers().get_all(header::ORIGIN).iter();
-    if origins.next().and_then(|v| v.to_str().ok()) != Some(origin.as_str())
-        || origins.next().is_some()
-    {
+    let Some(supplied_origin) = origins.next() else {
+        return api::error(
+            403,
+            "forbidden",
+            format!("the Origin header is missing; it must be {origin}"),
+        );
+    };
+    if supplied_origin.to_str().ok() != Some(origin.as_str()) || origins.next().is_some() {
         return api::error(403, "forbidden", "Origin must match the mod origin");
     }
     if !request

@@ -39,9 +39,9 @@ redb = "4.5"
 blake3 = "1.8"
 base64 = "0.22"
 getrandom = "0.3"
-tempfile = "3"                               # Harness homes (section 2.6)
 
 [dev-dependencies]
+tempfile = "3"                               # test homes; Harness uses getrandom
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 tower = { version = "0.5", features = ["util"] }
 ```
@@ -313,26 +313,35 @@ pub struct TokenInfo { pub id: TokenId, pub toolset: ToolsetName, pub handle: Ha
 /// Interface without version ("mods:list/items") -> function -> JSON result.
 pub type Fakes = BTreeMap<String, BTreeMap<String, Value>>;
 
-pub struct Harness { /* private: Arc<Host> on a temporary preview home, LocalName */ }
+pub struct Harness { /* private: Arc<Host> on a temporary preview home, LocalName, Fakes */ }
 impl Harness {
     /// Installs the built folder alone in a new temporary preview home.
-    /// Imports of other packages go to `fakes`; nothing else is linked.
+    /// S4 refuses mods that need calls or subscriptions to other mods.
     pub fn open(built_mod: &Path, fakes: Fakes) -> Result<Harness, HostError>;
-    pub fn functions(&self) -> Vec<FunctionInfo>;
-    /// A top-level call as `Caller::Page`.
+    /// A top-level call as `Caller::Page`, on a new 16 MiB stack thread.
     pub fn call(&self, function: &str, args: Value) -> Result<Outcome, CallError>;
-    /// Calls a subscription export as the host does for an event; caller "mod:fake".
-    pub fn deliver(&self, interface: &str, function: &str, args: Value) -> Result<Outcome, CallError>;
 }
+#[derive(Debug, Clone, PartialEq)]
 pub struct Outcome { pub value: Value, pub events: Vec<EventRecord> }
+#[derive(Debug, Clone, PartialEq)]
 pub struct EventRecord { pub interface: InterfaceName, pub function: String, pub args: Value /* object by name */ }
 ```
 
-Each `Harness::open` starts with empty state. A fake returns its JSON
-converted to the import's result type; a function with no fake fails with
-`trap`, "no fake for <interface>.<function>". Events are recorded, not
-delivered. The network import denies every request. `interface` in
-`deliver` is the short name of the subscription export.
+`Harness` is `Send`; `call` can run on any thread. Each `open` creates a
+directory with a random name under `std::env::temp_dir()` using `getrandom`,
+then uses the preview `Host::open` and `install_folders` path. State starts
+empty, and simultaneous harnesses never share a home. Drop closes the host
+before removing the directory. An open failure also removes the directory.
+The doc-hidden `home()` accessor exposes its path for cleanup tests.
+No server listens. Events are recorded in emission order instead of published
+to the page bus. A failed call returns only its `CallError`, commits no state,
+and records no events.
+
+S4 keeps `fakes` without linking imports to it. `deliver` waits for
+subscriptions and links; `functions` and `FunctionInfo` join with S5 toolsets.
+When links arrive, a fake returns its JSON converted to the import's result
+type; a function with no fake fails with `trap`, "no fake for
+<interface>.<function>". The network import will deny every request.
 
 ## 3. Home
 
@@ -656,7 +665,8 @@ Top-level `call(caller, local, "<interface>.<function>", args)`:
    depth 0, hop 0, empty effects.
 5. Invoke (below). Convert the result to JSON.
 6. Deliver the committed events (section 9), then send the `changed`
-   messages. Return the result of step 5.
+   messages. Return the result of step 5. The crate-private harness variant
+   returns the result and outbox as `Outcome`, without page bus publication.
 
 Invoke(mod, interface, function, values, ctx), used for top-level and
 nested calls:
@@ -821,6 +831,10 @@ package of up to 64 MiB). A mod origin never reaches them.
 | body at most 1 MiB | 413 `bad_request` |
 | body is `{"fn": "<interface>.<function>", "args": <object, array or null>}`, no other field | 400 `bad_request` |
 
+A missing `Origin` gets the message "the Origin header is missing; it must
+be http://<local>.localhost:<port>". A wrong, malformed, empty or repeated
+`Origin` keeps "Origin must match the mod origin". Both use 403 `forbidden`.
+
 The call runs as `Caller::Page` on a 16 MiB thread. Success: 200
 `{"value": <json>}`. Failure: the status of section 2.2 and
 `{"error": <CallError JSON>}`.
@@ -933,6 +947,10 @@ function, values, hop)` to the outbox of the store; `hop` is the chain hop.
 The outbox joins the chain effects only when that invoke succeeds (6.6). A
 nested call that succeeded keeps its events even if its caller fails, as
 it keeps its writes.
+
+In a harness, a successful call returns the outbox as `EventRecord`s with
+pkg's versioned `InterfaceName` and named JSON arguments. It sends no bus
+messages. A failed call drops its outbox.
 
 ### 9.2 Delivery
 
@@ -1156,6 +1174,7 @@ run on `RawMod` (section 15).
 | `src/home.rs` unit | local name grammar and derivation | a literal table: `notes` ok; `a`, 24 bytes ok; 25 bytes, `-a`, `a-`, `a--b`, `A`, `a_b`, `2x`, `é` refused; slug `reading-list` → `reading-list`; a 40-byte slug → its first 21 bytes; taken `notes` → `notes-2` |
 | `src/runtime/json.rs` unit | each row of 6.9, both ways, and the error paths | literal JSON and literal `Val` trees |
 | `tests/json.rs` | `echo` round trips through `Host::call` | literal JSON in and out; `opt-opt` is `no_function` |
+| `tests/harness.rs` | S4 contract calls, event records, independent homes, rollback, named and positional args, cleanup, invalid folders | literal values and events; directory absence after drop |
 | `tests/runtime.rs` | FUNCTIONAL S4 to S9; depth with `Limits { depth: 1 }` over `recs` → `list` → ok and depth 0 → `limit`/`depth`; state isolation (`counter` and `list` with the same key) | literal values; after `drop(host)` the test opens `state/state.redb` itself and reads `s/<id>` with `id` computed from the literal identity string |
 | `tests/events.rs` | S24, S26; order: `add("A")`, `add("B")`, `add("C")` → `received` = `["A","B","C"]`; a failed call emits nothing | literal lists and counts |
 | `tests/pages.rs` | S11, S12, S13; a page answers alike over `127.0.0.1` and `[::1]`; path refusals (`/../x`, `/a//b`, `/.env`, `/%2e%2e/x`, `/a\b`); unknown `Host` → 421; `/watane.js` bytes equal `src/watane.js` read from disk; a 404 has `text/plain` | status codes, literal header strings, file bytes |
@@ -1259,7 +1278,18 @@ local name, and send `reload` after the catalog commit and registry swap.
 The SSE adapter uses `tokio-stream` 0.1 with `sync`: Axum requires a Stream
 and does not re-export the trait; the wrappers supply it and channel polling.
 Subscribers, links, hop and delivery counting, enable/disable/remove,
-MCP, toolsets, Harness and participant homes wait for their catalog stages.
+MCP, toolsets and participant homes wait for their catalog stages.
+
+### S4 cut
+
+Stage 5's Harness part uses the existing preview open and folder install
+path, runs page calls without a server, and returns their values and emitted
+events. `Harness::deliver` waits for subscriptions, which install refuses
+until links exist. `Harness::functions` and `FunctionInfo` join with toolsets
+in S5. Fakes stay in the harness but are not linked yet, with the comment
+`// ponytail: fakes link with calls (step 2)`. Install still refuses a mod
+that calls or subscribes to another mod. Harness homes use `getrandom`;
+`tempfile` stays a dev-dependency. Missing Origin errors name the absent header.
 
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
@@ -1283,7 +1313,7 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` | Existing items, nothing added: toolset UI = `mods()` + `functions(local)` (no subscription export), entries `<local>:<interface>.<function>`; give back a withheld grant = app's consent view, then `grant` (4.4); "replaces" = `Change::Update`; "derived from" = `InstalledMod.origin` |
 | `app` | the page origin `http://<local>.localhost:<port>/` to load as a top-level view, on `127.0.0.1` and `::1` (8.1); CSP `frame-ancestors 'none'`; close a mod's view on disable or remove; `<home>/app/` reserved (3.1); `extra_api` routes set their own body limit (8.1) |
 | `dist` (through `app`) | `Source::Release { package: Package, entry: Entry }` for `plan`, as `Fetched` gives them; `MissingProvider.release` (a `ReleaseRef`) to fetch; `InstalledMod.release` (a `ReleaseRef`) to compare with updates and withdrawals; `<home>/dist/` and `<home>/log/` reserved (3.1) |
-| `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord`, `FunctionInfo`; `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). Every item of dev's section 14 exists; nothing added. |
+| `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S4 cut lists deferred Harness items. |
 
 ## 17. Needs from other subsystems
 
@@ -1369,3 +1399,5 @@ Each answer below is used in this file.
 - **Q17 (host)** Disable Wasm threads in the S2 engine. Wasmtime 48 does not invoke `ResourceLimiter` for shared memories, so accepting them would bypass the memory bound of section 14.
 
 - **Q18 (host)** S3 uses a call-local JSON outbox and a shared page bus; subscribers and catalog lifecycle operations wait for links. State commit returns whether stored bytes changed, and bus publication preserves commit order.
+
+- **Q19 (host, dev)** S4 fixes the Harness API to open/call with recorded events and temporary-home cleanup. Fakes stay unlinked, deliver waits for links, and functions joins S5; section 2.6 and the S4 cut define the available API. Missing `/call` Origin errors name the missing header without changing the origin check.

@@ -121,12 +121,12 @@ impl Compiled {
     pub fn call(
         &self,
         host: &crate::Host,
-        local: &crate::LocalName,
+        page: Option<&crate::LocalName>,
         identity: &str,
         caller: &crate::Caller,
         function: &str,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value, CallError> {
+    ) -> Result<crate::Outcome, CallError> {
         let function = self.functions.get(function).ok_or_else(|| {
             CallError::new(
                 CallCode::NoFunction,
@@ -194,11 +194,24 @@ impl Compiled {
         })();
         let value = result.map_err(|e| limits::classify(e, &stderr))?;
         let ctx = store.into_data();
+        let events = ctx
+            .outbox
+            .into_iter()
+            .map(|event| {
+                Ok(crate::EventRecord {
+                    interface: event.interface.parse().map_err(CallError::internal)?,
+                    function: event.function,
+                    args: event.args,
+                })
+            })
+            .collect::<Result<Vec<_>, CallError>>()?;
         let changed = ctx.state.commit()?;
-        let publication = host.bus.publication();
-        drop(guard);
-        crate::bus::deliver(&publication, local, ctx.outbox, changed);
-        Ok(value)
+        if let Some(local) = page {
+            let publication = host.bus.publication();
+            drop(guard);
+            crate::bus::deliver(&publication, local, &events, changed);
+        }
+        Ok(crate::Outcome { value, events })
     }
 }
 

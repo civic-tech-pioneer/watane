@@ -1,0 +1,150 @@
+use serde_json::json;
+use std::path::{Path, PathBuf};
+use watane_host::{EventRecord, Fakes, Harness, Outcome};
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mods")
+        .join(name)
+}
+
+#[test]
+fn ac1_counter_returns_values_and_exact_events_for_each_call() {
+    let harness = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    assert_eq!(
+        harness.call("api.get", json!({})).unwrap(),
+        Outcome {
+            value: json!(0),
+            events: vec![]
+        }
+    );
+    assert_eq!(
+        harness.call("api.add", json!({})).unwrap(),
+        Outcome {
+            value: json!(1),
+            events: vec![EventRecord {
+                interface: "mods:counter/changes@0.1.0".parse().unwrap(),
+                function: "counted".into(),
+                args: json!({"count":1}),
+            }],
+        }
+    );
+    assert_eq!(
+        harness.call("api.add", json!({})).unwrap(),
+        Outcome {
+            value: json!(2),
+            events: vec![EventRecord {
+                interface: "mods:counter/changes@0.1.0".parse().unwrap(),
+                function: "counted".into(),
+                args: json!({"count":2}),
+            }],
+        }
+    );
+    assert_eq!(
+        harness.call("api.who", json!({})).unwrap(),
+        Outcome {
+            value: json!("page"),
+            events: vec![],
+        }
+    );
+}
+
+#[test]
+fn ac2_fresh_and_simultaneous_harnesses_have_independent_state() {
+    let first = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    assert_eq!(first.call("api.add", json!({})).unwrap().value, json!(1));
+    assert_eq!(first.call("api.add", json!({})).unwrap().value, json!(2));
+    let second = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    assert_eq!(second.call("api.get", json!({})).unwrap().value, json!(0));
+    assert_eq!(second.call("api.add", json!({})).unwrap().value, json!(1));
+    assert_eq!(first.call("api.get", json!({})).unwrap().value, json!(2));
+    drop(first);
+    let third = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    assert_eq!(third.call("api.get", json!({})).unwrap().value, json!(0));
+    assert_eq!(second.call("api.get", json!({})).unwrap().value, json!(1));
+}
+
+#[test]
+fn ac3_failed_call_rolls_back_state_and_events_and_unknown_function_fails() {
+    let harness = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    assert_eq!(harness.call("api.add", json!({})).unwrap().value, json!(1));
+    let error = harness.call("api.add-then-fail", json!({})).unwrap_err();
+    assert_eq!(serde_json::to_value(error).unwrap()["code"], "trap");
+    assert_eq!(
+        harness.call("api.get", json!({})).unwrap(),
+        Outcome {
+            value: json!(1),
+            events: vec![],
+        }
+    );
+    assert_eq!(
+        harness.call("api.add", json!({})).unwrap(),
+        Outcome {
+            value: json!(2),
+            events: vec![EventRecord {
+                interface: "mods:counter/changes@0.1.0".parse().unwrap(),
+                function: "counted".into(),
+                args: json!({"count":2}),
+            }],
+        }
+    );
+    let error = harness.call("api.unknown", json!({})).unwrap_err();
+    assert_eq!(serde_json::to_value(error).unwrap()["code"], "no_function");
+}
+
+#[test]
+fn ac4_echo_accepts_named_and_positional_arguments() {
+    let harness = Harness::open(&fixture("echo"), Fakes::new()).unwrap();
+    for args in [json!({"x":"hello"}), json!(["hello"])] {
+        assert_eq!(
+            harness.call("api.id-string", args).unwrap(),
+            Outcome {
+                value: json!("hello"),
+                events: vec![],
+            }
+        );
+    }
+    // Two parameters also prove positional order.
+    harness.call("api.put", json!(["key", [65, 66]])).unwrap();
+    assert_eq!(
+        harness
+            .call("api.read", json!({"key":"key"}))
+            .unwrap()
+            .value,
+        json!([65, 66])
+    );
+}
+
+#[test]
+fn ac5_drop_removes_the_temporary_home_after_use_on_another_thread() {
+    let harness = Harness::open(&fixture("counter"), Fakes::new()).unwrap();
+    let home = harness.home().to_path_buf();
+    assert!(home.is_dir());
+    assert!(!home.join("run.json").exists());
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(move || {
+            assert_eq!(harness.call("api.add", json!({})).unwrap().value, json!(1));
+            assert!(home.join("state/state.redb").is_file());
+            assert!(!home.join("run.json").exists());
+            drop(harness);
+            assert!(!home.exists());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn ac6_invalid_mod_returns_a_host_error_naming_the_problem() {
+    let folder = tempfile::tempdir().unwrap();
+    let error = Harness::open(folder.path(), Fakes::new()).unwrap_err();
+    assert_eq!(error.code(), "invalid_mod");
+    let message = error.to_string();
+    assert!(message.contains("mod.toml"), "{message}");
+    assert!(message.contains("wit/world.wit"), "{message}");
+    assert!(
+        message.contains(&folder.path().display().to_string()),
+        "{message}"
+    );
+}

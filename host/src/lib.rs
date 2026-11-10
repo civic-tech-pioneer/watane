@@ -5,6 +5,7 @@ mod api;
 mod bus;
 mod catalog;
 mod error;
+mod harness;
 mod home;
 mod pages;
 mod runtime;
@@ -14,6 +15,7 @@ pub use runtime::limits::Limits;
 
 pub use catalog::{GrantState, InstalledMod, LinkKind, LinkView};
 pub use error::{CallCode, CallError, HostError, Limit};
+pub use harness::{EventRecord, Fakes, Harness, Outcome};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
 pub use server::Served;
@@ -74,6 +76,18 @@ impl Host {
         function: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, CallError> {
+        self.call_outcome(caller, local, function, args, true)
+            .map(|outcome| outcome.value)
+    }
+
+    pub(crate) fn call_outcome(
+        &self,
+        caller: &Caller,
+        local: &LocalName,
+        function: &str,
+        args: serde_json::Value,
+        publish: bool,
+    ) -> Result<Outcome, CallError> {
         let (compiled, identity) = {
             let catalog = self
                 .catalog
@@ -101,7 +115,14 @@ impl Host {
             })?;
             (compiled, m.identity.clone())
         };
-        compiled.call(self, local, &identity, caller, function, args)
+        compiled.call(
+            self,
+            publish.then_some(local),
+            &identity,
+            caller,
+            function,
+            args,
+        )
     }
     pub async fn call_async(
         self: &Arc<Self>,

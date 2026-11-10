@@ -24,6 +24,10 @@ path = "tests/runtime.rs"
 name = "json"
 path = "tests/json.rs"
 
+[[test]]
+name = "harness"
+path = "tests/harness.rs"
+
 [dependencies]
 watane-pkg = { path = "../pkg" }
 axum = "0.8.9"

@@ -54,3 +54,7 @@ word for word. Follow their intent, and do not ask whether to.
   TECHNICAL.md): adapt the call site, and record the difference in section 17.
 - `log` missing: stage 8 waits. Do not add the `watane-log` dependency before it.
 - A spec gap: propose an answer, use it, and add it to TECHNICAL.md section 18.
+
+## Spec gaps
+
+- Q19 (host, dev): S4 provides Harness open/call and recorded events; defer linked fakes and deliver to links and functions to S5, keep tempfile for tests, and distinguish a missing Origin header.

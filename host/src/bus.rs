@@ -66,7 +66,7 @@ impl PageBus {
 pub(crate) fn deliver(
     sender: &broadcast::Sender<Message>,
     local: &LocalName,
-    outbox: Vec<Emission>,
+    outbox: &[crate::EventRecord],
     changed: bool,
 ) {
     for event in outbox {

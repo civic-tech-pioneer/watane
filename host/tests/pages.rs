@@ -3,6 +3,47 @@ use std::io::Write;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'";
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac7_call_distinguishes_missing_origin_from_wrong_origin() {
+    let home = tempfile::tempdir().unwrap();
+    let preview = Preview::start(home.path());
+    assert_eq!(preview.install(&fixture("counter")).await.status(), 200);
+    let origin = format!("http://counter.localhost:{}", preview.ready.port);
+    let client = preview.client("counter.localhost", "127.0.0.1");
+    let response = client
+        .post(format!("{origin}/call"))
+        .json(&json!({"fn":"api.add","args":{}}))
+        .send()
+        .await
+        .unwrap();
+    let body = call_error(response, 403, "forbidden").await;
+    assert_eq!(
+        body["error"]["message"],
+        format!("the Origin header is missing; it must be {origin}")
+    );
+    let response = client
+        .post(format!("{origin}/call"))
+        .header(
+            "Origin",
+            format!("http://echo.localhost:{}", preview.ready.port),
+        )
+        .json(&json!({"fn":"api.add","args":{}}))
+        .send()
+        .await
+        .unwrap();
+    let body = call_error(response, 403, "forbidden").await;
+    assert_eq!(body["error"]["message"], "Origin must match the mod origin");
+    let response = client
+        .post(format!("{origin}/call"))
+        .header("Origin", &origin)
+        .json(&json!({"fn":"api.get","args":{}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json::<Value>().await.unwrap(), json!({"value":0}));
+}
+
 pub(super) fn headers(response: &reqwest::Response) {
     for (name, value) in [
         ("content-security-policy", CSP),
