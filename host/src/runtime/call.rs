@@ -280,7 +280,7 @@ impl Invocation {
             .collect::<Result<Vec<_>, CallError>>()?;
         let changed = ctx.state.commit()?;
         let mut effects = chain.effects.lock().unwrap();
-        if changed || !events.is_empty() {
+        if changed {
             effects.changed.insert(self.local.clone());
         }
         effects.events.extend(
@@ -353,10 +353,7 @@ fn deliver(chain: &Arc<Chain>, effects: Effects) {
                 queue.extend(effects.events);
                 changed.extend(effects.changed);
                 match result {
-                    Ok(_) => {
-                        host.bus.send(&m.local, message.clone());
-                        changed.insert(m.local.clone());
-                    }
+                    Ok(_) => host.bus.send(&m.local, message.clone()),
                     Err(error) => eprintln!(
                         "watane: event {}.{} from {emitter} to {} failed: {:?}: {}",
                         event.interface, event.function, m.local, error.code, error.message
