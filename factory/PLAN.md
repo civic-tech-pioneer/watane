@@ -35,18 +35,38 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
     `dev/tests/serve.rs`), dev template `AGENTS.md` (doctor first). Not `builder.rs`, `unit.rs`,
     `dev/tests/unit_tests.rs`, `dev/tests/builder.rs` or anything in host (S8).
   - Leaves out: `fake-watane` (needed only for the home-host scenarios S-25 to 31, step 2).
-- [~] **S9 Hostile pages and the program, checked.** (branch `slice/s9`; foreman: see `Foremen`) Host stages 3 and 6: every scenario of host
-  FUNCTIONAL for pages, `/call`, `/events` and the program has a passing test in
-  `host/tests/hostile.rs` or `program.rs`; what fails gets fixed.
-  - Outcomes: the foreman lists each such scenario with its test; the user-sim plays a hostile
-    page (wrong `Origin`, another mod's host name, oversize body, path tricks) on the real
-    `watane` and every one is refused as the spec says.
-  - Touches: host `tests/hostile.rs`, `tests/program.rs`, and `server.rs`/`pages.rs`/`bin` only
-    for fixes. Not dev (S6).
+- [x] **S9 Hostile pages and the program, checked.** Delivered 2026-11-11 (main `d7bf99b`). Sol runs: S9-1 1, S9-2 2, S9-fix1 1.
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
   Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
   link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
   a failed unpack cleanup hides the first error; no `O_NOFOLLOW` against a walk-then-read race.
+
+Step 2 (Run together, J2).
+
+- [~] **S10 Alice opens the app.** (branch `slice/s10`; foreman: see `Foremen`) App stage A,
+  against a fake catalog. Alice starts the app on a new home and sees an empty launcher with her
+  two mark words; mod windows open from the launcher, and the consent view guards every request.
+  - Outcomes (user-sim, `cargo test --features driver` on macOS and by hand):
+    1. S1 empty start: no mod entry, two mark words in the header, `<home>/mods/` empty.
+    2. S3 deny, S4 approve delay (800 ms), S5 consent stays above mod windows.
+    3. S6 the `hostile` fixture page reaches no app or plugin command, opens no window, leaves
+       its origin never; S7 fresh localStorage per window; S8 disable closes the window.
+    4. `cargo build --release --features driver` fails (no driver in a release).
+  - Touches: new `app/` crate (and its member line in the root `Cargo.toml`; `Cargo.lock`).
+  - Interfaces it creates: `Core` (fake now, host in stage B), the consent `Broker`.
+  - Fakes: the catalog via `WATANE_APP_FAKE`, fixture pages served by `tests/support` (app 12).
+  - Leaves out: stage B (real host, S2, S2b, S9 on), stage F (Linux), a bundle.
+- [ ] **S11 The recommendations mod calls the reading list.** In a preview: the agent runs
+  `watane-dev add ../reading-list` in `recommendations`, writes a call and a subscription, tests
+  with a fake and a `deliver` step, and `serve`s both; adding a book in one page shows in the
+  other.
+  - Outcomes: DEV-S-18, 19 (fakes, `deliver`), DEV-S-25, 26 (`add`, cycle); a `serve` of
+    `recommendations` installs `reading-list` first; a call and an event cross the two mods on
+    the real `watane`.
+  - Touches: pkg stage 6 (`add_provider`), host stage 2 (links, subscribers, hops: `bus.rs`
+    ponytail; `harness.rs` fakes ponytail), dev stage 6 (`deps`, `add`; `cli.rs`), dev contract
+    fakes and `deliver`. Waits for S6 (`cli.rs`, `preview.rs`).
+  - Leaves out: `install` into a home host (needs the app, stage B), grants UI.
 
 ## Stage coverage
 
@@ -64,10 +84,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
-| host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`, S5 `/mcp`): `tests/hostile.rs` page rows (S9) |
+| host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
 | host | 5 catalog and home | 1, 2 | part: preview install via pack (S8); `Harness::call` (S4); fakes (`ponytail` in `harness.rs`), `deliver`, plan, grants, update, remove, home mode in step 2 |
-| host | 6 program | 1 | part (S1, S5 ready `mcp`/`token`): S1 to S3 tests not all checked (S9) |
+| host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
 | dev | 2 allowlist, toolchain, builder | 1 | done (S8) |
@@ -76,7 +96,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` with MCP (S1, S2, S5); doctor and J1 (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | open |
 | dev | 7 publish | 3 | open |
-| app | A shell | 2 | open |
+| app | A shell | 2 | open (S10) |
 | app | B host | 2 | open |
 | app | F Linux | 2 | open |
 | app | C dist | 3 | open |
@@ -96,7 +116,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S5: `91dc7a35` (sessionId `91dc7a35-91d7-4d4d-a6a1-4f843f3fd54a`), worktree `.claude/worktrees/s5` (stopped, removed).
 - S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8` (stopped, removed).
 - S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6`.
-- S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9`.
+- S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -148,6 +168,11 @@ The human may veto each one.
 - S8: dev scans and clears both `<crate>.d` and `<crate>-*.d`, and touches the copied crate root
   so cargo writes fresh dep-info; only the mod crate rebuilds.
 - S8: the host unpacks into a new `staging/<hex>/mod/`; the link refusal still runs before pack.
+- S9: the program runs participant homes (`--home`, `Mode { Home, Preview }`); until the app's
+  Confirm lands, a home acts as "no app": installs that need confirmation are 403 `refused`.
+  No-arg `watane` opens the default home on port 47341 (host 15 "S9 cut", Q22).
+- S9: repeated `Host` headers are 421; a missing page file is 404 on any method; the connection
+  closes after a body-size refusal (host 8.1 to 8.3, Q21).
 
 ## Friction
 
@@ -184,6 +209,12 @@ The human may veto each one.
   should start after the build.
 - S8 user-sim: when only the unit-test build reads outside, `result.build` still names the removed
   `logic.wasm`; `build.reads_outside` has `line: null`; `serve --help`/`new --help` show no options.
+- S9: two parallel tasks both took spec gap id Q21; the foreman should hand out Q ids.
+- S9: Sol stopped PARTIAL on an old S1-cut test; a brief that changes a cut should name the tests
+  it supersedes.
+- S9 user-sim: a huge declared `Content-Length` with no body waits instead of 413 at once;
+  duplicate keys in a `/call` body are accepted (last wins); `mode_mismatch` does not name the
+  asked mode; `GET /api/mods` is 404 (S1 cut); HTTP-layer 400s lack the 8.3 headers.
 
 ## Digest
 
@@ -203,3 +234,5 @@ The human may veto each one.
   calls the mod's functions, and Alice's open page updates by itself.
 - S8: a mod folder builds to the same `logic.wasm` from any path and cache, and the preview host
   installs it under the same id `pack` gives; a mod that reads a file outside its folder is refused.
+- S9: every page, `/call`, `/events`, `/api` and program scenario of step 1 has a test on the
+  real `watane`; hostile pages are refused; `watane --home D` runs a participant home.
