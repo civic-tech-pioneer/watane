@@ -249,11 +249,12 @@ fn ac1_s11_fake_answers_provider_call() {
     let f = prebuilt_recommendations();
     let path = f.dir.join("tests/books.json");
     fs::write(&path, json!({"fakes":{"mods:reading-list/books":{"all":["Dune"]}},"steps":[{"call":"api.all","returns":["Dune"]}]}).to_string()).unwrap();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["result"]["contract"]["passed"], 1);
-    assert_eq!(v["result"]["build"], Value::Null);
-    assert_eq!(v["result"]["unit"], Value::Null);
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(report.passed, 1);
+    assert_eq!(report.failed, 0);
+    assert!(report.failures.is_empty());
 }
 
 #[test]
@@ -261,24 +262,33 @@ fn ac1_s11_missing_fake_fails() {
     let f = prebuilt_recommendations();
     let path = f.dir.join("tests/books.json");
     fs::write(path, r#"{"steps":[{"call":"api.all","returns":["Dune"]}]}"#).unwrap();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 1, "{v}");
-    assert_eq!(v["errors"][0]["code"], "test.contract");
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert_eq!(report.passed, 0);
+    assert_eq!(report.failed, 1);
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].code.as_str(), "test.contract");
+    assert!(problems[0].message.contains("no fake"), "{problems:?}");
     assert!(
-        v["errors"][0]["message"]
+        report.failures[0]
+            .got
+            .as_ref()
+            .unwrap()
             .as_str()
             .unwrap()
-            .contains("no fake"),
-        "{v}"
+            .contains("no fake")
     );
 }
 
 #[test]
 fn ac2_s11_deliver_retains_state_and_emits() {
     let f = prebuilt_recommendations();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["result"]["contract"]["passed"], 3);
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(report.passed, 3);
+    assert_eq!(report.failed, 0);
+    assert!(report.failures.is_empty());
 }
 
 #[test]
@@ -290,12 +300,15 @@ fn ac2_s11_deliver_compares_emitted_events() {
         r#"{"steps":[{"deliver":"events.added","args":{"title":"Emma"},"emits":[]}]}"#,
     )
     .unwrap();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 1, "{v}");
-    assert_eq!(v["errors"][0]["code"], "test.contract");
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert_eq!(report.passed, 0);
+    assert_eq!(report.failed, 1);
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].code.as_str(), "test.contract");
     assert_eq!(
-        v["result"]["contract"]["failures"][0]["got"],
-        json!([{"event":"mods:recommendations/changes.received","args":{"title":"Emma"}}])
+        report.failures[0].got,
+        Some(json!([{"event":"mods:recommendations/changes.received","args":{"title":"Emma"}}]))
     );
 }
 
@@ -308,14 +321,24 @@ fn ac2_s11_deliver_rejects_non_subscription() {
         json!({"steps":[{"deliver":"api.received"}]}).to_string(),
     )
     .unwrap();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 1, "{v}");
-    assert_eq!(v["errors"][0]["code"], "test.contract");
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert_eq!(report.passed, 0);
+    assert_eq!(report.failed, 1);
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].code.as_str(), "test.contract");
+    assert!(problems[0].message.contains("no_function"), "{problems:?}");
+}
+
+#[test]
+fn ac5_s11_test_rejects_stale_wasm_without_manifest() {
+    let f = prebuilt_recommendations();
+    let (code, value) = f.run("test");
+    assert_ne!(code, 0, "test accepted unbuilt logic: {value}");
+    assert!(value["result"]["contract"].is_null(), "{value}");
     assert!(
-        v["errors"][0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("no_function"),
-        "{v}"
+        !f.dir.join("logic.wasm").exists(),
+        "stale wasm survived failed build"
     );
+    assert!(!f.temp.path().join("cache/previews").exists());
 }

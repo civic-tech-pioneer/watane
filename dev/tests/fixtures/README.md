@@ -3,7 +3,7 @@
 `recommendations/` is a built-only mod, with its committed `logic.wasm`.
 It calls `mods:reading-list/books`, retains delivered titles, and emits a
 `changes.received` event from its subscription export. Tests copy it into
-a temporary folder, then run `watane-dev test --json` without compiling it.
+a temporary folder, then call `watane_dev::contract::contract_tests` on it.
 `src/recommendations/` contains the pinned source crate. The slow S11
 journey writes that same logic into a newly created mod and builds it
 through watane-dev's sandboxed builder.

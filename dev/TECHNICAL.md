@@ -906,10 +906,7 @@ Call imports are answered by the file's fakes; a missing fake fails the
 step with `trap` and `no fake`. Delivery invokes only subscription exports;
 a different export or missing function fails with `no_function`. `emits`
 compares the events of either kind of step. Uncovered-function warnings
-remain deferred until `Harness::functions()` exists. Built-only mods
-(`logic.wasm` without `logic/Cargo.toml`) validate the component and run
-contracts without a toolchain, build or unit run; `build` and `unit` stay
-null in the result.
+remain deferred until `Harness::functions()` exists.
 
 An open failure is one file-level
 `test.contract` Problem; no step failure is recorded since no step ran.
@@ -1292,7 +1289,7 @@ independent tool. Integration tests run the binary
 | `check.rs` | DEV-S-5, 6, 7, 8 | the codes of the table of 2.2 |
 | `builder.rs` | DEV-S-4, 9, 10, 11, 12, 13 | S-4: the test counts `#[test]` in `logic/src/lib.rs` with a regex and the steps in `tests/*.json` with `serde_json`, and loads `logic.wasm` with `wasmtime::component::Component` to find `mods:<slug>/api@0.1.0` among the exports; S-9: a fake toolchain folder whose `bin/cargo` writes a marker file if it runs; S-10: a secret file of random bytes in a temp folder, then a byte search over every file of the mod folder; S-12: the same template at two paths with two caches, `assert_eq!` of the bytes, and a search for `$HOME`, both caches and both mod paths (raw and canonical); S-13: run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'` on macOS or `unshare -rn` on Linux, ignored with a reason where neither works |
 | `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
-| `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; default S11 command tests use prebuilt `tests/fixtures/recommendations/logic.wasm`, importing `mods:reading-list/books`; source and rebuild instructions in `tests/fixtures/` |
+| `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; S11 fixture tests call `contract::contract_tests` on `tests/fixtures/recommendations/` with committed `logic.wasm`, importing `mods:reading-list/books`; the S11 journey covers `test --json` through the complete build pipeline; source and rebuild instructions in `tests/fixtures/` |
 | `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone; refused `serve`: literal `preview.previous` message/fix and text warning, unchanged page bytes, no warning without an answering preview |
 | `add.rs` | DEV-S-25, 26; self and missing providers, provider order | literal add result and metadata text; original world and provider WIT bytes; unchanged folder snapshot on refusal; literal order and missing-provider message/fix |
 | `install_publish.rs` | DEV-S-27 to 31 | the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
