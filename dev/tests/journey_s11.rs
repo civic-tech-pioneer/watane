@@ -99,7 +99,7 @@ document.getElementById('add').addEventListener('submit', async (e) => {
 });
 watane.on(read);
 "#).unwrap();
-    let added = j.run("recommendations", &["add", "../reading-list"], 0);
+    let added = j.run("recommendations", &["add", "reading-list"], 0);
     let import = added["result"]["imports"][0].as_str().unwrap();
     let subscription = added["result"]["subscriptions"][0].as_str().unwrap();
     assert_eq!(import, "import mods:reading-list/books@0.1.0;");

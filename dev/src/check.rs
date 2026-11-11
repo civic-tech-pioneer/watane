@@ -215,6 +215,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     let strings = |items: &[watane_pkg::InterfaceName]| {
         items.iter().map(ToString::to_string).collect::<Vec<_>>()
     };
+    let local = crate::deps::read_local(dir).map_err(|e| vec![e])?;
     let report = CheckReport {
         slug: m.slug().to_string(),
         version: m.version().to_string(),
@@ -232,7 +233,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
             .map(|(slug, publisher)| ProviderReport {
                 slug: slug.to_string(),
                 publisher: publisher.map(ToString::to_string),
-                path: None,
+                path: local.get(slug.as_str()).cloned(),
             })
             .collect(),
     };
@@ -709,6 +710,33 @@ crate-type = ["cdylib"]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac3_check_reports_recorded_provider_path() {
+        let t = tempfile::tempdir().unwrap();
+        let a = t.path().join("a");
+        let b = t.path().join("b");
+        crate::template::new_mod(&a, "a").unwrap();
+        crate::template::new_mod(&b, "b").unwrap();
+        crate::deps::add_local(&b, &a).unwrap();
+        let world = fs::read_to_string(b.join("wit/world.wit")).unwrap();
+        fs::write(
+            b.join("wit/world.wit"),
+            world.replace("world b {", "world b {\n    import mods:a/api@0.1.0;"),
+        )
+        .unwrap();
+        let (_, report) = check(&b).unwrap();
+        assert_eq!(
+            serde_json::to_value(report).unwrap()["providers"][0]["path"],
+            "../a"
+        );
+        fs::remove_file(b.join(".watane-dev.json")).unwrap();
+        let (_, report) = check(&b).unwrap();
+        assert_eq!(
+            serde_json::to_value(report).unwrap()["providers"][0]["path"],
+            serde_json::Value::Null
+        );
+    }
 
     #[test]
     fn ac3_dev_s5_and_s8_file_codes_locations_and_fixes() {

@@ -116,3 +116,14 @@ fn ac1_two_adds_write_sorted_local_paths_and_preserve_consumer_world() {
         Some("../a")
     );
 }
+
+#[test]
+fn ac4_add_resolves_provider_from_current_folder() {
+    let t = mods();
+    let (code, v) = run(t.path(), &["add", "a", "--dir", "b", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["path"], "../a");
+    let local: Value =
+        serde_json::from_slice(&fs::read(t.path().join("b/.watane-dev.json")).unwrap()).unwrap();
+    assert_eq!(local, json!({"local_providers":{"a":"../a"}}));
+}

@@ -66,9 +66,6 @@ fn visit(
     seen: &mut BTreeSet<PathBuf>,
     order: &mut Vec<PathBuf>,
 ) -> Result<(), Problem> {
-    if let Some(start) = stack.iter().position(|p| p == dir) {
-        return Err(cycle(&stack[start..], dir));
-    }
     if seen.contains(dir) {
         return Ok(());
     }
@@ -88,6 +85,12 @@ fn visit(
             .map_err(|_| missing(slug.as_str()))?;
         if !provider.join("mod.toml").is_file() {
             return Err(missing(slug.as_str()));
+        }
+        if let Some(start) = stack.iter().position(|p| p == &provider) {
+            return Err(cycle(&stack[start..], &provider).fix(format!(
+                "Remove mods:{slug} from deps.json and wit/deps/{slug}/ in {}",
+                dir.display()
+            )));
         }
         visit(&provider, stack, seen, order)?;
     }
@@ -134,10 +137,10 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
     };
     let provider = input.canonicalize().map_err(|_| usage())?;
     if provider == dir {
-        return Err(vec![Problem::new(
-            Code::ModSelfDependency,
-            "a mod cannot depend on itself",
-        )]);
+        return Err(vec![
+            Problem::new(Code::ModSelfDependency, "a mod cannot depend on itself")
+                .fix("Pass the folder of another mod to add"),
+        ]);
     }
     if !provider.join("mod.toml").is_file() {
         return Err(usage());
@@ -149,7 +152,17 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         &mut BTreeSet::new(),
         &mut Vec::new(),
     )
-    .map_err(|e| vec![e])?;
+    .map_err(|e| {
+        let e = if e.code == Code::ModDependencyCycle {
+            e.fix(format!(
+                "Do not add {}: it already depends on this mod",
+                label(&provider)
+            ))
+        } else {
+            e
+        };
+        vec![e]
+    })?;
     let m = Mod::read(&provider).map_err(|_| usage())?;
     let path = relative(&dir, &provider);
     let mut local = read_local(&dir).map_err(|e| vec![e])?;
@@ -184,6 +197,63 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_self_dependency_fix() {
+        let t = tempfile::tempdir().unwrap();
+        let a = t.path().join("a");
+        crate::template::new_mod(&a, "a").unwrap();
+        let errors = add_local(&a, &a).err().unwrap();
+        assert_eq!(errors[0].code, Code::ModSelfDependency);
+        assert_eq!(
+            errors[0].fix.as_deref(),
+            Some("Pass the folder of another mod to add")
+        );
+    }
+
+    #[test]
+    fn ac2_cycle_fixes_name_the_edge() {
+        let t = tempfile::tempdir().unwrap();
+        for slug in ["a", "b", "c"] {
+            crate::template::new_mod(&t.path().join(slug), slug).unwrap();
+        }
+        let a = t.path().join("a");
+        let b = t.path().join("b");
+        let c = t.path().join("c");
+        for (dir, slug, path) in [(&a, "b", "../b"), (&b, "c", "../c")] {
+            fs::write(dir.join("deps.json"), format!(r#"{{"mods:{slug}":null}}"#)).unwrap();
+            fs::write(
+                dir.join(".watane-dev.json"),
+                format!(r#"{{"local_providers":{{"{slug}":"{path}"}}}}"#),
+            )
+            .unwrap();
+        }
+        let errors = add_local(&c, &a).err().unwrap();
+        assert_eq!(errors[0].code, Code::ModDependencyCycle);
+        let add_fix = errors[0].fix.clone();
+        fs::write(c.join("deps.json"), r#"{"mods:a":null}"#).unwrap();
+        fs::write(
+            c.join(".watane-dev.json"),
+            r#"{"local_providers":{"a":"../a"}}"#,
+        )
+        .unwrap();
+        let error = local_order(&a).unwrap_err();
+        assert_eq!(error.code, Code::ModDependencyCycle);
+        assert_eq!(
+            error.fix.as_deref(),
+            Some(
+                format!(
+                    "Remove mods:a from deps.json and wit/deps/a/ in {}",
+                    c.canonicalize().unwrap().display()
+                )
+                .as_str()
+            )
+        );
+        assert_eq!(
+            add_fix.as_deref(),
+            Some("Do not add a: it already depends on this mod")
+        );
+    }
+
     #[test]
     fn ac3_missing_provider_text_and_fix() {
         let error = missing("a");

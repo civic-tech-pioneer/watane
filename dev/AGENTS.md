@@ -90,3 +90,4 @@ word for word. Follow their intent, and do not ask whether to.
 - S17-2 (dev): the template guide covers sandbox-safe allowlist recovery, page calls with curl, and preview MCP setup with rotating tokens and Claude Code/Codex tool approvals (§4.1).
 
 - S12b (dev): install verifies the app home before testing local providers, waits with --wait, and reports consent; default fake-host enables page-only integration proofs, distribution omits it with --no-default-features.
+- S12b-2 (dev): dependency errors name a recovery edge, check reports recorded provider paths, and add resolves provider paths from the current folder while storing them relative to the mod.

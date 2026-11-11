@@ -195,8 +195,8 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.logic_file` | 1 | a file of `logic/` outside 5.3 | `logic/build.rs is not allowed: the builder runs no build script` (one text for each kind) | `Remove <file>` |
 | `mod.symlink` | 1 | a symbolic link in the mod folder | `<file> is a symbolic link` | `Replace it with a file` |
 | `mod.no_contract_tests` | 1 | a logic part and no `tests/*.json` | `the mod has a logic part and no contract test` | `Add tests/<name>.json (see AGENTS.md)` |
-| `mod.self_dependency` | 1 | `add` of the mod itself | `a mod cannot depend on itself` | — |
-| `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | — |
+| `mod.self_dependency` | 1 | `add` of the mod itself | `a mod cannot depend on itself` | `Pass the folder of another mod to add` |
+| `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | From `add`: `Do not add <provider slug>: it already depends on this mod`. From traversal: `Remove mods:<slug> from deps.json and wit/deps/<slug>/ in <absolute folder>` for the edge that closes the cycle. |
 | `mod.provider_missing` | 1 | a local provider has no folder in `.watane-dev.json`, or the folder is gone | `the local provider <slug> has no known folder` | `Run: watane-dev add <folder of <slug>>` |
 | `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>` |
 | `build.compile` | 1 | each rustc error | the rustc message, with its location | — |
@@ -254,8 +254,8 @@ are added to these values.
  "providers": [{"slug": "a", "publisher": null, "path": "../a"}]}
 ```
 `grants` are the `Display` texts of `watane_pkg::Grant`. The four lists
-are the fields of `watane_pkg::World`. `path` is null for a published
-provider.
+are the fields of `watane_pkg::World`. `path` is the value recorded for
+the slug in `.watane-dev.json`, or null when none is recorded.
 
 **test**
 ```json
@@ -1039,6 +1039,8 @@ when no preview folder matches.
 4. Delete `P`.
 
 ### 9.5 `add <mod folder>` (step 2)
+
+Resolve a relative provider folder against the current working folder, independently of `--dir`.
 
 1. Canonicalize the folders; a missing provider or one without `mod.toml`
    is `usage.provider`. The same canonical folder as this mod is

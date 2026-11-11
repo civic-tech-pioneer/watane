@@ -106,7 +106,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Test => {
             return test(&dir);
         }
-        Command::Add { provider } => deps::add_local(&dir, &provider)
+        Command::Add { provider } => deps::add_local(&dir, &cwd.join(provider))
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
                 outcome.dir = dir.canonicalize().ok();
