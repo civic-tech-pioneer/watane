@@ -51,8 +51,9 @@ fn ac4_s2_install_order_and_s2b_withhold_storage() {
 fn ac7_idle_polling_disabled_entry_and_consent_focus() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    // Visible background windows avoid hidden WebKit timer throttling.
-    let app = App::background(home.path(), &[]);
+    // WebKit reports `document.hidden` for a hidden or occluded window (NOTES S12a-2);
+    // the poll gate reads it, so the test declares the main page visible.
+    let app = App::start(home.path(), &[]);
     begin_install(&app, &both());
     approve(&app);
     installed(&app, "reading-list");
@@ -65,6 +66,10 @@ fn ac7_idle_polling_disabled_entry_and_consent_focus() {
             .filter(|c| c["label"] == "main" && c["cmd"] == "mods_list")
             .count()
     };
+    app.eval(
+        "main",
+        "Object.defineProperty(document, 'hidden', {get: () => false}); null",
+    );
     let before = count(app.log());
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(5) {

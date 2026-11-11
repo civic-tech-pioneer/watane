@@ -109,24 +109,37 @@ fn ac9_release_refuses_driver() {
 }
 
 #[test]
-fn ac1_home_is_required_and_port_is_validated() {
+fn ac1_home_and_port_default_and_port_is_validated() {
     use watane_app::Config;
-    assert!(
-        Config::from_args([].into_iter())
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("bad argument")
-    );
+    // The only test in this binary that reads these variables.
+    unsafe {
+        std::env::remove_var("WATANE_PORT");
+        std::env::set_var("WATANE_HOME", "from-env");
+    }
+    let config = Config::from_args([].into_iter()).unwrap();
+    assert_eq!(config.home, Path::new("from-env"));
+    assert_eq!(config.port, watane_host::DEFAULT_PORT);
     assert!(
         Config::from_args(
             ["--port", "65536", "--home", "x"]
                 .map(Into::into)
                 .into_iter()
         )
-        .is_err()
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("bad argument")
     );
+    unsafe { std::env::set_var("WATANE_PORT", "4242") };
     let config = Config::from_args(["--home", "example"].map(Into::into).into_iter()).unwrap();
     assert_eq!(config.home, Path::new("example"));
+    assert_eq!(config.port, 4242);
+    let config = Config::from_args(["--port", "0"].map(Into::into).into_iter()).unwrap();
     assert_eq!(config.port, 0);
+    unsafe { std::env::set_var("WATANE_PORT", "nope") };
+    assert!(Config::from_args([].into_iter()).is_err());
+    unsafe {
+        std::env::remove_var("WATANE_PORT");
+        std::env::remove_var("WATANE_HOME");
+    }
 }

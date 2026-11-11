@@ -8,7 +8,7 @@ mod core;
 mod driver;
 pub mod mark;
 mod views;
-pub mod words;
+mod words;
 use consent::{AskId, Broker};
 use std::{
     path::PathBuf,
@@ -68,7 +68,7 @@ pub struct Config {
 impl Config {
     pub fn from_args(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<Self, AppError> {
         let mut home = None;
-        let mut port = 0;
+        let mut port = None;
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--home") => {
@@ -78,10 +78,11 @@ impl Config {
                         })?))
                 }
                 Some("--port") => {
-                    port = args
-                        .next()
-                        .and_then(|v| v.to_str().and_then(|s| s.parse().ok()))
-                        .ok_or_else(|| AppError::Args("--port needs a u16".into()))?
+                    port = Some(
+                        args.next()
+                            .and_then(|v| v.to_str().and_then(|s| s.parse().ok()))
+                            .ok_or_else(|| AppError::Args("--port needs a u16".into()))?,
+                    )
                 }
                 _ => {
                     return Err(AppError::Args(format!(
@@ -91,10 +92,18 @@ impl Config {
                 }
             }
         }
-        Ok(Self {
-            home: home.ok_or_else(|| AppError::Args("--home is required".into()))?,
-            port,
-        })
+        let port = match (port, std::env::var("WATANE_PORT")) {
+            (Some(port), _) => port,
+            (None, Ok(text)) => text
+                .parse()
+                .map_err(|_| AppError::Args("WATANE_PORT needs a u16".into()))?,
+            (None, Err(_)) => watane_host::DEFAULT_PORT,
+        };
+        let home = match home {
+            Some(home) => home,
+            None => watane_host::default_home()?,
+        };
+        Ok(Self { home, port })
     }
 }
 pub(crate) struct AppState {
