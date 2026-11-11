@@ -95,10 +95,15 @@ fn invalid(input: &Path, reason: impl ToString) -> HostError {
 
 fn preview_mod(dir: &Path) -> Result<Mod, HostError> {
     let m = Mod::read(dir).map_err(|e| invalid(dir, e))?;
+    refuse_links(dir, &m)?;
+    Ok(m)
+}
+
+fn refuse_links(dir: &Path, m: &Mod) -> Result<(), HostError> {
     if !m.world().calls.is_empty() || !m.world().subscriptions.is_empty() {
         return Err(invalid(dir, "links between mods arrive in a later step"));
     }
-    Ok(m)
+    Ok(())
 }
 
 fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
@@ -251,19 +256,15 @@ impl Catalog {
         let mut names: BTreeSet<_> = self.mods.iter().map(|m| m.local.clone()).collect();
         for folder in folders {
             // Keep the preview's link refusal ahead of component validation.
-            if let Ok(source) = Mod::read(folder)
-                && (!source.world().calls.is_empty() || !source.world().subscriptions.is_empty())
-            {
-                return Err(invalid(folder, "links between mods arrive in a later step"));
+            if let Ok(source) = Mod::read(folder) {
+                refuse_links(folder, &source)?;
             }
             let package = watane_pkg::pack(folder, false).map_err(|e| invalid(folder, e))?;
             let staging = Stage::new(home)?;
             let m = package
                 .unpack(&staging.0.join("mod"))
                 .map_err(|e| invalid(folder, e))?;
-            if !m.world().calls.is_empty() || !m.world().subscriptions.is_empty() {
-                return Err(invalid(folder, "links between mods arrive in a later step"));
-            }
+            refuse_links(folder, &m)?;
             let identity = format!("local/{}", m.slug());
             if !seen.insert(identity.clone()) {
                 return Err(invalid(folder, "twice in one plan"));
