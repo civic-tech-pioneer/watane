@@ -662,3 +662,56 @@ fn ac7a_successful_serve_gives_own_page_or_null() {
     assert_eq!(code, 0, "{v}");
     assert!(v["next"].is_null());
 }
+
+/// S11: a refused `serve` for a provider's failure must give a `next` that,
+/// run where the agent stands, shows the failure again; `test --json` in the
+/// consumer passes and sends the agent back to `serve`, a loop.
+#[test]
+fn regress_s11_provider_failure_next_reproduces_it() {
+    let m = Mod::new(false);
+    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(m.temp.path())
+        .args(["new", "provider", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let (code, v) = m.run(&["add", "../provider", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    // Paste the subscription line that `add` reported, as its `next` says.
+    let world = m.dir.join("wit/world.wit");
+    let text = fs::read_to_string(&world).unwrap().replace(
+        "world hello {",
+        &format!(
+            "world hello {{\n  {}",
+            v["result"]["subscriptions"][0].as_str().unwrap()
+        ),
+    );
+    fs::write(&world, text).unwrap();
+    let lib = m.dir.join("logic/src/lib.rs");
+    let text = fs::read_to_string(&lib).unwrap().replace(
+        "export!(Mod);",
+        "impl exports::mods::provider::changes::Guest for Mod {\n    fn counted(_count: u32) {}\n}\n\nexport!(Mod);",
+    );
+    fs::write(&lib, text).unwrap();
+    let (code, v) = m.run(&["test", "--json"]);
+    assert_eq!(code, 0, "the consumer alone passes: {v}");
+    fs::write(
+        m.temp.path().join("provider/logic/build.rs"),
+        "fn main() {}",
+    )
+    .unwrap();
+    let (code, served) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{served}");
+    let next = served["next"].as_str().expect("a next command");
+    let args: Vec<&str> = next
+        .strip_prefix("watane-dev ")
+        .expect("next is a watane-dev command")
+        .split_whitespace()
+        .collect();
+    let (code, v) = m.run(&args);
+    assert_ne!(
+        code, 0,
+        "serve said next `{next}`, which passes here: {v}\nserve: {served}"
+    );
+    assert_eq!(v["ok"], false, "{v}");
+}
