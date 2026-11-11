@@ -13,7 +13,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
 - [x] **S3 An edit keeps the data.** Delivered 2026-11-10 (main `c883171`). Sol runs: host 1, dev 1.
 - [x] **S4 The agent fixes a failing test.** Delivered 2026-11-11 (main `91e8d0a`). Sol runs: S4-1 1, S4-2 1, S4-3 1.
-- [ ] **S5 The agent works the mod through MCP.** The agent runs `serve --json`, points an MCP
+- [~] **S5 The agent works the mod through MCP.** (branch `slice/s5`; foreman: see `Foremen`) The agent runs `serve --json`, points an MCP
   client at `result.mcp` with its token, lists the counter's calls, calls `add`, and Alice's open
   page shows the new count by itself.
   - Outcomes (user-sim, on the real programs):
@@ -34,7 +34,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
   - Interfaces it creates: the ready line's `mcp`/`token` (host -> dev); `serve --json`'s `mcp`
     (dev -> agent); `set_toolset`, `issue_token`, `end_token` on `Host`.
   - Leaves out: tokens in a participant home (app, step 2); any UI for toolsets.
-- [ ] **S8 Same mod, same id.** Bob copies Alice's mod folder to another path and runs
+- [~] **S8 Same mod, same id.** (branch `slice/s8`; foreman: see `Foremen`) Bob copies Alice's mod folder to another path and runs
   `watane-dev test` with his own cache; both builds give the same `logic.wasm` bytes, and the
   preview host installs the mod under the same canonical package id that `pack` gives. A mod
   that sneaks in a file from outside its folder is refused.
