@@ -15,11 +15,13 @@ const HEADER: &[u8] = b"WATANEPK\x01";
 pub enum PackageError {
     #[error("the package is {size} bytes; the limit is 67108864")]
     TooLarge { size: u64 },
+    #[error("too many files; the limit is 4096")]
+    TooManyFiles,
     #[error("bad package format: {0}")]
     Format(String),
-    #[error("path `{path}` is not allowed: {reason}")]
+    #[error("path `{}` is not allowed: {reason}", path.escape_debug())]
     Path { path: String, reason: &'static str },
-    #[error("`{path}` is a symbolic link; a package holds no links")]
+    #[error("`{}` is a symbolic link; a package holds no links", path.escape_debug())]
     Symlink { path: String },
     #[error("{} exists already", path.display())]
     DestExists { path: PathBuf },
@@ -172,8 +174,11 @@ impl Package {
             ));
         }
         let count = r.u32("count")?;
-        if !(1..=MAX_FILES).contains(&count) {
-            return Err(PackageError::Format("count must be 1..=4096".into()));
+        if count == 0 {
+            return Err(PackageError::Format("count must be at least 1".into()));
+        }
+        if count > MAX_FILES {
+            return Err(PackageError::TooManyFiles);
         }
         let mut files: BTreeMap<String, Range<usize>> = BTreeMap::new();
         let mut paths = Paths::default();
@@ -271,11 +276,46 @@ impl Package {
             m.check_component()?;
             Ok(m)
         })();
-        if result.is_err() {
-            fs::remove_dir_all(dest).map_err(|e| io(dest, e))?;
-        }
-        result
+        finish_unpack(dest, result)
     }
+}
+
+fn finish_unpack(dest: &Path, result: Result<Mod, PackageError>) -> Result<Mod, PackageError> {
+    if result.is_err() {
+        // Cleanup is best-effort: its failure must not hide the unpack error.
+        let _ = fs::remove_dir_all(dest);
+    }
+    result
+}
+
+fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
+    let path = root.join(relative);
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(&path).map_err(|e| {
+        #[cfg(unix)]
+        {
+            let code = e.raw_os_error();
+            let is_link = code == Some(libc::ELOOP);
+            #[cfg(target_os = "macos")]
+            let is_link = is_link || code == Some(libc::EMLINK);
+            if is_link {
+                return PackageError::Symlink {
+                    path: relative.into(),
+                };
+            }
+        }
+        io(&path, e)
+    })?;
+    if !file.metadata().map_err(|e| io(&path, e))?.is_file() {
+        return Err(path_error(relative, "expected a regular file"));
+    }
+    Ok(file)
 }
 
 fn create_dir(path: &Path) -> std::io::Result<()> {
@@ -327,6 +367,13 @@ impl Input {
                 let entry = entry.map_err(|e| io(&path, e))?;
                 let name = entry.file_name();
                 if name.to_string_lossy().starts_with('.') {
+                    let metadata =
+                        fs::symlink_metadata(entry.path()).map_err(|e| io(&entry.path(), e))?;
+                    if metadata.file_type().is_symlink() {
+                        return Err(PackageError::Symlink {
+                            path: format!("{relative}/{}", name.to_string_lossy()),
+                        });
+                    }
                     continue;
                 }
                 let name = name.to_str().ok_or_else(|| {
@@ -339,7 +386,7 @@ impl Input {
             }
         } else if m.is_file() && class(relative).is_some() {
             if self.files.len() == MAX_FILES {
-                return Err(PackageError::Format("count must be 1..=4096".into()));
+                return Err(PackageError::TooManyFiles);
             }
             self.size = self
                 .size
@@ -387,8 +434,7 @@ pub fn pack(dir: &Path, include_source: bool) -> Result<Package, PackageError> {
         check_size(bytes.len() as u64)?;
         let full_path = dir.join(path);
         // Bound the read independently of metadata: a growing file cannot bypass the cap.
-        fs::File::open(&full_path)
-            .map_err(|e| io(&full_path, e))?
+        open_pack_file(dir, path)?
             .take(MAX_PACKAGE_BYTES - bytes.len() as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| io(&full_path, e))?;
@@ -397,4 +443,102 @@ pub fn pack(dir: &Path, include_source: bool) -> Result<Package, PackageError> {
         bytes[size_offset..size_offset + 4].copy_from_slice(&size.to_be_bytes());
     }
     Package::from_bytes(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac3_s15_error_display() {
+        for (path, escaped) in [
+            ("ui/a\0b", r"ui/a\0b"),
+            ("ui/a\nb", r"ui/a\nb"),
+            ("ui/a\x1bb", r"ui/a\u{1b}b"),
+            ("ui/a\x7fb", r"ui/a\u{7f}b"),
+            ("ui/file.js", "ui/file.js"),
+        ] {
+            let link = PackageError::Symlink { path: path.into() };
+            assert_eq!(
+                link.to_string(),
+                format!("`{escaped}` is a symbolic link; a package holds no links")
+            );
+            assert!(matches!(link, PackageError::Symlink { path: raw } if raw == path));
+            let error = path_error(path, "test rule");
+            assert_eq!(
+                error.to_string(),
+                format!("path `{escaped}` is not allowed: test rule")
+            );
+            assert!(matches!(error, PackageError::Path { path: raw, .. } if raw == path));
+        }
+    }
+
+    #[test]
+    fn ac4_s15_unpack_error_survives_failed_cleanup() {
+        let tmp = tempfile::tempdir().unwrap();
+        // remove_dir_all deterministically fails on a regular file, even as root.
+        let dest = tmp.path().join("not-a-directory");
+        fs::write(&dest, b"keep").unwrap();
+        assert!(fs::remove_dir_all(&dest).is_err());
+        let original = PackageError::Mod(ModError::Invalid(vec![crate::Violation {
+            rule: crate::Rule::ModToml,
+            file: "mod.toml".into(),
+            message: "invalid manifest".into(),
+        }]));
+        let error = finish_unpack(&dest, Err(original)).unwrap_err();
+        assert!(
+            matches!(error, PackageError::Mod(ModError::Invalid(v)) if v.len() == 1
+            && v[0].rule == crate::Rule::ModToml && v[0].file == "mod.toml"
+            && v[0].message == "invalid manifest")
+        );
+    }
+
+    #[cfg(unix)]
+    fn open_fixture() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("ui")).unwrap();
+        fs::write(tmp.path().join("ui/file"), b"content").unwrap();
+        assert!(open_pack_file(tmp.path(), "ui/file").is_ok());
+        tmp
+    }
+
+    #[cfg(unix)]
+    fn fifo(root: &Path) {
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(root.join("ui/pipe"))
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac5_s15_no_follow_link_to_file() {
+        let tmp = open_fixture();
+        std::os::unix::fs::symlink(tmp.path().join("ui/file"), tmp.path().join("ui/link")).unwrap();
+        let error = open_pack_file(tmp.path(), "ui/link").unwrap_err();
+        assert!(matches!(error, PackageError::Symlink { path } if path == "ui/link"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac5_s15_no_follow_link_to_fifo() {
+        let tmp = open_fixture();
+        fifo(tmp.path());
+        // No writer: following the FIFO with a blocking open would hang.
+        std::os::unix::fs::symlink(tmp.path().join("ui/pipe"), tmp.path().join("ui/link")).unwrap();
+        let error = open_pack_file(tmp.path(), "ui/link").unwrap_err();
+        assert!(matches!(error, PackageError::Symlink { path } if path == "ui/link"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac5_s15_no_follow_fifo() {
+        let tmp = open_fixture();
+        fifo(tmp.path());
+        let error = open_pack_file(tmp.path(), "ui/pipe").unwrap_err();
+        assert!(matches!(error, PackageError::Path { path, .. } if path == "ui/pipe"));
+    }
 }

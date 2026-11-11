@@ -541,3 +541,97 @@ fn ac8_public_types_are_send_sync() {
     send_sync::<PackageError>();
     assert_eq!(MAX_PACKAGE_BYTES, 67_108_864);
 }
+
+#[test]
+fn ac1_s15_too_many_files() {
+    let names: Vec<_> = (0..4097).map(|i| format!("ui/{i:04}")).collect();
+    let files: Vec<_> = names.iter().map(|p| (p.as_str(), b"".as_slice())).collect();
+    let dir = hello();
+    for name in &names {
+        put(dir.path(), name, b"");
+    }
+    for error in [
+        Package::from_bytes(raw(&files)).unwrap_err(),
+        pack(dir.path(), false).unwrap_err(),
+    ] {
+        assert!(matches!(error, PackageError::TooManyFiles));
+        assert_eq!(error.to_string(), "too many files; the limit is 4096");
+    }
+    assert!(matches!(
+        Package::from_bytes(raw(&[])),
+        Err(PackageError::Format(_))
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn ac2_s15_hidden_link_and_regular_file() {
+    use std::os::unix::fs::symlink;
+    let dir = hello();
+    put(dir.path(), "ui/.y", b"hidden");
+    assert_eq!(
+        pack(dir.path(), false).unwrap().paths().collect::<Vec<_>>(),
+        ["mod.toml", "ui/index.html", "wit/world.wit"]
+    );
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    for target in [
+        dir.path().join("ui/index.html"),
+        outside.path().to_path_buf(),
+    ] {
+        symlink(target, dir.path().join("ui/.x")).unwrap();
+        assert!(
+            matches!(pack(dir.path(), false), Err(PackageError::Symlink { path }) if path == "ui/.x")
+        );
+        fs::remove_file(dir.path().join("ui/.x")).unwrap();
+    }
+}
+
+fn assert_escaped(error: PackageError, expected_path: &str, escaped_path: &str) {
+    match &error {
+        PackageError::Path { path, .. } | PackageError::Symlink { path } => {
+            assert_eq!(path, expected_path)
+        }
+        _ => panic!("unexpected error: {error:?}"),
+    }
+    let message = error.to_string();
+    assert!(
+        !message.bytes().any(|b| b < 0x20 || b == 0x7f),
+        "{message:?}"
+    );
+    assert!(message.contains(escaped_path), "{message:?}");
+}
+
+#[test]
+fn ac3_s15_decode_escaped_paths() {
+    for (path, escaped) in [
+        ("ui/a\0b", r"ui/a\0b"),
+        ("ui/a\nb", r"ui/a\nb"),
+        ("ui/a\x1bb", r"ui/a\u{1b}b"),
+        ("ui/a\x7fb", r"ui/a\u{7f}b"),
+    ] {
+        assert_escaped(
+            Package::from_bytes(raw(&[(path, b"")])).unwrap_err(),
+            path,
+            escaped,
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ac3_s15_pack_escaped_paths_and_links() {
+    use std::os::unix::fs::symlink;
+    let dir = hello();
+    for (path, escaped) in [
+        ("ui/a\nb.js", r"ui/a\nb.js"),
+        ("ui/a\x1bb", r"ui/a\u{1b}b"),
+        ("ui/a\x7fb", r"ui/a\u{7f}b"),
+    ] {
+        put(dir.path(), path, b"");
+        assert_escaped(pack(dir.path(), false).unwrap_err(), path, escaped);
+        fs::remove_file(dir.path().join(path)).unwrap();
+        symlink(dir.path().join("ui/index.html"), dir.path().join(path)).unwrap();
+        assert_escaped(pack(dir.path(), false).unwrap_err(), path, escaped);
+        fs::remove_file(dir.path().join(path)).unwrap();
+    }
+}

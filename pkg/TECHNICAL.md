@@ -376,13 +376,17 @@ is at most `MAX_PACKAGE_BYTES` = 67 108 864 bytes (64 MiB). There is no
 compression, no time, no owner and no mode, so equal files give equal
 bytes, and the unpacked size is never larger than the package.
 
-The package id is `blake3(all bytes)`.
+Count 0 is `PackageError::Format`; count above 4096 is
+`PackageError::TooManyFiles` (`too many files; the limit is 4096`), in both
+pack and decode. The package id is `blake3(all bytes)`.
 
 ### 6.4 Pack, decode and unpack
 
 `pack(dir, include_source)`:
 1. Walk the paths of 6.1 with `symlink_metadata`. Skip each entry whose
-   name starts with `.`. Refuse a symbolic link (`PackageError::Symlink`),
+   name starts with `.` only after checking whether it is a symbolic link:
+   hidden regular files and directories are skipped, hidden links are refused.
+   Refuse a symbolic link (`PackageError::Symlink`),
    anything that is not a regular file or a directory, and a name outside
    6.2 (`PackageError::Path`). Never walk outside these paths, so
    `logic/target/`, `.git/` and `.cargo/` are never read.
@@ -390,15 +394,21 @@ The package id is `blake3(all bytes)`.
    so selected links and special files are refused as package errors before
    any mod parser or file read can reach them.
 3. Sort, check 6.2 and the limits, write the bytes of 6.3. Stop when the
-   size passes the limit.
+   size passes the limit. Open every file for reading on Unix with
+   `O_NOFOLLOW | O_NONBLOCK` (`OpenOptionsExt::custom_flags`, using the
+   Unix-only `libc = "0.2"` dependency); map `ELOOP` and macOS `EMLINK` to
+   `Symlink`. Check metadata on the opened file and refuse a non-regular
+   file with `Path`, before reading. Thus a last component swapped for a
+   link is never followed, and a FIFO cannot block the open. Non-Unix uses
+   a plain open followed by the same regular-file check.
 4. Return `Package::from_bytes` of the result, so pack only gives what
    decode accepts.
 
 `Package::from_bytes(bytes)`: check the length against the limit first,
 then the header, then each record. Compare each declared length with the
 bytes that remain before using it. Keep offsets into the input; allocate
-nothing in proportion to a declared size. Any failure is
-`PackageError::Format` or `PackageError::Path`.
+nothing in proportion to a declared size. Refusals are `TooLarge`,
+`TooManyFiles`, `Format` or `Path`, naming the actual cause.
 
 `Package::unpack(dest)`:
 1. The parent of `dest` exists. Create `dest` with `create_dir` (mode
@@ -407,7 +417,9 @@ nothing in proportion to a declared size. Any failure is
    `create_dir` (0755), then the file with `create_new(true)` (0644), and
    write it.
 3. `Mod::read(dest)?` and `check_component()?`.
-4. On any error after step 1, remove `dest` and return the error.
+4. On any error after step 1, attempt to remove `dest` and return the
+   original unpack error even if cleanup also fails. Successful cleanup
+   leaves no destination; a cleanup failure can leave partial output.
 
 ### 6.5 Example (golden)
 
@@ -615,9 +627,10 @@ impl Package {
 #[derive(Debug, thiserror::Error)]
 pub enum PackageError {
     #[error("the package is {size} bytes; the limit is 67108864")] TooLarge { size: u64 },
+    #[error("too many files; the limit is 4096")] TooManyFiles,
     #[error("bad package format: {0}")] Format(String),
-    #[error("path `{path}` is not allowed: {reason}")] Path { path: String, reason: &'static str },
-    #[error("`{path}` is a symbolic link; a package holds no links")] Symlink { path: String },
+    #[error("path `{}` is not allowed: {reason}", path.escape_debug())] Path { path: String, reason: &'static str },
+    #[error("`{}` is a symbolic link; a package holds no links", path.escape_debug())] Symlink { path: String },
     #[error("{} exists already", path.display())] DestExists { path: PathBuf },
     #[error("{}: {source}", path.display())] Io { path: PathBuf, #[source] source: std::io::Error },
     #[error(transparent)] Mod(#[from] ModError),
@@ -702,8 +715,8 @@ world recommendations {
 | No path traversal | path grammar (6.2) in pack and decode, before any write; `unpack` writes only below a directory it has just created, with `create_new`. |
 | No overwrite through case or file/directory clashes | the lowercase and parent checks of 6.2. |
 | No size bomb | no compression; the length limit is checked first; each declared size is compared with the remaining input; `.wit`, `mod.toml`, `deps.json` and release limits are checked before parsing; WIT nesting ≤ 32. |
-| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. |
-| No secret leaves through a package | only the paths of 6.1; hidden entries skipped; symbolic links refused; private state lives in the home, never in a mod folder. |
+| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
+| No secret leaves through a package | only the paths of 6.1; hidden entries checked for links before being skipped; symbolic links refused; every pack read uses the no-follow open and opened-file regularity check of 6.4 on Unix; private state lives in the home, never in a mod folder. |
 | One meaning, one byte string | canonical package bytes (6.3) and canonical release CBOR (7.2) with decode-then-re-encode; so one id and one signature per meaning. |
 | A package matches its release | `Release::check` re-derives the body from the unpacked mod and compares every field. |
 | `pkg` runs nothing | it only parses; it starts no process and loads no Wasm into a runtime. |
