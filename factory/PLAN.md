@@ -31,7 +31,7 @@ Step 2 (Run together, J2).
   `check.providers[].path` is null for a local provider; `add --dir` resolves the provider path
   from `--dir`; a subscriber's `/events` also gets the provider's raw `event` messages. Host
   stage 5 (`Host::plan`, `Source`, confirmation) and S25 (revoke) are not built: S12.
-- [ ] **S13 Cheap tests.** The test pyramid (`factory/README.md`) on the tests that exist. A
+- [~] **S13 Cheap tests.** (branch `slice/s13`; foreman: see `Foremen`) The test pyramid (`factory/README.md`) on the tests that exist. A
   maker of watane runs `cargo test` in dev and gets an answer in under 2 minutes, not 12.
   - Outcomes: dev's default `cargo test` under 2 min on a quiet machine (now: a cold mod build of
     about 30 s in nearly every integration test); the template is built once per test binary and
@@ -40,8 +40,9 @@ Step 2 (Run together, J2).
     proves wiring; cold builds, the preview life cycle and J1 are `slow` with a reason; host's
     default run is checked against the same budget. No outcome loses its proof: each DEV-S and
     HOST scenario keeps a test, listed by the foreman.
-  - Touches: `dev/tests/*`, `dev/src/*` test modules only, host tests only if over budget.
-    Waits for S11 (it adds dev tests).
+  - Touches: `dev/tests/*`, `dev/src/*` test modules only. Host: measure its default run and
+    report the time; no host file changes (S12a owns host).
+  - Input: S11 friction (the full slow run takes about 30 min: serve.rs 11, unit_tests.rs 10).
 - [x] **S14 Quiet GUI tests.** Delivered 2026-11-11 (main `dca54b6`). Sol runs: S14-1 1.
 - [x] **S15 Packages say what is wrong.** Delivered 2026-11-11 (main `3c441d7`). Sol runs: S15-1 2 (new, resume).
   Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
@@ -67,18 +68,25 @@ Step 2 (Run together, J2).
   - Measure both harnesses the same way: commands, failed commands, source reads, guesses.
   - Touches: dev (`cli.rs`, `outcome.rs`, `preview.rs`, the template `AGENTS.md`). After S11 and
     S13 (shared dev files).
-- [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
-  starts the app, installs `reading-list` and `recommendations` from their folders, approves the
-  plan, uses them together, restarts, withdraws a grant, and removes a mod.
+- [~] **S12a J2: Alice runs her mods together in the app.** (branch `slice/s12a`; foreman: see
+  `Foremen`) App stage B on the real host. Alice starts the app, installs `reading-list` and
+  `recommendations` from their folders, approves the plan, uses them together, restarts,
+  withdraws a grant, and removes a mod.
   - Outcomes: app S2, S2b, S6 to S9 against the real host; J2 as `app/tests/j2.rs`; the host's
-    plan, grants, revoke, update, remove and home mode with the app's Confirm (host stage 5);
-    the step-2 hostile rows (subscription export via `/call`, storage after revoke).
-  - Touches: app (`core.rs` on host, `HostConfirm`, `words.rs`, delete `fake.rs`), host stage 5
-    (catalog plan, grants, remove), dev `install` (DEV-S-27 to 29, `fake-watane`). Waits for S10
-    and S11; may be cut into an app part and a host part once those land.
+    plan, grants, revoke (S25), update, remove and home mode with the app's Confirm (host stage
+    5: `Host::plan`, `Source`, confirmation); the step-2 hostile rows (subscription export via
+    `/call`, storage after revoke).
+  - Touches: app (`core.rs` on host, `HostConfirm`, `words.rs`, delete `fake.rs`), host (stage 5
+    files, its tests). Not dev (S13 owns dev tests; dev `install` is S12b).
   - Also (S10 user-sim): the main page polls on focus and every 2 s (app 7); "No mods yet" in an
     empty launcher; a disabled mod says so; opening an open mod while consent shows must not
     steal its focus; `ready` reports the real port.
+  - Tests: front tests only with `--include-ignored`, once, before delivery (`factory/README.md`).
+- [ ] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
+  and `fake-watane`, against the home host S12a builds. After S12a and S13 (dev files).
+  Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
+  `check.providers[].path` for a local provider, `add --dir` path resolution, a subscriber's
+  `/events` getting the provider's raw `event` messages.
 
 ## Stage coverage
 
