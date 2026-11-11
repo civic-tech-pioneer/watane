@@ -82,6 +82,27 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
 mod tests {
     use super::*;
     #[test]
+    fn ac3_guide_documents_fakes_and_delivery() {
+        let guide = include_str!("../template/AGENTS.md");
+        assert!(!guide.contains("arrive with links"));
+        assert!(guide.contains("mods:<slug>/<iface>"));
+        assert!(guide.contains("no fake"));
+        let examples: Vec<serde_json::Value> = guide
+            .split("```json\n")
+            .skip(1)
+            .map(|block| serde_json::from_str(block.split("```").next().unwrap()).unwrap())
+            .collect();
+        assert!(
+            examples
+                .iter()
+                .any(|v| v["fakes"]["mods:reading-list/books"]["all"]
+                    == serde_json::json!(["Dune"])
+                    && v["steps"][0]["deliver"] == "events.added"
+                    && v["steps"][0]["args"] == serde_json::json!({"title": "Emma"}))
+        );
+    }
+
+    #[test]
     fn render_all_placeholders() {
         let slug = "a-b-c".parse().unwrap();
         assert_eq!(

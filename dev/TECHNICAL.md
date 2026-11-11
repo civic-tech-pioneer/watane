@@ -278,7 +278,8 @@ as `Authorization: Bearer <token>`. On success, `next` is
 `Give the person this page: <url>`, using the served mod's own (last)
 `pages` entry; it is null when that mod has no page. On failure with an
 `env.*` first error, `next` is `watane-dev doctor --json`; other test
-pipeline failures use `watane-dev test --json`. **serve --stop**:
+pipeline failures use `watane-dev test --json`, adding
+`--dir <absolute provider folder>` when the first failing folder is a provider. **serve --stop**:
 `{"stopped": true, "home": "..."}`; `stopped` is false when none ran, and
 that is not an error. When `stopped` is true, `next` is
 `The preview and its data are gone. To start a new one, run: watane-dev serve --json`.
@@ -943,7 +944,9 @@ folder runs the `test` pipeline (sections 5 to 8). Traversal reads dependency
 metadata without validating the world, so a pending edit after `add` does
 not hide a cycle or a provider's test failure. The first folder that
 fails stops the command. Each Problem of a provider gets the prefix
-`<provider slug>: ` in its message, and its `file` is absolute.
+`<provider slug>: ` in its message, its `file` is absolute, and its `fix`
+and the command's `next` are
+`watane-dev test --json --dir <absolute provider folder>`.
 
 ### 9.3 `serve`
 

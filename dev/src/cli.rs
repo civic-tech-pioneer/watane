@@ -157,8 +157,11 @@ fn test_local(dir: &Path) -> Outcome {
         if !tested.ok {
             if provider != dir {
                 let slug = deps::label(&provider);
+                let next = format!("watane-dev test --json --dir {}", provider.display());
+                tested.next = Some(next.clone());
                 for problem in &mut tested.errors {
                     problem.message = format!("{slug}: {}", problem.message);
+                    problem.fix = Some(next.clone());
                     let file = problem
                         .file
                         .as_deref()
@@ -235,6 +238,69 @@ pub fn test(dir: &Path) -> Outcome {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac1_provider_failure_sets_next_and_all_fixes() {
+        let root = tempfile::tempdir().unwrap();
+        let consumer = root.path().join("consumer");
+        let provider = root.path().join("provider");
+        template::new_mod(&consumer, "consumer").unwrap();
+        template::new_mod(&provider, "provider").unwrap();
+        deps::add_local(&consumer, &provider).unwrap();
+        std::fs::write(provider.join("logic/build.rs"), "fn main() {}").unwrap();
+        let tested = test_local(&consumer.canonicalize().unwrap());
+        let expected = format!(
+            "watane-dev test --json --dir {}",
+            provider.canonicalize().unwrap().display()
+        );
+        assert!(!tested.ok);
+        assert_eq!(tested.next.as_deref(), Some(expected.as_str()));
+        assert!(
+            tested
+                .errors
+                .iter()
+                .all(|p| p.fix.as_deref() == Some(expected.as_str()))
+        );
+    }
+
+    #[test]
+    fn ac2_consumer_failure_keeps_local_next() {
+        let root = tempfile::tempdir().unwrap();
+        let consumer = root.path().join("consumer");
+        template::new_mod(&consumer, "consumer").unwrap();
+        std::fs::write(consumer.join("logic/build.rs"), "fn main() {}").unwrap();
+        let tested = test_local(&consumer.canonicalize().unwrap());
+        assert!(!tested.ok);
+        assert_eq!(tested.next.as_deref(), Some("watane-dev test --json"));
+    }
+
+    #[test]
+    fn ac2_first_failing_provider_decides_next() {
+        let root = tempfile::tempdir().unwrap();
+        let consumer = root.path().join("consumer");
+        template::new_mod(&consumer, "consumer").unwrap();
+        for slug in ["alpha", "beta"] {
+            let provider = root.path().join(slug);
+            template::new_mod(&provider, slug).unwrap();
+            deps::add_local(&consumer, &provider).unwrap();
+            std::fs::write(provider.join("logic/build.rs"), "fn main() {}").unwrap();
+        }
+        let tested = test_local(&consumer.canonicalize().unwrap());
+        assert!(!tested.ok);
+        assert_eq!(
+            tested.next,
+            Some(format!(
+                "watane-dev test --json --dir {}",
+                root.path().join("alpha").canonicalize().unwrap().display()
+            ))
+        );
+        assert!(
+            tested
+                .errors
+                .iter()
+                .all(|p| p.message.starts_with("alpha: "))
+        );
+    }
 
     #[test]
     fn ac7a_next_uses_consumer_page_after_providers() {

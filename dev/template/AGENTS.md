@@ -74,7 +74,14 @@ return value or failure; emits checks the events in order. For example:
 file, 1-based step, call, expected and got. `fails: true` expects any call
 error; `fails: "text"` matches part of "<code>: <message>". Omitted args
 defaults to {}. An emits list must match exactly, including order.
-Provider fakes and deliver steps arrive with links between mods (step 2).
+`fakes` maps `mods:<slug>/<iface>` without version → function → JSON answer; a call with no fake fails "no fake".
+A `deliver` step invokes a subscription as `<provider iface>.<fn>`, with `args` by parameter name:
+
+```json
+{"fakes": {"mods:reading-list/books": {"all": ["Dune"]}},
+ "steps": [{"deliver": "events.added", "args": {"title": "Emma"}}]}
+```
+
 Serve runs all tests before starting or updating the preview.
 
 ## Results
