@@ -228,6 +228,7 @@ async fn ac5_state_is_private_and_reinstall_preserves_it() {
     );
 }
 #[tokio::test]
+#[ignore = "timing: run on a quiescent machine, see factory/README.md"]
 async fn ac6_limits_stop_calls_and_next_instance_answers() {
     for (limits, function, args, limit, minimum, maximum) in [
         (

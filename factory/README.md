@@ -45,7 +45,7 @@ parallel worktrees, and Opus reviewing and merging each one.
 |---|---|
 | Era B: fixed interfaces, small tickets that list their files, Sol builds, Opus reviews | The whole core loop |
 | `run.sh`: one entry point, old logs kept, a ledger of each run | `impl.sh`, with the same ledger |
-| Sol at an effort set per task (medium by default, high for a boundary) | The same table |
+| Sol at an effort set per task (medium by default; high only for an open security decision) | The same table |
 | Acceptance tests with an independent oracle; never weaken a test | Implementer writes them first; validator checks them |
 | The skeptic's checklist (new mechanism, weaker boundary, second copy of a concept, abstraction with one user) | In the validator's fit and simplicity checks |
 | The "tripwire": stop when a fix needs a new mechanism | Implementer stops on costly-to-undo choices |
@@ -102,3 +102,13 @@ session gets the same settings. Both were tested from a worktree on 2026-11-10.
 
 From `watane/` on `main`, in Claude Code: `/product-owner`. It refines slice S1 in `PLAN.md` and
 hands it to a foreman session.
+
+## Timing tests
+
+Tests that assert a spec'd time limit (a call stopped after 200 ms and before 2 s) fail under
+the load of parallel slices, so they carry `#[ignore = "timing: run on a quiescent machine, ..."]`.
+Sol and validators skip them. The product owner runs them on `main` after each merge, one at a
+time; a failure counts only if it repeats:
+`cargo test -p watane-host --test runtime -- --ignored --test-threads=1`.
+A new test of a time limit gets the same attribute. A wait that only guards against a hang is
+not such a test: give it a wide bound (30 s or more) and leave it in the normal run.

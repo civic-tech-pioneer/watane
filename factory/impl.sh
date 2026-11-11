@@ -7,6 +7,7 @@
 # the worktree: <task>.{jsonl,last.md,session}, and one line per run in ledger.jsonl. A new run of a
 # task that ran before first moves the old files to <task>.<n>.*, so no log is lost.
 set -u
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"  # rustup's cargo (has wasm32-wasip2) before Homebrew's
 F=$(cd "$(dirname "$0")" && pwd); W=$(dirname "$F")
 G=$(git -C "$W" rev-parse --path-format=absolute --git-common-dir); GD=$(git -C "$W" rev-parse --absolute-git-dir)
 R=$(dirname "$G")/factory/runs

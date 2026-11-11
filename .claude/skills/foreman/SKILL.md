@@ -17,6 +17,7 @@ At most 4 tasks, one per subsystem, in dependency order (`pkg`/`log` first, `app
 ```
 Subsystem: <pkg|host|dev|app|log|dist>
 Effort: <low|medium|high|xhigh>
+Depends on: <task ids>|none
 Slice: <id> — <story>
 ## Goal            one paragraph: what exists after this task, in user terms where possible
 ## Acceptance      numbered, observable criteria (AC1, AC2, ...): input -> expected result
@@ -25,19 +26,27 @@ Slice: <id> — <story>
 ## Files           the files this task may touch
 ## Out of scope    what a later slice does
 ```
-Effort for Sol 6.1:
+Effort for Sol 6.1. Write `medium` unless a rule below says otherwise; `high` is the exception,
+and it costs about twice the time:
 - `low`: mechanical work: a fixture, a rename, a test for existing behaviour.
-- `medium` (default): one subsystem, the spec is clear.
-- `high`: a security boundary (sandbox, grants, consent, signatures, hashes), a wire or file
-  format, or a public interface that siblings use.
-- `xhigh`: only after the task failed twice at `high`.
+- `medium` (default): almost every task, including ones that are long, touch several files, or
+  implement a format or interface whose spec section is already written out.
+- `high`: only when the task itself decides something the spec leaves open at a security boundary
+  (sandbox, grants, consent, signatures, hashes). Touching a boundary or a format is not enough.
+  Name the open decision in the brief's Goal; no named decision, no `high`.
+- `xhigh`: never in a first brief; only after the task failed twice at `high`.
+- Raise effort only after a run fails at the lower one (section 2), not up front.
+
+Header also carries `Depends on: <task ids>|none`. A task depends on another only if it needs that
+task's code to compile or its tests to run. Cut the briefs so most say `none`: split by subsystem
+and by file, and fix the interface in both briefs' `## Interface` so neither waits for the other.
 
 ## 2. Build and validate one task
 
-1. `factory/impl.sh <task>` (in the background). At most one agent (Sol or a validator) works in
-   a worktree at a time. To run tasks with no dependency on each other at the same time, give each
-   extra task its own worktree: `git worktree add -b slice/<id>-<n> ../<id>-<n>`, then run
-   `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
+1. `factory/impl.sh <task>` (in the background). Start every task whose `Depends on` is done (or
+   `none`) at once; never run independent tasks one after another. At most one agent (Sol or a
+   validator) works in a worktree at a time, so give each extra task its own worktree:
+   `git worktree add -b slice/<id>-<n> ../<id>-<n>`, then run `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
    fast-forward `slice/<id>` to it, and remove the worktree and branch (each worktree has its own
    `target/`).
 2. Read its last message. `BLOCKED` or `QUESTIONS` go to section 4 first.

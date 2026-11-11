@@ -24,7 +24,7 @@ impl Stream {
         }
     }
     async fn message(&mut self) -> Value {
-        let frame = tokio::time::timeout(Duration::from_secs(2), self.frame())
+        let frame = tokio::time::timeout(Duration::from_secs(30), self.frame()) // hang guard
             .await
             .expect("no message");
         assert!(frame.starts_with("data: "), "{frame:?}");

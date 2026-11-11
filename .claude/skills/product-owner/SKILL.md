@@ -15,9 +15,12 @@ done when its journey (J1 to J5) passes on the real programs and every stage of 
 
 ## 1. The loop
 
-1. Keep exactly one slice sketched ahead of the slices in flight (section 2).
-2. Hand out a sketched slice when no slice in flight touches the same subsystems (section 3).
-   Disjoint slices may run at the same time; otherwise wait for the delivery.
+1. Keep up to 4 slices in flight, and one sketched ahead (section 2).
+2. Hand out a sketched slice when it shares no file with a slice in flight (section 3). Slices
+   may share a subsystem; they may not share a file, except one that only gains lines at its
+   end (a new module line, a new error code). Each sketch lists the files it owns under
+   `Touches`; check them against the slices in flight before the hand-out. Prefer cutting the
+   next slices so they own disjoint files over waiting.
 3. While slices are in flight: answer their questions (section 4) and sketch the next one.
    A foreman's turn ending is not news: pass nothing to the human until it delivers or blocks.
 4. On a delivery: accept it (section 5), then go to 1.
@@ -84,7 +87,8 @@ Either way: one question, its options, your recommendation, and the cost to undo
 
 A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its decisions.
 1. Check it: the user-sim said `ACCEPTED`, and the branch is rebased on `main`.
-2. `git merge --ff-only slice/<id>` on `main`. If that fails, send the foreman "rebase on main
+2. `git merge --ff-only slice/<id>` on `main`, then run the timing tests (`factory/README.md`,
+   "Timing tests"). If the merge fails, send the foreman "rebase on main
    and run the tests again".
 3. `claude stop <id>`, then remove its worktree and branch (the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a
