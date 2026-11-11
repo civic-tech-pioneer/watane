@@ -68,9 +68,8 @@ return value or failure; emits checks the events in order. For example:
             "emits": [{"event": "changes.counted", "args": {"count": 1}}]}]}
 ```
 
-Contract execution, provider fakes and event delivery arrive with links
-to their guide and examples in a later slice. This slice runs unit tests;
-result.contract is null.
+Contract execution, provider fakes and event delivery arrive later, with
+links to their guide and examples. Until then result.contract is null.
 
 ## Results
 

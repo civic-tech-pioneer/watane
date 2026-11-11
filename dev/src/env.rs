@@ -2,6 +2,7 @@ use crate::outcome::Problem;
 use std::{fs, path::PathBuf};
 pub struct Env {
     pub cache: PathBuf,
+    pub unit_seconds: u64,
 }
 impl Env {
     pub fn from_process() -> Result<Self, Problem> {
@@ -26,6 +27,10 @@ impl Env {
         }
         Ok(Self {
             cache: cache.canonicalize().map_err(Problem::internal)?,
+            unit_seconds: std::env::var("WATANE_DEV_UNIT_SECONDS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(60),
         })
     }
 }

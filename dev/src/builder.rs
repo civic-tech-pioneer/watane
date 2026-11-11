@@ -363,6 +363,7 @@ mod tests {
     fn ac6_cargo_config_quotes_paths_and_restricts_environment() {
         let env = Env {
             cache: PathBuf::from("/cache with \"quotes\""),
+            unit_seconds: 60,
         };
         let toolchain = Toolchain {
             cargo: "/rust/bin/cargo".into(),

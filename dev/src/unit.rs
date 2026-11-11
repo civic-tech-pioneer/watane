@@ -251,7 +251,10 @@ fn run(
                     Code::TestUnitLimit,
                     format!("unit tests stopped after {seconds} s"),
                 ))
-            } else if detail.contains("memory") || err.contains("memory allocation of") {
+            } else if detail.contains("forcing trap when growing memory")
+                || detail.contains("memory growth failure")
+                || err.contains("memory allocation of")
+            {
                 Some((
                     Code::TestUnitLimit,
                     "unit tests used more than 512 MiB".into(),
@@ -299,10 +302,7 @@ pub fn unit_tests(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<UnitRep
             "json",
         ],
     )?;
-    let seconds = std::env::var("WATANE_DEV_UNIT_SECONDS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(60);
+    let seconds = ctx.env.unit_seconds;
     let mut config = Config::new();
     config
         .epoch_interruption(true)
