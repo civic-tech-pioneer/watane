@@ -12,27 +12,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S1 Hello page.** Delivered 2026-11-10 (main `bacecdc`). Sol runs: pkg 1, host 1, dev 2.
 - [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
 - [x] **S3 An edit keeps the data.** Delivered 2026-11-10 (main `c883171`). Sol runs: host 1, dev 1.
-- [~] **S4 The agent fixes a failing test.** (branch `slice/s4`; foreman: see `Foremen` below)
-  The agent breaks the counter's `add`, runs `watane-dev test`, reads the result, fixes the code,
-  and the tests pass.
-  - Outcomes (user-sim, on the real programs):
-    1. On a new mod, `test --json` exits 0; unit `passed` equals the `#[test]` functions in
-       `logic/src/lib.rs`, contract `passed` equals the steps in `tests/*.json` (DEV-S-4).
-    2. With `add` changed to add 2, `test --json` exits 1 with `test.contract`: file, step, call
-       `api.add`, expected and got; `next` is the command to run again. The fix makes it pass.
-    3. A unit test `fails_on_purpose` gives `test.unit` naming it; an endless unit test gives
-       `test.unit_limit` within the limit plus 5 s; a unit test cannot read `/` or the
-       environment, and writes no file (DEV-S-14 to 16).
-    4. Without `tests/*.json`, `test` exits 1 with `mod.no_contract_tests`; `serve` runs `test`
-       first and starts no preview for a mod whose tests fail.
-    5. `mod.dependency` and `mod.cargo_key` give their line in `logic/Cargo.toml`; a `/call`
-       without `Origin` gets a 403 whose message names the missing header (S2 user-sim).
-  - Touches: host (stage 5 part: `Harness`, `Fakes`, `Outcome`, `EventRecord`; the 403 message),
-    dev (stage 3 unit, stage 4 contract and `json_eq`, template `tests/counter.json`, check
-    stage 6, line numbers for `logic/Cargo.toml`).
-  - Interfaces it creates: `Harness` and its types (host → dev); the contract test file (dev 8.1).
-  - Leaves out: fakes for other packages and `deliver` steps (DEV-S-18, the `deliver` part of
-    DEV-S-19): they need links (step 2). `emits` steps are in.
+- [x] **S4 The agent fixes a failing test.** Delivered 2026-11-11 (main `91e8d0a`). Sol runs: S4-1 1, S4-2 1, S4-3 1.
 - [ ] **S5 The agent works the mod through MCP.** The agent runs `serve --json`, points an MCP
   client at `result.mcp` with its token, lists the counter's calls, calls `add`, and Alice's open
   page shows the new count by itself.
@@ -46,12 +26,31 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
        any `Origin` 403, `GET` 405, a batch `-32600`, a notification 202 (S14, S15).
     4. `initialize` answers with the client's protocol version when known, else `2025-06-18`;
        a real MCP client (e.g. `claude mcp add --transport http`) lists and calls the tools.
+    5. A `serve --json` refused for failing tests has `next` `watane-dev test --json` (S4 user-sim).
   - Touches: host stage 4 (`src/tools.rs`: toolsets in `toolsets.json`, tokens, `/mcp/<toolset>`,
-    `Caller::Agent`), host program (ready line `mcp` and `token` in a preview), dev `serve` (its
-    JSON carries them).
+    `Caller::Agent`; the function listing S4 deferred: `Harness::functions()`/`FunctionInfo` or
+    its equivalent), host program (ready line `mcp` and `token` in a preview), dev `serve`
+    (`preview.rs`: its JSON carries them). Not `catalog.rs`, `builder.rs`, `unit.rs` (S8).
   - Interfaces it creates: the ready line's `mcp`/`token` (host -> dev); `serve --json`'s `mcp`
     (dev -> agent); `set_toolset`, `issue_token`, `end_token` on `Host`.
   - Leaves out: tokens in a participant home (app, step 2); any UI for toolsets.
+- [ ] **S8 Same mod, same id.** Bob copies Alice's mod folder to another path and runs
+  `watane-dev test` with his own cache; both builds give the same `logic.wasm` bytes, and the
+  preview host installs the mod under the same canonical package id that `pack` gives. A mod
+  that sneaks in a file from outside its folder is refused.
+  - Outcomes (user-sim, on the real programs):
+    1. One mod folder at two paths with two caches: `test` in each gives equal `logic.wasm`
+       bytes, holding neither the mod path, the cache path nor the home path (DEV-S-12).
+    2. `include_bytes!` of a file outside the mod: `test --json` exits 1 with
+       `build.reads_outside` naming the file, no `logic.wasm`, and the file's bytes in no file
+       of the mod folder; same for a unit-test build (DEV-S-10).
+    3. `env!("SECRET")` with `SECRET` set in the shell gives `build.compile` (DEV-S-11).
+    4. The preview host's installed package id for a mod equals the id `pack` gives for the
+       same folder; the host's temporary digest is gone (both `ponytail`s in `catalog.rs`).
+  - Touches: dev stage 2 (`builder.rs`, `unit.rs` build step, `dev/tests/builder.rs`),
+    host stage 5 (`catalog.rs` install via `pkg::pack`/`unpack`).
+  - Interfaces it changes: host install now depends on pkg `pack`/`unpack` (pkg -> host).
+  - Leaves out: `O_NOFOLLOW` and the other S7 pkg follow-ups.
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
   that shows in the running preview.
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
@@ -77,13 +76,13 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
 | host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`): `tests/hostile.rs` page rows |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | open (S5) |
-| host | 5 catalog and home | 1, 2 | part: preview folder install only; `Harness` (S4); plan, grants, update, remove, home mode in step 2 |
+| host | 5 catalog and home | 1, 2 | part: preview folder install; `Harness::call` (S4); temp digest (S8); `deliver` and plan, grants, update, remove, home mode in step 2 |
 | host | 6 program | 1 | part (S1): S1 to S3 tests not all checked |
 | dev | 0 cli, outcome | 1 | done (S1) |
-| dev | 1 template, new, check | 1 | part (S1, S2): template `tests/` and check stage 6 in S4 |
-| dev | 2 allowlist, toolchain, builder | 1 | part (S2): DEV-S-10 outside reads, DEV-S-12 reproducible bytes |
-| dev | 3 unit | 1 | open (S4) |
-| dev | 4 contract | 1 | open (S4) |
+| dev | 1 template, new, check | 1 | done (S4) |
+| dev | 2 allowlist, toolchain, builder | 1 | part (S2): DEV-S-10 outside reads (`ponytail` in `builder.rs`), DEV-S-12 reproducible bytes (S8) |
+| dev | 3 unit | 1 | done (S4) |
+| dev | 4 contract | 1 | part (S4): fakes and `deliver` steps (DEV-S-18, 19) in step 2 |
 | dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` only (S1, S2) |
 | dev | 6 deps, add, install | 2 | open |
 | dev | 7 publish | 3 | open |
@@ -102,7 +101,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<sessionId>.jsonl`.
 
 - S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`; died 2026-11-10 23:32 mid S4-2 validation.
-  Resumed 2026-11-11 as `2066b4f1` (sessionId `2066b4f1-2ca3-4a1f-9fa3-29c671cea48f`).
+  Resumed 2026-11-11 as `2066b4f1` (sessionId `2066b4f1-2ca3-4a1f-9fa3-29c671cea48f`); died after
+  the user-sim's ACCEPTED, in its final test run; the product owner ran the tests and merged (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -138,6 +138,12 @@ The human may veto each one.
 - S3: pages reload only when the package id changes.
 - S7: `pack` checks paths (links, special files, names) before `Mod::read`, so a link gives
   `PackageError::Symlink` and special files are never opened (pkg §6.4, §15.17).
+- S4: `serve` runs the whole `test` pipeline first; failing tests start no preview and leave a
+  running one alone.
+- S4: unit tests keep typed WASI instances linked (wasmtime 48's `define_unknown_imports_as_traps`
+  breaks resource identities); non-WASI imports trap; TCP, UDP and name lookup are off.
+- S4: `Harness` has only `call`; `deliver` joins with links (step 2), `functions()` with S5.
+- S4: the outside-read check on unit-test builds stays deferred with DEV-S-10 (S8).
 
 ## Friction
 
@@ -153,6 +159,9 @@ The human may veto each one.
 - S7: the foreman tried `git push`; the repository has no remote.
 - S7: there is no command that only builds `logic.wasm`; and Homebrew's `cargo` comes before
   rustup's on this machine's PATH, without `wasm32-wasip2`.
+- S4: the foreman died silently again, this time after acceptance, during its last test run (2x).
+- S4: contract `test.contract` errors carry `line: null`; `emits` mismatches show the full event
+  name in `got` and the short one in `expected`; one template bug fails a unit and a contract test.
 
 ## Digest
 
@@ -165,3 +174,6 @@ The human may veto each one.
   new revision and the same count; every open page updates by itself.
 - S7: a mod folder packs into one canonical package with a stable id and unpacks to the same
   folder; hostile packages are refused.
+- S4: the agent runs `watane-dev test`, gets unit and contract failures with file, step, expected
+  and got, fixes the code and passes; unit tests run sandboxed with a time limit; `serve` refuses
+  a mod whose tests fail.
