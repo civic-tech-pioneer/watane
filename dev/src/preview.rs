@@ -163,8 +163,8 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
             Problem::new(
                 Code::PreviewPrevious,
                 format!(
-                    "the preview at http://localhost:{}/api/ still serves the previous build",
-                    ready.port
+                    "the preview at {} still serves the previous build",
+                    api_url(&ready)
                 ),
             )
             .fix("Fix the errors, then run: watane-dev serve --json"),
@@ -203,10 +203,13 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
             .collect::<Vec<_>>();
         // Construct loopback URLs from the host's port, never follow URLs supplied by files.
         Ok(
-            json!({"home":home,"api":format!("http://localhost:{}/api/",ready.port),"reused":reuse,"pages":pages,"mcp":mcp(&ready),"log":log}),
+            json!({"home":home,"api":api_url(&ready),"reused":reuse,"pages":pages,"mcp":mcp(&ready),"log":log}),
         )
     };
     work().map_err(|e| vec![e])
+}
+fn api_url(ready: &Ready) -> String {
+    format!("http://localhost:{}/api/", ready.port)
 }
 fn mcp(ready: &Ready) -> Value {
     ready.token.as_ref().map_or(Value::Null, |token| {
