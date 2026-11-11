@@ -87,7 +87,9 @@ pub fn run(cli: Cli) -> Outcome {
                 if stop {
                     preview::stop(&dir, &env)
                 } else {
-                    preview::serve(&dir, &env)
+                    preview::serve(&dir, &env).inspect_err(|_| {
+                        outcome.next = Some("watane-dev test --json".into());
+                    })
                 }
             }),
     };

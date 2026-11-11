@@ -71,3 +71,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S4-2 (dev): libtest needs --nocapture to retain panic locations on Wasm abort; the parser tracks a test across its printed output.
 - S4-3 (dev): test runs contracts after units and serve gates previews on the whole pipeline; deliver and uncovered warnings wait for links/toolsets, fakes pass through unlinked, and CallError supplies code text through serialization.
 - S4-3 (dev): a contract host-open error is one file Problem without a synthetic step; invalid-file errors retain syntax locations and do not stop other files.
+
+- S5-2 (dev): serve builds API and MCP URLs from the cached Ready port, reuses its preview token, and points failed test pipelines to watane-dev test --json.

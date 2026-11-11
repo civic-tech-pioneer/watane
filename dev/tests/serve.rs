@@ -424,3 +424,89 @@ fn ac8_failed_contract_keeps_running_preview_bytes() {
     assert_eq!(v["errors"][0]["code"], "mod.no_contract_tests");
     assert_eq!(get(&preview, "").1, old_bytes);
 }
+
+#[test]
+fn ac3_failed_contract_reports_test_next() {
+    let m = Mod::new(false);
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.add","returns":2}]}"#,
+    )
+    .unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert_eq!(v["next"], "watane-dev test --json");
+}
+
+fn mcp_request(v: &Value, method: &str, params: Value) -> Value {
+    let url = v["mcp"]["url"].as_str().unwrap();
+    assert_eq!(url, format!("http://localhost:{}/mcp/preview", port(v)));
+    let token = v["mcp"]["token"].as_str().unwrap();
+    let body =
+        serde_json::json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
+    let mut stream = TcpStream::connect(("127.0.0.1", port(v))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    write!(stream, "POST /mcp/preview HTTP/1.1\r\nHost: localhost:{}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", port(v), body.len()).unwrap();
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes).unwrap();
+    let split = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    assert!(
+        bytes.starts_with(b"HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let response: Value = serde_json::from_slice(&bytes[split + 4..]).unwrap();
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert_eq!(response["id"], 1);
+    assert!(response.get("error").is_none(), "{response}");
+    response["result"].clone()
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac1_preview_mcp_lists_and_calls_counter() {
+    let m = Mod::new(true);
+    let v = m.serve();
+    assert_eq!(
+        v["mcp"]["url"],
+        format!("http://localhost:{}/mcp/preview", port(&v))
+    );
+    assert_eq!(v["mcp"]["toolset"], "preview");
+    assert!(v["mcp"]["token"].as_str().unwrap().starts_with("wt_"));
+    let slug = "hello";
+    let add = format!("{slug}_api_add");
+    let get = format!("{slug}_api_get");
+    let listed = mcp_request(&v, "tools/list", serde_json::json!({}));
+    let names: Vec<_> = listed["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&add.as_str()), "{listed}");
+    assert!(names.contains(&get.as_str()), "{listed}");
+    let called = mcp_request(
+        &v,
+        "tools/call",
+        serde_json::json!({"name":add,"arguments":{}}),
+    );
+    assert_eq!(
+        called,
+        serde_json::json!({"content":[{"type":"text","text":"1"}],"isError":false})
+    );
+    assert_eq!(call(&v, "api.get"), serde_json::json!({"value":1}));
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac2_reused_preview_keeps_mcp() {
+    let m = Mod::new(true);
+    let first = m.serve();
+    assert!(first["mcp"].is_object());
+    let second = m.serve();
+    assert_eq!(second["reused"], true);
+    assert_eq!(second["mcp"], first["mcp"]);
+}

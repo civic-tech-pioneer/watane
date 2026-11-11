@@ -183,10 +183,15 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
             .collect::<Vec<_>>();
         // Construct loopback URLs from the host's port, never follow URLs supplied by files.
         Ok(
-            json!({"home":home,"api":format!("http://localhost:{}/api/",ready.port),"reused":reuse,"pages":pages,"mcp":null,"log":log}),
+            json!({"home":home,"api":format!("http://localhost:{}/api/",ready.port),"reused":reuse,"pages":pages,"mcp":mcp(&ready),"log":log}),
         )
     };
     work().map_err(|e| vec![e])
+}
+fn mcp(ready: &Ready) -> Value {
+    ready.token.as_ref().map_or(Value::Null, |token| {
+        json!({"url":format!("http://localhost:{}/mcp/preview", ready.port),"toolset":"preview","token":token})
+    })
 }
 fn stop_home(home: &Path) -> Result<bool, Problem> {
     if Client::for_home(home)?.is_none() {
@@ -264,4 +269,31 @@ pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
         Ok(json!({"stopped":stopped,"home":home}))
     };
     work().map_err(|e| vec![e])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac4_mcp_from_literal_ready() {
+        let mut ready = Ready {
+            watane: 1,
+            mode: "preview".into(),
+            home: "/tmp/preview".into(),
+            port: 52011,
+            api: "untrusted".into(),
+            mcp: Some("http://elsewhere/".into()),
+            token: Some("wt_x".into()),
+            mods: vec![],
+        };
+        assert_eq!(
+            json!({"mcp": mcp(&ready)}),
+            json!({"mcp": {
+                "url": "http://localhost:52011/mcp/preview", "toolset": "preview", "token": "wt_x"
+            }})
+        );
+        ready.token = None;
+        assert_eq!(json!({"mcp": mcp(&ready)}), json!({"mcp": null}));
+    }
 }

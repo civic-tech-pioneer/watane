@@ -269,7 +269,8 @@ or null. `next` on success: `watane-dev serve --json`; on failure:
 ```
 `pages` lists the mod and its local providers, in install order (providers
 first); `url` is null for a mod with no page. The token reaches the tools
-as `Authorization: Bearer <token>`. **serve --stop**:
+as `Authorization: Bearer <token>`. When the test pipeline fails, `next` is
+`watane-dev test --json`. **serve --stop**:
 `{"stopped": true, "home": "..."}`; `stopped` is false when none ran, and
 that is not an error.
 
@@ -932,7 +933,10 @@ fails stops the command. Each Problem of a provider gets the prefix
    folder with the slug of an installed local mod updates it; its state
    stays, because the host keys state by identity (`local/<slug>`).
 5. Report `pages` from the `installed` answer (`slug`, `local`, `page`),
-   and `api`, `mcp` and `token` from `P/ready.json`.
+   build `api` and `mcp.url` from the port in `P/ready.json`, using
+   `http://localhost:<port>/api/` and `http://localhost:<port>/mcp/preview`.
+   Set `mcp.toolset` to `preview` and take `mcp.token` from the cached ready
+   token; without a token, report `mcp: null`. Never follow ready-line URLs.
 
 ### 9.4 `serve --stop`
 
@@ -1226,6 +1230,7 @@ independent tool. Integration tests run the binary
 | builder | S2: cargo configuration quoting of a path with `"` and a space, environment whitelist; later: `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
 | unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
 | contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0` | literal expected failures |
+| preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text | literal JSON objects and null |
 | json_eq | key order, numbers, nesting | literal pairs |
 | deps | `.watane-dev.json` text after two adds | literal text |
 
@@ -1311,7 +1316,7 @@ Each has a proposed answer, which this specification uses.
    provider. Proposal: dev keeps the folder in its own `.watane-dev.json`,
    outside every package.
 6. **The preview token is only in the ready line**, but a second `serve`
-   must reuse the running preview. Proposal: dev keeps the ready line in
+   must reuse the running preview. Resolved: dev keeps the ready line in
    its cache with mode 0600. The preview holds no participant data (W5), so
    this is within spec §6 "not protected: another program of the same user".
 7. **F-PUB-4 "where the maker agrees"**: proposal: `publish` includes the
