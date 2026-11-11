@@ -23,6 +23,17 @@ pub(crate) struct ModView {
     pub error: Option<String>,
     pub grants: Vec<GrantLine>,
 }
+#[derive(serde::Serialize)]
+pub(crate) struct ToolRow {
+    pub entry: String,
+    pub tool: String,
+}
+fn tool_row(local: &str, interface: &str, function: &str) -> ToolRow {
+    ToolRow {
+        entry: format!("{local}:{interface}.{function}"),
+        tool: format!("{local}_{interface}_{function}"),
+    }
+}
 pub(crate) struct Core {
     pub host: Arc<Host>,
     pub served: Mutex<Option<Served>>,
@@ -113,16 +124,11 @@ impl Core {
         }
         Ok(())
     }
-    pub fn tools(&self) -> Result<Vec<String>, CmdError> {
+    pub fn tools(&self) -> Result<Vec<ToolRow>, CmdError> {
         let mut tools = Vec::new();
         for m in self.host.mods().into_iter().filter(|m| m.enabled) {
             for f in self.host.functions(&m.local)? {
-                tools.push(format!(
-                    "{}:{}.{}",
-                    m.local,
-                    f.interface.interface(),
-                    f.name
-                ));
+                tools.push(tool_row(m.local.as_ref(), f.interface.interface(), &f.name));
             }
         }
         Ok(tools)
@@ -131,6 +137,19 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_tool_row_keeps_entry_and_mcp_name() {
+        let row = tool_row("reading-list", "books", "list");
+        assert_eq!(row.entry, "reading-list:books.list");
+        assert_eq!(row.tool, "reading-list_books_list");
+    }
+    #[test]
+    fn ac2_tools_list_row_serializes_entry_and_tool() {
+        assert_eq!(
+            serde_json::to_value(tool_row("reading-list", "books", "list")).unwrap(),
+            serde_json::json!({"entry":"reading-list:books.list", "tool":"reading-list_books_list"})
+        );
+    }
     #[test]
     fn ac8_unknown_grant_keys_are_not_found() {
         for granted in [false, true] {

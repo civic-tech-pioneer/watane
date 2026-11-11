@@ -1,7 +1,7 @@
 use crate::{
     AppState, CmdError,
     consent::{Answer, AskId, Withheld},
-    core::ModView,
+    core::{ModView, ToolRow},
     views,
 };
 use serde_json::{Value, json};
@@ -193,7 +193,7 @@ pub(crate) async fn install_folders(
 pub(crate) fn tools_list(
     webview: tauri::Webview,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<String>, CmdError> {
+) -> Result<Vec<ToolRow>, CmdError> {
     record(&webview, "tools_list");
     core(&state)?.tools()
 }

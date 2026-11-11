@@ -65,13 +65,13 @@ async function agentsView() {
   if (JSON.stringify(tools) !== lastTools) {
     lastTools = JSON.stringify(tools); $('#tools').replaceChildren();
     for (const tool of tools) {
-      const label = element('label', '', $('#tools')); const check = document.createElement('input'); check.type = 'checkbox'; check.value = tool; label.append(check); element('span', tool, label);
+      const label = element('label', '', $('#tools')); const check = document.createElement('input'); check.type = 'checkbox'; check.value = tool.entry; label.append(check); element('span', tool.tool, label);
     }
   }
   if (JSON.stringify(sets) !== lastSets) {
     lastSets = JSON.stringify(sets); $('#toolsets').replaceChildren(); $('#token-toolset').replaceChildren();
     for (const set of sets) {
-      const row = element('p', `${set.name}: ${set.entries.join(', ')} `, $('#toolsets'));
+      const row = element('p', `${set.name}: ${set.entries.map(entry => entry.replace(':', '_').replace('.', '_')).join(', ')} `, $('#toolsets'));
       button(row, 'Edit', 'edit', () => {
         $('#toolset-name').value = set.name;
         for (const input of $('#tools').querySelectorAll('input')) input.checked = set.entries.includes(input.value);

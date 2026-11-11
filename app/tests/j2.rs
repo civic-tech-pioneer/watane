@@ -229,6 +229,30 @@ fn ac5_journey_j2() {
         "main",
         "document.querySelector('#toolsets').textContent.includes('reader')",
     );
+    // AC2/AC3: labels and saved entries use the same name as tools/call.
+    let tool_name = "reading-list_books_list";
+    let text = app.eval("main", "document.body.textContent");
+    assert!(text.as_str().unwrap().contains(tool_name));
+    assert!(!text.as_str().unwrap().contains("reading-list:books.list"));
+    assert_eq!(
+        app.eval("main", "document.querySelector('input[value=\"reading-list:books.list\"]').parentElement.textContent"),
+        tool_name
+    );
+    assert!(
+        app.eval("main", "document.querySelector('#toolsets').textContent")
+            .as_str()
+            .unwrap()
+            .contains(tool_name)
+    );
+    assert_eq!(
+        invoke(&app, "tools_list", json!({}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["entry"] == "reading-list:books.list")
+            .unwrap()["tool"],
+        tool_name
+    );
     app.eval("main", "document.querySelector('#token-toolset').value = 'reader'; document.querySelector('#handle').value = 'claude'; document.querySelector('#issue-token').click(); null");
     until(
         &app,
@@ -250,7 +274,7 @@ fn ac5_journey_j2() {
         .build()
         .unwrap();
     let call = || {
-        client.post(url.as_str().unwrap()).bearer_auth(token.as_str().unwrap()).json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reading-list_books_list","arguments":{}}})).send().unwrap()
+        client.post(url.as_str().unwrap()).bearer_auth(token.as_str().unwrap()).json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":tool_name,"arguments":{}}})).send().unwrap()
     };
     let result: Value = call().json().unwrap();
     assert_eq!(result["result"]["isError"], false);

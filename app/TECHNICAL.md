@@ -371,7 +371,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `grant_withdraw` | main | `local`, `key` | `null` | B |
 | `grant_give` | main | `local`, `key` | `null` | B |
 | `install_folders` | main | — | `{installed: [local]}` | B |
-| `tools_list` | main | — | `[string]` (toolset entries) | B |
+| `tools_list` | main | — | `[{entry: string, tool: string}]` | B |
 | `toolsets_list` | main | — | `[{name, entries: [string]}]` | B |
 | `toolset_save` | main | `name`, `entries: [string]` | `null` | B |
 | `tokens_list` | main | — | `[{id, toolset, handle}]` | B |
@@ -422,8 +422,12 @@ Behaviour:
   `host.grant`. No consent view for either: a withdrawal only removes
   authority, and a give-back is the participant's own act in `main`, which
   no mod reaches (host 4.4).
-- `tools_list`: for each enabled mod, `host.functions(local)` as entries
-  `<local>:<interface>.<function>` (short interface name, host 10.1).
+- `tools_list`: for each enabled mod, `host.functions(local)` as rows with `entry`
+  `<local>:<interface>.<function>` and `tool` `<local>_<interface>_<function>`
+  (short interface name, host 3.2 and 10.1). The page labels each checkbox
+  with `tool` and keeps `entry` as its value. Saved toolsets also display
+  entries by their MCP tool names, including entries of unavailable mods;
+  `toolset_save` still passes the unchanged entry strings to `set_toolset`.
 - `token_issue`: the page shows the token once with `Served::mcp_url` and a
   copy button, and keeps no copy. `token_end` false gives `not_found`.
 - `identity_backup`: a passphrase of at least 12 characters, else
