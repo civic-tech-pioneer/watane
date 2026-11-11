@@ -67,8 +67,18 @@ Step 2 (Run together, J2).
   grant-change message, so the app reloads the open window; a `/call` whose client disconnects
   keeps an `Arc<Host>` past shutdown; host `ac4_program_defaults_to_environment_home_and_port`
   probes port 47341 and then binds it, a race with a running watane.
+- [~] **S18 Alice runs the app on Linux.** (branch `slice/s18`; foreman: see `Foremen`) App stage F:
+  every app test passes on Linux under `xvfb-run`, in a Docker container on this Mac (arm64; the
+  deputy decision says a Linux VM is enough; x86_64 under emulation only if arm64 hides a gap).
+  - Outcomes: one script (`app/scripts/linux-test.sh`) builds the image and runs the app's
+    default and driver tests in it, all green; a `*.localhost` gap in WebKitGTK, if any, is a
+    finding in `app/NOTES.md`; the toolset view shows the host's MCP tool name (APP-F-25, from
+    S12a's user-sim).
+  - Touches: app only (Linux `cfg` code, the driver's Linux side, the script, a Dockerfile under
+    `app/`). Not dev (S17), not host unless a test proves a host bug on Linux (then ask).
+  - Leaves out: a Linux bundle, CI.
 - [ ] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
-  and `fake-watane`, against the home host S12a builds. After S12a and S13 (dev files).
+  and `fake-watane`, against the home host S12a built. After S17 (shared dev files).
   Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
   `check.providers[].path` for a local provider, `add --dir` path resolution, a subscriber's
   `/events` getting the provider's raw `event` messages.
