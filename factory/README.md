@@ -111,7 +111,7 @@ it; a higher level only proves that the parts work together.
 | Level | What | Cost | Runs in |
 |---|---|---|---|
 | Unit | a function in the crate (`#[cfg(test)]`): a rule, a parser, a classifier, an error text | ms | default `cargo test` |
-| Integration | a command or route on prebuilt fixtures (host: `tests/fixtures`; dev: one template build shared by the test binary, copied into each test's cache) | < 1 s each | default `cargo test` |
+| Integration | a command or route on prebuilt fixtures (host: `tests/fixtures`; dev: one warm template cache per test binary, shared by its tests; a copy at another path builds cold) | < 1 s each | default `cargo test` |
 | Slow | a cold build, a full pipeline on the real `watane`, one per thing only it proves (DEV-S-10 to 13, the preview life cycle) | 10 s to minutes | `#[ignore = "slow: ..."]` |
 | Journey | J1 to J5, one test each | minutes | `#[ignore = "slow: journey ..."]` |
 | Front | an app GUI check that needs real focus or stacking (`App::front`); waits for the human to be idle | seconds each, plus the wait | `#[ignore = "front: takes the screen"]`, once per slice |
