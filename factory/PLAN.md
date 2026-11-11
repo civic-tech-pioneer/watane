@@ -54,6 +54,15 @@ Step 2 (Run together, J2).
     a `serve` refused for an env gap has `next` `watane-dev doctor --json`; `serve --stop` says
     that the preview's data is gone.
   - Leaves out: `install` into a home host (needs the app, stage B), grants UI.
+- [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
+  starts the app, installs `reading-list` and `recommendations` from their folders, approves the
+  plan, uses them together, restarts, withdraws a grant, and removes a mod.
+  - Outcomes: app S2, S2b, S6 to S9 against the real host; J2 as `app/tests/j2.rs`; the host's
+    plan, grants, revoke, update, remove and home mode with the app's Confirm (host stage 5);
+    the step-2 hostile rows (subscription export via `/call`, storage after revoke).
+  - Touches: app (`core.rs` on host, `HostConfirm`, `words.rs`, delete `fake.rs`), host stage 5
+    (catalog plan, grants, remove), dev `install` (DEV-S-27 to 29, `fake-watane`). Waits for S10
+    and S11; may be cut into an app part and a host part once those land.
 
 ## Stage coverage
 
