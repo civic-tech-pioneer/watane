@@ -8,9 +8,24 @@ use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
 
 #[derive(Clone)]
 pub(crate) struct ServerState {
-    pub host: Arc<Host>,
+    pub host: Arc<ServingHost>,
     pub port: u16,
     pub shutdown: watch::Receiver<bool>,
+}
+
+// All router, request and blocking-task references share this owner. Axum's
+// graceful shutdown signal can precede the drop of a connection's router.
+#[derive(Debug)]
+pub(crate) struct ServingHost {
+    // Field order matters: release the host before notifying shutdown.
+    host: Arc<Host>,
+    _finished: watch::Sender<()>,
+}
+impl std::ops::Deref for ServingHost {
+    type Target = Arc<Host>;
+    fn deref(&self) -> &Self::Target {
+        &self.host
+    }
 }
 
 #[derive(Debug)]
@@ -19,6 +34,7 @@ pub struct Served {
     host: Arc<Host>,
     shutdown: watch::Sender<bool>,
     tasks: Vec<JoinHandle<std::io::Result<()>>>,
+    finished: watch::Receiver<()>,
 }
 
 impl Host {
@@ -59,8 +75,13 @@ impl Host {
         }
         let (v4, v6, port) = listeners.ok_or(HostError::PortInUse(requested))?;
         let (shutdown, rx) = watch::channel(false);
-        let api_state = api::ApiState {
+        let (finished_tx, finished) = watch::channel(());
+        let host = Arc::new(ServingHost {
             host: self.clone(),
+            _finished: finished_tx,
+        });
+        let api_state = api::ApiState {
+            host: host.clone(),
             port,
         };
         use axum::routing::MethodFilter as M;
@@ -86,7 +107,7 @@ impl Host {
             .fallback(|| async { api::error(404, "bad_request", "unknown API route") });
         let router = api.layer(axum::middleware::from_fn_with_state(
             ServerState {
-                host: self.clone(),
+                host,
                 port,
                 shutdown: rx.clone(),
             },
@@ -119,6 +140,7 @@ impl Host {
             host: self.clone(),
             shutdown,
             tasks,
+            finished,
         })
     }
 }
@@ -167,6 +189,9 @@ impl Served {
             }
         }
         self.tasks.clear();
+        // Also wait for detached connection futures and spawn_blocking work.
+        // Their shared owner notifies only after releasing its host clone.
+        let _ = self.finished.changed().await;
     }
     fn clean_run(&self) {
         if let Err(e) = std::fs::remove_file(self.host.home().join("run.json"))
@@ -208,7 +233,7 @@ async fn dispatch(
     .any(|s| s == host);
     if api_host {
         if request.uri().path().starts_with("/mcp/") {
-            return crate::tools::respond(state.host, request).await;
+            return crate::tools::respond(&state.host, request).await;
         }
         if request.headers().contains_key(axum::http::header::ORIGIN) {
             return api::error(403, "forbidden", "Origin is forbidden on the local API");

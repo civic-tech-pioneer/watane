@@ -343,7 +343,7 @@ fn content(value: Value, is_result: bool) -> Value {
     };
     json!({"content":[{"type":"text","text":text(value)}],"isError":error})
 }
-pub(crate) async fn respond(host: Arc<Host>, request: Request<Body>) -> Response {
+pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Response {
     if request.headers().contains_key(header::ORIGIN) {
         return api::error(403, "forbidden", "Origin is forbidden on MCP");
     }

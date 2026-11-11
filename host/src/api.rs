@@ -1,8 +1,8 @@
-use crate::{Host, HostError};
+use crate::HostError;
 use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct ApiState {
-    pub host: Arc<Host>,
+    pub host: Arc<crate::server::ServingHost>,
     pub port: u16,
 }
 use axum::{

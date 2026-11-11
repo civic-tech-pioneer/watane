@@ -523,6 +523,140 @@ mod participant {
         );
         denied(&host, "recs", "api.suggest").await;
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac1_close_releases_home_after_calls_and_shutdown() {
+        for iteration in 0..10 {
+            let fake = Fake::new(vec![approve()]);
+            let (dir, host) = home(fake.clone());
+            install(&host, &["shelf", "recs"]).await;
+            call(&host, "shelf", "items.add", json!({"title":"Dune"})).await;
+            assert_eq!(Arc::strong_count(&host), 1, "call at iteration {iteration}");
+            assert_eq!(
+                call(&host, "recs", "api.received", Value::Null).await,
+                json!(["Dune"])
+            );
+            let error = host
+                .call_async(
+                    Caller::Page,
+                    local("shelf"),
+                    "items.missing".into(),
+                    Value::Null,
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(serde_json::to_value(error).unwrap()["code"], "no_function");
+            assert_eq!(
+                Arc::strong_count(&host),
+                1,
+                "failed call at iteration {iteration}"
+            );
+            let served = host.serve(0, axum::Router::new()).await.unwrap();
+            let client = reqwest::Client::new();
+            let url = format!("http://127.0.0.1:{}", served.port);
+            let header = format!("shelf.localhost:{}", served.port);
+            let response = client
+                .post(format!("{url}/call"))
+                .header("Host", &header)
+                .header("Origin", format!("http://{header}"))
+                .json(&json!({"fn":"items.all","args":null}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            assert_eq!(
+                response.json::<Value>().await.unwrap(),
+                json!({"value":["Dune"]})
+            );
+            assert_eq!(
+                client
+                    .get(format!("{url}/"))
+                    .header("Host", header)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            );
+            served.shutdown().await;
+            assert_eq!(
+                Arc::strong_count(&host),
+                1,
+                "shutdown at iteration {iteration}"
+            );
+            drop(host);
+            let reopened = Host::open(
+                dir.path(),
+                Mode::Home { app: Some(fake) },
+                Limits::default(),
+            )
+            .unwrap_or_else(|error| panic!("reopen at iteration {iteration}: {error}"));
+            drop(reopened);
+        }
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac2_shutdown_drops_connection_hosts_before_returning() {
+        let (_dir, host) = home(Fake::new(vec![approve()]));
+        install(&host, &["shelf", "recs"]).await;
+        for iteration in 0..200 {
+            let served = host.serve(0, axum::Router::new()).await.unwrap();
+            let response = reqwest::Client::new()
+                .get(format!("http://127.0.0.1:{}/", served.port))
+                .header("Host", format!("shelf.localhost:{}", served.port))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            served.shutdown().await;
+            assert_eq!(
+                Arc::strong_count(&host),
+                1,
+                "shutdown at iteration {iteration}"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn ac2_shutdown_waits_for_request_hosts_after_listener_timeout() {
+        let (_dir, host) = home(Fake::default().into());
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let gates = Arc::new(tokio::sync::Mutex::new(Some((entered_tx, release_rx))));
+        let extra = axum::Router::new().route(
+            "/api/held",
+            axum::routing::get(move || {
+                let gates = gates.clone();
+                async move {
+                    let (entered, release) = gates.lock().await.take().unwrap();
+                    entered.send(()).unwrap();
+                    release.await.unwrap();
+                    "done"
+                }
+            }),
+        );
+        let served = host.serve(0, extra).await.unwrap();
+        let port = served.port;
+        let request = tokio::spawn(async move {
+            reqwest::get(format!("http://127.0.0.1:{port}/api/held"))
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap()
+        });
+        entered_rx.await.unwrap();
+        let shutdown = served.shutdown();
+        tokio::pin!(shutdown);
+        // The listener deadline does not mean detached request tasks are gone.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(4200), &mut shutdown)
+                .await
+                .is_err(),
+            "shutdown returned while a request still held the host"
+        );
+        release_tx.send(()).unwrap();
+        shutdown.await;
+        assert_eq!(request.await.unwrap(), "done");
+        assert_eq!(Arc::strong_count(&host), 1);
+    }
     #[tokio::test]
     async fn ac10_s12a_disable_enable_and_restart() {
         let fake = Fake::new(vec![approve()]);
