@@ -145,10 +145,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- Process change (friction 3x: S7, S14, S12a): foremen try `git push`. Proposal: one line in
-  `.claude/skills/foreman/SKILL.md` §5: "Never push; the product owner merges locally." Cost to
-  undo: none. Also: delete the pushed `slice/s12a` on origin (merged into local main)?
-
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
   the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
@@ -243,6 +239,8 @@ The human may veto each one.
 - S12a: the app fixtures ship a committed `logic.wasm` (`tests/fixtures/build.sh`); no app test builds a mod.
 - S12a: the app CLI in stage B: `--home` defaults to `default_home()`, `--port` to `WATANE_PORT`, then `DEFAULT_PORT`.
 - S12a: `Source` has only `Folder`; `Release` comes with stage C. `install_folders` stays for previews and dev (host Q24).
+- The human (2026-11-11): foremen may push slice branches to `origin`; the product owner deletes
+  the remote branch after the merge.
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.

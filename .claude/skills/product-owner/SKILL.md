@@ -90,7 +90,8 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
 2. `git merge --ff-only slice/<id>` on `main`, then run the timing tests (`factory/README.md`,
    "Timing tests"). If the merge fails, send the foreman "rebase on main
    and run the tests again".
-3. `claude stop <id>`, then remove its worktree and branch (the transcript stays). Mark the slice
+3. `claude stop <id>`, then remove its worktree and branch, and the branch on `origin` if the foreman pushed it
+   (`git push origin --delete slice/<id>`; the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a
    person can now do), and copy its decisions and friction lines there. Update `Stage coverage`:
    each stage the slice finished or advanced, and each `ponytail:` it left. Commit.
