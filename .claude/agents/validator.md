@@ -17,7 +17,8 @@ Work in the task's subsystem folder.
    Run the tests, clippy and fmt from the subsystem's `AGENTS.md`, and the ignored tests in the
    files this task touched (by name, with the environment `AGENTS.md` names, such as
    `WATANE_BIN`): Sol's sandbox cannot run some of them, so you may be the first to run them. A test
-   you cannot run either is `not run` in your table, never `pass`. Check that no earlier test was
+   you cannot run either is `not run` in your table, never `pass`. Never run `front` tests
+   (`#[ignore = "front: ..."]`, they take the screen); the foreman runs them once per slice. Check that no earlier test was
    weakened (`git diff`).
 2. **Fit.** Read `../spec/TECHNICAL.md` sections 2 and 6 and the subsystem's `TECHNICAL.md`.
    Flag: a dependency outside the "Depends on" cell; a type or rule redefined that another
