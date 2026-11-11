@@ -1,0 +1,12 @@
+package mods:reading-list@0.1.0;
+interface books {
+  add: func(title: string) -> result<_, string>;
+  all: func() -> list<string>;
+}
+interface events { added: func(title: string); }
+world reading-list {
+  import watane:host/state@0.1.0;
+  import watane:host/caller@0.1.0;
+  import events;
+  export books;
+}

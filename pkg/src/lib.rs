@@ -18,3 +18,6 @@ pub use names::{
 };
 pub use package::{MAX_PACKAGE_BYTES, Package, PackageError, pack};
 pub use world::World;
+
+mod release;
+pub use release::{MAX_RELEASE_BYTES, RELEASE_KIND, Release, ReleaseError};
