@@ -427,15 +427,15 @@ mod tests {
         b.set_listener(Box::new(move |id| tx.send(id).unwrap()));
         let mut a = Box::pin(b.ask(install()));
         queue(a.as_mut()).await;
-        let aid = rx.recv().unwrap().unwrap();
+        let aid = rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
         let mut c = pin!(b.ask(install()));
         queue(c.as_mut()).await;
         drop(a);
-        let bid = rx.recv().unwrap().unwrap();
+        let bid = rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
         assert_ne!(aid, bid);
         assert_eq!(b.current().unwrap().0, bid);
         b.deny_all();
-        assert_eq!(rx.recv().unwrap(), None);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), None);
         assert_eq!(c.await, Answer::Deny);
     }
 
@@ -447,9 +447,9 @@ mod tests {
         queue(a.as_mut()).await;
         queue(c.as_mut()).await;
         b.deny_all();
+        assert!(b.current().is_none());
         assert_eq!(a.await, Answer::Deny);
         assert_eq!(c.await, Answer::Deny);
-        assert!(b.current().is_none());
     }
 
     #[test]
