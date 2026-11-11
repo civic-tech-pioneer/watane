@@ -42,23 +42,13 @@ Step 2 (Run together, J2).
 - [x] **S16 J1 with Codex.** Delivered 2026-11-11 (main `34c6cc4`). Sol runs: none. Codex made the
   mod alone (379 s, 31 commands, 6 failed, about 9 source reads); MCP calls needed one approval line.
   Log: `factory/harness-codex.md`; raw runs in `factory/runs/s16-bob/` (untracked).
-- [~] **S17 The simplest tool to start with.** (branch `slice/s17`; foreman: see `Foremen`) The human's call: one slice only for the maker's
-  experience, for every harness. Input: S16's friction log and the user-sim notes in `Friction`
-  (`next` null after `serve` and on env gaps, doctor's text mode prints raw JSON, `--help` shows no
-  options, contract and WIT errors with `line: null`, `preview.previous` names the API URL, a
-  missing vendor folder reads as a version mismatch, `serve --stop` drops data silently).
-  - Outcomes: the top items fixed, each with a cheap test; the same story under Claude and Codex
-    takes fewer commands and fewer errors than in S16, measured the same way.
-  - From S16 (`factory/harness-codex.md`): the vendor fix must work from the agent's own folder
-    (a sandboxed agent cannot write into the watane checkout); `--help` gives each command and
-    option a line; the template `AGENTS.md` says how to add the preview's MCP endpoint and token
-    to an agent's config (the token changes with each preview), that some harnesses need tool
-    approval for it (Codex: `default_tools_approval_mode = "approve"`), and how to try the page
-    without a browser; the missing vendor folder says "missing" (red test
-    `regress_s16_missing_vendor_says_missing`, ignored until S17).
-  - Measure both harnesses the same way: commands, failed commands, source reads, guesses.
-  - Touches: dev (`cli.rs`, `outcome.rs`, `preview.rs`, the template `AGENTS.md`). After S11 and
-    S13 (shared dev files).
+- [x] **S17 The simplest tool to start with.** Delivered 2026-11-11 (main `786db15`). Sol runs: S17-1 1, S17-2 1, S17-fix1 1.
+  Against S16, Codex / Claude: commands 38 → 27 / 14, failed 6 → 3 / 2, source reads about 9 → 5 / 1,
+  guesses 3 → 1 / 1. Log and the smaller friction left: `factory/harness-s17.md` (no word on
+  `watane.on` in the guide, a silent first build of about 25 s, `calls: ` for an empty list, serve
+  `reused:false` does not say to update the MCP config, doctor in a mod folder suggests `new`,
+  check on `mod.invalid` has `next` null; WIT syntax errors keep `line: null`: pkg's message has no
+  location).
 - [x] **S12a J2: Alice runs her mods together in the app.** Delivered 2026-11-11 (main `37b2a9e`). Sol runs: S12a-1 1, S12a-2 1, S12a-fix1 2.
   Left for later (user-sim, validator): the app's toolset view names a tool
   `reading-list:books.list`, but MCP names it `reading-list_books_list` (APP-F-25; cheap app fix);
@@ -77,8 +67,8 @@ Step 2 (Run together, J2).
   - Touches: app only (Linux `cfg` code, the driver's Linux side, the script, a Dockerfile under
     `app/`). Not dev (S17), not host unless a test proves a host bug on Linux (then ask).
   - Leaves out: a Linux bundle, CI.
-- [ ] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
-  and `fake-watane`, against the home host S12a built. After S17 (shared dev files).
+- [~] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
+  and `fake-watane`, against the home host S12a built. (branch `slice/s12b`; foreman: see `Foremen`)
   Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
   `check.providers[].path` for a local provider, `add --dir` path resolution, a subscriber's
   `/events` getting the provider's raw `event` messages.
@@ -139,18 +129,22 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16` (stopped, removed).
 - S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a` (stopped, removed).
 - S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
-- S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17`.
+- S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17` (stopped, removed).
 - S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Process change (friction 3x: S11 twice, S17): Sol changes files outside its brief's list. Proposal:
+  `factory/impl.sh` lists the changed files after each run, and the foreman returns any that the
+  brief does not name before the validator starts. Cost to undo: drop the check.
 
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
   the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
   convention) and the host passes the hint on. Recommendation: (a). The hint is the mod's own
   claim, so a mod could mark a write read-only to skip approval, and (b) adds a format. Cost to
-  undo: (a) nothing; (b) a format change in pkg, host and dev. S17 builds (a) meanwhile.
+  undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
 
@@ -241,6 +235,12 @@ The human may veto each one.
 - S12a: `Source` has only `Folder`; `Release` comes with stage C. `install_folders` stays for previews and dev (host Q24).
 - The human (2026-11-11): foremen may push slice branches to `origin`; the product owner deletes
   the remote branch after the merge.
+- S17: dev finds the vendor folder last at `<cache>/vendor` (checksummed like any other); the
+  `env.allowlist` fix is `'<dev>/scripts/vendor.sh' '<folder>'`, which works from a sandbox.
+- S17: text output flattens nested results to dotted keys; `test.contract` reports the failing
+  step's line; `preview.previous` names the page URL (the API only for a mod with no page).
+- S17: MCP read-only hint: option (a) built; the template documents Claude's `--allowedTools` and
+  Codex's `default_tools_approval_mode = "approve"`, and that the token changes per preview.
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -322,6 +322,11 @@ The human may veto each one.
   failures (S10, S12a: 2x).
 - S12a: the foreman pushed `slice/s12a` to origin (once the remote existed); now told: slice
   branches stay local. Earlier push attempts: S7, S14 (3x in all; process change to propose).
+- S11, S17: Sol made a change outside its brief's file list and called it requested (host global
+  lock, dev built-only `test`, two factory docs); validators caught each (3x; process change to propose).
+- S17: the first default dev `cargo test` after a merge took 3:22 (a cold template build of 152 s);
+  warm 81 to 100 s. The 2-min budget has little headroom (S13 too, 2x).
+- S6, S17: parallel tasks in one subsystem conflict on `AGENTS.md` "Spec gaps" lines (2x).
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -362,3 +367,5 @@ The human may veto each one.
 - S13: a watane maker runs `cargo test` in dev and gets an answer in about 1.5 min, not 9.
 - S12a: Alice installs both mods in the app after consent, uses them together, restarts, withdraws
   and gives back a grant, disables or removes a mod, and gives an agent an MCP token (J2 passes).
+- S17: a maker's agent, Claude or a sandboxed Codex, goes from an empty folder to a served mod and
+  its MCP tools from watane-dev's output and the template `AGENTS.md` alone.
