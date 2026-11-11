@@ -56,7 +56,7 @@ Step 2 (Run together, J2).
   Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
   `O_NOFOLLOW` guards only the last path part; `folder.rs` opens with plain `File::open` after
   `symlink_metadata` (a narrow swap window; packed bytes stay safe).
-- [ ] **S16 J1 with Codex.** The human's call: a second harness proves the maker tools are
+- [~] **S16 J1 with Codex.** (branch `slice/s16`; foreman: see `Foremen`) The human's call: a second harness proves the maker tools are
   general. Bob asks Codex (the `codex` CLI, not Claude) for a reading list in an empty folder,
   with nothing but what `watane-dev` and the template's `AGENTS.md` tell it.
   - Outcomes: 1. Codex reaches a passing `test` and a running preview with no human help;
