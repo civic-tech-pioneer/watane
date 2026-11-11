@@ -442,13 +442,8 @@ mod tests {
         ] {
             assert!(parse(text).is_err(), "accepted {text}");
         }
-        let err = parse(r#"{"steps":[{"deliver":"changes.counted"}]}"#)
-            .err()
-            .unwrap();
-        assert!(
-            err.contains("deliver steps arrive with links between mods (step 2)"),
-            "{err}"
-        );
+        let file = parse(r#"{"steps":[{"deliver":"events.added"}]}"#).unwrap();
+        assert!(matches!(&file.steps[0].target, Target::Deliver(name) if name == "events.added"));
     }
 
     #[test]
