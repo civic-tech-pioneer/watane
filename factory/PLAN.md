@@ -33,8 +33,25 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
   - Interfaces it creates: `Harness` and its types (host → dev); the contract test file (dev 8.1).
   - Leaves out: fakes for other packages and `deliver` steps (DEV-S-18, the `deliver` part of
     DEV-S-19): they need links (step 2). `emits` steps are in.
-- [ ] **S5 The agent reads through a toolset.** The preview prints a toolset token; an MCP client lists
-  the mod's exports and calls one. Parts: host (toolsets, MCP).
+- [ ] **S5 The agent works the mod through MCP.** The agent runs `serve --json`, points an MCP
+  client at `result.mcp` with its token, lists the counter's calls, calls `add`, and Alice's open
+  page shows the new count by itself.
+  - Outcomes (user-sim, on the real programs):
+    1. `serve --json` gives an `mcp` URL ending in `/mcp/preview` and a `token` starting `wt_`;
+       `tools/list` with it gives `counter_api_add`, `counter_api_get` (and any other export),
+       each with the WIT doc comment (or signature) and an input schema (DEV-S-21, host 10.1).
+    2. `tools/call counter_api_add` returns the new count as text; an open page of the counter
+       gets `changed` and shows it. A call that fails gives `isError: true` with `<code>: <message>`.
+    3. Refusals on `/mcp/preview`: no token or an ended token 401, a token of another toolset 403,
+       any `Origin` 403, `GET` 405, a batch `-32600`, a notification 202 (S14, S15).
+    4. `initialize` answers with the client's protocol version when known, else `2025-06-18`;
+       a real MCP client (e.g. `claude mcp add --transport http`) lists and calls the tools.
+  - Touches: host stage 4 (`src/tools.rs`: toolsets in `toolsets.json`, tokens, `/mcp/<toolset>`,
+    `Caller::Agent`), host program (ready line `mcp` and `token` in a preview), dev `serve` (its
+    JSON carries them).
+  - Interfaces it creates: the ready line's `mcp`/`token` (host -> dev); `serve --json`'s `mcp`
+    (dev -> agent); `set_toolset`, `issue_token`, `end_token` on `Host`.
+  - Leaves out: tokens in a participant home (app, step 2); any UI for toolsets.
 - [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
   that shows in the running preview.
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
