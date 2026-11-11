@@ -604,9 +604,11 @@ fn ac4_program_defaults_to_environment_home_and_port() {
 fn ac6_second_home_program_is_busy() {
     let dir = tempfile::tempdir().unwrap();
     let mut home = Preview::home(dir.path());
+    // Port 0: the lock must refuse it, never a clash on the default port.
     let output = Command::new(env!("CARGO_BIN_EXE_watane"))
         .arg("--home")
         .arg(dir.path())
+        .args(["--port", "0"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
