@@ -7,6 +7,10 @@ pub enum Code {
     UsageNotAMod,
     UsageSlug,
     UsageExists,
+    UsageProvider,
+    ModSelfDependency,
+    ModDependencyCycle,
+    ModProviderMissing,
     EnvWataneMissing,
     EnvPreviewStart,
     ModInvalid,
@@ -39,6 +43,10 @@ impl Code {
             Self::UsageNotAMod => "usage.not_a_mod",
             Self::UsageSlug => "usage.slug",
             Self::UsageExists => "usage.exists",
+            Self::UsageProvider => "usage.provider",
+            Self::ModSelfDependency => "mod.self_dependency",
+            Self::ModDependencyCycle => "mod.dependency_cycle",
+            Self::ModProviderMissing => "mod.provider_missing",
             Self::EnvWataneMissing => "env.watane_missing",
             Self::EnvPreviewStart => "env.preview_start",
             Self::ModInvalid => "mod.invalid",
@@ -68,15 +76,20 @@ impl Code {
     pub fn class(self) -> Class {
         match self {
             Self::PreviewPrevious => Class::Warning,
-            Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => {
-                Class::Usage
-            }
+            Self::UsageArgs
+            | Self::UsageNotAMod
+            | Self::UsageSlug
+            | Self::UsageExists
+            | Self::UsageProvider => Class::Usage,
             Self::EnvWataneMissing
             | Self::EnvPreviewStart
             | Self::EnvToolchain
             | Self::EnvNoWasmTarget
             | Self::EnvAllowlist => Class::Env,
             Self::ModInvalid
+            | Self::ModSelfDependency
+            | Self::ModDependencyCycle
+            | Self::ModProviderMissing
             | Self::ModSymlink
             | Self::ModCargoKey
             | Self::ModDependency

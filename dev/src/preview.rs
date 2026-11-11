@@ -1,6 +1,6 @@
 use crate::{
     api::Client,
-    check,
+    check, deps,
     env::Env,
     outcome::{Code, Problem},
 };
@@ -174,6 +174,7 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
 
 pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
+    let folders = deps::local_order(dir).map_err(|e| vec![e])?;
 
     let work = || -> Result<Value, Problem> {
         let folder = folder(dir, env, m.slug().as_str());
@@ -196,7 +197,7 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
             )
             .fix(format!("Read {}", log.display()))
         })?;
-        let installed = client.install(&[dir.to_path_buf()])?;
+        let installed = client.install(&folders)?;
         let pages = installed
             .into_iter()
             .map(|m| json!({"slug":m.slug,"local":m.local,"url":m.page}))
@@ -302,6 +303,98 @@ pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac6_serve_posts_all_folders_once_in_provider_order() {
+        use std::{io::Read, net::TcpListener};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        for slug in ["a", "b", "c"] {
+            crate::template::new_mod(&root.join(slug), slug).unwrap();
+        }
+        for (consumer, provider) in [("b", "a"), ("c", "b")] {
+            let dir = root.join(consumer);
+            deps::add_local(&dir, &root.join(provider)).unwrap();
+            let world = fs::read_to_string(dir.join("wit/world.wit")).unwrap();
+            fs::write(
+                dir.join("wit/world.wit"),
+                world.replace(
+                    &format!("world {consumer} {{"),
+                    &format!("world {consumer} {{\n    import mods:{provider}/api@0.1.0;"),
+                ),
+            )
+            .unwrap();
+        }
+        let dir = root.join("c");
+        let env = Env {
+            cache: root.join("cache"),
+            unit_seconds: 10,
+        };
+        let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
+        let preview = env.cache.join(format!("previews/c-{}", &hash[..8]));
+        let home = preview.join("home");
+        fs::create_dir_all(&home).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(
+            home.join("run.json"),
+            json!({"watane":1,"mode":"preview","pid":std::process::id(),"port":port}).to_string(),
+        )
+        .unwrap();
+        fs::write(preview.join("ready.json"), json!({"watane":1,"mode":"preview","home":home,"port":port,"api":"untrusted","mcp":null,"token":null,"mods":[]}).to_string()).unwrap();
+        let expected = json!({"folders":[root.join("a"),root.join("b"),root.join("c")]});
+        let server = std::thread::spawn(move || {
+            for request in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    header.push(byte[0]);
+                }
+                let header = String::from_utf8(header).unwrap();
+                let body = if request < 2 {
+                    assert!(header.starts_with("GET /api/status "));
+                    json!({"watane":1,"mode":"preview","home":home,"port":port})
+                } else {
+                    assert!(header.starts_with("POST /api/install "));
+                    let length: usize = header
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|n| n.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    let mut bytes = vec![0; length];
+                    stream.read_exact(&mut bytes).unwrap();
+                    assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
+                    let installed = ["a", "b", "c"].map(|slug| json!({
+                        "local":slug, "identity":format!("local/{slug}"), "slug":slug,
+                        "name":slug, "summary":"", "version":"0.1.0", "publisher":null,
+                        "package":"0000000000000000000000000000000000000000000000000000000000000000",
+                        "release":null, "origin":null, "enabled":true, "has_logic":false,
+                        "page":format!("http://{slug}.localhost:{port}/"), "grants":[], "links":[], "error":null
+                    }));
+                    json!({"installed":installed})
+                }
+                .to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let result = serve(&dir, &env).unwrap();
+        assert_eq!(result["reused"], true);
+        assert_eq!(
+            result["pages"],
+            json!(["a", "b", "c"].map(|slug| json!({
+                "slug":slug, "local":slug, "url":format!("http://{slug}.localhost:{port}/")
+            })))
+        );
+        server.join().unwrap();
+    }
 
     #[test]
     fn ac4_mcp_from_literal_ready() {

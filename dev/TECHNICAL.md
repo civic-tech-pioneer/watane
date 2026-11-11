@@ -274,10 +274,14 @@ or null. `next` on success: `watane-dev serve --json`; on failure:
 ```
 `pages` lists the mod and its local providers, in install order (providers
 first); `url` is null for a mod with no page. The token reaches the tools
-as `Authorization: Bearer <token>`. When the test pipeline fails, `next` is
-`watane-dev test --json`. **serve --stop**:
+as `Authorization: Bearer <token>`. On success, `next` is
+`Give the person this page: <url>`, using the served mod's own (last)
+`pages` entry; it is null when that mod has no page. On failure with an
+`env.*` first error, `next` is `watane-dev doctor --json`; other test
+pipeline failures use `watane-dev test --json`. **serve --stop**:
 `{"stopped": true, "home": "..."}`; `stopped` is false when none ran, and
-that is not an error.
+that is not an error. When `stopped` is true, `next` is
+`The preview and its data are gone. To start a new one, run: watane-dev serve --json`.
 
 **doctor**
 ```json
@@ -925,25 +929,28 @@ prevent the remaining files from running.
 
 ### 9.2 Local providers and order
 
-`deps::local_order(dir)` follows each provider of `Mod::deps()` with no
+`deps::local_order(dir)` reads `watane_pkg::Deps::read(dir)` and follows each provider with no
 publisher, through the folder that `.watane-dev.json` names for its slug
 (`mod.provider_missing` when there is none or it has no `mod.toml`), depth
 first, and returns the folders with providers before their users and `dir`
 last. A folder seen twice on one path is `mod.dependency_cycle`. Each
-folder runs the `test` pipeline (sections 5 to 8). The first folder that
+folder runs the `test` pipeline (sections 5 to 8). Traversal reads dependency
+metadata without validating the world, so a pending edit after `add` does
+not hide a cycle or a provider's test failure. The first folder that
 fails stops the command. Each Problem of a provider gets the prefix
 `<provider slug>: ` in its message, and its `file` is absolute.
 
 ### 9.3 `serve`
 
-1. Run the whole `test` pipeline (check, build, unit, contract) for the mod.
+1. Resolve `deps::local_order(dir)` (9.2), then run the whole `test` pipeline
+   (check, build, unit, contract) for each folder, providers first.
    On any error return the test errors without starting or updating a
    preview. Look for an answering preview using the canonical-path hash
    (as in 9.4), its cached ready line and `Client::for_home`. If one answers,
    add `preview.previous` with its API address, constructed from the
    validated ready port as in step 5. Failure to find or verify a preview
    adds no warning and leaves the test errors unchanged. This applies only
-   to `serve`, never `serve --stop`. Provider traversal joins with `add`.
+   to `serve`, never `serve --stop`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
    (`reused` true). If it runs and `P/ready.json` is missing: stop it
@@ -986,9 +993,13 @@ when no preview folder matches.
 
 ### 9.5 `add <mod folder>` (step 2)
 
-1. `Mod::read(provider)` (else `usage.provider`). The same canonical folder
-   as this mod is `mod.self_dependency`. A provider whose
-   `local_order` contains this folder is `mod.dependency_cycle`.
+1. Canonicalize the folders; a missing provider or one without `mod.toml`
+   is `usage.provider`. The same canonical folder as this mod is
+   `mod.self_dependency`. Traverse the proposed provider edge before
+   `Mod::read(provider)`: a path back to this folder is
+   `mod.dependency_cycle`, even if the provider has not yet pasted its
+   import lines after `add`. Otherwise a failed provider read is
+   `usage.provider`.
 2. `watane_pkg::add_provider(dir, &provider, None)`: it copies the WIT into
    `wit/deps/<slug>/` and sets `"mods:<slug>": null` in `deps.json`. Its
    errors are `mod.invalid`.
@@ -1260,9 +1271,9 @@ independent tool. Integration tests run the binary
 | builder | cargo configuration quoting of a path with `"` and a space, environment whitelist; `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
 | unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
 | contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0` | literal expected failures |
-| preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text | literal JSON objects and null |
+| preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text; one install POST with all local folders and ordered pages | literal JSON objects, folder order and null; loopback unit server, no host links needed |
 | json_eq | key order, numbers, nesting | literal pairs |
-| deps | `.watane-dev.json` text after two adds | literal text |
+| deps | local order, missing folders, cycles, `.watane-dev.json` text after two adds | literal paths, codes and text in `tests/add.rs` |
 
 ### 15.2 Integration tests (`tests/`)
 
@@ -1274,7 +1285,8 @@ independent tool. Integration tests run the binary
 | `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
 | `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; fixture `tests/fixtures/recommendations/` (pkg section 9) imports `mods:reading-list/books` |
 | `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone; refused `serve`: literal `preview.previous` message/fix and text warning, unchanged page bytes, no warning without an answering preview |
-| `install_publish.rs` | DEV-S-25 to 31 | S-25: `deps.json` and the files of `wit/deps/a/` read by the test; the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
+| `add.rs` | DEV-S-25, 26; self and missing providers, provider order | literal add result and metadata text; original world and provider WIT bytes; unchanged folder snapshot on refusal; literal order and missing-provider message/fix |
+| `install_publish.rs` | DEV-S-27 to 31 | the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
 | `journey.rs` | J1 on the real programs | `new reading-list` → write a reading-list mod with a reversed-list bug → `test` fails with literal expected/got lists and `test.contract` → fix logic → `test` ok → `serve` → page `/call` adds Dune → change `ui/` → `serve` → new bytes → MCP list returns `["Dune"]` → `serve --stop`, closed port and removed home |
 
 S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
@@ -1285,7 +1297,8 @@ on a validator with permission to create the sandbox.
 
 Tests that need the real `watane` (S-21, 22, 23, J1) are
 `#[ignore = "needs WATANE_BIN"]` and read `WATANE_BIN`. With the feature
-`fake-host`, S-23, 24 and S-25 to 31 run against `fake-watane`.
+`fake-host`, S-23, 24 and S-27 to 31 run against `fake-watane`.
+S-25 and S-26 in `add.rs` need no host.
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
@@ -1321,7 +1334,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | 3 | `unit`, `test` pipeline, check stage 6, template contract file | — | — | S4-2: S-14 to 16, S-20 check; S-4 with `contract: null` |
 | 4 | `contract`, `json_eq` | host stage 5: `Harness` | `run_steps` tested with closures; integration tests ignored | S-17 to 20; S-4 complete |
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
-| 6 (step 2) | `deps`, `add`, `install` | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
+| 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` follows with the app | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
 | 7 (step 3) | `publish` | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31; dev's part of J3 |
 
 Steps 4 and 5 are not designed (section 10).
@@ -1365,3 +1378,9 @@ Each has a proposed answer, which this specification uses.
 11. **Contract fakes are constant** (host `Fakes`): a fake cannot fail or
     answer by argument. Proposal: enough for step 1; revisit when a maker
     needs it.
+
+12. **Pending dependency edits after `add`** (S11-3, dev): pkg rejects an
+    unused provider until the agent pastes its import or subscription line.
+    Traverse `Deps::read` before validating worlds, and check the proposed
+    cycle before reading the provider as a `Mod`. This preserves the fixed
+    pkg interface and reports DEV-S-26 without modifying either folder.

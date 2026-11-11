@@ -77,3 +77,5 @@ word for word. Follow their intent, and do not ask whether to.
 
 - S6-1 (dev): doctor retains targetless toolchain details, reports every environment gap, and shares the absolute vendor bootstrap fix with test/serve; template work starts with doctor.
 - S6-2 (dev): refused serve warns with preview.previous only for a verified answering preview; J1 lives in tests/journey.rs and drives the reading-list mod through page calls and MCP.
+
+- S11-3 (dev): local traversal reads pkg Deps before world validation, and add checks cycles before provider Mod validation, so pending import edits cannot hide cycles; serve tests and installs providers first and gives page/doctor/stop follow-ups (§17 item 12).

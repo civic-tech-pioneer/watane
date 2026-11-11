@@ -157,6 +157,10 @@ fn ac6_stop_closes_port_and_removes_preview() {
     let (c, stopped) = m.run(&["serve", "--stop", "--json"]);
     assert_eq!(c, 0);
     assert_eq!(
+        stopped["next"],
+        "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
+    );
+    assert_eq!(
         stopped["result"],
         serde_json::json!({"stopped":true,"home":v["home"]})
     );
@@ -172,7 +176,7 @@ fn ac6_stop_closes_port_and_removes_preview() {
     assert_eq!(v["result"]["stopped"], false);
 }
 #[test]
-fn ac7_missing_host_has_environment_error_and_fix() {
+fn ac7b_missing_host_has_environment_error_and_doctor_next() {
     let m = Mod::new(false);
     let (c, v) = m.run(&["serve", "--json"]);
     assert_eq!(c, 3);
@@ -182,7 +186,7 @@ fn ac7_missing_host_has_environment_error_and_fix() {
         "Install watane, or set WATANE_BIN to the program"
     );
     // The tests passed, so `next` must not send the agent back to them.
-    assert!(v["next"].is_null(), "{v}");
+    assert_eq!(v["next"], "watane-dev doctor --json", "{v}");
 }
 #[test]
 fn stop_with_unreadable_run_json_is_not_running() {
@@ -281,6 +285,10 @@ fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
     server.join().unwrap();
     reaper.join().unwrap();
     assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["next"],
+        "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
+    );
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_eq!(value["result"]["stopped"], true);
     assert!(!folder.exists());
@@ -595,4 +603,62 @@ fn ac5_refused_serve_prints_previous_preview_warning() {
         text.contains("  fix: Fix the errors, then run: watane-dev serve --json"),
         "{text}"
     );
+}
+
+#[test]
+fn ac5_provider_failure_is_prefixed_absolute_and_starts_no_preview() {
+    let m = Mod::new(false);
+    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(m.temp.path())
+        .args(["new", "provider", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let (code, v) = m.run(&["add", "../provider", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    fs::write(
+        m.temp.path().join("provider/logic/build.rs"),
+        "fn main() {}",
+    )
+    .unwrap();
+    // The consumer also fails: traversal must report the provider first.
+    fs::write(m.dir.join("logic/build.rs"), "fn main() {}").unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "mod.logic_file");
+    assert!(
+        v["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("provider: ")
+    );
+    assert_eq!(
+        v["errors"][0]["file"],
+        m.temp
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("provider/logic/build.rs")
+            .to_str()
+            .unwrap()
+    );
+    assert!(!m.temp.path().join("cache/previews").exists());
+}
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac7a_successful_serve_gives_own_page_or_null() {
+    let m = Mod::new(true);
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(
+        v["next"],
+        format!(
+            "Give the person this page: {}",
+            v["result"]["pages"][0]["url"].as_str().unwrap()
+        )
+    );
+    fs::remove_dir_all(m.dir.join("ui")).unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    assert!(v["next"].is_null());
 }

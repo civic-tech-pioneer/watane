@@ -1,7 +1,7 @@
 use crate::{
     allowlist::{self, Allowlist},
     builder::{self, BuildCtx},
-    check, contract,
+    check, contract, deps,
     env::Env,
     outcome::{Outcome, Problem},
     preview, template, toolchain, unit,
@@ -26,6 +26,9 @@ pub enum Command {
     Check,
     Doctor,
     Test,
+    Add {
+        provider: PathBuf,
+    },
     Serve {
         #[arg(long)]
         stop: bool,
@@ -37,6 +40,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Check => "check",
         Command::Doctor => "doctor",
         Command::Test => "test",
+        Command::Add { .. } => "add",
         Command::Serve { .. } => "serve",
     };
     let cwd = match std::env::current_dir() {
@@ -77,6 +81,12 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Test => {
             return test(&dir);
         }
+        Command::Add { provider } => deps::add_local(&dir, &provider)
+            .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
+            .inspect(|_| {
+                outcome.dir = dir.canonicalize().ok();
+                outcome.next = Some("Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves.".into());
+            }),
         Command::Serve { stop } => dir
             .canonicalize()
             .or_else(|e| match e.kind() {
@@ -90,7 +100,7 @@ pub fn run(cli: Cli) -> Outcome {
                 if stop {
                     preview::stop(&dir, &env)
                 } else {
-                    let tested = test(&dir);
+                    let tested = test_local(&dir);
                     if !tested.ok {
                         outcome.next = tested.next;
                         if let Some(warning) = preview::previous_warning(&dir, &env) {
@@ -104,14 +114,71 @@ pub fn run(cli: Cli) -> Outcome {
     };
     match result {
         Ok(v) => {
+            if name == "serve" {
+                outcome.next = serve_next(&v);
+            }
             outcome.result = Some(v);
             if name == "new" {
                 outcome.dir = std::fs::canonicalize(&dir).ok();
             }
             outcome
         }
-        Err(e) => outcome.fail(e),
+        Err(e) => {
+            if name == "serve"
+                && e.first()
+                    .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
+            {
+                outcome.next = Some("watane-dev doctor --json".into());
+            }
+            outcome.fail(e)
+        }
     }
+}
+
+fn serve_next(result: &serde_json::Value) -> Option<String> {
+    if result["stopped"] == true {
+        return Some(
+            "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
+                .into(),
+        );
+    }
+    result["pages"].as_array()?.last()?["url"]
+        .as_str()
+        .map(|url| format!("Give the person this page: {url}"))
+}
+
+fn test_local(dir: &Path) -> Outcome {
+    let order = match deps::local_order(dir) {
+        Ok(order) => order,
+        Err(e) => return Outcome::new("test", Some(dir.to_path_buf())).fail(vec![e]),
+    };
+    for provider in order {
+        let mut tested = test(&provider);
+        if !tested.ok {
+            if provider != dir {
+                let slug = watane_pkg::Mod::read(&provider)
+                    .map(|m| m.slug().to_string())
+                    .unwrap_or_else(|_| {
+                        provider
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned()
+                    });
+                for problem in &mut tested.errors {
+                    problem.message = format!("{slug}: {}", problem.message);
+                    problem.file = Some(
+                        provider
+                            .join(problem.file.as_deref().unwrap_or("."))
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
+            }
+            return tested;
+        }
+    }
+    Outcome::new("test", Some(dir.to_path_buf()))
 }
 
 /// Check, build and run unit and contract tests, retaining completed parts on failure.
@@ -170,5 +237,30 @@ pub fn test(dir: &Path) -> Outcome {
         outcome
     } else {
         outcome.fail(errors)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ac7a_next_uses_consumer_page_after_providers() {
+        assert_eq!(
+            serve_next(&json!({"pages":[
+                {"slug":"a","url":"http://a.localhost:123/"},
+                {"slug":"b","url":"http://b.localhost:123/"}
+            ]}))
+            .as_deref(),
+            Some("Give the person this page: http://b.localhost:123/")
+        );
+        assert_eq!(
+            serve_next(&json!({"pages":[
+                {"slug":"a","url":"http://a.localhost:123/"},
+                {"slug":"b","url":null}
+            ]})),
+            None
+        );
     }
 }
