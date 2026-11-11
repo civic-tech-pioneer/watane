@@ -95,7 +95,15 @@ async fn call_response(
     }
     let bytes = match to_bytes(request.into_body(), 1 << 20).await {
         Ok(bytes) => bytes,
-        Err(e) => return api::error(413, "bad_request", e),
+        Err(e) => {
+            let mut response = api::error(413, "bad_request", e);
+            // The unread body must not leave a reusable HTTP/1 connection.
+            response.headers_mut().insert(
+                header::CONNECTION,
+                header::HeaderValue::from_static("close"),
+            );
+            return response;
+        }
     };
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -174,17 +182,13 @@ fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Respo
     if !available(host, local) {
         return not_found();
     }
-    if method != Method::GET && method != Method::HEAD {
-        return (
-            StatusCode::METHOD_NOT_ALLOWED,
-            [(header::ALLOW, "GET, HEAD")],
-        )
-            .into_response();
-    }
     let Some(path) = decode_path(encoded) else {
         return not_found();
     };
     if path == "/watane.js" {
+        if method != Method::GET && method != Method::HEAD {
+            return file_method_not_allowed();
+        }
         let mut response = (
             [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
             crate::WATANE_JS,
@@ -221,6 +225,9 @@ fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Respo
     if !file.starts_with(&root) || !file.is_file() {
         return not_found();
     }
+    if method != Method::GET && method != Method::HEAD {
+        return file_method_not_allowed();
+    }
     let Ok(bytes) = fs::read(&file) else {
         return not_found();
     };
@@ -234,6 +241,14 @@ fn file(host: &Host, local: &LocalName, method: &Method, encoded: &str) -> Respo
         .headers_mut()
         .insert(header::CONTENT_LENGTH, length.into());
     response
+}
+
+fn file_method_not_allowed() -> Response {
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        [(header::ALLOW, "GET, HEAD")],
+    )
+        .into_response()
 }
 
 fn decode_path(path: &str) -> Option<String> {

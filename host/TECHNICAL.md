@@ -800,7 +800,9 @@ first), and no other address. Port 0: `[::1]` takes the port that
 `port_in_use`. Then it writes `run.json`. A second `serve` is
 `already_serving`.
 
-Every request is routed by its `Host` header:
+Every request must have exactly one `Host` header. Repeated headers get
+421, `text/plain; charset=utf-8`, "unknown host". The value is matched
+byte for byte, with no case folding or normalization:
 
 | Host header | Service |
 |---|---|
@@ -810,6 +812,9 @@ Every request is routed by its `Host` header:
 
 The exact host check stops DNS rebinding: a page of another site that
 resolves its name to 127.0.0.1 sends its own name in `Host`.
+
+No response carries an `Access-Control-Allow-Origin` header. Preflight
+requests receive no `Access-Control-Allow-*` headers.
 
 On the API host, a request with an `Origin` header gets 403 `forbidden`.
 A transport refusal (a wrong `Origin`, method, type or size) answers
@@ -839,6 +844,9 @@ A missing `Origin` gets the message "the Origin header is missing; it must
 be http://<local>.localhost:<port>". A wrong, malformed, empty or repeated
 `Origin` keeps "Origin must match the mod origin". Both use 403 `forbidden`.
 
+A body-size refusal closes the HTTP/1 connection, so an unread body
+cannot affect a later request on that connection.
+
 The call runs as `Caller::Page` on a 16 MiB thread. Success: 200
 `{"value": <json>}`. Failure: the status of section 2.2 and
 `{"error": <CallError JSON>}`.
@@ -860,6 +868,9 @@ Content types: `.html` `text/html; charset=utf-8`; `.js` `.mjs`
 `image/gif`; `.webp` `image/webp`; `.ico` `image/x-icon`; `.woff2`
 `font/woff2`; `.woff` `font/woff`; `.txt` `.md` `text/plain; charset=utf-8`;
 others `application/octet-stream`. A 404 has `text/plain; charset=utf-8`.
+A missing or refused file path returns 404 for every method. An existing
+file, including `/watane.js`, returns 405 with `Allow: GET, HEAD` for
+methods other than GET and HEAD.
 
 Every response of a mod origin carries these headers:
 
@@ -1186,7 +1197,7 @@ run on `RawMod` (section 15).
 | `tests/catalog.rs` | S16 to S23, S25, S28, S29; the pinned publisher (a provider of another publisher does not link); an update keeps a withdrawn grant withdrawn | a `Confirm` fake that counts calls and answers from a script; directory listings of `mods/`; `installed.json` parsed as plain JSON |
 | `tests/api.rs` | the four endpoints; `Origin` → 403; S22; S30 | status codes, literal JSON |
 | `tests/program.rs` | S1, S2, S3 through `env!("CARGO_BIN_EXE_watane")`; SIGTERM removes `run.json`; `--bad` exits 2 | the stdout line parsed as plain JSON; exit codes; file presence |
-| `tests/hostile.rs` | `/call` with a subscription function → 404; a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke | status codes |
+| `tests/hostile.rs` | `/call` with a subscription function → 404 (step 2); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (step 2); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
 | `tests/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 

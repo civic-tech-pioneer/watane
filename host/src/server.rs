@@ -152,11 +152,11 @@ impl Drop for Served {
 }
 
 async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> Response {
-    let host = request
-        .headers()
-        .get("host")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    let mut hosts = request.headers().get_all("host").iter();
+    let host = hosts.next().and_then(|v| v.to_str().ok()).unwrap_or("");
+    if hosts.next().is_some() {
+        return pages::plain(421, "unknown host");
+    }
     let api_host = [
         format!("localhost:{}", state.port),
         format!("127.0.0.1:{}", state.port),
