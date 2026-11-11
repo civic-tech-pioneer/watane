@@ -157,7 +157,14 @@ fn test_local(dir: &Path) -> Outcome {
         if !tested.ok {
             if provider != dir {
                 let slug = deps::label(&provider);
-                let next = format!("watane-dev test --json --dir {}", provider.display());
+                let mut path = provider.display().to_string();
+                if !path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+                {
+                    path = format!("'{}'", path.replace('\'', "'\"'\"'"));
+                }
+                let next = format!("watane-dev test --json --dir {path}");
                 tested.next = Some(next.clone());
                 for problem in &mut tested.errors {
                     problem.message = format!("{slug}: {}", problem.message);
@@ -261,6 +268,23 @@ mod tests {
                 .iter()
                 .all(|p| p.fix.as_deref() == Some(expected.as_str()))
         );
+    }
+
+    #[test]
+    fn provider_next_quotes_a_path_with_a_space() {
+        let root = tempfile::tempdir().unwrap();
+        let consumer = root.path().join("consumer");
+        let provider = root.path().join("my provider");
+        template::new_mod(&consumer, "consumer").unwrap();
+        template::new_mod(&provider, "provider").unwrap();
+        deps::add_local(&consumer, &provider).unwrap();
+        std::fs::write(provider.join("logic/build.rs"), "fn main() {}").unwrap();
+        let tested = test_local(&consumer.canonicalize().unwrap());
+        let expected = format!(
+            "watane-dev test --json --dir '{}'",
+            provider.canonicalize().unwrap().display()
+        );
+        assert_eq!(tested.next.as_deref(), Some(expected.as_str()));
     }
 
     #[test]

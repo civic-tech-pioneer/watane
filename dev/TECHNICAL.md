@@ -279,7 +279,7 @@ as `Authorization: Bearer <token>`. On success, `next` is
 `pages` entry; it is null when that mod has no page. On failure with an
 `env.*` first error, `next` is `watane-dev doctor --json`; other test
 pipeline failures use `watane-dev test --json`, adding
-`--dir <absolute provider folder>` when the first failing folder is a provider. **serve --stop**:
+`--dir <absolute provider folder>` (single-quoted for the shell when it has other characters than letters, digits, `/._-`) when the first failing folder is a provider. **serve --stop**:
 `{"stopped": true, "home": "..."}`; `stopped` is false when none ran, and
 that is not an error. When `stopped` is true, `next` is
 `The preview and its data are gone. To start a new one, run: watane-dev serve --json`.
