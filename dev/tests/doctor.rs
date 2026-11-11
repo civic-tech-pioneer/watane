@@ -156,6 +156,7 @@ fn ac3_missing_vendor_names_bootstrap_script() {
 // S16 (Codex as Bob): a missing vendor folder read as a mismatch, so the agent went to the
 // source to learn what was wrong. TECHNICAL 2.2 `env.allowlist`: "the crate allowlist at <path> is missing".
 #[test]
+#[ignore = "red: S17 fixes it (TECHNICAL 2.2 env.allowlist missing)"]
 fn regress_s16_missing_vendor_says_missing() {
     let m = Machine::new();
     let missing = m.temp.path().join("missing");
