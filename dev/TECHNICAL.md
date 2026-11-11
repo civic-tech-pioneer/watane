@@ -250,7 +250,8 @@ provider.
               "failures": [{"file": "tests/counter.json", "step": 2, "call": "api.add",
                             "message": "...", "expected": 1, "got": 2}]}}
 ```
-S4-2 leaves `contract` null; S4-3 supplies contract execution.
+S4 runs unit tests and then contracts, retaining unit failures while running
+contracts so both failures reach the agent.
 A part that did not run is null. `build`, `unit` and `contract` are null
 for a mod with no logic part. `not_run` counts the tests after a test that
 aborted the run (7.2). In a failure, `expected` and `got` are JSON values
@@ -564,8 +565,9 @@ joins with its slice):
 7. **Tests**: unit tests run as WebAssembly with no files, no environment
    and no host imports: test pure functions there. A panic ends the whole
    unit test run, so the tests after it do not run. Contract tests: the
-   form of 8.1 in short, with an `emits` example. Contract execution,
-   fake and `deliver` examples arrive in S4-3 with links.
+   form of 8.1 in short, with an `emits` example, failure matching and
+   reports. S4 runs contracts; fake linking and `deliver` examples arrive
+   with links between mods (step 2).
 8. **Building on another mod**: `watane-dev add <mod folder> --json`, then
    copy the needed lines of `result.imports` or `result.subscriptions`
    into the world.
@@ -870,6 +872,13 @@ of the host. `test.uncovered` warns for each function of
 `Harness::functions()` (as `<short iface>.<name>`) that no step of any
 file names.
 
+The S4 cut (section 16) calls only `Harness::call`; `deliver` and uncovered
+warnings wait for links/toolsets. An open failure is one file-level
+`test.contract` Problem; no step failure is recorded since no step ran.
+A malformed file reports `test.contract_file` with its file
+and, for invalid JSON syntax, its line and column. File errors do not
+prevent the remaining files from running.
+
 ## 9. Preview and the home host
 
 ### 9.1 Finding programs and hosts
@@ -901,8 +910,9 @@ fails stops the command. Each Problem of a provider gets the prefix
 
 ### 9.3 `serve`
 
-1. S2 runs check (5.1–5.3) and build (6.1–6.4) for the mod.
-   Unit and contract tests join in S4; provider traversal joins with `add`.
+1. Run the whole `test` pipeline (check, build, unit, contract) for the mod.
+   On any error return the test errors before inspecting, starting or
+   updating a preview. Provider traversal joins with `add`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
    (`reused` true). If it runs and `P/ready.json` is missing: stop it
@@ -1098,7 +1108,7 @@ pub fn parse_libtest(stdout: &str, stderr: &str, slug: &str) -> UnitReport;
 pub struct ContractFile { pub fakes: watane_host::Fakes, pub steps: Vec<Step> }
 pub struct Step { pub target: Target, pub args: serde_json::Value, pub expect: Expect,
     pub emits: Option<Vec<ExpectedEvent>> }
-pub enum Target { Call(String), Deliver { interface: String, function: String } }
+pub enum Target { Call(String) } // S4; Deliver joins with links (step 2)
 pub enum Expect { Success, Returns(serde_json::Value), Fails(Option<String>) }
 pub struct ExpectedEvent { pub event: String, pub args: serde_json::Value }
 pub fn parse(text: &str) -> Result<ContractFile, String>;   // by hand from serde_json::Value, for exact messages
@@ -1171,10 +1181,12 @@ it and change this list.
   and `port`.
 - `Ready` (Serialize, Deserialize): the ready line, with `api`, `mcp`,
   `token`.
-- `Harness::open(built_mod, Fakes)`, `Harness::call(function, args)`,
-  `Harness::deliver(interface, function, args)`, `Harness::functions()`;
+- `Harness::open(built_mod, Fakes)`, `Harness::call(function, args)`;
   `Fakes`, `Outcome { value, events }`, `EventRecord { interface, function, args }`,
-  `CallError { code, message }` with a `code` text, `FunctionInfo`.
+  `CallError { code, message }` whose `CallCode` is serialized to its wire
+  text by `CallError` (used for `fails` matching).
+  `Harness::deliver` joins with links (step 2); `Harness::functions()` and
+  `FunctionInfo` join with S5 toolsets, before uncovered-function warnings.
 - The program: `watane --preview <dir>` prints the ready line on stdout
   and then writes only to stderr; SIGTERM stops it and removes `run.json`.
   In a preview, the toolset `preview` holds every function of every
@@ -1256,11 +1268,15 @@ page and no MCP. SIGTERM ends it (the default action).
 
 ## 16. Build plan
 
-- S4-2 (dev): the counter template includes `tests/counter.json`; check
-  stage 6 and Wasmtime unit tests are implemented. `test` runs check, build
-  and unit tests; its contract part stays null until S4-3. `serve` runs
-  check and build only until S4-3. DEV-S-10 outside reads and DEV-S-12
-  reproducible bytes remain deferred; `env_clear()` and remap flags remain.
+- S4 (dev): the counter template includes `tests/counter.json`; `test` runs
+  check, build, Wasmtime unit tests and contracts through the host Harness.
+  `serve` runs that whole pipeline before touching a preview. S4 accepts
+  and passes `fakes` to the Harness, without linking imports to them.
+  `deliver` is a contract-file error explaining that delivery arrives with
+  links between mods (step 2); `Target::Deliver` and `test.uncovered` wait
+  for `Harness::deliver` and `Harness::functions`. Section 8.1 remains the
+  full form. DEV-S-10 outside reads and DEV-S-12 reproducible bytes remain
+  deferred; `env_clear()` and remap flags remain.
 
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|

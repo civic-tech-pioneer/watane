@@ -23,6 +23,8 @@ pub enum Code {
     ModNoContractTests,
     TestUnit,
     TestUnitLimit,
+    TestContractFile,
+    TestContract,
     BuildResolve,
     BuildCompile,
     BuildImports,
@@ -51,6 +53,8 @@ impl Code {
             Self::ModNoContractTests => "mod.no_contract_tests",
             Self::TestUnit => "test.unit",
             Self::TestUnitLimit => "test.unit_limit",
+            Self::TestContractFile => "test.contract_file",
+            Self::TestContract => "test.contract",
             Self::BuildResolve => "build.resolve",
             Self::BuildCompile => "build.compile",
             Self::BuildImports => "build.imports",
@@ -75,6 +79,8 @@ impl Code {
             | Self::ModNoContractTests
             | Self::TestUnit
             | Self::TestUnitLimit
+            | Self::TestContractFile
+            | Self::TestContract
             | Self::BuildResolve
             | Self::BuildCompile
             | Self::BuildImports => Class::Mod,

@@ -388,3 +388,26 @@ fn ac3_broken_build_leaves_running_revision_and_count() {
     assert_eq!(body, previous_html);
     assert_eq!(call(&preview, "api.get"), serde_json::json!({"value": 12}));
 }
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac8_failed_contract_keeps_running_preview_bytes() {
+    let m = Mod::new(true);
+    let preview = m.serve();
+    let old_bytes = fs::read(m.dir.join("ui/index.html")).unwrap();
+    fs::write(m.dir.join("ui/index.html"), "<h1>Rejected revision</h1>").unwrap();
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.add","returns":2}]}"#,
+    )
+    .unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert_eq!(get(&preview, "").1, old_bytes);
+    fs::remove_file(m.dir.join("tests/counter.json")).unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "mod.no_contract_tests");
+    assert_eq!(get(&preview, "").1, old_bytes);
+}

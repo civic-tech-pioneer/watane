@@ -122,7 +122,7 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
 }
 
 #[test]
-fn ac3_endless_test_stops_within_deadline() {
+fn ac10_endless_test_stops_with_exact_message_within_deadline() {
     let f = Fixture::new();
     // Warm the build cache before timing the endless test, so this measures execution.
     assert_eq!(output(&mut f.command("test")).0, 0);
@@ -136,11 +136,9 @@ fn ac3_endless_test_stops_within_deadline() {
     );
     assert_eq!(status, 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "test.unit_limit", "{v}");
-    assert!(
-        v["errors"][0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("endless")
+    assert_eq!(
+        v["errors"][0]["message"],
+        "unit tests stopped at endless after 2 s"
     );
 }
 
@@ -197,7 +195,6 @@ fn ac4_unit_host_imports_trap() {
 #[test]
 fn ac5_logic_requires_contract_file_but_page_only_does_not() {
     let f = Fixture::new();
-    // Accommodates the old template while establishing the red stage-6 check.
     let _ = fs::remove_file(f.dir.join("tests/counter.json"));
     for command in ["check", "test"] {
         let (status, v) = output(&mut f.command(command));

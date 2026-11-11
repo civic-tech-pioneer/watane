@@ -68,8 +68,12 @@ return value or failure; emits checks the events in order. For example:
             "emits": [{"event": "changes.counted", "args": {"count": 1}}]}]}
 ```
 
-Contract execution, provider fakes and event delivery arrive later, with
-links to their guide and examples. Until then result.contract is null.
+`result.contract` counts files and passed/failed steps. A failure names its
+file, 1-based step, call, expected and got. `fails: true` expects any call
+error; `fails: "text"` matches part of "<code>: <message>". Omitted args
+defaults to {}. An emits list must match exactly, including order.
+Provider fakes and deliver steps arrive with links between mods (step 2).
+Serve runs all tests before starting or updating the preview.
 
 ## Results
 

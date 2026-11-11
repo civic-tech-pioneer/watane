@@ -69,3 +69,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S4-2 (dev): test runs sandboxed Wasm units with counts and locations; check stage 6 and the template contract file ship now; contract execution and serve testing wait for S4-3; outside-read scanning stays deferred.
 - S4-2 (dev): Wasmtime 48.0.8 unknown-import helper breaks WASI resource aliases; dev traps non-WASI functions directly and preserves the typed, capability-free WASI linker.
 - S4-2 (dev): libtest needs --nocapture to retain panic locations on Wasm abort; the parser tracks a test across its printed output.
+- S4-3 (dev): test runs contracts after units and serve gates previews on the whole pipeline; deliver and uncovered warnings wait for links/toolsets, fakes pass through unlinked, and CallError supplies code text through serialization.
+- S4-3 (dev): a contract host-open error is one file Problem without a synthetic step; invalid-file errors retain syntax locations and do not stop other files.

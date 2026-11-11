@@ -36,7 +36,12 @@ impl UnitReport {
         self.failures
             .iter()
             .map(|f| {
-                let mut problem = Problem::new(f.code, format!("{}: {}", f.test, f.message))
+                let message = if f.code == Code::TestUnitLimit {
+                    f.message.clone()
+                } else {
+                    format!("{}: {}", f.test, f.message)
+                };
+                let mut problem = Problem::new(f.code, message)
                     .fix("Correct the unit test or its logic, then run: watane-dev test --json");
                 problem.file = f.file.clone();
                 problem.line = f.line;
@@ -246,10 +251,11 @@ fn run(
         )),
         Err(error) => {
             let detail = format!("{error:#}");
+            let test = report.failures.last().map_or("<unit binary>", |f| &f.test);
             if error.downcast_ref::<Trap>() == Some(&Trap::Interrupt) {
                 Some((
                     Code::TestUnitLimit,
-                    format!("unit tests stopped after {seconds} s"),
+                    format!("unit tests stopped at {test} after {seconds} s"),
                 ))
             } else if detail.contains("forcing trap when growing memory")
                 || detail.contains("memory growth failure")
@@ -257,7 +263,7 @@ fn run(
             {
                 Some((
                     Code::TestUnitLimit,
-                    "unit tests used more than 512 MiB".into(),
+                    format!("unit tests stopped at {test}: used more than 512 MiB"),
                 ))
             } else {
                 Some((Code::TestUnit, detail))
@@ -268,7 +274,11 @@ fn run(
         if let Some(failure) = report.failures.last_mut() {
             failure.code = code;
             if code == Code::TestUnitLimit || failure.file.is_none() {
-                failure.message = format!("{message}\n{err}").trim().into();
+                failure.message = if code == Code::TestUnitLimit {
+                    message
+                } else {
+                    format!("{message}\n{err}").trim().into()
+                };
             }
         } else {
             report.failed += 1;

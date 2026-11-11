@@ -1,7 +1,7 @@
 use crate::{
     allowlist::{self, Allowlist},
     builder::{self, BuildCtx},
-    check,
+    check, contract,
     env::Env,
     outcome::{Outcome, Problem},
     preview, template, toolchain, unit,
@@ -103,7 +103,7 @@ pub fn run(cli: Cli) -> Outcome {
     }
 }
 
-/// Check, build and run unit tests, retaining each completed part on failure.
+/// Check, build and run unit and contract tests, retaining completed parts on failure.
 pub fn test(dir: &Path) -> Outcome {
     let mut outcome = Outcome::new("test", Some(dir.to_path_buf()));
     outcome.next = Some("watane-dev test --json".into());
@@ -136,8 +136,18 @@ pub fn test(dir: &Path) -> Outcome {
         let built = builder::build(&dir, m.slug(), &ctx)?;
         result["build"] = serde_json::to_value(built).map_err(|e| vec![Problem::internal(e)])?;
         let report = unit::unit_tests(&dir, m.slug(), &ctx)?;
-        let errors = report.problems();
+        let mut errors = report.problems();
         result["unit"] = serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])?;
+        let (report, problems) = match contract::contract_tests(&dir, m.slug()) {
+            Ok(result) => result,
+            Err(problems) => {
+                errors.extend(problems);
+                return Err(errors);
+            }
+        };
+        errors.extend(problems);
+        result["contract"] =
+            serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])?;
         Ok(errors)
     };
     let errors = pipeline().unwrap_or_else(|errors| errors);
