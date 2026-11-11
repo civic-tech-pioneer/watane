@@ -67,6 +67,28 @@ Step 2 (Run together, J2).
   `check.providers[].path` for a local provider, `add --dir` path resolution, a subscriber's
   `/events` getting the provider's raw `event` messages.
 
+Step 3 (Publish, J3).
+
+- [~] **S19 Alice's app holds her identity.** (branch `slice/s19`; foreman: see `Foremen`) The
+  `log` crate, stages L1 to L4: keys and their text forms, the identity file, entries with the
+  strict rule, the SQLite store (append, ingest, entries, head, status), backup and restore with
+  own-head confirmation. No server.
+  - Outcomes: each stage's "Done when" tests pass (`log/TECHNICAL.md` 9); a corrupt or forked
+    chain is refused with a cause; a restored identity confirms its own head before it appends.
+  - Touches: `log/` (new crate), the workspace `Cargo.toml` members line. Nothing else.
+  - Leaves out: L5 (dist and host use it): S21.
+- [~] **S20 A mod becomes a release.** (branch `slice/s20`; foreman: see `Foremen`) pkg stage 7,
+  `release.rs` (pkg TECHNICAL 7): the release format dist publishes and the host verifies.
+  - Outcomes: `release_*` tests pass; a changed byte in a release is refused and the error names
+    the cause; a release round-trips to the same package id.
+  - Touches: `pkg/src/release.rs`, `pkg/tests/release_*.rs`, one line in `pkg/src/lib.rs`, pkg's
+    error codes (append only). Not dev, host or app.
+  - Leaves out: signing with the log key (dist S3, S21).
+- [ ] **S21 J3: Bob installs Alice's mod from a link.** dist S1 to S5 on the real `log` and
+  `pkg`, log L5, host stage 8 (`Source::Release`, verify), app stage C (`DistConfirm`, publish and
+  follow), dev 7 `publish` (DEV-S-30, 31). After S19 and S20. Too big for one slice: cut it into
+  dist first, then host and app, then dev, once S19 and S20 land.
+
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
@@ -80,7 +102,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
 | pkg | 6 add_provider | 2 | done (S11) |
-| pkg | 7 release | 3 | open |
+| pkg | 7 release | 3 | open (S20) |
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
@@ -101,7 +123,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
-| log | L1 to L5 | 3 | open |
+| log | L1 to L5 | 3 | open (S19: L1 to L4) |
 | dist | S1 to S5 | 3 | open |
 | dist | S6 find | 4 | open |
 
