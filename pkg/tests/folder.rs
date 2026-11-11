@@ -122,6 +122,15 @@ fn ac3_grants_from_world() {
             "subscribe mods:reading-list/events@0.1.0 from local/reading-list"
         ]
     );
+    // deps.json of the fixture is {"mods:reading-list": null} (TECHNICAL.md §9).
+    assert_eq!(
+        recommendations
+            .deps()
+            .iter()
+            .map(|(s, p)| (s.as_str(), p))
+            .collect::<Vec<_>>(),
+        [("reading-list", None)]
+    );
     assert_eq!(
         recommendations.requires(),
         [Requirement {

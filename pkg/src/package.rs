@@ -380,6 +380,9 @@ impl Input {
                 })?;
                 self.walk(root, &format!("{relative}/{name}"))?;
             }
+        } else if m.is_file() && class(relative).is_none() {
+            // A regular file beside the content, such as wit/deps/README.md, is not
+            // package content (section 6.1) and Mod::read ignores it (section 4.7).
         } else if m.is_file() && class(relative).is_some() {
             if self.files.len() == MAX_FILES {
                 return Err(PackageError::TooManyFiles);
