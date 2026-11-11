@@ -157,11 +157,13 @@ The human may veto each one.
 - S2, S3: host program tests with 2 s and 10 s limits fail now and then under heavy load (2x).
 - S3: the brief did not say S2's `/events`-404 tests would change; Sol left them red.
 - S3: nested `sandbox-exec` still runs only in the validator (2x).
-- S4: the foreman's process died silently mid-validation; `watch.sh` was not running, so nobody woke.
+- S4: the foreman's process died mid-validation (the battery ran out); `watch.sh` was not
+  running, so nobody woke. Not process friction.
 - S7: the foreman tried `git push`; the repository has no remote.
 - S7: there is no command that only builds `logic.wasm`; and Homebrew's `cargo` comes before
   rustup's on this machine's PATH, without `wasm32-wasip2`.
-- S4: the foreman died silently again, this time after acceptance, during its last test run (2x).
+- S4: the foreman died after acceptance, in its last test run (a forced OS update). Not process
+  friction.
 - S4: contract `test.contract` errors carry `line: null`; `emits` mismatches show the full event
   name in `got` and the short one in `expected`; one template bug fails a unit and a contract test.
 
