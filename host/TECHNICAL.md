@@ -1417,8 +1417,8 @@ Each answer below is used in this file.
   release is named by its `ReleaseRef`, never by a log entry id.
 - **Q10** W8 needs the app's web view to resolve `<local>.localhost` to
   the loopback address. macOS resolves it to `::1` first, so the server
-  listens on both (8.1). Not yet verified for WKWebView and WebKitGTK; the
-  app checks it at its first stage.
+  listens on both (8.1). Verified for WKWebView at app stage A (it loads
+  over `::1`, given the ATS exception of app 12); WebKitGTK not yet.
 - **Q11** Two mods that use each other need each other's WIT in
   `wit/deps/`. If `wit-parser` refuses that cycle, the cycle check (4.2
   step 8) and the hop limit stay as defence. Confirm at pkg stage 3.

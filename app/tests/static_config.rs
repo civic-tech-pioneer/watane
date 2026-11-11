@@ -64,6 +64,10 @@ fn ac8_static_security_configuration() {
         }
     }
     assert!(read("Info.plist").contains("NSAllowsLocalNetworking</key><true/>"));
+    // ATS refuses http://<local>.localhost without this exception (NOTES S10-4).
+    let plist = read("Info.plist");
+    assert!(plist.contains("<key>localhost</key><dict><key>NSIncludesSubdomains</key><true/><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>"));
+    assert!(!plist.contains("NSAllowsArbitraryLoads"));
     for file in ["ui/app.js", "ui/consent.js"] {
         assert!(!read(file).contains("innerHTML"));
     }

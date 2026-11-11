@@ -656,7 +656,10 @@ record it in `NOTES.md` with the old and the new result.
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page
 loads in the bundled app. `Info.plist` sets
-`NSAppTransportSecurity.NSAllowsLocalNetworking = true`.
+`NSAppTransportSecurity.NSAllowsLocalNetworking = true` and an
+`NSExceptionDomains` entry `localhost` with `NSIncludesSubdomains` and
+`NSExceptionAllowsInsecureHTTPLoads`: without it ATS refuses
+`http://<local>.localhost` (macOS 27), and no mod page loads.
 
 ## 13. Errors
 
