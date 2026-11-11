@@ -27,6 +27,7 @@ pub enum Code {
     TestContract,
     BuildResolve,
     BuildCompile,
+    BuildReadsOutside,
     BuildImports,
     Internal,
 }
@@ -57,6 +58,7 @@ impl Code {
             Self::TestContract => "test.contract",
             Self::BuildResolve => "build.resolve",
             Self::BuildCompile => "build.compile",
+            Self::BuildReadsOutside => "build.reads_outside",
             Self::BuildImports => "build.imports",
             Self::Internal => "internal",
         }
@@ -83,6 +85,7 @@ impl Code {
             | Self::TestContract
             | Self::BuildResolve
             | Self::BuildCompile
+            | Self::BuildReadsOutside
             | Self::BuildImports => Class::Mod,
             Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => Class::Refused,
             Self::Internal => Class::Internal,

@@ -324,3 +324,70 @@ fn ac9_agent_can_fix_a_broken_counter_and_rerun() {
     assert_eq!(status, 0, "{v}");
     assert_eq!(v["result"]["unit"]["passed"], 2);
 }
+
+#[test]
+fn ac2_unit_build_refuses_outside_reads_before_running_tests() {
+    let f = Fixture::new();
+    let outside = f.temp.path().join("test-only secret.txt");
+    fs::write(&outside, b"S8-unit-only-secret").unwrap();
+    f.source(&format!(
+        r#"
+#[cfg(test)]
+mod outside_read {{
+    #[test]
+    fn must_never_run() {{
+        std::hint::black_box(include_bytes!({:?}));
+        panic!("S8 unit test ran before reads check");
+    }}
+}}
+"#,
+        outside.to_str().unwrap()
+    ));
+    let (status, v) = output(&mut f.command("test"));
+    assert_eq!(status, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "build.reads_outside", "{v}");
+    assert_eq!(
+        v["errors"][0]["message"],
+        format!(
+            "the build read {}, outside the mod",
+            outside.canonicalize().unwrap().display()
+        )
+    );
+    assert!(v["result"]["build"].is_object(), "{v}");
+    assert!(v["result"]["unit"].is_null(), "{v}");
+    assert!(!f.dir.join("logic.wasm").exists());
+}
+
+#[test]
+fn ac3_fixed_mod_discards_stale_release_and_unit_dependencies() {
+    for test_only in [false, true] {
+        let f = Fixture::new();
+        let source = f.dir.join("logic/src/lib.rs");
+        let original = fs::read_to_string(&source).unwrap();
+        let outside = f.temp.path().join("outside.txt");
+        fs::write(&outside, b"S8-stale-dependency").unwrap();
+        let cfg = if test_only { "#[cfg(test)]" } else { "" };
+        f.source(&format!(
+            "{cfg}\n#[used]\nstatic X: &[u8] = include_bytes!({:?});",
+            outside.to_str().unwrap()
+        ));
+        let (status, v) = output(&mut f.command("test"));
+        assert_eq!(status, 1, "{v}");
+        assert_eq!(v["errors"][0]["code"], "build.reads_outside", "{v}");
+        let profile = if test_only { "debug" } else { "release" };
+        let stale = f
+            .temp
+            .path()
+            .join("cache/target/wasm32-wasip2")
+            .join(profile)
+            .join("deps/counter-stale.d");
+        fs::write(&stale, format!("old.wasm: {}\n", outside.display())).unwrap();
+        fs::write(&source, original).unwrap();
+        let (status, v) = output(&mut f.command("test"));
+        assert_eq!(status, 0, "{v}");
+        assert!(!stale.exists());
+        // Deleting text dep-info must also work when Cargo would otherwise be fresh.
+        let (status, v) = output(&mut f.command("test"));
+        assert_eq!(status, 0, "{v}");
+    }
+}

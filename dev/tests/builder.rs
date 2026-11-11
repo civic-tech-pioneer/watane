@@ -213,3 +213,146 @@ fn ac8_missing_vendor_is_environment_error() {
     assert_eq!(v["errors"][0]["code"], "env.allowlist");
     assert!(!f.dir.join("logic.wasm").exists());
 }
+
+fn assert_no_marker(dir: &Path, marker: &[u8]) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            assert_no_marker(&path, marker);
+        } else {
+            let bytes = fs::read(&path).unwrap();
+            assert!(
+                !bytes.windows(marker.len()).any(|w| w == marker),
+                "{}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn ac1_build_refuses_absolute_bytes_strings_and_relative_outside_reads() {
+    let f = Fixture::new();
+    let source = f.dir.join("logic/src/lib.rs");
+    let original = fs::read_to_string(&source).unwrap();
+    for (mac, relative) in [
+        ("include_bytes", false),
+        ("include_str", false),
+        ("include_bytes", true),
+    ] {
+        let outside = if relative {
+            fs::create_dir_all(f.temp.path().join("cache")).unwrap();
+            f.temp.path().join("cache/outside.txt")
+        } else {
+            f.temp.path().join("outside file.txt")
+        };
+        let marker = b"S8-distinctive-secret-never-in-mod-84739";
+        fs::write(&outside, marker).unwrap();
+        let include = if relative {
+            "../../../../outside.txt"
+        } else {
+            outside.to_str().unwrap()
+        };
+        let as_bytes = if mac == "include_str" {
+            ".as_bytes()"
+        } else {
+            ""
+        };
+        fs::write(
+            &source,
+            format!("{original}\n#[used]\nstatic X: &[u8] = {mac}!({include:?}){as_bytes};\n"),
+        )
+        .unwrap();
+        fs::write(f.dir.join("logic.wasm"), b"stale").unwrap();
+        let (status, v) = output(&mut {
+            let mut c = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+            c.current_dir(&f.dir)
+                .args(["test", "--json"])
+                .env("WATANE_DEV_CACHE", f.temp.path().join("cache"));
+            c
+        });
+        assert_eq!(status, 1, "{v}");
+        let errors = v["errors"].as_array().unwrap();
+        let error = errors
+            .iter()
+            .find(|e| e["code"] == "build.reads_outside")
+            .unwrap_or_else(|| panic!("{v}"));
+        assert_eq!(
+            error["message"],
+            format!(
+                "the build read {}, outside the mod",
+                outside.canonicalize().unwrap().display()
+            )
+        );
+        assert!(!f.dir.join("logic.wasm").exists());
+        assert_no_marker(&f.dir, marker);
+    }
+}
+
+#[test]
+fn ac4_test_build_does_not_receive_shell_secret() {
+    let f = Fixture::new();
+    let source = f.dir.join("logic/src/lib.rs");
+    let original = fs::read_to_string(&source).unwrap();
+    fs::write(
+        source,
+        format!("{original}\nconst _: &str = env!(\"SECRET\");"),
+    )
+    .unwrap();
+    let (status, v) = output(
+        Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&f.dir)
+            .args(["test", "--json"])
+            .env("WATANE_DEV_CACHE", f.temp.path().join("cache"))
+            .env("SECRET", "abc"),
+    );
+    assert_eq!(status, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "build.compile", "{v}");
+}
+
+#[test]
+fn ac5_same_mod_at_different_paths_and_caches_has_identical_path_free_wasm() {
+    let f = Fixture::new();
+    let parent = f.temp.path().join("a much longer parent directory for Bob");
+    fs::create_dir_all(&parent).unwrap();
+    let bob = parent.join("hello");
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(&f.dir)
+            .arg(&bob)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let caches = [f.temp.path().join("alice-cache"), parent.join("bob-cache")];
+    let dirs = [&f.dir, &bob];
+    let mut artifacts = Vec::new();
+    for (dir, cache) in dirs.iter().zip(&caches) {
+        let (status, v) = output(
+            Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+                .current_dir(dir)
+                .args(["test", "--json"])
+                .env("WATANE_DEV_CACHE", cache),
+        );
+        assert_eq!(status, 0, "{v}");
+        artifacts.push(fs::read(dir.join("logic.wasm")).unwrap());
+    }
+    assert_eq!(
+        artifacts[0], artifacts[1],
+        "logic.wasm differs between paths"
+    );
+    let mut paths = vec![PathBuf::from(std::env::var_os("HOME").unwrap())];
+    paths.extend(dirs.into_iter().cloned());
+    paths.extend(caches);
+    for path in paths {
+        for path in [path.clone(), path.canonicalize().unwrap()] {
+            let needle = path.to_str().unwrap().as_bytes();
+            assert!(
+                !artifacts[0].windows(needle.len()).any(|w| w == needle),
+                "embedded {}",
+                path.display()
+            );
+        }
+    }
+}

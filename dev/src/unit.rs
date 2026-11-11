@@ -311,7 +311,12 @@ pub fn unit_tests(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<UnitRep
             "--message-format",
             "json",
         ],
-    )?;
+    )
+    .inspect_err(|errors| {
+        if errors.iter().any(|e| e.code == Code::BuildReadsOutside) {
+            let _ = std::fs::remove_file(dir.join("logic.wasm"));
+        }
+    })?;
     let seconds = ctx.env.unit_seconds;
     let mut config = Config::new();
     config

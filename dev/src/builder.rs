@@ -7,10 +7,11 @@ use crate::{
 use serde::Serialize;
 use serde_json::Value;
 use std::{
+    collections::BTreeSet,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 use watane_pkg::{Mod, ModError, Slug};
 
@@ -246,6 +247,55 @@ pub(crate) fn compile(
     slug: &Slug,
     args: &[&str],
 ) -> Result<Vec<PathBuf>, Vec<Problem>> {
+    let manifest: toml::Table = toml::from_str(
+        &fs::read_to_string(copy.join("logic/Cargo.toml"))
+            .map_err(|e| vec![Problem::internal(e)])?,
+    )
+    .map_err(|e| vec![Problem::internal(e)])?;
+    let crate_name = manifest["package"]["name"]
+        .as_str()
+        .ok_or_else(|| vec![Problem::internal("missing crate name")])?
+        .replace('-', "_");
+    let profile = if args[0] == "test" {
+        "debug"
+    } else {
+        "release"
+    };
+    let deps = ctx
+        .env
+        .cache
+        .join("target/wasm32-wasip2")
+        .join(profile)
+        .join("deps");
+    let dep_files = || -> Result<Vec<PathBuf>, Vec<Problem>> {
+        if !deps.exists() {
+            return Ok(Vec::new());
+        }
+        fs::read_dir(&deps)
+            .map_err(|e| vec![Problem::internal(e)])?
+            .filter_map(|entry| match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+                    let stem = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_default();
+                    (path.extension().is_some_and(|e| e == "d")
+                        && (stem == crate_name || stem.starts_with(&format!("{crate_name}-"))))
+                    .then_some(Ok(path))
+                }
+                Err(e) => Some(Err(vec![Problem::internal(e)])),
+            })
+            .collect()
+    };
+    for path in dep_files()? {
+        fs::remove_file(path).map_err(|e| vec![Problem::internal(e)])?;
+    }
+    // Cargo's binary dep-info can still consider a build fresh after the text .d
+    // is removed. Refresh only the copied crate root so rustc emits new dep-info.
+    fs::File::open(copy.join("logic/src/lib.rs"))
+        .and_then(|file| file.set_modified(SystemTime::now()))
+        .map_err(|e| vec![Problem::internal(e)])?;
     let output = cargo(ctx, copy, args)
         .output()
         .map_err(|e| vec![Problem::internal(e)])?;
@@ -291,6 +341,37 @@ pub(crate) fn compile(
     if !output.status.success() {
         return Err(vec![resolve_problem(&output.stderr, ctx.allow)]);
     }
+    let target = ctx.env.cache.join("target");
+    let allowed = [
+        copy,
+        ctx.vendor,
+        ctx.toolchain.sysroot.as_path(),
+        target.as_path(),
+    ];
+    let files = dep_files()?;
+    if files.is_empty() {
+        return Err(vec![Problem::internal(
+            "cargo produced no mod dependency file",
+        )]);
+    }
+    let mut outside = BTreeSet::new();
+    for path in files {
+        let text = fs::read_to_string(path).map_err(|e| vec![Problem::internal(e)])?;
+        outside.extend(outside_reads(&text, &allowed));
+    }
+    if !outside.is_empty() {
+        return Err(outside
+            .into_iter()
+            .map(|path| {
+                Problem::new(
+                    Code::BuildReadsOutside,
+                    format!("the build read {}, outside the mod", path.display()),
+                )
+                .at(path.to_string_lossy(), None, None)
+                .fix("Remove the include_bytes!, include_str!, include! or #[path] that names it")
+            })
+            .collect());
+    }
     Ok(artifacts)
 }
 
@@ -320,7 +401,6 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
                 "json",
             ],
         )?;
-        // ponytail: DEV-S-10 outside-read scanning of .d files is deferred beyond S2.
         let artifact = artifacts.first().ok_or_else(|| {
             vec![Problem::internal(
                 "cargo produced no cdylib WebAssembly artifact",
@@ -356,9 +436,86 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
     result
 }
 
+// Resolve real files (including symlinks); lexical normalization also supports literal dep-info tests.
+fn normalized(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        let mut result = PathBuf::new();
+        for part in path.components() {
+            match part {
+                Component::ParentDir => {
+                    result.pop();
+                }
+                Component::CurDir => {}
+                part => result.push(part),
+            }
+        }
+        result
+    })
+}
+
+pub fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
+    let roots: Vec<_> = allowed.iter().map(|p| normalized(p)).collect();
+    let mut outside = BTreeSet::new();
+    for line in dep_info.lines().filter(|line| !line.starts_with('#')) {
+        let Some((_, dependencies)) = line.split_once(": ") else {
+            continue;
+        };
+        let mut chars = dependencies.chars().peekable();
+        let mut word = String::new();
+        let mut paths = Vec::new();
+        while let Some(ch) = chars.next() {
+            if ch == '\\'
+                && chars
+                    .peek()
+                    .is_some_and(|c| c.is_whitespace() || *c == '\\' || *c == '#')
+            {
+                word.push(chars.next().unwrap());
+            } else if ch.is_whitespace() {
+                if !word.is_empty() {
+                    paths.push(std::mem::take(&mut word));
+                }
+            } else {
+                word.push(ch);
+            }
+        }
+        if !word.is_empty() {
+            paths.push(word);
+        }
+        for path in paths {
+            let path = PathBuf::from(path);
+            let path = normalized(&if path.is_absolute() {
+                path
+            } else {
+                allowed[0].join("logic").join(path)
+            });
+            if !roots.iter().any(|root| path.starts_with(root)) {
+                outside.insert(path);
+            }
+        }
+    }
+    outside.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots() {
+        let allowed = [
+            Path::new("/copy"),
+            Path::new("/vendor"),
+            Path::new("/sysroot"),
+            Path::new("/cache/target"),
+        ];
+        let text = "/cache/target/mod.wasm: /copy/logic/src/lib.rs /copy/wit/world.wit /vendor/a/src/lib.rs /sysroot/lib/std.rs /cache/target/generated.rs /outside/secret\\ file.txt /copy/../escaped.txt\n\n/copy/logic/src/lib.rs:\n# env-dep:SECRET=abc\n";
+        assert_eq!(
+            outside_reads(text, &allowed),
+            vec![
+                PathBuf::from("/escaped.txt"),
+                PathBuf::from("/outside/secret file.txt")
+            ]
+        );
+    }
     #[test]
     fn ac6_cargo_config_quotes_paths_and_restricts_environment() {
         let env = Env {

@@ -734,9 +734,11 @@ The runs, in order:
    `env.allowlist`.
 3. If the new lock differs from `<mod>/logic/Cargo.lock`, dev writes it
    there; `lock_updated` is true.
-4. Before the reads check (deferred in S2), dev deletes
-   `<cache>/target/wasm32-wasip2/release/deps/<crate>-*.d`
-   (`<crate>`: the package name with `-` replaced by `_`).
+4. Before compilation, dev deletes
+   `<cache>/target/wasm32-wasip2/release/deps/<crate>-*.d` and `<crate>.d`
+   (`<crate>`: the package name with `-` replaced by `_`). Dev refreshes
+   the copied `logic/src/lib.rs` modification time so Cargo recompiles the
+   mod even when its binary dependency cache still considers it fresh.
 5. `cargo build <common> --locked --release --target wasm32-wasip2 --message-format json`.
    dev reads standard output line by line as JSON:
    - `reason: "compiler-message"` with `message.level` `error`: one
@@ -747,17 +749,20 @@ The runs, in order:
      `.wasm` file in `filenames`.
    - On a failure with no `compiler-message` error: `build.resolve` with
      the last 40 lines of standard error.
-6. **Reads** (DEV-S-10; deferred beyond S2): dev reads the new `deps/<crate>-*.d` files (make syntax:
+6. **Reads** (DEV-S-10): dev reads the new `deps/<crate>-*.d` and `deps/<crate>.d` files (make syntax:
    `target: dep dep ...`, with `\ ` for a space in a path). Every path in
    them must lie under the copy folder, the vendor folder, the sysroot or
    `<cache>/target`. Else one `build.reads_outside` for each path, and dev
    writes no `logic.wasm` (DEV-F-14). rustc lists the files of
    `include_bytes!`, `include_str!`, `include!` and `#[path]` there.
+   Relative dependencies resolve from the copy's `logic/` working folder;
+   canonicalization resolves `..` and symlinks before checking roots. A
+   successful compilation without a mod dependency file is an internal error.
 7. dev copies the `.wasm` to `<mod>/logic.wasm`, then runs
    `watane_pkg::Mod::read(dir)?.check_component()`. Each violation is
    `build.imports`, and dev deletes `<mod>/logic.wasm` again.
 
-### 6.5 Reproducible output (DEV-S-12; deferred beyond S2)
+### 6.5 Reproducible output (DEV-S-12)
 
 The output holds no path of the device: the copy, the target folder and the
 cargo home are under `<cache>` (remapped to `/watane-dev`), the crates under
@@ -775,8 +780,10 @@ cache; it is the maker's own choice and can change the output.
    copy and verified lock as in 6.3–6.4, then runs `cargo test <common> --locked --no-run --target wasm32-wasip2 --message-format json`
    (after 6.4 step 1). Compiler errors: as 6.4 step 5. The test binaries
    are the `executable` fields of `compiler-artifact` messages with
-   `profile.test` true. The reads check of 6.4 step 6, including deleting and scanning the new
-   `debug/deps/<crate>-*.d` files, remains deferred with DEV-S-10.
+   `profile.test` true. Before compilation dev deletes the old
+   `debug/deps/<crate>-*.d` and `<crate>.d` files; after compilation the
+   reads check of 6.4 step 6 scans the new files before any binary executes.
+   An outside read also removes `<mod>/logic.wasm`.
 2. dev runs each binary as a `wasi:cli/command` component in Wasmtime:
    - `Config`: `epoch_interruption(true)`. A thread calls
      `engine.increment_epoch()` every 100 ms; the store deadline is
@@ -1227,7 +1234,7 @@ independent tool. Integration tests run the binary
 | template | `render` leaves no `{{`; `{{crate}}` of `a-b-c` is `a_b_c` | literal strings |
 | check | `check_manifest` on 20 literal manifests (each refused key of 5.2, each allowed form) | a table of (manifest, expected codes) in the test |
 | allowlist | parse the embedded lock; `verify_vendor` on a temp vendor with one wrong checksum, one missing and one extra folder | literal crate names; expected `env.allowlist` |
-| builder | S2: cargo configuration quoting of a path with `"` and a space, environment whitelist; later: `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
+| builder | cargo configuration quoting of a path with `"` and a space, environment whitelist; `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
 | unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
 | contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0` | literal expected failures |
 | preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text | literal JSON objects and null |
@@ -1248,8 +1255,8 @@ independent tool. Integration tests run the binary
 | `journey_j1.rs` | J1 on the real programs | `new` → break a contract → `test` fails with `test.contract` → restore → `test` ok → `serve` → page and MCP read → change `ui/` → `serve` → new bytes, same count |
 
 S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
-component with `watane_pkg::Mod::check_component()`. S-4, S-10 and S-12
-join with their later slices. The network-denied build test may be ignored
+component with `watane_pkg::Mod::check_component()`. S-4 joins with S4;
+S-10 and S-12 are covered by S8. The network-denied build test may be ignored
 with the OS refusal reason when nested sandboxing is unavailable; it runs
 on a validator with permission to create the sandbox.
 
@@ -1280,8 +1287,8 @@ page and no MCP. SIGTERM ends it (the default action).
   `deliver` is a contract-file error explaining that delivery arrives with
   links between mods (step 2); `Target::Deliver` and `test.uncovered` wait
   for `Harness::deliver` and `Harness::functions`. Section 8.1 remains the
-  full form. DEV-S-10 outside reads and DEV-S-12 reproducible bytes remain
-  deferred; `env_clear()` and remap flags remain.
+  full form. S8 completes DEV-S-10 outside reads and DEV-S-12 reproducible
+  bytes; both release and unit builds scan compiler dependency files.
 
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|

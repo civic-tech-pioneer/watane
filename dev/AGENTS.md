@@ -60,16 +60,17 @@ word for word. Follow their intent, and do not ask whether to.
 - S1-3 (dev): stop locates previews by canonical-path hash without checking mod files; absent matches report home null; §12 records the typed S1 check entry point.
 
 - S2 cut (dev): counter template has no tests/; check stage 6, unit and contract tests join in S4; serve runs check and build only.
-- S2 (dev): page reads once at startup; S3 restores watane.on(read); outside reads (DEV-S-10) and reproducible bytes (DEV-S-12) are deferred.
+- S2 (dev): page reads once at startup; S3 restores watane.on(read).
 - S2 (dev): cargo target directory uses shared build.target-dir config; generate-lockfile has no --target-dir argument.
 
 - S3-2 (dev): the counter page displays counted event values and reads on changed, including stream open (host 8.4–8.5).
 - S3-2 (dev): the fake-host feature does not exist yet; the commands run the real-host tests with WATANE_BIN and --include-ignored.
 
-- S4-2 (dev): test runs sandboxed Wasm units with counts and locations; check stage 6 and the template contract file ship now; contract execution and serve testing wait for S4-3; outside-read scanning stays deferred.
+- S4-2 (dev): test runs sandboxed Wasm units with counts and locations; check stage 6 and the template contract file ship now; contract execution and serve testing wait for S4-3.
 - S4-2 (dev): Wasmtime 48.0.8 unknown-import helper breaks WASI resource aliases; dev traps non-WASI functions directly and preserves the typed, capability-free WASI linker.
 - S4-2 (dev): libtest needs --nocapture to retain panic locations on Wasm abort; the parser tracks a test across its printed output.
 - S4-3 (dev): test runs contracts after units and serve gates previews on the whole pipeline; deliver and uncovered warnings wait for links/toolsets, fakes pass through unlinked, and CallError supplies code text through serialization.
 - S4-3 (dev): a contract host-open error is one file Problem without a synthetic step; invalid-file errors retain syntax locations and do not stop other files.
 
 - S5-2 (dev): serve builds API and MCP URLs from the cached Ready port, reuses its preview token, and points failed test pipelines to watane-dev test --json.
+- S8 (dev): release cdylibs emit `<crate>.d` as well as hashed dependency names; scan and clear both forms for release and unit builds, refreshing the copied crate root to force new dep-info, completing DEV-S-10/12.
