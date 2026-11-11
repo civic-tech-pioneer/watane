@@ -1,0 +1,10 @@
+{
+  "identifier": "consent",
+  "windows": [
+    "consent"
+  ],
+  "permissions": [
+    "allow-consent-get",
+    "allow-consent-answer"
+  ]
+}

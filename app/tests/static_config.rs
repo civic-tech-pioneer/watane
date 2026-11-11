@@ -1,0 +1,101 @@
+use serde_json::{Value, json};
+use std::path::Path;
+fn root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+}
+fn read(path: &str) -> String {
+    std::fs::read_to_string(root().join(path)).unwrap()
+}
+#[test]
+fn ac8_static_security_configuration() {
+    let main = ["status", "mods_list", "mod_open", "mod_disable"];
+    let consent = ["consent_get", "consent_answer"];
+    let mut files: Vec<_> = std::fs::read_dir(root().join("capabilities"))
+        .unwrap()
+        .map(|p| p.unwrap().file_name())
+        .collect();
+    files.sort();
+    assert_eq!(files, ["consent.json", "main.json"]);
+    for (label, commands) in [("main", main.as_slice()), ("consent", consent.as_slice())] {
+        let cap: Value =
+            serde_json::from_str(&read(&format!("capabilities/{label}.json"))).unwrap();
+        assert_eq!(
+            cap,
+            json!({"identifier":label,"windows":[label],"permissions":commands.iter().map(|c| format!("allow-{}", c.replace('_',"-"))).collect::<Vec<_>>()})
+        );
+    }
+    let config: Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    assert_eq!(config["build"], json!({"frontendDist":"ui"}));
+    assert_eq!(
+        config["app"],
+        json!({"withGlobalTauri":false,"windows":[],"security":{"csp":"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'","freezePrototype":true}})
+    );
+    let build = read("build.rs");
+    let commands = build
+        .split(".commands(&[")
+        .nth(1)
+        .unwrap()
+        .split(']')
+        .next()
+        .unwrap()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim_matches('"'))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        [
+            "status",
+            "mods_list",
+            "mod_open",
+            "mod_disable",
+            "consent_get",
+            "consent_answer"
+        ]
+    );
+    for file in std::fs::read_dir(root().join("src")).unwrap() {
+        let file = file.unwrap().path();
+        if file.extension().is_some_and(|s| s == "rs")
+            && !["consent.rs", "commands.rs", "views.rs"]
+                .contains(&file.file_name().unwrap().to_str().unwrap())
+        {
+            assert!(!std::fs::read_to_string(file).unwrap().contains(".answer("));
+        }
+    }
+    assert!(read("Info.plist").contains("NSAllowsLocalNetworking</key><true/>"));
+    for file in ["ui/app.js", "ui/consent.js"] {
+        assert!(!read(file).contains("innerHTML"));
+    }
+}
+#[test]
+fn ac9_release_refuses_driver() {
+    let source = read("src/lib.rs");
+    assert!(source.contains("#[cfg(all(feature = \"driver\", not(debug_assertions)))]"));
+    assert!(
+        source.contains("compile_error!(\"the driver feature is only for debug test builds\");")
+    );
+}
+
+#[test]
+fn ac1_home_is_required_and_port_is_validated() {
+    use watane_app::Config;
+    assert!(
+        Config::from_args([].into_iter())
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("bad argument")
+    );
+    assert!(
+        Config::from_args(
+            ["--port", "65536", "--home", "x"]
+                .map(Into::into)
+                .into_iter()
+        )
+        .is_err()
+    );
+    let config = Config::from_args(["--home", "example"].map(Into::into).into_iter()).unwrap();
+    assert_eq!(config.home, Path::new("example"));
+    assert_eq!(config.port, 0);
+}

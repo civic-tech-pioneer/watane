@@ -366,7 +366,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `mods_list` | main | — | `[ModView]` | A |
 | `mod_open` | main | `local` | `null` | A |
 | `mod_enable` | main | `local` | `null` | B |
-| `mod_disable` | main | `local` | `null` | B |
+| `mod_disable` | main | `local` | `null` | A |
 | `mod_remove` | main | `local`, `deleteData: bool` | `null` | B |
 | `grant_withdraw` | main | `local`, `key` | `null` | B |
 | `grant_give` | main | `local`, `key` | `null` | B |

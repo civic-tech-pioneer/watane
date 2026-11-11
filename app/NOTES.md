@@ -1,0 +1,6 @@
+# Implementation notes
+
+- S10-3 spec gap (app): `mod_disable` is stage A, as required by the S10 interface; Core closes its window before changing the fake catalog's enabled flag (TECHNICAL 7).
+- S10-3 uses only the task-authorized new dependencies: tauri =2.12.5 for native windows and IPC, and tauri-build =2.7.4 for the command ACL manifest. No host, dist, server, or dialog plugin in stage A.
+- S10-3 validation environment (app): GUI startup in the sandbox reports `Connection Invalid error for service com.apple.hiservices-xpcservice` and never reaches the main page-load ready event; window tests remain enabled and unchanged for a logged-in macOS validator.
+- S10-3 checks (app): build, 14 non-GUI tests, clippy with driver and warnings denied, fmt, and JavaScript module syntax pass; release with driver fails with the required compile_error message. The feature-enabled suite compiles; its seven GUI tests time out at startup in this sandbox.

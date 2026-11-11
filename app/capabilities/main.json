@@ -1,0 +1,12 @@
+{
+  "identifier": "main",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-status",
+    "allow-mods-list",
+    "allow-mod-open",
+    "allow-mod-disable"
+  ]
+}
