@@ -8,7 +8,7 @@ window per mod page, and the consent view for every confirmation.
 1. `../spec/VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`.
 2. This folder: `VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`.
 3. `../host/` and `../dist/` specs: the real signatures behind section 15.
-4. Reference only: `../colos/explore/{app-driver-macos,webview-origin-isolation}/`.
+4. Reference only: `~/Documents/local-projects/colos/explore/{app-driver-macos,webview-origin-isolation}/`.
 
 ## Commands
 
