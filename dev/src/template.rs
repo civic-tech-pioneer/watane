@@ -127,6 +127,27 @@ mod tests {
         }
     }
 
+    /// S17 acceptance: Claude omitted `args` in the guide's curl call for a function
+    /// without arguments (the page section says "omit args or pass null") and the
+    /// preview answered `bad_request: missing field `args``. The curl section must
+    /// show that `/call` needs `args`, null for none.
+    #[test]
+    #[ignore = "red: S17 fix"]
+    fn regress_s17_guide_curl_call_needs_args() {
+        let guide = render(
+            include_str!("../template/AGENTS.md"),
+            &"reading-list".parse().unwrap(),
+        );
+        let curl = guide
+            .split("## Try the page without a browser\n")
+            .nth(1)
+            .unwrap()
+            .split("\n## ")
+            .next()
+            .unwrap();
+        assert!(curl.contains(r#""args":null"#), "curl section: {curl}");
+    }
+
     #[test]
     fn ac3_ac5_guide_configures_preview_mcp_for_each_harness() {
         let guide = render(
