@@ -67,6 +67,7 @@ curl -s -X POST '<page url>call' -H 'Origin: <page url without the trailing />' 
   -H 'Content-Type: application/json' -d '{"fn":"<iface>.<fn>","args":{...}}'
 ```
 Replace the placeholders with your function and arguments;
+the raw `/call` body always requires `args`: use `"args":null` for a function without arguments.
 the reply is `{"value": ...}` or `{"error": {...}}`.
 A headless browser may hang on the page's open `/events`, so use curl to check calls;
 the page's look is for the person.

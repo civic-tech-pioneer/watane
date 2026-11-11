@@ -132,7 +132,6 @@ mod tests {
     /// preview answered `bad_request: missing field `args``. The curl section must
     /// show that `/call` needs `args`, null for none.
     #[test]
-    #[ignore = "red: S17 fix"]
     fn regress_s17_guide_curl_call_needs_args() {
         let guide = render(
             include_str!("../template/AGENTS.md"),
