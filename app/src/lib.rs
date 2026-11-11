@@ -91,6 +91,8 @@ pub(crate) struct AppState {
     consent_id: Mutex<Option<AskId>>,
     #[cfg(feature = "driver")]
     driver: driver::DriverState,
+    #[cfg(feature = "driver")]
+    screen: driver::Screen,
 }
 pub fn run(config: Config) -> Result<(), AppError> {
     let mark = mark::read_or_create(&config.home);
@@ -108,8 +110,13 @@ pub fn run(config: Config) -> Result<(), AppError> {
         consent_id: Mutex::new(None),
         #[cfg(feature = "driver")]
         driver: Default::default(),
+        #[cfg(feature = "driver")]
+        screen: driver::Screen::from_env(),
     };
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(all(feature = "driver", target_os = "macos"))]
+    let builder = builder.activate_ignoring_other_apps(state.screen == driver::Screen::Front);
+    let app = builder
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::status,
@@ -120,6 +127,10 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::consent_answer
         ])
         .setup(|app| {
+            #[cfg(all(feature = "driver", target_os = "macos"))]
+            if app.state::<AppState>().screen != driver::Screen::Front {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
             let h = app.handle().clone();
             let state = h.state::<AppState>();
             if state.failed.get().is_none() {

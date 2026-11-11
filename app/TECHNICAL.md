@@ -584,6 +584,17 @@ Only for tests. It adds nothing to any webview: it uses the native
 compile_error!("the driver feature is only for debug test builds");
 ```
 
+A driver build reads `WATANE_DRIVER_SCREEN` once into `AppState` at startup:
+`hidden` (also unset or unknown), `background`, or `front`. On macOS, setup
+sets `ActivationPolicy::Accessory` for hidden/background (no Dock icon),
+and startup disables activation ignoring other apps. One helper in `views`
+applies the mode last to all three builders of section 5: hidden uses
+`visible(false).focused(false)`, background uses `visible(true).focused(false)`,
+and front leaves the builder unchanged. A second helper makes focus and
+user-attention calls only in front, including reopening a mod. Without
+`driver`, builders and focus/attention behavior remain as in section 5;
+no screen environment variable or driver code is compiled into a release.
+
 Transport: one JSON object per line; requests on stdin; responses and
 events on stdout. All logging goes to stderr. Request
 `{"id": <u64>, "op": "<op>", ...}`; response `{"id": n, "ok": <value>}` or
@@ -595,6 +606,7 @@ setup and the first page load of `main`, the app prints
 |---|---|---|
 | `eval` | `label`, `js` | the string that `eval_with_callback` returns (JSON text) |
 | `wait` | `label`, `timeoutMs` | `true` when the window exists and its last page load finished |
+| `screen` | — | `{mode: "hidden" \| "background" \| "front", accessory: bool}`; on macOS reads AppKit’s actual activation policy on the main thread (false on other platforms) |
 | `windows` | — | `[{label, url, title, alwaysOnTop, focused, visible}]` |
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |
@@ -607,9 +619,34 @@ setup and the first page load of `main`, the app prints
 ## 11. Test plan
 
 `cargo test` runs the unit and static tests. `cargo test --features driver`
-also runs the window tests; they need a logged-in macOS session (Linux:
-`xvfb-run`). Window tests spawn `env!("CARGO_BIN_EXE_watane-app")` with a
-temporary home and `--port 0`, and talk to it through `tests/support/`.
+also runs the quiet window tests; they need a logged-in macOS session.
+Window tests spawn `env!("CARGO_BIN_EXE_watane-app")` with a temporary home
+and `--port 0`, and talk to it through `tests/support/`.
+
+The constructors have the same `(home: &Path, env: &[(&str, &str)]) -> App`
+signature. `App::start` selects hidden; `App::background` selects background;
+`App::front` selects front. Each overrides the caller's screen environment.
+Tests declare their mode through these constructors, with no mode branch
+in their bodies. The default suite uses start/background. The background
+mode probe is the sole quiet test asserting `visible == true`.
+
+Every test of real focus (`focused == true`, `document.hasFocus()`), visible
+front windows, stacking, or the 800 ms approval gate uses `App::front` and
+`#[ignore = "front: takes the screen"]`. Front waits for at least 30 s of
+human idle time from `ioreg -c IOHIDSystem`'s `HIDIdleTime` nanoseconds,
+prints `waiting for you to step away` once to stderr, and panics after
+10 minutes instead of skipping. Idle parsing is pure and unit-tested in
+`support_selftest`. The foreman runs front tests explicitly; ordinary
+`cargo test --features driver` never runs them.
+
+The hidden shell probe checks page loads, native eval, an 800 ms timer's
+latency, visibility, focus and the actual Accessory policy. Isolation tests
+exercise the hostile page's timer-driven poll loop hidden. Record the
+observations and any tests requiring background due to hidden WKWebView
+scheduling in `NOTES.md`. The consent page intentionally keeps approval
+disabled without document focus: the hidden field/withhold test enables
+the button through native eval; only the ignored front test proves the
+real approval gate. No production security check changes.
 
 | Test | Checks | Oracle |
 |---|---|---|
@@ -617,8 +654,8 @@ temporary home and `--port 0`, and talk to it through `tests/support/`.
 | `mark::tests` | file format; reuse; repair of a bad file; 64 distinct words | regex `^[a-z]+ [a-z]+\n$`; the literal count 64 |
 | `words::tests` (B) | each grant kind gives the text of section 4 | literal strings; grants built from pkg's text forms of pkg A2 |
 | `tests/static_config.rs` | exactly two capability files; `main` and `consent` grant exactly the lists of section 7 (`allow-` + the command with `-` for `_`); no `remote` key; no `core:` or plugin permission; `tauri.conf.json` as section 14 (no `devUrl`, `withGlobalTauri` false, the CSP, no windows); `build.rs` names the same commands; `Broker::answer` is called only in `commands.rs` and `views.rs` | literal lists in the test; the files parsed with `serde_json`; a text search of `src/` |
-| `tests/gui_shell.rs` (A) | S1, S3, S4, S5; an `Install` and a `Sign` request from `ask` show every field; unchecking a grant gives `withheld`; a mod name `<img src=x onerror=alert(1)>` shows as text | the driver's `windows`; `eval` of the DOM text; the `ask` answer; the test's own clock for S4 |
-| `tests/gui_isolation.rs` (A, B) | S6, S7, S8 with fixture `hostile` | a loopback test listener (no connection); `log` (no command with label `mod-*`); `windows` (no new label, URL unchanged); the file tree of `<home>/mods/` unchanged; the hostile page's own report, read by `eval` |
+| `tests/gui_shell.rs` (A) | hidden/background screen modes; S1, S3; S4 and consent focus in ignored front tests; an `Install` and a `Sign` request from `ask` show every field; unchecking a grant gives `withheld`; a mod name `<img src=x onerror=alert(1)>` shows as text | the driver's `windows`; `eval` of the DOM text; the `ask` answer; the test's own clock for S4 |
+| `tests/gui_isolation.rs` (A, B) | S6, S7, S8 hidden with fixture `hostile`; S5 focus/stacking in an ignored front test, other S5 checks also hidden | a loopback test listener (no connection); `log` (no command with label `mod-*`); `windows` (no new label, URL unchanged); the file tree of `<home>/mods/` unchanged; the hostile page's own report, read by `eval` |
 | `tests/api.rs` (C) | each row of section 8.1 | the status codes and codes there; the file tree of `<home>/dist/site/`: new files after an approve, byte-equal before and after a deny |
 | `tests/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
 | `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |

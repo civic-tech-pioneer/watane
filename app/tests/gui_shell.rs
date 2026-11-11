@@ -50,20 +50,18 @@ fn install(name: &str) -> Value {
 }
 fn consent(app: &App) {
     assert!(app.wait("consent", TIMEOUT));
-    until(
-        app,
-        "consent",
-        "document.body.dataset.ready === 'true' && document.hasFocus()",
-    );
+    until(app, "consent", "document.body.dataset.ready === 'true'");
     assert!(
         app.windows()
             .iter()
-            .any(|w| w["label"] == "consent" && w["alwaysOnTop"] == true && w["focused"] == true)
+            .any(|w| w["label"] == "consent" && w["alwaysOnTop"] == true)
+    );
+    assert_eq!(
+        app.eval("consent", "document.querySelectorAll('form').length"),
+        0
     );
 }
-#[test]
-fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
-    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+fn books_page() -> String {
     // Serve a tiny page here; the shared page fixture belongs to S10-2.
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -85,6 +83,12 @@ fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
             );
         }
     });
+    url
+}
+#[test]
+fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let url = books_page();
     let home = tempfile::tempdir().unwrap();
     let fake=json!({"mods":[mod_view("books","Books",json!(url)),mod_view("logic","Logic",Value::Null)]}).to_string();
     let app = App::start(home.path(), &[("WATANE_APP_FAKE", &fake)]);
@@ -113,26 +117,19 @@ fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
     assert_eq!(w["url"], url);
     assert_eq!(w["title"], "Books — local");
     assert_eq!(w["alwaysOnTop"], false);
-    app.eval(
-        "main",
-        "document.querySelector('[data-local=books] button.open').click(); null",
+    assert_eq!(w["visible"], false);
+    assert_eq!(w["focused"], false);
+    app.eval("main", "window.__reopened = false; window.__TAURI_INTERNALS__.invoke('mod_open', {local:'books'}).then(() => { window.__reopened = true; }); null");
+    until(&app, "main", "window.__reopened === true");
+    let windows = app.windows();
+    assert_eq!(
+        windows.iter().filter(|w| w["label"] == "mod-books").count(),
+        1
     );
-    until(&app, "main", "true");
-    let deadline = Instant::now() + TIMEOUT;
-    loop {
-        let windows = app.windows();
-        assert_eq!(
-            windows.iter().filter(|w| w["label"] == "mod-books").count(),
-            1
-        );
-        if windows
-            .iter()
-            .any(|w| w["label"] == "mod-books" && w["focused"] == true)
-        {
-            break;
-        }
-        assert!(Instant::now() < deadline);
-    }
+    assert_eq!(
+        windows.iter().find(|w| w["label"] == "mod-books").unwrap()["focused"],
+        false
+    );
     app.eval("main","window.__TAURI_INTERNALS__.invoke('mod_open',{local:'logic'}).catch(e=>{document.body.dataset.code=e.code}); null");
     until(&app, "main", "document.body.dataset.code === 'not_found'");
     app.eval(
@@ -167,12 +164,14 @@ fn ac3_closing_consent_denies_and_destroys_it() {
     assert!(app.quit().success());
 }
 #[test]
+#[ignore = "front: takes the screen"]
 fn ac4_approve_delay_and_deny_focus() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let app = App::start(home.path(), &[]);
+    let app = App::front(home.path(), &[]);
     let ask = app.ask(install("Books"));
     consent(&app);
+    until(&app, "consent", "document.hasFocus()");
     let t = Instant::now();
     assert_eq!(app.eval("consent", "document.activeElement.id"), "deny");
     assert_eq!(
@@ -259,10 +258,10 @@ fn ac5_install_and_each_statement_show_fields_and_withhold() {
         "consent",
         "document.querySelector('input[type=checkbox]').checked=false; null",
     );
-    until(
-        &app,
+    // This tests fields and withholding; real focus and the gate belong to ac4.
+    app.eval(
         "consent",
-        "!document.querySelector('#approve').disabled",
+        "document.querySelector('#approve').disabled = false; null",
     );
     app.eval(
         "consent",
@@ -371,6 +370,105 @@ fn ac7_untrusted_name_is_literal_text() {
     assert_eq!(
         app.eval("consent", "document.querySelectorAll('img').length"),
         0
+    );
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_hidden_screen_loads_evaluates_and_runs_timers() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[("WATANE_DRIVER_SCREEN", "front")]);
+    let windows = app.windows();
+    let main = windows.iter().find(|w| w["label"] == "main").unwrap();
+    assert_eq!(main["visible"], false);
+    assert_eq!(main["focused"], false);
+    assert_eq!(app.screen(), json!({"mode":"hidden","accessory":true}));
+    let ask = app.ask(install("Timer probe"));
+    consent(&app);
+    let windows = app.windows();
+    let consent = windows.iter().find(|w| w["label"] == "consent").unwrap();
+    assert_eq!(consent["visible"], false);
+    assert_eq!(consent["focused"], false);
+    // Probe the WKWebView scheduler independently of the intentional focus gate.
+    app.eval("consent", "window.__timerProbe = null; const begin = performance.now(); setTimeout(() => { window.__timerProbe = performance.now() - begin; }, 800); null");
+    until(&app, "consent", "window.__timerProbe !== null");
+    let elapsed = app.eval("consent", "window.__timerProbe").as_f64().unwrap();
+    assert!(
+        (750.0..2000.0).contains(&elapsed),
+        "hidden timer took {elapsed} ms"
+    );
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac2_background_screen_is_visible_without_focus() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::background(home.path(), &[("WATANE_DRIVER_SCREEN", "front")]);
+    let windows = app.windows();
+    let main = windows.iter().find(|w| w["label"] == "main").unwrap();
+    assert_eq!(main["visible"], true);
+    assert_eq!(main["focused"], false);
+    assert_eq!(app.screen(), json!({"mode":"background","accessory":true}));
+    assert!(app.quit().success());
+}
+
+#[test]
+#[ignore = "front: takes the screen"]
+fn ac3_reopening_an_open_mod_focuses_it() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let url = books_page();
+    let fake = json!({"mods":[mod_view("books","Books",json!(url))]}).to_string();
+    let app = App::front(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    app.eval(
+        "main",
+        "document.querySelector('[data-local=books] button.open').click(); null",
+    );
+    assert!(app.wait("mod-books", TIMEOUT));
+    app.eval(
+        "main",
+        "document.querySelector('[data-local=books] button.open').click(); null",
+    );
+    until(&app, "main", "true");
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let windows = app.windows();
+        assert_eq!(
+            windows.iter().filter(|w| w["label"] == "mod-books").count(),
+            1
+        );
+        if windows
+            .iter()
+            .any(|w| w["label"] == "mod-books" && w["focused"] == true)
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+    }
+    assert!(app.quit().success());
+}
+
+#[test]
+#[ignore = "front: takes the screen"]
+fn ac3_consent_takes_focus() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::front(home.path(), &[("WATANE_DRIVER_SCREEN", "hidden")]);
+    assert_eq!(app.screen(), json!({"mode":"front","accessory":false}));
+    let ask = app.ask(install("Books"));
+    consent(&app);
+    until(&app, "consent", "document.hasFocus()");
+    assert!(
+        app.windows()
+            .iter()
+            .any(|w| w["label"] == "consent" && w["alwaysOnTop"] == true && w["focused"] == true)
     );
     app.close("consent");
     assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));

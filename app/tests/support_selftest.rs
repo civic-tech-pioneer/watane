@@ -259,3 +259,71 @@ async function run(allowed, before, missing = false) {
 }
 (async () => { await run(false, null); await run(true, 'previous'); await run(false, null, true); })().catch(e => { console.error(e); process.exitCode = 1; });
 "#;
+
+#[allow(dead_code)]
+#[path = "support/driver.rs"]
+mod driver;
+
+#[test]
+fn ac4_idle_time_parses_ioreg_nanoseconds() {
+    assert_eq!(
+        driver::idle_time(r#"    | |   "HIDIdleTime" = 30123456789"#),
+        Some(Duration::from_nanos(30_123_456_789))
+    );
+    assert_eq!(
+        driver::idle_time(r#"    "HIDIdleTime" = 30123456789"#),
+        Some(Duration::from_nanos(30_123_456_789))
+    );
+    assert_eq!(driver::idle_time("+-o IOHIDSystem"), None);
+    assert_eq!(driver::idle_time(r#""HIDIdleTime" = nope"#), None);
+    assert_eq!(
+        driver::idle_time(r#""OtherHIDIdleTime" = 40000000000"#),
+        None
+    );
+}
+
+#[test]
+fn ac3_screen_assertions_require_front_constructor_and_ignore() {
+    for file in ["gui_shell.rs", "gui_isolation.rs"] {
+        let source = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join(file),
+        )
+        .unwrap();
+        for test in source.split("#[test]").skip(1) {
+            let visible =
+                test.contains("[\"visible\"], true") || test.contains("[\"visible\"] == true");
+            let background_probe = test.contains("fn ac2_background_screen_");
+            if background_probe {
+                assert!(test.contains("App::background("));
+            }
+            let needs_front = test.contains("document.hasFocus()")
+                || test.contains("[\"focused\"] == true")
+                || test.contains("[\"focused\"], true")
+                || test.contains("fn ac4_approve_delay")
+                || (visible && !background_probe);
+            if needs_front || test.contains("App::front(") {
+                assert!(
+                    test.contains("App::front("),
+                    "{file}: focus test must call App::front"
+                );
+                assert!(
+                    test.contains("#[ignore = \"front: takes the screen\"]"),
+                    "{file}: focus test must be ignored"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn ac5_all_window_builders_and_focus_calls_share_screen_helpers() {
+    let views =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/views.rs")).unwrap();
+    assert_eq!(views.matches("screen_builder(app, builder)").count(), 3);
+    assert_eq!(views.matches(".set_focus()").count(), 1);
+    assert_eq!(views.matches(".request_user_attention(").count(), 1);
+    assert!(views.contains("focus(&w, false)?"));
+    assert!(views.contains("focus(&w, true)"));
+}

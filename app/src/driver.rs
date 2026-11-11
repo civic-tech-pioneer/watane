@@ -11,6 +11,26 @@ use std::{
     time::Duration,
 };
 use tauri::Manager;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Screen {
+    #[default]
+    Hidden,
+    Background,
+    Front,
+}
+impl Screen {
+    fn parse(value: Option<&str>) -> Self {
+        match value {
+            Some("background") => Self::Background,
+            Some("front") => Self::Front,
+            _ => Self::Hidden,
+        }
+    }
+    pub fn from_env() -> Self {
+        Self::parse(std::env::var("WATANE_DRIVER_SCREEN").ok().as_deref())
+    }
+}
 #[derive(Default)]
 pub(crate) struct DriverState {
     pages: Mutex<HashSet<String>>,
@@ -62,6 +82,35 @@ fn reply(id: Value, result: Result<Value, String>) {
 }
 fn field<'a>(v: &'a Value, name: &str) -> Result<&'a str, String> {
     v[name].as_str().ok_or_else(|| format!("missing {name}"))
+}
+// Tauri exposes a policy setter but no getter. Read AppKit's actual policy on
+// the main thread, rather than reporting the policy we intended to apply.
+#[cfg(target_os = "macos")]
+fn accessory(app: &tauri::AppHandle) -> Result<bool, String> {
+    use std::ffi::{c_char, c_void};
+    #[link(name = "AppKit", kind = "framework")]
+    unsafe extern "C" {
+        static NSApp: *mut c_void;
+    }
+    #[link(name = "objc")]
+    unsafe extern "C" {
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend(receiver: *mut c_void, selector: *mut c_void) -> isize;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        // SAFETY: setup has initialized NSApp. activationPolicy takes no
+        // arguments and returns NSInteger (isize); Accessory's AppKit value is 1.
+        let value = unsafe { objc_msgSend(NSApp, sel_registerName(c"activationPolicy".as_ptr())) };
+        let _ = tx.send(value == 1);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv_timeout(Duration::from_secs(30))
+        .map_err(|e| e.to_string())
+}
+#[cfg(not(target_os = "macos"))]
+fn accessory(_: &tauri::AppHandle) -> Result<bool, String> {
+    Ok(false)
 }
 pub(crate) fn start(app: tauri::AppHandle) {
     let ready = app.clone();
@@ -157,6 +206,7 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
                 .map(Value::String)
                 .map_err(|e| e.to_string())
         }
+        "screen" => Ok(json!({"mode":state.screen, "accessory": accessory(app)?})),
         "windows" => {
             let windows: Vec<_> = app.webview_windows().into_values().map(|w| {
                 json!({
@@ -187,5 +237,24 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
             json!({"commands":*state.driver.commands.lock().unwrap(),"blocked":*state.driver.blocked.lock().unwrap()}),
         ),
         op => Err(format!("unknown driver operation: {op}")),
+    }
+}
+
+#[cfg(test)]
+mod screen_tests {
+    use super::*;
+    #[test]
+    fn ac1_unknown_or_unset_screen_is_hidden() {
+        for value in [
+            None,
+            Some(""),
+            Some("unknown"),
+            Some("HIDDEN"),
+            Some("hidden"),
+        ] {
+            assert_eq!(Screen::parse(value), Screen::Hidden);
+        }
+        assert_eq!(Screen::parse(Some("background")), Screen::Background);
+        assert_eq!(Screen::parse(Some("front")), Screen::Front);
     }
 }

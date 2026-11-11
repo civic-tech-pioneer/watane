@@ -30,19 +30,23 @@ fn until(app: &App, label: &str, js: &str) {
     }
 }
 
-fn start(home: &Path, pages: &Pages, listener: &Listener) -> App {
+fn catalog(pages: &Pages, listener: &Listener) -> String {
     let page = format!(
         "{}?listener={}&api={}",
         pages.url("hostile"),
         listener.port,
         pages.port
     );
-    let fake = json!({"mods":[{
+    json!({"mods":[{
         "local":"hostile", "name":"Hostile", "slug":"hostile", "version":"0.1.0",
         "release":null, "publisher":null, "enabled":true, "page":page,
         "package":"hostile-fixture", "derivedFrom":null, "error":null, "grants":[]
     }]})
-    .to_string();
+    .to_string()
+}
+
+fn start(home: &Path, pages: &Pages, listener: &Listener) -> App {
+    let fake = catalog(pages, listener);
     let app = App::start(home, &[("WATANE_APP_FAKE", &fake)]);
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
@@ -66,6 +70,7 @@ fn fixtures() -> &'static Path {
 }
 
 #[test]
+#[ignore = "front: takes the screen"]
 fn ac1_consent_stays_above_hostile_and_takes_focus() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     // The driver has no field for all Spaces; this part is a source check.
@@ -81,7 +86,10 @@ fn ac1_consent_stays_above_hostile_and_takes_focus() {
     let home = tempfile::tempdir().unwrap();
     let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let app = start(home.path(), &pages, &listener);
+    let fake = catalog(&pages, &listener);
+    let app = App::front(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    open(&app);
     let ask = app.ask(json!({"kind":"install", "by_program":false, "mods":[]}));
     assert!(app.wait("consent", TIMEOUT));
     until(
@@ -265,5 +273,39 @@ fn ac4_disabling_hostile_closes_window_and_disables_catalog_entry() {
             .unwrap()["enabled"],
         false
     );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_hidden_consent_retains_topmost_configuration() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let views =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/views.rs")).unwrap();
+    assert!(
+        views
+            .split("fn sync_consent")
+            .nth(1)
+            .unwrap()
+            .contains(".visible_on_all_workspaces(true)")
+    );
+    let home = tempfile::tempdir().unwrap();
+    let pages = Pages::start(fixtures());
+    let listener = Listener::start();
+    let app = start(home.path(), &pages, &listener);
+    let ask = app.ask(json!({"kind":"install", "by_program":false, "mods":[]}));
+    assert!(app.wait("consent", TIMEOUT));
+    until(&app, "consent", "document.body.dataset.ready === 'true'");
+    let windows = app.windows();
+    assert_eq!(
+        windows.iter().find(|w| w["label"] == "consent").unwrap()["alwaysOnTop"],
+        true
+    );
+    assert_eq!(
+        windows.iter().find(|w| w["label"] == MOD).unwrap()["alwaysOnTop"],
+        false
+    );
+    assert!(ask.is_open());
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
     assert!(app.quit().success());
 }

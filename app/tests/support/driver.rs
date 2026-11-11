@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 const TIMEOUT: Duration = Duration::from_secs(30);
 type Replies = Arc<Mutex<HashMap<u64, mpsc::Sender<Value>>>>;
@@ -47,12 +47,60 @@ fn result(v: Value) -> Value {
     assert!(v.get("err").is_none(), "driver error: {v}");
     v["ok"].clone()
 }
+// ioreg reports HIDIdleTime in nanoseconds. Missing or malformed output is
+// not evidence that the human stepped away.
+pub fn idle_time(output: &str) -> Option<Duration> {
+    output.lines().find_map(|line| {
+        let (key, value) = line.trim().split_once('=')?;
+        (key.trim_start_matches([' ', '\t', '|']).trim_end() == "\"HIDIdleTime\"")
+            .then(|| value.trim().parse::<u64>().ok().map(Duration::from_nanos))
+            .flatten()
+    })
+}
+fn wait_for_idle() {
+    eprintln!("waiting for you to step away");
+    let deadline = Instant::now() + Duration::from_secs(600);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "front tests waited 10 minutes for at least 30 seconds of human idle time (ioreg HIDIdleTime)"
+        );
+        let output = Command::new("ioreg")
+            .args(["-c", "IOHIDSystem"])
+            .output()
+            .expect("front tests cannot read human idle time: failed to run ioreg -c IOHIDSystem");
+        assert!(
+            output.status.success(),
+            "front tests cannot read human idle time: ioreg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let idle = idle_time(&String::from_utf8_lossy(&output.stdout)).expect(
+            "front tests cannot read human idle time: ioreg output has no valid HIDIdleTime in ns",
+        );
+        if idle >= Duration::from_secs(30) {
+            return;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
 impl App {
     pub fn start(home: &Path, env: &[(&str, &str)]) -> App {
+        Self::spawn(home, env, "hidden")
+    }
+    #[allow(dead_code)] // Shared support: gui_isolation uses only hidden/front.
+    pub fn background(home: &Path, env: &[(&str, &str)]) -> App {
+        Self::spawn(home, env, "background")
+    }
+    pub fn front(home: &Path, env: &[(&str, &str)]) -> App {
+        wait_for_idle();
+        Self::spawn(home, env, "front")
+    }
+    fn spawn(home: &Path, env: &[(&str, &str)], screen: &str) -> App {
         let mut child = Command::new(env!("CARGO_BIN_EXE_watane-app"))
             .args(["--home", home.to_str().unwrap(), "--port", "0"])
             .env_remove("WATANE_APP_FAKE")
             .envs(env.iter().copied())
+            .env("WATANE_DRIVER_SCREEN", screen)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -120,6 +168,10 @@ impl App {
             .expect("driver wait response timed out")
             .as_bool()
             .unwrap()
+    }
+    #[allow(dead_code)] // Shared support: mode probes live in gui_shell.
+    pub fn screen(&self) -> Value {
+        self.call(json!({"op":"screen"}))
     }
     pub fn windows(&self) -> Vec<Value> {
         self.call(json!({"op":"windows"}))

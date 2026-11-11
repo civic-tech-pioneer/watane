@@ -1,6 +1,32 @@
 use crate::{AppState, CmdError, consent::Answer};
 use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+// Apply last, so a consent builder's focused(true) cannot override quiet mode.
+fn screen_builder<'a>(
+    app: &tauri::AppHandle,
+    builder: WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle>,
+) -> WebviewWindowBuilder<'a, tauri::Wry, tauri::AppHandle> {
+    #[cfg(feature = "driver")]
+    match app.state::<AppState>().screen {
+        crate::driver::Screen::Hidden => return builder.visible(false).focused(false),
+        crate::driver::Screen::Background => return builder.visible(true).focused(false),
+        crate::driver::Screen::Front => {}
+    }
+    #[cfg(not(feature = "driver"))]
+    let _ = app;
+    builder
+}
+fn focus(window: &tauri::WebviewWindow, attention: bool) -> tauri::Result<()> {
+    #[cfg(feature = "driver")]
+    if window.state::<AppState>().screen != crate::driver::Screen::Front {
+        return Ok(());
+    }
+    let result = window.set_focus();
+    if attention {
+        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+    }
+    result
+}
 fn loaded(window: tauri::WebviewWindow, event: tauri::webview::PageLoadPayload<'_>) {
     #[cfg(feature = "driver")]
     window.state::<AppState>().driver.loaded(
@@ -11,11 +37,11 @@ fn loaded(window: tauri::WebviewWindow, event: tauri::webview::PageLoadPayload<'
     let _ = (window, event);
 }
 pub(crate) fn main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("watane")
         .inner_size(1000., 700.)
-        .on_page_load(loaded)
-        .build()?;
+        .on_page_load(loaded);
+    let w = screen_builder(app, builder).build()?;
     let handle = app.clone();
     w.on_window_event(move |event| {
         if matches!(event, WindowEvent::CloseRequested { .. }) {
@@ -33,7 +59,7 @@ pub(crate) fn open_mod(
 ) -> Result<(), CmdError> {
     let label = format!("mod-{local}");
     if let Some(w) = app.get_webview_window(&label) {
-        w.set_focus()?;
+        focus(&w, false)?;
         return Ok(());
     }
     let url: tauri::Url = page
@@ -46,7 +72,7 @@ pub(crate) fn open_mod(
     let m = label.clone();
     let c = app.clone();
     let n = label.clone();
-    let w = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(title)
         .inner_size(900., 680.)
         .incognito(true)
@@ -68,8 +94,8 @@ pub(crate) fn open_mod(
             }
             false
         })
-        .on_page_load(loaded)
-        .build()?;
+        .on_page_load(loaded);
+    let w = screen_builder(app, builder).build()?;
     let h = app.clone();
     w.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
@@ -115,7 +141,7 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
         return;
     };
     *state.consent_id.lock().unwrap() = Some(id.clone());
-    let result = WebviewWindowBuilder::new(app, "consent", WebviewUrl::App("consent.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "consent", WebviewUrl::App("consent.html".into()))
         .title("watane — confirm")
         .inner_size(560., 640.)
         .resizable(false)
@@ -124,8 +150,8 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
         .visible_on_all_workspaces(true)
         .focused(true)
         .center()
-        .on_page_load(loaded)
-        .build();
+        .on_page_load(loaded);
+    let result = screen_builder(app, builder).build();
     match result {
         Ok(w) => {
             let h = app.clone();
@@ -145,8 +171,7 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
                     });
                 }
             });
-            let _ = w.set_focus();
-            let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
+            let _ = focus(&w, true);
         }
         Err(e) => {
             eprintln!("cannot open consent: {e}");
