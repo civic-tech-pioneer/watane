@@ -453,7 +453,7 @@ fn normalized(path: &Path) -> PathBuf {
     })
 }
 
-pub fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
+fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
     let roots: Vec<_> = allowed.iter().map(|p| normalized(p)).collect();
     let mut outside = BTreeSet::new();
     for line in dep_info.lines().filter(|line| !line.starts_with('#')) {
