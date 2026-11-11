@@ -660,16 +660,16 @@ async fn ac7_s12_s13_program_serves_policy_and_changed_quiet_reload_events() {
 }
 
 #[test]
-fn ac9_test_plan_marks_subscription_and_revoke_as_step_two() {
+fn ac9_test_plan_marks_subscription_and_revoke_as_tested() {
     let spec =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
     let row = spec
         .lines()
         .find(|line| line.starts_with("| `tests/hostile.rs` |"))
         .unwrap();
-    assert!(row.contains("`/call` with a subscription function → 404 (step 2)"));
+    assert!(row.contains("`/call` with a subscription function → 404 (`ac12_s11_page_cannot_call_a_subscription_function`)"));
     assert!(row.contains(
-        "`counter` without storage grant cannot read state that it wrote before the revoke (step 2)"
+        "`counter` without storage grant cannot read state that it wrote before the revoke (`ac8_s12a_storage_after_revoke_cannot_read_old_state`)"
     ));
 }
 
@@ -696,7 +696,7 @@ async fn ac12_s11_page_cannot_call_a_subscription_function() {
     .unwrap();
     host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
         .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = Client::builder()
         .no_proxy()
         .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
@@ -723,4 +723,76 @@ async fn ac12_s11_page_cannot_call_a_subscription_function() {
         json!([])
     );
     served.shutdown().await;
+}
+
+#[tokio::test]
+async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
+    use std::{future::Future, pin::Pin, sync::Arc};
+    use watane_host::{
+        Answer, Caller, Confirm, Host, InstallRequest, Limits, LocalName, Mode, Requester, Source,
+    };
+    struct App {
+        requests: std::sync::Mutex<Vec<InstallRequest>>,
+        answers: std::sync::Mutex<std::collections::VecDeque<Answer>>,
+    }
+    impl Confirm for App {
+        fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
+            self.requests.lock().unwrap().push(request);
+            let answer = self
+                .answers
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected confirmation");
+            Box::pin(async move { answer })
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let app = Arc::new(App {
+        requests: std::sync::Mutex::new(vec![]),
+        answers: std::sync::Mutex::new([Answer::Approve { withhold: vec![] }].into()),
+    });
+    let host = Host::open(
+        dir.path(),
+        Mode::Home {
+            app: Some(app.clone()),
+        },
+        Limits::default(),
+    )
+    .unwrap();
+    host.install(
+        host.plan(vec![Source::Folder(fixture("counter"))]).unwrap(),
+        Requester::App,
+    )
+    .await
+    .unwrap();
+    assert_eq!(app.requests.lock().unwrap().len(), 1);
+    assert!(matches!(
+        app.requests.lock().unwrap()[0].requester,
+        Requester::App
+    ));
+    let local = LocalName::parse("counter").unwrap();
+    for expected in 1..=3 {
+        assert_eq!(
+            host.call_async(Caller::Page, local.clone(), "api.add".into(), Value::Null)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    host.revoke(&local, &watane_host::watane_pkg::Grant::Storage)
+        .unwrap();
+    let error = host
+        .call_async(Caller::Page, local.clone(), "api.get".into(), Value::Null)
+        .await
+        .unwrap_err();
+    assert_eq!(serde_json::to_value(error).unwrap()["code"], "not_granted");
+    host.grant(&local, &watane_host::watane_pkg::Grant::Storage)
+        .unwrap();
+    assert_eq!(
+        host.call_async(Caller::Page, local, "api.get".into(), Value::Null)
+            .await
+            .unwrap(),
+        3
+    );
 }

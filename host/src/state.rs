@@ -29,6 +29,29 @@ impl State {
             db: Mutex::new(db),
         })
     }
+    pub fn delete(&self, identity: &str) -> Result<(), HostError> {
+        let db = self.db.lock().unwrap();
+        let Some(db) = db.as_ref() else {
+            return Ok(());
+        };
+        let id = blake3::hash(identity.as_bytes()).to_hex()[..32].to_string();
+        let txn = db
+            .begin_write()
+            .map_err(|e| HostError::Internal(e.to_string()))?;
+        txn.delete_table(TableDefinition::<&str, &[u8]>::new(&format!("s/{id}")))
+            .map_err(|e| HostError::Internal(e.to_string()))?;
+        {
+            let mut sizes = txn
+                .open_table(SIZES)
+                .map_err(|e| HostError::Internal(e.to_string()))?;
+            sizes
+                .remove(id.as_str())
+                .map_err(|e| HostError::Internal(e.to_string()))?;
+        }
+        txn.commit()
+            .map_err(|e| HostError::Internal(e.to_string()))?;
+        Ok(())
+    }
     pub fn transaction(&self, identity: &str, limits: &Limits) -> Result<Transaction, CallError> {
         let mut db = self
             .db

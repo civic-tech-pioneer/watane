@@ -18,6 +18,7 @@ use tokio_stream::{
 };
 
 type Message = (LocalName, Arc<str>);
+pub(crate) const CLOSE: &str = "";
 pub(crate) const CHANGED: &str = r#"{"type":"changed"}"#;
 pub(crate) const RELOAD: &str = r#"{"type":"reload"}"#;
 
@@ -87,6 +88,9 @@ impl Stream for PageStream {
         loop {
             match Pin::new(&mut self.receiver).poll_next(cx) {
                 Poll::Ready(Some(Ok((local, message)))) if local == self.local => {
+                    if message.is_empty() {
+                        return Poll::Ready(None);
+                    }
                     return Poll::Ready(Some(Ok(Event::default().data(message.as_ref()))));
                 }
                 Poll::Ready(Some(Ok(_))) => continue,

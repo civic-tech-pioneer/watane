@@ -115,6 +115,22 @@ pub(crate) fn run(
 }
 
 impl Invocation {
+    pub(super) fn storage(&self) -> Result<(), CallError> {
+        let catalog = self.chain.host.catalog.lock().unwrap();
+        if catalog.mods.iter().any(|m| {
+            m.local == self.local
+                && m.grants
+                    .iter()
+                    .any(|g| g.granted && matches!(g.grant, Grant::Storage))
+        }) {
+            Ok(())
+        } else {
+            Err(CallError::new(
+                CallCode::NotGranted,
+                format!("{} has no grant for watane:host/state", self.local),
+            ))
+        }
+    }
     pub(super) fn nested(
         &self,
         interface: &InterfaceName,
@@ -138,13 +154,12 @@ impl Invocation {
                 })?;
             return Ok((value, fuel));
         }
-        let consumer = self
-            .chain
-            .snapshot
+        let current = self.chain.host.catalog.lock().unwrap().clone();
+        let consumer = current
             .mods
             .iter()
             .find(|m| m.local == self.local)
-            .expect("invoked mod exists");
+            .ok_or_else(|| CallError::new(CallCode::NotGranted, "consumer was removed"))?;
         let granted = consumer.grants.iter().any(|g| {
             g.granted && matches!(&g.grant, Grant::Call { interface: i, .. } if i == interface)
         });
@@ -163,9 +178,7 @@ impl Invocation {
             ));
         }
         let provider = provider.unwrap();
-        let target = self
-            .chain
-            .snapshot
+        let target = current
             .mods
             .iter()
             .find(|m| &m.local == provider)
@@ -240,6 +253,52 @@ impl Invocation {
             .or_default()
             .clone();
         let _guard = lock_until(&lock, chain.deadline)?;
+        {
+            let current = host.catalog.lock().unwrap();
+            let active = current
+                .mods
+                .iter()
+                .find(|current| {
+                    current.local == m.local
+                        && current.identity == m.identity
+                        && current.package == m.package
+                })
+                .ok_or_else(|| CallError::new(CallCode::NoMod, "mod was removed or updated"))?;
+            if !active.enabled {
+                return Err(CallError::new(CallCode::Disabled, "mod is disabled"));
+            }
+            if let Caller::Mod(other) = caller {
+                // Selection can precede a wait for this mod's lock. Check
+                // authority again before invoking the selected export.
+                let authorized = if subscription && chain.publish {
+                    current.mods.iter().any(|p| &p.local == other && p.enabled)
+                        && active.links.iter().any(|link| {
+                            matches!(link.kind, LinkKind::Subscribe)
+                                && link.provider.as_ref() == Some(other)
+                                && link.interface.to_string() == function.interface
+                                && active.grants.iter().any(|g| g.granted && matches!(&g.grant, Grant::Subscribe { interface, .. } if interface == &link.interface))
+                        })
+                } else if self.depth > 0 {
+                    current.mods.iter().filter(|m| &m.local == other && m.enabled).any(|consumer| {
+                        consumer.links.iter().any(|link| {
+                            matches!(link.kind, LinkKind::Call)
+                                && link.provider.as_ref() == Some(&self.local)
+                                && link.provider_interface.as_ref().is_some_and(|i| i.to_string() == function.interface)
+                                && consumer.grants.iter().any(|g| g.granted && matches!(&g.grant, Grant::Call { interface, .. } if interface == &link.interface))
+                        })
+                    })
+                } else {
+                    true
+                };
+                if !authorized {
+                    return Err(CallError::new(
+                        CallCode::NotGranted,
+                        "grant or provider was withdrawn while waiting for the mod",
+                    ));
+                }
+            }
+        }
+
         let transaction = host.state.transaction(&m.identity, &host.limits)?;
         let mut store = super::linker::store(
             &host.engine,
@@ -485,8 +544,8 @@ fn process(delivery: &Delivery) {
     }
     delivery.accepted.store(true, Ordering::Release);
     let message = crate::bus::event_message(emitter, event);
-    let mut subscribers: Vec<_> = chain
-        .snapshot
+    let current = host.catalog.lock().unwrap().clone();
+    let mut subscribers: Vec<_> = current
         .mods
         .iter()
         .filter(|m| m.enabled && m.error.is_none())
@@ -510,7 +569,7 @@ fn process(delivery: &Delivery) {
             };
             let subscriber = Arc::new(Chain {
                 host: host.clone(),
-                snapshot: chain.snapshot.clone(),
+                snapshot: Arc::new(current.clone()),
                 fakes: None,
                 deadline,
                 effects: Mutex::new(Effects::default()),
@@ -541,5 +600,72 @@ fn process(delivery: &Delivery) {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Limits, Mode};
+    use std::{path::Path, time::Duration};
+
+    #[test]
+    fn ac7_s12a_subscription_rechecks_grant_after_waiting_for_its_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        // Preview avoids consent here: this unit test isolates runtime delivery.
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let fixture = |name| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/mods")
+                .join(name)
+        };
+        host.install_folders(&[fixture("shelf"), fixture("recs")], 0)
+            .unwrap();
+        let recs = LocalName::parse("recs").unwrap();
+        let grant = host
+            .get(&recs)
+            .unwrap()
+            .grants
+            .into_iter()
+            .find(|g| matches!(g.grant, Grant::Subscribe { .. }))
+            .unwrap()
+            .grant;
+        let lock = Arc::new(Mutex::new(()));
+        host.call_locks
+            .lock()
+            .unwrap()
+            .insert("local/recs".into(), lock.clone());
+        let guard = lock.lock().unwrap();
+        let emitter = host.clone();
+        let thread = std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(move || {
+                emitter.call(
+                    &Caller::Page,
+                    &LocalName::parse("shelf").unwrap(),
+                    "items.add",
+                    serde_json::json!({"title":"X"}),
+                )
+            })
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        // The map and this test own two references. The third is the
+        // subscriber invocation waiting in lock_until, after grant selection.
+        while Arc::strong_count(&lock) < 3 {
+            assert!(Instant::now() < deadline, "delivery did not start");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        host.revoke(&recs, &grant).unwrap();
+        drop(guard);
+        assert_eq!(thread.join().unwrap().unwrap(), Value::Null);
+        let reader = host.clone();
+        let received = std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(move || reader.call(&Caller::Page, &recs, "api.received", Value::Null))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
+        assert_eq!(received, serde_json::json!([]));
     }
 }

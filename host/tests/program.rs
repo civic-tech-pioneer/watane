@@ -632,7 +632,7 @@ fn ac7_public_modes_and_default_home() {
                 .map(|s| PathBuf::from(s).join(".watane"))
         });
     assert_eq!(default_home().ok(), expected);
-    for (mode, preview) in [(Mode::Home, false), (Mode::Preview, true)] {
+    for (mode, preview) in [(Mode::Home { app: None }, false), (Mode::Preview, true)] {
         let dir = tempfile::tempdir().unwrap();
         let host = Host::open(dir.path(), mode, Limits::default()).unwrap();
         assert_eq!(host.is_preview(), preview);

@@ -26,12 +26,14 @@ pub(super) fn linker(
     state.func_wrap(
         "get",
         |mut ctx: wasmtime::StoreContextMut<'_, Ctx>, (key,): (String,)| {
+            ctx.data().invocation.storage()?;
             Ok((ctx.data_mut().state.get(&key)?,))
         },
     )?;
     state.func_wrap(
         "put",
         |mut ctx: wasmtime::StoreContextMut<'_, Ctx>, (key, value): (String, Vec<u8>)| {
+            ctx.data().invocation.storage()?;
             ctx.data_mut().state.put(key, value)?;
             Ok(())
         },
@@ -39,6 +41,7 @@ pub(super) fn linker(
     state.func_wrap(
         "delete",
         |mut ctx: wasmtime::StoreContextMut<'_, Ctx>, (key,): (String,)| {
+            ctx.data().invocation.storage()?;
             ctx.data_mut().state.delete(key);
             Ok(())
         },

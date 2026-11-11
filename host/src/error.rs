@@ -11,8 +11,8 @@ pub enum HostError {
     BadHome { path: PathBuf, reason: String },
     #[error("{0}")]
     Refused(String),
-    #[error("missing providers: {0}")]
-    MissingProviders(String),
+    #[error("missing providers: {}", missing_message(.0))]
+    MissingProviders(Vec<crate::MissingProvider>),
     #[error("call cycle: {0}")]
     Cycle(String),
     #[error("ambiguous provider: {0}")]
@@ -31,6 +31,13 @@ pub enum HostError {
     PortInUse(u16),
     #[error("host is already serving")]
     AlreadyServing,
+    #[error("plan no longer matches the catalog")]
+    StalePlan,
+    #[error("{local} does not declare {grant}")]
+    NotDeclared {
+        local: crate::LocalName,
+        grant: watane_pkg::Grant,
+    },
     #[error("{0}")]
     Internal(String),
 }
@@ -39,6 +46,8 @@ impl HostError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Busy(_) => "busy",
+            Self::StalePlan => "stale_plan",
+            Self::NotDeclared { .. } => "not_declared",
             Self::Refused(_) => "refused",
             Self::MissingProviders(_) => "missing_providers",
             Self::Cycle(_) => "cycle",
@@ -59,19 +68,28 @@ impl HostError {
     pub fn status(&self) -> u16 {
         match self {
             Self::Refused(_) => 403,
-            Self::BadName { .. } | Self::BadToolsetEntry { .. } => 400,
+            Self::BadName { .. } | Self::BadToolsetEntry { .. } | Self::NotDeclared { .. } => 400,
             Self::NoSuchMod(_) | Self::NoSuchToolset(_) => 404,
-            Self::Busy(_) | Self::ModeMismatch { .. } => 409,
-            Self::InvalidMod { .. }
+            Self::Busy(_)
+            | Self::ModeMismatch { .. }
+            | Self::StalePlan
             | Self::MissingProviders(_)
             | Self::Cycle(_)
-            | Self::AmbiguousProvider(_) => 422,
+            | Self::AmbiguousProvider(_) => 409,
+            Self::InvalidMod { .. } => 422,
             _ => 500,
         }
     }
 
     pub(crate) fn json(&self) -> Value {
-        json!({"code":self.code(), "message":self.to_string()})
+        let mut value = json!({"code":self.code(), "message":self.to_string()});
+        if let Self::MissingProviders(missing) = self {
+            value["missing"] = json!(missing);
+        }
+        if let Self::Cycle(path) = self {
+            value["cycle"] = json!(path.split(" -> ").collect::<Vec<_>>());
+        }
+        value
     }
 }
 
@@ -165,4 +183,12 @@ impl serde::Serialize for CallError {
         out.serialize_field("message", &self.message)?;
         out.end()
     }
+}
+
+fn missing_message(missing: &[crate::MissingProvider]) -> String {
+    missing
+        .iter()
+        .map(|m| format!("{} at {} needed by {}", m.provider, m.version, m.needed_by))
+        .collect::<Vec<_>>()
+        .join(", ")
 }

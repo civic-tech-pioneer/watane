@@ -15,7 +15,7 @@ fn arguments() -> Result<Option<Args>, &'static str> {
     }
     let mut args = args.into_iter();
     let mut home = None;
-    let mut mode = Mode::Home;
+    let mut mode = Mode::Home { app: None };
     let mut port = None;
     let mut folders = Vec::new();
     while let Some(arg) = args.next() {
@@ -24,7 +24,7 @@ fn arguments() -> Result<Option<Args>, &'static str> {
                 mode = if option == "--preview" {
                     Mode::Preview
                 } else {
-                    Mode::Home
+                    Mode::Home { app: None }
                 };
                 let path = args.next().ok_or("home option needs a directory")?;
                 if path.to_str().is_some_and(|s| s.starts_with("--")) {
@@ -58,13 +58,13 @@ fn arguments() -> Result<Option<Args>, &'static str> {
             }
         }
     }
-    if mode == Mode::Home && !folders.is_empty() {
+    if matches!(mode, Mode::Home { .. }) && !folders.is_empty() {
         return Err("--install requires --preview");
     }
     Ok(Some(Args {
         home,
-        mode,
-        port: port.unwrap_or(if mode == Mode::Preview {
+        mode: mode.clone(),
+        port: port.unwrap_or(if matches!(mode, Mode::Preview) {
             0
         } else {
             DEFAULT_PORT
@@ -107,7 +107,7 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
         None => default_home()?,
     };
     let host = Host::open(&home, args.mode, watane_host::Limits::default())?;
-    let served = host.serve(args.port).await?;
+    let served = host.serve(args.port, axum::Router::new()).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {
         host.install_folders(&args.folders, served.port)?;

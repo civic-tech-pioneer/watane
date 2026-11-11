@@ -1,4 +1,10 @@
-use crate::{HostError, server::ServerState};
+use crate::{Host, HostError};
+use std::sync::Arc;
+#[derive(Clone)]
+pub(crate) struct ApiState {
+    pub host: Arc<Host>,
+    pub port: u16,
+}
 use axum::{
     Json,
     body::{Body, to_bytes},
@@ -31,13 +37,14 @@ fn host_error(error: HostError) -> Response {
     json_response(error.status(), json!({"error":error.json()}))
 }
 
-pub(crate) async fn respond(state: ServerState, request: Request<Body>) -> Response {
+pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response {
     if request.headers().contains_key(header::ORIGIN) {
         return error(403, "forbidden", "Origin is forbidden on the local API");
     }
     let path = request.uri().path();
     let allowed = match path {
-        "/api/status" => Method::GET,
+        "/api/status" | "/api/mods" => Method::GET,
+        "/api/plan" => Method::POST,
         "/api/install" => Method::POST,
         _ => return error(404, "bad_request", "unknown API route"),
     };
@@ -49,7 +56,8 @@ pub(crate) async fn respond(state: ServerState, request: Request<Body>) -> Respo
         );
         return response;
     }
-    let status_route = path == "/api/status";
+    let route = path.to_owned();
+    let status_route = path == "/api/status" || path == "/api/mods";
     let content_type = request
         .headers()
         .get(header::CONTENT_TYPE)
@@ -67,10 +75,13 @@ pub(crate) async fn respond(state: ServerState, request: Request<Body>) -> Respo
         Ok(bytes) => bytes,
         Err(e) => return error(413, "bad_request", e),
     };
+    if route == "/api/mods" {
+        return json_response(200, json!({"mods":state.host.mods()}));
+    }
     if status_route {
         return json_response(
             200,
-            json!({"watane":1,"mode":state.host.home.mode.as_str(),"home":state.host.home(),"port":state.port,"app":false}),
+            json!({"watane":1,"mode":state.host.home.mode.as_str(),"home":state.host.home(),"port":state.port,"app":state.host.home.mode.has_app()}),
         );
     }
     #[derive(Deserialize)]
@@ -85,13 +96,28 @@ pub(crate) async fn respond(state: ServerState, request: Request<Body>) -> Respo
     if install.folders.iter().any(|path| !path.is_absolute()) {
         return error(400, "bad_request", "folder paths must be absolute");
     }
-    match tokio::task::spawn_blocking(move || {
-        state.host.install_folders(&install.folders, state.port)
+    let host = state.host;
+    let planner = host.clone();
+    let plan = match tokio::task::spawn_blocking(move || {
+        planner.plan(
+            install
+                .folders
+                .into_iter()
+                .map(crate::Source::Folder)
+                .collect(),
+        )
     })
     .await
     {
-        Ok(Ok(installed)) => json_response(200, json!({"installed":installed})),
-        Ok(Err(e)) => host_error(e),
-        Err(e) => host_error(HostError::Internal(e.to_string())),
+        Ok(Ok(plan)) => plan,
+        Ok(Err(e)) => return host_error(e),
+        Err(e) => return host_error(HostError::Internal(e.to_string())),
+    };
+    if route == "/api/plan" {
+        return json_response(200, serde_json::to_value(&plan).expect("plan serializes"));
+    }
+    match host.install(plan, crate::Requester::LocalApi).await {
+        Ok(installed) => json_response(200, json!({"installed":installed})),
+        Err(e) => host_error(e),
     }
 }

@@ -118,7 +118,7 @@ async fn ac4_call_errors_keep_codes_and_limits_allow_recovery() {
         },
     )
     .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     host.install_folders(
         &[fixture("counter"), fixture("hello"), fixture("hog")],
         served.port,

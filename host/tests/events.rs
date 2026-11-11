@@ -58,7 +58,7 @@ async fn setup() -> (
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("counter"), fixture("echo")], 0)
         .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = Client::builder()
         .no_proxy()
         .resolve("counter.localhost", ([127, 0, 0, 1], served.port).into())
@@ -368,7 +368,7 @@ async fn ac8_s11_subscriber_pages_receive_event_then_changed() {
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
         .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = Client::builder()
         .no_proxy()
         .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
@@ -398,7 +398,7 @@ async fn ac8_s11_event_without_state_change_sends_no_changed() {
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
         .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = Client::builder()
         .no_proxy()
         .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
@@ -514,7 +514,7 @@ async fn ac1_validator_event_chain_sends_one_changed_per_mod() {
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("loop-a"), fixture("loop-b")], 0)
         .unwrap();
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = Client::builder()
         .no_proxy()
         .resolve("loop-a.localhost", ([127, 0, 0, 1], served.port).into())

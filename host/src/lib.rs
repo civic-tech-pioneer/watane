@@ -4,7 +4,9 @@ pub const WATANE_JS: &str = include_str!("watane.js");
 mod api;
 mod bus;
 mod catalog;
+mod confirm;
 mod error;
+pub use confirm::{Answer, Confirm, InstallRequest, Requester};
 mod harness;
 mod home;
 mod pages;
@@ -13,9 +15,11 @@ mod server;
 mod state;
 mod tools;
 pub use runtime::limits::Limits;
-pub use tools::{FunctionInfo, Handle, Token, TokenId, ToolsetName};
+pub use tools::{FunctionInfo, Handle, Token, TokenId, TokenInfo, ToolsetName};
 
-pub use catalog::{GrantState, InstalledMod, LinkKind, LinkView};
+pub use catalog::{
+    Change, GrantState, InstalledMod, LinkKind, LinkView, MissingProvider, Plan, PlanEntry, Source,
+};
 pub use error::{CallCode, CallError, HostError, Limit};
 pub use harness::{EventRecord, Fakes, Harness, Outcome};
 pub use home::{LocalName, RunInfo, default_home};
@@ -29,18 +33,28 @@ pub use watane_pkg;
 
 pub const DEFAULT_PORT: u16 = 47341;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 pub enum Mode {
-    Home,
+    Home { app: Option<Arc<dyn Confirm>> },
     Preview,
 }
-
-impl Mode {
-    pub(crate) fn as_str(self) -> &'static str {
+impl std::fmt::Debug for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Home => "home",
+            Self::Home { app } => f.debug_struct("Home").field("app", &app.is_some()).finish(),
+            Self::Preview => f.write_str("Preview"),
+        }
+    }
+}
+impl Mode {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Home { .. } => "home",
             Self::Preview => "preview",
         }
+    }
+    pub(crate) fn has_app(&self) -> bool {
+        matches!(self, Self::Home { app: Some(_) })
     }
 }
 
@@ -49,6 +63,8 @@ pub struct Host {
     home: home::Home,
     catalog: Mutex<catalog::Catalog>,
     serving: AtomicBool,
+    port: std::sync::atomic::AtomicU16,
+    installing: tokio::sync::Mutex<()>,
     engine: Arc<wasmtime::Engine>,
     limits: Limits,
     state: state::State,
@@ -80,6 +96,8 @@ impl Host {
             home,
             catalog: Mutex::new(catalog),
             serving: AtomicBool::new(false),
+            port: std::sync::atomic::AtomicU16::new(0),
+            installing: tokio::sync::Mutex::new(()),
         });
         let weak = Arc::downgrade(&host.engine);
         std::thread::Builder::new()
@@ -143,7 +161,7 @@ impl Host {
         &self.home.path
     }
     pub fn is_preview(&self) -> bool {
-        self.home.mode == Mode::Preview
+        matches!(self.home.mode, Mode::Preview)
     }
 
     pub fn install_folders(
@@ -151,29 +169,203 @@ impl Host {
         folders: &[PathBuf],
         port: u16,
     ) -> Result<Vec<InstalledMod>, HostError> {
-        let mut catalog = self
-            .catalog
+        let plan = self.plan(folders.iter().cloned().map(Source::Folder).collect())?;
+        if plan.needs_confirmation() {
+            return Err(HostError::Refused(
+                "use install with the app to confirm the install".into(),
+            ));
+        }
+        self.commit_plan(plan, &[], port)
+    }
+    pub fn plan(&self, sources: Vec<Source>) -> Result<Plan, HostError> {
+        let folders = sources
+            .into_iter()
+            .map(|Source::Folder(p)| p)
+            .collect::<Vec<_>>();
+        self.catalog.lock().unwrap().plan(
+            self.home(),
+            &folders,
+            &self.engine,
+            self.is_preview(),
+            false,
+        )
+    }
+    pub async fn install(
+        &self,
+        plan: Plan,
+        requester: Requester,
+    ) -> Result<Vec<InstalledMod>, HostError> {
+        let _install = self.installing.lock().await;
+        self.catalog.lock().unwrap().validate(&plan, self.home())?;
+        let withhold = if plan.needs_confirmation() {
+            let Mode::Home { app: Some(app) } = &self.home.mode else {
+                return Err(HostError::Refused(
+                    "no app is attached to confirm the install".into(),
+                ));
+            };
+            let request = InstallRequest {
+                entries: plan
+                    .entries()
+                    .iter()
+                    .filter(|e| !matches!(e.change, Change::Unchanged))
+                    .cloned()
+                    .collect(),
+                requester,
+            };
+            match tokio::time::timeout(std::time::Duration::from_secs(600), app.install(request))
+                .await
+            {
+                Ok(Answer::Approve { withhold }) => withhold,
+                _ => return Err(HostError::Refused("install was not approved".into())),
+            }
+        } else {
+            vec![]
+        };
+        self.commit_plan(
+            plan,
+            &withhold,
+            self.port.load(std::sync::atomic::Ordering::Acquire),
+        )
+    }
+    fn commit_plan(
+        &self,
+        plan: Plan,
+        withhold: &[(LocalName, watane_pkg::Grant)],
+        port: u16,
+    ) -> Result<Vec<InstalledMod>, HostError> {
+        let updates: Vec<_> = plan
+            .entries()
+            .iter()
+            .filter(|e| matches!(e.change, Change::Update { .. }))
+            .map(|e| e.local.clone())
+            .collect();
+        let installed =
+            self.catalog
+                .lock()
+                .unwrap()
+                .commit(self.home(), plan, withhold, self.is_preview())?;
+        for local in updates {
+            self.bus.send(&local, bus::RELOAD);
+        }
+        Ok(installed
+            .into_iter()
+            .map(|m| self.mod_view(m, port))
+            .collect())
+    }
+    fn mod_view(&self, mut m: InstalledMod, port: u16) -> InstalledMod {
+        m.page = m
+            .page
+            .and_then(|_| (port != 0).then(|| format!("http://{}.localhost:{port}/", m.local)));
+        m
+    }
+    pub fn mods(&self) -> Vec<InstalledMod> {
+        let mut mods = self.catalog.lock().unwrap().mods.clone();
+        mods.sort_by(|a, b| a.local.cmp(&b.local));
+        let port = self.port.load(std::sync::atomic::Ordering::Acquire);
+        mods.into_iter().map(|m| self.mod_view(m, port)).collect()
+    }
+    pub fn get(&self, local: &LocalName) -> Option<InstalledMod> {
+        self.mods().into_iter().find(|m| &m.local == local)
+    }
+    fn change_mod(
+        &self,
+        local: &LocalName,
+        change: impl FnOnce(&mut InstalledMod) -> Result<(), HostError>,
+    ) -> Result<(), HostError> {
+        let mut catalog = self.catalog.lock().unwrap();
+        let mut next = catalog.clone();
+        let m = next
+            .mods
+            .iter_mut()
+            .find(|m| &m.local == local)
+            .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?;
+        change(m)?;
+        next.save(self.home())?;
+        *catalog = next;
+        Ok(())
+    }
+    pub fn enable(&self, local: &LocalName) -> Result<(), HostError> {
+        self.change_mod(local, |m| {
+            m.enabled = true;
+            Ok(())
+        })?;
+        self.bus.send(local, bus::RELOAD);
+        Ok(())
+    }
+    pub fn disable(&self, local: &LocalName) -> Result<(), HostError> {
+        self.change_mod(local, |m| {
+            m.enabled = false;
+            Ok(())
+        })?;
+        self.bus.send(local, bus::CLOSE);
+        Ok(())
+    }
+    fn set_grant(
+        &self,
+        local: &LocalName,
+        grant: &watane_pkg::Grant,
+        granted: bool,
+    ) -> Result<(), HostError> {
+        self.change_mod(local, |m| {
+            let state = m
+                .grants
+                .iter_mut()
+                .find(|g| &g.grant == grant)
+                .ok_or_else(|| HostError::NotDeclared {
+                    local: local.clone(),
+                    grant: grant.clone(),
+                })?;
+            state.granted = granted;
+            Ok(())
+        })
+    }
+    pub fn grant(&self, local: &LocalName, grant: &watane_pkg::Grant) -> Result<(), HostError> {
+        self.set_grant(local, grant, true)
+    }
+    pub fn revoke(&self, local: &LocalName, grant: &watane_pkg::Grant) -> Result<(), HostError> {
+        self.set_grant(local, grant, false)
+    }
+    pub fn remove(&self, local: &LocalName, delete_data: bool) -> Result<(), HostError> {
+        // Lock the mod before the catalog; a running call may read the catalog.
+        let identity = self
+            .get(local)
+            .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?
+            .identity;
+        let lock = self
+            .call_locks
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let before: std::collections::BTreeMap<_, _> = catalog
+            .unwrap()
+            .entry(identity.clone())
+            .or_default()
+            .clone();
+        let _call = lock.lock().unwrap();
+        let mut catalog = self.catalog.lock().unwrap();
+        if !catalog
             .mods
             .iter()
-            .map(|m| (m.identity.clone(), m.package.clone()))
-            .collect();
-        let installed = catalog.install(
-            self.home(),
-            folders,
-            port,
-            &self.engine,
-            self.home.mode,
-            false,
-        )?;
-        for m in &installed {
-            if before.get(&m.identity).is_some_and(|id| id != &m.package) {
-                self.bus.send(&m.local, bus::RELOAD);
+            .any(|m| &m.local == local && m.identity == identity)
+        {
+            return Err(HostError::NoSuchMod(local.to_string()));
+        }
+        let mut next = catalog.clone();
+        next.mods.retain(|m| &m.local != local);
+        next.components.remove(local);
+        for m in &mut next.mods {
+            for link in &mut m.links {
+                if link.provider.as_ref() == Some(local) {
+                    link.provider = None;
+                    link.provider_interface = None;
+                }
             }
         }
-        Ok(installed)
+        next.save(self.home())?;
+        *catalog = next;
+        std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))?;
+        if delete_data {
+            self.state.delete(&identity)?;
+        }
+        self.bus.send(local, bus::CLOSE);
+        Ok(())
     }
 }
 

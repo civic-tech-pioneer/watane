@@ -5,7 +5,78 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use watane_pkg::{Grant, InterfaceName, Mod, PackageId, PublisherKey, ReleaseRef, Slug, Version};
+use watane_pkg::{
+    Grant, InterfaceName, Mod, PackageId, Provider, PublisherKey, ReleaseRef, Slug, Version,
+};
+
+#[derive(Debug)]
+pub enum Source {
+    Folder(PathBuf),
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Change {
+    New,
+    Update { from_version: Version },
+    Unchanged,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanEntry {
+    pub local: LocalName,
+    pub identity: String,
+    pub slug: Slug,
+    pub name: String,
+    pub summary: String,
+    pub version: Version,
+    pub publisher: Option<PublisherKey>,
+    pub package: PackageId,
+    pub release: Option<ReleaseRef>,
+    pub origin: Option<ReleaseRef>,
+    pub change: Change,
+    pub grants: Vec<Grant>,
+    pub new_grants: Vec<Grant>,
+    pub providers: Vec<LocalName>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MissingProvider {
+    pub provider: Provider,
+    pub version: Version,
+    pub release: Option<ReleaseRef>,
+    pub needed_by: String,
+}
+#[derive(Debug, Serialize)]
+pub struct Plan {
+    entries: Vec<PlanEntry>,
+    missing: Vec<MissingProvider>,
+    #[serde(skip)]
+    prepared: Vec<Prepared>,
+    #[serde(skip)]
+    next: Vec<InstalledMod>,
+    #[serde(skip)]
+    generation: u64,
+    #[serde(skip)]
+    home: PathBuf,
+    #[serde(skip)]
+    confirmation: bool,
+}
+#[derive(Debug)]
+struct Prepared(
+    Stage,
+    InstalledMod,
+    bool,
+    Option<std::sync::Arc<crate::runtime::Compiled>>,
+);
+impl Plan {
+    pub fn entries(&self) -> &[PlanEntry] {
+        &self.entries
+    }
+    pub fn missing(&self) -> &[MissingProvider] {
+        &self.missing
+    }
+    pub fn needs_confirmation(&self) -> bool {
+        self.confirmation
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstalledMod {
@@ -236,15 +307,15 @@ impl Catalog {
         })
     }
 
-    pub fn install(
+    pub fn plan(
         &mut self,
         home: &Path,
         folders: &[PathBuf],
-        port: u16,
         engine: &wasmtime::Engine,
-        mode: crate::Mode,
+        preview: bool,
         harness: bool,
-    ) -> Result<Vec<InstalledMod>, HostError> {
+    ) -> Result<Plan, HostError> {
+        let mut entries = Vec::new();
         let mut prepared = Vec::new();
         let mut seen = BTreeSet::new();
         let mut worlds = BTreeMap::new();
@@ -267,19 +338,6 @@ impl Catalog {
             let component = crate::runtime::compile(engine, &m)?;
             let package = package.id();
             let old = self.mods.iter().find(|m| m.identity == identity);
-            if mode == crate::Mode::Home
-                && old.is_none_or(|old| {
-                    m.grants().iter().any(|grant| {
-                        !old.grants
-                            .iter()
-                            .any(|previous| previous.grant.same_authority(grant))
-                    })
-                })
-            {
-                return Err(HostError::Refused(
-                    "no app is attached to confirm the install".into(),
-                ));
-            }
             let local = match old {
                 Some(m) => m.local.clone(),
                 None => derive_local(m.slug().as_str(), &names)?,
@@ -288,27 +346,51 @@ impl Catalog {
             names.insert(local.clone());
             let unchanged = old.is_some_and(|m| m.package == package);
             let mut installed = view(&m, local, package);
+            let change = match old {
+                None => Change::New,
+                Some(_) if unchanged => Change::Unchanged,
+                Some(old) => Change::Update {
+                    from_version: old.version.clone(),
+                },
+            };
+            let grants = m.grants();
+            let new_grants = grants
+                .iter()
+                .filter(|g| {
+                    old.is_none_or(|old| !old.grants.iter().any(|p| p.grant.same_authority(g)))
+                })
+                .cloned()
+                .collect();
             if let Some(old) = old {
                 installed.enabled = old.enabled;
-                if mode == crate::Mode::Home {
-                    for grant in &mut installed.grants {
-                        grant.granted = old.grants.iter().any(|previous| {
-                            previous.granted && previous.grant.same_authority(&grant.grant)
-                        });
-                    }
-                }
             }
-            prepared.push((staging, installed, unchanged, component));
+            entries.push(PlanEntry {
+                local: installed.local.clone(),
+                identity: identity.clone(),
+                slug: installed.slug.clone(),
+                name: installed.name.clone(),
+                summary: installed.summary.clone(),
+                version: installed.version.clone(),
+                publisher: None,
+                package: installed.package.clone(),
+                release: None,
+                origin: installed.origin.clone(),
+                change,
+                grants,
+                new_grants,
+                providers: vec![],
+            });
+            prepared.push(Prepared(staging, installed, unchanged, component));
         }
         let mut next = self.mods.clone();
-        for (_, installed, _, _) in &prepared {
+        for Prepared(_, installed, _, _) in &prepared {
             next.retain(|m| m.identity != installed.identity);
             next.push(installed.clone());
         }
-        bind(&mut next, &worlds, &seen, harness)?;
+        let missing = bind(&mut next, &worlds, &seen, harness)?;
         let order = provider_order(&next)?;
         next.sort_by_key(|m| order.iter().position(|n| n == &m.local).unwrap());
-        for (_, installed, _, _) in &mut prepared {
+        for Prepared(_, installed, _, _) in &mut prepared {
             installed.links = next
                 .iter()
                 .find(|m| m.local == installed.local)
@@ -316,11 +398,85 @@ impl Catalog {
                 .links
                 .clone();
         }
+        for e in &mut entries {
+            e.providers = next
+                .iter()
+                .find(|m| m.local == e.local)
+                .unwrap()
+                .links
+                .iter()
+                .filter_map(|l| l.provider.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+        }
         prepared.sort_by_key(|p| order.iter().position(|n| n == &p.1.local).unwrap());
+        entries.sort_by_key(|e| order.iter().position(|n| n == &e.local).unwrap());
+        let confirmation = !preview
+            && entries.iter().any(|e| {
+                matches!(e.change, Change::New)
+                    || matches!(e.change, Change::Update { .. }) && !e.new_grants.is_empty()
+            });
+        Ok(Plan {
+            entries,
+            missing,
+            prepared,
+            next,
+            generation: self.generation,
+            home: home.into(),
+            confirmation,
+        })
+    }
+
+    pub fn validate(&self, plan: &Plan, home: &Path) -> Result<(), HostError> {
+        if plan.generation != self.generation || plan.home != home {
+            return Err(HostError::StalePlan);
+        }
+        if !plan.missing.is_empty() {
+            return Err(HostError::MissingProviders(plan.missing.clone()));
+        }
+        Ok(())
+    }
+    pub fn commit(
+        &mut self,
+        home: &Path,
+        mut plan: Plan,
+        withhold: &[(LocalName, Grant)],
+        preview: bool,
+    ) -> Result<Vec<InstalledMod>, HostError> {
+        self.validate(&plan, home)?;
+        for Prepared(_, installed, _, _) in &mut plan.prepared {
+            let old = self.mods.iter().find(|m| m.identity == installed.identity);
+            for state in &mut installed.grants {
+                state.granted = if preview {
+                    true
+                } else {
+                    match old.and_then(|m| {
+                        m.grants
+                            .iter()
+                            .find(|g| g.grant.same_authority(&state.grant))
+                    }) {
+                        Some(previous) => previous.granted,
+                        None => !withhold
+                            .iter()
+                            .any(|(local, g)| local == &installed.local && g == &state.grant),
+                    }
+                };
+            }
+            *plan
+                .next
+                .iter_mut()
+                .find(|m| m.local == installed.local)
+                .unwrap() = installed.clone();
+        }
+        let prepared = plan.prepared;
+        let next = plan.next;
         let mut moved: Vec<(PathBuf, bool)> = Vec::new();
-        let changed = prepared.iter().any(|(_, _, unchanged, _)| !unchanged);
+        let changed = prepared
+            .iter()
+            .any(|Prepared(_, _, unchanged, _)| !unchanged);
         let transaction = (|| -> Result<(), HostError> {
-            for (staging, installed, unchanged, _) in &prepared {
+            for Prepared(staging, installed, unchanged, _) in &prepared {
                 if *unchanged {
                     continue;
                 }
@@ -363,7 +519,7 @@ impl Catalog {
             }
             return Err(error);
         }
-        for (_, installed, unchanged, component) in &prepared {
+        for Prepared(_, installed, unchanged, component) in &prepared {
             if !unchanged {
                 self.components.remove(&installed.local);
                 if let Some(component) = component {
@@ -381,15 +537,19 @@ impl Catalog {
                 eprintln!("watane: remove old mod: {e}");
             }
         }
-        Ok(prepared
-            .into_iter()
-            .map(|(_, mut m, _, _)| {
-                m.page = m
-                    .page
-                    .map(|_| format!("http://{}.localhost:{port}/", m.local));
-                m
-            })
-            .collect())
+        Ok(prepared.into_iter().map(|Prepared(_, m, _, _)| m).collect())
+    }
+    pub fn save(&mut self, home: &Path) -> Result<(), HostError> {
+        home::write_json(
+            &home.join("installed.json"),
+            &DiskCatalog {
+                watane_installed: 1,
+                generation: self.generation + 1,
+                mods: self.mods.iter().map(Record::from).collect(),
+            },
+        )?;
+        self.generation += 1;
+        Ok(())
     }
 }
 
@@ -398,9 +558,9 @@ fn bind(
     worlds: &BTreeMap<LocalName, watane_pkg::World>,
     supplied: &BTreeSet<String>,
     harness: bool,
-) -> Result<(), HostError> {
+) -> Result<Vec<MissingProvider>, HostError> {
     let providers = mods.to_vec();
-    let mut missing = BTreeSet::new();
+    let mut missing = Vec::new();
     for m in mods {
         m.links.clear();
         for g in &m.grants {
@@ -437,8 +597,23 @@ fn bind(
                 return Err(HostError::AmbiguousProvider(interface.to_string()));
             }
             let candidate = candidates.pop();
-            if candidate.is_none() && supplied.contains(&m.identity) && !harness {
-                missing.insert(format!("{} at {}", provider, interface.version()));
+            if candidate.is_none()
+                && supplied.contains(&m.identity)
+                && !harness
+                && !missing.iter().any(|m: &MissingProvider| {
+                    m.provider == *provider && m.version == interface.version()
+                })
+            {
+                missing.push(MissingProvider {
+                    provider: provider.clone(),
+                    version: interface.version().clone(),
+                    release: provider.publisher.as_ref().map(|publisher| ReleaseRef {
+                        publisher: publisher.clone(),
+                        slug: provider.slug.clone(),
+                        version: interface.version().clone(),
+                    }),
+                    needed_by: m.identity.clone(),
+                });
             }
             m.links.push(LinkView {
                 kind,
@@ -448,12 +623,7 @@ fn bind(
             });
         }
     }
-    if !missing.is_empty() {
-        return Err(HostError::MissingProviders(
-            missing.into_iter().collect::<Vec<_>>().join(", "),
-        ));
-    }
-    Ok(())
+    Ok(missing)
 }
 
 fn provider_order(mods: &[InstalledMod]) -> Result<Vec<LocalName>, HostError> {
@@ -545,6 +715,7 @@ fn derive_local(slug: &str, names: &BTreeSet<LocalName>) -> Result<LocalName, Ho
     unreachable!()
 }
 
+#[derive(Debug)]
 struct Stage(PathBuf);
 impl Stage {
     fn new(home: &Path) -> Result<Self, HostError> {

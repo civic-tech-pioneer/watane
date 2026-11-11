@@ -71,7 +71,7 @@ async fn rpc(
     response.json().await.unwrap()
 }
 async fn server(host: &Arc<Host>) -> (watane_host::Served, reqwest::Client, String) {
-    let served = host.serve(0).await.unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
     let client = reqwest::Client::builder()
         .no_proxy()
         .resolve("localhost", ([127, 0, 0, 1], served.port).into())

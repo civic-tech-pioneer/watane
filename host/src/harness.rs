@@ -39,14 +39,18 @@ impl Harness {
         let home = TemporaryHome::new()?;
         let host = Host::open(&home.0, crate::Mode::Preview, Limits::default())?;
         *host.fakes.lock().unwrap() = Some(fakes);
-        let installed = host.catalog.lock().unwrap().install(
+        let plan = host.catalog.lock().unwrap().plan(
             host.home(),
             &[built_mod.to_path_buf()],
-            0,
             &host.engine,
-            crate::Mode::Preview,
+            true,
             true,
         )?;
+        let installed = host
+            .catalog
+            .lock()
+            .unwrap()
+            .commit(host.home(), plan, &[], true)?;
         let local = installed
             .into_iter()
             .next()

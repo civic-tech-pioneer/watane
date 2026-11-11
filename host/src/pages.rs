@@ -53,7 +53,7 @@ pub(crate) async fn call(
     port: u16,
     request: Request<Body>,
 ) -> Response {
-    if !available(host, &local) {
+    if host.get(&local).is_none() {
         return not_found();
     }
     secure(call_response(host, local, port, request).await)

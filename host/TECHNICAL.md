@@ -503,8 +503,10 @@ A plan with `missing` entries is valid. `install` refuses it.
 
 ### 4.4 Enable, disable, remove, grant, revoke
 
-Each runs under the install mutex, writes `installed.json` and swaps the
-registry.
+Each serializes its catalog write and registry swap under the catalog
+mutex. Install serializes confirmation requests separately. A lifecycle
+write invalidates an outstanding plan, including while consent is pending.
+Install checks the generation again before committing (Q24).
 
 - `disable`: `enabled = false`. The mod gets no call, no tool and no
   delivery; a consumer's call into it fails with `not_granted` ("provider
@@ -638,9 +640,10 @@ The linker of a mod is built once per registry and kept as an
 | in a `Harness`, a call import | `func_new`: the fake |
 
 The link and the grant are not baked into the closure. The closure reads
-them from the registry snapshot of the chain at each call. Thus a revoke
-takes effect at the next top-level call, and a call never mixes two
-registries.
+authority from the current catalog at every nested call and storage access.
+Event delivery checks current subscriptions. Compiled code stays in the
+chain snapshot. A revoked grant cannot authorize a later host import in
+an already running chain (Q24).
 
 ### 6.5 Instance context
 
@@ -689,7 +692,7 @@ nested calls:
    classified error (6.7).
 
 A nested call (the `func_new` of a call import of consumer C):
-1. From the snapshot: the link of C for this import must exist and point to
+1. From the current catalog: the link of C for this import must exist and point to
    an enabled provider P, and C must hold the `Call` grant. Else
    `not_granted` ("<C> may not call <interface>: not granted" or "... no
    provider is linked" or "... provider <P> is disabled").
@@ -822,8 +825,9 @@ On the API host, a request with an `Origin` header gets 403 `forbidden`.
 A transport refusal (a wrong `Origin`, method, type or size) answers
 `{"error":{"code":"forbidden"|"bad_request","message":"..."}}` with its
 status, before any handler runs.
-On a mod origin of a mod that is not installed, or is disabled, every path
-answers 404 `text/plain; charset=utf-8`.
+On an uninstalled mod origin, every path answers 404 `text/plain; charset=utf-8`.
+A disabled mod answers 409 `disabled` on a valid `/call`; its pages and
+events answer 404.
 
 `extra_api` is merged into the API host's router. Its routes must be under
 `/api/` and must not use the paths of section 11 (axum panics on an
@@ -1200,7 +1204,7 @@ run on the preview install path.
 | `tests/catalog.rs` | S16 to S23, S25, S28, S29; the pinned publisher (a provider of another publisher does not link); an update keeps a withdrawn grant withdrawn | a `Confirm` fake that counts calls and answers from a script; directory listings of `mods/`; `installed.json` parsed as plain JSON |
 | `tests/api.rs` | the four endpoints; `Origin` → 403; S22; S30 | status codes, literal JSON |
 | `tests/program.rs` | S1, S2, S3 through `env!("CARGO_BIN_EXE_watane")`; SIGTERM removes `run.json`; `--bad` exits 2 | the stdout line parsed as plain JSON; exit codes; file presence |
-| `tests/hostile.rs` | `/call` with a subscription function → 404 (step 2); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (step 2); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
+| `tests/hostile.rs` | `/call` with a subscription function → 404 (`ac12_s11_page_cannot_call_a_subscription_function`); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (`ac8_s12a_storage_after_revoke_cannot_read_old_state`); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
 | `tests/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
@@ -1210,7 +1214,7 @@ run on the preview install path.
 |---|---|---|
 | A logic part has no device access | empty `WasiCtx` (6.5); import check (5.3) | S9, S17 |
 | Each call ends | fuel shared by the chain; epoch deadline; memory limiter; depth; state limits (6.2) | S6 to S8, runtime |
-| An ungranted import never reaches a provider | link and grant read from the snapshot at each nested call (6.6); stub otherwise | S25 |
+| An ungranted import never reaches a provider | link and grant read from the current catalog at each nested call (6.6); stub otherwise | S25 |
 | The caller comes from the transport | `Caller` set by the entry point; `mod:` only by the linker; `/call` refuses unknown fields | S10, hostile |
 | Only the host calls a subscription | `/call` and tools exclude subscription exports (6.6 step 2) | hostile |
 | A page reaches only its own mod | one origin per mod; exact `Origin` on `/call`; CSP; COOP and CORP (8.2, 8.3) | S11, S12 |
@@ -1352,6 +1356,18 @@ This ends the S2 link refusal, S3 subscriber deferral and S4 fake/deliver cuts.
 Harness imports use fakes and subscriptions use `deliver`; Harness functions,
 participant confirmation and revoke remain deferred.
 
+### S12a cut
+
+Stage 5 adds participant folder plans, scripted app confirmation, persisted
+grants and lifecycle operations. `Mode::Home { app }` attaches `Confirm`;
+`serve(port, extra_api)` accepts the app router. `install_folders` stays a
+synchronous preview and quiet-update wrapper. Participant installs that
+need consent use async `install`. Plan staging ends on drop or install.
+Toolsets and live token metadata complete stage 4. Release sources, network
+grants and Harness functions remain deferred. Axum middleware applies the
+common host and Origin guards before the merged API router. No dependency
+is added.
+
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
 | 1 Runtime core | engine, limits, epoch ticker, `Ctx`, state store, `watane:host` interfaces, JSON encoding, top-level call; fixtures `counter`, `echo`, `hog` | none | load a mod through a crate-private `RawMod { local, identity, package, component bytes, grants, links }` built by the test | `tests/json.rs`, S4 to S9 pass |
@@ -1479,3 +1495,11 @@ Each answer below is used in this file.
   Per-emitter queues preserve event order; queued page batches preserve each
   mod's commit order. Invocations never wait for publication while holding
   a mod lock. Unrelated mods can execute concurrently.
+
+- **Q24 (host, app, dev)** S12a fixes the Home app field and two-argument
+  serve interface. A valid disabled-mod call returns 409; its page and
+  events return 404. Calls keep compiled snapshots but read current grants
+  at host imports and delivery. Lifecycle writes invalidate pending plans;
+  an install checks generation again after consent and refuses stale plans.
+  The synchronous folder helper cannot request app consent; async install
+  owns that path. Provider uses pkg's object serde form, not its Display text.

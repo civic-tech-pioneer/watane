@@ -68,3 +68,5 @@ word for word. Follow their intent, and do not ask whether to.
 - Q23 (host, dev): S11 uses shelf instead of the keyword list; preview links and event limits, fake imports and Harness deliver end the S2/S3/S4 link cuts.
 
 - Q23 correction (host): Validator round 1 replaces global serialization with per-emitter delivery and commit-ordered page queues; unrelated mods execute concurrently.
+
+- Q24 (host, app, dev): S12a adds participant plans and confirmation, live grant checks, lifecycle management, app routes and tool metadata; disabled calls return 409 and pages return 404.

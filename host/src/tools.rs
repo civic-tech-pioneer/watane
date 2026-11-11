@@ -65,6 +65,12 @@ impl Token {
         token_id(&blake3::hash(self.0.as_bytes()))
     }
 }
+#[derive(Debug, Clone, Serialize)]
+pub struct TokenInfo {
+    pub id: TokenId,
+    pub toolset: ToolsetName,
+    pub handle: Handle,
+}
 fn token_id(hash: &blake3::Hash) -> TokenId {
     TokenId(hash.to_hex()[..16].into())
 }
@@ -182,6 +188,31 @@ impl Host {
         home::write_json(&self.home().join("toolsets.json"), &sets)?;
         tools.sets = sets;
         Ok(())
+    }
+    pub fn toolsets(&self) -> BTreeMap<ToolsetName, Vec<String>> {
+        self.tools.lock().unwrap().sets.clone()
+    }
+    pub fn remove_toolset(&self, name: &ToolsetName) -> Result<(), HostError> {
+        let mut tools = self.tools.lock().unwrap();
+        let mut sets = tools.sets.clone();
+        if sets.remove(name).is_none() {
+            return Err(HostError::NoSuchToolset(name.to_string()));
+        }
+        home::write_json(&self.home().join("toolsets.json"), &sets)?;
+        tools.sets = sets;
+        Ok(())
+    }
+    pub fn tokens(&self) -> Vec<TokenInfo> {
+        let tools = self.tools.lock().unwrap();
+        tools
+            .tokens
+            .iter()
+            .map(|(hash, binding)| TokenInfo {
+                id: token_id(&blake3::Hash::from(*hash)),
+                toolset: binding.toolset.clone(),
+                handle: binding.handle.clone(),
+            })
+            .collect()
     }
     pub fn issue_token(&self, toolset: &ToolsetName, handle: &Handle) -> Result<Token, HostError> {
         let mut tools = self

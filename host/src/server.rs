@@ -22,18 +22,26 @@ pub struct Served {
 }
 
 impl Host {
-    pub async fn serve(self: &Arc<Self>, port: u16) -> Result<Served, HostError> {
+    pub async fn serve(
+        self: &Arc<Self>,
+        port: u16,
+        extra_api: Router,
+    ) -> Result<Served, HostError> {
         if self.serving.swap(true, Ordering::AcqRel) {
             return Err(HostError::AlreadyServing);
         }
-        let result = self.bind_and_serve(port).await;
+        let result = self.bind_and_serve(port, extra_api).await;
         if result.is_err() {
             self.serving.store(false, Ordering::Release);
         }
         result
     }
 
-    async fn bind_and_serve(self: &Arc<Self>, requested: u16) -> Result<Served, HostError> {
+    async fn bind_and_serve(
+        self: &Arc<Self>,
+        requested: u16,
+        extra_api: Router,
+    ) -> Result<Served, HostError> {
         let mut listeners = None;
         for _ in 0..8 {
             let v4 = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, requested))
@@ -51,11 +59,39 @@ impl Host {
         }
         let (v4, v6, port) = listeners.ok_or(HostError::PortInUse(requested))?;
         let (shutdown, rx) = watch::channel(false);
-        let router = Router::new().fallback(dispatch).with_state(ServerState {
+        let api_state = api::ApiState {
             host: self.clone(),
             port,
-            shutdown: rx.clone(),
+        };
+        use axum::routing::MethodFilter as M;
+        let methods = M::CONNECT
+            .or(M::DELETE)
+            .or(M::GET)
+            .or(M::HEAD)
+            .or(M::OPTIONS)
+            .or(M::PATCH)
+            .or(M::POST)
+            .or(M::PUT)
+            .or(M::TRACE);
+        let builtin = axum::routing::on(methods, move |request: Request<Body>| {
+            let state = api_state.clone();
+            async move { api::respond(state, request).await }
         });
+        let api = Router::new()
+            .route("/api/status", builtin.clone())
+            .route("/api/mods", builtin.clone())
+            .route("/api/plan", builtin.clone())
+            .route("/api/install", builtin)
+            .merge(extra_api)
+            .fallback(|| async { api::error(404, "bad_request", "unknown API route") });
+        let router = api.layer(axum::middleware::from_fn_with_state(
+            ServerState {
+                host: self.clone(),
+                port,
+                shutdown: rx.clone(),
+            },
+            dispatch,
+        ));
         home::write_json(
             &self.home().join("run.json"),
             &RunInfo {
@@ -77,6 +113,7 @@ impl Host {
                     .await
             }));
         }
+        self.port.store(port, Ordering::Release);
         Ok(Served {
             port,
             host: self.clone(),
@@ -138,6 +175,7 @@ impl Served {
             eprintln!("watane: remove run.json: {e}");
         }
         self.host.serving.store(false, Ordering::Release);
+        self.host.port.store(0, Ordering::Release);
     }
 }
 
@@ -151,7 +189,11 @@ impl Drop for Served {
     }
 }
 
-async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> Response {
+async fn dispatch(
+    State(state): State<ServerState>,
+    request: Request<Body>,
+    next: axum::middleware::Next,
+) -> Response {
     let mut hosts = request.headers().get_all("host").iter();
     let host = hosts.next().and_then(|v| v.to_str().ok()).unwrap_or("");
     if hosts.next().is_some() {
@@ -168,7 +210,13 @@ async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> R
         if request.uri().path().starts_with("/mcp/") {
             return crate::tools::respond(state.host, request).await;
         }
-        return api::respond(state, request).await;
+        if request.headers().contains_key(axum::http::header::ORIGIN) {
+            return api::error(403, "forbidden", "Origin is forbidden on the local API");
+        }
+        if !request.uri().path().starts_with("/api/") {
+            return api::error(404, "bad_request", "unknown API route");
+        }
+        return next.run(request).await;
     }
     if let Some(label) = host.strip_suffix(&format!(".localhost:{}", state.port))
         && let Ok(local) = LocalName::parse(label)
