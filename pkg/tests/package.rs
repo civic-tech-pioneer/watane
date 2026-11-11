@@ -79,7 +79,7 @@ fn path_error(bytes: Vec<u8>, path: &str) {
         matches!(&error, PackageError::Path { path: p, .. } if p == path),
         "{error:?}"
     );
-    assert!(error.to_string().contains(path));
+    assert!(error.to_string().contains(&path.escape_debug().to_string()));
 }
 fn format_error(bytes: Vec<u8>) {
     let error = std::panic::catch_unwind(|| Package::from_bytes(bytes))
@@ -326,13 +326,16 @@ fn ac4_decode_refusals() {
         .iter()
         .map(|p| (p.as_str(), b"".as_slice()))
         .collect::<Vec<_>>());
+    assert!(matches!(
+        Package::from_bytes(count),
+        Err(PackageError::TooManyFiles)
+    ));
     let mut trailing = raw(&HELLO);
     trailing.push(0);
     for bytes in [
         bad_magic,
         version,
         raw(&[]),
-        count,
         raw(&[("ui/z", b""), ("ui/a", b"")]),
         trailing,
     ] {
