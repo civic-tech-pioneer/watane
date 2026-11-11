@@ -85,6 +85,57 @@ pub(super) fn linker(
             }
         }
     }
+    for import in &m.world().calls {
+        let Some(item) = ty.get_import(engine, &import.to_string()) else {
+            continue;
+        };
+        let ComponentItem::ComponentInstance(instance) = item.ty else {
+            return Err(HostError::Internal("call import is not an interface".into()).into());
+        };
+        let mut interface = linker.instance(&import.to_string())?;
+        for (name, item) in instance.exports(engine) {
+            if let ComponentItem::ComponentFunc(_) = item.ty {
+                let import = import.clone();
+                let name_owned = name.to_owned();
+                interface.func_new(name, move |mut ctx, ty, values, results| {
+                    let args = ty
+                        .params()
+                        .zip(values)
+                        .map(|((name, _), value)| {
+                            Ok((name.to_owned(), super::json::encode(value)?))
+                        })
+                        .collect::<Result<serde_json::Map<_, _>, CallError>>()?;
+                    let invocation = ctx.data().invocation.clone();
+                    let fuel = ctx.get_fuel()?;
+                    let (value, fuel) =
+                        invocation.nested(&import, &name_owned, args.into(), fuel)?;
+                    ctx.set_fuel(fuel)?;
+                    let function_name = format!(
+                        "{}:{}/{}.{name_owned}",
+                        import.namespace(),
+                        import.package(),
+                        import.interface()
+                    );
+                    if ty.results().len() == 0 && !value.is_null() {
+                        return Err(CallError::new(
+                            crate::CallCode::Trap,
+                            format!("{function_name}: expected null result"),
+                        )
+                        .into());
+                    }
+                    for (ty, result) in ty.results().zip(results) {
+                        *result = super::json::decode(&ty, &value, "$").map_err(|error| {
+                            CallError::new(
+                                crate::CallCode::Trap,
+                                format!("{function_name}: {error}"),
+                            )
+                        })?;
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+    }
     Ok(linker)
 }
 pub(super) fn store(
@@ -93,6 +144,7 @@ pub(super) fn store(
     caller: String,
     limits: &Limits,
     deadline: Instant,
+    invocation: super::call::Invocation,
 ) -> Result<Store<Ctx>, CallError> {
     let stderr = wasmtime_wasi::p2::pipe::MemoryOutputPipe::new(64 << 10);
     let mut builder = WasiCtx::builder();
@@ -110,6 +162,7 @@ pub(super) fn store(
         stderr,
         deadline,
         outbox: Vec::new(),
+        invocation,
     };
     let mut store = Store::new(engine, ctx);
     store.limiter(|ctx| &mut ctx.limiter);

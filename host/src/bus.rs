@@ -37,7 +37,7 @@ impl PageBus {
             sender: Mutex::new(broadcast::channel(capacity).0),
         }
     }
-    // Reserve publication before unlocking the mod, so commits cannot overtake.
+    // Serialize channel subscription and publication. Call execution preserves commit order.
     pub fn publication(&self) -> MutexGuard<'_, broadcast::Sender<Message>> {
         self.sender
             .lock()
@@ -63,22 +63,10 @@ impl PageBus {
     }
 }
 
-pub(crate) fn deliver(
-    sender: &broadcast::Sender<Message>,
-    local: &LocalName,
-    outbox: &[crate::EventRecord],
-    changed: bool,
-) {
-    for event in outbox {
-        let message = json!({"type":"event", "from":local, "interface":event.interface,
-            "function":event.function, "args":event.args})
-        .to_string();
-        let _ = sender.send((local.clone(), message.into()));
-        // ponytail: subscribers join with links (step 2)
-    }
-    if changed {
-        let _ = sender.send((local.clone(), CHANGED.into()));
-    }
+pub(crate) fn event_message(emitter: &LocalName, event: &crate::EventRecord) -> String {
+    json!({"type":"event", "from":emitter, "interface":event.interface,
+        "function":event.function, "args":event.args})
+    .to_string()
 }
 
 struct PageStream {

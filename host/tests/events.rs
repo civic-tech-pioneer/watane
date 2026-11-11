@@ -361,3 +361,33 @@ async fn ac8_program_emits_counter_events() {
     assert_eq!(stream.message().await, json!({"type":"changed"}));
     preview.stop();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac8_s11_subscriber_pages_receive_event_then_changed() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
+        .unwrap();
+    let served = host.serve(0).await.unwrap();
+    let client = Client::builder()
+        .no_proxy()
+        .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
+        .build()
+        .unwrap();
+    let mut stream = Stream::open(&client, &format!("http://recs.localhost:{}", served.port)).await;
+    host.call_async(
+        Caller::Page,
+        LocalName::parse("shelf").unwrap(),
+        "items.add".into(),
+        json!({"title":"Dune"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        stream.message().await,
+        json!({"type":"event","from":"shelf","interface":"mods:shelf/events@0.1.0","function":"added","args":{"title":"Dune"}})
+    );
+    assert_eq!(stream.message().await, json!({"type":"changed"}));
+    stream.quiet().await;
+    served.shutdown().await;
+}

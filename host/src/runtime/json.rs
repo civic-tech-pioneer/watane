@@ -60,7 +60,7 @@ pub(super) fn arguments(func: &ComponentFunc, args: Value) -> Result<Vec<Val>, C
         _ => Err(bad("$", "expected object, array or null")),
     }
 }
-fn decode(ty: &Type, value: &Value, path: &str) -> Result<Val, CallError> {
+pub(super) fn decode(ty: &Type, value: &Value, path: &str) -> Result<Val, CallError> {
     let expected = || {
         bad(
             path,

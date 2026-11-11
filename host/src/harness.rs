@@ -31,27 +31,28 @@ pub struct Harness {
     host: Arc<Host>,
     home: TemporaryHome,
     local: LocalName,
-    // ponytail: fakes link with calls (step 2)
-    _fakes: Fakes,
 }
 
 impl Harness {
-    /// Installs the built folder alone. Mods that need links are refused.
+    /// Installs the built folder alone, using fakes for call imports.
     pub fn open(built_mod: &Path, fakes: Fakes) -> Result<Self, HostError> {
         let home = TemporaryHome::new()?;
         let host = Host::open(&home.0, crate::Mode::Preview, Limits::default())?;
-        let installed = host.install_folders(&[built_mod.to_path_buf()], 0)?;
+        *host.fakes.lock().unwrap() = Some(fakes);
+        let installed = host.catalog.lock().unwrap().install(
+            host.home(),
+            &[built_mod.to_path_buf()],
+            0,
+            &host.engine,
+            crate::Mode::Preview,
+            true,
+        )?;
         let local = installed
             .into_iter()
             .next()
             .ok_or_else(|| HostError::Internal("harness install returned no mod".into()))?
             .local;
-        Ok(Self {
-            host,
-            home,
-            local,
-            _fakes: fakes,
-        })
+        Ok(Self { host, home, local })
     }
 
     /// Calls an export as the page, with a 16 MiB stack on any calling thread.
@@ -67,6 +68,42 @@ impl Harness {
                 .map_err(CallError::internal)?
                 .join()
                 .map_err(|_| CallError::internal("harness call thread panicked"))?
+        })
+    }
+
+    /// Runs only a subscription export, as its provider slug.
+    pub fn deliver(&self, function: &str, args: Value) -> Result<Outcome, CallError> {
+        if function.contains(':') || function.contains('/') {
+            return Err(CallError::new(
+                crate::CallCode::NoFunction,
+                format!("no subscription function {function}"),
+            ));
+        }
+        let provider = {
+            let catalog = self.host.catalog.lock().unwrap();
+            let compiled = catalog.components.get(&self.local).ok_or_else(|| {
+                CallError::new(crate::CallCode::NoFunction, "mod has no logic part")
+            })?;
+            compiled.subscription_provider(function)?
+        };
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .name("watane-harness-deliver".into())
+                .stack_size(16 << 20)
+                .spawn_scoped(scope, || {
+                    crate::runtime::call::run(
+                        &self.host,
+                        &Caller::Mod(provider),
+                        &self.local,
+                        function,
+                        args,
+                        false,
+                        true,
+                    )
+                })
+                .map_err(CallError::internal)?
+                .join()
+                .map_err(|_| CallError::internal("harness delivery thread panicked"))?
         })
     }
 

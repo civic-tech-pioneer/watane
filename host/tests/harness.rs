@@ -148,3 +148,94 @@ fn ac6_invalid_mod_returns_a_host_error_naming_the_problem() {
         "{message}"
     );
 }
+
+#[test]
+fn ac9_s11_fake_import_returns_typed_value_and_records_emission() {
+    let fakes = serde_json::from_value(json!({"mods:shelf/items":{"all":["Dune"]}})).unwrap();
+    let harness = Harness::open(&fixture("recs"), fakes).unwrap();
+    assert_eq!(
+        harness.call("api.suggest", json!(null)).unwrap(),
+        Outcome {
+            value: json!("Dune"),
+            events: vec![EventRecord {
+                interface: "mods:recs/events@0.1.0".parse().unwrap(),
+                function: "suggested".into(),
+                args: json!({"title":"Dune"})
+            }]
+        }
+    );
+    let harness = Harness::open(&fixture("recs"), Fakes::new()).unwrap();
+    let error = harness.call("api.suggest", json!(null)).unwrap_err();
+    assert_eq!(error.code, watane_host::CallCode::Trap);
+    assert!(
+        error.message.contains("no fake for mods:shelf/items.all"),
+        "{error}"
+    );
+    let fakes = serde_json::from_value(json!({"mods:shelf/items":{"all":42}})).unwrap();
+    let harness = Harness::open(&fixture("recs"), fakes).unwrap();
+    let error = harness.call("api.suggest", json!(null)).unwrap_err();
+    assert_eq!(error.code, watane_host::CallCode::Trap);
+    assert!(error.message.contains("mods:shelf/items.all"), "{error}");
+}
+
+#[test]
+fn ac10_s11_deliver_accepts_only_subscription_functions() {
+    let harness = Harness::open(&fixture("recs"), Fakes::new()).unwrap();
+    assert_eq!(
+        harness
+            .deliver("events.added", json!({"title":"Emma"}))
+            .unwrap(),
+        Outcome {
+            value: json!(null),
+            events: vec![]
+        }
+    );
+    assert_eq!(
+        harness.call("api.received", json!(null)).unwrap().value,
+        json!(["Emma"])
+    );
+    for name in ["api.ping", "events.nope"] {
+        assert_eq!(
+            harness.deliver(name, json!(null)).unwrap_err().code,
+            watane_host::CallCode::NoFunction
+        );
+    }
+    assert_eq!(
+        harness
+            .call("events.added", json!({"title":"lost"}))
+            .unwrap_err()
+            .code,
+        watane_host::CallCode::NoFunction
+    );
+    assert_eq!(
+        harness
+            .deliver("events.added", json!({"title":42}))
+            .unwrap_err()
+            .code,
+        watane_host::CallCode::BadRequest
+    );
+    assert_eq!(
+        harness.call("api.received", json!(null)).unwrap().value,
+        json!(["Emma"])
+    );
+}
+
+#[test]
+fn ac10_s11_delivery_records_its_outbox_and_commits_state() {
+    let harness = Harness::open(&fixture("loop-a"), Fakes::new()).unwrap();
+    assert_eq!(
+        harness.deliver("events.ping", json!({"n":1})).unwrap(),
+        Outcome {
+            value: json!(null),
+            events: vec![EventRecord {
+                interface: "mods:loop-a/events@0.1.0".parse().unwrap(),
+                function: "ping".into(),
+                args: json!({"n":2})
+            }]
+        }
+    );
+    assert_eq!(
+        harness.call("api.count", json!(null)).unwrap().value,
+        json!(1)
+    );
+}

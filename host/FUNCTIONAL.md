@@ -2,7 +2,7 @@
 
 What `host` does, free of implementation. Ids `HOST-F-<n>`. Each
 requirement traces to `spec/FUNCTIONAL.md`. The fixture mods named in the
-scenarios (`counter`, `echo`, `hog`, `list`, `recs`, `net`) are defined in
+scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 `TECHNICAL.md` section 13.
 
 ## 1. Terms
@@ -109,9 +109,9 @@ API, the HTTP server or the program `watane`.
 - **S9 No device access** (HOST-F-6). When `hog`'s `api.probe` lists `/`,
   reads `HOME` and opens a TCP socket, then it returns `["no-dir",
   "no-env", "no-socket"]`.
-- **S10 Caller** (HOST-F-10). When `list`'s `items.who` is called from the
+- **S10 Caller** (HOST-F-10). When `shelf`'s `items.who` is called from the
   page, from MCP with a token of handle `alice-agent`, and through `recs`'s
-  `api.who-of-list`, then it returns `page`, `agent:alice-agent` and
+  `api.who-of-shelf`, then it returns `page`, `agent:alice-agent` and
   `mod:recs`.
 - **S11 Page origin** (HOST-F-11, 12). When `POST /call` reaches the origin
   of `counter` with `Origin: http://echo.localhost:<port>`, then the answer
@@ -132,7 +132,7 @@ API, the HTTP server or the program `watane`.
   with a token for another toolset, with an ended token, or with an
   `Origin` header, is refused with 401, 403, 401 and 403.
 - **S16 Contract harness** (HOST-F-19). Given `recs` alone, with a fake for
-  `list/items.all` that returns `["Dune"]`. When `api.suggest` is called,
+  `shelf/items.all` that returns `["Dune"]`. When `api.suggest` is called,
   then it returns `"Dune"` and the outcome records the event that `recs`
   emitted.
 - **S17 Refused package** (HOST-F-21). When a folder with neither
@@ -142,11 +142,11 @@ API, the HTTP server or the program `watane`.
 ### 3.2 Step 2
 
 - **S18 Plan order** (HOST-F-22, 23, 28). Given an empty participant home.
-  When `recs` and `list` are planned together, then the plan lists `list`
+  When `recs` and `shelf` are planned together, then the plan lists `shelf`
   first, both with publisher `null` (local), and `recs` with providers
-  `["list"]`.
+  `["shelf"]`.
 - **S19 Missing provider** (HOST-F-22). When `recs` alone is planned, then
-  `missing` names the local provider `list` at version 0.1.0, and an install fails with
+  `missing` names the local provider `shelf` at version 0.1.0, and an install fails with
   code `missing_providers`.
 - **S20 Cycle** (HOST-F-24). When two mods that import each other are
   planned, then the plan fails with code `cycle` and the message names
@@ -161,12 +161,12 @@ API, the HTTP server or the program `watane`.
 - **S23 Quiet update** (HOST-F-27). Given `counter` installed and counted
   to 2. When a changed build with the same grants is installed, then the
   app is not asked, and `api.get` returns 2.
-- **S24 Calls and events** (HOST-F-30, 32). Given `list` and `recs`
-  installed with all grants. When `list`'s `items.add("Dune")` succeeds,
+- **S24 Calls and events** (HOST-F-30, 32). Given `shelf` and `recs`
+  installed with all grants. When `shelf`'s `items.add("Dune")` succeeds,
   then `recs` has received `events.added("Dune")` exactly once, and
-  `recs`'s `api.suggest` returns `"Dune"` through its call to `list`.
+  `recs`'s `api.suggest` returns `"Dune"` through its call to `shelf`.
 - **S25 Withdrawn grant** (HOST-F-31, 36). Given S24. When the call grant
-  of `recs` on `list/items` is withdrawn, then `recs`'s `api.suggest` fails
+  of `recs` on `shelf/items` is withdrawn, then `recs`'s `api.suggest` fails
   with code `not_granted`, and `recs`'s `api.ping` still succeeds.
 - **S26 Hop limit** (HOST-F-33). Given two mods that each re-emit the
   event they receive. When one emits, then exactly 8 deliveries happen.

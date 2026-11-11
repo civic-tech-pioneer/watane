@@ -135,3 +135,89 @@ fn ac4_package_errors_name_input_and_leave_no_staging() {
         assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 0);
     }
 }
+
+#[test]
+fn ac1_s11_providers_install_first_and_links_are_literal_json() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
+        .unwrap();
+    let disk = catalog(home.path());
+    assert_eq!(
+        disk["mods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["local"].clone())
+            .collect::<Vec<_>>(),
+        vec![serde_json::json!("shelf"), serde_json::json!("recs")]
+    );
+    assert_eq!(
+        disk["mods"][1]["links"],
+        serde_json::json!([
+            {"kind":"call","interface":"mods:shelf/items@0.1.0","provider":"shelf","provider_interface":"mods:shelf/items@0.1.0"},
+            {"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":"shelf","provider_interface":"mods:shelf/events@0.1.0"}
+        ])
+    );
+}
+
+#[test]
+fn ac2_s11_missing_provider_refuses_without_installing_anything() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    let error = host.install_folders(&[fixture("recs")], 0).unwrap_err();
+    assert_eq!(error.code(), "missing_providers");
+    assert!(error.to_string().contains("shelf"));
+    assert!(error.to_string().contains("0.1.0"));
+    assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 0);
+}
+#[test]
+fn ac3_s11_call_cycle_names_closed_path() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    let error = host
+        .install_folders(&[fixture("cyc-a"), fixture("cyc-b")], 0)
+        .unwrap_err();
+    assert_eq!(error.code(), "cycle");
+    assert!(
+        error.to_string().contains("cyc-a -> cyc-b -> cyc-a"),
+        "{error}"
+    );
+    assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 0);
+}
+
+#[test]
+fn ac1_s11_consumer_can_link_to_an_already_installed_provider() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("shelf")], 0).unwrap();
+    host.install_folders(&[fixture("recs")], 0).unwrap();
+    assert_eq!(
+        catalog(home.path())["mods"][1]["links"][0]["provider"],
+        "shelf"
+    );
+}
+#[test]
+fn ac2_s11_pinned_publisher_never_links_to_a_local_provider() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("shelf")], 0).unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let dir = folder.path().join("recs");
+    watane_pkg::pack(&fixture("recs"), false)
+        .unwrap()
+        .unpack(&dir)
+        .unwrap();
+    fs::write(
+        dir.join("deps.json"),
+        r#"{"mods:shelf":"yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo"}"#,
+    )
+    .unwrap();
+    let error = host
+        .install_folders(&[fixture("counter"), dir], 0)
+        .unwrap_err();
+    assert_eq!(error.code(), "missing_providers");
+    assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 1);
+    assert!(!home.path().join("mods/counter").exists());
+    assert_eq!(catalog(home.path())["generation"], 1);
+}

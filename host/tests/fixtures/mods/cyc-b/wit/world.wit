@@ -1,0 +1,1 @@
+package mods:cyc-b@0.1.0; interface api { ping: func(); } world cyc-b { import mods:cyc-a/api@0.1.0; export api; }

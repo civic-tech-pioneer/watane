@@ -296,7 +296,7 @@ pub struct Limits {
 impl Default for Limits { /* section 6.2 */ }
 
 pub struct FunctionInfo {
-    pub interface: InterfaceName,       // "mods:list/items@0.1.0"; .interface() is the short name
+    pub interface: InterfaceName,       // "mods:shelf/items@0.1.0"; .interface() is the short name
     pub name: String,                   // "add"
     pub params: Vec<(String, String)>,  // name, WIT type text
     pub result: Option<String>,         // WIT type text
@@ -311,16 +311,18 @@ pub struct TokenInfo { pub id: TokenId, pub toolset: ToolsetName, pub handle: Ha
 ### 2.6 Harness (contract tests for `dev`)
 
 ```rust
-/// Interface without version ("mods:list/items") -> function -> JSON result.
+/// Interface without version ("mods:shelf/items") -> function -> JSON result.
 pub type Fakes = BTreeMap<String, BTreeMap<String, Value>>;
 
 pub struct Harness { /* private: Arc<Host> on a temporary preview home, LocalName, Fakes */ }
 impl Harness {
     /// Installs the built folder alone in a new temporary preview home.
-    /// S4 refuses mods that need calls or subscriptions to other mods.
+    /// Call imports use fakes; subscriptions need no installed provider.
     pub fn open(built_mod: &Path, fakes: Fakes) -> Result<Harness, HostError>;
     /// A top-level call as `Caller::Page`, on a new 16 MiB stack thread.
     pub fn call(&self, function: &str, args: Value) -> Result<Outcome, CallError>;
+    /// Invoke a subscription export as mod:<provider slug>, using its short interface name.
+    pub fn deliver(&self, function: &str, args: Value) -> Result<Outcome, CallError>;
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Outcome { pub value: Value, pub events: Vec<EventRecord> }
@@ -338,11 +340,11 @@ No server listens. Events are recorded in emission order instead of published
 to the page bus. A failed call returns only its `CallError`, commits no state,
 and records no events.
 
-S4 keeps `fakes` without linking imports to it. `deliver` waits for
-subscriptions and links. `FunctionInfo` joins with S5 toolsets;
-`Harness::functions` waits for a later slice.
-When links arrive, a fake returns its JSON converted to the import's result
-type; a function with no fake fails with `trap`, "no fake for
+`Harness::functions` waits for a later slice. `deliver` accepts only functions
+of `world().subscriptions`, commits on success and records emitted events
+under the same rules as `call`. A fake returns its JSON converted to the
+import's result type. A conversion mismatch is `trap` naming the function.
+A function with no fake fails with `trap`, "no fake for
 <interface>.<function>". The network import will deny every request.
 
 ## 3. Home
@@ -415,8 +417,8 @@ An update keeps the local name of the installed mod.
       "release": null,
       "enabled": true,
       "grants": [{"grant": <Grant>, "granted": true}],
-      "links": [{"kind": "call", "interface": "mods:list/items@0.1.0",
-                 "provider": "list", "provider_interface": "mods:list/items@0.1.0"}]
+      "links": [{"kind": "call", "interface": "mods:shelf/items@0.1.0",
+                 "provider": "shelf", "provider_interface": "mods:shelf/items@0.1.0"}]
     }
   ]
 }
@@ -1172,15 +1174,16 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `counter` | import state and caller; import own-package outlet `changes { counted: func(count: u32); }`, called by `add`; export `api { add: func() -> u32; add-then-fail: func(); get: func() -> u32; who: func() -> string; }`; `ui/index.html`, `ui/app.js` |
 | `echo` | import state; export `api` with identity functions for bool, each integer width, f32, f64, char, string, list, tuple, record, variant, enum, flags, option and result (with and without payloads); `opt-opt: func(x: option<option<u32>>)`, `put`, `read`, `delete`, `put-twice` for state limits and isolation, `nan` and `infinity` for float output |
 | `hog` | export `api { spin: func(); grow: func(pages: u32); probe: func() -> list<string>; ping: func() -> string; fresh: func() -> u32; }`; `ping` checks recovery after a limit; `fresh` checks that instances share no globals |
-| `list` | import state, caller, outlet `events { added: func(title: string); }`; export `items { add: func(title: string); all: func() -> list<string>; who: func() -> string; }` |
-| `recs` | `deps.json` `{"mods:list": null}`; import state, `mods:list/items`, outlet `events { suggested: func(title: string); }`; export `mods:list/events` (subscription, stores each title), `api { suggest: func() -> string; received: func() -> list<string>; ping: func() -> string; who-of-list: func() -> string; }` |
+| `shelf` | import state, caller, outlet `events { added: func(title: string); }`; export `items { add: func(title: string); add-then-fail: func(title: string); all: func() -> list<string>; who: func() -> string; }` |
+| `recs` | `deps.json` `{"mods:shelf": null}`; import state, `mods:shelf/items`, outlet `events { suggested: func(title: string); }`; export `mods:shelf/events` (subscription, stores each title), `api { suggest: func() -> string; received: func() -> list<string>; ping: func() -> string; who-of-shelf: func() -> string; }` |
 | `loop-a`, `loop-b` | each: outlet `events { ping: func(n: u32); }`, subscribes to the other's `events`, counts receipts in state and re-emits; `loop-a` exports `api { start: func(); count: func() -> u32; }`, `loop-b` exports `api { count: func() -> u32; }` |
 | `cyc-a`, `cyc-b` | each imports an interface that the other exports |
 | `net` | `[http] hosts = ["example.org"]`; export `api { get: func(url: string) -> result<u16, string>; }` |
 | `empty` | `mod.toml` and an empty world; no part |
 
-If pkg refuses the mutual WIT of `loop-*` and `cyc-*` (Q11), S20 and S26
-run on `RawMod` (section 15).
+The mutual fixtures copy only provider interfaces and outlets into
+dependency worlds, without back-references (Q23). Their real components
+run on the preview install path.
 
 ### 13.2 Tests
 
@@ -1189,8 +1192,8 @@ run on `RawMod` (section 15).
 | `src/home.rs` unit | local name grammar and derivation | a literal table: `notes` ok; `a`, 24 bytes ok; 25 bytes, `-a`, `a-`, `a--b`, `A`, `a_b`, `2x`, `é` refused; slug `reading-list` → `reading-list`; a 40-byte slug → its first 21 bytes; taken `notes` → `notes-2` |
 | `src/runtime/json.rs` unit | each row of 6.9, both ways, and the error paths | literal JSON and literal `Val` trees |
 | `tests/json.rs` | `echo` round trips through `Host::call` | literal JSON in and out; `opt-opt` is `no_function` |
-| `tests/harness.rs` | S4 contract calls, event records, independent homes, rollback, named and positional args, cleanup, invalid folders | literal values and events; directory absence after drop |
-| `tests/runtime.rs` | FUNCTIONAL S4 to S9; depth with `Limits { depth: 1 }` over `recs` → `list` → ok and depth 0 → `limit`/`depth`; state isolation (`counter` and `list` with the same key) | literal values; after `drop(host)` the test opens `state/state.redb` itself and reads `s/<id>` with `id` computed from the literal identity string |
+| `tests/harness.rs` | S16 fake imports and conversion errors; subscription deliver and call separation; event records, independent homes, rollback, named and positional args, cleanup, invalid folders | literal values and events; directory absence after drop |
+| `tests/runtime.rs` | FUNCTIONAL S4 to S9; depth with `Limits { depth: 1 }` over `recs` → `shelf` → ok and depth 0 → `limit`/`depth`; state isolation (`counter` and `shelf` with the same key) | literal values; after `drop(host)` the test opens `state/state.redb` itself and reads `s/<id>` with `id` computed from the literal identity string |
 | `tests/events.rs` | S24, S26; order: `add("A")`, `add("B")`, `add("C")` → `received` = `["A","B","C"]`; a failed call emits nothing | literal lists and counts |
 | `tests/pages.rs` | S11, S12, S13; a page answers alike over `127.0.0.1` and `[::1]`; path refusals (`/../x`, `/a//b`, `/.env`, `/%2e%2e/x`, `/a\b`); unknown `Host` → 421; `/watane.js` bytes equal `src/watane.js` read from disk; a 404 has `text/plain` | status codes, literal header strings, file bytes |
 | `tests/mcp.rs` | S14, S15; `tools/call` output for ok, err and a trap; batch → `-32600`; notification → 202; `initialize` version choice | literal JSON-RPC responses |
@@ -1266,9 +1269,8 @@ uncommitted directories. This preserves the commit point of 4.3.
 Runtime core runs top-level calls with `Caller::Page`. Install stages
 `logic.wasm` through pkg pack/unpack, checks the staged
 component with pkg, and compiles it before the catalog commit. Open compiles
-installed components again. Links between mods are refused for this slice.
-For a readable folder, refuse links before pkg checks the component; still
-check the unpacked world before compiling it.
+installed components again. S11 extends this path with preview links and
+keeps the unpacked world check before compilation.
 Preview grants each declared grant. The state import's Storage grant check
 joins with revoke; FUNCTIONAL S5 waits for that step. Undeclared imports
 fail installation.
@@ -1283,27 +1285,24 @@ already exists, so an empty page-only home needs no state directory.
 
 Outlets queue named JSON arguments in the call's outbox. A successful state
 commit publishes the events to the emitter's pages, then `changed` if bytes
-changed. Publication reserves the bus before releasing the call lock, then
-sends with no mod lock held, so concurrent calls keep commit order. The host
+changed. S11 serializes top-level calls through delivery and publication,
+with no mod lock held while sending, so commits keep their order. The host
 owns one broadcast channel with capacity 1024. `/events` filters by local
 name, recovers from lag with `changed`, pings after 15 idle seconds, and ends
 on server shutdown. Updates with a different package id keep identity and
 local name, and send `reload` after the catalog commit and registry swap.
 The SSE adapter uses `tokio-stream` 0.1 with `sync`: Axum requires a Stream
 and does not re-export the trait; the wrappers supply it and channel polling.
-Subscribers, links, hop and delivery counting, enable/disable/remove,
-MCP, toolsets and participant homes wait for their catalog stages.
+S11 adds subscribers, links and hop and delivery counting. Lifecycle
+operations still wait for participant catalog stages.
 
 ### S4 cut
 
 Stage 5's Harness part uses the existing preview open and folder install
 path, runs page calls without a server, and returns their values and emitted
-events. `Harness::deliver` waits for subscriptions, which install refuses
-until links exist. `FunctionInfo` joins with toolsets in S5;
-`Harness::functions` stays deferred. Fakes stay in the harness but are not
-linked yet, with the comment
-`// ponytail: fakes link with calls (step 2)`. Install still refuses a mod
-that calls or subscribes to another mod. Harness homes use `getrandom`;
+events. S11 links fakes and adds `Harness::deliver` for subscriptions.
+`FunctionInfo` joins with toolsets in S5; `Harness::functions` stays deferred.
+Harness homes use `getrandom`;
 `tempfile` stays a dev-dependency. Missing Origin errors name the absent header.
 
 ### S5 cut
@@ -1329,10 +1328,24 @@ The program defaults to `default_home()` and `DEFAULT_PORT` (47341) in home
 mode. Preview still defaults to port 0 and alone accepts `--install` and
 prints an MCP address and token. Home ready lines have null MCP and token.
 
+### S11 cut
+
+Stage 2 now runs on preview folder installs. Preview links every declared
+call and subscription to a compatible local provider, rejects missing
+providers and call cycles, and persists links in provider-first order.
+Subscription cycles are allowed; their order breaks ties by local name.
+Calls share fuel and deadline across nested providers. Event delivery runs
+without mod locks, with fresh invocation budgets and shared hop and delivery
+limits. Top-level calls serialize through a deadline-bounded execution lock
+to preserve commit and page publication order across event deliveries.
+This ends the S2 link refusal, S3 subscriber deferral and S4 fake/deliver cuts.
+Harness imports use fakes and subscriptions use `deliver`; Harness functions,
+participant confirmation and revoke remain deferred.
+
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
 | 1 Runtime core | engine, limits, epoch ticker, `Ctx`, state store, `watane:host` interfaces, JSON encoding, top-level call; fixtures `counter`, `echo`, `hog` | none | load a mod through a crate-private `RawMod { local, identity, package, component bytes, grants, links }` built by the test | `tests/json.rs`, S4 to S9 pass |
-| 2 Links and events | nested calls, stubs, outlets, delivery, hops, page bus; fixtures `list`, `recs`, `loop-*` | none | `RawMod` with hand-written links | S10 (through `recs`), S24 to S26 pass on `RawMod` |
+| 2 Links and events | nested calls, stubs, outlets, delivery, hops, page bus; fixtures `shelf`, `recs`, `loop-*` | none | `RawMod` with hand-written links | S10 (through `recs`), S24 to S26 pass on `RawMod` |
 | 3 Server and pages | routing, `/call`, `/events`, files, CSP, `watane.js` | none | `RawMod` | `tests/pages.rs`, page rows of `tests/hostile.rs` pass |
 | 4 Tools | toolsets, tokens, MCP | none | `RawMod` | `tests/mcp.rs` passes |
 | 5 Catalog and home | home layout, lock, `installed.json`, plan, install, update, remove, grants, confirmation, import check, local API, `Harness` | `pkg`: section 17 without `Release` | write the catalog logic against `RawMod` first; do not write a second `mod.toml` or WIT reader; wire `Mod::read` in when pkg lands | S16 to S23, S25, S28 to S30 pass |
@@ -1351,7 +1364,7 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` | Existing items, nothing added: toolset UI = `mods()` + `functions(local)` (no subscription export), entries `<local>:<interface>.<function>`; give back a withheld grant = app's consent view, then `grant` (4.4); "replaces" = `Change::Update`; "derived from" = `InstalledMod.origin` |
 | `app` | the page origin `http://<local>.localhost:<port>/` to load as a top-level view, on `127.0.0.1` and `::1` (8.1); CSP `frame-ancestors 'none'`; close a mod's view on disable or remove; `<home>/app/` reserved (3.1); `extra_api` routes set their own body limit (8.1) |
 | `dist` (through `app`) | `Source::Release { package: Package, entry: Entry }` for `plan`, as `Fetched` gives them; `MissingProvider.release` (a `ReleaseRef`) to fetch; `InstalledMod.release` (a `ReleaseRef`) to compare with updates and withdrawals; `<home>/dist/` and `<home>/log/` reserved (3.1) |
-| `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S4 cut lists deferred Harness items. |
+| `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
 
 ## 17. Needs from other subsystems
 
@@ -1442,3 +1455,12 @@ Each answer below is used in this file.
 - **Q19 (host, dev)** S4 fixes the Harness API to open/call with recorded events and temporary-home cleanup. Fakes stay unlinked, deliver waits for links, and functions joins S5; section 2.6 and the S4 cut define the available API. Missing `/call` Origin errors name the missing header without changing the origin check.
 
 - **Q20 (host, dev)** S5 serves stateless MCP on the API host, reserves preview in every home, and defers app toolset management and Harness functions. The lockfile resolves wit-parser to 0.254.2.
+
+- **Q23 (host, dev)** S11 renames the invalid keyword fixture `list` to
+  `shelf` throughout its calls, subscriptions and fakes. Mutual fixture
+  dependency WIT includes only the provider's offered interfaces and outlets,
+  with no back-reference in the copied world. Subscription cycles do not
+  constrain install order; call links do. Short subscription names that
+  match multiple providers are `no_function` in the harness. The harness
+  uses the preview staging and compile path with unbound providers and
+  fake imports.

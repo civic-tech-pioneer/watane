@@ -1,0 +1,4 @@
+package mods:loop-a@0.1.0;
+interface api { start: func(); count: func() -> u32; }
+interface events { ping: func(n: u32); }
+world loop-a { import watane:host/state@0.1.0; import events; export api; export mods:loop-b/events@0.1.0; }

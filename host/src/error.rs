@@ -11,6 +11,12 @@ pub enum HostError {
     BadHome { path: PathBuf, reason: String },
     #[error("{0}")]
     Refused(String),
+    #[error("missing providers: {0}")]
+    MissingProviders(String),
+    #[error("call cycle: {0}")]
+    Cycle(String),
+    #[error("ambiguous provider: {0}")]
+    AmbiguousProvider(String),
     #[error("invalid mod {input}: {reason}")]
     InvalidMod { input: String, reason: String },
     #[error("invalid name {value:?}: {rule}")]
@@ -34,6 +40,9 @@ impl HostError {
         match self {
             Self::Busy(_) => "busy",
             Self::Refused(_) => "refused",
+            Self::MissingProviders(_) => "missing_providers",
+            Self::Cycle(_) => "cycle",
+            Self::AmbiguousProvider(_) => "ambiguous_provider",
             Self::ModeMismatch { .. } => "mode_mismatch",
             Self::BadHome { .. } => "bad_home",
             Self::InvalidMod { .. } => "invalid_mod",
@@ -53,7 +62,10 @@ impl HostError {
             Self::BadName { .. } | Self::BadToolsetEntry { .. } => 400,
             Self::NoSuchMod(_) | Self::NoSuchToolset(_) => 404,
             Self::Busy(_) | Self::ModeMismatch { .. } => 409,
-            Self::InvalidMod { .. } => 422,
+            Self::InvalidMod { .. }
+            | Self::MissingProviders(_)
+            | Self::Cycle(_)
+            | Self::AmbiguousProvider(_) => 422,
             _ => 500,
         }
     }

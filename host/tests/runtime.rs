@@ -400,40 +400,22 @@ async fn ac10_state_size_and_quota_fail_atomically() {
 }
 
 #[test]
-fn ac2_links_between_mods_are_refused() {
-    for direction in ["import", "export"] {
-        let folder = copy_fixture("counter");
-        let provider = folder.path().join("wit/deps/other");
-        fs::create_dir_all(&provider).unwrap();
-        fs::write(provider.join("world.wit"),format!("package mods:other@0.1.0; interface api {{ ping: func(); }} world other {{ {} api; }}",if direction=="export" {"import"} else {"export"})).unwrap();
-        fs::write(folder.path().join("deps.json"), r#"{"mods:other":null}"#).unwrap();
-        let wit = folder.path().join("wit/world.wit");
-        fs::write(
-            &wit,
-            fs::read_to_string(&wit).unwrap().replace(
-                "world counter {",
-                &format!("world counter {{ {direction} mods:other/api@0.1.0;"),
-            ),
-        )
-        .unwrap();
-        let home = tempfile::tempdir().unwrap();
-        let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
-        let error = host
-            .install_folders(&[folder.path().into()], 0)
-            .unwrap_err();
-        assert_eq!(error.code(), "invalid_mod");
-        assert!(
-            error
-                .to_string()
-                .contains("links between mods arrive in a later step"),
-            "{error}"
-        );
-        assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 0);
-    }
+fn ac2_links_require_a_provider_on_preview_install() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    assert_eq!(
+        host.install_folders(&[fixture("recs")], 0)
+            .unwrap_err()
+            .code(),
+        "missing_providers"
+    );
+    assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 0);
 }
 #[test]
 fn ac11_fixtures_are_components_available_without_a_wasm_toolchain() {
-    for name in ["counter", "echo", "hog"] {
+    for name in [
+        "counter", "echo", "hog", "shelf", "recs", "loop-a", "loop-b", "cyc-a", "cyc-b",
+    ] {
         let bytes = fs::read(fixture(name).join("logic.wasm")).unwrap();
         assert_eq!(&bytes[..8], b"\0asm\x0d\0\x01\0");
         watane_pkg::Mod::read(&fixture(name))
@@ -484,4 +466,159 @@ fn ac6_shared_memory_cannot_bypass_the_store_limiter() {
         .install_folders(&[folder.path().into()], 0)
         .unwrap_err();
     assert_eq!(error.code(), "invalid_mod");
+}
+
+#[tokio::test]
+async fn ac4_s11_calls_and_ordered_exactly_once_events_commit_only_on_success() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(home.path(), Limits::default(), &["recs", "shelf"]);
+    call(&host, "shelf", "items.add", json!({"title":"Dune"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&host, "recs", "api.received", json!(null))
+            .await
+            .unwrap(),
+        json!(["Dune"])
+    );
+    assert_eq!(
+        call(&host, "recs", "api.suggest", json!(null))
+            .await
+            .unwrap(),
+        json!("Dune")
+    );
+    assert_eq!(
+        call(&host, "shelf", "items.add-then-fail", json!(["lost"]))
+            .await
+            .unwrap_err()
+            .code,
+        CallCode::Trap
+    );
+    assert_eq!(
+        call(&host, "recs", "api.received", json!(null))
+            .await
+            .unwrap(),
+        json!(["Dune"])
+    );
+    let ordered_home = tempfile::tempdir().unwrap();
+    let host = install(ordered_home.path(), Limits::default(), &["recs", "shelf"]);
+    for title in ["A", "B", "C"] {
+        call(&host, "shelf", "items.add", json!([title]))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        call(&host, "recs", "api.received", json!(null))
+            .await
+            .unwrap(),
+        json!(["A", "B", "C"])
+    );
+}
+#[tokio::test]
+async fn ac5_s11_nested_caller_is_the_consumer() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(home.path(), Limits::default(), &["recs", "shelf"]);
+    assert_eq!(
+        call(&host, "recs", "api.who-of-shelf", json!(null))
+            .await
+            .unwrap(),
+        json!("mod:recs")
+    );
+}
+#[tokio::test]
+async fn ac11_s11_restart_preserves_links_and_provider_state() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(home.path(), Limits::default(), &["recs", "shelf"]);
+    call(&host, "shelf", "items.add", json!(["Dune"]))
+        .await
+        .unwrap();
+    drop(host);
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    assert_eq!(
+        call(&host, "recs", "api.suggest", json!(null))
+            .await
+            .unwrap(),
+        json!("Dune")
+    );
+}
+#[tokio::test]
+async fn ac7_s11_event_cycle_stops_after_eight_deliveries() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(home.path(), Limits::default(), &["loop-a", "loop-b"]);
+    call(&host, "loop-a", "api.start", json!(null))
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&host, "loop-a", "api.count", json!(null))
+            .await
+            .unwrap(),
+        json!(4)
+    );
+    assert_eq!(
+        call(&host, "loop-b", "api.count", json!(null))
+            .await
+            .unwrap(),
+        json!(4)
+    );
+}
+
+#[tokio::test]
+async fn ac6_s11_depth_counts_nested_calls_only() {
+    for depth in [1, 0] {
+        let home = tempfile::tempdir().unwrap();
+        let host = install(
+            home.path(),
+            Limits {
+                depth,
+                ..Limits::default()
+            },
+            &["recs", "shelf"],
+        );
+        let result = call(&host, "recs", "api.who-of-shelf", json!(null)).await;
+        if depth == 1 {
+            assert_eq!(result.unwrap(), json!("mod:recs"));
+        } else {
+            assert_eq!(result.unwrap_err().code, CallCode::Limit(Limit::Depth));
+        }
+    }
+}
+
+#[tokio::test]
+async fn ac7_s11_delivery_budget_also_bounds_event_cycles() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(
+        home.path(),
+        Limits {
+            hops: 20,
+            deliveries: 3,
+            ..Limits::default()
+        },
+        &["loop-a", "loop-b"],
+    );
+    call(&host, "loop-a", "api.start", json!(null))
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&host, "loop-a", "api.count", json!(null))
+            .await
+            .unwrap(),
+        json!(1)
+    );
+    assert_eq!(
+        call(&host, "loop-b", "api.count", json!(null))
+            .await
+            .unwrap(),
+        json!(2)
+    );
+}
+#[test]
+fn ac13_s11_fixture_slugs_are_valid() {
+    for name in ["shelf", "recs", "loop-a", "loop-b", "cyc-a", "cyc-b"] {
+        assert_eq!(
+            name.parse::<watane_host::watane_pkg::Slug>()
+                .unwrap()
+                .to_string(),
+            name
+        );
+    }
 }

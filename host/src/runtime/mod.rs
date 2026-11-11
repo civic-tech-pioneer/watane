@@ -1,3 +1,4 @@
+pub(crate) mod call;
 mod json;
 pub(crate) mod limits;
 mod linker;
@@ -21,6 +22,7 @@ pub(crate) struct Ctx {
     stderr: wasmtime_wasi::p2::pipe::MemoryOutputPipe,
     deadline: Instant,
     outbox: Vec<crate::bus::Emission>,
+    invocation: call::Invocation,
 }
 #[derive(Clone, Debug)]
 struct Function {
@@ -28,6 +30,7 @@ struct Function {
     name: String,
     ty: ComponentFunc,
     docs: Option<String>,
+    subscription: bool,
 }
 pub(crate) struct Compiled {
     pre: InstancePre<Ctx>,
@@ -79,13 +82,23 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
         let allowed = base
             || name == "watane:host/caller@0.1.0"
             || (name == "watane:host/state@0.1.0" && m.world().storage)
-            || m.world().events.iter().any(|n| n.to_string() == name);
+            || m.world()
+                .events
+                .iter()
+                .chain(&m.world().calls)
+                .any(|n| n.to_string() == name);
         if !allowed || !matches!(item.ty, ComponentItem::ComponentInstance(_)) {
             return Err(invalid(format!("undeclared component import {name}")));
         }
     }
     for (name, _) in ty.exports(engine) {
-        if !m.world().exports.iter().any(|n| n.to_string() == name) {
+        if !m
+            .world()
+            .exports
+            .iter()
+            .chain(&m.world().subscriptions)
+            .any(|n| n.to_string() == name)
+        {
             return Err(invalid(format!("undeclared component export {name}")));
         }
     }
@@ -127,7 +140,7 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
         }
     }
     let mut functions = BTreeMap::new();
-    for interface in &m.world().exports {
+    for interface in m.world().exports.iter().chain(&m.world().subscriptions) {
         let Some(item) = ty.get_export(engine, &interface.to_string()) else {
             return Err(invalid(format!("missing export {interface}")));
         };
@@ -140,8 +153,13 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
                 && ty.results().all(|t| json::callable(&t))
             {
                 functions.insert(
-                    format!("{}.{name}", interface.interface()),
+                    if m.world().subscriptions.contains(interface) {
+                        format!("{interface}.{name}")
+                    } else {
+                        format!("{}.{name}", interface.interface())
+                    },
                     Function {
+                        subscription: m.world().subscriptions.contains(interface),
                         interface: interface.to_string(),
                         name: name.into(),
                         ty,
@@ -160,9 +178,49 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
     Ok(Some(Arc::new(Compiled { pre, functions })))
 }
 impl Compiled {
+    fn find(&self, name: &str, subscription: bool) -> Result<&Function, CallError> {
+        if !subscription {
+            return self
+                .functions
+                .get(name)
+                .filter(|f| !f.subscription)
+                .ok_or_else(|| {
+                    CallError::new(CallCode::NoFunction, format!("no callable function {name}"))
+                });
+        }
+        let mut matches = self.functions.values().filter(|f| {
+            f.subscription == subscription
+                && (format!("{}.{}", f.interface, f.name) == name
+                    || format!(
+                        "{}.{}",
+                        f.interface
+                            .parse::<watane_pkg::InterfaceName>()
+                            .expect("checked interface")
+                            .interface(),
+                        f.name
+                    ) == name)
+        });
+        let found = matches.next();
+        if matches.next().is_some() {
+            return Err(CallError::new(
+                CallCode::NoFunction,
+                format!("ambiguous subscription function {name}"),
+            ));
+        }
+        found.ok_or_else(|| {
+            CallError::new(CallCode::NoFunction, format!("no callable function {name}"))
+        })
+    }
+    pub(crate) fn subscription_provider(&self, name: &str) -> Result<crate::LocalName, CallError> {
+        let f = self.find(name, true)?;
+        let interface: watane_pkg::InterfaceName =
+            f.interface.parse().map_err(CallError::internal)?;
+        crate::LocalName::parse(interface.package()).map_err(CallError::internal)
+    }
     pub(crate) fn functions(&self) -> Vec<crate::FunctionInfo> {
         self.functions
             .values()
+            .filter(|f| !f.subscription)
             .map(|f| crate::FunctionInfo {
                 interface: f.interface.parse().expect("pkg checked interface"),
                 name: f.name.clone(),
@@ -178,101 +236,6 @@ impl Compiled {
     }
     pub(crate) fn schema(&self, function: &str) -> serde_json::Value {
         json::object_schema(self.functions[function].ty.params())
-    }
-    pub fn call(
-        &self,
-        host: &crate::Host,
-        page: Option<&crate::LocalName>,
-        identity: &str,
-        caller: &crate::Caller,
-        function: &str,
-        args: serde_json::Value,
-    ) -> Result<crate::Outcome, CallError> {
-        let function = self.functions.get(function).ok_or_else(|| {
-            CallError::new(
-                CallCode::NoFunction,
-                format!("no callable function {function}"),
-            )
-        })?;
-        let params = json::arguments(&function.ty, args)?;
-        let deadline = Instant::now()
-            .checked_add(host.limits.time)
-            .ok_or_else(|| CallError::internal("time limit is too large"))?;
-        let lock = host
-            .call_locks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(identity.into())
-            .or_default()
-            .clone();
-        let guard = loop {
-            let now = Instant::now();
-            if now >= deadline {
-                return Err(CallError::limit(
-                    crate::Limit::Time,
-                    "call exceeded wall time while waiting for its mod",
-                ));
-            }
-            match lock.try_lock() {
-                Ok(guard) => break guard,
-                Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    std::thread::sleep((deadline - now).min(std::time::Duration::from_millis(10)))
-                }
-            }
-        };
-        let transaction = host.state.transaction(identity, &host.limits)?;
-        let mut store = linker::store(
-            &host.engine,
-            transaction,
-            caller.who(),
-            &host.limits,
-            deadline,
-        )?;
-        let stderr = store.data().stderr.clone();
-        let result = (|| -> wasmtime::Result<serde_json::Value> {
-            let instance = self.pre.instantiate(&mut store)?;
-            let (_, interface) = instance
-                .get_export(&mut store, None, &function.interface)
-                .ok_or_else(|| CallError::internal("compiled interface disappeared"))?;
-            let (_, export) = instance
-                .get_export(&mut store, Some(&interface), &function.name)
-                .ok_or_else(|| CallError::internal("compiled function disappeared"))?;
-            let func = instance
-                .get_func(&mut store, export)
-                .ok_or_else(|| CallError::internal("compiled export is not a function"))?;
-            let mut results =
-                vec![wasmtime::component::Val::Bool(false); function.ty.results().len()];
-            func.call(&mut store, &params, &mut results)?;
-            // Wasmtime 48 runs canonical post-return as part of call.
-            if Instant::now() >= store.data().deadline {
-                return Err(CallError::limit(crate::Limit::Time, "call exceeded wall time").into());
-            }
-            Ok(match results.first() {
-                Some(value) => json::encode(value)?,
-                None => serde_json::Value::Null,
-            })
-        })();
-        let value = result.map_err(|e| limits::classify(e, &stderr))?;
-        let ctx = store.into_data();
-        let events = ctx
-            .outbox
-            .into_iter()
-            .map(|event| {
-                Ok(crate::EventRecord {
-                    interface: event.interface.parse().map_err(CallError::internal)?,
-                    function: event.function,
-                    args: event.args,
-                })
-            })
-            .collect::<Result<Vec<_>, CallError>>()?;
-        let changed = ctx.state.commit()?;
-        if let Some(local) = page {
-            let publication = host.bus.publication();
-            drop(guard);
-            crate::bus::deliver(&publication, local, &events, changed);
-        }
-        Ok(crate::Outcome { value, events })
     }
 }
 

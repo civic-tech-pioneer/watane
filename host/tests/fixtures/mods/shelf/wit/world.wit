@@ -1,0 +1,4 @@
+package mods:shelf@0.1.0;
+interface items { add: func(title: string); add-then-fail: func(title: string); all: func() -> list<string>; who: func() -> string; }
+interface events { added: func(title: string); }
+world shelf { import watane:host/state@0.1.0; import watane:host/caller@0.1.0; import events; export items; }

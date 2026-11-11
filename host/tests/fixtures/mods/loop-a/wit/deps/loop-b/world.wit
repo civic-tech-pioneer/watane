@@ -1,0 +1,1 @@
+package mods:loop-b@0.1.0; interface events { ping: func(n: u32); } world loop-b { import events; }

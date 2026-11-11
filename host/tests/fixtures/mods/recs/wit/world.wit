@@ -1,0 +1,4 @@
+package mods:recs@0.1.0;
+interface api { suggest: func() -> string; received: func() -> list<string>; ping: func() -> string; who-of-shelf: func() -> string; }
+interface events { suggested: func(title: string); }
+world recs { import watane:host/state@0.1.0; import mods:shelf/items@0.1.0; import events; export mods:shelf/events@0.1.0; export api; }

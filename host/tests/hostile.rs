@@ -684,3 +684,43 @@ fn ac5_page_files_refuse_other_methods_only_when_they_exist() {
     }
     request(&preview, "POST", &host, "/missing.html", "", "").plain(404, "not found");
 }
+
+#[tokio::test]
+async fn ac12_s11_page_cannot_call_a_subscription_function() {
+    let home = tempfile::tempdir().unwrap();
+    let host = watane_host::Host::open(
+        home.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
+        .unwrap();
+    let served = host.serve(0).await.unwrap();
+    let client = Client::builder()
+        .no_proxy()
+        .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
+        .build()
+        .unwrap();
+    let origin = format!("http://recs.localhost:{}", served.port);
+    let response = client
+        .post(format!("{origin}/call"))
+        .header("Origin", &origin)
+        .json(&json!({"fn":"events.added","args":{"title":"forged"}}))
+        .send()
+        .await
+        .unwrap();
+    call_error(response, 404, "no_function").await;
+    assert_eq!(
+        host.call_async(
+            watane_host::Caller::Page,
+            watane_host::LocalName::parse("recs").unwrap(),
+            "api.received".into(),
+            Value::Null
+        )
+        .await
+        .unwrap(),
+        json!([])
+    );
+    served.shutdown().await;
+}

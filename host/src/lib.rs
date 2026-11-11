@@ -55,6 +55,9 @@ pub struct Host {
     call_locks: Mutex<std::collections::BTreeMap<String, Arc<Mutex<()>>>>,
     bus: bus::PageBus,
     tools: Mutex<tools::Tools>,
+    weak: std::sync::Weak<Host>,
+    execution: Mutex<()>,
+    fakes: Mutex<Option<Fakes>>,
 }
 
 impl Host {
@@ -63,8 +66,12 @@ impl Host {
         let engine = Arc::new(runtime::engine()?);
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
-        let host = Arc::new(Self {
-            tools: Mutex::new(tools::Tools::open(&home.path)?),
+        let tools = tools::Tools::open(&home.path)?;
+        let host = Arc::new_cyclic(|weak| Self {
+            weak: weak.clone(),
+            execution: Mutex::new(()),
+            fakes: Mutex::new(None),
+            tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
             state,
             call_locks: Mutex::new(std::collections::BTreeMap::new()),
@@ -109,41 +116,7 @@ impl Host {
         args: serde_json::Value,
         publish: bool,
     ) -> Result<Outcome, CallError> {
-        let (compiled, identity) = {
-            let catalog = self
-                .catalog
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let m = catalog
-                .mods
-                .iter()
-                .find(|m| &m.local == local)
-                .ok_or_else(|| CallError::new(CallCode::NoMod, format!("no mod {local}")))?;
-            if !m.enabled {
-                return Err(CallError::new(
-                    CallCode::Disabled,
-                    format!("mod {local} is disabled"),
-                ));
-            }
-            if let Some(error) = &m.error {
-                return Err(CallError::internal(error));
-            }
-            let compiled = catalog.components.get(local).cloned().ok_or_else(|| {
-                CallError::new(
-                    CallCode::NoFunction,
-                    format!("mod {local} has no logic part"),
-                )
-            })?;
-            (compiled, m.identity.clone())
-        };
-        compiled.call(
-            self,
-            publish.then_some(local),
-            &identity,
-            caller,
-            function,
-            args,
-        )
+        runtime::call::run(self, caller, local, function, args, publish, false)
     }
     pub async fn call_async(
         self: &Arc<Self>,
@@ -187,8 +160,14 @@ impl Host {
             .iter()
             .map(|m| (m.identity.clone(), m.package.clone()))
             .collect();
-        let installed =
-            catalog.install(self.home(), folders, port, &self.engine, self.home.mode)?;
+        let installed = catalog.install(
+            self.home(),
+            folders,
+            port,
+            &self.engine,
+            self.home.mode,
+            false,
+        )?;
         for m in &installed {
             if before.get(&m.identity).is_some_and(|id| id != &m.package) {
                 self.bus.send(&m.local, bus::RELOAD);
@@ -219,12 +198,14 @@ pub struct ReadyMod {
 pub enum Caller {
     Page,
     Agent(Handle),
+    Mod(LocalName),
 }
 impl Caller {
     pub fn who(&self) -> String {
         match self {
             Self::Page => "page".into(),
             Self::Agent(handle) => format!("agent:{handle}"),
+            Self::Mod(local) => format!("mod:{local}"),
         }
     }
 }
