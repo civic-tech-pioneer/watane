@@ -30,7 +30,19 @@ fn ac3_vendor_script_writes_only_to_callers_output() {
         );
         return;
     }
+    let listing = |dir: &Path| {
+        let mut names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        names
+    };
+    let (dev, allowlist) = (listing(manifest), listing(&manifest.join("allowlist")));
     run_script(root.path(), true);
+    // Nothing new in the checkout: no vendor/, target/ or lock beside the allowlist.
+    assert_eq!(listing(manifest), dev);
+    assert_eq!(listing(&manifest.join("allowlist")), allowlist);
 }
 
 #[test]

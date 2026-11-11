@@ -130,7 +130,7 @@ fn ac2_broken_add_reports_step_and_can_be_fixed() {
 }
 
 #[test]
-#[ignore = "slow: full template pipeline proves contract failure command wiring and fresh state per file"]
+#[ignore = "slow: full template pipeline proves contract failure wiring through the test command"]
 fn ac3_literal_fresh_counter_failure_and_fresh_state_per_file() {
     let f = Fixture::new();
     f.steps(json!([{ "call": "api.add", "returns": 2 }]));
@@ -317,4 +317,19 @@ fn ac6_contract_problem_reports_failing_step_object_line() {
     assert_eq!(problems[0].code.as_str(), "test.contract");
     assert_eq!(problems[0].line, Some(3));
     assert_eq!(problems[0].file.as_deref(), Some("tests/books.json"));
+}
+
+#[test]
+fn ac3_each_contract_file_starts_from_fresh_state() {
+    let f = prebuilt_recommendations();
+    // Runs before books.json; if its state leaked, books.json would receive ["Emma","Emma"].
+    fs::write(
+        f.dir.join("tests/a.json"),
+        r#"{"steps":[{"deliver":"events.added","args":{"title":"Emma"},"emits":[{"event":"changes.received","args":{"title":"Emma"}}]}]}"#,
+    )
+    .unwrap();
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!((report.files, report.passed, report.failed), (2, 4, 0));
 }

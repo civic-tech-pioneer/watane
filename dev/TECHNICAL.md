@@ -1310,7 +1310,7 @@ stop before compilation need no warmed cache. No product code changes.
 | outcome | `ac3_exit_classes_and_problem_envelope`, `ac3_previous_preview_is_only_a_warning` | unit: literal status 1–5, codes, JSON and warning text |
 | template | existing render, page and guide tests | unit: literal strings and file contents |
 | check | `ac3_twenty_literal_manifests`, `ac3_invalid_toml_names_file_and_line`, `ac3_dev_s5_and_s8_file_codes_locations_and_fixes`, `ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`, `ac3_check_repairs_host_wit_and_skips_git_links`, `ac3_logic_needs_contract_but_page_only_does_not` | unit: every builder check code, file, line, message and fix; missing locations are literal null |
-| allowlist | `ac3_source_vendor_fix_is_absolute_bootstrap_command`, `ac3_custom_vendor_fix_names_bootstrap_and_export`, `ac3_vendor_lookup_order_and_fix_texts`, existing pins/checksum tests | unit: literal pins, error, lookup order and bootstrap output-path fix |
+| allowlist | `ac3_source_vendor_fix_is_absolute_bootstrap_command`, `ac3_custom_vendor_fix_targets_that_path`, `ac3_vendor_lookup_order_and_fix_texts`, existing pins/checksum tests | unit: literal pins, error, lookup order and bootstrap output-path fix |
 | toolchain | `ac3_doctor_toolchain_gap_texts_and_fixes` | unit: toolchain and missing-target error/fix |
 | builder | `ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots`, `ac6_cargo_config_quotes_paths_and_restricts_environment`, `ac3_compiler_failure_code_location_and_fix` | unit: literal paths, flags and environment keys |
 | unit | existing `ac1_parse_*`, `ac2_parse_*`; `ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `ac3_unit_host_imports_are_unknown_import_traps` | unit: literal libtest output; tiny literal WASI commands prove unsuccessful exit, interrupt, memory limit and trap classifications without Cargo |
@@ -1345,7 +1345,7 @@ rules belong to 15.1.
 | DEV-S-14 | `unit_tests::ac4_unit_tests_have_no_files_environment_or_network`, `ac4_unit_host_imports_trap`; `unit::tests::ac3_unit_host_imports_are_unknown_import_traps` | integration, warm cache; slow Rust import wiring; unit trap |
 | DEV-S-15 | `unit_tests::ac2_panic_names_assert_and_counts_remaining_tests`; `unit::tests::ac3_panic_classification_counts_location_and_fix` | integration; unit |
 | DEV-S-16 | `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline`; `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | timing; unit classification |
-| DEV-S-17 | `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file` (slow: full pipeline); `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
+| DEV-S-17 | `contract::ac3_each_contract_file_starts_from_fresh_state` (committed Wasm); `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file` (slow: full pipeline); `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
 | DEV-S-18 | `contract::ac1_s11_fake_answers_provider_call`, `ac1_s11_missing_fake_fails` | integration: committed Wasm fixture |
 | DEV-S-19 | `contract::ac2_s11_deliver_retains_state_and_emits`, `ac2_s11_deliver_compares_emitted_events`, `ac2_s11_deliver_rejects_non_subscription`; `contract::tests::ac4_run_steps_events_exact_order_names_and_failed_calls`, `ac3_single_event_equality_and_failure_payloads` | integration: prebuilt; unit |
 | DEV-S-20 | `unit_tests::ac5_logic_requires_contract_file_but_page_only_does_not`, `contract::ac8_serve_does_not_start_preview_for_failed_or_absent_contracts`; `check::tests::ac3_logic_needs_contract_but_page_only_does_not` | integration; slow serve pipeline; unit |
@@ -1364,8 +1364,10 @@ rules belong to 15.1.
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
-S17-1 keeps `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` unchanged
-in the slow set: it drives the full check/build/unit/contract pipeline.
+S17-1 moves `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` unchanged
+to the slow set: it drives the full check/build/unit/contract pipeline;
+`ac3_each_contract_file_starts_from_fresh_state` proves fresh state per file on
+the committed recommendations component.
 `ac6_bad_contract_file_names_file` uses the committed recommendations component,
 so its parser/location proof needs no template build.
 

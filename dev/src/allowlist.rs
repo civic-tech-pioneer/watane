@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn ac3_custom_vendor_fix_names_bootstrap_and_export() {
+    fn ac3_custom_vendor_fix_targets_that_path() {
         let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
         let error = problem(Path::new("/missing/vendor"), "missing");
         assert_eq!(error.code, Code::EnvAllowlist);
