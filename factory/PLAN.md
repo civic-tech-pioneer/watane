@@ -31,18 +31,9 @@ Step 2 (Run together, J2).
   `check.providers[].path` is null for a local provider; `add --dir` resolves the provider path
   from `--dir`; a subscriber's `/events` also gets the provider's raw `event` messages. Host
   stage 5 (`Host::plan`, `Source`, confirmation) and S25 (revoke) are not built: S12.
-- [~] **S13 Cheap tests.** (branch `slice/s13`; foreman: see `Foremen`) The test pyramid (`factory/README.md`) on the tests that exist. A
-  maker of watane runs `cargo test` in dev and gets an answer in under 2 minutes, not 12.
-  - Outcomes: dev's default `cargo test` under 2 min on a quiet machine (now: a cold mod build of
-    about 30 s in nearly every integration test); the template is built once per test binary and
-    each test copies that warm cache; rules now proven by a command test (check rules, error
-    texts, `json_eq`, classifications) get unit tests, and the command test stays only where it
-    proves wiring; cold builds, the preview life cycle and J1 are `slow` with a reason; host's
-    default run is checked against the same budget. No outcome loses its proof: each DEV-S and
-    HOST scenario keeps a test, listed by the foreman.
-  - Touches: `dev/tests/*`, `dev/src/*` test modules only. Host: measure its default run and
-    report the time; no host file changes (S12a owns host).
-  - Input: S11 friction (the full slow run takes about 30 min: serve.rs 11, unit_tests.rs 10).
+- [x] **S13 Cheap tests.** Delivered 2026-11-11 (main `cf35f70`). Sol runs: S13-1 1.
+  dev's default `cargo test` takes about 1.5 min (was about 9); the full run with slow tests about
+  10 min (was about 30). `dev/TECHNICAL.md` 15.2 maps each DEV-S scenario to its test and level.
 - [x] **S14 Quiet GUI tests.** Delivered 2026-11-11 (main `dca54b6`). Sol runs: S14-1 1.
 - [x] **S15 Packages say what is wrong.** Delivered 2026-11-11 (main `3c441d7`). Sol runs: S15-1 2 (new, resume).
   Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
@@ -143,7 +134,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15` (stopped, removed).
 - S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16` (stopped, removed).
 - S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a`.
-- S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13`.
+- S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -232,6 +223,9 @@ The human may veto each one.
   first), null when it has no page; an `env.*` refusal gives `watane-dev doctor --json`; a
   provider's failure gives `watane-dev test --json --dir <provider>`.
 - S11: pkg `add_provider` refuses a symlinked destination; an I/O failure may leave a partial copy.
+- S13: dev tests share one warm cache folder per test binary (a copy at a new path builds cold:
+  the path is in the rustflags). A command test may be removed once a unit test proves its rule;
+  5 were, each named in TECHNICAL 15.2's replacement table. DEV-S-27 to 31 are marked planned.
 
 ## Friction
 
@@ -306,6 +300,11 @@ The human may veto each one.
 - S11: `--include-ignored` now also runs main's intentionally red S16 test, so a foreman's final
   run needs a `--skip`.
 - S11: dev's full slow run took about 30 min (serve.rs 11, unit_tests.rs 10): S13's input.
+- S13: a fresh worktree has no `dev/allowlist/vendor`; tests fail with `env.allowlist` until
+  `scripts/vendor.sh` runs. Foremen should run it first.
+- S13: the 2-min default budget rests on two binaries (contract, unit_tests) that each pay one
+  cold build of about 35 s; little headroom as tests are added.
+- S13: some `slow:` reasons say why a test is slow but not what it needs.
 
 ## Digest
 
@@ -341,3 +340,4 @@ The human may veto each one.
 - S11: in `recommendations` the agent adds `reading-list`, writes a call and a subscription, tests
   them with a fake and a `deliver` step, and `serve` installs the provider first; a book added in
   one page reaches the other through the call and the event.
+- S13: a watane maker runs `cargo test` in dev and gets an answer in about 1.5 min, not 9.
