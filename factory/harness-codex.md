@@ -88,10 +88,8 @@ count both the same way from these logs.
 ## Lines for S17
 
 - A sandboxed agent cannot run the vendor fix: it writes into the watane checkout. The fix
-  now works from the agent's writable cache: `vendor.sh '<cache>/vendor'`; dev finds it
-  without an export. An explicit override remains authoritative. S17-1 also describes all
-  help inputs, flattens doctor text, points environment gaps to fixes, preserves available
-  WIT and contract locations, and names the page in previous-preview warnings.
+  should work from the agent's own folder (`vendor.sh <out>` and `export WATANE_DEV_VENDOR`), or
+  the installed `share/watane-dev/vendor` must exist.
 - `watane-dev --help` and each command's help have no descriptions; the agent read source instead.
 - The preview's MCP tools carry no `annotations`; Codex in `exec` blocks every call that is not
   `readOnlyHint`. A host decision: mark functions that write no state, or document the
