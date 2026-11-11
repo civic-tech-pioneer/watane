@@ -112,3 +112,8 @@ time; a failure counts only if it repeats:
 `cargo test -p watane-host --test runtime -- --ignored --test-threads=1`.
 A new test of a time limit gets the same attribute. A wait that only guards against a hang is
 not such a test: give it a wide bound (30 s or more) and leave it in the normal run.
+
+## Tests only the validator runs
+
+Sol's sandbox cannot start a nested `sandbox-exec`, so DEV-S-13 (the build with network access
+denied) runs only in the validator. That is expected; it is not friction.

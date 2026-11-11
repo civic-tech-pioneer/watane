@@ -176,8 +176,8 @@ The human may veto each one.
 - S5: a refused `serve` leaves the old preview up without saying so (into S6); a trap's text is a
   long wasm backtrace with the panic message at the end; dev keeps the preview token in
   `<cache>/previews/*/ready.json` (0600, dev Q6), which reads awkwardly beside host 10.2.
-- S2, S3, S8: nested `sandbox-exec` (DEV-S-13) runs only in the validator (3x): proposed to the
-  human to accept it and stop logging it.
+- S2, S3, S8: nested `sandbox-exec` (DEV-S-13) runs only in the validator (3x). The human
+  accepted it (factory/README.md); no longer friction.
 - S8: S8-1's Sol run took 77 min, much of it full-suite reruns under S5's load.
 - S8: dev `ac10` (timing-ignored now) failed twice on `main` under S6's load: 8.4 s against 7 s,
   the time includes rebuilding the changed source. Rerun when quiet; if it fails then, the timer
