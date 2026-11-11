@@ -150,8 +150,11 @@
 
   await Promise.all(pending);
   report.done = true;
+  // A second synchronous assignment would cancel the first before the native
+  // guard sees it, so give each navigation its own turn.
   for (const url of [targets.tauri, `${listener}/navigate`]) {
     try { location.href = url; } catch (error) { /* Native navigation guard may throw. */ }
+    await new Promise(resolve => setTimeout(resolve, 300));
   }
   report.navTried = true;
 })();
