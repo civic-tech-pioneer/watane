@@ -71,3 +71,22 @@ fn ac2_deps_json() {
     .unwrap();
     assert_eq!(Deps::read(dir.path()).unwrap().iter().count(), 32);
 }
+
+#[test]
+fn ac2_deps_write_member_limit_is_inclusive() {
+    // TECHNICAL.md §4.3: deps.json holds at most 32 members.
+    let dir = tempfile::tempdir().unwrap();
+    let mut deps = Deps::default();
+    for i in 0..32 {
+        deps.set(format!("p{i}").parse().unwrap(), None);
+    }
+    deps.write(dir.path()).unwrap();
+    assert_eq!(Deps::read(dir.path()).unwrap(), deps);
+    assert_eq!(deps.iter().count(), 32);
+    deps.set("p32".parse().unwrap(), None);
+    assert!(
+        matches!(deps.write(dir.path()), Err(ModError::Invalid(v)) if v[0].rule == Rule::DepsJson)
+    );
+    // The refused write leaves the 32-member file in place.
+    assert_eq!(Deps::read(dir.path()).unwrap().iter().count(), 32);
+}

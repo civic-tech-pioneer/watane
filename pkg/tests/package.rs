@@ -638,3 +638,119 @@ fn ac3_s15_pack_escaped_paths_and_links() {
         fs::remove_file(dir.path().join(path)).unwrap();
     }
 }
+
+#[test]
+fn ac4_path_limits_are_inclusive() {
+    // TECHNICAL.md §6.2: a path is 1..=255 bytes and 1..=16 segments; a segment 1..=128 bytes.
+    let segment = "a".repeat(128);
+    let longest = format!("ui/{segment}/{}", "b".repeat(123));
+    let too_long = format!("ui/{segment}/{}", "b".repeat(124));
+    assert_eq!((longest.len(), too_long.len()), (255, 256));
+    let p = Package::from_bytes(raw(&[(&longest, b"x")])).unwrap();
+    assert_eq!(p.file(&longest), Some(b"x".as_slice()));
+    path_error(raw(&[(&too_long, b"x")]), &too_long);
+
+    let long_segment = format!("ui/{}", "a".repeat(129));
+    path_error(raw(&[(&long_segment, b"")]), &long_segment);
+
+    let deepest = format!("ui{}", "/a".repeat(15));
+    let too_deep = format!("ui{}", "/a".repeat(16));
+    assert_eq!(
+        (deepest.split('/').count(), too_deep.split('/').count()),
+        (16, 17)
+    );
+    let p = Package::from_bytes(raw(&[(&deepest, b"")])).unwrap();
+    assert_eq!(p.paths().collect::<Vec<_>>(), [deepest.as_str()]);
+    path_error(raw(&[(&too_deep, b"")]), &too_deep);
+
+    // first = ALPHA / DIGIT / "_" / "-"; rest adds ".".
+    let names = ["ui/-a", "ui/9.-_", "ui/_a"];
+    let files: Vec<_> = names.iter().map(|p| (*p, b"".as_slice())).collect();
+    let p = Package::from_bytes(raw(&files)).unwrap();
+    assert_eq!(p.paths().collect::<Vec<_>>(), ["ui/-a", "ui/9.-_", "ui/_a"]);
+}
+
+#[test]
+fn ac3_only_wit_files_from_wit() {
+    // TECHNICAL.md §6.1: wit/ contributes only .wit files; §4.7: other files there are ignored.
+    let dir = hello();
+    put(dir.path(), "wit/README.md", b"notes");
+    put(dir.path(), "wit/deps/notes.txt", b"notes");
+    assert_eq!(
+        pack(dir.path(), false).unwrap().paths().collect::<Vec<_>>(),
+        ["mod.toml", "ui/index.html", "wit/world.wit"]
+    );
+    for path in [
+        "wit/README.md",
+        "wit/deps/notes.txt",
+        "wit/deps/x/notes.txt",
+    ] {
+        path_error(raw(&[(path, b"")]), path);
+    }
+}
+
+#[test]
+fn ac4_pack_size_limit_is_inclusive() {
+    // TECHNICAL.md §6.3: a package is at most 67 108 864 bytes. The golden `hello`
+    // package is 159 bytes (§6.5); a record adds 2 + path + 4 + size bytes, so
+    // `ui/large` (8 bytes of path) may hold 67 108 864 - 159 - 14 bytes.
+    let size = 67_108_864 - 159 - 14;
+    let dir = hello();
+    let large = fs::File::create(dir.path().join("ui/large")).unwrap();
+    large.set_len(size).unwrap();
+    let p = pack(dir.path(), false).unwrap();
+    assert_eq!(p.len(), 67_108_864);
+    assert_eq!(p.file("ui/large").map(<[u8]>::len), Some(size as usize));
+    drop(p);
+    large.set_len(size + 1).unwrap();
+    assert!(matches!(
+        pack(dir.path(), false),
+        Err(PackageError::TooLarge { .. })
+    ));
+}
+
+#[test]
+fn ac3_pack_walks_nested_content_directories() {
+    // TECHNICAL.md §6.1: ui/<path>, logic/src/<path> and tests/<path> may be nested,
+    // and wit/deps/<s>/<s>.wit sits one directory below wit/deps.
+    let dir = hello();
+    for path in [
+        "ui/css/site.css",
+        "ui/img/icons/a.svg",
+        "logic/src/bin/tool.rs",
+        "tests/unit/a.rs",
+    ] {
+        put(dir.path(), path, b"nested");
+    }
+    put(
+        dir.path(),
+        "wit/deps/clocks/clocks.wit",
+        b"package wasi:clocks@0.2.0;\ninterface wall {}\n",
+    );
+    let mod_paths = [
+        "mod.toml",
+        "ui/css/site.css",
+        "ui/img/icons/a.svg",
+        "ui/index.html",
+        "wit/deps/clocks/clocks.wit",
+        "wit/world.wit",
+    ];
+    assert_eq!(
+        pack(dir.path(), false).unwrap().paths().collect::<Vec<_>>(),
+        mod_paths
+    );
+    let p = pack(dir.path(), true).unwrap();
+    let mut all = mod_paths.to_vec();
+    all.extend(["logic/src/bin/tool.rs", "tests/unit/a.rs"]);
+    all.sort();
+    assert_eq!(p.paths().collect::<Vec<_>>(), all);
+
+    // A directory below wit/deps/<s>/ is not package content (§6.4: the walk never
+    // goes outside the paths of §6.1), so the refusal is Mod::read's rule `path` (§4.7).
+    put(dir.path(), "wit/deps/clocks/extra/x.wit", b"");
+    let error = pack(dir.path(), false).unwrap_err();
+    assert!(
+        matches!(&error, PackageError::Mod(ModError::Invalid(v)) if v.iter().any(|v| v.rule == Rule::Path && v.file.starts_with("wit/deps/clocks/extra"))),
+        "{error:?}"
+    );
+}
