@@ -248,10 +248,10 @@ fn ac6_program_arguments_lock_and_sigterm() {
     assert_eq!(version.status.code(), Some(0));
     assert_eq!(version.stdout, b"watane 0.1.0\n");
     for args in [
-        vec![],
         vec!["--bad"],
         vec!["--preview"],
-        vec!["--home", "/tmp/x"],
+        vec!["--home", "/tmp/x", "--preview", "/tmp/y"],
+        vec!["--home", "/tmp/x", "--install", "/tmp/z"],
         vec!["--preview", "/tmp/x", "--port", "65536"],
         vec!["--version", "--bad"],
     ] {
