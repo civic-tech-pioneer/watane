@@ -26,20 +26,11 @@ is in step 2.
 Step 2 (Run together, J2).
 
 - [x] **S10 Alice opens the app.** Delivered 2026-11-11 (main `da54bb4`). Sol runs: S10-1 1, S10-2 1, S10-3 1, S10-4 1.
-- [~] **S11 The recommendations mod calls the reading list.** (branch `slice/s11`; foreman: see `Foremen`) In a preview: the agent runs
-  `watane-dev add ../reading-list` in `recommendations`, writes a call and a subscription, tests
-  with a fake and a `deliver` step, and `serve`s both; adding a book in one page shows in the
-  other.
-  - Outcomes: DEV-S-18, 19 (fakes, `deliver`), DEV-S-25, 26 (`add`, cycle); a `serve` of
-    `recommendations` installs `reading-list` first; a call and an event cross the two mods on
-    the real `watane`.
-  - Touches: pkg stage 6 (`add_provider`), host stage 2 (links, subscribers, hops: `bus.rs`
-    ponytail; `harness.rs` fakes ponytail), dev stage 6 (`deps`, `add`; `cli.rs`), dev contract
-    fakes and `deliver`. Not `app/` (S10).
-  - Also (S6 user-sim): after a successful `serve`, `next` says to give `pages[0].url` to the person;
-    a `serve` refused for an env gap has `next` `watane-dev doctor --json`; `serve --stop` says
-    that the preview's data is gone.
-  - Leaves out: `install` into a home host (needs the app, stage B), grants UI.
+- [x] **S11 The recommendations mod calls the reading list.** Delivered 2026-11-11 (main `e6dc87e`). Sol runs: S11-1 1, S11-2 3, S11-3 1, S11-4 2, S11-fix1 1.
+  Left for later (user-sim): `mod.dependency_cycle` and `mod.self_dependency` have `fix: null`;
+  `check.providers[].path` is null for a local provider; `add --dir` resolves the provider path
+  from `--dir`; a subscriber's `/events` also gets the provider's raw `event` messages. Host
+  stage 5 (`Host::plan`, `Source`, confirmation) and S25 (revoke) are not built: S12.
 - [ ] **S13 Cheap tests.** The test pyramid (`factory/README.md`) on the tests that exist. A
   maker of watane runs `cargo test` in dev and gets an answer in under 2 minutes, not 12.
   - Outcomes: dev's default `cargo test` under 2 min on a quiet machine (now: a cold mod build of
@@ -101,21 +92,21 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
-| pkg | 6 add_provider | 2 | open |
+| pkg | 6 add_provider | 2 | done (S11) |
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
-| host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
+| host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
-| host | 5 catalog and home | 1, 2 | part: preview install via pack (S8); `Harness::call` (S4); fakes (`ponytail` in `harness.rs`), `deliver`, plan, grants, update, remove, home mode in step 2 |
+| host | 5 catalog and home | 1, 2 | part: preview install via pack (S8); `Harness::call` (S4); fakes and `deliver` (S11); plan, grants, update, remove, home mode in step 2 |
 | host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
 | dev | 2 allowlist, toolchain, builder | 1 | done (S8) |
 | dev | 3 unit | 1 | done (S4) |
-| dev | 4 contract | 1 | part (S4): fakes and `deliver` steps (DEV-S-18, 19) in step 2 |
+| dev | 4 contract | 1 | done (S4, S11: fakes and `deliver`) |
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
-| dev | 6 deps, add, install | 2 | open |
+| dev | 6 deps, add, install | 2 | part (S11: deps, add): `install` (DEV-S-27 to 29) |
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | open |
@@ -139,7 +130,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6` (stopped, removed).
 - S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9` (stopped, removed).
 - S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10` (stopped, removed).
-- S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11`.
+- S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11` (stopped, removed).
 - S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14` (stopped, removed).
 - S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15` (stopped, removed).
 - S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16` (stopped, removed).
@@ -221,6 +212,16 @@ The human may veto each one.
   with `escape_debug`; pkg adds `libc` 0.2 (unix) for `O_NOFOLLOW|O_NONBLOCK`, no `unsafe`.
 - S16: Codex ran in its `workspace-write` sandbox with network (as Sol), with its own
   `CODEX_HOME`, so the human's `~/.codex` was untouched.
+- S11: host fixture `list` renamed `shelf` (`list` is a WIT keyword, refused as a slug).
+- S11: host links, missing providers, cycles and order are built on the preview `install_folders`
+  path only; `Host::plan`, `Source` and confirmation stay with app stage B (S12).
+- S11: no global call lock: per-mod call locks plus per-emitter ordered delivery.
+- S11: `Harness::deliver(function, args)` takes `<short iface>.<fn>` of a subscription export,
+  caller `mod:<provider slug>`. `changed` goes only to mods whose state bytes changed.
+- S11: serve `next`: success gives the served mod's own page (the last entry, providers come
+  first), null when it has no page; an `env.*` refusal gives `watane-dev doctor --json`; a
+  provider's failure gives `watane-dev test --json --dir <provider>`.
+- S11: pkg `add_provider` refuses a symlinked destination; an I/O failure may leave a partial copy.
 
 ## Friction
 
@@ -287,6 +288,14 @@ The human may veto each one.
 - S15: watane-dev has no `pack` command, so pack is reached only through the host or pkg tests.
 - S16: codex-cli 0.163 has no `--full-auto` (use `-s workspace-write`); `codex exec` needs
   `--skip-git-repo-check` outside a git repo; S6 kept no Claude command log to compare with.
+- S11: a spec fixture name (`list`) was never checked against the slug grammar; S11-2's first run
+  stopped BLOCKED on it.
+- S11: Sol twice added an unlisted product change to make its tests easy (a host global call
+  lock; a dev "built-only" `test` that would let `serve` install an unbuilt `logic.wasm`).
+  Validators caught both.
+- S11: `--include-ignored` now also runs main's intentionally red S16 test, so a foreman's final
+  run needs a `--skip`.
+- S11: dev's full slow run took about 30 min (serve.rs 11, unit_tests.rs 10): S13's input.
 
 ## Digest
 
@@ -319,3 +328,6 @@ The human may veto each one.
   swapped-in link.
 - S16: a Codex agent makes and previews a mod with no human help; `factory/harness-codex.md`
   lists what made it guess or read source.
+- S11: in `recommendations` the agent adds `reading-list`, writes a call and a subscription, tests
+  them with a fake and a `deliver` step, and `serve` installs the provider first; a book added in
+  one page reaches the other through the call and the event.
