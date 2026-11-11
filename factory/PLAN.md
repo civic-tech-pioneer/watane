@@ -53,32 +53,7 @@ Step 2 (Run together, J2).
     HOST scenario keeps a test, listed by the foreman.
   - Touches: `dev/tests/*`, `dev/src/*` test modules only, host tests only if over budget.
     Waits for S11 (it adds dev tests).
-- [~] **S14 Quiet GUI tests.** (branch `slice/s14`; foreman: see `Foremen`) Requested by the
-  human: the app's driver tests open real windows that take focus and show a Dock icon, which
-  interrupts the human's own work while the factory loops. A maker runs
-  `cargo test --features driver` in `app/` and sees nothing happen on screen.
-  - Design (agreed with the human): the driver reads `WATANE_DRIVER_SCREEN` = `hidden` |
-    `background` | `front` once at startup. One helper in `views.rs` wraps the three
-    `WebviewWindowBuilder`s (main, mod, consent): hidden -> `.visible(false)`, background ->
-    `.focused(false)`, front -> unchanged. One helper replaces the direct `set_focus` /
-    `request_user_attention` calls and does nothing unless front. Every mode except front sets
-    `ActivationPolicy::Accessory` in setup. Without feature `driver` the helpers do nothing.
-    Tests declare their mode, with no ifs in test bodies: `App::start` (hidden, the default),
-    `App::background`, `App::front` in `tests/support/driver.rs`. Tests that need real focus or
-    stacking (consent takes focus, the 800 ms approve delay, consent stays above; at first look
-    `gui_isolation` ac1 and `gui_shell` ac4) use `App::front` and carry
-    `#[ignore = "front: takes the screen"]`. `App::front` waits until the human has been idle
-    about 30 s (`ioreg` HIDIdleTime), printing "waiting for you to step away", and fails loudly
-    after a time limit; it never skips, since these are security checks.
-  - Check first: whether hidden WKWebView windows still finish page loads, run driver JS and keep
-    timers unthrottled; a test that breaks hidden uses `App::background`.
-  - Outcomes: 1. a plain `cargo test --features driver` in `app/` shows no window, no Dock icon,
-    never takes focus; 2. `-- --include-ignored` runs the front tests and they pass; 3. the release
-    build still has no driver; 4. `factory/README.md` "Test pyramid" and the user-sim and validator
-    prompts say front tests run once per slice (user-sim or foreman), not every validator round.
-  - Touches: `app/src/{views,driver,lib}.rs`, `app/tests/support/driver.rs`, `app/tests/gui_*.rs`,
-    `factory/README.md`, `.claude/agents/{user-sim,validator}.md`. Not dev, host, pkg (S11).
-  - Rejected: moving windows to another Space (private APIs only).
+- [x] **S14 Quiet GUI tests.** Delivered 2026-11-11 (main `dca54b6`). Sol runs: S14-1 1.
 - [~] **S15 Packages say what is wrong.** (branch `slice/s15`; foreman: see `Foremen`) The
   human's call: S7's pkg follow-ups. A maker packs a mod with a bad file and the error names the
   real cause.
@@ -156,7 +131,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9` (stopped, removed).
 - S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10` (stopped, removed).
 - S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11`.
-- S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14`.
+- S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14` (stopped, removed).
 - S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -222,6 +197,11 @@ The human may veto each one.
   arbitrary loads); without it macOS loads no mod page. host Q10 verified for WKWebView (`::1`
   works); WebKitGTK still open (stage F).
 - S10: the consent window's `Destroyed` handler denies and reopens off the main thread.
+- S14: the foreman edited `factory/README.md` ("Front" row in the test pyramid), `validator.md`
+  (never runs front tests) and `user-sim.md` (starts the app hidden) itself.
+- S14: a driver op `screen` reports the mode and the real AppKit activation policy (app 10).
+  Hidden WKWebView loads pages and runs timers on time, so only a self-test uses `background`.
+  The front tests' idle wait panics after 10 minutes; it never skips.
 
 ## Friction
 
@@ -277,6 +257,12 @@ The human may veto each one.
   time out on app S3 to S5.
 - S10: Tauri embeds `Info.plist` without a rebuild trigger; a `cargo clean -p watane-app` dropped
   2.5 GiB of the shared `target/`.
+- S7, S14: the foreman tried `git push`; there is no remote (2x).
+- S14: app `support_selftest` "port refused after drop" checks fail now and then under parallel
+  load (pre-existing; a fix task for a later app slice).
+- S14: "user-sim runs no suite" did not fit a slice whose story is the suite; the foreman made a
+  one-off exception. Minor: `App::start`/`background`/`front` lack doc comments;
+  `ac3_consent_takes_focus` passes a misleading `("WATANE_DRIVER_SCREEN","hidden")` to `App::front`.
 
 ## Digest
 
@@ -302,3 +288,5 @@ The human may veto each one.
   `serve`; her book survives a page change; the agent reads the list over MCP (J1 passes).
 - S10: Alice starts `watane-app --home <dir>` and sees an empty launcher with her two mark words;
   mod windows are sealed (109 hostile attacks, 0 allowed); every request goes through the consent view.
+- S14: `cargo test --features driver` in `app/` shows no window, no Dock icon and takes no focus;
+  the 4 front tests run with `--include-ignored` once the human is idle 30 s.
