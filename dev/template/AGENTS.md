@@ -75,7 +75,8 @@ the page's look is for the person.
 
 `serve --json` gives `result.mcp.url` and `result.mcp.token`; send `Authorization: Bearer <token>`.
 The token changes when a new preview starts (after `serve --stop`, or a restart);
-update the config then.
+update the config then (Claude Code: `claude mcp remove {{slug}}`, then add it again).
+A harness reads its MCP config when a session starts.
 
 Claude Code:
 ```sh

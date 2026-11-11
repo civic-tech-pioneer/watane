@@ -141,6 +141,8 @@ mod tests {
             "serve --stop",
             "restart",
             "update the config",
+            "claude mcp remove reading-list",
+            "when a session starts",
             "claude mcp add --transport http reading-list <mcp url> --header \"Authorization: Bearer <token>\"",
             "claude -p",
             "--allowedTools \"mcp__reading-list\"",
