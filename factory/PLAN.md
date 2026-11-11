@@ -27,19 +27,7 @@ is in step 2.
 
 Step 2 (Run together, J2).
 
-- [~] **S10 Alice opens the app.** (branch `slice/s10`; foreman: see `Foremen`) App stage A,
-  against a fake catalog. Alice starts the app on a new home and sees an empty launcher with her
-  two mark words; mod windows open from the launcher, and the consent view guards every request.
-  - Outcomes (user-sim, `cargo test --features driver` on macOS and by hand):
-    1. S1 empty start: no mod entry, two mark words in the header, `<home>/mods/` empty.
-    2. S3 deny, S4 approve delay (800 ms), S5 consent stays above mod windows.
-    3. S6 the `hostile` fixture page reaches no app or plugin command, opens no window, leaves
-       its origin never; S7 fresh localStorage per window; S8 disable closes the window.
-    4. `cargo build --release --features driver` fails (no driver in a release).
-  - Touches: new `app/` crate (and its member line in the root `Cargo.toml`; `Cargo.lock`).
-  - Interfaces it creates: `Core` (fake now, host in stage B), the consent `Broker`.
-  - Fakes: the catalog via `WATANE_APP_FAKE`, fixture pages served by `tests/support` (app 12).
-  - Leaves out: stage B (real host, S2, S2b, S9 on), stage F (Linux), a bundle.
+- [x] **S10 Alice opens the app.** Delivered 2026-11-11 (main `da54bb4`). Sol runs: S10-1 1, S10-2 1, S10-3 1, S10-4 1.
 - [~] **S11 The recommendations mod calls the reading list.** (branch `slice/s11`; foreman: see `Foremen`) In a preview: the agent runs
   `watane-dev add ../reading-list` in `recommendations`, writes a call and a subscription, tests
   with a fake and a `deliver` step, and `serve`s both; adding a book in one page shows in the
@@ -74,6 +62,9 @@ Step 2 (Run together, J2).
   - Touches: app (`core.rs` on host, `HostConfirm`, `words.rs`, delete `fake.rs`), host stage 5
     (catalog plan, grants, remove), dev `install` (DEV-S-27 to 29, `fake-watane`). Waits for S10
     and S11; may be cut into an app part and a host part once those land.
+  - Also (S10 user-sim): the main page polls on focus and every 2 s (app 7); "No mods yet" in an
+    empty launcher; a disabled mod says so; opening an open mod while consent shows must not
+    steal its focus; `ready` reports the real port.
 
 ## Stage coverage
 
@@ -103,7 +94,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | open |
 | dev | 7 publish | 3 | open |
-| app | A shell | 2 | open (S10) |
+| app | A shell | 2 | done (S10) |
 | app | B host | 2 | open |
 | app | F Linux | 2 | open |
 | app | C dist | 3 | open |
@@ -124,7 +115,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8` (stopped, removed).
 - S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6` (stopped, removed).
 - S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9` (stopped, removed).
-- S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10`.
+- S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10` (stopped, removed).
 - S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -185,6 +176,11 @@ The human may veto each one.
 - S6: doctor's `next` is `watane-dev new <slug> --json` with no gaps, else `watane-dev doctor --json`;
   a missing vendor folder's fix is `<abs dev>/scripts/vendor.sh` in doctor, `test` and `serve`.
 - S6: a refused `serve` warns `preview.previous` when a preview of that folder still answers.
+- S10: `mod_disable` moved into stage A (fake Core) so app S8 is testable now.
+- S10: `Info.plist` has an ATS exception for `localhost` and its subdomains (insecure HTTP only, no
+  arbitrary loads); without it macOS loads no mod page. host Q10 verified for WKWebView (`::1`
+  works); WebKitGTK still open (stage F).
+- S10: the consent window's `Destroyed` handler denies and reopens off the main thread.
 
 ## Friction
 
@@ -234,6 +230,12 @@ The human may veto each one.
   as "differs from this watane-dev"; `mod.invalid` WIT errors have `line: null`; doctor's text mode
   prints raw JSON; a raw `/call` without `args` is `bad_request`; headless Chrome hung on the
   page's open `/events`, so the form was not driven.
+- S10: Sol's sandbox has no GUI session; app window tests run only in the validator, which found
+  the real bugs (ATS, consent reopen). App briefs must say so.
+- S10: window tests get focus only while the terminal is in front (macOS 27); unattended runs can
+  time out on app S3 to S5.
+- S10: Tauri embeds `Info.plist` without a rebuild trigger; a `cargo clean -p watane-app` dropped
+  2.5 GiB of the shared `target/`.
 
 ## Digest
 
@@ -257,3 +259,5 @@ The human may veto each one.
   real `watane`; hostile pages are refused; `watane --home D` runs a participant home.
 - S6: Alice's agent runs `doctor`, builds her reading list with `new`, `test`, a contract fix and
   `serve`; her book survives a page change; the agent reads the list over MCP (J1 passes).
+- S10: Alice starts `watane-app --home <dir>` and sees an empty launcher with her two mark words;
+  mod windows are sealed (109 hostile attacks, 0 allowed); every request goes through the consent view.
