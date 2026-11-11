@@ -1,1 +1,10 @@
-<!doctype html><html><head><meta charset="utf-8"><title>watane</title><link rel="stylesheet" href="style.css"></head><body><header><span class="mark"></span></header><main id="launcher"></main><p id="error" role="alert"></p><script type="module" src="app.js"></script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><title>watane</title><link rel="stylesheet" href="style.css"></head><body>
+<header><span class="mark"></span><button id="install">Install folders</button></header>
+<main id="launcher"></main>
+<section id="agents"><h2>Agents</h2>
+<label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button id="save-toolset">Save toolset</button><div id="toolsets"></div>
+<label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button id="issue-token">Issue token</button>
+<dialog id="token-dialog"><p>Copy this token now. It is shown only here.</p><pre id="token-secret"></pre><p id="mcp-url"></p><button id="copy-token">Copy token</button><button id="close-token">Done</button></dialog><div id="tokens"></div>
+</section>
+<dialog id="remove-dialog"><p></p><button id="keep-data" autofocus>Keep data</button><button id="delete-data">Delete data</button></dialog>
+<p id="error" role="alert"></p><script type="module" src="app.js"></script></body></html>

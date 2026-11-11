@@ -59,7 +59,9 @@ pub(crate) fn open_mod(
 ) -> Result<(), CmdError> {
     let label = format!("mod-{local}");
     if let Some(w) = app.get_webview_window(&label) {
-        focus(&w, false)?;
+        if app.state::<AppState>().broker.current().is_none() {
+            focus(&w, false)?;
+        }
         return Ok(());
     }
     let url: tauri::Url = page

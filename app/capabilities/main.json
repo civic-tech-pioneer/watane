@@ -7,6 +7,17 @@
     "allow-status",
     "allow-mods-list",
     "allow-mod-open",
-    "allow-mod-disable"
+    "allow-mod-disable",
+    "allow-mod-enable",
+    "allow-mod-remove",
+    "allow-grant-withdraw",
+    "allow-grant-give",
+    "allow-install-folders",
+    "allow-tools-list",
+    "allow-toolsets-list",
+    "allow-toolset-save",
+    "allow-tokens-list",
+    "allow-token-issue",
+    "allow-token-end"
   ]
 }

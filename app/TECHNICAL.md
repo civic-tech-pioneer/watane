@@ -173,7 +173,7 @@ The app creates every window in code (`app.windows` is empty).
 
 `views::open_mod(app, local, page, title)`:
 
-- If the label exists: `set_focus()` and return (APP-F-7).
+- If the label exists: `set_focus()` unless a consent request is open, then return (APP-F-7, APP-F-14).
 - Else `WebviewWindowBuilder::new(app, "mod-<local>", WebviewUrl::External(page))` with:
   - `.title("<mod name> — <party or 'local'>")` (APP-F-6). Never register
     `on_document_title_changed`.
@@ -514,7 +514,7 @@ authority. `watane-dev new --from` and `add <release>` use it.
 
 ```rust
 pub(crate) struct Parties(std::sync::RwLock<HashMap<String, Party>>);  // key text -> Party
-pub(crate) struct HostConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties> } // impl watane_host::Confirm
+pub(crate) struct HostConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties>, pub host: OnceLock<Weak<Host>> } // impl watane_host::Confirm
 pub(crate) struct DistConfirm(pub Arc<Broker>);                                      // impl watane_dist::Confirm
 ```
 
@@ -522,6 +522,8 @@ pub(crate) struct DistConfirm(pub Arc<Broker>);                                 
   fingerprint. Core fills it from `dist.own()` and `dist.followed()` at
   start and after each follow, refresh and set_name. It never blocks on
   dist, so HostConfirm can read it while dist waits for a signature.
+- HostConfirm receives a weak host reference immediately after `Host::open`,
+  avoiding a host/confirmation reference cycle while resolving installed providers.
 - `HostConfirm::install(InstallRequest { entries, requester })` (also an
   update with new grants) gives `Request::Install` (`by_program` for
   `Requester::LocalApi`), one `PlanMod` per `PlanEntry` in order:
@@ -674,8 +676,9 @@ script from the test listener; `window.open`; a navigation to
 Fixtures `tests/fixtures/reading-list` and `tests/fixtures/recommendations`
 are mod folders like those of pkg's acceptance A2 (`recommendations` calls
 and subscribes to `reading-list`). The `recommendations` page shows
-`not granted` when its call fails with that code. The test support builds
-them with `watane-dev test` from `../dev`.
+`not granted` when its call fails with that code. Built `logic.wasm` files are
+committed alongside the fixtures. `tests/fixtures/build.sh` builds them manually
+from `tests/fixtures/src/`; no test builds a mod or reads `dev/`.
 
 Never weaken a test. If a fact changes (for example after a Tauri update),
 record it in `NOTES.md` with the old and the new result.
@@ -685,7 +688,7 @@ record it in `NOTES.md` with the old and the new result.
 | Stage | Builds | Needs | Fake until then | Done when |
 |---|---|---|---|---|
 | A Shell | sections 1, 3 (no host), 5, 6, 7 (stage A rows), 10, 14; `ui/`; unit, static, `gui_shell`, `gui_isolation` | nothing | `src/fake.rs`: Core reads a catalog from env `WATANE_APP_FAKE` (JSON `{"mods": [ModView]}`); `tests/support` serves the fixture pages on `http://<local>.localhost:<port>` (127.0.0.1 and ::1) with the stand-in CSP `default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'`; requests come from the driver's `ask`; `--home` is required and `--port` defaults to 0 | `cargo test --features driver` passes S1 and S3 to S8 on macOS |
-| B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | if dev is late: the test support builds the fixtures with `cargo build --target wasm32-wasip2` | J2 passes; S6 to S8 pass against the real host |
+| B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
 | D Find (sketch) | 8.2, APP-F-38 to APP-F-40 | dist step 4 | — | J4 passes |
 | E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
@@ -828,7 +831,8 @@ Fetched`; the types `Confirm`, `Decision`, `SignRequest`, `Statement`,
 `EntryId`, `Entry` (`bytes()`), `Package` (`as_bytes()`), `Release`.
 **Asked of dist**: the re-export of `watane_pkg::ReleaseRef`.
 
-From **dev**: `watane-dev test <folder>` builds a fixture mod (tests only).
+Fixture sources originate in **dev**, copied into `tests/fixtures/`; app tests
+use their committed components and never invoke dev or build a mod.
 
 ## 16. Questions for spec/
 

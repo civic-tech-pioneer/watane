@@ -12,11 +12,10 @@
     report.storageBefore = null;
   }
 
-  const query = new URLSearchParams(location.search);
-  const listener = `http://127.0.0.1:${query.get("listener")}`;
+  const listener = `http://127.0.0.1:${window.fixtureListener}`;
   const targets = {
     tauri: "tauri://localhost/index.html",
-    api: `http://localhost:${query.get("api")}/api/`,
+    api: `http://localhost:${location.port}/api/`,
     other: `http://other.localhost:${location.port}/`,
     listener: `${listener}/fetch`
   };

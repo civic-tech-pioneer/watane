@@ -4,6 +4,8 @@ mod pages;
 use pages::{Listener, Pages};
 use std::{fs, path::Path, time::Duration};
 
+static NET: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const CSP: &str = "default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'";
 
 fn client() -> reqwest::blocking::Client {
@@ -20,6 +22,7 @@ fn fixtures() -> &'static Path {
 
 #[test]
 fn ac1_pages_serve_each_origin_on_both_loopbacks() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     for local in ["hostile", "other"] {
         fs::create_dir(dir.path().join(local)).unwrap();
@@ -50,6 +53,7 @@ fn ac1_pages_serve_each_origin_on_both_loopbacks() {
 
 #[test]
 fn ac2_csp_on_success_and_not_found_and_strict_host_routing() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     let pages = Pages::start(fixtures());
     let url = format!("http://127.0.0.1:{}/", pages.port);
     for (host, status) in [
@@ -77,6 +81,7 @@ fn ac2_csp_on_success_and_not_found_and_strict_host_routing() {
 
 #[test]
 fn ac3_listener_counts_connections_and_stops_on_drop() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     let listener = Listener::start();
     assert_eq!(listener.count(), 0);
     for count in 1..=2 {
@@ -116,6 +121,7 @@ fn ac3_listener_counts_connections_and_stops_on_drop() {
 
 #[test]
 fn ac4_hostile_external_script_reports_every_attack_before_navigation() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     let pages = Pages::start(fixtures());
     let get = |path: &str| {
         client()
@@ -126,7 +132,8 @@ fn ac4_hostile_external_script_reports_every_attack_before_navigation() {
     };
     let html = get("").text().unwrap();
     assert!(html.contains("<script src=\"hostile.js\" defer></script>"));
-    assert_eq!(html.matches("<script").count(), 1);
+    assert_eq!(html.matches("<script").count(), 2);
+    assert!(html.contains("<script src=\"config.js\"></script>"));
     let response = get("hostile.js");
     assert_eq!(response.status(), 200);
     assert!(
@@ -160,7 +167,7 @@ fn ac4_hostile_external_script_reports_every_attack_before_navigation() {
 
 #[test]
 fn ac5_script_names_all_app_and_plugin_commands() {
-    let script = fs::read_to_string(fixtures().join("hostile/hostile.js")).unwrap();
+    let script = fs::read_to_string(fixtures().join("hostile/ui/hostile.js")).unwrap();
     for command in [
         "status",
         "mods_list",
@@ -216,6 +223,7 @@ async function run(allowed, before, missing = false) {
     WebSocket: class { constructor(url) { calls.push(url); if (allowed) setTimeout(() => this.onopen?.(), 0); } close() {} },
   };
   context.window = context;
+  context.fixtureListener = 12345;
   context.location = { search: '?listener=12345&api=23456', port: '23456',
     set href(url) { assert.equal(context.__report.done, true); navigations.push(url); } };
   context.open = url => { calls.push(url); return allowed ? {} : null; };

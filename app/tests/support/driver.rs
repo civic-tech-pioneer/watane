@@ -98,7 +98,6 @@ impl App {
     fn spawn(home: &Path, env: &[(&str, &str)], screen: &str) -> App {
         let mut child = Command::new(env!("CARGO_BIN_EXE_watane-app"))
             .args(["--home", home.to_str().unwrap(), "--port", "0"])
-            .env_remove("WATANE_APP_FAKE")
             .envs(env.iter().copied())
             .env("WATANE_DRIVER_SCREEN", screen)
             .stdin(Stdio::piped())
@@ -181,6 +180,10 @@ impl App {
     }
     pub fn close(&self, label: &str) {
         self.call(json!({"op":"close","label":label}));
+    }
+    #[allow(dead_code)]
+    pub fn pick(&self, paths: &[PathBuf]) {
+        assert_eq!(self.call(json!({"op":"pick", "paths":paths})), true);
     }
     pub fn log(&self) -> Value {
         self.call(json!({"op":"log"}))

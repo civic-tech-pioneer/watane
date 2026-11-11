@@ -33,6 +33,7 @@ impl Screen {
 }
 #[derive(Default)]
 pub(crate) struct DriverState {
+    pub pick: Mutex<Option<Vec<std::path::PathBuf>>>,
     pages: Mutex<HashSet<String>>,
     changed: Condvar,
     commands: Mutex<Vec<Value>>,
@@ -120,7 +121,9 @@ pub(crate) fn start(app: tauri::AppHandle) {
             if let Some(cause) = state.failed.get() {
                 output(json!({"event":"failed","cause":cause}));
             } else {
-                output(json!({"event":"ready","port":state.port}));
+                output(
+                    json!({"event":"ready","port":state.core.get().map_or(state.port, |c| c.port())}),
+                );
             }
         } else {
             output(json!({"event":"failed","cause":"main page load timed out"}));
@@ -186,6 +189,12 @@ pub(crate) fn start(app: tauri::AppHandle) {
 fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match field(v, "op")? {
+        "pick" => {
+            let paths: Vec<std::path::PathBuf> =
+                serde_json::from_value(v["paths"].clone()).map_err(|e| e.to_string())?;
+            *state.driver.pick.lock().unwrap() = Some(paths);
+            Ok(json!(true))
+        }
         "wait" => {
             let label = field(v, "label")?;
             let timeout = Duration::from_millis(v["timeoutMs"].as_u64().unwrap_or(30000));

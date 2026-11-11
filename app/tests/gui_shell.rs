@@ -2,7 +2,10 @@
 mod support;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
-use support::driver::App;
+use support::{
+    driver::App,
+    journey::{approve, begin_install, copy_dir, fixture, installed},
+};
 static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const TIMEOUT: Duration = Duration::from_secs(30);
 fn until(app: &App, label: &str, js: &str) {
@@ -38,13 +41,23 @@ fn ac1_new_home_has_empty_launcher_and_mark() {
                 .next()
                 .is_none()
     );
-    assert_eq!(app.port, 0);
+    assert_eq!(
+        app.eval("main", "document.body.textContent.includes('No mods yet')"),
+        true
+    );
+    assert_ne!(app.port, 0);
+    let response = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(TIMEOUT)
+        .build()
+        .unwrap()
+        .get(format!("http://localhost:{}/api/status", app.port))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 200);
     assert!(app.quit().success());
 }
 
-fn mod_view(local: &str, name: &str, page: Value) -> Value {
-    json!({"local":local,"name":name,"slug":local,"version":"1.2.3","release":null,"publisher":null,"enabled":true,"page":page,"package":"abc","derivedFrom":null,"error":null,"grants":[]})
-}
 fn install(name: &str) -> Value {
     json!({"kind":"install","by_program":false,"mods":[{"local":"books","name":name,"slug":"books","version":"1.2.3","release":null,"publisher":null,"replaces":null,"grants":[],"uses":[]}]})
 }
@@ -61,37 +74,55 @@ fn consent(app: &App) {
         0
     );
 }
-fn books_page() -> String {
-    // Serve a tiny page here; the shared page fixture belongs to S10-2.
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!(
-        "http://127.0.0.1:{}/",
-        listener.local_addr().unwrap().port()
-    );
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let mut stream = stream.unwrap();
-            let mut buf = [0; 4096];
-            let _ = stream.read(&mut buf);
-            let body = "<!doctype html><title>Books</title><p>Books page</p>";
-            let _ = write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-        }
-    });
-    url
+fn install_books(app: &App, name: &str, with_logic: bool) {
+    let copied = tempfile::tempdir().unwrap();
+    let books = copied.path().join("books");
+    std::fs::create_dir_all(books.join("wit")).unwrap();
+    std::fs::create_dir(books.join("ui")).unwrap();
+    std::fs::write(
+        books.join("mod.toml"),
+        format!(
+            "name = {}\nsummary = \"Books fixture\"\n",
+            serde_json::to_string(name).unwrap()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        books.join("wit/world.wit"),
+        "package mods:books@1.2.3; world books {} ",
+    )
+    .unwrap();
+    std::fs::write(
+        books.join("ui/index.html"),
+        "<!doctype html><title>Books</title><p>Books page</p>",
+    )
+    .unwrap();
+    let mut paths = vec![books];
+    if with_logic {
+        let logic = copied.path().join("logic");
+        copy_dir(&fixture("reading-list"), &logic);
+        std::fs::remove_dir_all(logic.join("ui")).unwrap();
+        std::fs::write(
+            logic.join("mod.toml"),
+            "name = \"Logic\"\nsummary = \"Logic fixture\"\n",
+        )
+        .unwrap();
+        paths.push(logic);
+    }
+    begin_install(app, &paths);
+    approve(app);
+    installed(app, "books");
+    if with_logic {
+        installed(app, "reading-list");
+    }
 }
 #[test]
-fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
+fn ac2_real_catalog_opens_one_window_and_no_page_is_not_found() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
-    let url = books_page();
     let home = tempfile::tempdir().unwrap();
-    let fake=json!({"mods":[mod_view("books","Books",json!(url)),mod_view("logic","Logic",Value::Null)]}).to_string();
-    let app = App::start(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    let app = App::start(home.path(), &[]);
+    install_books(&app, "Books", true);
+    let url = format!("http://books.localhost:{}/", app.port);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     assert_eq!(
         app.eval(
@@ -103,7 +134,7 @@ fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local=logic] button.open') === null"
+            "document.querySelector('[data-local=reading-list] button.open') === null"
         ),
         true
     );
@@ -130,7 +161,7 @@ fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
         windows.iter().find(|w| w["label"] == "mod-books").unwrap()["focused"],
         false
     );
-    app.eval("main","window.__TAURI_INTERNALS__.invoke('mod_open',{local:'logic'}).catch(e=>{document.body.dataset.code=e.code}); null");
+    app.eval("main","window.__TAURI_INTERNALS__.invoke('mod_open',{local:'reading-list'}).catch(e=>{document.body.dataset.code=e.code}); null");
     until(&app, "main", "document.body.dataset.code === 'not_found'");
     app.eval(
         "main",
@@ -347,8 +378,8 @@ fn ac7_untrusted_name_is_literal_text() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let name = "<img src=x onerror=alert(1)>";
     let home = tempfile::tempdir().unwrap();
-    let fake = json!({"mods":[mod_view("evil",name,Value::Null)]}).to_string();
-    let app = App::start(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    let app = App::start(home.path(), &[]);
+    install_books(&app, name, false);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     assert_eq!(
         app.eval(
@@ -423,9 +454,8 @@ fn ac2_background_screen_is_visible_without_focus() {
 fn ac3_reopening_an_open_mod_focuses_it() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let url = books_page();
-    let fake = json!({"mods":[mod_view("books","Books",json!(url))]}).to_string();
-    let app = App::front(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    let app = App::front(home.path(), &[]);
+    install_books(&app, "Books", false);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     app.eval(
         "main",

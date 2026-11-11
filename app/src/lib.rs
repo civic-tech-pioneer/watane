@@ -1,12 +1,14 @@
 #[cfg(all(feature = "driver", not(debug_assertions)))]
 compile_error!("the driver feature is only for debug test builds");
 mod commands;
+mod confirm;
 pub mod consent;
 mod core;
 #[cfg(feature = "driver")]
 mod driver;
 pub mod mark;
 mod views;
+pub mod words;
 use consent::{AskId, Broker};
 use std::{
     path::PathBuf,
@@ -17,6 +19,8 @@ use tauri::Manager;
 pub enum AppError {
     #[error("bad argument: {0}")]
     Args(String),
+    #[error(transparent)]
+    Host(#[from] watane_host::HostError),
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
 }
@@ -43,6 +47,18 @@ impl From<tauri::Error> for CmdError {
             cause = error.source();
         }
         Self::new("io", message)
+    }
+}
+impl From<watane_host::HostError> for CmdError {
+    fn from(e: watane_host::HostError) -> Self {
+        let mut message = e.to_string();
+        let mut cause = std::error::Error::source(&e);
+        while let Some(error) = cause {
+            message.push_str(": ");
+            message.push_str(&error.to_string());
+            cause = error.source();
+        }
+        Self::new(e.code(), message)
     }
 }
 pub struct Config {
@@ -95,7 +111,27 @@ pub(crate) struct AppState {
     screen: driver::Screen,
 }
 pub fn run(config: Config) -> Result<(), AppError> {
-    let mark = mark::read_or_create(&config.home);
+    let broker = Broker::new();
+    let parties = Arc::new(words::Parties::new());
+    let confirm = Arc::new(confirm::HostConfirm {
+        broker: broker.clone(),
+        parties: parties.clone(),
+        host: OnceLock::new(),
+    });
+    let host = watane_host::Host::open(
+        &config.home,
+        watane_host::Mode::Home {
+            app: Some(confirm.clone()),
+        },
+        watane_host::Limits::default(),
+    );
+    if let Ok(host) = &host {
+        let _ = confirm.host.set(Arc::downgrade(host));
+    }
+    let mark = match &host {
+        Ok(_) => mark::read_or_create(&config.home).map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    };
     let failed = OnceLock::new();
     if let Err(e) = &mark {
         let _ = failed.set(format!("cannot open home {}: {e}", config.home.display()));
@@ -105,7 +141,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         port: config.port,
         mark: mark.ok(),
         failed,
-        broker: Broker::new(),
+        broker,
         core: OnceLock::new(),
         consent_id: Mutex::new(None),
         #[cfg(feature = "driver")]
@@ -113,7 +149,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         #[cfg(feature = "driver")]
         screen: driver::Screen::from_env(),
     };
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
     #[cfg(all(feature = "driver", target_os = "macos"))]
     let builder = builder.activate_ignoring_other_apps(state.screen == driver::Screen::Front);
     let app = builder
@@ -123,10 +159,21 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::mods_list,
             commands::mod_open,
             commands::mod_disable,
+            commands::mod_enable,
+            commands::mod_remove,
+            commands::grant_withdraw,
+            commands::grant_give,
+            commands::install_folders,
+            commands::tools_list,
+            commands::toolsets_list,
+            commands::toolset_save,
+            commands::tokens_list,
+            commands::token_issue,
+            commands::token_end,
             commands::consent_get,
             commands::consent_answer
         ])
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(all(feature = "driver", target_os = "macos"))]
             if app.state::<AppState>().screen != driver::Screen::Front {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -134,12 +181,22 @@ pub fn run(config: Config) -> Result<(), AppError> {
             let h = app.handle().clone();
             let state = h.state::<AppState>();
             if state.failed.get().is_none() {
-                match core::Core::new(h.clone()) {
-                    Ok(core) => {
-                        let _ = state.core.set(core);
-                    }
+                match host {
+                    Ok(host) => match tauri::async_runtime::block_on(
+                        host.serve(config.port, axum::Router::new()),
+                    ) {
+                        Ok(served) => {
+                            let _ =
+                                state
+                                    .core
+                                    .set(core::Core::new(h.clone(), host, served, parties));
+                        }
+                        Err(e) => {
+                            let _ = state.failed.set(e.to_string());
+                        }
+                    },
                     Err(e) => {
-                        let _ = state.failed.set(e.message);
+                        let _ = state.failed.set(e.to_string());
                     }
                 }
             }
@@ -160,6 +217,14 @@ pub fn run(config: Config) -> Result<(), AppError> {
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
         ) {
             h.state::<AppState>().broker.deny_all();
+        }
+        if matches!(event, tauri::RunEvent::Exit)
+            && let Some(core) = h.state::<AppState>().core.get()
+        {
+            let served = core.served.lock().unwrap().take();
+            if let Some(served) = served {
+                tauri::async_runtime::block_on(served.shutdown());
+            }
         }
     });
     Ok(())

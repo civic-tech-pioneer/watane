@@ -99,6 +99,11 @@ async fn page(State((dir, port)): State<(PathBuf, u16)>, request: Request) -> Re
     let mut response = if let Some(local) = local {
         let folder = dir.join(local);
         if folder.is_dir() {
+            let folder = if folder.join("ui").is_dir() {
+                folder.join("ui")
+            } else {
+                folder
+            };
             ServeDir::new(folder)
                 .oneshot(request)
                 .await

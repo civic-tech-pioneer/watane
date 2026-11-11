@@ -8,7 +8,8 @@ use std::{
 };
 use support::{
     driver::App,
-    pages::{Listener, Pages},
+    journey::{approve, begin_install, copy_dir, installed},
+    pages::Listener,
 };
 
 static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -30,27 +31,21 @@ fn until(app: &App, label: &str, js: &str) {
     }
 }
 
-fn catalog(pages: &Pages, listener: &Listener) -> String {
-    let page = format!(
-        "{}?listener={}&api={}",
-        pages.url("hostile"),
-        listener.port,
-        pages.port
-    );
-    json!({"mods":[{
-        "local":"hostile", "name":"Hostile", "slug":"hostile", "version":"0.1.0",
-        "release":null, "publisher":null, "enabled":true, "page":page,
-        "package":"hostile-fixture", "derivedFrom":null, "error":null, "grants":[]
-    }]})
-    .to_string()
+fn install_hostile(app: &App, listener: &Listener) {
+    let copied = tempfile::tempdir().unwrap();
+    copy_dir(&fixtures().join("hostile"), copied.path());
+    std::fs::write(
+        copied.path().join("ui/config.js"),
+        format!("window.fixtureListener = {};", listener.port),
+    )
+    .unwrap();
+    begin_install(app, &[copied.path().to_path_buf()]);
+    approve(app);
+    installed(app, "hostile");
 }
-
-fn start(home: &Path, pages: &Pages, listener: &Listener) -> App {
-    let fake = catalog(pages, listener);
-    let app = App::start(home, &[("WATANE_APP_FAKE", &fake)]);
-    assert!(app.wait("main", TIMEOUT));
-    until(&app, "main", "document.body.dataset.ready === 'true'");
-    open(&app);
+fn start(home: &Path, listener: &Listener) -> App {
+    let app = App::start(home, &[]);
+    install_hostile(&app, listener);
     app
 }
 
@@ -84,10 +79,9 @@ fn ac1_consent_stays_above_hostile_and_takes_focus() {
             .contains(".visible_on_all_workspaces(true)")
     );
     let home = tempfile::tempdir().unwrap();
-    let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let fake = catalog(&pages, &listener);
-    let app = App::front(home.path(), &[("WATANE_APP_FAKE", &fake)]);
+    let app = App::front(home.path(), &[]);
+    install_hostile(&app, &listener);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     open(&app);
     let ask = app.ask(json!({"kind":"install", "by_program":false, "mods":[]}));
@@ -107,6 +101,15 @@ fn ac1_consent_stays_above_hostile_and_takes_focus() {
         false
     );
     assert!(ask.is_open());
+    // Reopening an existing page must preserve the consent window's focus.
+    support::journey::invoke(&app, "mod_open", json!({"local":"hostile"}));
+    assert_eq!(
+        app.windows()
+            .iter()
+            .find(|w| w["label"] == "consent")
+            .unwrap()["focused"],
+        consent["focused"]
+    );
     app.close("consent");
     assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
     assert!(app.quit().success());
@@ -121,29 +124,37 @@ fn report(app: &App) -> Value {
     app.eval(MOD, "window.__report")
 }
 
-// Since the baseline has no entries, any added descendant must also add an
-// immediate child. Comparing these lists proves the whole tree stayed empty.
-fn mods_entries(home: &Path) -> Option<Vec<std::ffi::OsString>> {
-    match std::fs::read_dir(home.join("mods")) {
-        Ok(entries) => {
-            let mut entries: Vec<_> = entries.map(|e| e.unwrap().file_name()).collect();
-            entries.sort();
-            Some(entries)
+fn mods_entries(home: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    fn walk(
+        root: &Path,
+        path: &Path,
+        tree: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+    ) {
+        for entry in std::fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, tree);
+            } else {
+                tree.insert(
+                    path.strip_prefix(root).unwrap().into(),
+                    std::fs::read(&path).unwrap(),
+                );
+            }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => panic!("read mods tree: {e}"),
     }
+    let mut tree = std::collections::BTreeMap::new();
+    walk(&home.join("mods"), &home.join("mods"), &mut tree);
+    tree
 }
 
 #[test]
 fn ac2_hostile_attacks_are_refused_without_side_effects() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let before = mods_entries(home.path());
-    assert!(before.as_ref().is_none_or(Vec::is_empty));
-    let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let app = start(home.path(), &pages, &listener);
+    let app = start(home.path(), &listener);
+    let before = mods_entries(home.path());
+    open(&app);
     let report = report(&app);
     let attacks = report["attacks"].as_array().unwrap();
     assert_eq!(attacks.len(), 109, "incomplete hostile report: {report}");
@@ -198,7 +209,7 @@ fn ac2_hostile_attacks_are_refused_without_side_effects() {
             .unwrap()
             .origin()
             .ascii_serialization(),
-        format!("http://hostile.localhost:{}", pages.port)
+        format!("http://hostile.localhost:{}", app.port)
     );
     assert_eq!(
         listener.count(),
@@ -217,9 +228,9 @@ fn ac2_hostile_attacks_are_refused_without_side_effects() {
 fn ac3_reopened_hostile_window_has_fresh_storage() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let app = start(home.path(), &pages, &listener);
+    let app = start(home.path(), &listener);
+    open(&app);
     assert_eq!(report(&app)["storageBefore"], Value::Null);
     assert_eq!(
         app.eval(MOD, "localStorage.getItem('hostile') !== null"),
@@ -241,9 +252,9 @@ fn ac3_reopened_hostile_window_has_fresh_storage() {
 fn ac4_disabling_hostile_closes_window_and_disables_catalog_entry() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let app = start(home.path(), &pages, &listener);
+    let app = start(home.path(), &listener);
+    open(&app);
     report(&app);
     assert!(app.windows().iter().any(|w| w["label"] == MOD));
     app.eval(
@@ -289,9 +300,9 @@ fn ac1_hidden_consent_retains_topmost_configuration() {
             .contains(".visible_on_all_workspaces(true)")
     );
     let home = tempfile::tempdir().unwrap();
-    let pages = Pages::start(fixtures());
     let listener = Listener::start();
-    let app = start(home.path(), &pages, &listener);
+    let app = start(home.path(), &listener);
+    open(&app);
     let ask = app.ask(json!({"kind":"install", "by_program":false, "mods":[]}));
     assert!(app.wait("consent", TIMEOUT));
     until(&app, "consent", "document.body.dataset.ready === 'true'");
