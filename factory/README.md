@@ -51,7 +51,7 @@ parallel worktrees, and Opus reviewing and merging each one.
 | The "tripwire": stop when a fix needs a new mechanism | Implementer stops on costly-to-undo choices |
 | One line per friction; act at three | `Friction` in `PLAN.md` |
 | The adversary (found about 8 security defects) | Not yet. Add one run per step that touches a boundary (host sandbox, consent, signatures) |
-| Mutation tests (they killed real mutants) | Not yet. Add `cargo mutants --in-diff` to the validator if weak tests slip through |
+| Mutation tests (they killed real mutants) | Weekly on `pkg` (`.github/workflows/mutants.yml`, about 20-30 min). Add `cargo mutants --in-diff` (about 1 min) to the validator if weak tests slip through |
 | Seatbelt profile for Sol | Not needed while watane has no iroh; Codex's own sandbox plus network and the cargo home |
 
 Dropped: OpenSpec, beads, the lineage checker, the gate, the council, the navigator, the tuner,

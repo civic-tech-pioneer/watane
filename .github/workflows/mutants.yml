@@ -1,0 +1,46 @@
+# Weekly mutation testing: changes pkg's code in small ways and checks that a test fails.
+# A full run takes about 20-30 minutes, too slow for every push.
+name: mutants
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pkg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cargo-mutants --locked --version 27.1.0
+      - name: cargo mutants -p watane-pkg
+        # Exit 2 (missed) and 3 (timeout) are findings for the report, not a broken run.
+        run: |
+          set +e
+          cargo mutants -p watane-pkg --no-shuffle
+          code=$?
+          {
+            echo "## Mutation testing: watane-pkg"
+            for f in caught missed timeout unviable; do
+              echo "- $f: $(wc -l < mutants.out/$f.txt 2>/dev/null || echo 0)"
+            done
+            echo
+            echo "### Missed (no test failed)"
+            echo '```'
+            cat mutants.out/missed.txt
+            echo '```'
+            echo "### Timeouts"
+            echo '```'
+            cat mutants.out/timeout.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" -eq 0 ] || [ "$code" -eq 2 ] || [ "$code" -eq 3 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-pkg
+          path: mutants.out
