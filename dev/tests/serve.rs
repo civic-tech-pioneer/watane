@@ -347,6 +347,19 @@ fn edited_counter() -> (Mod, Value, Vec<u8>) {
         source.replace("count.saturating_add(1)", "count.saturating_add(10)"),
     )
     .unwrap();
+    // As a maker would, update the unit and contract tests to the new logic.
+    let source = fs::read_to_string(&logic).unwrap();
+    assert_eq!(source.matches("assert_eq!(next(0), 1);").count(), 1);
+    fs::write(
+        &logic,
+        source.replace("assert_eq!(next(0), 1);", "assert_eq!(next(0), 10);"),
+    )
+    .unwrap();
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.get","returns":0},{"call":"api.add","returns":10},{"call":"api.add","returns":20}]}"#,
+    )
+    .unwrap();
     let html = fs::read_to_string(m.dir.join("ui/index.html")).unwrap();
     assert!(html.contains("<h1>Hello</h1>"));
     let edited = html

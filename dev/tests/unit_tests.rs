@@ -93,7 +93,19 @@ fn ac1_template_unit_counts_and_pipeline() {
     }
     assert!(v["result"]["check"].is_object());
     assert!(v["result"]["build"].is_object());
-    assert!(v["result"]["contract"].is_null());
+    // Independent oracle: count the steps of the template's contract files with serde_json.
+    let steps: usize = fs::read_dir(f.dir.join("tests"))
+        .unwrap()
+        .map(|entry| {
+            let file: Value =
+                serde_json::from_slice(&fs::read(entry.unwrap().path()).unwrap()).unwrap();
+            file["steps"].as_array().unwrap().len()
+        })
+        .sum();
+    assert!(steps > 0);
+    assert_eq!(v["result"]["contract"]["files"], 1, "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], steps, "{v}");
+    assert_eq!(v["result"]["contract"]["failed"], 0, "{v}");
     assert_eq!(v["next"], "watane-dev serve --json");
 }
 
