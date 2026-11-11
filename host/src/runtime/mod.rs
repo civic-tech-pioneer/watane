@@ -288,6 +288,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let host = Host::open(
             home.path(),
+            crate::Mode::Preview,
             Limits {
                 time: Duration::from_millis(50),
                 ..Limits::default()

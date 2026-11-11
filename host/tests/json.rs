@@ -3,7 +3,7 @@ use watane_host::{CallCode, Caller, Host, Limits, LocalName};
 #[tokio::test]
 async fn ac8_json_rows_round_trip_and_refuse_bad_paths() {
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(
         &[std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/echo")],
         0,

@@ -1,8 +1,9 @@
 use std::{io::Write, path::PathBuf};
-use watane_host::Host;
+use watane_host::{DEFAULT_PORT, Host, Mode, default_home};
 
 struct Args {
-    home: PathBuf,
+    home: Option<PathBuf>,
+    mode: Mode,
     port: u16,
     folders: Vec<PathBuf>,
 }
@@ -14,14 +15,20 @@ fn arguments() -> Result<Option<Args>, &'static str> {
     }
     let mut args = args.into_iter();
     let mut home = None;
+    let mut mode = Mode::Home;
     let mut port = None;
     let mut folders = Vec::new();
     while let Some(arg) = args.next() {
         match arg.to_str() {
-            Some("--preview") if home.is_none() => {
-                let path = args.next().ok_or("--preview needs a directory")?;
+            Some(option @ ("--preview" | "--home")) if home.is_none() => {
+                mode = if option == "--preview" {
+                    Mode::Preview
+                } else {
+                    Mode::Home
+                };
+                let path = args.next().ok_or("home option needs a directory")?;
                 if path.to_str().is_some_and(|s| s.starts_with("--")) {
-                    return Err("--preview needs a directory, not an option");
+                    return Err("home option needs a directory, not an option");
                 }
                 home = Some(PathBuf::from(path));
             }
@@ -46,14 +53,22 @@ fn arguments() -> Result<Option<Args>, &'static str> {
             }
             _ => {
                 return Err(
-                    "use watane --preview <dir> [--port <n>] [--install <folder>] or --version",
+                    "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>], or --version",
                 );
             }
         }
     }
+    if mode == Mode::Home && !folders.is_empty() {
+        return Err("--install requires --preview");
+    }
     Ok(Some(Args {
-        home: home.ok_or("--preview is required in this slice")?,
-        port: port.unwrap_or(0),
+        home,
+        mode,
+        port: port.unwrap_or(if mode == Mode::Preview {
+            0
+        } else {
+            DEFAULT_PORT
+        }),
         folders,
     }))
 }
@@ -87,17 +102,23 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
     use tokio::signal::unix::{SignalKind, signal};
     let mut term = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
-    let host = Host::open(&args.home, watane_host::Limits::default())?;
+    let home = match args.home {
+        Some(home) => home,
+        None => default_home()?,
+    };
+    let host = Host::open(&home, args.mode, watane_host::Limits::default())?;
     let served = host.serve(args.port).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {
         host.install_folders(&args.folders, served.port)?;
     }
-    let preview = watane_host::ToolsetName::parse("preview")?;
-    let token = host.issue_token(&preview, &watane_host::Handle::parse("preview")?)?;
     let mut ready = served.ready();
-    ready.mcp = Some(served.mcp_url(&preview));
-    ready.token = Some(token.as_str().into());
+    if host.is_preview() {
+        let preview = watane_host::ToolsetName::parse("preview")?;
+        let token = host.issue_token(&preview, &watane_host::Handle::parse("preview")?)?;
+        ready.mcp = Some(served.mcp_url(&preview));
+        ready.token = Some(token.as_str().into());
+    }
     println!("{}", serde_json::to_string(&ready)?);
     std::io::stdout().flush()?;
     tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }

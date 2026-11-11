@@ -63,3 +63,4 @@ word for word. Follow their intent, and do not ask whether to.
 - Q20 (host, dev): S5 adds MCP and preview tokens, reserves preview in every home, and defers app toolset management and Harness functions; wit-parser resolves to 0.254.2.
 
 - Q21 (host): S9 rejects repeated Host headers, returns 404 for missing page files on every method, closes HTTP/1 connections after body-size refusals, and marks subscription and revoke hostile probes as step 2.
+- Q22 (host, dev): S9 adds fixed Home and Preview modes, default participant startup, and no-app install refusal; Mode::Home gains its app field with confirmation in step 2.

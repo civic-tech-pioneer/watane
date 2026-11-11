@@ -110,6 +110,7 @@ async fn ac4_call_errors_keep_codes_and_limits_allow_recovery() {
     let home = tempfile::tempdir().unwrap();
     let host = Host::open(
         home.path(),
+        watane_host::Mode::Preview,
         Limits {
             time: Duration::from_millis(200),
             fuel: u64::MAX,

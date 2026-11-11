@@ -55,7 +55,7 @@ async fn setup() -> (
     String,
 ) {
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("counter"), fixture("echo")], 0)
         .unwrap();
     let served = host.serve(0).await.unwrap();

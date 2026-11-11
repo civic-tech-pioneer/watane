@@ -39,7 +39,7 @@ impl Harness {
     /// Installs the built folder alone. Mods that need links are refused.
     pub fn open(built_mod: &Path, fakes: Fakes) -> Result<Self, HostError> {
         let home = TemporaryHome::new()?;
-        let host = Host::open(&home.0, Limits::default())?;
+        let host = Host::open(&home.0, crate::Mode::Preview, Limits::default())?;
         let installed = host.install_folders(&[built_mod.to_path_buf()], 0)?;
         let local = installed
             .into_iter()

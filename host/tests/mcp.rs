@@ -11,7 +11,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 fn setup() -> (tempfile::TempDir, Arc<Host>) {
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("counter"), fixture("echo"), fixture("hello")], 0)
         .unwrap();
     (home, host)
@@ -408,7 +408,7 @@ fn ac7_toolset_grammar_and_persistence() {
         json!({"t":["counter:api"]})
     );
     drop(host);
-    let reopened = Host::open(home.path(), Limits::default()).unwrap();
+    let reopened = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     assert!(
         reopened
             .issue_token(&name("t"), &watane_host::Handle::parse("alice").unwrap())

@@ -27,6 +27,23 @@ use std::{
 };
 pub use watane_pkg;
 
+pub const DEFAULT_PORT: u16 = 47341;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Mode {
+    Home,
+    Preview,
+}
+
+impl Mode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Preview => "preview",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Host {
     home: home::Home,
@@ -41,8 +58,8 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn open(path: &Path, limits: Limits) -> Result<Arc<Self>, HostError> {
-        let home = home::Home::open(path)?;
+    pub fn open(path: &Path, mode: Mode, limits: Limits) -> Result<Arc<Self>, HostError> {
+        let home = home::Home::open(path, mode)?;
         let engine = Arc::new(runtime::engine()?);
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
@@ -153,7 +170,7 @@ impl Host {
         &self.home.path
     }
     pub fn is_preview(&self) -> bool {
-        true
+        self.home.mode == Mode::Preview
     }
 
     pub fn install_folders(
@@ -170,7 +187,8 @@ impl Host {
             .iter()
             .map(|m| (m.identity.clone(), m.package.clone()))
             .collect();
-        let installed = catalog.install(self.home(), folders, port, &self.engine)?;
+        let installed =
+            catalog.install(self.home(), folders, port, &self.engine, self.home.mode)?;
         for m in &installed {
             if before.get(&m.identity).is_some_and(|id| id != &m.package) {
                 self.bus.send(&m.local, bus::RELOAD);

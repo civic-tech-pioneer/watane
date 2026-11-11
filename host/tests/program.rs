@@ -22,6 +22,7 @@ struct Preview {
     child: Child,
     stdout: BufReader<ChildStdout>,
     ready: Ready,
+    raw_ready: Value,
 }
 
 impl Preview {
@@ -30,10 +31,19 @@ impl Preview {
     }
 
     fn start_with(home: &Path, args: &[&std::ffi::OsStr]) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_watane"))
-            .arg("--preview")
-            .arg(home)
-            .args(args)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+        command.arg("--preview").arg(home).args(args);
+        Self::start_command(command)
+    }
+
+    fn home(home: &Path) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+        command.arg("--home").arg(home).args(["--port", "0"]);
+        Self::start_command(command)
+    }
+
+    fn start_command(mut command: Command) -> Self {
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -53,7 +63,8 @@ impl Preview {
                 panic!("no ready line: {e}")
             });
         result.unwrap();
-        let ready = serde_json::from_str(&line).unwrap_or_else(|e| {
+        let raw_ready: Value = serde_json::from_str(&line).unwrap();
+        let ready = serde_json::from_value(raw_ready.clone()).unwrap_or_else(|e| {
             let _ = child.kill();
             let _ = child.wait();
             panic!("invalid ready line {line:?}: {e}")
@@ -62,6 +73,7 @@ impl Preview {
             child,
             stdout,
             ready,
+            raw_ready,
         }
     }
 
@@ -139,6 +151,19 @@ async fn ac5_program_installs_counter_and_wires_page_calls() {
         Preview::start_with(home.path(), &["--install".as_ref(), counter.as_os_str()]);
     assert_eq!(preview.ready.mods.len(), 1);
     assert_eq!(preview.ready.mods[0].local.to_string(), "counter");
+    assert_eq!(
+        preview.raw_ready["mods"],
+        json!([{"local":"counter","page":format!("http://counter.localhost:{}/", preview.ready.port)}])
+    );
+    assert!(
+        preview
+            .ready
+            .mcp
+            .as_deref()
+            .unwrap()
+            .ends_with("/mcp/preview")
+    );
+    assert!(preview.ready.token.as_deref().unwrap().starts_with("wt_"));
     let origin = format!("http://counter.localhost:{}", preview.ready.port);
     assert_eq!(
         preview.ready.mods[0].page.as_deref(),
@@ -448,4 +473,166 @@ async fn ac6_preview_ready_token_is_live_and_never_persisted() {
     }
     check(home.path(), token);
     preview.stop();
+}
+
+#[test]
+fn ac1_program_refuses_both_mode_mismatches_without_changing_marker() {
+    for preview_first in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut first = if preview_first {
+            Preview::start(dir.path())
+        } else {
+            Preview::home(dir.path())
+        };
+        first.stop();
+        let marker = fs::read(dir.path().join("home.json")).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_watane"))
+            .arg(if preview_first { "--home" } else { "--preview" })
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.stdout.iter().filter(|&&b| b == b'\n').count(), 1);
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(error["watane"], 1);
+        assert_eq!(error["error"]["code"], "mode_mismatch");
+        assert_eq!(fs::read(dir.path().join("home.json")).unwrap(), marker);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac2_home_creates_marker_status_run_and_cleans_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut home = Preview::home(dir.path());
+    assert_eq!(
+        fs::read(dir.path().join("home.json")).unwrap(),
+        br#"{"watane_home":1,"mode":"home"}"#
+    );
+    assert_eq!(
+        home.raw_ready,
+        json!({
+            "watane":1,"mode":"home","home":dir.path().canonicalize().unwrap(),
+            "port":home.ready.port,"api":format!("http://localhost:{}/api/",home.ready.port),
+            "mcp":null,"token":null,"mods":[]
+        })
+    );
+    assert_eq!(RunInfo::read(dir.path()).unwrap().unwrap().mode, "home");
+    let status = home
+        .client("localhost", "127.0.0.1")
+        .get(format!("{}status", home.ready.api))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(status.status(), 200);
+    assert_eq!(
+        status.json::<Value>().await.unwrap(),
+        json!({"watane":1,"mode":"home","home":dir.path().canonicalize().unwrap(),"port":home.ready.port,"app":false})
+    );
+    home.stop();
+    assert!(!dir.path().join("run.json").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac3_home_refuses_install_without_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut home = Preview::home(dir.path());
+    let before = fs::read(dir.path().join("installed.json")).ok();
+    let response = home.install(&fixture("hello")).await;
+    assert_eq!(response.status(), 403);
+    assert_eq!(
+        response.json::<Value>().await.unwrap(),
+        json!({"error":{"code":"refused","message":"no app is attached to confirm the install"}})
+    );
+    assert_eq!(fs::read_dir(dir.path().join("mods")).unwrap().count(), 0);
+    assert_eq!(fs::read(dir.path().join("installed.json")).ok(), before);
+    home.stop();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane"))
+        .arg("--home")
+        .arg(dir.path())
+        .args(["--install", "x"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"]["code"],
+        "usage"
+    );
+}
+
+#[test]
+fn ac4_program_defaults_to_environment_home_and_port() {
+    for explicit_home in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let free = std::net::TcpListener::bind("127.0.0.1:47341").is_ok()
+            && std::net::TcpListener::bind("[::1]:47341").is_ok();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+        command.env("WATANE_HOME", dir.path());
+        if explicit_home {
+            command.arg("--home").arg(dir.path());
+        }
+        if !free {
+            command.args(["--port", "0"]);
+        }
+        let mut home = Preview::start_command(command);
+        assert_eq!(home.ready.home, dir.path().canonicalize().unwrap());
+        assert_eq!(home.ready.mode, "home");
+        if free {
+            assert_eq!(home.ready.port, 47341);
+        }
+        home.stop();
+    }
+    for unset in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+        command.env("HOME", dir.path()).args(["--port", "0"]);
+        if unset {
+            command.env_remove("WATANE_HOME");
+        } else {
+            command.env("WATANE_HOME", "");
+        }
+        let mut home = Preview::start_command(command);
+        assert_eq!(
+            home.ready.home,
+            dir.path().join(".watane").canonicalize().unwrap()
+        );
+        home.stop();
+    }
+}
+
+#[test]
+fn ac6_second_home_program_is_busy() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut home = Preview::home(dir.path());
+    let output = Command::new(env!("CARGO_BIN_EXE_watane"))
+        .arg("--home")
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"]["code"],
+        "busy"
+    );
+    home.stop();
+}
+
+#[test]
+fn ac7_public_modes_and_default_home() {
+    use watane_host::{DEFAULT_PORT, Host, Limits, Mode, default_home};
+    assert_eq!(DEFAULT_PORT, 47341);
+    let expected = std::env::var_os("WATANE_HOME")
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|s| !s.is_empty())
+                .map(|s| PathBuf::from(s).join(".watane"))
+        });
+    assert_eq!(default_home().ok(), expected);
+    for (mode, preview) in [(Mode::Home, false), (Mode::Preview, true)] {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), mode, Limits::default()).unwrap();
+        assert_eq!(host.is_preview(), preview);
+    }
 }

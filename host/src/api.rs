@@ -70,7 +70,7 @@ pub(crate) async fn respond(state: ServerState, request: Request<Body>) -> Respo
     if status_route {
         return json_response(
             200,
-            json!({"watane":1,"mode":"preview","home":state.host.home(),"port":state.port,"app":false}),
+            json!({"watane":1,"mode":state.host.home.mode.as_str(),"home":state.host.home(),"port":state.port,"app":false}),
         );
     }
     #[derive(Deserialize)]

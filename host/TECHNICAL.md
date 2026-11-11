@@ -1318,6 +1318,17 @@ and token in the existing Ready fields. Tokens stay in memory as hashes.
 serve signatures stay until participant homes arrive. `wit-parser` 0.254.2
 reads only doc comments; compiled types supply function metadata and schemas.
 
+### S9 cut
+
+`Mode` is `pub enum Mode { Home, Preview }`. `Host::open(home, mode, limits)`
+opens either kind of home and checks its fixed marker before recovery.
+`Mode::Home` has no `app` field until confirmation joins in step 2. It always
+behaves as no app: status reports `app: false`, and an install that needs
+confirmation returns `Refused("no app is attached to confirm the install")`.
+The program defaults to `default_home()` and `DEFAULT_PORT` (47341) in home
+mode. Preview still defaults to port 0 and alone accepts `--install` and
+prints an MCP address and token. Home ready lines have null MCP and token.
+
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
 | 1 Runtime core | engine, limits, epoch ticker, `Ctx`, state store, `watane:host` interfaces, JSON encoding, top-level call; fixtures `counter`, `echo`, `hog` | none | load a mod through a crate-private `RawMod { local, identity, package, component bytes, grants, links }` built by the test | `tests/json.rs`, S4 to S9 pass |

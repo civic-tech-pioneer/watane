@@ -250,6 +250,7 @@ impl Catalog {
         folders: &[PathBuf],
         port: u16,
         engine: &wasmtime::Engine,
+        mode: crate::Mode,
     ) -> Result<Vec<InstalledMod>, HostError> {
         let mut prepared = Vec::new();
         let mut seen = BTreeSet::new();
@@ -272,6 +273,19 @@ impl Catalog {
             let component = crate::runtime::compile(engine, &m)?;
             let package = package.id();
             let old = self.mods.iter().find(|m| m.identity == identity);
+            if mode == crate::Mode::Home
+                && old.is_none_or(|old| {
+                    m.grants().iter().any(|grant| {
+                        !old.grants
+                            .iter()
+                            .any(|previous| previous.grant.same_authority(grant))
+                    })
+                })
+            {
+                return Err(HostError::Refused(
+                    "no app is attached to confirm the install".into(),
+                ));
+            }
             let local = match old {
                 Some(m) => m.local.clone(),
                 None => derive_local(m.slug().as_str(), &names)?,
@@ -281,6 +295,13 @@ impl Catalog {
             let mut installed = view(&m, local, package);
             if let Some(old) = old {
                 installed.enabled = old.enabled;
+                if mode == crate::Mode::Home {
+                    for grant in &mut installed.grants {
+                        grant.granted = old.grants.iter().any(|previous| {
+                            previous.granted && previous.grant.same_authority(&grant.grant)
+                        });
+                    }
+                }
             }
             prepared.push((staging, installed, unchanged, component));
         }

@@ -1,4 +1,4 @@
-use crate::HostError;
+use crate::{HostError, Mode};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt, fs,
@@ -77,11 +77,12 @@ pub fn default_home() -> Result<PathBuf, HostError> {
 #[derive(Debug)]
 pub(crate) struct Home {
     pub path: PathBuf,
+    pub mode: Mode,
     _lock: fs::File,
 }
 
 impl Home {
-    pub fn open(path: &Path) -> Result<Self, HostError> {
+    pub fn open(path: &Path, mode: Mode) -> Result<Self, HostError> {
         fs::create_dir_all(path).map_err(|e| HostError::BadHome {
             path: path.into(),
             reason: e.to_string(),
@@ -112,7 +113,9 @@ impl Home {
                 .write(true)
                 .create_new(true)
                 .open(marker)?;
-            file.write_all(b"{\"watane_home\":1,\"mode\":\"preview\"}")?;
+            file.write_all(
+                format!(r#"{{"watane_home":1,"mode":"{}"}}"#, mode.as_str()).as_bytes(),
+            )?;
             file.sync_all()?;
         } else {
             #[derive(Deserialize)]
@@ -134,10 +137,14 @@ impl Home {
                     reason: "unknown home version or mode".into(),
                 });
             }
-            if marker.mode == "home" {
+            if marker.mode != mode.as_str() {
                 return Err(HostError::ModeMismatch {
                     path,
-                    found: "home",
+                    found: if marker.mode == "home" {
+                        "home"
+                    } else {
+                        "preview"
+                    },
                 });
             }
         }
@@ -153,7 +160,11 @@ impl Home {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
             Err(e) => return Err(e.into()),
         }
-        Ok(Self { path, _lock: lock })
+        Ok(Self {
+            path,
+            mode,
+            _lock: lock,
+        })
     }
 }
 

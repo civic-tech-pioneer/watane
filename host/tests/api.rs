@@ -292,3 +292,63 @@ async fn ac3_long_slugs_truncate_and_collisions_keep_distinct_origins() {
         assert_eq!(response.status(), 200);
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac2_home_serves_existing_mods_and_ac3_keeps_quiet_updates() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("home.json"),
+        br#"{"watane_home":1,"mode":"home"}"#,
+    )
+    .unwrap();
+    let folder = copy_hello();
+    let installed = dir.path().join("mods/hello");
+    for file in ["mod.toml", "wit/world.wit", "ui/index.html", "ui/app.js"] {
+        fs::create_dir_all(installed.join(file).parent().unwrap()).unwrap();
+        fs::copy(folder.path().join(file), installed.join(file)).unwrap();
+    }
+    fs::write(
+        dir.path().join("installed.json"),
+        serde_json::to_vec(&json!({
+            "watane_installed":1,"generation":1,"mods":[{
+                "local":"hello","identity":"local/hello","package":HELLO_PACKAGE,
+                "release":null,"enabled":true,"grants":[],"links":[]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut home = Preview::home(dir.path());
+    assert_eq!(
+        serde_json::to_value(&home.ready.mods).unwrap(),
+        json!([{
+            "local":"hello","page":format!("http://hello.localhost:{}/", home.ready.port)
+        }])
+    );
+    let url = format!("http://hello.localhost:{}/", home.ready.port);
+    let response = home
+        .client("hello.localhost", "127.0.0.1")
+        .get(&url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.bytes().await.unwrap().as_ref(),
+        fs::read(fixture("hello").join("ui/index.html")).unwrap()
+    );
+    let before = fs::read(dir.path().join("installed.json")).unwrap();
+    assert_eq!(home.install(folder.path()).await.status(), 200);
+    assert_eq!(fs::read(dir.path().join("installed.json")).unwrap(), before);
+    fs::write(folder.path().join("ui/index.html"), b"updated page").unwrap();
+    assert_eq!(home.install(folder.path()).await.status(), 200);
+    let response = home
+        .client("hello.localhost", "127.0.0.1")
+        .get(url)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.bytes().await.unwrap().as_ref(), b"updated page");
+    home.stop();
+}

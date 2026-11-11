@@ -5,10 +5,12 @@ use std::path::PathBuf;
 pub enum HostError {
     #[error("home {} is busy", .0.display())]
     Busy(PathBuf),
-    #[error("home {} has mode {found}, expected preview", path.display())]
+    #[error("home {} has mode {found}, incompatible with requested mode", path.display())]
     ModeMismatch { path: PathBuf, found: &'static str },
     #[error("bad home {}: {reason}", path.display())]
     BadHome { path: PathBuf, reason: String },
+    #[error("{0}")]
+    Refused(String),
     #[error("invalid mod {input}: {reason}")]
     InvalidMod { input: String, reason: String },
     #[error("invalid name {value:?}: {rule}")]
@@ -31,6 +33,7 @@ impl HostError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Busy(_) => "busy",
+            Self::Refused(_) => "refused",
             Self::ModeMismatch { .. } => "mode_mismatch",
             Self::BadHome { .. } => "bad_home",
             Self::InvalidMod { .. } => "invalid_mod",
@@ -46,6 +49,7 @@ impl HostError {
 
     pub fn status(&self) -> u16 {
         match self {
+            Self::Refused(_) => 403,
             Self::BadName { .. } | Self::BadToolsetEntry { .. } => 400,
             Self::NoSuchMod(_) | Self::NoSuchToolset(_) => 404,
             Self::Busy(_) | Self::ModeMismatch { .. } => 409,

@@ -62,7 +62,7 @@ impl Host {
                 watane: 1,
                 pid: std::process::id(),
                 port,
-                mode: "preview".into(),
+                mode: self.home.mode.as_str().into(),
             },
         )?;
         let mut tasks = Vec::new();
@@ -104,7 +104,7 @@ impl Served {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ready {
             watane: 1,
-            mode: "preview".into(),
+            mode: self.host.home.mode.as_str().into(),
             home: self.host.home().into(),
             port: self.port,
             api: self.api_url(),

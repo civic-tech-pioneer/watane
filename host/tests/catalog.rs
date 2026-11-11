@@ -31,7 +31,7 @@ fn ac1_installed_and_persisted_ids_match_pack_for_both_parts() {
         let folder = fixture(name);
         let expected = watane_pkg::pack(&folder, false).unwrap().id();
         let home = tempfile::tempdir().unwrap();
-        let host = Host::open(home.path(), Limits::default()).unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
         let installed = host.install_folders(&[folder], 0).unwrap();
         assert_eq!(installed[0].package, expected);
         assert_eq!(
@@ -39,7 +39,7 @@ fn ac1_installed_and_persisted_ids_match_pack_for_both_parts() {
             expected.to_string()
         );
         drop(host);
-        let host = Host::open(home.path(), Limits::default()).unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
         let served = host.install_folders(&[fixture(name)], 0).unwrap();
         assert_eq!(served[0].package, expected);
         assert_eq!(catalog(home.path())["generation"], 1);
@@ -62,7 +62,7 @@ fn ac2_pack_skipped_files_are_absent_from_install() {
     }
     let expected = watane_pkg::pack(folder.path(), false).unwrap().id();
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     let installed = host.install_folders(&[folder.path().into()], 0).unwrap();
     for file in [".git", ".hidden", "ui/.hidden", "logic"] {
         assert!(
@@ -77,7 +77,7 @@ fn ac2_pack_skipped_files_are_absent_from_install() {
 fn ac3_unchanged_keeps_generation_one_byte_updates_package() {
     let folder = page();
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     let folders = [folder.path().into()];
     let first = host.install_folders(&folders, 0).unwrap();
     let before = fs::read(home.path().join("installed.json")).unwrap();
@@ -116,7 +116,7 @@ fn ac4_package_errors_name_input_and_leave_no_staging() {
             .unwrap_err()
             .to_string();
         let home = tempfile::tempdir().unwrap();
-        let host = Host::open(home.path(), Limits::default()).unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
         let error = host
             .install_folders(&[fixture("hello"), folder.path().into()], 0)
             .unwrap_err();

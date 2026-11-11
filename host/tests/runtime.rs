@@ -35,7 +35,7 @@ fn copy_fixture(name: &str) -> tempfile::TempDir {
 #[test]
 fn ac2_install_checks_staged_component_and_grants_declarations() {
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     let installed = host.install_folders(&[fixture("counter")], 1234).unwrap();
     assert!(installed[0].has_logic);
     assert_eq!(
@@ -100,7 +100,7 @@ async fn call(
     .await
 }
 fn install(home: &Path, limits: Limits, names: &[&str]) -> Arc<Host> {
-    let host = Host::open(home, limits).unwrap();
+    let host = Host::open(home, watane_host::Mode::Preview, limits).unwrap();
     host.install_folders(&names.iter().map(|n| fixture(n)).collect::<Vec<_>>(), 0)
         .unwrap();
     host
@@ -156,7 +156,7 @@ async fn ac4_restart_persists_identity_table() {
         );
     }
     drop(host);
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     assert_eq!(
         call(&host, "counter", "api.get", json!(null))
             .await
@@ -417,7 +417,7 @@ fn ac2_links_between_mods_are_refused() {
         )
         .unwrap();
         let home = tempfile::tempdir().unwrap();
-        let host = Host::open(home.path(), Limits::default()).unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
         let error = host
             .install_folders(&[folder.path().into()], 0)
             .unwrap_err();
@@ -457,7 +457,7 @@ fn ac2_invalid_core_code_is_refused_before_catalog_commit() {
         .check_component()
         .unwrap();
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     let error = host
         .install_folders(&[folder.path().into()], 0)
         .unwrap_err();
@@ -479,7 +479,7 @@ fn ac6_shared_memory_cannot_bypass_the_store_limiter() {
         .check_component()
         .unwrap();
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), Limits::default()).unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     let error = host
         .install_folders(&[folder.path().into()], 0)
         .unwrap_err();
