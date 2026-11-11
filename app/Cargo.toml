@@ -7,7 +7,7 @@ edition = "2024"
 name = "watane_app"
 
 [features]
-driver = []
+driver = ["dep:webkit2gtk"]
 
 [build-dependencies]
 tauri-build = "=2.7.4"
@@ -32,4 +32,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "blo
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Driver-only: let popup attempts reach the native deny hook, as on macOS.
-webkit2gtk = "=2.0.2"
+webkit2gtk = { version = "=2.0.2", optional = true }

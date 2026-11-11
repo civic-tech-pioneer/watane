@@ -27,6 +27,7 @@ docker run --rm --init --platform linux/arm64 --shm-size=1g \
         cat /tmp/openbox.log >&2
         exit 1
       fi
+      sleep 0.1
     done
     cargo test -p watane-app "$@" --features driver -- --include-ignored \
       --skip ac4_approve_delay_and_deny_focus \
