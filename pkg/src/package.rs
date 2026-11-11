@@ -300,11 +300,7 @@ fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError>
     let file = options.open(&path).map_err(|e| {
         #[cfg(unix)]
         {
-            let code = e.raw_os_error();
-            let is_link = code == Some(libc::ELOOP);
-            #[cfg(target_os = "macos")]
-            let is_link = is_link || code == Some(libc::EMLINK);
-            if is_link {
+            if e.raw_os_error() == Some(libc::ELOOP) {
                 return PackageError::Symlink {
                     path: relative.into(),
                 };

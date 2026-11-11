@@ -396,7 +396,7 @@ pack and decode. The package id is `blake3(all bytes)`.
 3. Sort, check 6.2 and the limits, write the bytes of 6.3. Stop when the
    size passes the limit. Open every file for reading on Unix with
    `O_NOFOLLOW | O_NONBLOCK` (`OpenOptionsExt::custom_flags`, using the
-   Unix-only `libc = "0.2"` dependency); map `ELOOP` and macOS `EMLINK` to
+   Unix-only `libc = "0.2"` dependency); map `ELOOP` (macOS gives it too) to
    `Symlink`. Check metadata on the opened file and refuse a non-regular
    file with `Path`, before reading. Thus a last component swapped for a
    link is never followed, and a FIFO cannot block the open. Non-Unix uses
