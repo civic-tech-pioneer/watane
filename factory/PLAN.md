@@ -53,6 +53,32 @@ Step 2 (Run together, J2).
     HOST scenario keeps a test, listed by the foreman.
   - Touches: `dev/tests/*`, `dev/src/*` test modules only, host tests only if over budget.
     Waits for S11 (it adds dev tests).
+- [~] **S14 Quiet GUI tests.** (branch `slice/s14`; foreman: see `Foremen`) Requested by the
+  human: the app's driver tests open real windows that take focus and show a Dock icon, which
+  interrupts the human's own work while the factory loops. A maker runs
+  `cargo test --features driver` in `app/` and sees nothing happen on screen.
+  - Design (agreed with the human): the driver reads `WATANE_DRIVER_SCREEN` = `hidden` |
+    `background` | `front` once at startup. One helper in `views.rs` wraps the three
+    `WebviewWindowBuilder`s (main, mod, consent): hidden -> `.visible(false)`, background ->
+    `.focused(false)`, front -> unchanged. One helper replaces the direct `set_focus` /
+    `request_user_attention` calls and does nothing unless front. Every mode except front sets
+    `ActivationPolicy::Accessory` in setup. Without feature `driver` the helpers do nothing.
+    Tests declare their mode, with no ifs in test bodies: `App::start` (hidden, the default),
+    `App::background`, `App::front` in `tests/support/driver.rs`. Tests that need real focus or
+    stacking (consent takes focus, the 800 ms approve delay, consent stays above; at first look
+    `gui_isolation` ac1 and `gui_shell` ac4) use `App::front` and carry
+    `#[ignore = "front: takes the screen"]`. `App::front` waits until the human has been idle
+    about 30 s (`ioreg` HIDIdleTime), printing "waiting for you to step away", and fails loudly
+    after a time limit; it never skips, since these are security checks.
+  - Check first: whether hidden WKWebView windows still finish page loads, run driver JS and keep
+    timers unthrottled; a test that breaks hidden uses `App::background`.
+  - Outcomes: 1. a plain `cargo test --features driver` in `app/` shows no window, no Dock icon,
+    never takes focus; 2. `-- --include-ignored` runs the front tests and they pass; 3. the release
+    build still has no driver; 4. `factory/README.md` "Test pyramid" and the user-sim and validator
+    prompts say front tests run once per slice (user-sim or foreman), not every validator round.
+  - Touches: `app/src/{views,driver,lib}.rs`, `app/tests/support/driver.rs`, `app/tests/gui_*.rs`,
+    `factory/README.md`, `.claude/agents/{user-sim,validator}.md`. Not dev, host, pkg (S11).
+  - Rejected: moving windows to another Space (private APIs only).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
   starts the app, installs `reading-list` and `recommendations` from their folders, approves the
   plan, uses them together, restarts, withdraws a grant, and removes a mod.
