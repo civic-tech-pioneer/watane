@@ -94,7 +94,12 @@ fn ac4_real_preview_serves_page_and_csp() {
     let m = Mod::new(true);
     let v = m.serve();
     assert_eq!(v["reused"], false);
-    assert!(v["mcp"].is_null());
+    assert_eq!(
+        v["mcp"]["url"],
+        format!("http://localhost:{}/mcp/preview", port(&v))
+    );
+    assert_eq!(v["mcp"]["toolset"], "preview");
+    assert!(v["mcp"]["token"].as_str().unwrap().starts_with("wt_"));
     let hash = blake3::hash(m.dir.canonicalize().unwrap().to_str().unwrap().as_bytes()).to_hex();
     let folder = m
         .temp
@@ -173,6 +178,8 @@ fn ac7_missing_host_has_environment_error_and_fix() {
         v["errors"][0]["fix"],
         "Install watane, or set WATANE_BIN to the program"
     );
+    // The tests passed, so `next` must not send the agent back to them.
+    assert!(v["next"].is_null(), "{v}");
 }
 #[test]
 fn stop_with_unreadable_run_json_is_not_running() {

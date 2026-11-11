@@ -137,10 +137,6 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
     Ok(ready)
 }
 pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
-    let tested = crate::cli::test(dir);
-    if !tested.ok {
-        return Err(tested.errors);
-    }
     let (m, _) = check::check(dir)?;
 
     let work = || -> Result<Value, Problem> {
