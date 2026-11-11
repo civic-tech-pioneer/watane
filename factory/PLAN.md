@@ -14,23 +14,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S3 An edit keeps the data.** Delivered 2026-11-10 (main `c883171`). Sol runs: host 1, dev 1.
 - [x] **S4 The agent fixes a failing test.** Delivered 2026-11-11 (main `91e8d0a`). Sol runs: S4-1 1, S4-2 1, S4-3 1.
 - [x] **S5 The agent works the mod through MCP.** Delivered 2026-11-11 (main `196452e`). Sol runs: S5-1 1, S5-2 1.
-- [~] **S8 Same mod, same id.** (branch `slice/s8`; foreman: see `Foremen`) Bob copies Alice's mod folder to another path and runs
-  `watane-dev test` with his own cache; both builds give the same `logic.wasm` bytes, and the
-  preview host installs the mod under the same canonical package id that `pack` gives. A mod
-  that sneaks in a file from outside its folder is refused.
-  - Outcomes (user-sim, on the real programs):
-    1. One mod folder at two paths with two caches: `test` in each gives equal `logic.wasm`
-       bytes, holding neither the mod path, the cache path nor the home path (DEV-S-12).
-    2. `include_bytes!` of a file outside the mod: `test --json` exits 1 with
-       `build.reads_outside` naming the file, no `logic.wasm`, and the file's bytes in no file
-       of the mod folder; same for a unit-test build (DEV-S-10).
-    3. `env!("SECRET")` with `SECRET` set in the shell gives `build.compile` (DEV-S-11).
-    4. The preview host's installed package id for a mod equals the id `pack` gives for the
-       same folder; the host's temporary digest is gone (both `ponytail`s in `catalog.rs`).
-  - Touches: dev stage 2 (`builder.rs`, `unit.rs` build step, `dev/tests/builder.rs`),
-    host stage 5 (`catalog.rs` install via `pkg::pack`/`unpack`).
-  - Interfaces it changes: host install now depends on pkg `pack`/`unpack` (pkg -> host).
-  - Leaves out: `O_NOFOLLOW` and the other S7 pkg follow-ups.
+- [x] **S8 Same mod, same id.** Delivered 2026-11-11 (main `d79e73e`). Sol runs: S8-1 1, S8-2 1.
 - [~] **S6 J1: Alice gets her reading list.** (branch `slice/s6`; foreman: see `Foremen`)
   Alice asks her agent for a reading list. The agent runs `watane-dev doctor`, then `new`, writes
   logic, page and contract tests, gets a failing contract test, fixes it, runs `serve`; Alice adds
@@ -51,14 +35,14 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
     `dev/tests/serve.rs`), dev template `AGENTS.md` (doctor first). Not `builder.rs`, `unit.rs`,
     `dev/tests/unit_tests.rs`, `dev/tests/builder.rs` or anything in host (S8).
   - Leaves out: `fake-watane` (needed only for the home-host scenarios S-25 to 31, step 2).
-- [ ] **S9 Hostile pages and the program, checked.** Host stages 3 and 6: every scenario of host
+- [~] **S9 Hostile pages and the program, checked.** (branch `slice/s9`; foreman: see `Foremen`) Host stages 3 and 6: every scenario of host
   FUNCTIONAL for pages, `/call`, `/events` and the program has a passing test in
   `host/tests/hostile.rs` or `program.rs`; what fails gets fixed.
   - Outcomes: the foreman lists each such scenario with its test; the user-sim plays a hostile
     page (wrong `Origin`, another mod's host name, oversize body, path tricks) on the real
     `watane` and every one is refused as the spec says.
   - Touches: host `tests/hostile.rs`, `tests/program.rs`, and `server.rs`/`pages.rs`/`bin` only
-    for fixes. Waits for S8 (it touches `tests/program.rs`, `tests/pages.rs`).
+    for fixes. Not dev (S6).
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
   Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
   link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
@@ -75,18 +59,18 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 |---|---|---|---|
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
-| pkg | 5 package (pack, unpack) | 1 | done (S7); host still uses its temporary digest (2 `ponytail` in `catalog.rs`) |
+| pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
 | pkg | 6 add_provider | 2 | open |
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
 | host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`, S5 `/mcp`): `tests/hostile.rs` page rows (S9) |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
-| host | 5 catalog and home | 1, 2 | part: preview folder install; `Harness::call` (S4); temp digest (S8); `deliver` and plan, grants, update, remove, home mode in step 2 |
+| host | 5 catalog and home | 1, 2 | part: preview install via pack (S8); `Harness::call` (S4); fakes (`ponytail` in `harness.rs`), `deliver`, plan, grants, update, remove, home mode in step 2 |
 | host | 6 program | 1 | part (S1, S5 ready `mcp`/`token`): S1 to S3 tests not all checked (S9) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
-| dev | 2 allowlist, toolchain, builder | 1 | part (S2): DEV-S-10 outside reads (`ponytail` in `builder.rs`), DEV-S-12 reproducible bytes (S8) |
+| dev | 2 allowlist, toolchain, builder | 1 | done (S8) |
 | dev | 3 unit | 1 | done (S4) |
 | dev | 4 contract | 1 | part (S4): fakes and `deliver` steps (DEV-S-18, 19) in step 2 |
 | dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` with MCP (S1, S2, S5); doctor and J1 (S6); `fake-watane` moved to step 2 (deputy) |
@@ -110,7 +94,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   Resumed 2026-11-11 as `2066b4f1` (sessionId `2066b4f1-2ca3-4a1f-9fa3-29c671cea48f`); died after
   the user-sim's ACCEPTED, in its final test run; the product owner ran the tests and merged (stopped, removed).
 - S5: `91dc7a35` (sessionId `91dc7a35-91d7-4d4d-a6a1-4f843f3fd54a`), worktree `.claude/worktrees/s5` (stopped, removed).
-- S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8`.
+- S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8` (stopped, removed).
 - S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -160,6 +144,9 @@ The human may veto each one.
   wit-parser is pinned `=0.254.2` (the version in `Cargo.lock`).
 - S5: `serve`'s `next` is `watane-dev test --json` only when the test pipeline fails.
 - S6: `fake-watane` moves to step 2; only the home-host scenarios (S-25 to 31) need it.
+- S8: dev scans and clears both `<crate>.d` and `<crate>-*.d`, and touches the copied crate root
+  so cargo writes fresh dep-info; only the mod crate rebuilds.
+- S8: the host unpacks into a new `staging/<hex>/mod/`; the link refusal still runs before pack.
 
 ## Friction
 
@@ -188,6 +175,14 @@ The human may veto each one.
 - S5: a refused `serve` leaves the old preview up without saying so (into S6); a trap's text is a
   long wasm backtrace with the panic message at the end; dev keeps the preview token in
   `<cache>/previews/*/ready.json` (0600, dev Q6), which reads awkwardly beside host 10.2.
+- S2, S3, S8: nested `sandbox-exec` (DEV-S-13) runs only in the validator (3x): proposed to the
+  human to accept it and stop logging it.
+- S8: S8-1's Sol run took 77 min, much of it full-suite reruns under S5's load.
+- S8: dev `ac10` (timing-ignored now) failed twice on `main` under S6's load: 8.4 s against 7 s,
+  the time includes rebuilding the changed source. Rerun when quiet; if it fails then, the timer
+  should start after the build.
+- S8 user-sim: when only the unit-test build reads outside, `result.build` still names the removed
+  `logic.wasm`; `build.reads_outside` has `line: null`; `serve --help`/`new --help` show no options.
 
 ## Digest
 
@@ -205,3 +200,5 @@ The human may veto each one.
   a mod whose tests fail.
 - S5: the agent points an MCP client at `serve --json`'s `mcp` URL with its token, lists and
   calls the mod's functions, and Alice's open page updates by itself.
+- S8: a mod folder builds to the same `logic.wasm` from any path and cache, and the preview host
+  installs it under the same id `pack` gives; a mod that reads a file outside its folder is refused.
