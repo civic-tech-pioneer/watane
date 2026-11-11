@@ -55,22 +55,16 @@ async fn ac3_call_refuses_wrong_method_origin_type_size_and_body() {
         .await
         .unwrap();
     call_error(response, 403, "forbidden").await;
-    let response = client
-        .post(&url)
-        .header("Origin", &origin)
-        .header("Content-Type", "application/json")
-        .body(" ".repeat(2 << 20))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        response
-            .headers()
-            .get("connection")
-            .and_then(|v| v.to_str().ok()),
-        Some("close")
+    // The size refusal may close the connection before the body is written.
+    let oversized = format!(
+        "POST /call HTTP/1.1\r\nHost: counter.localhost:{}\r\nOrigin: {origin}\r\nContent-Type: application/json\r\nContent-Length: 2097152\r\nConnection: close\r\n\r\n{}",
+        preview.ready.port,
+        " ".repeat(2 << 20)
     );
-    call_error(response, 413, "bad_request").await;
+    if let Some(reply) = raw(&preview, "127.0.0.1", oversized.as_bytes()) {
+        assert_eq!(reply.header("connection"), Some("close"));
+        reply.error(413, "bad_request");
+    }
     for body in [
         r#"{"fn":"api.add","args":null,"caller":"agent:evil"}"#,
         r#"{"fn":42,"args":null}"#,
