@@ -622,3 +622,57 @@ fn ac13_s11_fixture_slugs_are_valid() {
         );
     }
 }
+
+#[test]
+fn ac1_validator_busy_mod_does_not_stall_another_mod() {
+    let home = tempfile::tempdir().unwrap();
+    let host = install(
+        home.path(),
+        Limits {
+            time: Duration::from_millis(1500),
+            fuel: u64::MAX,
+            ..Limits::default()
+        },
+        &["hog", "counter"],
+    );
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let spinner = host.clone();
+    let thread = std::thread::Builder::new()
+        .stack_size(16 << 20)
+        .spawn(move || {
+            started_tx.send(()).unwrap();
+            spinner.call(
+                &Caller::Page,
+                &LocalName::parse("hog").unwrap(),
+                "api.spin",
+                Value::Null,
+            )
+        })
+        .unwrap();
+    started_rx.recv().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let reader = host.clone();
+    let read = std::thread::Builder::new()
+        .stack_size(16 << 20)
+        .spawn(move || {
+            let start = Instant::now();
+            let result = reader.call(
+                &Caller::Page,
+                &LocalName::parse("counter").unwrap(),
+                "api.get",
+                Value::Null,
+            );
+            (result, start.elapsed())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    let spin = thread.join().unwrap().unwrap_err();
+    assert_eq!(spin.code, CallCode::Limit(Limit::Time));
+    assert_eq!(read.0.unwrap(), json!(0));
+    assert!(
+        read.1 < Duration::from_millis(500),
+        "counter waited {:?} for hog",
+        read.1
+    );
+}

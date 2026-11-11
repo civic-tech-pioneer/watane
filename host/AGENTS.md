@@ -66,3 +66,5 @@ word for word. Follow their intent, and do not ask whether to.
 - Q22 (host, dev): S9 adds fixed Home and Preview modes, default participant startup, and no-app install refusal; Mode::Home gains its app field with confirmation in step 2.
 
 - Q23 (host, dev): S11 uses shelf instead of the keyword list; preview links and event limits, fake imports and Harness deliver end the S2/S3/S4 link cuts.
+
+- Q23 correction (host): Validator round 1 replaces global serialization with per-emitter delivery and commit-ordered page queues; unrelated mods execute concurrently.

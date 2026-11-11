@@ -2,8 +2,11 @@ use super::{json, limits};
 use crate::{CallCode, CallError, Caller, EventRecord, Host, Limit, LinkKind, LocalName, Outcome};
 use serde_json::Value;
 use std::{
-    collections::{BTreeSet, VecDeque},
-    sync::{Arc, Mutex, MutexGuard},
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::{
+        Arc, Condvar, Mutex, MutexGuard,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     time::Instant,
 };
 use watane_pkg::{Grant, InterfaceName};
@@ -11,7 +14,6 @@ use watane_pkg::{Grant, InterfaceName};
 #[derive(Default)]
 struct Effects {
     events: Vec<(LocalName, EventRecord, u8)>,
-    changed: BTreeSet<LocalName>,
 }
 struct Chain {
     host: Arc<Host>,
@@ -19,6 +21,9 @@ struct Chain {
     fakes: Option<crate::Fakes>,
     deadline: Instant,
     effects: Mutex<Effects>,
+    publish: bool,
+    ready: AtomicBool,
+    job: Arc<Job>,
 }
 #[derive(Clone)]
 pub(super) struct Invocation {
@@ -26,6 +31,7 @@ pub(super) struct Invocation {
     local: LocalName,
     depth: u32,
     hop: u8,
+    received: Option<String>,
 }
 
 pub(super) fn lock_until<T>(
@@ -65,8 +71,6 @@ pub(crate) fn run(
     subscription: bool,
 ) -> Result<Outcome, CallError> {
     let deadline = deadline(host)?;
-    // Deliveries finish before a later top-level call can publish a commit.
-    let _execution = lock_until(&host.execution, deadline)?;
     let snapshot = Arc::new(
         host.catalog
             .lock()
@@ -86,12 +90,16 @@ pub(crate) fn run(
             .clone(),
         deadline,
         effects: Mutex::new(Effects::default()),
+        publish,
+        ready: AtomicBool::new(false),
+        job: Arc::new(Job::new()),
     });
     let invocation = Invocation {
         chain: chain.clone(),
         local: local.clone(),
         depth: 0,
         hop: 0,
+        received: None,
     };
     let result = invocation.invoke(caller, function, args, host.limits.fuel, subscription);
     let effects = std::mem::take(&mut *chain.effects.lock().unwrap());
@@ -101,7 +109,7 @@ pub(crate) fn run(
         .map(|(_, event, _)| event.clone())
         .collect();
     if publish {
-        deliver(&chain, effects);
+        host.events.finish(host, &chain);
     }
     result.map(|(value, _)| Outcome { value, events })
 }
@@ -178,6 +186,7 @@ impl Invocation {
             local: provider.clone(),
             depth: self.depth.saturating_add(1),
             hop: self.hop,
+            received: None,
         };
         nested.invoke(
             &Caller::Mod(self.local.clone()),
@@ -280,8 +289,9 @@ impl Invocation {
             .collect::<Result<Vec<_>, CallError>>()?;
         let changed = ctx.state.commit()?;
         let mut effects = chain.effects.lock().unwrap();
-        if changed {
-            effects.changed.insert(self.local.clone());
+        if chain.publish {
+            // Enqueue before releasing the mod lock; no invocation waits here.
+            host.events.enqueue(self, &events, changed);
         }
         effects.events.extend(
             events
@@ -292,77 +302,244 @@ impl Invocation {
     }
 }
 
-fn deliver(chain: &Arc<Chain>, effects: Effects) {
-    let host = &chain.host;
-    let mut queue: VecDeque<_> = effects.events.into();
-    let mut changed = effects.changed;
-    let mut deliveries = 0;
-    while let Some((emitter, event, hop)) = queue.pop_front() {
-        if hop >= host.limits.hops {
-            eprintln!("watane: event hop limit reached");
-            continue;
-        }
-        if deliveries >= host.limits.deliveries {
-            eprintln!("watane: event delivery limit reached");
-            break;
-        }
-        let message = crate::bus::event_message(&emitter, &event);
-        host.bus.send(&emitter, message.clone());
-        let mut subscribers: Vec<_> = chain
-            .snapshot
-            .mods
-            .iter()
-            .filter(|m| m.enabled && m.error.is_none())
-            .collect();
-        subscribers.sort_by(|a, b| a.local.cmp(&b.local));
-        for m in subscribers {
-            for link in m.links.iter().filter(|l| {
-                matches!(l.kind, LinkKind::Subscribe)
-                    && l.provider.as_ref() == Some(&emitter)
-                    && l.provider_interface.as_ref() == Some(&event.interface)
-            }) {
-                if !m.grants.iter().any(|g| g.granted && matches!(&g.grant, Grant::Subscribe { interface,.. } if interface == &link.interface)) { continue; }
-                if deliveries >= host.limits.deliveries {
-                    break;
-                }
-                deliveries += 1;
-                let Ok(deadline) = deadline(host) else {
-                    continue;
-                };
-                let delivery = Arc::new(Chain {
-                    host: host.clone(),
-                    snapshot: chain.snapshot.clone(),
-                    fakes: None,
-                    deadline,
-                    effects: Mutex::new(Effects::default()),
-                });
-                let invocation = Invocation {
-                    chain: delivery.clone(),
-                    local: m.local.clone(),
-                    depth: 0,
-                    hop: hop + 1,
-                };
-                let result = invocation.invoke(
-                    &Caller::Mod(emitter.clone()),
-                    &format!("{}.{}", link.interface, event.function),
-                    event.args.clone(),
-                    host.limits.fuel,
-                    true,
-                );
-                let effects = std::mem::take(&mut *delivery.effects.lock().unwrap());
-                queue.extend(effects.events);
-                changed.extend(effects.changed);
-                match result {
-                    Ok(_) => host.bus.send(&m.local, message.clone()),
-                    Err(error) => eprintln!(
-                        "watane: event {}.{} from {emitter} to {} failed: {:?}: {}",
-                        event.interface, event.function, m.local, error.code, error.message
-                    ),
-                }
-            }
+// Queue coordination never covers a Wasm call or a wait for a mod lock.
+#[derive(Default)]
+pub(crate) struct Deliveries {
+    pending: Mutex<Pending>,
+    wake: Condvar,
+}
+impl std::fmt::Debug for Deliveries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Deliveries").finish_non_exhaustive()
+    }
+}
+#[derive(Default)]
+struct Pending {
+    emitters: BTreeMap<LocalName, Emitter>,
+}
+#[derive(Default)]
+struct Emitter {
+    events: VecDeque<Delivery>,
+    active: bool,
+    pages: VecDeque<Publication>,
+}
+struct Job {
+    pending: AtomicUsize,
+    publications: AtomicUsize,
+    deliveries: AtomicUsize,
+    changed: Mutex<BTreeSet<LocalName>>,
+}
+impl Job {
+    fn new() -> Self {
+        Self {
+            // The root invoke holds one count until it releases its mod locks.
+            pending: AtomicUsize::new(1),
+            publications: AtomicUsize::new(0),
+            deliveries: AtomicUsize::new(0),
+            changed: Mutex::new(BTreeSet::new()),
         }
     }
-    for local in changed {
-        host.bus.send(&local, crate::bus::CHANGED);
+    fn complete(&self) -> bool {
+        self.pending.load(Ordering::Acquire) == 0
+    }
+    fn published(&self) -> bool {
+        self.complete() && self.publications.load(Ordering::Acquire) == 0
+    }
+}
+struct Delivery {
+    chain: Arc<Chain>,
+    emitter: LocalName,
+    event: EventRecord,
+    hop: u8,
+    accepted: Arc<AtomicBool>,
+}
+struct Publication {
+    job: Arc<Job>,
+    // Emitted event messages are included only if they survive the limits.
+    messages: Vec<(Option<Arc<AtomicBool>>, String)>,
+}
+impl Deliveries {
+    fn enqueue(&self, invocation: &Invocation, events: &[EventRecord], changed: bool) {
+        let chain = &invocation.chain;
+        let mut pending = self.pending.lock().unwrap();
+        let emitter = pending
+            .emitters
+            .entry(invocation.local.clone())
+            .or_default();
+        let mut messages = Vec::new();
+        if let Some(received) = &invocation.received {
+            messages.push((None, received.clone()));
+        }
+        chain.job.pending.fetch_add(events.len(), Ordering::Release);
+        for event in events {
+            let accepted = Arc::new(AtomicBool::new(false));
+            messages.push((
+                Some(accepted.clone()),
+                crate::bus::event_message(&invocation.local, event),
+            ));
+            emitter.events.push_back(Delivery {
+                chain: chain.clone(),
+                emitter: invocation.local.clone(),
+                event: event.clone(),
+                hop: invocation.hop,
+                accepted,
+            });
+        }
+        if changed {
+            chain
+                .job
+                .changed
+                .lock()
+                .unwrap()
+                .insert(invocation.local.clone());
+        }
+        if changed || !messages.is_empty() {
+            chain.job.publications.fetch_add(1, Ordering::Release);
+            emitter.pages.push_back(Publication {
+                job: chain.job.clone(),
+                messages,
+            });
+        }
+        self.wake.notify_all();
+    }
+
+    fn ready(&self, chain: &Chain) {
+        let _pending = self.pending.lock().unwrap();
+        chain.ready.store(true, Ordering::Release);
+        self.wake.notify_all();
+    }
+
+    fn finish(&self, host: &Host, chain: &Arc<Chain>) {
+        let mut pending = self.pending.lock().unwrap();
+        chain.ready.store(true, Ordering::Release);
+        chain.job.pending.fetch_sub(1, Ordering::Release);
+        self.wake.notify_all();
+        loop {
+            // A later commit cannot overtake an earlier page batch of this mod.
+            // Read-only calls with no effects do not wait for another job.
+            for (local, emitter) in &mut pending.emitters {
+                while emitter.pages.front().is_some_and(|p| p.job.complete()) {
+                    let publication = emitter.pages.pop_front().unwrap();
+                    // Coalesce changed at the last commit of this mod in the
+                    // original call's completed event chain (9.2 step 6).
+                    let changed = !emitter
+                        .pages
+                        .iter()
+                        .any(|p| Arc::ptr_eq(&p.job, &publication.job))
+                        && publication.job.changed.lock().unwrap().remove(local);
+                    let sender = host.bus.publication();
+                    for (accepted, message) in publication.messages {
+                        if accepted.is_none_or(|flag| flag.load(Ordering::Acquire)) {
+                            let _ = sender.send((local.clone(), message.into()));
+                        }
+                    }
+                    if changed {
+                        let _ = sender.send((local.clone(), crate::bus::CHANGED.into()));
+                    }
+                    publication.job.publications.fetch_sub(1, Ordering::Release);
+                }
+            }
+            self.wake.notify_all();
+            if chain.job.published() {
+                return;
+            }
+            let next = pending.emitters.values_mut().find_map(|emitter| {
+                if emitter.active
+                    || !emitter.events.front().is_some_and(|e| {
+                        Arc::ptr_eq(&e.chain.job, &chain.job)
+                            && e.chain.ready.load(Ordering::Acquire)
+                    })
+                {
+                    return None;
+                }
+                emitter.active = true;
+                emitter.events.pop_front()
+            });
+            let Some(delivery) = next else {
+                pending = self.wake.wait(pending).unwrap();
+                continue;
+            };
+            drop(pending);
+            process(&delivery);
+            pending = self.pending.lock().unwrap();
+            pending.emitters.get_mut(&delivery.emitter).unwrap().active = false;
+            delivery.chain.job.pending.fetch_sub(1, Ordering::Release);
+            self.wake.notify_all();
+        }
+    }
+}
+
+fn process(delivery: &Delivery) {
+    let chain = &delivery.chain;
+    let host = &chain.host;
+    let job = &chain.job;
+    let emitter = &delivery.emitter;
+    let event = &delivery.event;
+    if delivery.hop >= host.limits.hops {
+        eprintln!("watane: event hop limit reached");
+        return;
+    }
+    if job.deliveries.load(Ordering::Acquire) >= host.limits.deliveries {
+        eprintln!("watane: event delivery limit reached");
+        return;
+    }
+    delivery.accepted.store(true, Ordering::Release);
+    let message = crate::bus::event_message(emitter, event);
+    let mut subscribers: Vec<_> = chain
+        .snapshot
+        .mods
+        .iter()
+        .filter(|m| m.enabled && m.error.is_none())
+        .collect();
+    subscribers.sort_by(|a, b| a.local.cmp(&b.local));
+    for m in subscribers {
+        for link in m.links.iter().filter(|l| {
+            matches!(l.kind, LinkKind::Subscribe)
+                && l.provider.as_ref() == Some(emitter)
+                && l.provider_interface.as_ref() == Some(&event.interface)
+        }) {
+            if !m.grants.iter().any(|g| g.granted && matches!(&g.grant, Grant::Subscribe { interface,.. } if interface == &link.interface)) { continue; }
+            // Only the original caller drains this job's events.
+            let count = job.deliveries.load(Ordering::Relaxed);
+            if count >= host.limits.deliveries {
+                return;
+            }
+            job.deliveries.store(count + 1, Ordering::Relaxed);
+            let Ok(deadline) = deadline(host) else {
+                continue;
+            };
+            let subscriber = Arc::new(Chain {
+                host: host.clone(),
+                snapshot: chain.snapshot.clone(),
+                fakes: None,
+                deadline,
+                effects: Mutex::new(Effects::default()),
+                publish: true,
+                ready: AtomicBool::new(false),
+                job: job.clone(),
+            });
+            let invocation = Invocation {
+                chain: subscriber.clone(),
+                local: m.local.clone(),
+                depth: 0,
+                hop: delivery.hop + 1,
+                received: Some(message.clone()),
+            };
+            let result = invocation.invoke(
+                &Caller::Mod(emitter.clone()),
+                &format!("{}.{}", link.interface, event.function),
+                event.args.clone(),
+                host.limits.fuel,
+                true,
+            );
+            // Nested calls have also released their locks before these events run.
+            host.events.ready(&subscriber);
+            if let Err(error) = result {
+                eprintln!(
+                    "watane: event {}.{} from {emitter} to {} failed: {:?}: {}",
+                    event.interface, event.function, m.local, error.code, error.message
+                );
+            }
+        }
     }
 }

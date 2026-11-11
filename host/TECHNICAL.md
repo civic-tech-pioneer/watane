@@ -1285,9 +1285,9 @@ already exists, so an empty page-only home needs no state directory.
 
 Outlets queue named JSON arguments in the call's outbox. A successful state
 commit publishes the events to the emitter's pages, then `changed` if bytes
-changed. S11 serializes top-level calls through delivery and publication,
-with no mod lock held while sending, so commits keep their order. The host
-owns one broadcast channel with capacity 1024. `/events` filters by local
+changed. Each mod queues its publication before releasing its call mutex.
+Publication keeps that mod's commit order; unrelated mods run independently.
+The host owns one broadcast channel with capacity 1024. `/events` filters by local
 name, recovers from lag with `changed`, pings after 15 idle seconds, and ends
 on server shutdown. Updates with a different package id keep identity and
 local name, and send `reload` after the catalog commit and registry swap.
@@ -1336,8 +1336,18 @@ providers and call cycles, and persists links in provider-first order.
 Subscription cycles are allowed; their order breaks ties by local name.
 Calls share fuel and deadline across nested providers. Event delivery runs
 without mod locks, with fresh invocation budgets and shared hop and delivery
-limits. Top-level calls serialize through a deadline-bounded execution lock
-to preserve commit and page publication order across event deliveries.
+limits. Each emitter queues committed events before releasing its call
+mutex. A queue head becomes ready after its invoking chain releases its
+mod locks. Callers drain their own ready events, one at a time per emitter.
+They release queue locks before invoking a subscriber and hold no emitter
+lock. Subscriber invokes take their normal per-mod call locks. A caller
+waits when another call has an earlier event of the same emitter.
+Each original call waits for its own deliveries. Page batches retain each
+mod's commit order and become publishable when that call's event chain
+finishes. Each changed mod gets one `changed` message at its last page
+batch of that chain. Only changed state bytes add this message. Queue locks
+only protect enqueue, dequeue and publication; they never cover a call.
+This keeps nested calls and event cycles free of publication lock waits.
 This ends the S2 link refusal, S3 subscriber deferral and S4 fake/deliver cuts.
 Harness imports use fakes and subscriptions use `deliver`; Harness functions,
 participant confirmation and revoke remain deferred.
@@ -1464,3 +1474,8 @@ Each answer below is used in this file.
   match multiple providers are `no_function` in the harness. The harness
   uses the preview staging and compile path with unbound providers and
   fake imports.
+
+- **Q23 correction (host)** Validator round 1 removes global call serialization.
+  Per-emitter queues preserve event order; queued page batches preserve each
+  mod's commit order. Invocations never wait for publication while holding
+  a mod lock. Unrelated mods can execute concurrently.

@@ -420,3 +420,128 @@ async fn ac8_s11_event_without_state_change_sends_no_changed() {
     stream.quiet().await;
     served.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac1_validator_concurrent_commits_keep_page_order() {
+    let (_home, host, served, client, origin) = setup().await;
+    let mut stream = Stream::open(&client, &origin).await;
+    let mut calls = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let host = host.clone();
+        calls.spawn(async move {
+            host.call_async(
+                Caller::Page,
+                LocalName::parse("counter").unwrap(),
+                "api.add".into(),
+                Value::Null,
+            )
+            .await
+            .unwrap()
+        });
+    }
+    let mut values = Vec::new();
+    while let Some(result) = calls.join_next().await {
+        values.push(result.unwrap().as_u64().unwrap());
+    }
+    values.sort();
+    assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    for count in 1..=8 {
+        assert_eq!(stream.message().await, counted(count));
+        assert_eq!(stream.message().await, json!({"type":"changed"}));
+    }
+    stream.quiet().await;
+    served.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac1_validator_nested_calls_and_event_delivery_do_not_deadlock() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
+        .unwrap();
+    host.call_async(
+        Caller::Page,
+        LocalName::parse("shelf").unwrap(),
+        "items.add".into(),
+        json!(["Dune"]),
+    )
+    .await
+    .unwrap();
+    let mut calls = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        for (local, function, args) in [
+            ("shelf", "items.add", json!(["Dune"])),
+            ("recs", "api.suggest", Value::Null),
+        ] {
+            let host = host.clone();
+            calls.spawn(async move {
+                host.call_async(
+                    Caller::Page,
+                    LocalName::parse(local).unwrap(),
+                    function.into(),
+                    args,
+                )
+                .await
+                .unwrap()
+            });
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(result) = calls.join_next().await {
+            result.unwrap();
+        }
+    })
+    .await
+    .expect("nested calls and deliveries must not deadlock");
+    assert_eq!(
+        host.call_async(
+            Caller::Page,
+            LocalName::parse("recs").unwrap(),
+            "api.received".into(),
+            Value::Null
+        )
+        .await
+        .unwrap(),
+        json!([
+            "Dune", "Dune", "Dune", "Dune", "Dune", "Dune", "Dune", "Dune", "Dune"
+        ])
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac1_validator_event_chain_sends_one_changed_per_mod() {
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    host.install_folders(&[fixture("loop-a"), fixture("loop-b")], 0)
+        .unwrap();
+    let served = host.serve(0).await.unwrap();
+    let client = Client::builder()
+        .no_proxy()
+        .resolve("loop-a.localhost", ([127, 0, 0, 1], served.port).into())
+        .build()
+        .unwrap();
+    let mut stream =
+        Stream::open(&client, &format!("http://loop-a.localhost:{}", served.port)).await;
+    host.call_async(
+        Caller::Page,
+        LocalName::parse("loop-a").unwrap(),
+        "api.start".into(),
+        Value::Null,
+    )
+    .await
+    .unwrap();
+    for n in 0..8 {
+        let (emitter, interface) = if n % 2 == 0 {
+            ("loop-a", "mods:loop-a/events@0.1.0")
+        } else {
+            ("loop-b", "mods:loop-b/events@0.1.0")
+        };
+        assert_eq!(
+            stream.message().await,
+            json!({"type":"event","from":emitter,"interface":interface,"function":"ping","args":{"n":n}})
+        );
+    }
+    assert_eq!(stream.message().await, json!({"type":"changed"}));
+    stream.quiet().await;
+    served.shutdown().await;
+}

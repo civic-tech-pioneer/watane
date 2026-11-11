@@ -56,7 +56,7 @@ pub struct Host {
     bus: bus::PageBus,
     tools: Mutex<tools::Tools>,
     weak: std::sync::Weak<Host>,
-    execution: Mutex<()>,
+    events: runtime::call::Deliveries,
     fakes: Mutex<Option<Fakes>>,
 }
 
@@ -69,7 +69,7 @@ impl Host {
         let tools = tools::Tools::open(&home.path)?;
         let host = Arc::new_cyclic(|weak| Self {
             weak: weak.clone(),
-            execution: Mutex::new(()),
+            events: runtime::call::Deliveries::default(),
             fakes: Mutex::new(None),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),

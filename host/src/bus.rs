@@ -37,7 +37,7 @@ impl PageBus {
             sender: Mutex::new(broadcast::channel(capacity).0),
         }
     }
-    // Serialize channel subscription and publication. Call execution preserves commit order.
+    // Serialize channel subscription and publication. Per-mod queues preserve commit order.
     pub fn publication(&self) -> MutexGuard<'_, broadcast::Sender<Message>> {
         self.sender
             .lock()
