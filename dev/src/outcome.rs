@@ -251,4 +251,30 @@ mod tests {
         assert!(!outcome.ok);
         assert_eq!(outcome.exit_code(), 1);
     }
+    #[test]
+    fn ac3_exit_classes_and_problem_envelope() {
+        use super::{Class, Code, Outcome, Problem};
+        use serde_json::json;
+        for (code, class, status, text) in [
+            (Code::ModInvalid, Class::Mod, 1, "mod.invalid"),
+            (Code::UsageArgs, Class::Usage, 2, "usage.args"),
+            (Code::EnvWataneMissing, Class::Env, 3, "env.watane_missing"),
+            (Code::HostRefused, Class::Refused, 4, "host.refused"),
+            (Code::Internal, Class::Internal, 5, "internal"),
+        ] {
+            assert_eq!(code.class(), class);
+            assert_eq!(code, code);
+            assert_eq!(serde_json::to_value(code).unwrap(), text);
+            let problem = Problem::new(code, "message").at("ui/app.js", Some(12), Some(5));
+            let cloned = problem.clone();
+            let outcome = Outcome::new("check", None).fail(vec![cloned]);
+            let command: &'static str = outcome.command;
+            assert_eq!(command, "check");
+            assert_eq!(outcome.exit_code(), status);
+            assert_eq!(
+                serde_json::to_value(problem).unwrap(),
+                json!({"code":text,"message":"message","file":"ui/app.js","line":12,"column":5,"fix":null})
+            );
+        }
+    }
 }

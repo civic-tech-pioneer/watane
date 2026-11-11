@@ -214,4 +214,23 @@ mod tests {
             assert_eq!(error.code.as_str(), "env.allowlist");
         }
     }
+
+    #[test]
+    fn ac3_custom_vendor_fix_names_bootstrap_and_export() {
+        let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let error = problem(Path::new("/missing/vendor"), "missing");
+        assert_eq!(error.code, Code::EnvAllowlist);
+        assert_eq!(
+            error.message,
+            "the crate allowlist at /missing/vendor differs from this watane-dev: missing"
+        );
+        assert_eq!(
+            error.fix,
+            Some(format!(
+                "'{}' && export WATANE_DEV_VENDOR='{}'",
+                dev.join("scripts/vendor.sh").display(),
+                dev.join("allowlist/vendor").display()
+            ))
+        );
+    }
 }

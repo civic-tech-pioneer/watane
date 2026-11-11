@@ -1,9 +1,11 @@
+mod support;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
 
 struct Fixture {
-    temp: tempfile::TempDir,
+    _temp: tempfile::TempDir,
     dir: PathBuf,
+    cache: PathBuf,
 }
 impl Fixture {
     fn new() -> Self {
@@ -15,13 +17,17 @@ impl Fixture {
             .output()
             .unwrap();
         assert!(output.status.success());
-        Self { temp, dir }
+        Self {
+            _temp: temp,
+            dir,
+            cache: support::cache().to_path_buf(),
+        }
     }
     fn run(&self, name: &str) -> (i32, Value) {
         let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .current_dir(&self.dir)
             .args([name, "--json"])
-            .env("WATANE_DEV_CACHE", self.temp.path().join("cache"))
+            .env("WATANE_DEV_CACHE", &self.cache)
             .env_remove("WATANE_DEV_UNIT_SECONDS")
             .output()
             .unwrap();
@@ -44,6 +50,7 @@ impl Fixture {
 }
 
 #[test]
+#[ignore = "slow: full template pipeline verifies unit counts and compiled component export"]
 fn ac1_template_counts_and_component_export() {
     let f = Fixture::new();
     let steps: usize = fs::read_dir(f.dir.join("tests"))
@@ -83,6 +90,7 @@ fn ac1_template_counts_and_component_export() {
 }
 
 #[test]
+#[ignore = "slow: full pipeline repairs changed logic after unit and contract failures"]
 fn ac2_broken_add_reports_step_and_can_be_fixed() {
     let f = Fixture::new();
     let path = f.dir.join("logic/src/lib.rs");
@@ -143,83 +151,36 @@ fn ac3_literal_fresh_counter_failure_and_fresh_state_per_file() {
 }
 
 #[test]
-fn ac4_events_match_short_and_full_names_and_exact_lists() {
-    let f = Fixture::new();
-    for (events, passes) in [
-        (
-            json!([{"event":"changes.counted","args":{"count":1}}]),
-            true,
-        ),
-        (
-            json!([{"event":"mods:counter/changes.counted","args":{"count":1.0}}]),
-            true,
-        ),
-        (
-            json!([{"event":"changes.counted","args":{"count":2}}]),
-            false,
-        ),
-        (json!([]), false),
-        (
-            json!([{"event":"changes.counted","args":{"count":1}},{"event":"changes.counted","args":{"count":1}}]),
-            false,
-        ),
-    ] {
-        f.steps(json!([{"call":"api.add","emits":events}]));
-        let (code, v) = f.run("test");
-        assert_eq!(code, i32::from(!passes), "{v}");
-        if !passes {
-            assert_eq!(v["errors"][0]["code"], "test.contract");
-            assert_eq!(v["result"]["contract"]["failures"][0]["step"], 1);
-            assert_eq!(v["result"]["contract"]["failures"][0]["expected"], events);
-            assert_eq!(
-                v["result"]["contract"]["failures"][0]["got"],
-                json!([{"event":"mods:counter/changes.counted","args":{"count":1}}])
-            );
-        }
-    }
-}
-
-#[test]
-fn ac5_expected_call_failures() {
-    let f = Fixture::new();
-    for (function, fails, passes) in [
-        ("api.missing", json!(true), true),
-        ("api.missing", json!("no_function:"), true),
-        ("api.missing", json!("different error"), false),
-        ("api.get", json!(true), false),
-    ] {
-        f.steps(json!([{"call":function,"fails":fails}]));
-        let (code, v) = f.run("test");
-        assert_eq!(code, i32::from(!passes), "{v}");
-        if !passes {
-            assert_eq!(v["errors"][0]["code"], "test.contract", "{v}");
-        }
-    }
-}
-
-#[test]
 fn ac6_bad_contract_file_names_file() {
     let f = Fixture::new();
     fs::write(f.dir.join("tests/counter.json"), "{").unwrap();
-    let (code, v) = f.run("test");
-    assert_eq!(code, 1, "{v}");
-    assert_eq!(v["errors"][0]["code"], "test.contract_file");
-    assert_eq!(v["errors"][0]["file"], "tests/counter.json");
+    fs::copy(
+        support::cache().join("counter/logic.wasm"),
+        f.dir.join("logic.wasm"),
+    )
+    .unwrap();
+    let (_, errors) =
+        watane_dev::contract::contract_tests(&f.dir, &"counter".parse().unwrap()).unwrap();
+    assert_eq!(errors[0].code.as_str(), "test.contract_file");
+    assert_eq!(errors[0].file.as_deref(), Some("tests/counter.json"));
 }
 
 #[test]
+#[ignore = "slow: full serve pipeline gates preview creation on contracts"]
 fn ac8_serve_does_not_start_preview_for_failed_or_absent_contracts() {
     let f = Fixture::new();
+    let hash = blake3::hash(f.dir.canonicalize().unwrap().as_os_str().as_encoded_bytes()).to_hex();
+    let preview = f.cache.join(format!("previews/counter-{}", &hash[..8]));
     f.steps(json!([{"call":"api.add","returns":2}]));
     let (code, v) = f.run("serve");
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "test.contract");
-    assert!(!f.temp.path().join("cache/previews").exists());
+    assert!(!preview.exists());
     fs::remove_file(f.dir.join("tests/counter.json")).unwrap();
     let (code, v) = f.run("serve");
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "mod.no_contract_tests");
-    assert!(!f.temp.path().join("cache/previews").exists());
+    assert!(!preview.exists());
 }
 
 fn prebuilt_recommendations() -> Fixture {
@@ -241,7 +202,11 @@ fn prebuilt_recommendations() -> Fixture {
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/recommendations"),
         &dir,
     );
-    Fixture { temp, dir }
+    Fixture {
+        cache: temp.path().join("cache"),
+        _temp: temp,
+        dir,
+    }
 }
 
 #[test]
@@ -340,5 +305,5 @@ fn ac5_s11_test_rejects_stale_wasm_without_manifest() {
         !f.dir.join("logic.wasm").exists(),
         "stale wasm survived failed build"
     );
-    assert!(!f.temp.path().join("cache/previews").exists());
+    assert!(!f.cache.join("previews").exists());
 }

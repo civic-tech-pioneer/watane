@@ -417,4 +417,59 @@ mod tests {
         ready.token = None;
         assert_eq!(json!({"mcp": mcp(&ready)}), json!({"mcp": null}));
     }
+
+    #[test]
+    fn ac3_previous_warning_requires_answering_preview_and_has_literal_fix() {
+        use std::{io::Read, net::TcpListener};
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("counter");
+        fs::create_dir(&dir).unwrap();
+        let env = Env {
+            cache: temp.path().join("cache"),
+            unit_seconds: 60,
+        };
+        assert!(previous_warning(&dir, &env).is_none());
+        let preview = folder(&dir, &env, "counter");
+        let home = preview.join("home");
+        fs::create_dir_all(&home).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(
+            home.join("run.json"),
+            json!({"watane":1,"mode":"preview","pid":std::process::id(),"port":port}).to_string(),
+        )
+        .unwrap();
+        fs::write(preview.join("ready.json"), json!({"watane":1,"mode":"preview","home":home,"port":port,"api":"untrusted","mcp":null,"token":null,"mods":[]}).to_string()).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(30)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            let body = json!({"watane":1,"mode":"preview","home":home,"port":port}).to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        let warning = previous_warning(&dir, &env).unwrap();
+        assert_eq!(
+            serde_json::to_value(warning).unwrap(),
+            json!({
+                "code":"preview.previous",
+                "message":format!("the preview at http://localhost:{port}/api/ still serves the previous build"),
+                "file":null,"line":null,"column":null,
+                "fix":"Fix the errors, then run: watane-dev serve --json"
+            })
+        );
+        server.join().unwrap();
+        assert!(previous_warning(&dir, &env).is_none());
+    }
 }

@@ -73,7 +73,7 @@ export!(Mod);
 "#;
 
 #[test]
-#[ignore = "slow: journey S11, a call and an event across two served mods"]
+#[ignore = "slow: needs WATANE_BIN; journey S11 on real programs"]
 fn ac4_s11_call_and_event_across_two_served_mods() {
     let j = Journey {
         temp: tempfile::tempdir().unwrap(),

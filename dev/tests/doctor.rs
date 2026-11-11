@@ -224,7 +224,7 @@ fn ac6_stale_home_is_no_error() {
     assert_eq!(v["errors"], json!([]));
 }
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac6 real preview home is running without app"]
 fn ac6_real_preview_home_is_running_without_app() {
     let m = Machine::new();
     let binary = std::env::var_os("WATANE_BIN").expect("WATANE_BIN");

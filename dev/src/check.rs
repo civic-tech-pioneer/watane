@@ -629,3 +629,109 @@ crate-type = ["cdylib"]
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ac3_dev_s5_and_s8_file_codes_locations_and_fixes() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("logic/src")).unwrap();
+        fs::write(temp.path().join("logic/build.rs"), "fn main() {}").unwrap();
+        std::os::unix::fs::symlink("missing", temp.path().join("logic/src/link.rs")).unwrap();
+        assert_eq!(
+            serde_json::to_value(files(temp.path()).unwrap()).unwrap(),
+            json!([
+                {"code":"mod.logic_file","message":"logic/build.rs is not allowed: the builder runs no build script",
+                 "file":"logic/build.rs","line":null,"column":null,"fix":"Remove logic/build.rs"},
+                {"code":"mod.symlink","message":"logic/src/link.rs is a symbolic link",
+                 "file":"logic/src/link.rs","line":null,"column":null,"fix":"Replace it with a file"}
+            ])
+        );
+    }
+
+    #[test]
+    fn ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes() {
+        let base = "[lib]\ncrate-type = [\"cdylib\"]\n[workspace]\n";
+        for (extra, code, line, message, fix) in [
+            (
+                "[dependencies]\nrand = \"0.9\"\n",
+                "mod.dependency",
+                5,
+                "dependency `rand` is not in the allowlist",
+                "Use only: serde 1.0.229, serde_json 1.0.154, wit-bindgen 0.63.0",
+            ),
+            (
+                "[build-dependencies]\n",
+                "mod.cargo_key",
+                4,
+                "logic/Cargo.toml: `build-dependencies` is not allowed or has an invalid value",
+                "Remove it or correct its value. Allowed: package.{name,version,edition,publish,description,license,authors}, lib.crate-type = [\"cdylib\"], dependencies, dev-dependencies, empty workspace",
+            ),
+        ] {
+            let errors = check_manifest(&format!("{base}{extra}"), &Allowlist::embedded());
+            assert_eq!(
+                serde_json::to_value(errors).unwrap(),
+                json!([
+                    {"code":code,"message":message,"file":"logic/Cargo.toml","line":line,"column":null,"fix":fix}
+                ])
+            );
+        }
+        let errors = check_manifest(
+            "[lib]\ncrate-type = [\"cdylib\"]\nproc-macro = true\n[workspace]\n",
+            &Allowlist::embedded(),
+        );
+        assert_eq!(
+            serde_json::to_value(errors).unwrap(),
+            json!([{
+                "code":"mod.cargo_key", "message":"logic/Cargo.toml: `lib.proc-macro` is not allowed or has an invalid value",
+                "file":"logic/Cargo.toml","line":3,"column":null,
+                "fix":"Remove it or correct its value. Allowed: package.{name,version,edition,publish,description,license,authors}, lib.crate-type = [\"cdylib\"], dependencies, dev-dependencies, empty workspace"
+            }])
+        );
+    }
+
+    #[test]
+    fn ac3_check_repairs_host_wit_and_skips_git_links() {
+        let root = tempfile::tempdir().unwrap();
+        let temp = root.path().join("counter");
+        crate::template::new_mod(temp.as_path(), "counter").unwrap();
+        fs::create_dir(temp.as_path().join(".git")).unwrap();
+        std::os::unix::fs::symlink("missing", temp.as_path().join(".git/link")).unwrap();
+        fs::write(
+            temp.as_path().join("wit/deps/watane-host/host.wit"),
+            "changed",
+        )
+        .unwrap();
+        assert!(check(temp.as_path()).is_ok());
+        assert_eq!(
+            fs::read_to_string(temp.as_path().join("wit/deps/watane-host/host.wit")).unwrap(),
+            watane_host::HOST_WIT
+        );
+    }
+
+    #[test]
+    fn ac3_logic_needs_contract_but_page_only_does_not() {
+        let root = tempfile::tempdir().unwrap();
+        let temp = root.path().join("counter");
+        crate::template::new_mod(temp.as_path(), "counter").unwrap();
+        fs::remove_file(temp.as_path().join("tests/counter.json")).unwrap();
+        let errors = check(temp.as_path()).err().unwrap();
+        assert_eq!(
+            serde_json::to_value(errors).unwrap(),
+            json!([{
+                "code":"mod.no_contract_tests","message":"the mod has a logic part and no contract test",
+                "file":null,"line":null,"column":null,"fix":"Add tests/<name>.json (see AGENTS.md)"
+            }])
+        );
+        fs::remove_dir_all(temp.as_path().join("logic")).unwrap();
+        fs::write(
+            temp.as_path().join("wit/world.wit"),
+            "package mods:counter@0.1.0;\nworld counter {}\n",
+        )
+        .unwrap();
+        assert!(check(temp.as_path()).is_ok());
+    }
+}

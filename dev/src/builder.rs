@@ -566,4 +566,23 @@ mod tests {
         }));
         assert!(args.contains(&"--offline"));
     }
+
+    #[test]
+    fn ac3_compiler_failure_code_location_and_fix() {
+        let message = serde_json::json!({"message":"test-only compile failure", "spans":[{
+            "is_primary":true,"file_name":"/watane-dev/build/counter/logic/src/lib.rs", "line_start":71,"column_start":1
+        }]});
+        let error = compiler_problem(
+            &message,
+            Path::new("/cache/build/counter"),
+            &"counter".parse().unwrap(),
+        );
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code":"build.compile","message":"test-only compile failure","file":"logic/src/lib.rs","line":71,"column":1,
+                "fix":"Correct the Rust error at the reported location and run the command again"
+            })
+        );
+    }
 }

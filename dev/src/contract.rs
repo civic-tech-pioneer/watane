@@ -632,4 +632,51 @@ mod tests {
         assert_eq!(errors[0].code, Code::TestContract);
         assert_eq!(errors[0].file.as_deref(), Some("tests/a.json"));
     }
+
+    #[test]
+    fn ac3_single_event_equality_and_failure_payloads() {
+        for (expected, passes) in [
+            (
+                json!([{"event":"changes.counted","args":{"count":1}}]),
+                true,
+            ),
+            (
+                json!([{"event":"mods:counter/changes.counted","args":{"count":1.0}}]),
+                true,
+            ),
+            (
+                json!([{"event":"changes.counted","args":{"count":2}}]),
+                false,
+            ),
+            (json!([]), false),
+            (
+                json!([{"event":"changes.counted","args":{"count":1}},{"event":"changes.counted","args":{"count":1}}]),
+                false,
+            ),
+        ] {
+            let steps = parse(&json!({"steps":[{"call":"api.add","emits":expected}]}).to_string())
+                .unwrap()
+                .steps;
+            let (passed, failures) =
+                run_steps("tests/counter.json", &steps, "counter", &mut |_, _| {
+                    Ok(Outcome {
+                        value: json!(1),
+                        events: vec![EventRecord {
+                            interface: "mods:counter/changes@0.1.0".parse().unwrap(),
+                            function: "counted".into(),
+                            args: json!({"count":1}),
+                        }],
+                    })
+                });
+            assert_eq!(passed, u32::from(passes));
+            if !passes {
+                assert_eq!(failures[0].step, 1);
+                assert_eq!(failures[0].expected, Some(expected));
+                assert_eq!(
+                    failures[0].got,
+                    Some(json!([{"event":"mods:counter/changes.counted","args":{"count":1}}]))
+                );
+            }
+        }
+    }
 }

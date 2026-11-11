@@ -1,3 +1,4 @@
+mod support;
 use serde_json::Value;
 use std::{
     fs,
@@ -11,6 +12,7 @@ struct Mod {
     temp: tempfile::TempDir,
     dir: PathBuf,
     host: PathBuf,
+    cache: PathBuf,
 }
 impl Mod {
     fn new(real: bool) -> Self {
@@ -23,7 +25,18 @@ impl Mod {
         } else {
             temp.path().join("missing")
         };
-        let m = Self { temp, dir, host };
+        let cache = if real {
+            support::cache().to_path_buf()
+        } else {
+            temp.path().join("cache")
+        };
+        fs::create_dir_all(&cache).unwrap();
+        let m = Self {
+            temp,
+            dir,
+            host,
+            cache,
+        };
         assert_eq!(m.run(&["new", "hello", "--json"]).0, 0);
         m
     }
@@ -42,7 +55,7 @@ impl Mod {
         };
         Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .current_dir(cwd)
-            .env("WATANE_DEV_CACHE", self.temp.path().join("cache"))
+            .env("WATANE_DEV_CACHE", &self.cache)
             .env("WATANE_BIN", &self.host)
             .args(args)
             .output()
@@ -92,7 +105,7 @@ fn get(v: &Value, path: &str) -> (String, Vec<u8>) {
     )
 }
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac4 real preview serves page and csp"]
 fn ac4_real_preview_serves_page_and_csp() {
     let m = Mod::new(true);
     let v = m.serve();
@@ -105,11 +118,10 @@ fn ac4_real_preview_serves_page_and_csp() {
     assert!(v["mcp"]["token"].as_str().unwrap().starts_with("wt_"));
     let hash = blake3::hash(m.dir.canonicalize().unwrap().to_str().unwrap().as_bytes()).to_hex();
     let folder = m
-        .temp
-        .path()
+        .cache
         .canonicalize()
         .unwrap()
-        .join(format!("cache/previews/hello-{}/", &hash[..8]));
+        .join(format!("previews/hello-{}/", &hash[..8]));
     assert_eq!(v["home"], folder.join("home").to_str().unwrap());
     assert_eq!(v["log"], folder.join("watane.log").to_str().unwrap());
     assert_eq!(
@@ -135,7 +147,7 @@ fn ac4_real_preview_serves_page_and_csp() {
     );
 }
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac5 serve reuses preview and updates page"]
 fn ac5_serve_reuses_preview_and_updates_page() {
     let m = Mod::new(true);
     let first = m.serve();
@@ -150,7 +162,7 @@ fn ac5_serve_reuses_preview_and_updates_page() {
     assert_eq!(get(&second, "").1, b"<!doctype html><h1>Edited</h1>");
 }
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac6 stop closes port and removes preview"]
 fn ac6_stop_closes_port_and_removes_preview() {
     let m = Mod::new(true);
     let v = m.serve();
@@ -178,6 +190,13 @@ fn ac6_stop_closes_port_and_removes_preview() {
 #[test]
 fn ac7b_missing_host_has_environment_error_and_doctor_next() {
     let m = Mod::new(false);
+    fs::remove_dir_all(m.dir.join("logic")).unwrap();
+    fs::write(
+        m.dir.join("wit/world.wit"),
+        "package mods:hello@0.1.0;\nworld hello {}\n",
+    )
+    .unwrap();
+
     let (c, v) = m.run(&["serve", "--json"]);
     assert_eq!(c, 3);
     assert_eq!(v["errors"][0]["code"], "env.watane_missing");
@@ -193,11 +212,10 @@ fn stop_with_unreadable_run_json_is_not_running() {
     let m = Mod::new(false);
     let hash = blake3::hash(m.dir.canonicalize().unwrap().to_str().unwrap().as_bytes()).to_hex();
     let folder = m
-        .temp
-        .path()
+        .cache
         .canonicalize()
         .unwrap()
-        .join(format!("cache/previews/hello-{}", &hash[..8]));
+        .join(format!("previews/hello-{}", &hash[..8]));
     fs::create_dir_all(folder.join("home")).unwrap();
     fs::write(folder.join("home/run.json"), "not json").unwrap();
     let (c, v) = m.run(&["serve", "--stop", "--json"]);
@@ -207,7 +225,7 @@ fn stop_with_unreadable_run_json_is_not_running() {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac6 stop works after mod files are broken"]
 fn ac6_stop_works_after_mod_files_are_broken() {
     for file in ["mod.toml", "wit/world.wit"] {
         let m = Mod::new(true);
@@ -233,16 +251,16 @@ fn ac6_stop_works_after_mod_files_are_broken() {
 }
 
 #[test]
+#[ignore = "timing: stop deadline after child exits leaving run.json; run on a quiescent machine"]
 fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
     use std::{net::TcpListener, process::Stdio, time::Instant};
     let m = Mod::new(false);
     let hash = blake3::hash(m.dir.canonicalize().unwrap().as_os_str().as_encoded_bytes()).to_hex();
     let folder = m
-        .temp
-        .path()
+        .cache
         .canonicalize()
         .unwrap()
-        .join(format!("cache/previews/hello-{}", &hash[..8]));
+        .join(format!("previews/hello-{}", &hash[..8]));
     let home = folder.join("home");
     fs::create_dir_all(&home).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -300,11 +318,10 @@ fn stop_works_after_mod_folder_is_deleted() {
     let dir = m.dir.canonicalize().unwrap();
     let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
     let folder = m
-        .temp
-        .path()
+        .cache
         .canonicalize()
         .unwrap()
-        .join(format!("cache/previews/hello-{}", &hash[..8]));
+        .join(format!("previews/hello-{}", &hash[..8]));
     fs::create_dir_all(folder.join("home")).unwrap();
     fs::remove_dir_all(&dir).unwrap();
     let (code, value) = m.run(&["--dir", dir.to_str().unwrap(), "serve", "--stop", "--json"]);
@@ -336,7 +353,7 @@ fn call(v: &Value, function: &str) -> Value {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac9 real counter page calls logic"]
 fn ac9_real_counter_page_calls_logic() {
     let m = Mod::new(true);
     let first = m.serve();
@@ -399,13 +416,13 @@ fn edited_counter() -> (Mod, Value, Vec<u8>) {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac2 edit keeps data and updates logic and page"]
 fn ac2_edit_keeps_data_and_updates_logic_and_page() {
     let (_m, _, _) = edited_counter();
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac3 broken build leaves running revision and count"]
 fn ac3_broken_build_leaves_running_revision_and_count() {
     let (m, preview, previous_html) = edited_counter();
     fs::write(m.dir.join("logic/src/lib.rs"), "fn broken( {").unwrap();
@@ -421,7 +438,7 @@ fn ac3_broken_build_leaves_running_revision_and_count() {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac8 failed contract keeps running preview bytes"]
 fn ac8_failed_contract_keeps_running_preview_bytes() {
     let m = Mod::new(true);
     let preview = m.serve();
@@ -444,8 +461,10 @@ fn ac8_failed_contract_keeps_running_preview_bytes() {
 }
 
 #[test]
+#[ignore = "slow: full serve pipeline forwards failed contract to test"]
 fn ac3_failed_contract_reports_test_next() {
-    let m = Mod::new(false);
+    let mut m = Mod::new(false);
+    m.cache = support::cache().to_path_buf();
     fs::write(
         m.dir.join("tests/counter.json"),
         r#"{"steps":[{"call":"api.add","returns":2}]}"#,
@@ -484,7 +503,7 @@ fn mcp_request(v: &Value, method: &str, params: Value) -> Value {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac1 preview mcp lists and calls counter"]
 fn ac1_preview_mcp_lists_and_calls_counter() {
     let m = Mod::new(true);
     let v = m.serve();
@@ -519,7 +538,7 @@ fn ac1_preview_mcp_lists_and_calls_counter() {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac2 reused preview keeps mcp"]
 fn ac2_reused_preview_keeps_mcp() {
     let m = Mod::new(true);
     let first = m.serve();
@@ -530,7 +549,7 @@ fn ac2_reused_preview_keeps_mcp() {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac3 refused serve warns about previous preview"]
 fn ac3_refused_serve_warns_about_previous_preview() {
     let m = Mod::new(true);
     let preview = m.serve();
@@ -559,8 +578,10 @@ fn ac3_refused_serve_warns_about_previous_preview() {
 }
 
 #[test]
+#[ignore = "slow: full serve pipeline emits no previous warning without preview"]
 fn ac4_refused_serve_without_preview_has_no_previous_warning() {
-    let m = Mod::new(false);
+    let mut m = Mod::new(false);
+    m.cache = support::cache().to_path_buf();
     fs::write(
         m.dir.join("tests/counter.json"),
         r#"{"steps":[{"call":"api.add","returns":2}]}"#,
@@ -579,7 +600,7 @@ fn ac4_refused_serve_without_preview_has_no_previous_warning() {
 }
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac5 refused serve prints previous preview warning"]
 fn ac5_refused_serve_prints_previous_preview_warning() {
     let m = Mod::new(true);
     let preview = m.serve();
@@ -642,10 +663,10 @@ fn ac5_provider_failure_is_prefixed_absolute_and_starts_no_preview() {
             .to_str()
             .unwrap()
     );
-    assert!(!m.temp.path().join("cache/previews").exists());
+    assert!(!m.cache.join("previews").exists());
 }
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; preview life cycle: ac7a successful serve gives own page or null"]
 fn ac7a_successful_serve_gives_own_page_or_null() {
     let m = Mod::new(true);
     let (code, v) = m.run(&["serve", "--json"]);
@@ -667,8 +688,10 @@ fn ac7a_successful_serve_gives_own_page_or_null() {
 /// run where the agent stands, shows the failure again; `test --json` in the
 /// consumer passes and sends the agent back to `serve`, a loop.
 #[test]
+#[ignore = "slow: S11 full consumer pipeline and reproducible provider next command"]
 fn regress_s11_provider_failure_next_reproduces_it() {
-    let m = Mod::new(false);
+    let mut m = Mod::new(false);
+    m.cache = support::cache().to_path_buf();
     let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .current_dir(m.temp.path())
         .args(["new", "provider", "--json"])

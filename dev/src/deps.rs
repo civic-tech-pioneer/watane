@@ -180,3 +180,61 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
             .collect(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ac3_missing_provider_text_and_fix() {
+        let error = missing("a");
+        assert_eq!(error.code, Code::ModProviderMissing);
+        assert_eq!(error.message, "the local provider a has no known folder");
+        assert_eq!(
+            error.fix.as_deref(),
+            Some("Run: watane-dev add <folder of a>")
+        );
+        assert_eq!(error.file, None);
+        assert_eq!(error.line, None);
+    }
+    #[test]
+    fn ac3_local_order_and_missing_folders() {
+        let t = tempfile::tempdir().unwrap();
+        for slug in ["a", "b", "c"] {
+            crate::template::new_mod(&t.path().join(slug), slug).unwrap();
+        }
+        let a = t.path().join("a");
+        let b = t.path().join("b");
+        let c = t.path().join("c");
+        add_local(&b, &a).unwrap();
+        let world = fs::read_to_string(b.join("wit/world.wit")).unwrap();
+        fs::write(
+            b.join("wit/world.wit"),
+            world.replace("world b {", "world b {\n    import mods:a/api@0.1.0;"),
+        )
+        .unwrap();
+        add_local(&c, &b).unwrap();
+        assert_eq!(
+            local_order(&c).unwrap(),
+            vec![
+                a.canonicalize().unwrap(),
+                b.canonicalize().unwrap(),
+                c.canonicalize().unwrap()
+            ]
+        );
+        for missing_entry in [true, false] {
+            if missing_entry {
+                fs::remove_file(b.join(".watane-dev.json")).unwrap();
+            } else {
+                fs::write(
+                    b.join(".watane-dev.json"),
+                    r#"{"local_providers":{"a":"../gone"}}"#,
+                )
+                .unwrap();
+            }
+            let e = local_order(&c).unwrap_err();
+            assert_eq!(e.code.as_str(), "mod.provider_missing");
+            assert_eq!(e.message, "the local provider a has no known folder");
+            assert_eq!(e.fix.as_deref(), Some("Run: watane-dev add <folder of a>"));
+        }
+    }
+}

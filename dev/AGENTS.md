@@ -83,3 +83,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S11-4 (dev): contracts dispatch delivery to Harness and compare its events; file fakes answer calls, and journey_s11 drives two served mods.
 
 - S11 rejection fix (dev): refused serve points next and problem fixes to the first failing provider with an absolute --dir; the template documents working fakes and delivery.
+
+- S13 (dev): §15 records the cache-copy fingerprint experiment, shared warm per-binary fixtures, unit rule replacements, slow/timing reasons and the complete current scenario proof map (27–31 remain planned).

@@ -116,3 +116,34 @@ impl Toolchain {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ac3_doctor_toolchain_gap_texts_and_fixes() {
+        let error = problem("rustup is missing");
+        assert_eq!(error.code, Code::EnvToolchain);
+        assert_eq!(error.message, "no Rust toolchain found: rustup is missing");
+        assert_eq!(
+            error.fix.as_deref(),
+            Some("Install rustup with your package manager, then run: rustup default stable")
+        );
+        let toolchain = Toolchain {
+            cargo: "/absent/cargo".into(),
+            rustc: "/absent/rustc".into(),
+            sysroot: "/absent/sysroot".into(),
+            version: "rustc fake".into(),
+        };
+        let error = toolchain.check_target().unwrap_err();
+        assert_eq!(error.code, Code::EnvNoWasmTarget);
+        assert_eq!(
+            error.message,
+            "the Rust toolchain at /absent/sysroot has no wasm32-wasip2 target"
+        );
+        assert_eq!(
+            error.fix.as_deref(),
+            Some("rustup target add wasm32-wasip2")
+        );
+    }
+}

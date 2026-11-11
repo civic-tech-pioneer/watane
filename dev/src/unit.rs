@@ -408,4 +408,118 @@ mod tests {
         assert_eq!(report.failures[0].file.as_deref(), Some("logic/src/lib.rs"));
         assert_eq!(report.failures[0].line, Some(40));
     }
+
+    #[test]
+    fn ac3_panic_classification_counts_location_and_fix() {
+        let report = parse_libtest(
+            "running 4 tests\ntest fails_on_purpose ... ",
+            "thread 'main' panicked at /watane-dev/build/counter/logic/src/lib.rs:71:9:\nassertion `left == right` failed\n  left: 1\n right: 2\nnote: backtrace\n",
+            "counter",
+        );
+        assert_eq!(
+            (report.passed, report.failed, report.ignored, report.not_run),
+            (0, 1, 0, 3)
+        );
+        assert_eq!(
+            serde_json::to_value(report.problems()).unwrap(),
+            serde_json::json!([{
+                "code":"test.unit", "message":"fails_on_purpose: assertion `left == right` failed\n  left: 1\n right: 2",
+                "file":"logic/src/lib.rs", "line":71, "column":null,
+                "fix":"Correct the unit test or its logic, then run: watane-dev test --json"
+            }])
+        );
+    }
+
+    #[test]
+    fn ac3_wasm_exit_trap_and_limit_classifications() {
+        // Tiny literal WASI commands exercise the real classifier without Cargo or a mod build.
+        for (body, seconds, code, message) in [
+            (
+                "i32.const 1",
+                60,
+                Code::TestUnit,
+                "unit binary exited unsuccessfully",
+            ),
+            (
+                "loop br 0 end i32.const 0",
+                0,
+                Code::TestUnitLimit,
+                "unit tests stopped at <unit binary> after 0 s",
+            ),
+            (
+                "i32.const 8193 memory.grow drop i32.const 0",
+                60,
+                Code::TestUnitLimit,
+                "unit tests stopped at <unit binary>: used more than 512 MiB",
+            ),
+            (
+                "unreachable",
+                60,
+                Code::TestUnit,
+                "wasm `unreachable` instruction executed",
+            ),
+        ] {
+            let mut config = Config::new();
+            config.epoch_interruption(true);
+            let engine = Engine::new(&config).unwrap();
+            let component = Component::new(
+                &engine,
+                format!(
+                    r#"
+                (component
+                    (core module $m
+                        (memory (export "memory") 1)
+                        (func (export "run") (result i32) {body}))
+                    (core instance $i (instantiate $m))
+                    (func $run (result (result)) (canon lift (core func $i "run")))
+                    (instance (export "wasi:cli/run@0.2.6") (export "run" (func $run))))
+            "#
+                ),
+            )
+            .unwrap();
+            let report = run(&engine, &component, &"counter".parse().unwrap(), seconds).unwrap();
+            assert_eq!((report.passed, report.failed, report.not_run), (0, 1, 0));
+            let problems = report.problems();
+            assert_eq!(problems[0].code, code);
+            assert!(
+                problems[0].message.contains(message),
+                "{}",
+                problems[0].message
+            );
+            assert_eq!(report.failures[0].test, "<unit binary>");
+        }
+    }
+
+    #[test]
+    fn ac3_unit_host_imports_are_unknown_import_traps() {
+        let mut config = Config::new();
+        config.epoch_interruption(true);
+        let engine = Engine::new(&config).unwrap();
+        let component = Component::new(
+            &engine,
+            r#"
+            (component
+                (import "mods:counter/api@0.1.0" (instance $api
+                    (export "ping" (func))))
+                (core func $ping (canon lower (func $api "ping")))
+                (core module $m
+                    (import "api" "ping" (func $ping))
+                    (func (export "run") (result i32) call $ping i32.const 0))
+                (core instance $i (instantiate $m
+                    (with "api" (instance (export "ping" (func $ping))))))
+                (func $run (result (result)) (canon lift (core func $i "run")))
+                (instance (export "wasi:cli/run@0.2.6") (export "run" (func $run))))
+        "#,
+        )
+        .unwrap();
+        let report = run(&engine, &component, &"counter".parse().unwrap(), 60).unwrap();
+        assert_eq!(report.failed, 1);
+        let errors = report.problems();
+        assert_eq!(errors[0].code, Code::TestUnit);
+        assert!(
+            errors[0]
+                .message
+                .contains("unknown import: mods:counter/api@0.1.0#ping")
+        );
+    }
 }

@@ -92,46 +92,6 @@ fn ac3_self_and_missing_provider() {
     assert_eq!(snapshot(&b), before);
 }
 #[test]
-fn ac4_local_order_and_missing_folders() {
-    let t = mods();
-    let a = t.path().join("a");
-    let b = t.path().join("b");
-    let c = t.path().join("c");
-    assert_eq!(run(&b, &["add", "../a", "--json"]).0, 0);
-    let world = fs::read_to_string(b.join("wit/world.wit")).unwrap();
-    fs::write(
-        b.join("wit/world.wit"),
-        world.replace("world b {", "world b {\n    import mods:a/api@0.1.0;"),
-    )
-    .unwrap();
-    let (code, v) = run(&c, &["add", "../b", "--json"]);
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(
-        watane_dev::deps::local_order(&c).unwrap(),
-        vec![
-            a.canonicalize().unwrap(),
-            b.canonicalize().unwrap(),
-            c.canonicalize().unwrap()
-        ]
-    );
-    for missing_entry in [true, false] {
-        if missing_entry {
-            fs::remove_file(b.join(".watane-dev.json")).unwrap();
-        } else {
-            fs::write(
-                b.join(".watane-dev.json"),
-                r#"{"local_providers":{"a":"../gone"}}"#,
-            )
-            .unwrap();
-        }
-        let e = watane_dev::deps::local_order(&c).unwrap_err();
-        assert_eq!(e.code.as_str(), "mod.provider_missing");
-        assert_eq!(e.message, "the local provider a has no known folder");
-        assert_eq!(e.fix.as_deref(), Some("Run: watane-dev add <folder of a>"));
-    }
-}
-
-#[test]
 fn ac1_two_adds_write_sorted_local_paths_and_preserve_consumer_world() {
     let t = mods();
     let c = t.path().join("c");

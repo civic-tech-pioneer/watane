@@ -95,7 +95,7 @@ export!(Mod);
 "#;
 
 #[test]
-#[ignore = "needs WATANE_BIN"]
+#[ignore = "slow: needs WATANE_BIN; journey J1 on real programs"]
 fn ac1_j1_reading_list_on_real_programs() {
     let temp = tempfile::tempdir().unwrap();
     let j = Journey {

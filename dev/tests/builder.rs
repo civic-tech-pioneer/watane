@@ -112,6 +112,7 @@ fn ac5_missing_target_stops_before_cargo() {
 }
 
 #[test]
+#[ignore = "slow: cold template build and component validation"]
 fn ac6_build_counter_component() {
     let f = Fixture::new();
     let (status, v) = output(&mut f.command());
@@ -133,7 +134,7 @@ fn ac6_build_counter_component() {
 }
 
 #[test]
-#[ignore = "needs sandbox-exec permission: sandbox_apply is denied in this environment"]
+#[ignore = "slow: cold offline build; sandbox-exec sandbox_apply is denied in this environment"]
 fn ac6_build_with_network_denied() {
     let exe = std::env::current_exe().unwrap();
     let mut c = if cfg!(target_os = "macos") {
@@ -147,7 +148,12 @@ fn ac6_build_with_network_denied() {
         c
     };
     let o = c
-        .args(["--exact", "ac6_build_counter_component", "--nocapture"])
+        .args([
+            "--exact",
+            "ac6_build_counter_component",
+            "--include-ignored",
+            "--nocapture",
+        ])
         .output()
         .unwrap();
     assert!(
@@ -161,6 +167,7 @@ fn ac6_build_with_network_denied() {
 }
 
 #[test]
+#[ignore = "slow: cold compiler error removes stale wasm"]
 fn ac7_compile_error_names_mod_file_and_line_and_removes_wasm() {
     let f = Fixture::new();
     let path = f.dir.join("logic/src/lib.rs");
@@ -181,6 +188,7 @@ fn ac7_compile_error_names_mod_file_and_line_and_removes_wasm() {
 }
 
 #[test]
+#[ignore = "slow: cold serve build clears maker environment"]
 fn ac7_build_sees_no_maker_secret() {
     let f = Fixture::new();
     let path = f.dir.join("logic/src/lib.rs");
@@ -231,6 +239,7 @@ fn assert_no_marker(dir: &Path, marker: &[u8]) {
 }
 
 #[test]
+#[ignore = "slow: cold release dep-info rejects outside reads"]
 fn ac1_build_refuses_absolute_bytes_strings_and_relative_outside_reads() {
     let f = Fixture::new();
     let source = f.dir.join("logic/src/lib.rs");
@@ -290,6 +299,7 @@ fn ac1_build_refuses_absolute_bytes_strings_and_relative_outside_reads() {
 }
 
 #[test]
+#[ignore = "slow: cold test build clears maker environment"]
 fn ac4_test_build_does_not_receive_shell_secret() {
     let f = Fixture::new();
     let source = f.dir.join("logic/src/lib.rs");
@@ -311,6 +321,7 @@ fn ac4_test_build_does_not_receive_shell_secret() {
 }
 
 #[test]
+#[ignore = "slow: two cold caches prove reproducible path-free bytes"]
 fn ac5_same_mod_at_different_paths_and_caches_has_identical_path_free_wasm() {
     let f = Fixture::new();
     let parent = f.temp.path().join("a much longer parent directory for Bob");

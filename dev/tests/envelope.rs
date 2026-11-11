@@ -126,32 +126,6 @@ fn ac8_json_argument_errors_use_envelope() {
 }
 
 #[test]
-fn ac8_public_outcome_types_match_section_12() {
-    use watane_dev::outcome::{Class, Code, Outcome, Problem};
-    for (code, class, status, text) in [
-        (Code::ModInvalid, Class::Mod, 1, "mod.invalid"),
-        (Code::UsageArgs, Class::Usage, 2, "usage.args"),
-        (Code::EnvWataneMissing, Class::Env, 3, "env.watane_missing"),
-        (Code::HostRefused, Class::Refused, 4, "host.refused"),
-        (Code::Internal, Class::Internal, 5, "internal"),
-    ] {
-        assert_eq!(code.class(), class);
-        assert_eq!(code, code);
-        assert_eq!(serde_json::to_value(code).unwrap(), text);
-        let problem = Problem::new(code, "message").at("ui/app.js", Some(12), Some(5));
-        let cloned = problem.clone();
-        let outcome = Outcome::new("check", None).fail(vec![cloned]);
-        let command: &'static str = outcome.command;
-        assert_eq!(command, "check");
-        assert_eq!(outcome.exit_code(), status);
-        assert_eq!(
-            serde_json::to_value(problem).unwrap(),
-            json!({"code":text,"message":"message","file":"ui/app.js","line":12,"column":5,"fix":null})
-        );
-    }
-}
-
-#[test]
 fn ac1_ac3_public_reports_are_typed() {
     use watane_dev::{
         check::{CheckReport, ProviderReport},
@@ -214,4 +188,69 @@ watane.on((message) => {
     let spec =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
     assert!(spec.contains(&format!("`template/ui/app.js`:\n```js\n{expected}```")));
+}
+
+#[test]
+fn ac4_ignored_tests_explain_their_cost_or_refusal() {
+    for folder in ["tests", "src"] {
+        for entry in fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join(folder)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "rs") {
+                let text = fs::read_to_string(&path).unwrap();
+                for line in text
+                    .lines()
+                    .filter(|line| line.trim().starts_with("#[ignore"))
+                {
+                    assert!(
+                        ["slow:", "timing:", "red:", "sandbox_apply", "unshare"]
+                            .iter()
+                            .any(|reason| line.contains(reason)),
+                        "{}: {line}",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ac5_scenario_map_covers_every_scenario_and_names_existing_tests() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let spec = fs::read_to_string(root.join("TECHNICAL.md")).unwrap();
+    let map = spec
+        .split("### 15.2")
+        .nth(1)
+        .unwrap()
+        .split("Removed command assertions")
+        .next()
+        .unwrap();
+    for scenario in (1..=32)
+        .map(|n| format!("DEV-S-{n}"))
+        .chain(["J1".into(), "S11".into()])
+    {
+        assert!(
+            map.contains(&format!("| {scenario} |")),
+            "missing {scenario}"
+        );
+    }
+    let sources: String = ["src", "tests"]
+        .into_iter()
+        .flat_map(|folder| fs::read_dir(root.join(folder)).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    for reference in map
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|name| name.contains("::ac"))
+    {
+        let name = reference.rsplit("::").next().unwrap();
+        assert!(
+            sources.contains(&format!("fn {name}(")),
+            "unknown proof {reference}"
+        );
+    }
 }

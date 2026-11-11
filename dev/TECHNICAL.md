@@ -1263,52 +1263,103 @@ shows whether the package holds source. Steps 4 and 5: `/api/search`,
 
 ## 15. Test plan
 
-Each test computes its expectation without calling the code under test:
-from literal values in the test, from files it reads itself, or from an
-independent tool. Integration tests run the binary
-(`env!("CARGO_BIN_EXE_watane-dev")`) with `WATANE_DEV_CACHE` in a
-`tempfile` folder, and parse standard output with `serde_json` in the test.
+Each oracle is literal, read independently from fixture files, or computed by
+an independent tool; never call the code under test for the expectation.
+Default `cargo test -p watane-dev` has a 120 s wall budget with binaries compiled.
+Cold builds, real preview life cycles and journeys are `slow:`; asserted
+execution deadlines are `timing:`. The S16 vendor regression stays `red:`.
+
+Cache experiment (S13): original cold 33.41 s, same path warm 6.78 s, copied cache 13.68 s; the cache-path remap changes Cargo's rustflags fingerprint, so `tests/support/mod.rs` uses `OnceLock<TempDir>` to build one template per binary and shares that original cache folder, never a copy.
+
+Tests keep their mod folders independent. The builder's per-slug lock guards
+source preparation and compilation; the unit fixture also serializes its
+runs. Tests of two caches, stale dep-info, or missing vendor keep isolated
+caches. Only the first two need cold builds and are slow. Commands which
+stop before compilation need no warmed cache. No product code changes.
 
 ### 15.1 Unit tests (in the modules)
 
-| Module | Checks | Oracle |
+| Module | Tests and rules | Level / oracle |
 |---|---|---|
-| outcome | exit status for each class; envelope JSON of a fixed Outcome | literal JSON text and numbers |
-| template | `render` leaves no `{{`; `{{crate}}` of `a-b-c` is `a_b_c` | literal strings |
-| check | `check_manifest` on 20 literal manifests (each refused key of 5.2, each allowed form) | a table of (manifest, expected codes) in the test |
-| allowlist | parse the embedded lock; `verify_vendor` on a temp vendor with one wrong checksum, one missing and one extra folder | literal crate names; expected `env.allowlist` |
-| builder | cargo configuration quoting of a path with `"` and a space, environment whitelist; `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
-| unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
-| contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0`; `Target::Deliver` dispatch, args, state and events; fake answers and missing-fake errors | literal expected failures |
-| preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text; one install POST with all local folders and ordered pages | literal JSON objects, folder order and null; loopback unit server, no host links needed |
-| json_eq | key order, numbers, nesting | literal pairs |
-| deps | local order, missing folders, cycles, `.watane-dev.json` text after two adds | literal paths, codes and text in `tests/add.rs` |
+| outcome | `ac3_exit_classes_and_problem_envelope`, `ac3_previous_preview_is_only_a_warning` | unit: literal status 1–5, codes, JSON and warning text |
+| template | existing render, page and guide tests | unit: literal strings and file contents |
+| check | `ac3_twenty_literal_manifests`, `ac3_invalid_toml_names_file_and_line`, `ac3_dev_s5_and_s8_file_codes_locations_and_fixes`, `ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`, `ac3_check_repairs_host_wit_and_skips_git_links`, `ac3_logic_needs_contract_but_page_only_does_not` | unit: every builder check code, file, line, message and fix; missing locations are literal null |
+| allowlist | `ac3_source_vendor_fix_is_absolute_bootstrap_command`, `ac3_custom_vendor_fix_names_bootstrap_and_export`, existing pins/checksum tests | unit: literal pins, error and bootstrap/export fix |
+| toolchain | `ac3_doctor_toolchain_gap_texts_and_fixes` | unit: toolchain and missing-target error/fix |
+| builder | `ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots`, `ac6_cargo_config_quotes_paths_and_restricts_environment`, `ac3_compiler_failure_code_location_and_fix` | unit: literal paths, flags and environment keys |
+| unit | existing `ac1_parse_*`, `ac2_parse_*`; `ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `ac3_unit_host_imports_are_unknown_import_traps` | unit: literal libtest output; tiny literal WASI commands prove unsuccessful exit, interrupt, memory limit and trap classifications without Cargo |
+| contract | existing parse/run_steps tests, `ac3_single_event_equality_and_failure_payloads` | unit: literal returns, failures, events, short/full names, order, numeric equality, delivery and fakes |
+| preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac3_previous_warning_requires_answering_preview_and_has_literal_fix` | unit: literal Ready/JSON, loopback server; no real host |
+| cli | existing provider-failure and next-page tests | unit: absolute next/fixes, first failing provider, consumer page |
+| json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
+| deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 
-### 15.2 Integration tests (`tests/`)
+### 15.2 Scenario proofs (`tests/` unless qualified)
 
-| File | Scenarios | Oracle |
+Names below identify current proofs, including the slow set. Planned scenarios
+without an implementation had no test before S13; this table does not imply
+they pass. Command tests keep exit status, envelope and code wiring; detailed
+rules belong to 15.1.
+
+| Scenario | Test name(s) | Level |
 |---|---|---|
-| `envelope.rs` | DEV-S-1, 2, 3, 32 | the template file list as a literal; the envelope keys as a literal set |
-| `check.rs` | DEV-S-5, 6, 7, 8 | the codes of the table of 2.2 |
-| `builder.rs` | DEV-S-4, 9, 10, 11, 12, 13 | S-4: the test counts `#[test]` in `logic/src/lib.rs` with a regex and the steps in `tests/*.json` with `serde_json`, and loads `logic.wasm` with `wasmtime::component::Component` to find `mods:<slug>/api@0.1.0` among the exports; S-9: a fake toolchain folder whose `bin/cargo` writes a marker file if it runs; S-10: a secret file of random bytes in a temp folder, then a byte search over every file of the mod folder; S-12: the same template at two paths with two caches, `assert_eq!` of the bytes, and a search for `$HOME`, both caches and both mod paths (raw and canonical); S-13: run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'` on macOS or `unshare -rn` on Linux, ignored with a reason where neither works |
-| `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
-| `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; S11 fixture tests call `contract::contract_tests` on `tests/fixtures/recommendations/` with committed `logic.wasm`, importing `mods:reading-list/books`; the S11 journey covers `test --json` through the complete build pipeline; source and rebuild instructions in `tests/fixtures/` |
-| `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone; refused `serve`: literal `preview.previous` message/fix and text warning, unchanged page bytes, no warning without an answering preview |
-| `add.rs` | DEV-S-25, 26; self and missing providers, provider order | literal add result and metadata text; original world and provider WIT bytes; unchanged folder snapshot on refusal; literal order and missing-provider message/fix |
-| `install_publish.rs` | DEV-S-27 to 31 | the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
-| `journey.rs` | J1 on the real programs | `new reading-list` → write a reading-list mod with a reversed-list bug → `test` fails with literal expected/got lists and `test.contract` → fix logic → `test` ok → `serve` → page `/call` adds Dune → change `ui/` → `serve` → new bytes → MCP list returns `["Dune"]` → `serve --stop`, closed port and removed home |
-| `journey_s11.rs` | S11 calls and subscriptions on real programs | two `new` mods → `add` lines pasted → contracts with a fake and delivery → ordered served pages → reading-list page adds Dune → recommendations call and received titles both `["Dune"]` → pre-opened stream receives changed within 30 s → stop; ignored as a slow journey, reads `WATANE_BIN` |
+| DEV-S-1 | `envelope::ac1_new_counter_template_envelope` | integration |
+| DEV-S-2 | `envelope::ac2_existing_and_invalid_slug_change_nothing` | integration |
+| DEV-S-3 | `envelope::ac2_existing_and_invalid_slug_change_nothing` | integration |
+| DEV-S-4 | `unit_tests::ac1_ac2_template_unit_counts_and_warm_pipeline`, `contract::ac1_template_counts_and_component_export` | integration, shared warm cache; slow component-export pipeline |
+| DEV-S-5 | `check::tests::ac3_dev_s5_and_s8_file_codes_locations_and_fixes`; `builder::ac4_serve_rejects_before_cargo` | unit; integration wiring |
+| DEV-S-6 | `check::tests::ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`; `builder::ac4_serve_rejects_before_cargo` | unit; integration wiring |
+| DEV-S-7 | `check::tests::ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`; `builder::ac4_serve_rejects_before_cargo` | unit; integration wiring |
+| DEV-S-8 | `check::tests::ac3_dev_s5_and_s8_file_codes_locations_and_fixes`; `check::ac2_check_counter_mod_and_rejections` | unit; integration wiring |
+| DEV-S-9 | `builder::ac5_missing_target_stops_before_cargo`, `doctor::ac5_missing_target_retains_toolchain_without_running_cargo`; `toolchain::tests::ac3_doctor_toolchain_gap_texts_and_fixes` | integration; unit |
+| DEV-S-10 | `builder::ac1_build_refuses_absolute_bytes_strings_and_relative_outside_reads`, `unit_tests::ac2_unit_build_refuses_outside_reads_before_running_tests`, `unit_tests::ac3_fixed_mod_discards_stale_release_and_unit_dependencies` | slow |
+| DEV-S-11 | `builder::ac7_build_sees_no_maker_secret`, `builder::ac4_test_build_does_not_receive_shell_secret` | slow |
+| DEV-S-12 | `builder::ac5_same_mod_at_different_paths_and_caches_has_identical_path_free_wasm` | slow: two cold caches |
+| DEV-S-13 | `builder::ac6_build_with_network_denied` → `ac6_build_counter_component` | slow; OS refusal permitted for nested sandbox |
+| DEV-S-14 | `unit_tests::ac4_unit_tests_have_no_files_environment_or_network`, `ac4_unit_host_imports_trap`; `unit::tests::ac3_unit_host_imports_are_unknown_import_traps` | integration, warm cache; slow Rust import wiring; unit trap |
+| DEV-S-15 | `unit_tests::ac2_panic_names_assert_and_counts_remaining_tests`; `unit::tests::ac3_panic_classification_counts_location_and_fix` | integration; unit |
+| DEV-S-16 | `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline`; `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | timing; unit classification |
+| DEV-S-17 | `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file`; `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
+| DEV-S-18 | `contract::ac1_s11_fake_answers_provider_call`, `ac1_s11_missing_fake_fails` | integration: committed Wasm fixture |
+| DEV-S-19 | `contract::ac2_s11_deliver_retains_state_and_emits`, `ac2_s11_deliver_compares_emitted_events`, `ac2_s11_deliver_rejects_non_subscription`; `contract::tests::ac4_run_steps_events_exact_order_names_and_failed_calls`, `ac3_single_event_equality_and_failure_payloads` | integration: prebuilt; unit |
+| DEV-S-20 | `unit_tests::ac5_logic_requires_contract_file_but_page_only_does_not`, `contract::ac8_serve_does_not_start_preview_for_failed_or_absent_contracts`; `check::tests::ac3_logic_needs_contract_but_page_only_does_not` | integration; slow serve pipeline; unit |
+| DEV-S-21 | `serve::ac4_real_preview_serves_page_and_csp`, `ac9_real_counter_page_calls_logic`, `ac1_preview_mcp_lists_and_calls_counter` | slow: needs WATANE_BIN |
+| DEV-S-22 | `serve::ac5_serve_reuses_preview_and_updates_page`, `ac2_edit_keeps_data_and_updates_logic_and_page`, `ac2_reused_preview_keeps_mcp` | slow: needs WATANE_BIN |
+| DEV-S-23 | `serve::ac6_stop_closes_port_and_removes_preview`, `ac6_stop_works_after_mod_files_are_broken`; stop regression tests in `serve.rs` | slow: needs WATANE_BIN; integration stop regressions |
+| DEV-S-24 | `serve::ac7b_missing_host_has_environment_error_and_doctor_next` | integration |
+| DEV-S-25 | `add::ac1_dev_s25_add_copies_wit_and_reports_lines`, `ac1_two_adds_write_sorted_local_paths_and_preserve_consumer_world` | integration |
+| DEV-S-26 | `add::ac2_dev_s26_cycle_changes_nothing`, `ac3_self_and_missing_provider` | integration |
+| DEV-S-27 | planned missing home-host error: no existing implementation/test | planned |
+| DEV-S-28 | planned install refusal: no existing implementation/test | planned |
+| DEV-S-29 | planned ordered home install: no existing implementation/test | planned |
+| DEV-S-30 | planned publish local dependency refusal: no existing implementation/test | planned |
+| DEV-S-31 | planned publish source exclusion: no existing implementation/test | planned |
+| DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
+| J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
+| S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
-S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
-component with `watane_pkg::Mod::check_component()`. S-4 joins with S4;
-S-10 and S-12 are covered by S8. The network-denied build test may be ignored
-with the OS refusal reason when nested sandboxing is unavailable; it runs
-on a validator with permission to create the sandbox.
+The successful unit pipeline also proves unchanged dependency timestamps, avoiding
+a second command just to check cache reuse.
 
-Tests that need the real `watane` (S-21, 22, 23, J1) are
-`#[ignore = "needs WATANE_BIN"]` and read `WATANE_BIN`. With the feature
-`fake-host`, S-23, 24 and S-27 to 31 run against `fake-watane`.
-S-25 and S-26 in `add.rs` need no host.
+Removed command assertions and their named replacements (S13):
+
+| Removed test/assertions | Replacement proving the same rule |
+|---|---|
+| `check::ac3_check_rejects_builder_inputs`: build script, build-dependencies, proc macro, rand, named file and allowed-crates fix | `check::tests::ac3_dev_s5_and_s8_file_codes_locations_and_fixes`, `ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`; command code/status wiring retained in `builder::ac4_serve_rejects_before_cargo` |
+| `contract::ac4_events_match_short_and_full_names_and_exact_lists`: each literal event list, status, failure code, step, expected and got | `contract::tests::ac3_single_event_equality_and_failure_payloads`, `ac4_run_steps_events_exact_order_names_and_failed_calls`; contract error code/status remains in `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` |
+| `contract::ac5_expected_call_failures`: boolean, matching substring, mismatching substring, unexpected success and status/code | `contract::tests::ac5_run_steps_fails_boolean_and_substring_and_unexpected_results`; command error wiring remains in `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` |
+| `add::ac4_local_order_and_missing_folders`: provider order, both missing-folder forms, error code/text/fix | moved verbatim to `deps::tests::ac3_local_order_and_missing_folders` with direct fixture construction; also `ac3_missing_provider_text_and_fix` |
+| `envelope::ac8_public_outcome_types_match_section_12`: class, status, code serialization, cloned problem envelope | moved to `outcome::tests::ac3_exit_classes_and_problem_envelope` |
+| `contract::ac6_bad_contract_file_names_file`: command exit assertion | direct prebuilt-fixture integration still asserts `test.contract_file` and its file; `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` keeps mod exit-class wiring, `contract::tests::ac6_parse_rejects_literal_invalid_files` proves syntax refusal |
+| `serve::ac7b_missing_host_has_environment_error_and_doctor_next`: template logic fixture replaced by page-only fixture | same command error/fix/next assertions; logic pipeline reaching missing host remains in slow `builder::ac6_build_counter_component` |
+
+The real-host slow set reads `WATANE_BIN`. Run it with
+`cargo build -p watane-host` then
+`WATANE_BIN=$PWD/../target/debug/watane cargo test -p watane-dev -- --include-ignored --skip regress_s16_missing_vendor_says_missing`.
+DEV-S-13 may be refused by the outer OS sandbox; `timing:` tests require a
+quiet machine. `envelope::ac4_ignored_tests_explain_their_cost_or_refusal`
+checks the ignore reasons; `unit_tests::ac1_ac2_template_unit_counts_and_warm_pipeline`
+checks cache identity and unchanged dependency artifact timestamps across reuse.
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
