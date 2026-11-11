@@ -132,11 +132,17 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
             w.on_window_event(move |event| {
                 if matches!(event, WindowEvent::Destroyed) {
                     unloaded(&h, "consent");
-                    let state = h.state::<AppState>();
-                    let _ = state.broker.answer(&id, Answer::Deny);
-                    *state.consent_id.lock().unwrap() = None;
-                    let handle = h.clone();
-                    let _ = h.run_on_main_thread(move || sync_consent(&handle));
+                    *h.state::<AppState>().consent_id.lock().unwrap() = None;
+                    // Answer off the main thread: run_on_main_thread called on
+                    // the main thread runs at once, which would open the
+                    // successor while this window still owns the label.
+                    let h = h.clone();
+                    let id = id.clone();
+                    std::thread::spawn(move || {
+                        let _ = h.state::<AppState>().broker.answer(&id, Answer::Deny);
+                        let handle = h.clone();
+                        let _ = h.run_on_main_thread(move || sync_consent(&handle));
+                    });
                 }
             });
             let _ = w.set_focus();

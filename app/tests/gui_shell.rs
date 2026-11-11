@@ -142,7 +142,7 @@ fn ac2_fake_catalog_opens_one_window_and_no_page_is_not_found() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=books] button.disable').disabled",
+        "document.querySelector('[data-local=books] button.disable')?.disabled === true",
     );
     assert!(!app.windows().iter().any(|w| w["label"] == "mod-books"));
     assert!(

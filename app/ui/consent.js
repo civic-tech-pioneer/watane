@@ -1,4 +1,4 @@
-import { invoke } from './ipc.js';
+import { call } from './ipc.js';
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
@@ -38,7 +38,7 @@ async function answer(allow) {
   deny.disabled = true;
   try {
     const withheld = allow ? grants.filter(g => !g.input.checked).map(g => ({local: g.local, key: g.key})) : [];
-    await invoke('consent_answer', {id: view.id, approve: allow, withheld});
+    await call('consent_answer', {id: view.id, approve: allow, withheld});
   } catch (e) {
     text(document.querySelector('#error'), 'span', e.message || String(e));
     submitting = false;
@@ -50,7 +50,7 @@ deny.onclick = () => answer(false);
 approve.onclick = () => answer(true);
 
 try {
-  view = await invoke('consent_get');
+  view = await call('consent_get');
   if (view) {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
