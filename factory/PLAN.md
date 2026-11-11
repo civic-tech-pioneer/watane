@@ -84,7 +84,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<sessionId>.jsonl`.
 
-- S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`.
+- S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`; died 2026-11-10 23:32 mid S4-2 validation.
+  Resumed 2026-11-11 as `2066b4f1` (sessionId `2066b4f1-2ca3-4a1f-9fa3-29c671cea48f`).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -131,6 +132,7 @@ The human may veto each one.
 - S2, S3: host program tests with 2 s and 10 s limits fail now and then under heavy load (2x).
 - S3: the brief did not say S2's `/events`-404 tests would change; Sol left them red.
 - S3: nested `sandbox-exec` still runs only in the validator (2x).
+- S4: the foreman's process died silently mid-validation; `watch.sh` was not running, so nobody woke.
 - S7: the foreman tried `git push`; the repository has no remote.
 - S7: there is no command that only builds `logic.wasm`; and Homebrew's `cargo` comes before
   rustup's on this machine's PATH, without `wasm32-wasip2`.
