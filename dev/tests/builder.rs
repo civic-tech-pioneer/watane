@@ -369,3 +369,21 @@ fn ac5_same_mod_at_different_paths_and_caches_has_identical_path_free_wasm() {
         }
     }
 }
+
+#[test]
+fn ac8_test_and_serve_env_gaps_point_to_doctor() {
+    let f = Fixture::new();
+    for name in ["test", "serve"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&f.dir)
+            .args([name, "--json"])
+            .env("WATANE_DEV_CACHE", f.temp.path().join("cache"))
+            .env("WATANE_DEV_TOOLCHAIN", f.fake_toolchain(false))
+            .output()
+            .unwrap();
+        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(out.status.code(), Some(3), "{value}");
+        assert_eq!(value["errors"][0]["code"], "env.no_wasm_target");
+        assert_eq!(value["next"], "watane-dev doctor --json");
+    }
+}

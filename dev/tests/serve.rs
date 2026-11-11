@@ -569,7 +569,7 @@ fn ac3_refused_serve_warns_about_previous_preview() {
         v["warnings"],
         serde_json::json!([{
             "code": "preview.previous",
-            "message": format!("the preview at {} still serves the previous build", preview["api"].as_str().unwrap()),
+            "message": format!("the preview at {} still serves the previous build", preview["pages"][0]["url"].as_str().unwrap()),
             "file": null, "line": null, "column": null,
             "fix": "Fix the errors, then run: watane-dev serve --json"
         }])
@@ -616,7 +616,7 @@ fn ac5_refused_serve_prints_previous_preview_warning() {
         text.lines().any(|line| line
             == format!(
                 "warning[preview.previous]: the preview at {} still serves the previous build",
-                preview["api"].as_str().unwrap()
+                preview["pages"][0]["url"].as_str().unwrap()
             )),
         "{text}"
     );

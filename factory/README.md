@@ -127,6 +127,11 @@ Rules:
   tests of its task's files (by name), not the whole slow set, and never `front` tests. The
   foreman runs everything once, `front` tests included, before it delivers. The user-sim runs no suite; it uses the programs.
 - A failure the user-sim finds becomes a test at the lowest level that shows it.
+- S17-1: help, vendor lookup/fix text and output formatting use literal unit oracles;
+  contract locations use prebuilt Wasm, environment guidance stops before Cargo, and the
+  real vendor script test uses the local registry cache offline (otherwise its `slow:`
+  counterpart runs). The existing full template contract pipeline stays intact in the slow
+  set; contract-file parsing uses the committed component instead of warming a build.
 
 ## Timing tests
 

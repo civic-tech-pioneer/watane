@@ -219,7 +219,7 @@ impl Outcome {
         ));
         if let Some(serde_json::Value::Object(fields)) = &self.result {
             for (k, v) in fields {
-                text.push_str(&format!("{k}: {v}\n"));
+                text_fields(k, v, &mut text);
             }
         }
         if let Some(next) = &self.next {
@@ -229,9 +229,46 @@ impl Outcome {
     }
 }
 
+fn text_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "missing".into(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(items) => {
+            items.iter().map(text_value).collect::<Vec<_>>().join(", ")
+        }
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .map(|(k, v)| format!("{k}: {}", text_value(v)))
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => other.to_string(),
+    }
+}
+fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
+    if let serde_json::Value::Object(fields) = value {
+        for (field, value) in fields {
+            text_fields(&format!("{key}.{field}"), value, text);
+        }
+    } else {
+        text.push_str(&format!("{key}: {}\n", text_value(value)));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac4_text_flattens_objects_and_formats_values() {
+        let mut out = Outcome::new("doctor", None);
+        out.result = Some(
+            serde_json::json!({"allowlist":{"vendor":"/abs/vendor","direct":["serde 1", "wit 2"]}, "toolchain":{"wasm32_wasip2":true}, "watane":null}),
+        );
+        assert_eq!(
+            out.to_text(),
+            "doctor: ok\nallowlist.direct: serde 1, wit 2\nallowlist.vendor: /abs/vendor\ntoolchain.wasm32_wasip2: true\nwatane: missing\n"
+        );
+    }
 
     #[test]
     fn ac3_previous_preview_is_only_a_warning() {

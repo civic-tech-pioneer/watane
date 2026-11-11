@@ -91,12 +91,40 @@ pub struct CheckReport {
     pub subscriptions: Vec<String>,
     pub providers: Vec<ProviderReport>,
 }
-/// Map a pkg `ModError` to `mod.invalid` problems (or an internal one for I/O).
+fn wit_location(message: &str) -> Option<(String, u32, u32)> {
+    message.lines().find_map(|line| {
+        let location = line.trim().strip_prefix("-->")?.trim();
+        let mut parts = location.rsplitn(3, ':');
+        let column = parts.next()?.parse().ok()?;
+        let line = parts.next()?.parse().ok()?;
+        Some((parts.next()?.into(), line, column))
+    })
+}
+/// Map pkg violations, preserving locations supplied in parser diagnostics.
 pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
     match e {
         ModError::Invalid(v) => v
             .into_iter()
             .map(|v| {
+                let location = wit_location(&v.message);
+                let (file, line, column) =
+                    location.map_or((v.file.clone(), None, None), |(file, line, column)| {
+                        // pkg may report the package directory while wit-parser names a file.
+                        let file = if let Some(i) = file.rfind("/wit/") {
+                            file[i + 1..].into()
+                        } else if !file.starts_with("wit/") && Path::new(&file).is_relative() {
+                            let base = Path::new(&v.file);
+                            let base = if base.extension().is_some() {
+                                base.parent().unwrap_or(base)
+                            } else {
+                                base
+                            };
+                            base.join(file).to_string_lossy().into_owned()
+                        } else {
+                            file
+                        };
+                        (file, Some(line), Some(column))
+                    });
                 Problem::new(
                     Code::ModInvalid,
                     format!(
@@ -105,7 +133,7 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                         v.message
                     ),
                 )
-                .at(v.file.clone(), None, None)
+                .at(file, line, column)
                 .fix(format!("Correct {} according to the reported rule", v.file))
             })
             .collect(),
@@ -357,6 +385,53 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
 #[cfg(test)]
 mod manifest_tests {
     use super::*;
+    #[test]
+    fn ac5_wit_location_in_message_is_retained() {
+        assert_eq!(
+            wit_location("bad WIT\n --> wit/deps/books/world.wit:14:7\n |"),
+            Some(("wit/deps/books/world.wit".into(), 14, 7))
+        );
+        let problems = mod_problems(ModError::Invalid(vec![watane_pkg::Violation {
+            rule: watane_pkg::Rule::Wit,
+            file: "wit".into(),
+            message: "bad WIT\n --> /mod/wit/deps/books/world.wit:14:7".into(),
+        }]));
+        assert_eq!(
+            problems[0].file.as_deref(),
+            Some("wit/deps/books/world.wit")
+        );
+        assert_eq!(problems[0].line, Some(14));
+        assert_eq!(problems[0].column, Some(7));
+        let relative = mod_problems(ModError::Invalid(vec![watane_pkg::Violation {
+            rule: watane_pkg::Rule::Wit,
+            file: "wit".into(),
+            message: "bad WIT\n --> world.wit:4:3".into(),
+        }]));
+        assert_eq!(relative[0].file.as_deref(), Some("wit/world.wit"));
+        assert_eq!(wit_location("no location"), None);
+    }
+
+    #[test]
+    fn ac5_wit_syntax_error_retains_parser_location() {
+        let root = tempfile::tempdir().unwrap();
+        crate::template::new_mod(root.path().join("broken").as_path(), "broken").unwrap();
+        let dir = root.path().join("broken");
+        fs::write(
+            dir.join("wit/world.wit"),
+            "package mods:broken@0.1.0;\n\nworld broken {\n  @\n}\n",
+        )
+        .unwrap();
+        let errors = match check(&dir) {
+            Err(errors) => errors,
+            Ok(_) => panic!("accepted syntax error"),
+        };
+        assert_eq!(errors[0].code, Code::ModInvalid);
+        assert_eq!(errors[0].file.as_deref(), Some("wit/world.wit"));
+        // pkg currently formats its WIT error without the parser location.
+        assert_eq!(errors[0].line, None, "{}", errors[0].message);
+        assert_eq!(errors[0].column, None);
+    }
+
     #[test]
     fn ac3_invalid_toml_names_file_and_line() {
         let allow = crate::allowlist::Allowlist::embedded();

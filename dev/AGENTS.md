@@ -13,10 +13,10 @@ JSON results are the product: a coding agent reads them and acts alone.
 ## Commands
 
 ```bash
-scripts/vendor.sh                       # once: the allowlist crates (needs the registry cache or network)
+scripts/vendor.sh [<out>]               # once: allowlist crates, optional output folder (registry cache or network)
 cargo build
 cargo test                              # stages 0-4
-cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test -- --ignored --skip regress_s16_missing_vendor_says_missing  # slow set; timing: tests want a quiet machine
+cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test -- --ignored  # slow set; timing: tests want a quiet machine
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check                       # the toolchain needs: rustup target add wasm32-wasip2
 ```
@@ -85,3 +85,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S11 rejection fix (dev): refused serve points next and problem fixes to the first failing provider with an absolute --dir; the template documents working fakes and delivery.
 
 - S13 (dev): §15 records the cache-copy fingerprint experiment, shared warm per-binary fixtures, unit rule replacements, slow/timing reasons and the complete current scenario proof map (27–31 remain planned).
+
+- S17-1 (dev): help describes all inputs and destructive stop; vendor bootstraps into the caller/cache without exports, text flattens fields, available WIT/contract locations survive, env gaps point to doctor, and refused previews name their page.

@@ -130,6 +130,7 @@ fn ac2_broken_add_reports_step_and_can_be_fixed() {
 }
 
 #[test]
+#[ignore = "slow: full template pipeline proves contract failure command wiring and fresh state per file"]
 fn ac3_literal_fresh_counter_failure_and_fresh_state_per_file() {
     let f = Fixture::new();
     f.steps(json!([{ "call": "api.add", "returns": 2 }]));
@@ -152,15 +153,10 @@ fn ac3_literal_fresh_counter_failure_and_fresh_state_per_file() {
 
 #[test]
 fn ac6_bad_contract_file_names_file() {
-    let f = Fixture::new();
+    let f = prebuilt_recommendations();
     fs::write(f.dir.join("tests/counter.json"), "{").unwrap();
-    fs::copy(
-        support::cache().join("counter/logic.wasm"),
-        f.dir.join("logic.wasm"),
-    )
-    .unwrap();
     let (_, errors) =
-        watane_dev::contract::contract_tests(&f.dir, &"counter".parse().unwrap()).unwrap();
+        watane_dev::contract::contract_tests(&f.dir, &"recommendations".parse().unwrap()).unwrap();
     assert_eq!(errors[0].code.as_str(), "test.contract_file");
     assert_eq!(errors[0].file.as_deref(), Some("tests/counter.json"));
 }
@@ -306,4 +302,19 @@ fn ac5_s11_test_rejects_stale_wasm_without_manifest() {
         "stale wasm survived failed build"
     );
     assert!(!f.cache.join("previews").exists());
+}
+
+#[test]
+fn ac6_contract_problem_reports_failing_step_object_line() {
+    let f = prebuilt_recommendations();
+    fs::write(
+        f.dir.join("tests/books.json"),
+        "{\n  \"steps\": [\n    {\"call\":\"api.all\",\"returns\":[\"Dune\"]}\n  ]\n}\n",
+    )
+    .unwrap();
+    let m = watane_pkg::Mod::read(&f.dir).unwrap();
+    let (_, problems) = watane_dev::contract::contract_tests(&f.dir, m.slug()).unwrap();
+    assert_eq!(problems[0].code.as_str(), "test.contract");
+    assert_eq!(problems[0].line, Some(3));
+    assert_eq!(problems[0].file.as_deref(), Some("tests/books.json"));
 }

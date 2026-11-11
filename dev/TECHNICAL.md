@@ -111,6 +111,8 @@ watane-dev [--json] [--dir <path>] <command>
   add --release <link>                                      (step 5, outline)
 ```
 
+- `--help` describes every command, positional argument and option. `serve --stop`
+  stops the preview and deletes its data; its help states this before use.
 - `--json` and `--dir` are global (`clap` `global = true`). `--dir` is the
   mod folder, default the current folder. dev canonicalizes it.
 - `--wait` defaults to 600 seconds: the time that the participant has to
@@ -179,11 +181,11 @@ The exit status is the class of the first error; 0 when there is none.
 | `usage.provider` | 2 | `add`: the path is not a mod folder | `<path> is not a mod folder` | — |
 | `env.toolchain` | 3 | no rustup, no cargo, no rustc | `no Rust toolchain found: <detail>` | `Install rustup with your package manager, then run: rustup default stable` |
 | `env.no_wasm_target` | 3 | the sysroot has no `wasm32-wasip2` | `the Rust toolchain at <sysroot> has no wasm32-wasip2 target` | `rustup target add wasm32-wasip2` |
-| `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <crate> <version>` | `<abs dev>/scripts/vendor.sh` for the source-tree vendor; for another path, run that script and export `WATANE_DEV_VENDOR` to its output (6.2); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
+| `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
 | `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run this command again` |
-| `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file` | — |
+| `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file`; preserve wit-parser `--> <file>:<line>:<col>` locations when present, using the more specific WIT file relative to the mod | — |
 | `mod.cargo_key` | 1 | a key of `logic/Cargo.toml` outside 5.2 | ``logic/Cargo.toml: `<key>` is not allowed`` | `Remove it. Allowed: <list>` |
 | `mod.dependency` | 1 | a dependency outside the allowlist, or of a refused form | ``dependency `<name>` is not in the allowlist`` / `... must be a version requirement` / `... requires <req>, the allowlist has <version>` | `Use only: <direct crates with versions>` |
 | `mod.logic_file` | 1 | a file of `logic/` outside 5.3 | `logic/build.rs is not allowed: the builder runs no build script` (one text for each kind) | `Remove <file>` |
@@ -212,7 +214,8 @@ the host blocks it), `ui.inline_script` (`ui/*.html` holds a `<script>`
 without `src`; the content policy blocks it), `test.uncovered` (an
 exported function is called by no contract step), `preview.previous` (a
 `serve` refused by the test pipeline while a preview for that folder still
-answers; message `the preview at <api> still serves the previous build`,
+answers; message `the preview at <page url> still serves the previous build`
+(the API URL only when the served mod has no page),
 fix `Fix the errors, then run: watane-dev serve --json`). Warnings never
 change `ok` or the exit status.
 
@@ -222,6 +225,11 @@ For each error: `error[<code>]: <message>`, then `  --> <file>:<line>:<column>`
 and `  fix: <fix>` when known. The same for warnings with `warning[...]`.
 Then one line `<command>: ok` or `<command>: failed`, the main fields of
 `result` as `key: value` lines, and `next: <next>`.
+Nested objects emit one line per field with dotted keys (for example
+`allowlist.vendor: /abs/vendor`, `toolchain.wasm32_wasip2: true`). Lists
+join their values with `, `; strings are unquoted, null is `missing`, and
+booleans and numbers use their plain text. No JSON containers or quotes
+are added to these values.
 
 ### 2.4 The result of each command
 
@@ -261,7 +269,14 @@ A part that did not run is null. `build`, `unit` and `contract` are null
 for a mod with no logic part. `not_run` counts the tests after a test that
 aborted the run (7.2). In a failure, `expected` and `got` are JSON values
 or null. `next` on success: `watane-dev serve --json`; on failure:
-`watane-dev test --json`.
+`watane-dev test --json`. For every command whose first error is `env.*`,
+`next` is `watane-dev doctor --json` (doctor itself uses the fix instruction
+below). `check` currently performs no environment discovery.
+Contract step failures report the 1-based line where the step object starts;
+`step` remains its 1-based index. Host-open failures have no step location.
+Pkg currently omits parser locations for malformed WIT worlds; those errors
+retain null line and column. When its message includes a parser location,
+dev preserves the line, column and the specific WIT file.
 
 **serve**
 ```json
@@ -298,7 +313,7 @@ its Wasm target remains an object with `wasm32_wasip2: false` and adds
 run is no error. `running` requires a readable `run.json` and a status
 answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
 `next` is `watane-dev new <slug> --json` on success and
-`watane-dev doctor --json` on a gap.
+`Run each error's fix, then run: watane-dev doctor --json` on a gap.
 
 **add** (step 2)
 ```json
@@ -339,6 +354,7 @@ The cache folder (dev creates and canonicalizes it):
 
 ```text
 <cache>/
+  vendor/                optional allowlist bootstrap, discovered without an override
   cargo-home/            CARGO_HOME of every cargo run
   tmp/                   TMPDIR of every cargo run
   build/<slug>/          the copy of the mod sources for one build
@@ -684,20 +700,23 @@ The allowlist is the closed set of crates that a logic part may use.
   kept in git. It is the full closure, with checksums.
 - Both files enter the binary with `include_str!` (`allowlist::MANIFEST`,
   `allowlist::LOCK`).
-- `scripts/vendor.sh` runs
-  `cargo vendor --locked --versioned-dirs --manifest-path allowlist/Cargo.toml allowlist/vendor`
-  (add `--offline` when the crates are in the local registry cache). The
-  packager runs it and installs the folder as
-  `<prefix>/share/watane-dev/vendor`.
-- dev finds the vendor folder in this order: `WATANE_DEV_VENDOR`;
-  `<folder of the executable>/../share/watane-dev/vendor`;
-  `<CARGO_MANIFEST_DIR at compile time>/allowlist/vendor`.
-- A missing source-tree vendor reports the absolute
-  `<CARGO_MANIFEST_DIR>/scripts/vendor.sh` as its fix. For an override or
-  installed path, the fix runs that script and exports `WATANE_DEV_VENDOR`
-  to the source-tree vendor it generates. `doctor`, `test` and `serve`
-  share this fix through `allowlist::vendor_dir`.
-- **Verification**, before each build: the vendor folder holds exactly one
+- `scripts/vendor.sh [<out>]` writes the vendor directory to `<out>`, relative
+  to the caller's folder when relative, or to `dev/allowlist/vendor` with
+  no argument. It copies the allowlist manifest, lock and empty library to
+  a temporary workspace, writes nothing else in the checkout, and tries
+  `cargo vendor --offline --locked --versioned-dirs` there first, falling
+  back to normal registry access only if needed. The packager installs it
+  as `<prefix>/share/watane-dev/vendor`.
+- dev selects `WATANE_DEV_VENDOR` when set (even if absent); otherwise the
+  first existing folder of `<folder of executable>/../share/watane-dev/vendor`,
+  `<CARGO_MANIFEST_DIR at compile time>/allowlist/vendor`, `<cache>/vendor`.
+  With none present, the error names `<cache>/vendor`.
+- The fix is always `'<abs dev>/scripts/vendor.sh' '<path>'`. For a missing
+  override it targets that override; without an override it targets the
+  absolute cache vendor path. No export is needed: the override is already
+  set, or dev discovers the cache vendor automatically. `doctor`, `test`
+  and `serve` share this fix through `allowlist::vendor_dir`.
+- **Verification**, in doctor and before each build: the vendor folder holds exactly one
   folder `<name>-<version>` for each registry package of the lock, and no
   other folder. The `package` field of its `.cargo-checksum.json` equals
   the `checksum` of the lock. Else `env.allowlist`.
@@ -955,8 +974,12 @@ and the command's `next` are
    On any error return the test errors without starting or updating a
    preview. Look for an answering preview using the canonical-path hash
    (as in 9.4), its cached ready line and `Client::for_home`. If one answers,
-   add `preview.previous` with its API address, constructed from the
-   validated ready port as in step 5. Failure to find or verify a preview
+   add `preview.previous` with the served mod's page URL, or the API URL
+   when it has no page. Construct URLs from the validated ready port and
+   cached installed local name as in step 5; do not follow cached URLs.
+   After installation, refresh the cached Ready mods in install order,
+   retaining page presence so later source edits cannot hide the old page.
+   Failure to find or verify a preview
    adds no warning and leaves the test errors unchanged. This applies only
    to `serve`, never `serve --stop`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
@@ -1267,7 +1290,10 @@ Each oracle is literal, read independently from fixture files, or computed by
 an independent tool; never call the code under test for the expectation.
 Default `cargo test -p watane-dev` has a 120 s wall budget with binaries compiled.
 Cold builds, real preview life cycles and journeys are `slow:`; asserted
-execution deadlines are `timing:`. The S16 vendor regression stays `red:`.
+execution deadlines are `timing:`. The S16 missing-vendor regression runs by default (S17-1).
+The vendor-script integration runs offline only when registry metadata confirms
+that the local cache has the crates; otherwise its ignored
+`ac3_vendor_script_with_registry_downloads` counterpart runs the bootstrap.
 
 Cache experiment (S13): original cold 33.41 s, same path warm 6.78 s, copied cache 13.68 s; the cache-path remap changes Cargo's rustflags fingerprint, so `tests/support/mod.rs` uses `OnceLock<TempDir>` to build one template per binary and shares that original cache folder, never a copy.
 
@@ -1284,12 +1310,12 @@ stop before compilation need no warmed cache. No product code changes.
 | outcome | `ac3_exit_classes_and_problem_envelope`, `ac3_previous_preview_is_only_a_warning` | unit: literal status 1–5, codes, JSON and warning text |
 | template | existing render, page and guide tests | unit: literal strings and file contents |
 | check | `ac3_twenty_literal_manifests`, `ac3_invalid_toml_names_file_and_line`, `ac3_dev_s5_and_s8_file_codes_locations_and_fixes`, `ac3_dev_s6_and_s7_manifest_codes_locations_and_fixes`, `ac3_check_repairs_host_wit_and_skips_git_links`, `ac3_logic_needs_contract_but_page_only_does_not` | unit: every builder check code, file, line, message and fix; missing locations are literal null |
-| allowlist | `ac3_source_vendor_fix_is_absolute_bootstrap_command`, `ac3_custom_vendor_fix_names_bootstrap_and_export`, existing pins/checksum tests | unit: literal pins, error and bootstrap/export fix |
+| allowlist | `ac3_source_vendor_fix_is_absolute_bootstrap_command`, `ac3_custom_vendor_fix_names_bootstrap_and_export`, `ac3_vendor_lookup_order_and_fix_texts`, existing pins/checksum tests | unit: literal pins, error, lookup order and bootstrap output-path fix |
 | toolchain | `ac3_doctor_toolchain_gap_texts_and_fixes` | unit: toolchain and missing-target error/fix |
 | builder | `ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots`, `ac6_cargo_config_quotes_paths_and_restricts_environment`, `ac3_compiler_failure_code_location_and_fix` | unit: literal paths, flags and environment keys |
 | unit | existing `ac1_parse_*`, `ac2_parse_*`; `ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `ac3_unit_host_imports_are_unknown_import_traps` | unit: literal libtest output; tiny literal WASI commands prove unsuccessful exit, interrupt, memory limit and trap classifications without Cargo |
 | contract | existing parse/run_steps tests, `ac3_single_event_equality_and_failure_payloads` | unit: literal returns, failures, events, short/full names, order, numeric equality, delivery and fakes |
-| preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac3_previous_warning_requires_answering_preview_and_has_literal_fix` | unit: literal Ready/JSON, loopback server; no real host |
+| preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac7_previous_warning_requires_answering_preview_and_names_page` | unit: literal Ready/JSON, loopback server; no real host |
 | cli | existing provider-failure and next-page tests | unit: absolute next/fixes, first failing provider, consumer page |
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
@@ -1319,7 +1345,7 @@ rules belong to 15.1.
 | DEV-S-14 | `unit_tests::ac4_unit_tests_have_no_files_environment_or_network`, `ac4_unit_host_imports_trap`; `unit::tests::ac3_unit_host_imports_are_unknown_import_traps` | integration, warm cache; slow Rust import wiring; unit trap |
 | DEV-S-15 | `unit_tests::ac2_panic_names_assert_and_counts_remaining_tests`; `unit::tests::ac3_panic_classification_counts_location_and_fix` | integration; unit |
 | DEV-S-16 | `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline`; `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | timing; unit classification |
-| DEV-S-17 | `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file`; `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
+| DEV-S-17 | `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file` (slow: full pipeline); `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
 | DEV-S-18 | `contract::ac1_s11_fake_answers_provider_call`, `ac1_s11_missing_fake_fails` | integration: committed Wasm fixture |
 | DEV-S-19 | `contract::ac2_s11_deliver_retains_state_and_emits`, `ac2_s11_deliver_compares_emitted_events`, `ac2_s11_deliver_rejects_non_subscription`; `contract::tests::ac4_run_steps_events_exact_order_names_and_failed_calls`, `ac3_single_event_equality_and_failure_payloads` | integration: prebuilt; unit |
 | DEV-S-20 | `unit_tests::ac5_logic_requires_contract_file_but_page_only_does_not`, `contract::ac8_serve_does_not_start_preview_for_failed_or_absent_contracts`; `check::tests::ac3_logic_needs_contract_but_page_only_does_not` | integration; slow serve pipeline; unit |
@@ -1338,6 +1364,11 @@ rules belong to 15.1.
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
+S17-1 keeps `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` unchanged
+in the slow set: it drives the full check/build/unit/contract pipeline.
+`ac6_bad_contract_file_names_file` uses the committed recommendations component,
+so its parser/location proof needs no template build.
+
 The successful unit pipeline also proves unchanged dependency timestamps, avoiding
 a second command just to check cache reuse.
 
@@ -1355,7 +1386,7 @@ Removed command assertions and their named replacements (S13):
 
 The real-host slow set reads `WATANE_BIN`. Run it with
 `cargo build -p watane-host` then
-`WATANE_BIN=$PWD/../target/debug/watane cargo test -p watane-dev -- --include-ignored --skip regress_s16_missing_vendor_says_missing`.
+`WATANE_BIN=$PWD/../target/debug/watane cargo test -p watane-dev -- --include-ignored`.
 DEV-S-13 may be refused by the outer OS sandbox; `timing:` tests require a
 quiet machine. `envelope::ac4_ignored_tests_explain_their_cost_or_refusal`
 checks the ignore reasons; `unit_tests::ac1_ac2_template_unit_counts_and_warm_pipeline`

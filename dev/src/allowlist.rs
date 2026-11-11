@@ -81,7 +81,7 @@ fn problem(path: &Path, detail: impl std::fmt::Display) -> Problem {
     Problem::new(
         Code::EnvAllowlist,
         format!(
-            "the crate allowlist at {} differs from this watane-dev: {detail}",
+            "the crate allowlist at {} differs from the allowlist of this watane-dev: {detail}",
             path.display()
         ),
     )
@@ -91,32 +91,46 @@ fn problem(path: &Path, detail: impl std::fmt::Display) -> Problem {
 fn vendor_fix(path: &Path) -> String {
     let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
     let script = dev.join("scripts/vendor.sh");
-    if path == dev.join("allowlist/vendor") {
-        script.display().to_string()
-    } else {
-        format!(
-            "'{}' && export WATANE_DEV_VENDOR='{}'",
-            script.display().to_string().replace('\'', "'\"'\"'"),
-            dev.join("allowlist/vendor")
-                .display()
-                .to_string()
-                .replace('\'', "'\"'\"'")
-        )
-    }
+    format!(
+        "'{}' '{}'",
+        script.display().to_string().replace('\'', "'\"'\"'"),
+        path.display().to_string().replace('\'', "'\"'\"'")
+    )
+}
+fn select_vendor(
+    override_path: Option<PathBuf>,
+    installed: &Path,
+    source: &Path,
+    cache: &Path,
+) -> PathBuf {
+    override_path.unwrap_or_else(|| {
+        [installed, source, cache]
+            .into_iter()
+            .find(|p| p.exists())
+            .unwrap_or(cache)
+            .to_path_buf()
+    })
 }
 pub fn vendor_dir() -> Result<PathBuf, Problem> {
-    let path = if let Some(path) = std::env::var_os("WATANE_DEV_VENDOR") {
-        PathBuf::from(path)
-    } else {
-        let installed = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("../share/watane-dev/vendor")));
-        installed
-            .filter(|p| p.is_dir())
-            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("allowlist/vendor"))
-    };
-    if !path.is_dir() {
-        return Err(problem(&path, "vendor folder is missing"));
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("../share/watane-dev/vendor")))
+        .unwrap_or_default();
+    let cache = crate::env::Env::from_process()?.cache.join("vendor");
+    let path = select_vendor(
+        std::env::var_os("WATANE_DEV_VENDOR").map(PathBuf::from),
+        &installed,
+        &dev.join("allowlist/vendor"),
+        &cache,
+    );
+    if !path.exists() {
+        return Err(Problem::new(
+            Code::EnvAllowlist,
+            format!("the crate allowlist at {} is missing", path.display()),
+        )
+        .at(path.to_string_lossy(), None, None)
+        .fix(vendor_fix(&path)));
     }
     path.canonicalize().map_err(|e| problem(&path, e))
 }
@@ -153,12 +167,50 @@ pub fn verify_vendor(vendor: &Path, allow: &Allowlist) -> Result<(), Problem> {
 mod tests {
     use super::*;
     #[test]
+    fn ac3_vendor_lookup_order_and_fix_texts() {
+        let temp = tempfile::tempdir().unwrap();
+        let installed = temp.path().join("installed");
+        let source = temp.path().join("source");
+        let cache = temp.path().join("cache/vendor");
+        for path in [&cache, &source, &installed] {
+            fs::create_dir_all(path).unwrap();
+        }
+        assert_eq!(select_vendor(None, &installed, &source, &cache), installed);
+        fs::remove_dir(&installed).unwrap();
+        assert_eq!(select_vendor(None, &installed, &source, &cache), source);
+        fs::remove_dir(&source).unwrap();
+        assert_eq!(select_vendor(None, &installed, &source, &cache), cache);
+        fs::remove_dir(&cache).unwrap();
+        assert_eq!(select_vendor(None, &installed, &source, &cache), cache);
+        assert_eq!(
+            select_vendor(Some("/override".into()), &installed, &source, &cache),
+            Path::new("/override")
+        );
+        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/vendor.sh");
+        assert_eq!(
+            vendor_fix(Path::new("/agent/cache/vendor")),
+            format!("'{script}' '/agent/cache/vendor'")
+        );
+        assert_eq!(
+            vendor_fix(Path::new("/custom/vendor")),
+            format!("'{script}' '/custom/vendor'")
+        );
+    }
+
+    #[test]
     fn ac3_source_vendor_fix_is_absolute_bootstrap_command() {
         let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
         let error = problem(&dev.join("allowlist/vendor"), "vendor folder is missing");
         assert_eq!(
             error.fix.as_deref(),
-            Some(dev.join("scripts/vendor.sh").to_str().unwrap())
+            Some(
+                format!(
+                    "'{}' '{}'",
+                    dev.join("scripts/vendor.sh").display(),
+                    dev.join("allowlist/vendor").display()
+                )
+                .as_str()
+            )
         );
     }
     #[test]
@@ -222,14 +274,14 @@ mod tests {
         assert_eq!(error.code, Code::EnvAllowlist);
         assert_eq!(
             error.message,
-            "the crate allowlist at /missing/vendor differs from this watane-dev: missing"
+            "the crate allowlist at /missing/vendor differs from the allowlist of this watane-dev: missing"
         );
         assert_eq!(
             error.fix,
             Some(format!(
-                "'{}' && export WATANE_DEV_VENDOR='{}'",
+                "'{}' '{}'",
                 dev.join("scripts/vendor.sh").display(),
-                dev.join("allowlist/vendor").display()
+                "/missing/vendor"
             ))
         );
     }

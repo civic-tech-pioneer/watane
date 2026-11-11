@@ -134,7 +134,10 @@ fn ac2_missing_watane_retains_other_parts() {
     for key in ["toolchain", "allowlist", "home"] {
         assert!(v["result"][key].is_object());
     }
-    assert_eq!(v["next"], "watane-dev doctor --json");
+    assert_eq!(
+        v["next"],
+        "Run each error's fix, then run: watane-dev doctor --json"
+    );
 }
 #[test]
 fn ac3_missing_vendor_names_bootstrap_script() {
@@ -156,7 +159,6 @@ fn ac3_missing_vendor_names_bootstrap_script() {
 // S16 (Codex as Bob): a missing vendor folder read as a mismatch, so the agent went to the
 // source to learn what was wrong. TECHNICAL 2.2 `env.allowlist`: "the crate allowlist at <path> is missing".
 #[test]
-#[ignore = "red: S17 fixes it (TECHNICAL 2.2 env.allowlist missing)"]
 fn regress_s16_missing_vendor_says_missing() {
     let m = Machine::new();
     let missing = m.temp.path().join("missing");
@@ -315,4 +317,24 @@ fn ac8_new_guide_starts_with_doctor_and_fixes() {
         order.contains("each error's `fix` before going on"),
         "{order}"
     );
+}
+
+#[test]
+fn ac2_missing_vendor_fix_targets_override_and_existing_vendor_differs() {
+    let m = Machine::new();
+    let missing = m.temp.path().join("own vendor");
+    let v = report(m.command().env("WATANE_DEV_VENDOR", &missing), 3);
+    assert_eq!(
+        v["errors"][0]["fix"],
+        format!(
+            "'{}' '{}'",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/vendor.sh")
+                .display(),
+            missing.display()
+        )
+    );
+    fs::create_dir(&missing).unwrap();
+    let v = report(m.command().env("WATANE_DEV_VENDOR", &missing), 3);
+    assert!(v["errors"][0]["message"].as_str().unwrap().starts_with(&format!("the crate allowlist at {} differs from the allowlist of this watane-dev: missing folder ", missing.canonicalize().unwrap().display())));
 }

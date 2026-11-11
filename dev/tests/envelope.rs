@@ -254,3 +254,12 @@ fn ac5_scenario_map_covers_every_scenario_and_names_existing_tests() {
         );
     }
 }
+
+#[test]
+fn ac9_s17_builder_commands_document_bootstrap_and_slow_set() {
+    let guide =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("AGENTS.md")).unwrap();
+    assert!(guide.contains("scripts/vendor.sh [<out>]"));
+    assert!(!guide.contains("--skip regress_s16_missing_vendor_says_missing"));
+    assert!(guide.contains("- S17-1 (dev):"));
+}

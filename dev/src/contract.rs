@@ -219,6 +219,48 @@ pub fn run_steps(
     (passed, failures)
 }
 
+// Called only after JSON validation; skip structural bytes inside strings.
+fn step_lines(text: &str) -> Vec<u32> {
+    let (mut depth, mut line, mut string, mut escaped) = (0, 1, None, false);
+    let (mut steps, mut lines) = (false, vec![]);
+    for (i, byte) in text.bytes().enumerate() {
+        if byte == b'\n' {
+            line += 1;
+        }
+        if let Some(start) = string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                string = None;
+                if depth == 1 {
+                    steps = serde_json::from_str::<String>(&text[start..=i])
+                        .is_ok_and(|s| s == "steps");
+                }
+            }
+            continue;
+        }
+        match byte {
+            b'"' => string = Some(i),
+            b'{' | b'[' => {
+                if steps && depth == 2 && byte == b'{' {
+                    lines.push(line);
+                }
+                depth += 1;
+            }
+            b'}' | b']' => {
+                depth -= 1;
+                if depth == 1 {
+                    steps = false;
+                }
+            }
+            _ => {}
+        }
+    }
+    lines
+}
+
 pub fn contract_tests(
     dir: &Path,
     slug: &watane_pkg::Slug,
@@ -286,10 +328,11 @@ pub fn contract_tests(
                 continue;
             }
         };
+        let lines = step_lines(&text);
         for failure in failures {
             errors.push(
                 Problem::new(Code::TestContract, &failure.message)
-                    .at(&file, None, None)
+                    .at(&file, lines.get(failure.step as usize - 1).copied(), None)
                     .fix(
                         "Correct the contract test or its logic, then run: watane-dev test --json",
                     ),
@@ -306,6 +349,19 @@ mod tests {
     use super::*;
     use serde_json::json;
     use watane_host::{CallError, EventRecord, Outcome};
+
+    #[test]
+    fn ac6_step_lines_skip_nested_values_and_escaped_strings() {
+        let text = r#"{
+          "fakes": {"mods:books/api":{"steps": ["{\"}"]}},
+          "steps": [
+            {"call":"api.get", "returns":{"steps":[{}]}},
+            {"call":"api.get", "returns":"}\"["}
+          ]
+        }"#;
+        assert!(parse(text).is_ok());
+        assert_eq!(step_lines(text), vec![4, 5]);
+    }
 
     #[test]
     fn ac3_parse_accepts_deliver_and_run_steps_dispatches_it() {

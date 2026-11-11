@@ -25,7 +25,10 @@ pub fn doctor() -> Outcome {
             Value::Null
         }
     };
-    let allowlist = match allowlist::vendor_dir() {
+    let allowlist = match allowlist::vendor_dir().and_then(|vendor| {
+        allowlist::verify_vendor(&vendor, &Allowlist::embedded())?;
+        Ok(vendor)
+    }) {
         Ok(vendor) => {
             let allow = Allowlist::embedded();
             json!({"vendor":vendor,"direct":allow.direct().iter()
@@ -61,7 +64,7 @@ pub fn doctor() -> Outcome {
         outcome.next = Some("watane-dev new <slug> --json".into());
         outcome
     } else {
-        outcome.next = Some("watane-dev doctor --json".into());
+        outcome.next = Some("Run each error's fix, then run: watane-dev doctor --json".into());
         outcome.fail(errors)
     }
 }

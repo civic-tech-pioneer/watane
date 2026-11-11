@@ -122,6 +122,10 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
     std::thread::spawn(move || {
         let _ = child.wait();
     });
+    save_ready(folder, &ready)?;
+    Ok(ready)
+}
+fn save_ready(folder: &Path, ready: &Ready) -> Result<(), Problem> {
     let path = folder.join("ready.json");
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -134,7 +138,7 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
         .map_err(Problem::internal)?;
     file.write_all(&serde_json::to_vec(&ready).map_err(Problem::internal)?)
         .map_err(Problem::internal)?;
-    Ok(ready)
+    Ok(())
 }
 fn running_preview(folder: &Path) -> Result<(Option<Client>, Option<Ready>), Problem> {
     let home = folder.join("home");
@@ -164,7 +168,7 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
                 Code::PreviewPrevious,
                 format!(
                     "the preview at {} still serves the previous build",
-                    api_url(&ready)
+                    previous_url(&ready)
                 ),
             )
             .fix("Fix the errors, then run: watane-dev serve --json"),
@@ -182,7 +186,7 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
         let log = folder.join("watane.log");
         let (running, cached) = running_preview(&folder)?;
         let reuse = cached.is_some();
-        let ready = if let Some(ready) = cached {
+        let mut ready = if let Some(ready) = cached {
             ready
         } else {
             if running.is_some() {
@@ -198,6 +202,14 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
             .fix(format!("Read {}", log.display()))
         })?;
         let installed = client.install(&folders)?;
+        ready.mods = installed
+            .iter()
+            .map(|m| watane_host::ReadyMod {
+                local: m.local.clone(),
+                page: m.page.clone(),
+            })
+            .collect();
+        save_ready(&folder, &ready)?;
         let pages = installed
             .into_iter()
             .map(|m| json!({"slug":m.slug,"local":m.local,"url":m.page}))
@@ -211,6 +223,12 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
 }
 fn api_url(ready: &Ready) -> String {
     format!("http://localhost:{}/api/", ready.port)
+}
+fn previous_url(ready: &Ready) -> String {
+    ready.mods.last().filter(|m| m.page.is_some()).map_or_else(
+        || api_url(ready),
+        |m| format!("http://{}.localhost:{}/", m.local, ready.port),
+    )
 }
 fn mcp(ready: &Ready) -> Value {
     ready.token.as_ref().map_or(Value::Null, |token| {
@@ -393,6 +411,9 @@ mod tests {
                 "slug":slug, "local":slug, "url":format!("http://{slug}.localhost:{port}/")
             })))
         );
+        let cached: Ready =
+            serde_json::from_slice(&fs::read(preview.join("ready.json")).unwrap()).unwrap();
+        assert_eq!(previous_url(&cached), format!("http://c.localhost:{port}/"));
         server.join().unwrap();
     }
 
@@ -419,7 +440,15 @@ mod tests {
     }
 
     #[test]
-    fn ac3_previous_warning_requires_answering_preview_and_has_literal_fix() {
+    fn ac7_previous_url_uses_consumer_and_falls_back_only_without_page() {
+        let mut ready: Ready = serde_json::from_value(json!({"watane":1,"mode":"preview","home":"/home","port":1234,"api":"untrusted","mcp":null,"token":null,"mods":[{"local":"provider","page":"untrusted"},{"local":"consumer","page":"untrusted"}]})).unwrap();
+        assert_eq!(previous_url(&ready), "http://consumer.localhost:1234/");
+        ready.mods.last_mut().unwrap().page = None;
+        assert_eq!(previous_url(&ready), "http://localhost:1234/api/");
+    }
+
+    #[test]
+    fn ac7_previous_warning_requires_answering_preview_and_names_page() {
         use std::{io::Read, net::TcpListener};
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("counter");
@@ -439,7 +468,7 @@ mod tests {
             json!({"watane":1,"mode":"preview","pid":std::process::id(),"port":port}).to_string(),
         )
         .unwrap();
-        fs::write(preview.join("ready.json"), json!({"watane":1,"mode":"preview","home":home,"port":port,"api":"untrusted","mcp":null,"token":null,"mods":[]}).to_string()).unwrap();
+        fs::write(preview.join("ready.json"), json!({"watane":1,"mode":"preview","home":home,"port":port,"api":"untrusted","mcp":null,"token":null,"mods":[{"local":"counter","page":"untrusted"}]}).to_string()).unwrap();
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             stream
@@ -464,7 +493,7 @@ mod tests {
             serde_json::to_value(warning).unwrap(),
             json!({
                 "code":"preview.previous",
-                "message":format!("the preview at http://localhost:{port}/api/ still serves the previous build"),
+                "message":format!("the preview at http://counter.localhost:{port}/ still serves the previous build"),
                 "file":null,"line":null,"column":null,
                 "fix":"Fix the errors, then run: watane-dev serve --json"
             })

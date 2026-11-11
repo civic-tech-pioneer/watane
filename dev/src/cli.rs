@@ -11,26 +11,38 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 #[command(version, about = "Make and preview watane mods")]
 pub struct Cli {
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help = "Print one JSON result object")]
     pub json: bool,
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Use this mod folder (new: the destination folder)"
+    )]
     pub dir: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Command,
 }
 #[derive(Subcommand)]
 pub enum Command {
+    /// Create a mod from the counter template
     New {
+        /// Lowercase mod slug, such as reading-list
         slug: String,
     },
+    /// Check the mod layout, WIT and builder constraints
     Check,
+    /// Report the toolchain, allowlist and host environment
     Doctor,
+    /// Check, build and run sandboxed unit and contract tests
     Test,
+    /// Add a local provider and report its WIT imports
     Add {
+        /// Folder of the provider mod
         provider: PathBuf,
     },
+    /// Test the mod and serve it in a preview
     Serve {
-        #[arg(long)]
+        #[arg(long, help = "Stops the preview and deletes its data")]
         stop: bool,
     },
 }
@@ -124,9 +136,8 @@ pub fn run(cli: Cli) -> Outcome {
             outcome
         }
         Err(e) => {
-            if name == "serve"
-                && e.first()
-                    .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
+            if e.first()
+                .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
             {
                 outcome.next = Some("watane-dev doctor --json".into());
             }
@@ -237,6 +248,12 @@ pub fn test(dir: &Path) -> Outcome {
         outcome.next = Some("watane-dev serve --json".into());
         outcome
     } else {
+        if errors
+            .first()
+            .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
+        {
+            outcome.next = Some("watane-dev doctor --json".into());
+        }
         outcome.fail(errors)
     }
 }
@@ -245,6 +262,42 @@ pub fn test(dir: &Path) -> Outcome {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac1_all_commands_and_arguments_have_help() {
+        use clap::CommandFactory;
+        fn walk(command: &clap::Command) {
+            for arg in command.get_arguments() {
+                if !matches!(arg.get_id().as_str(), "help" | "version") {
+                    assert!(
+                        arg.get_help().is_some(),
+                        "{}: {}",
+                        command.get_name(),
+                        arg.get_id()
+                    );
+                }
+            }
+            for sub in command.get_subcommands() {
+                assert!(sub.get_about().is_some(), "{}", sub.get_name());
+                walk(sub);
+            }
+        }
+        walk(&Cli::command());
+        assert!(
+            Cli::command()
+                .find_subcommand_mut("serve")
+                .unwrap()
+                .render_help()
+                .to_string()
+                .contains("deletes its data")
+        );
+        assert_eq!(
+            serve_next(&json!({"stopped":true})).as_deref(),
+            Some(
+                "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
+            )
+        );
+    }
 
     #[test]
     fn ac1_provider_failure_sets_next_and_all_fixes() {
