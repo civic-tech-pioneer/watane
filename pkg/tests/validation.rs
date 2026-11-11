@@ -549,3 +549,187 @@ fn ac2_schema_boundaries_and_duplicates() {
     }
     assert!(deps.write(dir.path()).is_err());
 }
+
+#[test]
+fn ac2_http_host_count_limit_is_inclusive() {
+    // TECHNICAL.md §4.2: [http] hosts holds 1..=16 hosts.
+    let dir = temporary("http-valid");
+    let hosts = (0..16)
+        .map(|n| format!("'a{n:02}.example'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    put(
+        dir.path(),
+        "mod.toml",
+        format!("name = 'Hello'\nsummary = 'Says hello.'\n[http]\nhosts = [{hosts}]"),
+    );
+    let m = Mod::read(dir.path()).unwrap();
+    assert_eq!(m.http_hosts().len(), 16);
+    assert_eq!(m.http_hosts()[15].as_str(), "a15.example");
+}
+
+#[test]
+fn ac3_rules_wit_total_limit_is_inclusive() {
+    // TECHNICAL.md §4.7: all .wit files together are at most 4 MiB; each at most 1 MiB.
+    let dir = temporary("hello");
+    let world = fs::read(dir.path().join("wit/world.wit")).unwrap();
+    for file in ["a", "b", "c"] {
+        put(
+            dir.path(),
+            &format!("wit/{file}.wit"),
+            vec![b' '; 1_048_576],
+        );
+    }
+    put(dir.path(), "wit/d.wit", vec![b' '; 1_048_576 - world.len()]);
+    Mod::read(dir.path()).unwrap();
+    put(
+        dir.path(),
+        "wit/d.wit",
+        vec![b' '; 1_048_576 - world.len() + 1],
+    );
+    refused(dir.path(), Rule::Limit, "wit/world.wit");
+}
+
+// The message of the `wit` violation for a world that wit-parser itself refuses.
+fn wit_message(dir: &Path) -> String {
+    let v = refused(dir, Rule::Wit, "wit/world.wit");
+    v.into_iter().find(|v| v.rule == Rule::Wit).unwrap().message
+}
+fn parser_message(dir: &Path) -> String {
+    let error = wit_parser::Resolve::default()
+        .push_dir(dir.join("wit"))
+        .unwrap_err();
+    format!("{error:#}")
+}
+
+#[test]
+fn ac3_rules_wit_message_is_first_2000_bytes() {
+    // TECHNICAL.md §4.4 step 2: the violation carries the first 2000 bytes of the
+    // parser message. The oracle is wit-parser itself, called directly.
+    let dir = temporary("hello");
+    put(
+        dir.path(),
+        "wit/world.wit",
+        "package mods:hello@0.1.0;\ninterface api { type t = missing; }\nworld hello {}\n",
+    );
+    let expected = parser_message(dir.path());
+    assert!(expected.len() < 2000);
+    assert_eq!(wit_message(dir.path()), expected);
+
+    let name = "a".repeat(3000);
+    put(
+        dir.path(),
+        "wit/world.wit",
+        format!(
+            "package mods:hello@0.1.0;\ninterface api {{ type t = {name}; }}\nworld hello {{}}\n"
+        ),
+    );
+    let expected = parser_message(dir.path());
+    assert!(expected.len() > 2000 && expected.is_char_boundary(2000));
+    assert_eq!(wit_message(dir.path()), expected[..2000]);
+}
+
+#[test]
+fn ac3_rules_wit_skipped_only_for_wit_path_violations() {
+    // TECHNICAL.md §4.4: the WIT is walked (rule `path`) before any parse, so a
+    // path violation inside wit/ stops the parse...
+    let world = "package mods:hello@0.1.0; world hello { import other:x/y@1.0.0; }";
+    let dir = temporary("hello");
+    put(dir.path(), "wit/world.wit", world);
+    put(
+        dir.path(),
+        "wit/x/y.wit",
+        "package other:x@1.0.0; interface y {}",
+    );
+    let v = refused(dir.path(), Rule::Path, "wit/x");
+    assert!(
+        !v.iter().any(|v| matches!(v.rule, Rule::Wit | Rule::Import)),
+        "{v:?}"
+    );
+    // ...while a path violation outside wit/ leaves the WIT checks running (§4.7:
+    // every violation that can be found is reported).
+    #[cfg(unix)]
+    {
+        let dir = temporary("hello");
+        put(dir.path(), "wit/world.wit", world);
+        put(
+            dir.path(),
+            "wit/deps/x/y.wit",
+            "package other:x@1.0.0; interface y {}",
+        );
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("ui/link")).unwrap();
+        let v = refused(dir.path(), Rule::Path, "ui/link");
+        assert!(
+            v.iter()
+                .any(|v| v.rule == Rule::Wit || v.rule == Rule::Import),
+            "{v:?}"
+        );
+    }
+}
+
+#[test]
+fn ac3_rules_nesting_scan_comments() {
+    // TECHNICAL.md §4.4 nesting scan: comments (which nest) are skipped; depth above 32 is `limit`.
+    let open = "{".repeat(33);
+    let dir = temporary("hello");
+    for world in [
+        // Braces inside the outer comment, after a nested one has closed.
+        format!("package mods:hello@0.1.0;\n/* /* */ {open} */\nworld hello {{}}\n"),
+        // One brace in each of 33 separate comments.
+        format!(
+            "package mods:hello@0.1.0;\n{}\nworld hello {{}}\n",
+            "/*{*/ ".repeat(33)
+        ),
+        // A line comment at the very end, with no newline after it.
+        "package mods:hello@0.1.0;\nworld hello {}\n// end".to_string(),
+    ] {
+        put(dir.path(), "wit/world.wit", &world);
+        Mod::read(dir.path()).unwrap_or_else(|e| panic!("{world}: {e}"));
+    }
+    // A comment at the very start ends at its first */; the braces after it count.
+    put(
+        dir.path(),
+        "wit/world.wit",
+        format!("/* c */ package mods:hello@0.1.0;\n{open}"),
+    );
+    refused(dir.path(), Rule::Limit, "wit/world.wit");
+}
+
+#[test]
+fn ac3_identity_package_line_after_comments() {
+    // TECHNICAL.md §4.1: the package line is in wit/world.wit; comments before it
+    // may hold `;`, and a `;` after it in the file is not part of it.
+    let dir = temporary("hello");
+    let rest = "interface api { f: func(); }\nworld hello {}\n";
+    for head in [
+        "/* /* */ ; */ package mods:hello@0.1.0;\n",
+        "/* a */ package mods:hello@0.1.0;\n// */\n",
+        "          //\n/* x */ package mods:hello@0.1.0;\n",
+    ] {
+        let world = format!("{head}{rest}");
+        put(dir.path(), "wit/world.wit", &world);
+        let m = Mod::read(dir.path()).unwrap_or_else(|e| panic!("{world}: {e}"));
+        assert_eq!(m.slug().as_str(), "hello");
+    }
+    // Without a package line the refusal is the parser's, never a panic (§4.4, §10).
+    for world in ["world hello {}", "world hello {} // end"] {
+        put(dir.path(), "wit/world.wit", world);
+        let message = wit_message(dir.path());
+        assert!(!message.contains("panicked"), "{world}: {message}");
+    }
+}
+
+#[test]
+fn ac2_mod_toml_at_limit_is_read_whole() {
+    // TECHNICAL.md §4.2: mod.toml is at most 16 KiB; a file of exactly 16384 bytes
+    // is read to its last byte (here the closing quote of `summary`).
+    let dir = temporary("hello");
+    let tail = "\nname = 'Hello'\nsummary = 'Says hello.'";
+    let text = format!("#{}{tail}", "-".repeat(16384 - 1 - tail.len()));
+    assert_eq!(text.len(), 16384);
+    put(dir.path(), "mod.toml", &text);
+    assert_eq!(Mod::read(dir.path()).unwrap().summary(), "Says hello.");
+    put(dir.path(), "mod.toml", format!("-{text}"));
+    refused(dir.path(), Rule::ModToml, "mod.toml");
+}

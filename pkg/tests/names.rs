@@ -51,6 +51,8 @@ fn ac1_names() {
             "1.2.3+build",
             "1.2.3.4",
             "-1.2.3",
+            "+1.2.3",
+            "1.+2.3",
             "1.2.3\n",
             "18446744073709551616.0.0",
         ],
@@ -145,6 +147,13 @@ fn ac1_names() {
         PackageId::of(b"").to_string(),
         "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
     );
+    // TECHNICAL.md §8: from_bytes and as_bytes convert the 32 bytes both ways.
+    let bytes: [u8; 32] = std::array::from_fn(|i| i as u8);
+    assert_eq!(PackageId::from_bytes(bytes).as_bytes(), &bytes);
+    assert_eq!(
+        PackageId::from_bytes(bytes).to_string(),
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    );
     let error = "é".repeat(100).parse::<Slug>().unwrap_err();
     assert!(error.text.chars().count() <= 80);
 }
@@ -206,4 +215,45 @@ fn ac1_compatible() {
             "{wanted}, {offered}"
         );
     }
+}
+
+#[test]
+fn ac1_interface_satisfied_by() {
+    // TECHNICAL.md: same namespace, package and interface, and a compatible version.
+    let wanted: InterfaceName = "mods:reading-list/books@0.1.0".parse().unwrap();
+    for (offered, yes) in [
+        ("mods:reading-list/books@0.1.0", true),
+        ("mods:reading-list/books@0.1.7", true),
+        ("other:reading-list/books@0.1.0", false),
+        ("mods:recommendations/books@0.1.0", false),
+        ("mods:reading-list/events@0.1.0", false),
+        ("mods:reading-list/books@0.2.0", false),
+        ("mods:reading-list/books@1.0.0", false),
+    ] {
+        assert_eq!(
+            wanted.satisfied_by(&offered.parse().unwrap()),
+            yes,
+            "{offered}"
+        );
+    }
+}
+
+#[test]
+fn ac1_length_limits_are_inclusive() {
+    // TECHNICAL.md §3: an interface name is at most 128 bytes.
+    // "mods:" + package + "/" + interface + "@0.1.0" is 12 bytes plus the two words.
+    let at_limit = format!("mods:{}/{}@0.1.0", "a".repeat(58), "b".repeat(58));
+    let over = format!("mods:{}/{}@0.1.0", "a".repeat(58), "b".repeat(59));
+    assert_eq!((at_limit.len(), over.len()), (128, 129));
+    grammar::<InterfaceName>(&[&at_limit], &[&over]);
+
+    // TECHNICAL.md §3: an HTTP host name is at most 253 bytes; a label at most 63.
+    let label = "a".repeat(63);
+    let at_limit = format!("{label}.{label}.{label}.{}", "b".repeat(61));
+    let over = format!("{label}.{label}.{label}.{}", "b".repeat(62));
+    assert_eq!((at_limit.len(), over.len()), (253, 254));
+    // The limit is on the name only: a port does not count against it.
+    let with_port = format!("{at_limit}:65535");
+    let over_with_port = format!("{over}:1");
+    grammar::<HttpHost>(&[&at_limit, &with_port], &[&over, &over_with_port]);
 }
