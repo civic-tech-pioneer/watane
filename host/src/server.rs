@@ -180,8 +180,9 @@ impl Served {
         }
     }
     pub async fn shutdown(mut self) {
+        let started = tokio::time::Instant::now();
         let _ = self.shutdown.send(true);
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(4);
+        let deadline = started + Duration::from_secs(4);
         for task in &mut self.tasks {
             if tokio::time::timeout_at(deadline, &mut *task).await.is_err() {
                 task.abort();
@@ -191,7 +192,9 @@ impl Served {
         self.tasks.clear();
         // Also wait for detached connection futures and spawn_blocking work.
         // Their shared owner notifies only after releasing its host clone.
-        let _ = self.finished.changed().await;
+        // Active work may retain the home after the whole shutdown bound.
+        let _ = tokio::time::timeout_at(started + Duration::from_secs(5), self.finished.changed())
+            .await;
     }
     fn clean_run(&self) {
         if let Err(e) = std::fs::remove_file(self.host.home().join("run.json"))

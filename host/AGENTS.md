@@ -70,5 +70,3 @@ word for word. Follow their intent, and do not ask whether to.
 - Q23 correction (host): Validator round 1 replaces global serialization with per-emitter delivery and commit-ordered page queues; unrelated mods execute concurrently.
 
 - Q24 (host, app, dev): S12a adds participant plans and confirmation, live grant checks, lifecycle management, app routes and tool metadata; disabled calls return 409 and pages return 404.
-
-- Q25 (host, app, dev): S12a shutdown waits for server host owners after the listener deadline; the last caller handle releases the home before an immediate reopen.

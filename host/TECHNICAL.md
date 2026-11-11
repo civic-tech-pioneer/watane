@@ -163,11 +163,12 @@ pub struct ReadyMod { pub local: LocalName, pub page: Option<String> }
 Product callers pass `Limits::default()` to `Host::open`; tests lower one.
 
 `call_async` returns only after its worker releases every host reference,
-including those of the event deliveries it waits for. `Served::shutdown`
-returns only after the server's routers, connections, requests and blocking
-work release their host references. Dropping the last caller handle after
-these operations releases the home synchronously; an immediate `open` can
-acquire its lock.
+including those of the event deliveries it waits for. Within the shutdown
+bound of 12.2, `Served::shutdown` waits for routers, connections, requests
+and blocking work to release their host references. If they finish within
+that bound, dropping the last caller handle releases the home synchronously.
+If the bound expires, shutdown returns anyway; running work can still hold
+the home until it ends.
 
 ### 2.2 Errors
 
@@ -1162,11 +1163,8 @@ mod without a page. A failure before the ready line prints
 `{"watane":1,"error":<HostError JSON>}` and exits 1. `watane_host::Ready`
 (Serialize, Deserialize) is the type of the ready line, for `dev`.
 
-SIGINT or SIGTERM: stop accepting and signal connections to close. Wait for
-running requests and their host references to end, then remove `run.json`
-and exit 0. The listener tasks have a four-second deadline; this deadline
-does not end the wait for connection and blocking work to release the host.
-Log lines on stderr start with `watane: `.
+SIGINT or SIGTERM: stop accepting, let running requests end for up to 5 s,
+remove `run.json`, exit 0. Log lines on stderr start with `watane: `.
 
 ## 13. Test plan
 
@@ -1513,8 +1511,3 @@ Each answer below is used in this file.
   an install checks generation again after consent and refuses stale plans.
   The synchronous folder helper cannot request app consent; async install
   owns that path. Provider uses pkg's object serde form, not its Display text.
-
-- **Q25 (host, app, dev)** S12a shutdown waits for all server host owners,
-  including detached connections and blocking work, after the listener
-  deadline. This replaces the five-second program shutdown promise so that
-  the last caller handle releases the home before an immediate reopen.
