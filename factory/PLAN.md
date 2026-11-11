@@ -79,6 +79,19 @@ Step 2 (Run together, J2).
   - Touches: `app/src/{views,driver,lib}.rs`, `app/tests/support/driver.rs`, `app/tests/gui_*.rs`,
     `factory/README.md`, `.claude/agents/{user-sim,validator}.md`. Not dev, host, pkg (S11).
   - Rejected: moving windows to another Space (private APIs only).
+- [~] **S15 Packages say what is wrong.** (branch `slice/s15`; foreman: see `Foremen`) The
+  human's call: S7's pkg follow-ups. A maker packs a mod with a bad file and the error names the
+  real cause.
+  - Outcomes (user-sim, `pack`/`unpack` through pkg's tests and the real `watane-dev`/`watane`):
+    1. Too many files says "too many files" with the limit, not "count must be 1..=4096".
+    2. A hidden link such as `ui/.x` is refused as `Symlink`, not as a mod rule.
+    3. A NUL or control character in a path is escaped in the message.
+    4. When an unpack fails and its cleanup fails too, the first error is the one reported.
+    5. Reads use `O_NOFOLLOW` (or the platform's equal), so a file swapped for a link between the
+       walk and the read is refused.
+  - Touches: `pkg/src/package.rs` and its tests (`pkg/tests/package*.rs`, new `regress_*`);
+    `pkg/AGENTS.md` spec-gap line at the end only. Not `deps.rs`, `lib.rs`,
+    `tests/add_provider.rs` (S11), nor `app/` (S14). Unit tests first (test pyramid).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
   starts the app, installs `reading-list` and `recommendations` from their folders, approves the
   plan, uses them together, restarts, withdraws a grant, and removes a mod.
