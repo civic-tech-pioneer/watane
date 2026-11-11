@@ -6,8 +6,11 @@ Read first: `../spec/VISION.md`, `../spec/FUNCTIONAL.md`, `../spec/TECHNICAL.md`
 `AGENTS.md` binds you; where it and this text differ, `AGENTS.md` wins, and THE TASK wins over both.
 
 Work test-first:
-1. Write a test for each acceptance criterion of THE TASK. Name the test after the criterion
-   (`ac1_...`). Run it and see it fail for the right reason.
+1. Write a test for each acceptance criterion of THE TASK, at the lowest level that can show it:
+   a unit test in the crate before a command test, a prebuilt fixture before a fresh build.
+   A test that needs a cold build or the full pipeline gets `#[ignore = "slow: <what only it
+   proves>"]`. Name the test after the criterion (`ac1_...`). Run it and see it fail for the
+   right reason.
 2. Write the least code that makes it pass. Then refactor while green.
 3. Run the commands of `AGENTS.md` (tests, clippy, fmt). All must pass.
 

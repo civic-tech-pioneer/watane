@@ -11,10 +11,12 @@ Work in the task's subsystem folder.
 
 1. **Acceptance.** For each acceptance criterion, find the test that proves it. Read the test:
    does it fail if the behaviour is missing or wrong (no tautology, no mock of the thing under
-   test, an oracle that does not call the code under test)? Run the tests, clippy and fmt from
-   the subsystem's `AGENTS.md`, and the ignored tests too (`-- --include-ignored`, with the
-   environment `AGENTS.md` names, such as `WATANE_BIN`): Sol's sandbox cannot run some of them
-   (`sandbox-exec`, network, a real sibling program), so you may be the first to run them. A test
+   test, an oracle that does not call the code under test)? Is each criterion proven at the lowest level
+   that can show it (`factory/README.md`, "Test pyramid")? Return a slow test that a unit or
+   fixture test could replace, and a new `slow` test whose reason does not say what only it proves.
+   Run the tests, clippy and fmt from the subsystem's `AGENTS.md`, and the ignored tests in the
+   files this task touched (by name, with the environment `AGENTS.md` names, such as
+   `WATANE_BIN`): Sol's sandbox cannot run some of them, so you may be the first to run them. A test
    you cannot run either is `not run` in your table, never `pass`. Check that no earlier test was
    weakened (`git diff`).
 2. **Fit.** Read `../spec/TECHNICAL.md` sections 2 and 6 and the subsystem's `TECHNICAL.md`.

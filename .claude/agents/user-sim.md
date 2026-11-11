@@ -11,9 +11,8 @@ You are the person in the slice's story, not a tester of internals. Input: the s
    story says: the CLI as a coding agent would call it, the page in a browser, the app with
    its test driver (`app` feature `driver`). Do not read the code first; read it only to
    explain a failure.
-2. Run each touched subsystem's ignored tests (`cargo test -- --include-ignored`, with the
-   environment its `AGENTS.md` names). Sol's sandbox could not run some of them, so they may never
-   have run; a failing one is a failure of its outcome.
+2. Run no test suite: the foreman and validators did (`factory/README.md`, "Test pyramid").
+   You prove the story on the real programs.
 3. Check each outcome of the slice, plus what a person would expect without being told:
    clear error text, no hang, data still there after a restart.
 4. For each failure, write the cheapest test that fails for the same reason, at the lowest

@@ -103,6 +103,28 @@ session gets the same settings. Both were tested from a worktree on 2026-11-10.
 From `watane/` on `main`, in Claude Code: `/product-owner`. It refines slice S1 in `PLAN.md` and
 hands it to a foreman session.
 
+## Test pyramid
+
+Many cheap tests, few expensive ones. Each behaviour is proven at the lowest level that can show
+it; a higher level only proves that the parts work together.
+
+| Level | What | Cost | Runs in |
+|---|---|---|---|
+| Unit | a function in the crate (`#[cfg(test)]`): a rule, a parser, a classifier, an error text | ms | default `cargo test` |
+| Integration | a command or route on prebuilt fixtures (host: `tests/fixtures`; dev: one template build shared by the test binary, copied into each test's cache) | < 1 s each | default `cargo test` |
+| Slow | a cold build, a full pipeline on the real `watane`, one per thing only it proves (DEV-S-10 to 13, the preview life cycle) | 10 s to minutes | `#[ignore = "slow: ..."]` |
+| Journey | J1 to J5, one test each | minutes | `#[ignore = "slow: journey ..."]` |
+| User-sim | the slice's story on the real programs, by hand | an agent run | once per slice |
+
+Rules:
+- A subsystem's default `cargo test` stays under 2 minutes on a quiet machine. A test that needs
+  more is `slow`, and its reason names what no cheaper test can prove.
+- An integration test never builds a mod from scratch unless the build is what it tests.
+- Who runs what: Sol runs the default tests. The validator runs the default tests and the slow
+  tests of its task's files (by name), not the whole slow set. The foreman runs everything once,
+  before it delivers. The user-sim runs no suite; it uses the programs.
+- A failure the user-sim finds becomes a test at the lowest level that shows it.
+
 ## Timing tests
 
 Tests that assert a spec'd time limit (a call stopped after 200 ms and before 2 s) fail under

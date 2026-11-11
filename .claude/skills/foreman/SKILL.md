@@ -85,7 +85,9 @@ product owner sees the turn end and needs nothing from it.
 
 ## 5. Deliver
 
-1. Rebase `slice/<id>` on `main`. Run every touched subsystem's tests again; they must pass.
+1. Rebase `slice/<id>` on `main`. Run every touched subsystem's tests again, the slow ones too
+   (`-- --include-ignored`), once; they must pass. In briefs, ask for each criterion's test at the
+   lowest level that can show it (`factory/README.md`, "Test pyramid").
 2. Report to the product owner:
    - `DELIVERED <id>` and the branch;
    - what a person can now do (one line), and the user-sim result;

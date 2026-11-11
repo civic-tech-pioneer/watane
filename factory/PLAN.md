@@ -54,6 +54,17 @@ Step 2 (Run together, J2).
     a `serve` refused for an env gap has `next` `watane-dev doctor --json`; `serve --stop` says
     that the preview's data is gone.
   - Leaves out: `install` into a home host (needs the app, stage B), grants UI.
+- [ ] **S13 Cheap tests.** The test pyramid (`factory/README.md`) on the tests that exist. A
+  maker of watane runs `cargo test` in dev and gets an answer in under 2 minutes, not 12.
+  - Outcomes: dev's default `cargo test` under 2 min on a quiet machine (now: a cold mod build of
+    about 30 s in nearly every integration test); the template is built once per test binary and
+    each test copies that warm cache; rules now proven by a command test (check rules, error
+    texts, `json_eq`, classifications) get unit tests, and the command test stays only where it
+    proves wiring; cold builds, the preview life cycle and J1 are `slow` with a reason; host's
+    default run is checked against the same budget. No outcome loses its proof: each DEV-S and
+    HOST scenario keeps a test, listed by the foreman.
+  - Touches: `dev/tests/*`, `dev/src/*` test modules only, host tests only if over budget.
+    Waits for S11 (it adds dev tests).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
   starts the app, installs `reading-list` and `recommendations` from their folders, approves the
   plan, uses them together, restarts, withdraws a grant, and removes a mod.
