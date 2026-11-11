@@ -15,27 +15,11 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S4 The agent fixes a failing test.** Delivered 2026-11-11 (main `91e8d0a`). Sol runs: S4-1 1, S4-2 1, S4-3 1.
 - [x] **S5 The agent works the mod through MCP.** Delivered 2026-11-11 (main `196452e`). Sol runs: S5-1 1, S5-2 1.
 - [x] **S8 Same mod, same id.** Delivered 2026-11-11 (main `d79e73e`). Sol runs: S8-1 1, S8-2 1.
-- [~] **S6 J1: Alice gets her reading list.** (branch `slice/s6`; foreman: see `Foremen`)
-  Alice asks her agent for a reading list. The agent runs `watane-dev doctor`, then `new`, writes
-  logic, page and contract tests, gets a failing contract test, fixes it, runs `serve`; Alice adds
-  a book on the page, asks for one change, sees it in the preview with her book still there; the
-  agent reads the list through the preview's MCP toolset.
-  - Outcomes (user-sim, on the real programs):
-    1. `doctor --json` reports the toolchain, the `wasm32-wasip2` target, the allowlist, the
-       program `watane` and the home host, each with a command for each gap (DEV-F-30); with
-       `WATANE_BIN` missing it names the gap. A missing allowlist vendor folder is a gap whose
-       command is `scripts/vendor.sh` (S5 friction).
-    2. J1 as a journey test in `dev/tests/journey.rs` on the real `watane`, the reading-list
-       mod written into a temp folder by the test: failing contract, fix, serve, a page change
-       kept with data (DEV-S-22), an MCP `tools/call` that reads the list.
-    3. DEV-S-23 (`serve --stop`) and DEV-S-24 (`env.watane_missing`) hold on the real program.
-    4. A `serve` refused for failing tests says that a running preview still serves the
-       previous build (S5 user-sim).
-  - Touches: dev stage 5 (`cli.rs`, new `doctor.rs`, `preview.rs`, `dev/tests/journey.rs`,
-    `dev/tests/serve.rs`), dev template `AGENTS.md` (doctor first). Not `builder.rs`, `unit.rs`,
-    `dev/tests/unit_tests.rs`, `dev/tests/builder.rs` or anything in host (S8).
-  - Leaves out: `fake-watane` (needed only for the home-host scenarios S-25 to 31, step 2).
-- [x] **S9 Hostile pages and the program, checked.** Delivered 2026-11-11 (main `d7bf99b`). Sol runs: S9-1 1, S9-2 2, S9-fix1 1.
+- [x] **S6 J1: Alice gets her reading list.** Delivered 2026-11-11 (main `856b431`). Sol runs: S6-1 1, S6-2 1.
+
+Step 1 done 2026-11-11: J1 passes (`dev/tests/journey.rs`); every step-1 stage is done or its rest
+is in step 2.
+
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
   Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
   link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
@@ -56,7 +40,7 @@ Step 2 (Run together, J2).
   - Interfaces it creates: `Core` (fake now, host in stage B), the consent `Broker`.
   - Fakes: the catalog via `WATANE_APP_FAKE`, fixture pages served by `tests/support` (app 12).
   - Leaves out: stage B (real host, S2, S2b, S9 on), stage F (Linux), a bundle.
-- [ ] **S11 The recommendations mod calls the reading list.** In a preview: the agent runs
+- [~] **S11 The recommendations mod calls the reading list.** (branch `slice/s11`; foreman: see `Foremen`) In a preview: the agent runs
   `watane-dev add ../reading-list` in `recommendations`, writes a call and a subscription, tests
   with a fake and a `deliver` step, and `serve`s both; adding a book in one page shows in the
   other.
@@ -65,7 +49,10 @@ Step 2 (Run together, J2).
     the real `watane`.
   - Touches: pkg stage 6 (`add_provider`), host stage 2 (links, subscribers, hops: `bus.rs`
     ponytail; `harness.rs` fakes ponytail), dev stage 6 (`deps`, `add`; `cli.rs`), dev contract
-    fakes and `deliver`. Waits for S6 (`cli.rs`, `preview.rs`).
+    fakes and `deliver`. Not `app/` (S10).
+  - Also (S6 user-sim): after a successful `serve`, `next` says to give `pages[0].url` to the person;
+    a `serve` refused for an env gap has `next` `watane-dev doctor --json`; `serve --stop` says
+    that the preview's data is gone.
   - Leaves out: `install` into a home host (needs the app, stage B), grants UI.
 
 ## Stage coverage
@@ -93,7 +80,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 2 allowlist, toolchain, builder | 1 | done (S8) |
 | dev | 3 unit | 1 | done (S4) |
 | dev | 4 contract | 1 | part (S4): fakes and `deliver` steps (DEV-S-18, 19) in step 2 |
-| dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` with MCP (S1, S2, S5); doctor and J1 (S6); `fake-watane` moved to step 2 (deputy) |
+| dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | open |
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | open (S10) |
@@ -115,7 +102,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   the user-sim's ACCEPTED, in its final test run; the product owner ran the tests and merged (stopped, removed).
 - S5: `91dc7a35` (sessionId `91dc7a35-91d7-4d4d-a6a1-4f843f3fd54a`), worktree `.claude/worktrees/s5` (stopped, removed).
 - S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8` (stopped, removed).
-- S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6`.
+- S6: `4a8d4ea4` (sessionId `4a8d4ea4-67ac-411a-bf4d-9ce82018000d`), worktree `.claude/worktrees/s6` (stopped, removed).
 - S9: `e793310c` (sessionId `e793310c-21e9-4c6d-bddd-6e1180c23fe4`), worktree `.claude/worktrees/s9` (stopped, removed).
 - S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -174,6 +161,9 @@ The human may veto each one.
   No-arg `watane` opens the default home on port 47341 (host 15 "S9 cut", Q22).
 - S9: repeated `Host` headers are 421; a missing page file is 404 on any method; the connection
   closes after a body-size refusal (host 8.1 to 8.3, Q21).
+- S6: doctor's `next` is `watane-dev new <slug> --json` with no gaps, else `watane-dev doctor --json`;
+  a missing vendor folder's fix is `<abs dev>/scripts/vendor.sh` in doctor, `test` and `serve`.
+- S6: a refused `serve` warns `preview.previous` when a preview of that folder still answers.
 
 ## Friction
 
@@ -216,6 +206,13 @@ The human may veto each one.
 - S9 user-sim: a huge declared `Content-Length` with no body waits instead of 413 at once;
   duplicate keys in a `/call` body are accepted (last wins); `mode_mismatch` does not name the
   asked mode; `GET /api/mods` is 404 (S1 cut); HTTP-layer 400s lack the 8.3 headers.
+- S6: the full dev run with `--include-ignored` takes about 12 min, over one 10-min shell limit.
+- S6: parallel tasks all append to dev/AGENTS.md "Spec gaps", so each rebase conflicts there
+  (trivially).
+- S6 user-sim: `preview.previous` names the API URL, not the page; a missing vendor folder reads
+  as "differs from this watane-dev"; `mod.invalid` WIT errors have `line: null`; doctor's text mode
+  prints raw JSON; a raw `/call` without `args` is `bad_request`; headless Chrome hung on the
+  page's open `/events`, so the form was not driven.
 
 ## Digest
 
@@ -237,3 +234,5 @@ The human may veto each one.
   installs it under the same id `pack` gives; a mod that reads a file outside its folder is refused.
 - S9: every page, `/call`, `/events`, `/api` and program scenario of step 1 has a test on the
   real `watane`; hostile pages are refused; `watane --home D` runs a participant home.
+- S6: Alice's agent runs `doctor`, builds her reading list with `new`, `test`, a contract fix and
+  `serve`; her book survives a page change; the agent reads the list over MCP (J1 passes).
