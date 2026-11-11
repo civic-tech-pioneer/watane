@@ -132,3 +132,19 @@ fn ac6_consumer_can_call_and_subscribe() {
         "mods:reading-list/events@0.1.0"
     );
 }
+#[cfg(unix)]
+#[test]
+fn linked_destination_is_refused() {
+    let (_p, c, m) = setup();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("keep.wit"), "keep").unwrap();
+    fs::create_dir_all(c.path().join("wit/deps")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), c.path().join("wit/deps/reading-list")).unwrap();
+    let Err(ModError::Invalid(v)) = add_provider(c.path(), &m, None) else {
+        panic!("expected path violation")
+    };
+    assert_eq!(v[0].rule, Rule::Path);
+    assert_eq!(v[0].file, "wit/deps/reading-list");
+    assert_eq!(fs::read(outside.path().join("keep.wit")).unwrap(), b"keep");
+    assert!(!c.path().join("deps.json").exists());
+}

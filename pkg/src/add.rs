@@ -81,18 +81,11 @@ pub fn add_provider(
             let name = name.to_string_lossy();
             let relative = format!("wit/deps/{name}");
             // Non-WIT files in deps are ignored by the WIT walk.
-            if !entry
-                .file_type()
-                .map_err(|e| io(&entry.path(), e))?
-                .is_dir()
-            {
-                if entry
-                    .file_type()
-                    .map_err(|e| io(&entry.path(), e))?
-                    .is_symlink()
-                {
-                    return Err(invalid(Rule::Path, &relative, "symbolic link"));
-                }
+            let kind = entry.file_type().map_err(|e| io(&entry.path(), e))?;
+            if kind.is_symlink() {
+                return Err(invalid(Rule::Path, &relative, "symbolic link"));
+            }
+            if !kind.is_dir() {
                 continue;
             }
             let source = files(provider.dir(), &relative)?;
