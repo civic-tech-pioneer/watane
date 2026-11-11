@@ -606,7 +606,7 @@ mod participant {
                 "/api/upload",
                 post(|bytes: axum::body::Bytes| async move { bytes.len().to_string() }),
             )
-            .layer(DefaultBodyLimit::max(2 << 20));
+            .layer(DefaultBodyLimit::max(8 << 20));
         let served = host.serve(0, extra).await.unwrap();
         let client = reqwest::Client::new();
         let url = format!("http://127.0.0.1:{}", served.port);
@@ -644,14 +644,14 @@ mod participant {
         assert_eq!(
             client
                 .post(format!("{url}/api/upload"))
-                .body(vec![b'x'; 100_000])
+                .body(vec![b'x'; 3 << 20])
                 .send()
                 .await
                 .unwrap()
                 .text()
                 .await
                 .unwrap(),
-            "100000"
+            "3145728"
         );
         served.shutdown().await;
     }

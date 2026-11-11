@@ -64,7 +64,7 @@ pub struct Host {
     catalog: Mutex<catalog::Catalog>,
     serving: AtomicBool,
     port: std::sync::atomic::AtomicU16,
-    installing: tokio::sync::Mutex<()>,
+    pub(crate) installing: tokio::sync::Mutex<()>,
     engine: Arc<wasmtime::Engine>,
     limits: Limits,
     state: state::State,
@@ -196,6 +196,14 @@ impl Host {
         requester: Requester,
     ) -> Result<Vec<InstalledMod>, HostError> {
         let _install = self.installing.lock().await;
+        self.install_locked(plan, requester).await
+    }
+    /// The caller holds `installing` (section 11: `/api/install` plans under it).
+    pub(crate) async fn install_locked(
+        &self,
+        plan: Plan,
+        requester: Requester,
+    ) -> Result<Vec<InstalledMod>, HostError> {
         self.catalog.lock().unwrap().validate(&plan, self.home())?;
         let withhold = if plan.needs_confirmation() {
             let Mode::Home { app: Some(app) } = &self.home.mode else {

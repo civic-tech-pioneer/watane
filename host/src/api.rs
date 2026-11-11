@@ -97,6 +97,12 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
         return error(400, "bad_request", "folder paths must be absolute");
     }
     let host = state.host;
+    // Section 11: /api/install plans and installs under the install mutex.
+    let _install = if route == "/api/install" {
+        Some(host.installing.lock().await)
+    } else {
+        None
+    };
     let planner = host.clone();
     let plan = match tokio::task::spawn_blocking(move || {
         planner.plan(
@@ -116,7 +122,7 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
     if route == "/api/plan" {
         return json_response(200, serde_json::to_value(&plan).expect("plan serializes"));
     }
-    match host.install(plan, crate::Requester::LocalApi).await {
+    match host.install_locked(plan, crate::Requester::LocalApi).await {
         Ok(installed) => json_response(200, json!({"installed":installed})),
         Err(e) => host_error(e),
     }
