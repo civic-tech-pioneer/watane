@@ -383,7 +383,7 @@ async fn ac5_reinstall_updates_in_place_and_survives_restart() {
     assert_eq!(catalog["generation"], 2);
     assert_eq!(
         catalog["mods"][0]["package"],
-        "4db0f3a20b5d44b521ceddd0f3ad3a3ad0cdfe604bbf8914986fe75cd7a39b30"
+        "46ef634169247ba5adfe4d2645269389c65d3707a4bb1b3c04ba08ef50e41406"
     );
     assert_ne!(catalog["mods"][0]["package"], before["mods"][0]["package"]);
     assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 1);

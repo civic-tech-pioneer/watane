@@ -1,8 +1,8 @@
 use super::*;
 
-// Python struct.pack('<Q', size) framed the fixture files independently;
+// Python framed WATANEPK v1 records with big-endian path and content lengths;
 // a standalone BLAKE3 invocation produced this literal.
-const HELLO_PACKAGE: &str = "3bf89275fdfc74838367648fcda2df616528442cf1f2abbe66653cb6d0d0a8f5";
+const HELLO_PACKAGE: &str = "d049784754023367a3cf622c78271ff06ae34063f3da42ebf812c3076dc424b6";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac2_status_and_api_guards() {

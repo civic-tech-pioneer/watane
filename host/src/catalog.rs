@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::Read,
     path::{Path, PathBuf},
 };
 use watane_pkg::{Grant, InterfaceName, Mod, PackageId, PublisherKey, ReleaseRef, Slug, Version};
@@ -161,8 +160,12 @@ impl Catalog {
             let current = home.join("mods").join(r.local.as_ref());
             let old = current.with_extension("old");
             if old.is_dir()
-                && digest(&current).ok().as_ref() != Some(&r.package)
-                && digest(&old).ok().as_ref() == Some(&r.package)
+                && watane_pkg::pack(&current, false)
+                    .map(|p| p.id())
+                    .ok()
+                    .as_ref()
+                    != Some(&r.package)
+                && watane_pkg::pack(&old, false).map(|p| p.id()).ok().as_ref() == Some(&r.package)
             {
                 if current.exists() {
                     home::remove_entry(&current)?;
@@ -247,20 +250,26 @@ impl Catalog {
         let mut seen = BTreeSet::new();
         let mut names: BTreeSet<_> = self.mods.iter().map(|m| m.local.clone()).collect();
         for folder in folders {
-            let source = preview_mod(folder)?;
-            let identity = format!("local/{}", source.slug());
+            // Keep the preview's link refusal ahead of component validation.
+            if let Ok(source) = Mod::read(folder)
+                && (!source.world().calls.is_empty() || !source.world().subscriptions.is_empty())
+            {
+                return Err(invalid(folder, "links between mods arrive in a later step"));
+            }
+            let package = watane_pkg::pack(folder, false).map_err(|e| invalid(folder, e))?;
+            let staging = Stage::new(home)?;
+            let m = package
+                .unpack(&staging.0.join("mod"))
+                .map_err(|e| invalid(folder, e))?;
+            if !m.world().calls.is_empty() || !m.world().subscriptions.is_empty() {
+                return Err(invalid(folder, "links between mods arrive in a later step"));
+            }
+            let identity = format!("local/{}", m.slug());
             if !seen.insert(identity.clone()) {
                 return Err(invalid(folder, "twice in one plan"));
             }
-            let staging = Stage::new(home)?;
-            // ponytail: replace this copy and reread with pack(dir,false) + unpack.
-            copy_folder(folder, &staging.0)?;
-            let m = preview_mod(&staging.0)?;
-            if m.slug() != source.slug() {
-                return Err(invalid(folder, "slug changed during staging"));
-            }
             let component = crate::runtime::compile(engine, &m)?;
-            let package = digest(&staging.0)?;
+            let package = package.id();
             let old = self.mods.iter().find(|m| m.identity == identity);
             let local = match old {
                 Some(m) => m.local.clone(),
@@ -286,7 +295,7 @@ impl Catalog {
                 let dest = home.join("mods").join(installed.local.as_ref());
                 let new = dest.with_extension("new");
                 let old = dest.with_extension("old");
-                fs::rename(&staging.0, &new)?;
+                fs::rename(staging.0.join("mod"), &new)?;
                 let update = dest.exists();
                 if update && let Err(e) = fs::rename(&dest, &old) {
                     let _ = fs::remove_dir_all(&new);
@@ -392,96 +401,4 @@ impl Drop for Stage {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-fn files(dir: &Path) -> Result<Vec<String>, HostError> {
-    let mut files = Vec::new();
-    let mut stack = vec![
-        "mod.toml".to_owned(),
-        "deps.json".to_owned(),
-        "wit".to_owned(),
-        "ui".to_owned(),
-        "logic.wasm".to_owned(),
-    ];
-    while let Some(relative) = stack.pop() {
-        let path = dir.join(&relative);
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(m) => m,
-            Err(e)
-                if e.kind() == std::io::ErrorKind::NotFound
-                    && matches!(relative.as_str(), "deps.json" | "logic.wasm" | "ui") =>
-            {
-                continue;
-            }
-            Err(e) => return Err(invalid(dir, e)),
-        };
-        if metadata.file_type().is_symlink() || (!metadata.is_file() && !metadata.is_dir()) {
-            return Err(invalid(
-                dir,
-                format!("{relative}: links and special files are refused"),
-            ));
-        }
-        if relative.len() > 255 || relative.split('/').count() > 16 {
-            return Err(invalid(dir, "path exceeds package limits"));
-        }
-        if metadata.is_dir() {
-            for entry in fs::read_dir(path)? {
-                let entry = entry?;
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| invalid(dir, "path is not UTF-8"))?;
-                stack.push(format!("{relative}/{name}"));
-            }
-        } else {
-            files.push(relative);
-        }
-        if files.len() + stack.len() > 4096 {
-            return Err(invalid(dir, "too many package files"));
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
-fn read_bounded(path: &Path) -> Result<Vec<u8>, HostError> {
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(67_108_865)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > 67_108_864 {
-        return Err(invalid(path, "package exceeds 64 MiB"));
-    }
-    Ok(bytes)
-}
-
-fn copy_folder(source: &Path, dest: &Path) -> Result<(), HostError> {
-    let mut total = 0;
-    for file in files(source)? {
-        let bytes = read_bounded(&source.join(&file))?;
-        total += bytes.len();
-        if total > 67_108_864 {
-            return Err(invalid(source, "package exceeds 64 MiB"));
-        }
-        let path = dest.join(file);
-        fs::create_dir_all(path.parent().expect("staged file has parent"))?;
-        fs::write(path, bytes)?;
-    }
-    Ok(())
-}
-
-fn digest(dir: &Path) -> Result<PackageId, HostError> {
-    // ponytail: temporary digest until pkg pack supplies the canonical PackageId.
-    let mut encoded = Vec::new();
-    for file in files(dir)? {
-        let bytes = read_bounded(&dir.join(&file))?;
-        if encoded.len() + file.len() + 9 + bytes.len() > 67_108_864 {
-            return Err(invalid(dir, "package exceeds 64 MiB"));
-        }
-        encoded.extend_from_slice(file.as_bytes());
-        encoded.push(0);
-        encoded.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        encoded.extend_from_slice(&bytes);
-    }
-    Ok(PackageId::of(&encoded))
 }

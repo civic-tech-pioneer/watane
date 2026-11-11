@@ -444,7 +444,9 @@ identity: the second is an update of the first.
 1. For each source, get a package: `Folder(dir)` gives `pack(dir, false)`;
    `Release` runs the checks `kind`, `release_body` and `package_hash` of
    section 5.2. A `ModError` or `PackageError` is `invalid_mod`.
-2. `package.unpack(staging/<16 random hex>/)` gives the `Mod`. For a
+2. Create a random parent under `staging/`; unpack into its absent `mod/`
+   child. `package.unpack(staging/<16 random hex>/mod/)` gives the `Mod`.
+   Remove the parent and its contents when staging ends, including on error. For a
    release, run the check `mismatch` (5.2). Run the import check (5.3).
 3. Two sources with one identity: `invalid_mod` ("twice in one plan").
 4. `change`: no installed mod with the identity gives `New`; the same
@@ -1231,13 +1233,10 @@ the fixed Ready value from the running server and catalog.
 The program accepts `--preview`, `--port`, repeated `--install`, and
 `--version`; other arguments, including no arguments, are `usage` errors.
 
-Until pkg has pack/unpack, install validates the source with `Mod::read`,
-copies `mod.toml`, optional `deps.json`, `wit/` and `ui/` into a random staging
-directory, and reads that copy with `Mod::read`. The copy refuses links and
-special files. Its package id is `PackageId::of` over the copied files in
-sorted relative-path order, each encoded as path bytes, NUL, byte length as
-u64 little-endian, then contents. These two temporary steps carry `ponytail`
-comments in code. Grants and links are empty. Equal package ids do not write
+Install uses `pack(dir, false)` and `package.unpack(staging)` as in 4.2.
+The package id is the canonical `package.id()`. Recovery compares installed
+folders with `pack(dir, false)?.id()` before restoring committed `.old` bytes.
+Grants and links are empty. Equal package ids do not write
 the catalog. The only dependencies are pkg, axum, tokio (including signals),
 serde, serde_json, thiserror, getrandom, and dev reqwest and tempfile.
 S1 fixtures are plain page folders. The Wasm fixture build script of 13.1
@@ -1253,10 +1252,12 @@ uncommitted directories. This preserves the commit point of 4.3.
 ### S2 cut
 
 `Host::open(home: &Path, limits: Limits)` still opens only a preview.
-Runtime core runs top-level calls with `Caller::Page`. Install copies
-`logic.wasm`, includes it in the temporary package digest, checks the staged
+Runtime core runs top-level calls with `Caller::Page`. Install stages
+`logic.wasm` through pkg pack/unpack, checks the staged
 component with pkg, and compiles it before the catalog commit. Open compiles
 installed components again. Links between mods are refused for this slice.
+For a readable folder, refuse links before pkg checks the component; still
+check the unpacked world before compiling it.
 Preview grants each declared grant. The state import's Storage grant check
 joins with revoke; FUNCTIONAL S5 waits for that step. Undeclared imports
 fail installation.
@@ -1399,9 +1400,10 @@ Each answer below is used in this file.
 - **Q11** Two mods that use each other need each other's WIT in
   `wit/deps/`. If `wit-parser` refuses that cycle, the cycle check (4.2
   step 8) and the hop limit stay as defence. Confirm at pkg stage 3.
-- **Q12 (host, dev, pkg)** S1 uses the page-only cut in section 15, with
-  folder copy and a temporary package digest until pkg pack/unpack joins.
-  Its preview has no token; dev consumes the fixed Ready and RunInfo types.
+- **Q12 (host, dev, pkg)** S8 replaces S1/S2 folder copying and the temporary
+  digest with `pack(dir, false)`, `Package::id` and `Package::unpack`.
+  Host and dev use the same canonical package id. Recovery also uses pack.
+  The preview has no token; dev consumes the fixed Ready and RunInfo types.
 - **Q13 (host)** Recovery in 3.1 must restore committed `.old` bytes before
   deleting leftovers; otherwise an interrupted update can lose the old mod.
 - **Q14 (host)** Hold the home lock before marker initialization, so two

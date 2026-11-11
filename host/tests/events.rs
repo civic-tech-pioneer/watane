@@ -188,6 +188,30 @@ fn copy_counter() -> TempDir {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac3_canonical_id_changes_reload_pages_only_once() {
+    let (_home, host, served, client, origin) = setup().await;
+    let folder = copy_counter();
+    let folders = [folder.path().to_owned()];
+    let mut stream = Stream::open(&client, &origin).await;
+    let installed = host.install_folders(&folders, served.port).unwrap();
+    assert_eq!(
+        installed[0].package,
+        watane_pkg::pack(folder.path(), false).unwrap().id()
+    );
+    stream.quiet().await;
+    let path = folder.path().join("ui/index.html");
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[0] ^= 1;
+    fs::write(path, bytes).unwrap();
+    let updated = host.install_folders(&folders, served.port).unwrap();
+    assert_ne!(updated[0].package, installed[0].package);
+    assert_eq!(stream.message().await, json!({"type":"reload"}));
+    host.install_folders(&folders, served.port).unwrap();
+    stream.quiet().await;
+    served.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac4_s23_update_keeps_count_local_and_reloads_only_changed_builds() {
     let (_home, host, served, client, origin) = setup().await;
     for value in [1, 2] {
