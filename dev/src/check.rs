@@ -91,6 +91,29 @@ pub struct CheckReport {
     pub subscriptions: Vec<String>,
     pub providers: Vec<ProviderReport>,
 }
+/// Map a pkg `ModError` to `mod.invalid` problems (or an internal one for I/O).
+pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
+    match e {
+        ModError::Invalid(v) => v
+            .into_iter()
+            .map(|v| {
+                Problem::new(
+                    Code::ModInvalid,
+                    format!(
+                        "[{}] {}",
+                        serde_json::to_value(v.rule).unwrap().as_str().unwrap(),
+                        v.message
+                    ),
+                )
+                .at(v.file.clone(), None, None)
+                .fix(format!("Correct {} according to the reported rule", v.file))
+            })
+            .collect(),
+        ModError::Io { path, source } => {
+            vec![Problem::internal(source).at(path.to_string_lossy(), None, None)]
+        }
+    }
+}
 pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     if fs::symlink_metadata(dir.join("mod.toml"))
         .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
@@ -120,26 +143,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     if !errors.is_empty() {
         return Err(errors);
     }
-    let m = Mod::read(dir).map_err(|e| match e {
-        ModError::Invalid(v) => v
-            .into_iter()
-            .map(|v| {
-                Problem::new(
-                    Code::ModInvalid,
-                    format!(
-                        "[{}] {}",
-                        serde_json::to_value(v.rule).unwrap().as_str().unwrap(),
-                        v.message
-                    ),
-                )
-                .at(v.file.clone(), None, None)
-                .fix(format!("Correct {} according to the reported rule", v.file))
-            })
-            .collect(),
-        ModError::Io { path, source } => {
-            vec![Problem::internal(source).at(path.to_string_lossy(), None, None)]
-        }
-    })?;
+    let m = Mod::read(dir).map_err(mod_problems)?;
     if dir.join("logic").exists() {
         let path = dir.join("logic/Cargo.toml");
         let text = fs::read_to_string(&path)

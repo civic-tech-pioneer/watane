@@ -5,7 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use watane_pkg::{Deps, Mod, ModError};
+use watane_pkg::{Deps, Mod};
 
 #[derive(Serialize)]
 pub struct AddReport {
@@ -32,25 +32,6 @@ pub fn read_local(dir: &Path) -> Result<BTreeMap<String, String>, Problem> {
         Err(e) => Err(Problem::internal(e).at(file.to_string_lossy(), None, None)),
     }
 }
-fn mod_errors(error: ModError) -> Vec<Problem> {
-    match error {
-        ModError::Invalid(violations) => violations
-            .into_iter()
-            .map(|v| {
-                let rule = serde_json::to_value(v.rule).expect("rule serializes");
-                Problem::new(
-                    Code::ModInvalid,
-                    format!("[{}] {}", rule.as_str().unwrap(), v.message),
-                )
-                .at(v.file.clone(), None, None)
-                .fix(format!("Correct {} according to the reported rule", v.file))
-            })
-            .collect(),
-        ModError::Io { path, source } => {
-            vec![Problem::internal(source).at(path.to_string_lossy(), None, None)]
-        }
-    }
-}
 fn missing(slug: &str) -> Problem {
     Problem::new(
         Code::ModProviderMissing,
@@ -58,7 +39,7 @@ fn missing(slug: &str) -> Problem {
     )
     .fix(format!("Run: watane-dev add <folder of {slug}>"))
 }
-fn label(dir: &Path) -> String {
+pub(crate) fn label(dir: &Path) -> String {
     Mod::read(dir)
         .map(|m| m.slug().to_string())
         .unwrap_or_else(|_| {
@@ -92,7 +73,7 @@ fn visit(
         return Ok(());
     }
     stack.push(dir.to_path_buf());
-    let deps = Deps::read(dir).map_err(|e| mod_errors(e).remove(0))?;
+    let deps = Deps::read(dir).map_err(|e| crate::check::mod_problems(e).remove(0))?;
     let local = read_local(dir)?;
     for (slug, publisher) in deps.iter() {
         if publisher.is_some() {
@@ -178,7 +159,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
     })
     .map_err(|e| vec![Problem::internal(e)])?;
     text.push('\n');
-    watane_pkg::add_provider(&dir, &m, None).map_err(mod_errors)?;
+    watane_pkg::add_provider(&dir, &m, None).map_err(crate::check::mod_problems)?;
     fs::write(dir.join(".watane-dev.json"), text).map_err(|e| vec![Problem::internal(e)])?;
     Ok(AddReport {
         slug: m.slug().to_string(),

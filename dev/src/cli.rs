@@ -156,23 +156,14 @@ fn test_local(dir: &Path) -> Outcome {
         let mut tested = test(&provider);
         if !tested.ok {
             if provider != dir {
-                let slug = watane_pkg::Mod::read(&provider)
-                    .map(|m| m.slug().to_string())
-                    .unwrap_or_else(|_| {
-                        provider
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned()
-                    });
+                let slug = deps::label(&provider);
                 for problem in &mut tested.errors {
                     problem.message = format!("{slug}: {}", problem.message);
-                    problem.file = Some(
-                        provider
-                            .join(problem.file.as_deref().unwrap_or("."))
-                            .to_string_lossy()
-                            .into_owned(),
-                    );
+                    let file = problem
+                        .file
+                        .as_deref()
+                        .map_or(provider.clone(), |f| provider.join(f));
+                    problem.file = Some(file.to_string_lossy().into_owned());
                 }
             }
             return tested;
