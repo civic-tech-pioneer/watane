@@ -909,7 +909,8 @@ page runs as a top-level view, never in a frame.
   sends `: ping\n\n`.
 - Messages: `{"type":"changed"}`, `{"type":"reload"}`, and
   `{"type":"event","from":"<emitter local>","interface":"<full outlet name>","function":"<name>","args":{...}}`
-  with `args` by parameter name in the encoding of 6.9.
+  with `args` by parameter name in the encoding of 6.9. A page gets only
+  events emitted by its own mod, never events received from another mod.
 - A receiver that lags on the bus (section 9.3) gets one
   `{"type":"changed"}` in place of the lost messages.
 - The stream ends when the mod is disabled or removed, or the server stops.
@@ -997,8 +998,9 @@ returns its result:
 5. For each: a new chain (fresh fuel and deadline, depth 0, hop =
    `event.hop + 1`), caller `mod:<emitter>`, invoke the subscriber's
    subscription export, the same function name, the same values. On
-   success, append its committed events to the queue and send the event
-   message to the subscriber's pages. On failure, log
+   success, append its committed events to the queue. Only the emitter's
+   pages get each event message; the subscriber's pages do not get the
+   provider's event. On failure, log
    `watane: event <interface>.<function> from <emitter> to <subscriber> failed: <code>: <message>`
    and go on. No retry.
 6. When the queue is empty, send `{"type":"changed"}` to each mod whose
@@ -1511,3 +1513,8 @@ Each answer below is used in this file.
   an install checks generation again after consent and refuses stale plans.
   The synchronous folder helper cannot request app consent; async install
   owns that path. Provider uses pkg's object serde form, not its Display text.
+
+- **Q25 (host)** S12b limits page event messages to events emitted by the
+  page's own mod. Delivering a provider event invokes the subscriber but
+  does not forward the raw event to its pages. State changes still send
+  `changed`, once per changed mod in the completed chain.

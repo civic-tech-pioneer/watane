@@ -34,7 +34,7 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-10** The host shall tell a logic part who called it (`page`, `agent:<handle>` or `mod:<local name>`), from the entry point of the call and never from the request. Traces: F-RUN-5, F-AGENT-1.
 - **HOST-F-11** The host shall serve the page of each mod only on the origin of that mod, with a content policy that allows only that origin. Traces: F-RUN-4.
 - **HOST-F-12** When a page calls a function, the host shall accept the request only with the exact origin of that mod, and call only an export of that mod. Traces: F-RUN-4.
-- **HOST-F-13** While a page listens for events, the host shall send it a "changed" message after each call that changed the state of its mod, each event that its mod emits or receives, and a "reload" message after its mod is updated. Traces: F-RUN-4, F-RUN-6, J1.
+- **HOST-F-13** While a page listens for events, the host shall send it a "changed" message after each call that changed the state of its mod, an "event" message for each event that its own mod emits, and a "reload" message after its mod is updated. Traces: F-RUN-4, F-RUN-6, J1.
 - **HOST-F-14** The host shall offer each call of a toolset as one MCP tool, named `<local name>_<interface>_<function>`. Traces: F-AGENT-1, F-AGENT-3.
 - **HOST-F-15** The host shall accept an MCP request only with a live token for that toolset, and shall take the agent handle from the token. Traces: F-AGENT-1, F-AGENT-2.
 - **HOST-F-16** If a request to the local API or to MCP carries an `Origin` header, then the host shall refuse it. Traces: F-RUN-4, F-AGENT-2.

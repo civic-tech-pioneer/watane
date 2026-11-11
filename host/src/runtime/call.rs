@@ -31,7 +31,6 @@ pub(super) struct Invocation {
     local: LocalName,
     depth: u32,
     hop: u8,
-    received: Option<String>,
 }
 
 pub(super) fn lock_until<T>(
@@ -99,7 +98,6 @@ pub(crate) fn run(
         local: local.clone(),
         depth: 0,
         hop: 0,
-        received: None,
     };
     let result = invocation.invoke(caller, function, args, host.limits.fuel, subscription);
     let effects = std::mem::take(&mut *chain.effects.lock().unwrap());
@@ -199,7 +197,6 @@ impl Invocation {
             local: provider.clone(),
             depth: self.depth.saturating_add(1),
             hop: self.hop,
-            received: None,
         };
         nested.invoke(
             &Caller::Mod(self.local.clone()),
@@ -426,9 +423,6 @@ impl Deliveries {
             .entry(invocation.local.clone())
             .or_default();
         let mut messages = Vec::new();
-        if let Some(received) = &invocation.received {
-            messages.push((None, received.clone()));
-        }
         chain.job.pending.fetch_add(events.len(), Ordering::Release);
         for event in events {
             let accepted = Arc::new(AtomicBool::new(false));
@@ -543,7 +537,6 @@ fn process(delivery: &Delivery) {
         return;
     }
     delivery.accepted.store(true, Ordering::Release);
-    let message = crate::bus::event_message(emitter, event);
     let current = host.catalog.lock().unwrap().clone();
     let mut subscribers: Vec<_> = current
         .mods
@@ -582,7 +575,6 @@ fn process(delivery: &Delivery) {
                 local: m.local.clone(),
                 depth: 0,
                 hop: delivery.hop + 1,
-                received: Some(message.clone()),
             };
             let result = invocation.invoke(
                 &Caller::Mod(emitter.clone()),

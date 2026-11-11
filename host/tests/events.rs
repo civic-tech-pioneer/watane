@@ -363,7 +363,7 @@ async fn ac8_program_emits_counter_events() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ac8_s11_subscriber_pages_receive_event_then_changed() {
+async fn ac1_ac2_s12b_subscriber_changed_and_emitter_event_then_changed() {
     let home = tempfile::tempdir().unwrap();
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("recs"), fixture("shelf")], 0)
@@ -372,21 +372,26 @@ async fn ac8_s11_subscriber_pages_receive_event_then_changed() {
     let client = Client::builder()
         .no_proxy()
         .resolve("recs.localhost", ([127, 0, 0, 1], served.port).into())
+        .resolve("shelf.localhost", ([127, 0, 0, 1], served.port).into())
         .build()
         .unwrap();
     let mut stream = Stream::open(&client, &format!("http://recs.localhost:{}", served.port)).await;
-    host.call_async(
-        Caller::Page,
-        LocalName::parse("shelf").unwrap(),
-        "items.add".into(),
-        json!({"title":"Dune"}),
-    )
-    .await
-    .unwrap();
+    let shelf_origin = format!("http://shelf.localhost:{}", served.port);
+    let mut shelf = Stream::open(&client, &shelf_origin).await;
+    let response = client
+        .post(format!("{shelf_origin}/call"))
+        .header("Origin", &shelf_origin)
+        .json(&json!({"fn":"items.add","args":{"title":"Dune"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
     assert_eq!(
-        stream.message().await,
+        shelf.message().await,
         json!({"type":"event","from":"shelf","interface":"mods:shelf/events@0.1.0","function":"added","args":{"title":"Dune"}})
     );
+    assert_eq!(shelf.message().await, json!({"type":"changed"}));
+    shelf.quiet().await;
     assert_eq!(stream.message().await, json!({"type":"changed"}));
     stream.quiet().await;
     served.shutdown().await;
@@ -509,7 +514,7 @@ async fn ac1_validator_nested_calls_and_event_delivery_do_not_deadlock() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ac1_validator_event_chain_sends_one_changed_per_mod() {
+async fn ac3_s12b_event_chain_pages_receive_only_own_events_then_changed() {
     let home = tempfile::tempdir().unwrap();
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     host.install_folders(&[fixture("loop-a"), fixture("loop-b")], 0)
@@ -530,12 +535,8 @@ async fn ac1_validator_event_chain_sends_one_changed_per_mod() {
     )
     .await
     .unwrap();
-    for n in 0..8 {
-        let (emitter, interface) = if n % 2 == 0 {
-            ("loop-a", "mods:loop-a/events@0.1.0")
-        } else {
-            ("loop-b", "mods:loop-b/events@0.1.0")
-        };
+    for n in [0, 2, 4, 6] {
+        let (emitter, interface) = ("loop-a", "mods:loop-a/events@0.1.0");
         assert_eq!(
             stream.message().await,
             json!({"type":"event","from":emitter,"interface":interface,"function":"ping","args":{"n":n}})
