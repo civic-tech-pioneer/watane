@@ -136,6 +136,42 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
         .map_err(Problem::internal)?;
     Ok(ready)
 }
+fn running_preview(folder: &Path) -> Result<(Option<Client>, Option<Ready>), Problem> {
+    let home = folder.join("home");
+    let running = Client::for_home(&home)?;
+    let cached = fs::read(folder.join("ready.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Ready>(&b).ok())
+        .filter(|r| {
+            running.is_some()
+                && r.watane == 1
+                && r.mode == "preview"
+                && r.home == home
+                && RunInfo::read(&home)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|run| run.port == r.port)
+        });
+    Ok((running, cached))
+}
+
+pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
+    preview_folders(dir, env).ok()?.iter().find_map(|folder| {
+        let (_, ready) = running_preview(folder).ok()?;
+        let ready = ready?;
+        Some(
+            Problem::new(
+                Code::PreviewPrevious,
+                format!(
+                    "the preview at http://localhost:{}/api/ still serves the previous build",
+                    ready.port
+                ),
+            )
+            .fix("Fix the errors, then run: watane-dev serve --json"),
+        )
+    })
+}
+
 pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
 
@@ -143,22 +179,10 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
         let folder = folder(dir, env, m.slug().as_str());
         let home = folder.join("home");
         let log = folder.join("watane.log");
-        let running = Client::for_home(&home)?;
-        let cached = fs::read(folder.join("ready.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Ready>(&b).ok());
-        let reuse = running.is_some()
-            && cached.as_ref().is_some_and(|r| {
-                r.watane == 1
-                    && r.mode == "preview"
-                    && r.home == home
-                    && RunInfo::read(&home)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|run| run.port == r.port)
-            });
-        let ready = if reuse {
-            cached.unwrap()
+        let (running, cached) = running_preview(&folder)?;
+        let reuse = cached.is_some();
+        let ready = if let Some(ready) = cached {
+            ready
         } else {
             if running.is_some() {
                 stop_home(&home)?;
@@ -228,32 +252,37 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
     }
     Ok(true)
 }
+fn preview_folders(dir: &Path, env: &Env) -> Result<Vec<PathBuf>, Problem> {
+    let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
+    let suffix = format!("-{}", &hash[..8]);
+    let entries = match fs::read_dir(env.cache.join("previews")) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(vec![]);
+        }
+        Err(e) => return Err(Problem::internal(e)),
+    };
+    let mut folders = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(Problem::internal)?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.ends_with(&suffix))
+            && entry.file_type().map_err(Problem::internal)?.is_dir()
+        {
+            folders.push(entry.path());
+        }
+    }
+    folders.sort();
+    Ok(folders)
+}
+
 pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
     let work = || -> Result<Value, Problem> {
         // A deleted mod folder keeps its absolute path, so its preview can still stop.
         let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
-        let suffix = format!("-{}", &hash[..8]);
-        let entries = match fs::read_dir(env.cache.join("previews")) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(json!({"stopped":false,"home":null}));
-            }
-            Err(e) => return Err(Problem::internal(e)),
-        };
-        let mut folders = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(Problem::internal)?;
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.ends_with(&suffix))
-                && entry.file_type().map_err(Problem::internal)?.is_dir()
-            {
-                folders.push(entry.path());
-            }
-        }
-        folders.sort();
+        let folders = preview_folders(&dir, env)?;
         let mut home = None;
         let mut stopped = false;
         for folder in folders {

@@ -28,22 +28,25 @@ impl Mod {
         m
     }
     fn run(&self, args: &[&str]) -> (i32, Value) {
+        let o = self.output(args);
+        (
+            o.status.code().unwrap(),
+            serde_json::from_slice(&o.stdout).unwrap(),
+        )
+    }
+    fn output(&self, args: &[&str]) -> std::process::Output {
         let cwd = if self.dir.exists() {
             &self.dir
         } else {
             self.temp.path()
         };
-        let o = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .current_dir(cwd)
             .env("WATANE_DEV_CACHE", self.temp.path().join("cache"))
             .env("WATANE_BIN", &self.host)
             .args(args)
             .output()
-            .unwrap();
-        (
-            o.status.code().unwrap(),
-            serde_json::from_slice(&o.stdout).unwrap(),
-        )
+            .unwrap()
     }
     fn serve(&self) -> Value {
         let (c, v) = self.run(&["serve", "--json"]);
@@ -516,4 +519,80 @@ fn ac2_reused_preview_keeps_mcp() {
     let second = m.serve();
     assert_eq!(second["reused"], true);
     assert_eq!(second["mcp"], first["mcp"]);
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac3_refused_serve_warns_about_previous_preview() {
+    let m = Mod::new(true);
+    let preview = m.serve();
+    let old_bytes = fs::read(m.dir.join("ui/index.html")).unwrap();
+    fs::write(m.dir.join("ui/index.html"), "<h1>Rejected revision</h1>").unwrap();
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.add","returns":2}]}"#,
+    )
+    .unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert_eq!(v["next"], "watane-dev test --json");
+    assert_eq!(
+        v["warnings"],
+        serde_json::json!([{
+            "code": "preview.previous",
+            "message": format!("the preview at {} still serves the previous build", preview["api"].as_str().unwrap()),
+            "file": null, "line": null, "column": null,
+            "fix": "Fix the errors, then run: watane-dev serve --json"
+        }])
+    );
+    assert_eq!(get(&preview, "").1, old_bytes);
+}
+
+#[test]
+fn ac4_refused_serve_without_preview_has_no_previous_warning() {
+    let m = Mod::new(false);
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.add","returns":2}]}"#,
+    )
+    .unwrap();
+    let (code, v) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert!(
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w["code"] != "preview.previous")
+    );
+}
+
+#[test]
+#[ignore = "needs WATANE_BIN"]
+fn ac5_refused_serve_prints_previous_preview_warning() {
+    let m = Mod::new(true);
+    let preview = m.serve();
+    fs::write(
+        m.dir.join("tests/counter.json"),
+        r#"{"steps":[{"call":"api.add","returns":2}]}"#,
+    )
+    .unwrap();
+    let output = m.output(&["serve"]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.lines().any(|line| line
+            == format!(
+                "warning[preview.previous]: the preview at {} still serves the previous build",
+                preview["api"].as_str().unwrap()
+            )),
+        "{text}"
+    );
+    assert!(
+        text.contains("  fix: Fix the errors, then run: watane-dev serve --json"),
+        "{text}"
+    );
 }

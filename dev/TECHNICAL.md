@@ -210,7 +210,11 @@ Warning codes: `ui.external` (a file of `ui/` names an `http://` or
 `https://` URL in `src`, `href`, `import` or `fetch(`; the content policy of
 the host blocks it), `ui.inline_script` (`ui/*.html` holds a `<script>`
 without `src`; the content policy blocks it), `test.uncovered` (an
-exported function is called by no contract step).
+exported function is called by no contract step), `preview.previous` (a
+`serve` refused by the test pipeline while a preview for that folder still
+answers; message `the preview at <api> still serves the previous build`,
+fix `Fix the errors, then run: watane-dev serve --json`). Warnings never
+change `ok` or the exit status.
 
 ### 2.3 Text output
 
@@ -933,8 +937,13 @@ fails stops the command. Each Problem of a provider gets the prefix
 ### 9.3 `serve`
 
 1. Run the whole `test` pipeline (check, build, unit, contract) for the mod.
-   On any error return the test errors before inspecting, starting or
-   updating a preview. Provider traversal joins with `add`.
+   On any error return the test errors without starting or updating a
+   preview. Look for an answering preview using the canonical-path hash
+   (as in 9.4), its cached ready line and `Client::for_home`. If one answers,
+   add `preview.previous` with its API address, constructed from the
+   validated ready port as in step 5. Failure to find or verify a preview
+   adds no warning and leaves the test errors unchanged. This applies only
+   to `serve`, never `serve --stop`. Provider traversal joins with `add`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
    (`reused` true). If it runs and `P/ready.json` is missing: stop it
@@ -1054,10 +1063,10 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     ModNoContractTests, ModSelfDependency, ModDependencyCycle, ModProviderMissing,
     BuildResolve, BuildCompile, BuildReadsOutside, BuildImports, TestUnit, TestUnitLimit,
     TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused,
-    HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered }
+    HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious }
 impl Code { pub fn as_str(self) -> &'static str; pub fn class(self) -> Class; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Class { Mod = 1, Usage = 2, Env = 3, Refused = 4, Internal = 5 }
+pub enum Class { Warning = 0, Mod = 1, Usage = 2, Env = 3, Refused = 4, Internal = 5 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Problem { pub code: Code, pub message: String, pub file: Option<String>,
     pub line: Option<u32>, pub column: Option<u32>, pub fix: Option<String> }
@@ -1264,9 +1273,9 @@ independent tool. Integration tests run the binary
 | `builder.rs` | DEV-S-4, 9, 10, 11, 12, 13 | S-4: the test counts `#[test]` in `logic/src/lib.rs` with a regex and the steps in `tests/*.json` with `serde_json`, and loads `logic.wasm` with `wasmtime::component::Component` to find `mods:<slug>/api@0.1.0` among the exports; S-9: a fake toolchain folder whose `bin/cargo` writes a marker file if it runs; S-10: a secret file of random bytes in a temp folder, then a byte search over every file of the mod folder; S-12: the same template at two paths with two caches, `assert_eq!` of the bytes, and a search for `$HOME`, both caches and both mod paths (raw and canonical); S-13: run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'` on macOS or `unshare -rn` on Linux, ignored with a reason where neither works |
 | `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
 | `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; fixture `tests/fixtures/recommendations/` (pkg section 9) imports `mods:reading-list/books` |
-| `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone |
+| `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone; refused `serve`: literal `preview.previous` message/fix and text warning, unchanged page bytes, no warning without an answering preview |
 | `install_publish.rs` | DEV-S-25 to 31 | S-25: `deps.json` and the files of `wit/deps/a/` read by the test; the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
-| `journey_j1.rs` | J1 on the real programs | `new` → break a contract → `test` fails with `test.contract` → restore → `test` ok → `serve` → page and MCP read → change `ui/` → `serve` → new bytes, same count |
+| `journey.rs` | J1 on the real programs | `new reading-list` → write a reading-list mod with a reversed-list bug → `test` fails with literal expected/got lists and `test.contract` → fix logic → `test` ok → `serve` → page `/call` adds Dune → change `ui/` → `serve` → new bytes → MCP list returns `["Dune"]` → `serve --stop`, closed port and removed home |
 
 S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
 component with `watane_pkg::Mod::check_component()`. S-4 joins with S4;

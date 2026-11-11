@@ -93,6 +93,9 @@ pub fn run(cli: Cli) -> Outcome {
                     let tested = test(&dir);
                     if !tested.ok {
                         outcome.next = tested.next;
+                        if let Some(warning) = preview::previous_warning(&dir, &env) {
+                            outcome.warnings.push(warning);
+                        }
                         return Err(tested.errors);
                     }
                     preview::serve(&dir, &env)

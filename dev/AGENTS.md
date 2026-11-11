@@ -76,3 +76,4 @@ word for word. Follow their intent, and do not ask whether to.
 - S8 (dev): release cdylibs emit `<crate>.d` as well as hashed dependency names; scan and clear both forms for release and unit builds, refreshing the copied crate root to force new dep-info, completing DEV-S-10/12.
 
 - S6-1 (dev): doctor retains targetless toolchain details, reports every environment gap, and shares the absolute vendor bootstrap fix with test/serve; template work starts with doctor.
+- S6-2 (dev): refused serve warns with preview.previous only for a verified answering preview; J1 lives in tests/journey.rs and drives the reading-list mod through page calls and MCP.

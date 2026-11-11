@@ -29,6 +29,7 @@ pub enum Code {
     BuildCompile,
     BuildReadsOutside,
     BuildImports,
+    PreviewPrevious,
     Internal,
 }
 impl Code {
@@ -60,11 +61,13 @@ impl Code {
             Self::BuildCompile => "build.compile",
             Self::BuildReadsOutside => "build.reads_outside",
             Self::BuildImports => "build.imports",
+            Self::PreviewPrevious => "preview.previous",
             Self::Internal => "internal",
         }
     }
     pub fn class(self) -> Class {
         match self {
+            Self::PreviewPrevious => Class::Warning,
             Self::UsageArgs | Self::UsageNotAMod | Self::UsageSlug | Self::UsageExists => {
                 Class::Usage
             }
@@ -99,6 +102,7 @@ impl From<Code> for &'static str {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class {
+    Warning = 0,
     Mod = 1,
     Usage = 2,
     Env = 3,
@@ -209,5 +213,29 @@ impl Outcome {
             text.push_str(&format!("next: {next}\n"));
         }
         text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac3_previous_preview_is_only_a_warning() {
+        let mut outcome = Outcome::new("serve", None);
+        outcome.warnings.push(Problem::new(
+            Code::PreviewPrevious,
+            "the preview at http://localhost:52011/api/ still serves the previous build",
+        ));
+        assert_eq!(Code::PreviewPrevious.class(), Class::Warning);
+        assert!(outcome.ok);
+        assert_eq!(outcome.exit_code(), 0);
+        assert_eq!(
+            serde_json::to_value(&outcome.warnings[0]).unwrap()["code"],
+            "preview.previous"
+        );
+        let outcome = outcome.fail(vec![Problem::new(Code::TestContract, "broken contract")]);
+        assert!(!outcome.ok);
+        assert_eq!(outcome.exit_code(), 1);
     }
 }
