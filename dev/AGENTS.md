@@ -87,3 +87,4 @@ word for word. Follow their intent, and do not ask whether to.
 - S13 (dev): §15 records the cache-copy fingerprint experiment, shared warm per-binary fixtures, unit rule replacements, slow/timing reasons and the complete current scenario proof map (27–31 remain planned).
 
 - S17-1 (dev): help describes all inputs and destructive stop; vendor bootstraps into the caller/cache without exports, text flattens fields, available WIT/contract locations survive, env gaps point to doctor, and refused previews name their page.
+- S17-2 (dev): the template guide covers sandbox-safe allowlist recovery, page calls with curl, and preview MCP setup with rotating tokens and Claude Code/Codex tool approvals (§4.1).

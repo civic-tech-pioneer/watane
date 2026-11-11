@@ -566,13 +566,14 @@ The stream also dispatches `changed` when it opens, so no separate first
 read is needed (host 8.4–8.5).
 
 `template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
-with these sections in this order (S4-2 includes 1–7, 9 and 10; section 8
-joins with its slice):
+with these sections in this order (section 10 joins with its slice):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
    `watane-dev`; do not edit them.
 2. **Order of work**: first `watane-dev doctor --json`; run each error's
-   `fix` before going on. Edit `wit/world.wit`, then `logic/src/lib.rs`, then
+   `fix` before going on; for `env.allowlist`, run it as given: dev finds
+   the filled folder without an exported variable, including in a sandbox
+   without write access to the watane checkout. Edit `wit/world.wit`, then `logic/src/lib.rs`, then
    `ui/`; run `watane-dev test --json` until `ok` is true, then
    `watane-dev serve --json` and give the page URL to the person.
 3. **The world**: keep `package mods:{{slug}}@<version>;` and
@@ -596,18 +597,27 @@ joins with its slice):
    `TECHNICAL.md` 6.9: records as objects, `option` as null or the value,
    variants as `"case"` or `{"case": payload}`, `result` as `{"ok": v}` or
    `{"err": e}`).
-7. **Tests**: unit tests run as WebAssembly with no files, no environment
+7. **Try the page without a browser**: use `result.pages[i].url` from
+   `serve --json` for `POST /call` with its exact `Origin`, JSON content
+   type and `fn`/`args`; responses are `value` or `error`. A headless
+   browser may hang on open `/events`; curl checks calls, the person checks looks.
+8. **MCP tools for your agent**: `result.mcp.url` and `result.mcp.token`,
+   the bearer header and config updates after a new preview starts;
+   Claude Code HTTP setup and headless allowed tools; Codex's server table
+   with `url`, `http_headers` and person-set `default_tools_approval_mode = "approve"`;
+   other harnesses use Streamable HTTP and the person allows tools.
+9. **Tests**: unit tests run as WebAssembly with no files, no environment
    and no host imports: test pure functions there. A panic ends the whole
    unit test run, so the tests after it do not run. Contract tests: the
    form of 8.1 in short, with an `emits` example, failure matching and
    reports. S4 runs contracts; fake linking and `deliver` examples arrive
    with links between mods (step 2).
-8. **Building on another mod**: `watane-dev add <mod folder> --json`, then
+10. **Building on another mod**: `watane-dev add <mod folder> --json`, then
    copy the needed lines of `result.imports` or `result.subscriptions`
    into the world.
-9. **Results**: the envelope fields, the exit statuses, and the advice
+11. **Results**: the envelope fields, the exit statuses, and the advice
    "read `errors[].fix`; for `build.compile` read `file` and `line`".
-10. **Rules**: do not ask questions; finish with a passing
+12. **Rules**: do not ask questions; finish with a passing
     `watane-dev test --json`, then `watane-dev serve --json`.
 
 ## 5. Check

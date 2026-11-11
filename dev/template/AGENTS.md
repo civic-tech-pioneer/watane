@@ -15,6 +15,9 @@
 ## Order of work
 
 `watane-dev doctor --json` comes first. Run each error's `fix` before going on.
+For `env.allowlist`, run its `fix` as given: it fills a folder dev finds
+on its own, with no variable to export. This works in a sandbox,
+without write access to the watane checkout.
 
 Edit wit/world.wit, then logic/src/lib.rs, then ui/. Run
 `watane-dev test --json` until ok is true, then run
@@ -55,6 +58,43 @@ For a call without arguments, omit args or pass null.
 Records are JSON objects; option is null or the value; variants are
 "case" or {"case": payload}; result is {"ok": v} or {"err": e}.
 Read once at startup and refresh after your page's calls.
+
+## Try the page without a browser
+
+Use `result.pages[i].url` from `serve --json` as `<page url>` (the origin, ending in `/`):
+```sh
+curl -s -X POST '<page url>call' -H 'Origin: <page url without the trailing />' \
+  -H 'Content-Type: application/json' -d '{"fn":"<iface>.<fn>","args":{...}}'
+```
+Replace the placeholders with your function and arguments;
+the reply is `{"value": ...}` or `{"error": {...}}`.
+A headless browser may hang on the page's open `/events`, so use curl to check calls;
+the page's look is for the person.
+
+## MCP tools for your agent
+
+`serve --json` gives `result.mcp.url` and `result.mcp.token`; send `Authorization: Bearer <token>`.
+The token changes when a new preview starts (after `serve --stop`, or a restart);
+update the config then.
+
+Claude Code:
+```sh
+claude mcp add --transport http {{slug}} <mcp url> --header "Authorization: Bearer <token>"
+```
+A headless `claude -p` run needs `--allowedTools "mcp__{{slug}}"`; an interactive run asks the person once.
+
+Codex: in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), use the slug with `-` replaced by `_`:
+```toml
+[mcp_servers.{{crate}}]
+url = "<mcp url>"
+http_headers = { Authorization = "Bearer <token>" }
+default_tools_approval_mode = "approve"
+```
+The person adds the approval line in that same table: without it `codex exec` refuses every tool call
+("requires approval"). Codex will not change its own approval setting.
+
+Any other harness: add an HTTP (streamable) MCP server with that URL and header.
+If it asks before each call, the person allows the server's tools.
 
 ## Tests
 

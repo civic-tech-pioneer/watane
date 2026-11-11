@@ -82,6 +82,106 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
 mod tests {
     use super::*;
     #[test]
+    fn ac1_guide_recovers_allowlist_in_sandbox() {
+        let guide = render(
+            include_str!("../template/AGENTS.md"),
+            &"reading-list".parse().unwrap(),
+        );
+        let order = guide
+            .split("## Order of work\n")
+            .nth(1)
+            .unwrap()
+            .split("\n## ")
+            .next()
+            .unwrap();
+        for marker in [
+            "env.allowlist",
+            "fix` as given",
+            "no variable to export",
+            "without write access to the watane checkout",
+            "sandbox",
+        ] {
+            assert!(order.contains(marker), "missing {marker}");
+        }
+    }
+
+    #[test]
+    fn ac2_guide_checks_page_calls_without_browser() {
+        let guide = render(
+            include_str!("../template/AGENTS.md"),
+            &"reading-list".parse().unwrap(),
+        );
+        for marker in [
+            "result.pages[i].url",
+            "curl -s -X POST '<page url>call'",
+            "-H 'Origin: <page url without the trailing />'",
+            "-H 'Content-Type: application/json'",
+            r#"-d '{"fn":"<iface>.<fn>","args":{...}}'"#,
+            r#"{"value": ...}"#,
+            r#"{"error": {...}}"#,
+            "headless browser",
+            "open `/events`",
+            "page's look is for the person",
+        ] {
+            assert!(guide.contains(marker), "missing {marker}");
+        }
+    }
+
+    #[test]
+    fn ac3_ac5_guide_configures_preview_mcp_for_each_harness() {
+        let guide = render(
+            include_str!("../template/AGENTS.md"),
+            &"reading-list".parse().unwrap(),
+        );
+        for marker in [
+            "result.mcp.url",
+            "result.mcp.token",
+            "Authorization: Bearer <token>",
+            "token changes",
+            "serve --stop",
+            "restart",
+            "update the config",
+            "claude mcp add --transport http reading-list <mcp url> --header \"Authorization: Bearer <token>\"",
+            "claude -p",
+            "--allowedTools \"mcp__reading-list\"",
+            "interactive",
+            "asks the person once",
+            "$CODEX_HOME/config.toml",
+            "~/.codex/config.toml",
+            "[mcp_servers.reading_list]",
+            "url = \"<mcp url>\"",
+            "http_headers = { Authorization = \"Bearer <token>\" }",
+            "default_tools_approval_mode = \"approve\"",
+            "codex exec",
+            "requires approval",
+            "person adds",
+            "own approval setting",
+            "HTTP (streamable) MCP",
+            "allows the server's tools",
+            "curl -s -X POST",
+        ] {
+            assert!(guide.contains(marker), "missing {marker}");
+        }
+        assert!(!guide.contains("{{slug}}"));
+    }
+
+    #[test]
+    fn ac4_guide_stays_short_with_distinct_sections_and_slug_placeholders() {
+        let guide = include_str!("../template/AGENTS.md");
+        // S17-2 starts with a 98-line guide; at most 45 lines may be added.
+        assert!(guide.lines().count() <= 98 + 45);
+        let sections: Vec<_> = guide
+            .lines()
+            .filter(|line| line.starts_with("## "))
+            .collect();
+        let unique: std::collections::BTreeSet<_> = sections.iter().collect();
+        assert_eq!(sections.len(), unique.len());
+        assert!(guide.contains("claude mcp add --transport http {{slug}} "));
+        assert!(guide.contains("--allowedTools \"mcp__{{slug}}\""));
+        assert!(guide.contains("[mcp_servers.{{crate}}]"));
+    }
+
+    #[test]
     fn ac3_guide_documents_fakes_and_delivery() {
         let guide = include_str!("../template/AGENTS.md");
         assert!(!guide.contains("arrive with links"));
