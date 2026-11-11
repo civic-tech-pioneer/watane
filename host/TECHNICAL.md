@@ -28,7 +28,7 @@ watane-log = { path = "../log" }            # added in stage 8 (section 15)
 wasmtime = "48.0.8"                          # LTS line; default features
 wasmtime-wasi = "48.0.8"
 wasmtime-wasi-http = "48.0.8"
-wit-parser = "0.254.1"                       # doc comments for tool descriptions; wasmtime 48.0.8's version
+wit-parser = "0.254.2"                       # doc comments; version already resolved in Cargo.lock
 axum = "0.8.9"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
@@ -46,8 +46,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 tower = { version = "0.5", features = ["util"] }
 ```
 
-Evidence: wasmtime 48 (an LTS line) asks for `wit-parser` 0.254.1 in its
-`Cargo.toml`, so `host` and `pkg` link one copy. Since the colos prototype
+Evidence: wasmtime 48 (an LTS line) asks for `wit-parser` ^0.254.1 in its
+`Cargo.toml`. Cargo.lock resolves it to 0.254.2, so `host` and `pkg` link
+one copy. Since the colos prototype
 (wasmtime 38): `LinkerInstance::func_new` takes a closure
 `Fn(StoreContextMut<T>, ComponentFunc, &[Val], &mut [Val])`, and HTTP
 interception is `WasiHttpHooks::send_request`. Local toolchain: rustc 1.97,
@@ -338,7 +339,8 @@ to the page bus. A failed call returns only its `CallError`, commits no state,
 and records no events.
 
 S4 keeps `fakes` without linking imports to it. `deliver` waits for
-subscriptions and links; `functions` and `FunctionInfo` join with S5 toolsets.
+subscriptions and links. `FunctionInfo` joins with S5 toolsets;
+`Harness::functions` waits for a later slice.
 When links arrive, a fake returns its JSON converted to the import's result
 type; a function with no fake fails with `trap`, "no fake for
 <interface>.<function>". The network import will deny every request.
@@ -993,9 +995,9 @@ filters by its local name.
 `toolsets.json` maps a toolset name to entries. An entry is
 `<local>:<interface>` (every function of that own-package export) or
 `<local>:<interface>.<function>`. `set_toolset` checks the grammar only
-(`bad_toolset_entry`). The name `preview` is reserved: in a preview it is
-the implicit toolset of every function of every enabled mod; elsewhere
-`set_toolset("preview")` is `bad_name`.
+(`bad_toolset_entry`). The name `preview` is reserved: `set_toolset("preview")`
+is `bad_name` in every home. In a preview it is the implicit toolset of
+every function of every enabled mod.
 
 At each request, the host resolves the toolset against the current
 registry: entries that name no installed, enabled mod or function give no
@@ -1285,11 +1287,24 @@ MCP, toolsets and participant homes wait for their catalog stages.
 Stage 5's Harness part uses the existing preview open and folder install
 path, runs page calls without a server, and returns their values and emitted
 events. `Harness::deliver` waits for subscriptions, which install refuses
-until links exist. `Harness::functions` and `FunctionInfo` join with toolsets
-in S5. Fakes stay in the harness but are not linked yet, with the comment
+until links exist. `FunctionInfo` joins with toolsets in S5;
+`Harness::functions` stays deferred. Fakes stay in the harness but are not
+linked yet, with the comment
 `// ponytail: fakes link with calls (step 2)`. Install still refuses a mod
 that calls or subscribes to another mod. Harness homes use `getrandom`;
 `tempfile` stays a dev-dependency. Missing Origin errors name the absent header.
+
+### S5 cut
+
+Stage 4 adds `functions`, `set_toolset`, `issue_token`, `end_token`, and MCP
+on the API host at `/mcp/<toolset>`. MCP has its own 1 MiB body limit;
+the local API's 64 KiB limit does not apply. The preview program issues
+one token with handle `preview` after installation and prints its MCP URL
+and token in the existing Ready fields. Tokens stay in memory as hashes.
+`remove_toolset`, `toolsets`, and `tokens` wait for the app in step 2.
+`Harness::functions` remains deferred. The existing preview-only open and
+serve signatures stay until participant homes arrive. `wit-parser` 0.254.2
+reads only doc comments; compiled types supply function metadata and schemas.
 
 | Stage | Build | Needs | Until it exists | Done when |
 |---|---|---|---|---|
@@ -1401,3 +1416,5 @@ Each answer below is used in this file.
 - **Q18 (host)** S3 uses a call-local JSON outbox and a shared page bus; subscribers and catalog lifecycle operations wait for links. State commit returns whether stored bytes changed, and bus publication preserves commit order.
 
 - **Q19 (host, dev)** S4 fixes the Harness API to open/call with recorded events and temporary-home cleanup. Fakes stay unlinked, deliver waits for links, and functions joins S5; section 2.6 and the S4 cut define the available API. Missing `/call` Origin errors name the missing header without changing the origin check.
+
+- **Q20 (host, dev)** S5 serves stateless MCP on the API host, reserves preview in every home, and defers app toolset management and Harness functions. The lockfile resolves wit-parser to 0.254.2.

@@ -93,7 +93,12 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
     if !args.folders.is_empty() {
         host.install_folders(&args.folders, served.port)?;
     }
-    println!("{}", serde_json::to_string(&served.ready())?);
+    let preview = watane_host::ToolsetName::parse("preview")?;
+    let token = host.issue_token(&preview, &watane_host::Handle::parse("preview")?)?;
+    let mut ready = served.ready();
+    ready.mcp = Some(served.mcp_url(&preview));
+    ready.token = Some(token.as_str().into());
+    println!("{}", serde_json::to_string(&ready)?);
     std::io::stdout().flush()?;
     tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }
     served.shutdown().await;

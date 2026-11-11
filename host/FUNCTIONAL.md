@@ -126,7 +126,8 @@ API, the HTTP server or the program `watane`.
   `{"type":"reload"}`.
 - **S14 Tools** (HOST-F-14, 15). Given toolset `t` lists `counter:api`. When
   `tools/list` is sent with a token for `t`, then the names are
-  `counter_api_add`, `counter_api_add-then-fail` and `counter_api_get`.
+  `counter_api_add`, `counter_api_add-then-fail`, `counter_api_get` and
+  `counter_api_who`, in sorted order.
 - **S15 Token** (HOST-F-15, 16, 18). A request to `/mcp/t` without a token,
   with a token for another toolset, with an ended token, or with an
   `Origin` header, is refused with 401, 403, 401 and 403.

@@ -13,6 +13,12 @@ pub enum HostError {
     InvalidMod { input: String, reason: String },
     #[error("invalid name {value:?}: {rule}")]
     BadName { value: String, rule: &'static str },
+    #[error("no mod {0}")]
+    NoSuchMod(String),
+    #[error("invalid toolset entry {entry}: {reason}")]
+    BadToolsetEntry { entry: String, reason: String },
+    #[error("no toolset {0}")]
+    NoSuchToolset(String),
     #[error("cannot bind loopback port {0}")]
     PortInUse(u16),
     #[error("host is already serving")]
@@ -29,6 +35,9 @@ impl HostError {
             Self::BadHome { .. } => "bad_home",
             Self::InvalidMod { .. } => "invalid_mod",
             Self::BadName { .. } => "bad_name",
+            Self::NoSuchMod(_) => "no_mod",
+            Self::BadToolsetEntry { .. } => "bad_toolset_entry",
+            Self::NoSuchToolset(_) => "no_toolset",
             Self::PortInUse(_) => "port_in_use",
             Self::AlreadyServing => "already_serving",
             Self::Internal(_) => "internal",
@@ -37,7 +46,8 @@ impl HostError {
 
     pub fn status(&self) -> u16 {
         match self {
-            Self::BadName { .. } => 400,
+            Self::BadName { .. } | Self::BadToolsetEntry { .. } => 400,
+            Self::NoSuchMod(_) | Self::NoSuchToolset(_) => 404,
             Self::Busy(_) | Self::ModeMismatch { .. } => 409,
             Self::InvalidMod { .. } => 422,
             _ => 500,

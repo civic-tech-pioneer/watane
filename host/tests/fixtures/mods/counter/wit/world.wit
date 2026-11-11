@@ -1,5 +1,6 @@
 package mods:counter@0.1.0;
 interface api {
+  /// Increment the counter.
   add: func() -> u32;
   add-then-fail: func();
   get: func() -> u32;

@@ -11,7 +11,9 @@ mod pages;
 mod runtime;
 mod server;
 mod state;
+mod tools;
 pub use runtime::limits::Limits;
+pub use tools::{FunctionInfo, Handle, Token, TokenId, ToolsetName};
 
 pub use catalog::{GrantState, InstalledMod, LinkKind, LinkView};
 pub use error::{CallCode, CallError, HostError, Limit};
@@ -35,6 +37,7 @@ pub struct Host {
     state: state::State,
     call_locks: Mutex<std::collections::BTreeMap<String, Arc<Mutex<()>>>>,
     bus: bus::PageBus,
+    tools: Mutex<tools::Tools>,
 }
 
 impl Host {
@@ -44,6 +47,7 @@ impl Host {
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
         let host = Arc::new(Self {
+            tools: Mutex::new(tools::Tools::open(&home.path)?),
             bus: bus::PageBus::new(1024),
             state,
             call_locks: Mutex::new(std::collections::BTreeMap::new()),
@@ -196,9 +200,13 @@ pub struct ReadyMod {
 #[derive(Clone, Debug)]
 pub enum Caller {
     Page,
+    Agent(Handle),
 }
 impl Caller {
-    pub fn who(&self) -> &'static str {
-        "page"
+    pub fn who(&self) -> String {
+        match self {
+            Self::Page => "page".into(),
+            Self::Agent(handle) => format!("agent:{handle}"),
+        }
     }
 }

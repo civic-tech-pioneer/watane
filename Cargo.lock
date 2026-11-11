@@ -2700,6 +2700,7 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "watane-pkg",
+ "wit-parser",
 ]
 
 [[package]]

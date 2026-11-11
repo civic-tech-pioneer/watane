@@ -93,6 +93,9 @@ impl Served {
     pub fn api_url(&self) -> String {
         format!("http://localhost:{}/api/", self.port)
     }
+    pub fn mcp_url(&self, toolset: &crate::ToolsetName) -> String {
+        format!("http://localhost:{}/mcp/{toolset}", self.port)
+    }
     pub fn ready(&self) -> Ready {
         let catalog = self
             .host
@@ -162,6 +165,9 @@ async fn dispatch(State(state): State<ServerState>, request: Request<Body>) -> R
     .iter()
     .any(|s| s == host);
     if api_host {
+        if request.uri().path().starts_with("/mcp/") {
+            return crate::tools::respond(state.host, request).await;
+        }
         return api::respond(state, request).await;
     }
     if let Some(label) = host.strip_suffix(&format!(".localhost:{}", state.port))

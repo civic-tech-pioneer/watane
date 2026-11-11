@@ -324,6 +324,105 @@ pub(super) fn encode(value: &Val) -> Result<Value, CallError> {
     })
 }
 
+pub(super) fn type_text(ty: &Type) -> String {
+    match ty {
+        Type::Bool => "bool".into(),
+        Type::U8 => "u8".into(),
+        Type::U16 => "u16".into(),
+        Type::U32 => "u32".into(),
+        Type::U64 => "u64".into(),
+        Type::S8 => "s8".into(),
+        Type::S16 => "s16".into(),
+        Type::S32 => "s32".into(),
+        Type::S64 => "s64".into(),
+        Type::Float32 => "f32".into(),
+        Type::Float64 => "f64".into(),
+        Type::Char => "char".into(),
+        Type::String => "string".into(),
+        Type::List(t) => format!("list<{}>", type_text(&t.ty())),
+        Type::Option(t) => format!("option<{}>", type_text(&t.ty())),
+        Type::Tuple(t) => format!(
+            "tuple<{}>",
+            t.types()
+                .map(|t| type_text(&t))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Type::Record(t) => format!(
+            "record {{ {} }}",
+            t.fields()
+                .map(|f| format!("{}: {}", f.name, type_text(&f.ty)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Type::Enum(t) => format!("enum {{ {} }}", t.names().collect::<Vec<_>>().join(", ")),
+        Type::Flags(t) => format!("flags {{ {} }}", t.names().collect::<Vec<_>>().join(", ")),
+        Type::Variant(t) => format!(
+            "variant {{ {} }}",
+            t.cases()
+                .map(|c| match c.ty {
+                    Some(t) => format!("{}({})", c.name, type_text(&t)),
+                    None => c.name.into(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Type::Result(t) => format!(
+            "result<{}, {}>",
+            t.ok().map(|t| type_text(&t)).unwrap_or("_".into()),
+            t.err().map(|t| type_text(&t)).unwrap_or("_".into())
+        ),
+        _ => unreachable!("only callable types have text"),
+    }
+}
+pub(super) fn object_schema<'a>(fields: impl Iterator<Item = (&'a str, Type)>) -> Value {
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    for (name, ty) in fields {
+        properties.insert(name.into(), schema(&ty));
+        if !matches!(ty, Type::Option(_)) {
+            required.push(name.to_owned());
+        }
+    }
+    json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
+}
+fn case_schema(name: &str, ty: Option<Type>) -> Value {
+    let payload = ty.as_ref().map(schema).unwrap_or(json!({"type":"null"}));
+    json!({"type":"object","properties":{name:payload},"required":[name],"additionalProperties":false})
+}
+fn schema(ty: &Type) -> Value {
+    match ty {
+        Type::Bool => json!({"type":"boolean"}),
+        Type::U8 => json!({"type":"integer","minimum":0,"maximum":255}),
+        Type::U16 => json!({"type":"integer","minimum":0,"maximum":65535}),
+        Type::U32 => json!({"type":"integer","minimum":0,"maximum":4294967295u32}),
+        Type::U64 => json!({"type":"integer","minimum":0,"maximum":u64::MAX}),
+        Type::S8 => json!({"type":"integer","minimum":-128,"maximum":127}),
+        Type::S16 => json!({"type":"integer","minimum":-32768,"maximum":32767}),
+        Type::S32 => json!({"type":"integer","minimum":i32::MIN,"maximum":i32::MAX}),
+        Type::S64 => json!({"type":"integer","minimum":i64::MIN,"maximum":i64::MAX}),
+        Type::Float32 | Type::Float64 => json!({"type":"number"}),
+        Type::String => json!({"type":"string"}),
+        Type::Char => json!({"type":"string","minLength":1,"maxLength":1}),
+        Type::List(t) => json!({"type":"array","items":schema(&t.ty())}),
+        Type::Option(t) => json!({"anyOf":[{"type":"null"},schema(&t.ty())]}),
+        Type::Tuple(t) => {
+            let items: Vec<_> = t.types().map(|t| schema(&t)).collect();
+            json!({"type":"array","prefixItems":items,"minItems":items.len(),"maxItems":items.len()})
+        }
+        Type::Record(t) => object_schema(t.fields().map(|f| (f.name, f.ty))),
+        Type::Enum(t) => json!({"type":"string","enum":t.names().collect::<Vec<_>>()}),
+        Type::Flags(t) => {
+            json!({"type":"array","items":{"type":"string","enum":t.names().collect::<Vec<_>>()},"uniqueItems":true})
+        }
+        Type::Variant(t) => {
+            json!({"oneOf":t.cases().map(|c|if c.ty.is_none(){json!({"type":"string","const":c.name})}else{case_schema(c.name,c.ty)}).collect::<Vec<_>>()})
+        }
+        Type::Result(t) => json!({"oneOf":[case_schema("ok",t.ok()),case_schema("err",t.err())]}),
+        _ => unreachable!("only callable types have schemas"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

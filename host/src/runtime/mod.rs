@@ -27,6 +27,7 @@ struct Function {
     interface: String,
     name: String,
     ty: ComponentFunc,
+    docs: Option<String>,
 }
 pub(crate) struct Compiled {
     pre: InstancePre<Ctx>,
@@ -88,6 +89,43 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
             return Err(invalid(format!("undeclared component export {name}")));
         }
     }
+    let mut docs = BTreeMap::new();
+    let mut resolve = wit_parser::Resolve::default();
+    resolve
+        .push_dir(m.dir().join("wit"))
+        .map_err(|e| invalid(e.to_string()))?;
+    // pkg owns world interpretation; this reader extracts only doc comments.
+    for (_, interface) in resolve.interfaces.iter() {
+        let Some(package) = interface.package else {
+            continue;
+        };
+        let Some(name) = &interface.name else {
+            continue;
+        };
+        let package = &resolve.packages[package].name;
+        let full = format!(
+            "{}:{}/{}@{}",
+            package.namespace,
+            package.name,
+            name,
+            package
+                .version
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        );
+        for (name, function) in &interface.functions {
+            docs.insert(
+                (full.clone(), name.clone()),
+                function
+                    .docs
+                    .contents
+                    .clone()
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty()),
+            );
+        }
+    }
     let mut functions = BTreeMap::new();
     for interface in &m.world().exports {
         let Some(item) = ty.get_export(engine, &interface.to_string()) else {
@@ -107,6 +145,10 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
                         interface: interface.to_string(),
                         name: name.into(),
                         ty,
+                        docs: docs
+                            .get(&(interface.to_string(), name.into()))
+                            .cloned()
+                            .flatten(),
                     },
                 );
             }
@@ -118,6 +160,25 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
     Ok(Some(Arc::new(Compiled { pre, functions })))
 }
 impl Compiled {
+    pub(crate) fn functions(&self) -> Vec<crate::FunctionInfo> {
+        self.functions
+            .values()
+            .map(|f| crate::FunctionInfo {
+                interface: f.interface.parse().expect("pkg checked interface"),
+                name: f.name.clone(),
+                params: f
+                    .ty
+                    .params()
+                    .map(|(n, t)| (n.into(), json::type_text(&t)))
+                    .collect(),
+                result: f.ty.results().next().map(|t| json::type_text(&t)),
+                docs: f.docs.clone(),
+            })
+            .collect()
+    }
+    pub(crate) fn schema(&self, function: &str) -> serde_json::Value {
+        json::object_schema(self.functions[function].ty.params())
+    }
     pub fn call(
         &self,
         host: &crate::Host,
@@ -164,7 +225,7 @@ impl Compiled {
         let mut store = linker::store(
             &host.engine,
             transaction,
-            caller.who().into(),
+            caller.who(),
             &host.limits,
             deadline,
         )?;

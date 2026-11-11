@@ -182,7 +182,7 @@ fn ac1_preview_creates_home_and_reports_ready() {
             json!({
                 "watane":1,"mode":"preview","home":home,"port":preview.ready.port,
                 "api":format!("http://localhost:{}/api/",preview.ready.port),
-                "mcp":null,"token":null,"mods":[]
+                "mcp":format!("http://localhost:{}/mcp/preview",preview.ready.port),"token":preview.ready.token,"mods":[]
             })
         );
         assert_ne!(preview.ready.port, 0);
@@ -370,4 +370,74 @@ fn ac7_public_types_validate_and_round_trip() {
     serde_type::<InstalledMod>();
     serde_type::<Ready>();
     serde_type::<watane_host::ReadyMod>();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac6_preview_ready_token_is_live_and_never_persisted() {
+    let home = tempfile::tempdir().unwrap();
+    let counter = fixture("counter");
+    let mut preview =
+        Preview::start_with(home.path(), &["--install".as_ref(), counter.as_os_str()]);
+    let token = preview.ready.token.as_ref().expect("preview token");
+    assert_eq!(token.len(), 46);
+    assert!(token.starts_with("wt_"));
+    assert!(
+        token[3..]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    );
+    let url = format!("http://localhost:{}/mcp/preview", preview.ready.port);
+    assert_eq!(preview.ready.mcp.as_deref(), Some(url.as_str()));
+    let client = preview.client("localhost", "127.0.0.1");
+    let r = client
+        .post(&url)
+        .bearer_auth(token)
+        .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let body = r.json::<Value>().await.unwrap();
+    assert_eq!(
+        body["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].clone())
+            .collect::<Vec<_>>(),
+        vec![
+            json!("counter_api_add"),
+            json!("counter_api_add-then-fail"),
+            json!("counter_api_get"),
+            json!("counter_api_who")
+        ]
+    );
+    assert_eq!(
+        client
+            .post(format!("http://localhost:{}/mcp/other", preview.ready.port))
+            .bearer_auth(token)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    fn check(path: &Path, token: &str) {
+        for e in fs::read_dir(path).unwrap() {
+            let e = e.unwrap();
+            if e.file_type().unwrap().is_dir() {
+                check(&e.path(), token)
+            } else {
+                assert!(
+                    !fs::read(e.path())
+                        .unwrap()
+                        .windows(token.len())
+                        .any(|w| w == token.as_bytes())
+                );
+            }
+        }
+    }
+    check(home.path(), token);
+    preview.stop();
 }

@@ -58,3 +58,5 @@ word for word. Follow their intent, and do not ask whether to.
 ## Spec gaps
 
 - Q19 (host, dev): S4 provides Harness open/call and recorded events; defer linked fakes and deliver to links and functions to S5, keep tempfile for tests, and distinguish a missing Origin header.
+
+- Q20 (host, dev): S5 adds MCP and preview tokens, reserves preview in every home, and defers app toolset management and Harness functions; wit-parser resolves to 0.254.2.
