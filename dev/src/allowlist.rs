@@ -66,6 +66,9 @@ impl Allowlist {
             .get(&(name.into(), version.into()))
             .is_some_and(|c| c == checksum)
     }
+    pub fn package_count(&self) -> usize {
+        self.packages.len()
+    }
     pub fn crates(&self) -> String {
         self.direct
             .iter()
@@ -83,7 +86,23 @@ fn problem(path: &Path, detail: impl std::fmt::Display) -> Problem {
         ),
     )
     .at(path.to_string_lossy(), None, None)
-    .fix("Reinstall watane-dev, or set WATANE_DEV_VENDOR")
+    .fix(vendor_fix(path))
+}
+fn vendor_fix(path: &Path) -> String {
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script = dev.join("scripts/vendor.sh");
+    if path == dev.join("allowlist/vendor") {
+        script.display().to_string()
+    } else {
+        format!(
+            "'{}' && export WATANE_DEV_VENDOR='{}'",
+            script.display().to_string().replace('\'', "'\"'\"'"),
+            dev.join("allowlist/vendor")
+                .display()
+                .to_string()
+                .replace('\'', "'\"'\"'")
+        )
+    }
 }
 pub fn vendor_dir() -> Result<PathBuf, Problem> {
     let path = if let Some(path) = std::env::var_os("WATANE_DEV_VENDOR") {
@@ -133,6 +152,15 @@ pub fn verify_vendor(vendor: &Path, allow: &Allowlist) -> Result<(), Problem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac3_source_vendor_fix_is_absolute_bootstrap_command() {
+        let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let error = problem(&dev.join("allowlist/vendor"), "vendor folder is missing");
+        assert_eq!(
+            error.fix.as_deref(),
+            Some(dev.join("scripts/vendor.sh").to_str().unwrap())
+        );
+    }
     #[test]
     fn ac8_embedded_allowlist_has_exact_direct_pins() {
         let allow = Allowlist::embedded();

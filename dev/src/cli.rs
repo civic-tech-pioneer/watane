@@ -24,6 +24,7 @@ pub enum Command {
         slug: String,
     },
     Check,
+    Doctor,
     Test,
     Serve {
         #[arg(long)]
@@ -34,6 +35,7 @@ pub fn run(cli: Cli) -> Outcome {
     let name = match cli.command {
         Command::New { .. } => "new",
         Command::Check => "check",
+        Command::Doctor => "doctor",
         Command::Test => "test",
         Command::Serve { .. } => "serve",
     };
@@ -52,6 +54,7 @@ pub fn run(cli: Cli) -> Outcome {
     };
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
+        Command::Doctor => return crate::doctor::doctor(),
         Command::New { slug } => template::new_mod(&dir, &slug)
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))

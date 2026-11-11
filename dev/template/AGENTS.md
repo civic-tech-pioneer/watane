@@ -14,6 +14,8 @@
 
 ## Order of work
 
+`watane-dev doctor --json` comes first. Run each error's `fix` before going on.
+
 Edit wit/world.wit, then logic/src/lib.rs, then ui/. Run
 `watane-dev test --json` until ok is true, then run
 `watane-dev serve --json` and give result.pages[0].url

@@ -37,6 +37,13 @@ fn query(command: &mut Command) -> Result<String, Problem> {
     Ok(text.trim().to_string())
 }
 pub fn find(env: &Env) -> Result<Toolchain, Problem> {
+    let toolchain = discover(env)?;
+    toolchain.check_target()?;
+    Ok(toolchain)
+}
+
+/// Discover the toolchain without requiring an installed Wasm target.
+pub fn discover(env: &Env) -> Result<Toolchain, Problem> {
     let (cargo, rustc) = if let Some(root) = std::env::var_os("WATANE_DEV_TOOLCHAIN") {
         let root = PathBuf::from(root).canonicalize().map_err(problem)?;
         (root.join("bin/cargo"), root.join("bin/rustc"))
@@ -81,16 +88,6 @@ pub fn find(env: &Env) -> Result<Toolchain, Problem> {
             .current_dir(&env.cache)
             .args(["--print", "sysroot"]),
     )?);
-    if !sysroot.join("lib/rustlib/wasm32-wasip2/lib").is_dir() {
-        return Err(Problem::new(
-            Code::EnvNoWasmTarget,
-            format!(
-                "the Rust toolchain at {} has no wasm32-wasip2 target",
-                sysroot.display()
-            ),
-        )
-        .fix("rustup target add wasm32-wasip2"));
-    }
     let version = query(
         Command::new(&rustc)
             .current_dir(&env.cache)
@@ -102,4 +99,20 @@ pub fn find(env: &Env) -> Result<Toolchain, Problem> {
         sysroot: sysroot.canonicalize().map_err(problem)?,
         version,
     })
+}
+
+impl Toolchain {
+    pub fn check_target(&self) -> Result<(), Problem> {
+        if !self.sysroot.join("lib/rustlib/wasm32-wasip2/lib").is_dir() {
+            return Err(Problem::new(
+                Code::EnvNoWasmTarget,
+                format!(
+                    "the Rust toolchain at {} has no wasm32-wasip2 target",
+                    self.sysroot.display()
+                ),
+            )
+            .fix("rustup target add wasm32-wasip2"));
+        }
+        Ok(())
+    }
 }

@@ -4,6 +4,7 @@ pub mod builder;
 pub mod check;
 pub mod cli;
 pub mod contract;
+pub mod doctor;
 pub mod env;
 pub mod json_eq;
 pub mod outcome;

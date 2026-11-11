@@ -10,6 +10,15 @@ pub struct Client {
     port: u16,
 }
 impl Client {
+    /// Read status for either a home or a preview, without requiring an app.
+    pub fn home_status(home: &Path) -> Option<Value> {
+        let run = RunInfo::read(home).ok().flatten()?;
+        let status = Self { port: run.port }
+            .request("status", None, Duration::from_secs(2))
+            .ok()?;
+        (status["watane"] == 1).then_some(status)
+    }
+
     pub fn for_home(home: &Path) -> Result<Option<Self>, Problem> {
         // An unreadable run.json names no host to talk to (9.4 step 1).
         let Some(run) = RunInfo::read(home).ok().flatten() else {

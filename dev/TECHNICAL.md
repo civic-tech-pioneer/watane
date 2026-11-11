@@ -19,6 +19,7 @@ dev/
   src/lib.rs            the modules below, all `pub`
   src/cli.rs            clap types; run(Cli) -> Outcome; one fn for each command
   src/outcome.rs        Outcome, Problem, Code, Class; JSON and text output
+  src/doctor.rs         report every environment gap without stopping early
   src/env.rs            the cache folder and the limits
   src/template.rs       the embedded template; `new`
   src/check.rs          pkg rules plus the builder constraints
@@ -178,7 +179,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `usage.provider` | 2 | `add`: the path is not a mod folder | `<path> is not a mod folder` | — |
 | `env.toolchain` | 3 | no rustup, no cargo, no rustc | `no Rust toolchain found: <detail>` | `Install rustup with your package manager, then run: rustup default stable` |
 | `env.no_wasm_target` | 3 | the sysroot has no `wasm32-wasip2` | `the Rust toolchain at <sysroot> has no wasm32-wasip2 target` | `rustup target add wasm32-wasip2` |
-| `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <crate> <version>` | `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
+| `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <crate> <version>` | `<abs dev>/scripts/vendor.sh` for the source-tree vendor; for another path, run that script and export `WATANE_DEV_VENDOR` to its output (6.2) |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
 | `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run this command again` |
@@ -281,8 +282,14 @@ that is not an error.
  "watane": "/abs/watane",
  "home": {"path": "/abs/.watane", "running": false, "app": false}}
 ```
-A missing part is null and adds its error. `doctor` reports every gap, not
-only the first. A home host that does not run is no error.
+A missing part is null and adds its error. A discovered toolchain without
+its Wasm target remains an object with `wasm32_wasip2: false` and adds
+`env.no_wasm_target`; discovery still reads its version and never runs cargo.
+`doctor` reports every gap, not only the first. A home host that does not
+run is no error. `running` requires a readable `run.json` and a status
+answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
+`next` is `watane-dev new <slug> --json` on success and
+`watane-dev doctor --json` on a gap.
 
 **add** (step 2)
 ```json
@@ -539,7 +546,8 @@ joins with its slice):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
    `watane-dev`; do not edit them.
-2. **Order of work**: edit `wit/world.wit`, then `logic/src/lib.rs`, then
+2. **Order of work**: first `watane-dev doctor --json`; run each error's
+   `fix` before going on. Edit `wit/world.wit`, then `logic/src/lib.rs`, then
    `ui/`; run `watane-dev test --json` until `ok` is true, then
    `watane-dev serve --json` and give the page URL to the person.
 3. **The world**: keep `package mods:{{slug}}@<version>;` and
@@ -652,7 +660,8 @@ read). Every other file is `mod.logic_file`, with a reason for these:
 4. `<rustc> --print sysroot` gives the sysroot. If
    `<sysroot>/lib/rustlib/wasm32-wasip2/lib` is not a folder:
    `env.no_wasm_target`, and dev runs no cargo.
-5. `<rustc> --version` gives the version for `doctor`.
+5. `<rustc> --version` gives the version for `doctor`, including when
+   step 4 found no Wasm target. Build and test still stop before cargo.
 
 ### 6.2 Allowlist
 
@@ -674,6 +683,11 @@ The allowlist is the closed set of crates that a logic part may use.
 - dev finds the vendor folder in this order: `WATANE_DEV_VENDOR`;
   `<folder of the executable>/../share/watane-dev/vendor`;
   `<CARGO_MANIFEST_DIR at compile time>/allowlist/vendor`.
+- A missing source-tree vendor reports the absolute
+  `<CARGO_MANIFEST_DIR>/scripts/vendor.sh` as its fix. For an override or
+  installed path, the fix runs that script and exports `WATANE_DEV_VENDOR`
+  to the source-tree vendor it generates. `doctor`, `test` and `serve`
+  share this fix through `allowlist::vendor_dir`.
 - **Verification**, before each build: the vendor folder holds exactly one
   folder `<name>-<version>` for each registry package of the lock, and no
   other folder. The `package` field of its `.cargo-checksum.json` equals
