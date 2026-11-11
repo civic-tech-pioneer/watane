@@ -748,9 +748,39 @@ fn ac3_pack_walks_nested_content_directories() {
     // A directory below wit/deps/<s>/ is not package content (§6.4: the walk never
     // goes outside the paths of §6.1), so the refusal is Mod::read's rule `path` (§4.7).
     put(dir.path(), "wit/deps/clocks/extra/x.wit", b"");
+    // A link down there is never reached by the walk either.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/", dir.path().join("wit/deps/clocks/extra/link")).unwrap();
     let error = pack(dir.path(), false).unwrap_err();
     assert!(
         matches!(&error, PackageError::Mod(ModError::Invalid(v)) if v.iter().any(|v| v.rule == Rule::Path && v.file.starts_with("wit/deps/clocks/extra"))),
         "{error:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ac3_pack_never_walks_build_output() {
+    // TECHNICAL.md §6.4: the walk stays on the paths of §6.1, so logic/target/ is
+    // never read, even with source included: a link or a FIFO there is not seen.
+    let dir = hello();
+    put(dir.path(), "logic/src/lib.rs", b"source");
+    put(dir.path(), "logic/target/out", b"build output");
+    std::os::unix::fs::symlink("/", dir.path().join("logic/target/link")).unwrap();
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(dir.path().join("logic/target/pipe"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        pack(dir.path(), true).unwrap().paths().collect::<Vec<_>>(),
+        [
+            "logic/src/lib.rs",
+            "mod.toml",
+            "ui/index.html",
+            "wit/world.wit"
+        ]
     );
 }
