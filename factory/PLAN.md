@@ -56,6 +56,24 @@ Step 2 (Run together, J2).
   Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
   `O_NOFOLLOW` guards only the last path part; `folder.rs` opens with plain `File::open` after
   `symlink_metadata` (a narrow swap window; packed bytes stay safe).
+- [ ] **S16 J1 with Codex.** The human's call: a second harness proves the maker tools are
+  general. Bob asks Codex (the `codex` CLI, not Claude) for a reading list in an empty folder,
+  with nothing but what `watane-dev` and the template's `AGENTS.md` tell it.
+  - Outcomes: 1. Codex reaches a passing `test` and a running preview with no human help;
+    2. it adds the preview's MCP endpoint to its own config and calls a function; 3. a friction
+    log: each command, each error it hit, each doc it had to read, each place it guessed, side by
+    side with the same story under Claude (J1's user-sim notes). No product code changes; a
+    failure becomes a red test or a line for S17.
+  - Touches: `factory/` (a harness note), new `dev/tests/` red tests only. Can run beside S11.
+- [ ] **S17 The simplest tool to start with.** The human's call: one slice only for the maker's
+  experience, for every harness. Input: S16's friction log and the user-sim notes in `Friction`
+  (`next` null after `serve` and on env gaps, doctor's text mode prints raw JSON, `--help` shows no
+  options, contract and WIT errors with `line: null`, `preview.previous` names the API URL, a
+  missing vendor folder reads as a version mismatch, `serve --stop` drops data silently).
+  - Outcomes: the top items fixed, each with a cheap test; the same story under Claude and Codex
+    takes fewer commands and fewer errors than in S16, measured the same way.
+  - Touches: dev (`cli.rs`, `outcome.rs`, `preview.rs`, the template `AGENTS.md`). After S11 and
+    S13 (shared dev files).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
   starts the app, installs `reading-list` and `recommendations` from their folders, approves the
   plan, uses them together, restarts, withdraws a grant, and removes a mod.
@@ -99,7 +117,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | open |
-| app | F Linux | 2 | open |
+| app | F Linux | 2 | open: a Linux VM is enough (Docker on this Mac runs arm64 Linux; x86_64 under emulation) |
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
