@@ -57,16 +57,10 @@ Step 2 (Run together, J2).
   grant-change message, so the app reloads the open window; a `/call` whose client disconnects
   keeps an `Arc<Host>` past shutdown; host `ac4_program_defaults_to_environment_home_and_port`
   probes port 47341 and then binds it, a race with a running watane.
-- [~] **S18 Alice runs the app on Linux.** (branch `slice/s18`; foreman: see `Foremen`) App stage F:
-  every app test passes on Linux under `xvfb-run`, in a Docker container on this Mac (arm64; the
-  deputy decision says a Linux VM is enough; x86_64 under emulation only if arm64 hides a gap).
-  - Outcomes: one script (`app/scripts/linux-test.sh`) builds the image and runs the app's
-    default and driver tests in it, all green; a `*.localhost` gap in WebKitGTK, if any, is a
-    finding in `app/NOTES.md`; the toolset view shows the host's MCP tool name (APP-F-25, from
-    S12a's user-sim).
-  - Touches: app only (Linux `cfg` code, the driver's Linux side, the script, a Dockerfile under
-    `app/`). Not dev (S17), not host unless a test proves a host bug on Linux (then ask).
-  - Leaves out: a Linux bundle, CI.
+- [x] **S18 Alice runs the app on Linux.** Delivered 2026-11-11 (main `e7d9b5d`). Sol runs: S18-1 1, S18-2 1.
+  Left for later (user-sim): the runner prints versions without names; about 17 AT-SPI warnings
+  bury the output (`NO_AT_BRIDGE=1` in the image); the app's JS repeats the tool-name rule for
+  saved entries.
 - [~] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
   and `fake-watane`, against the home host S12a built. (branch `slice/s12b`; foreman: see `Foremen`)
   Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
@@ -103,7 +97,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
-| app | F Linux | 2 | open: a Linux VM is enough (Docker on this Mac runs arm64 Linux; x86_64 under emulation) |
+| app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
@@ -130,7 +124,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a` (stopped, removed).
 - S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
 - S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17` (stopped, removed).
-- S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18`.
+- S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18` (stopped, removed; the product owner rebased it on main).
 - S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -242,6 +236,9 @@ The human may veto each one.
   step's line; `preview.previous` names the page URL (the API only for a mod with no page).
 - S17: MCP read-only hint: option (a) built; the template documents Claude's `--allowedTools` and
   Codex's `default_tools_approval_mode = "approve"`, and that the token changes per preview.
+- S18: stage F runs on arm64 Linux in Docker under Xvfb with Openbox (focus needs a window
+  manager); WebKitGTK resolves `<local>.localhost`; `webkit2gtk` is a Linux driver-only dependency.
+- S18: `tools_list` returns `{entry, tool}`; the app shows the host's MCP tool name (APP-F-25).
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -328,6 +325,9 @@ The human may veto each one.
 - S17: the first default dev `cargo test` after a merge took 3:22 (a cold template build of 152 s);
   warm 81 to 100 s. The 2-min budget has little headroom (S13 too, 2x).
 - S6, S17: parallel tasks in one subsystem conflict on `AGENTS.md` "Spec gaps" lines (2x).
+- S18: app j2 `ac8_remove_defaults_to_keep_data_and_unknown_keys_fail` failed 1 in 9 runs under
+  load ("DOM timed out"); watch it on main.
+- S18: the foreman ignored the "you may push" correction because a peer relayed it; fine, pushing is optional.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -370,3 +370,5 @@ The human may veto each one.
   and gives back a grant, disables or removes a mod, and gives an agent an MCP token (J2 passes).
 - S17: a maker's agent, Claude or a sandboxed Codex, goes from an empty folder to a served mod and
   its MCP tools from watane-dev's output and the template `AGENTS.md` alone.
+- S18: every app test passes on arm64 Linux (`app/scripts/linux-test.sh`); the toolset view shows
+  the MCP tool name an agent calls.
