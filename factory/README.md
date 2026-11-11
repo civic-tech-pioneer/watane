@@ -134,7 +134,8 @@ Tests that assert a spec'd time limit (a call stopped after 200 ms and before 2 
 the load of parallel slices, so they carry `#[ignore = "timing: run on a quiescent machine, ..."]`.
 Sol and validators skip them. The product owner runs them on `main` after each merge, one at a
 time; a failure counts only if it repeats:
-`cargo test -p watane-host --test runtime -- --ignored --test-threads=1`.
+`cargo test -p watane-host --test runtime -- --ignored --test-threads=1` and
+`cargo test -p watane-host --test preview -- --ignored --test-threads=1 ac3_shutdown`.
 A new test of a time limit gets the same attribute. A wait that only guards against a hang is
 not such a test: give it a wide bound (30 s or more) and leave it in the normal run.
 

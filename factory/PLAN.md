@@ -59,20 +59,14 @@ Step 2 (Run together, J2).
   - Measure both harnesses the same way: commands, failed commands, source reads, guesses.
   - Touches: dev (`cli.rs`, `outcome.rs`, `preview.rs`, the template `AGENTS.md`). After S11 and
     S13 (shared dev files).
-- [~] **S12a J2: Alice runs her mods together in the app.** (branch `slice/s12a`; foreman: see
-  `Foremen`) App stage B on the real host. Alice starts the app, installs `reading-list` and
-  `recommendations` from their folders, approves the plan, uses them together, restarts,
-  withdraws a grant, and removes a mod.
-  - Outcomes: app S2, S2b, S6 to S9 against the real host; J2 as `app/tests/j2.rs`; the host's
-    plan, grants, revoke (S25), update, remove and home mode with the app's Confirm (host stage
-    5: `Host::plan`, `Source`, confirmation); the step-2 hostile rows (subscription export via
-    `/call`, storage after revoke).
-  - Touches: app (`core.rs` on host, `HostConfirm`, `words.rs`, delete `fake.rs`), host (stage 5
-    files, its tests). Not dev (S13 owns dev tests; dev `install` is S12b).
-  - Also (S10 user-sim): the main page polls on focus and every 2 s (app 7); "No mods yet" in an
-    empty launcher; a disabled mod says so; opening an open mod while consent shows must not
-    steal its focus; `ready` reports the real port.
-  - Tests: front tests only with `--include-ignored`, once, before delivery (`factory/README.md`).
+- [x] **S12a J2: Alice runs her mods together in the app.** Delivered 2026-11-11 (main `37b2a9e`). Sol runs: S12a-1 1, S12a-2 1, S12a-fix1 2.
+  Left for later (user-sim, validator): the app's toolset view names a tool
+  `reading-list:books.list`, but MCP names it `reading-list_books_list` (APP-F-25; cheap app fix);
+  with a provider disabled, the recommendations fixture page shows "not granted" and hides the
+  host's message; stage C must put the lock on `Parties` (now a BTreeMap alias); pages get no
+  grant-change message, so the app reloads the open window; a `/call` whose client disconnects
+  keeps an `Arc<Host>` past shutdown; host `ac4_program_defaults_to_environment_home_and_port`
+  probes port 47341 and then binds it, a race with a running watane.
 - [ ] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
   and `fake-watane`, against the home host S12a builds. After S12a and S13 (dev files).
   Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
@@ -97,7 +91,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
 | host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
-| host | 5 catalog and home | 1, 2 | part: preview install via pack (S8); `Harness::call` (S4); fakes and `deliver` (S11); plan, grants, update, remove, home mode in step 2 |
+| host | 5 catalog and home | 1, 2 | done (S8, S11, S12a: plan, `Source::Folder`, grants, revoke, update, remove, home mode) |
 | host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
@@ -108,7 +102,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 6 deps, add, install | 2 | part (S11: deps, add): `install` (DEV-S-27 to 29) |
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | done (S10) |
-| app | B host | 2 | open |
+| app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | open: a Linux VM is enough (Docker on this Mac runs arm64 Linux; x86_64 under emulation) |
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
@@ -133,7 +127,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14` (stopped, removed).
 - S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15` (stopped, removed).
 - S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16` (stopped, removed).
-- S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a`.
+- S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a` (stopped, removed).
 - S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
 - S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -230,6 +224,11 @@ The human may veto each one.
 
 ## Friction
 
+- S12a: giving back a withdrawn grant asks no consent (app TECHNICAL 7); app FUNCTIONAL S9 changed to match.
+- S12a: the app fixtures ship a committed `logic.wasm` (`tests/fixtures/build.sh`); no app test builds a mod.
+- S12a: the app CLI in stage B: `--home` defaults to `default_home()`, `--port` to `WATANE_PORT`, then `DEFAULT_PORT`.
+- S12a: `Source` has only `Folder`; `Release` comes with stage C. `install_folders` stays for previews and dev (host Q24).
+- S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
 - S2: a brief left out the subsystem's error-code module (`dev/src/outcome.rs`); Sol stopped
@@ -306,6 +305,12 @@ The human may veto each one.
 - S13: the 2-min default budget rests on two binaries (contract, unit_tests) that each pay one
   cold build of about 35 s; little headroom as tests are added.
 - S13: some `slow:` reasons say why a test is slow but not what it needs.
+- S12a: Sol cannot run window tests, so app tasks end PARTIAL and the validator finds the GUI
+  failures (S10, S12a: 2x).
+- S12a: the foreman pushed `slice/s12a` to origin (once the remote existed); now told: slice
+  branches stay local. Earlier push attempts: S7, S14 (3x in all; process change to propose).
+- S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
+  shutdown. Fixed with a bounded wait (S12a-fix1).
 
 ## Digest
 
@@ -342,3 +347,5 @@ The human may veto each one.
   them with a fake and a `deliver` step, and `serve` installs the provider first; a book added in
   one page reaches the other through the call and the event.
 - S13: a watane maker runs `cargo test` in dev and gets an answer in about 1.5 min, not 9.
+- S12a: Alice installs both mods in the app after consent, uses them together, restarts, withdraws
+  and gives back a grant, disables or removes a mod, and gives an agent an MCP token (J2 passes).
