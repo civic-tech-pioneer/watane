@@ -42,7 +42,7 @@ Step 2 (Run together, J2).
 - [x] **S16 J1 with Codex.** Delivered 2026-11-11 (main `34c6cc4`). Sol runs: none. Codex made the
   mod alone (379 s, 31 commands, 6 failed, about 9 source reads); MCP calls needed one approval line.
   Log: `factory/harness-codex.md`; raw runs in `factory/runs/s16-bob/` (untracked).
-- [ ] **S17 The simplest tool to start with.** The human's call: one slice only for the maker's
+- [~] **S17 The simplest tool to start with.** (branch `slice/s17`; foreman: see `Foremen`) The human's call: one slice only for the maker's
   experience, for every harness. Input: S16's friction log and the user-sim notes in `Friction`
   (`next` null after `serve` and on env gaps, doctor's text mode prints raw JSON, `--help` shows no
   options, contract and WIT errors with `line: null`, `preview.previous` names the API URL, a
