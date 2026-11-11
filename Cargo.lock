@@ -5548,6 +5548,7 @@ dependencies = [
  "tower",
  "tower-http",
  "watane-host",
+ "webkit2gtk",
 ]
 
 [[package]]

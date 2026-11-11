@@ -597,6 +597,10 @@ user-attention calls only in front, including reopening a mod. Without
 `driver`, builders and focus/attention behavior remain as in section 5;
 no screen environment variable or driver code is compiled into a release.
 
+On Linux, driver builds allow automatic script popup attempts in WebKitGTK
+so they reach the native new-window deny handler; the handler still denies
+every request. Production WebKitGTK settings are unchanged (NOTES S18).
+
 Transport: one JSON object per line; requests on stdin; responses and
 events on stdout. All logging goes to stderr. Request
 `{"id": <u64>, "op": "<op>", ...}`; response `{"id": n, "ok": <value>}` or
@@ -621,7 +625,15 @@ setup and the first page load of `main`, the app prints
 ## 11. Test plan
 
 `cargo test` runs the unit and static tests. `cargo test --features driver`
-also runs the quiet window tests; they need a logged-in macOS session.
+also runs the quiet window tests; on macOS they need a logged-in session.
+For Linux, run `app/scripts/linux-test.sh` from any directory (or
+`./scripts/linux-test.sh` here). It builds `linux.Dockerfile` and runs both
+the default suite, then the driver suite under `xvfb-run` with Openbox, including ignored
+slow tests such as J2. It compiles but skips every front test by name.
+Extra arguments (for example `ac5_journey_j2`) go to both cargo runs.
+Named Docker volumes cache Cargo’s registry and `/linux-target`; the
+worktree’s macOS `target/` is untouched. The runner prints the image’s GLib,
+libsoup and WebKitGTK versions before testing.
 Window tests spawn `env!("CARGO_BIN_EXE_watane-app")` with a temporary home
 and `--port 0`, and talk to it through `tests/support/`.
 
@@ -692,7 +704,7 @@ record it in `NOTES.md` with the old and the new result.
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
 | D Find (sketch) | 8.2, APP-F-38 to APP-F-40 | dist step 4 | — | J4 passes |
 | E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
-| F Linux | every test on Linux x86_64 under `xvfb-run` | — | — | all pass; if WebKitGTK does not resolve `*.localhost`, a finding in `NOTES.md` |
+| F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page
 loads in the bundled app. `Info.plist` sets

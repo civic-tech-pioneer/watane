@@ -98,6 +98,17 @@ pub(crate) fn open_mod(
         })
         .on_page_load(loaded);
     let w = screen_builder(app, builder).build()?;
+    // WebKitGTK blocks script popups before the create signal by default.
+    // In driver builds, exercise our deny hook instead (NOTES S18). The hook
+    // above still denies every request; release settings remain untouched.
+    #[cfg(all(feature = "driver", target_os = "linux"))]
+    w.with_webview(|view| {
+        use webkit2gtk::{SettingsExt, WebViewExt};
+        view.inner()
+            .settings()
+            .expect("WebKitGTK settings")
+            .set_javascript_can_open_windows_automatically(true);
+    })?;
     let h = app.clone();
     w.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {

@@ -416,7 +416,10 @@ fn ac1_hidden_screen_loads_evaluates_and_runs_timers() {
     let main = windows.iter().find(|w| w["label"] == "main").unwrap();
     assert_eq!(main["visible"], false);
     assert_eq!(main["focused"], false);
-    assert_eq!(app.screen(), json!({"mode":"hidden","accessory":true}));
+    assert_eq!(
+        app.screen(),
+        json!({"mode":"hidden","accessory":cfg!(target_os = "macos")})
+    );
     let ask = app.ask(install("Timer probe"));
     consent(&app);
     let windows = app.windows();
@@ -445,7 +448,10 @@ fn ac2_background_screen_is_visible_without_focus() {
     let main = windows.iter().find(|w| w["label"] == "main").unwrap();
     assert_eq!(main["visible"], true);
     assert_eq!(main["focused"], false);
-    assert_eq!(app.screen(), json!({"mode":"background","accessory":true}));
+    assert_eq!(
+        app.screen(),
+        json!({"mode":"background","accessory":cfg!(target_os = "macos")})
+    );
     assert!(app.quit().success());
 }
 
