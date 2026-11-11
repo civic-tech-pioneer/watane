@@ -207,3 +207,24 @@ fn ac1_compatible() {
         );
     }
 }
+
+#[test]
+fn ac1_interface_satisfied_by() {
+    // TECHNICAL.md: same namespace, package and interface, and a compatible version.
+    let wanted: InterfaceName = "mods:reading-list/books@0.1.0".parse().unwrap();
+    for (offered, yes) in [
+        ("mods:reading-list/books@0.1.0", true),
+        ("mods:reading-list/books@0.1.7", true),
+        ("other:reading-list/books@0.1.0", false),
+        ("mods:recommendations/books@0.1.0", false),
+        ("mods:reading-list/events@0.1.0", false),
+        ("mods:reading-list/books@0.2.0", false),
+        ("mods:reading-list/books@1.0.0", false),
+    ] {
+        assert_eq!(
+            wanted.satisfied_by(&offered.parse().unwrap()),
+            yes,
+            "{offered}"
+        );
+    }
+}
