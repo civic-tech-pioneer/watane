@@ -21,9 +21,7 @@ Step 1 done 2026-11-11: J1 passes (`dev/tests/journey.rs`); every step-1 stage i
 is in step 2.
 
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
-  Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
-  link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
-  a failed unpack cleanup hides the first error; no `O_NOFOLLOW` against a walk-then-read race.
+  Its follow-ups are done in S15.
 
 Step 2 (Run together, J2).
 
@@ -54,19 +52,10 @@ Step 2 (Run together, J2).
   - Touches: `dev/tests/*`, `dev/src/*` test modules only, host tests only if over budget.
     Waits for S11 (it adds dev tests).
 - [x] **S14 Quiet GUI tests.** Delivered 2026-11-11 (main `dca54b6`). Sol runs: S14-1 1.
-- [~] **S15 Packages say what is wrong.** (branch `slice/s15`; foreman: see `Foremen`) The
-  human's call: S7's pkg follow-ups. A maker packs a mod with a bad file and the error names the
-  real cause.
-  - Outcomes (user-sim, `pack`/`unpack` through pkg's tests and the real `watane-dev`/`watane`):
-    1. Too many files says "too many files" with the limit, not "count must be 1..=4096".
-    2. A hidden link such as `ui/.x` is refused as `Symlink`, not as a mod rule.
-    3. A NUL or control character in a path is escaped in the message.
-    4. When an unpack fails and its cleanup fails too, the first error is the one reported.
-    5. Reads use `O_NOFOLLOW` (or the platform's equal), so a file swapped for a link between the
-       walk and the read is refused.
-  - Touches: `pkg/src/package.rs` and its tests (`pkg/tests/package*.rs`, new `regress_*`);
-    `pkg/AGENTS.md` spec-gap line at the end only. Not `deps.rs`, `lib.rs`,
-    `tests/add_provider.rs` (S11), nor `app/` (S14). Unit tests first (test pyramid).
+- [x] **S15 Packages say what is wrong.** Delivered 2026-11-11 (main `3c441d7`). Sol runs: S15-1 2 (new, resume).
+  Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
+  `O_NOFOLLOW` guards only the last path part; `folder.rs` opens with plain `File::open` after
+  `symlink_metadata` (a narrow swap window; packed bytes stay safe).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
   starts the app, installs `reading-list` and `recommendations` from their folders, approves the
   plan, uses them together, restarts, withdraws a grant, and removes a mod.
@@ -132,7 +121,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S10: `a41a03d5` (sessionId `a41a03d5-4976-4920-bd4a-029b3628011c`), worktree `.claude/worktrees/s10` (stopped, removed).
 - S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11`.
 - S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14` (stopped, removed).
-- S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15`.
+- S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -202,6 +191,8 @@ The human may veto each one.
 - S14: a driver op `screen` reports the mode and the real AppKit activation policy (app 10).
   Hidden WKWebView loads pages and runs timers on time, so only a self-test uses `background`.
   The front tests' idle wait panics after 10 minutes; it never skips.
+- S15: `PackageError::TooManyFiles` (count 0 stays `Format`); `Path`/`Symlink` print the path
+  with `escape_debug`; pkg adds `libc` 0.2 (unix) for `O_NOFOLLOW|O_NONBLOCK`, no `unsafe`.
 
 ## Friction
 
@@ -263,6 +254,9 @@ The human may veto each one.
 - S14: "user-sim runs no suite" did not fit a slice whose story is the suite; the foreman made a
   one-off exception. Minor: `App::start`/`background`/`front` lack doc comments;
   `ac3_consent_takes_focus` passes a misleading `("WATANE_DRIVER_SCREEN","hidden")` to `App::front`.
+- S9, S15: a brief kept "existing tests stay green" while it changed what an old test asserts;
+  Sol stopped or needed a resume (2x).
+- S15: watane-dev has no `pack` command, so pack is reached only through the host or pkg tests.
 
 ## Digest
 
@@ -290,3 +284,6 @@ The human may veto each one.
   mod windows are sealed (109 hostile attacks, 0 allowed); every request goes through the consent view.
 - S14: `cargo test --features driver` in `app/` shows no window, no Dock icon and takes no focus;
   the 4 front tests run with `--include-ignored` once the human is idle 30 s.
+- S15: a bad file in a mod gives an error that names the real cause (too many files, a link,
+  escaped control characters, the unpack error before the cleanup error); reads never follow a
+  swapped-in link.
