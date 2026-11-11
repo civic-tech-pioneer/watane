@@ -251,7 +251,6 @@ fn ac6_stop_works_after_mod_files_are_broken() {
 }
 
 #[test]
-#[ignore = "timing: stop deadline after child exits leaving run.json; run on a quiescent machine"]
 fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
     use std::{net::TcpListener, process::Stdio, time::Instant};
     let m = Mod::new(false);
@@ -307,7 +306,8 @@ fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
         value["next"],
         "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
     );
-    assert!(started.elapsed() < Duration::from_secs(5));
+    // Hang guard only: waiting out the 10 s stop deadline already fails `code == 0`.
+    assert!(started.elapsed() < Duration::from_secs(30));
     assert_eq!(value["result"]["stopped"], true);
     assert!(!folder.exists());
 }

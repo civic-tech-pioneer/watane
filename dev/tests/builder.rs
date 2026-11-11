@@ -119,6 +119,8 @@ fn ac6_build_counter_component() {
     // A missing host is reached only after the successful build.
     assert_eq!(status, 3, "{v}");
     assert_eq!(v["errors"][0]["code"], "env.watane_missing", "{v}");
+    // The tests passed, so `next` must not send the agent back to them.
+    assert_eq!(v["next"], "watane-dev doctor --json", "{v}");
     let bytes = fs::read(f.dir.join("logic.wasm")).expect("built component");
     assert!(
         bytes
