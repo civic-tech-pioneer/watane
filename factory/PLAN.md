@@ -13,27 +13,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S2 The page calls its logic.** Delivered 2026-11-10 (main `7eb55ad`). Sol runs: pkg 1, host 2, dev 2.
 - [x] **S3 An edit keeps the data.** Delivered 2026-11-10 (main `c883171`). Sol runs: host 1, dev 1.
 - [x] **S4 The agent fixes a failing test.** Delivered 2026-11-11 (main `91e8d0a`). Sol runs: S4-1 1, S4-2 1, S4-3 1.
-- [~] **S5 The agent works the mod through MCP.** (branch `slice/s5`; foreman: see `Foremen`) The agent runs `serve --json`, points an MCP
-  client at `result.mcp` with its token, lists the counter's calls, calls `add`, and Alice's open
-  page shows the new count by itself.
-  - Outcomes (user-sim, on the real programs):
-    1. `serve --json` gives an `mcp` URL ending in `/mcp/preview` and a `token` starting `wt_`;
-       `tools/list` with it gives `counter_api_add`, `counter_api_get` (and any other export),
-       each with the WIT doc comment (or signature) and an input schema (DEV-S-21, host 10.1).
-    2. `tools/call counter_api_add` returns the new count as text; an open page of the counter
-       gets `changed` and shows it. A call that fails gives `isError: true` with `<code>: <message>`.
-    3. Refusals on `/mcp/preview`: no token or an ended token 401, a token of another toolset 403,
-       any `Origin` 403, `GET` 405, a batch `-32600`, a notification 202 (S14, S15).
-    4. `initialize` answers with the client's protocol version when known, else `2025-06-18`;
-       a real MCP client (e.g. `claude mcp add --transport http`) lists and calls the tools.
-    5. A `serve --json` refused for failing tests has `next` `watane-dev test --json` (S4 user-sim).
-  - Touches: host stage 4 (`src/tools.rs`: toolsets in `toolsets.json`, tokens, `/mcp/<toolset>`,
-    `Caller::Agent`; the function listing S4 deferred: `Harness::functions()`/`FunctionInfo` or
-    its equivalent), host program (ready line `mcp` and `token` in a preview), dev `serve`
-    (`preview.rs`: its JSON carries them). Not `catalog.rs`, `builder.rs`, `unit.rs` (S8).
-  - Interfaces it creates: the ready line's `mcp`/`token` (host -> dev); `serve --json`'s `mcp`
-    (dev -> agent); `set_toolset`, `issue_token`, `end_token` on `Host`.
-  - Leaves out: tokens in a participant home (app, step 2); any UI for toolsets.
+- [x] **S5 The agent works the mod through MCP.** Delivered 2026-11-11 (main `196452e`). Sol runs: S5-1 1, S5-2 1.
 - [~] **S8 Same mod, same id.** (branch `slice/s8`; foreman: see `Foremen`) Bob copies Alice's mod folder to another path and runs
   `watane-dev test` with his own cache; both builds give the same `logic.wasm` bytes, and the
   preview host installs the mod under the same canonical package id that `pack` gives. A mod
@@ -51,8 +31,34 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
     host stage 5 (`catalog.rs` install via `pkg::pack`/`unpack`).
   - Interfaces it changes: host install now depends on pkg `pack`/`unpack` (pkg -> host).
   - Leaves out: `O_NOFOLLOW` and the other S7 pkg follow-ups.
-- [ ] **S6 J1.** The reading-list story of J1 as a journey test in `dev/tests/`, including a change
-  that shows in the running preview.
+- [~] **S6 J1: Alice gets her reading list.** (branch `slice/s6`; foreman: see `Foremen`)
+  Alice asks her agent for a reading list. The agent runs `watane-dev doctor`, then `new`, writes
+  logic, page and contract tests, gets a failing contract test, fixes it, runs `serve`; Alice adds
+  a book on the page, asks for one change, sees it in the preview with her book still there; the
+  agent reads the list through the preview's MCP toolset.
+  - Outcomes (user-sim, on the real programs):
+    1. `doctor --json` reports the toolchain, the `wasm32-wasip2` target, the allowlist, the
+       program `watane` and the home host, each with a command for each gap (DEV-F-30); with
+       `WATANE_BIN` missing it names the gap. A missing allowlist vendor folder is a gap whose
+       command is `scripts/vendor.sh` (S5 friction).
+    2. J1 as a journey test in `dev/tests/journey.rs` on the real `watane`, the reading-list
+       mod written into a temp folder by the test: failing contract, fix, serve, a page change
+       kept with data (DEV-S-22), an MCP `tools/call` that reads the list.
+    3. DEV-S-23 (`serve --stop`) and DEV-S-24 (`env.watane_missing`) hold on the real program.
+    4. A `serve` refused for failing tests says that a running preview still serves the
+       previous build (S5 user-sim).
+  - Touches: dev stage 5 (`cli.rs`, new `doctor.rs`, `preview.rs`, `dev/tests/journey.rs`,
+    `dev/tests/serve.rs`), dev template `AGENTS.md` (doctor first). Not `builder.rs`, `unit.rs`,
+    `dev/tests/unit_tests.rs`, `dev/tests/builder.rs` or anything in host (S8).
+  - Leaves out: `fake-watane` (needed only for the home-host scenarios S-25 to 31, step 2).
+- [ ] **S9 Hostile pages and the program, checked.** Host stages 3 and 6: every scenario of host
+  FUNCTIONAL for pages, `/call`, `/events` and the program has a passing test in
+  `host/tests/hostile.rs` or `program.rs`; what fails gets fixed.
+  - Outcomes: the foreman lists each such scenario with its test; the user-sim plays a hostile
+    page (wrong `Origin`, another mod's host name, oversize body, path tricks) on the real
+    `watane` and every one is refused as the spec says.
+  - Touches: host `tests/hostile.rs`, `tests/program.rs`, and `server.rs`/`pages.rs`/`bin` only
+    for fixes. Waits for S8 (it touches `tests/program.rs`, `tests/pages.rs`).
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
   Follow-ups for a later pkg slice: too many files reads as "count must be 1..=4096"; a hidden
   link `ui/.x` is refused as a mod rule, not `Symlink`; a NUL in a path shows raw in the message;
@@ -74,16 +80,16 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 7 release | 3 | open |
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | part (S3: page bus, outbox): links, subscribers, hops in step 2; `ponytail` in `bus.rs` |
-| host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`): `tests/hostile.rs` page rows |
-| host | 4 tools (toolsets, tokens, MCP) | 1 | open (S5) |
+| host | 3 server and pages | 1 | part (S2 `/call`, S3 `/events`, S5 `/mcp`): `tests/hostile.rs` page rows (S9) |
+| host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
 | host | 5 catalog and home | 1, 2 | part: preview folder install; `Harness::call` (S4); temp digest (S8); `deliver` and plan, grants, update, remove, home mode in step 2 |
-| host | 6 program | 1 | part (S1): S1 to S3 tests not all checked |
+| host | 6 program | 1 | part (S1, S5 ready `mcp`/`token`): S1 to S3 tests not all checked (S9) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
 | dev | 2 allowlist, toolchain, builder | 1 | part (S2): DEV-S-10 outside reads (`ponytail` in `builder.rs`), DEV-S-12 reproducible bytes (S8) |
 | dev | 3 unit | 1 | done (S4) |
 | dev | 4 contract | 1 | part (S4): fakes and `deliver` steps (DEV-S-18, 19) in step 2 |
-| dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` only (S1, S2) |
+| dev | 5 preview, api, doctor, fake-watane | 1 | part: `serve` with MCP (S1, S2, S5); doctor and J1 (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | open |
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | open |
@@ -103,7 +109,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S4: `91605db7` (sessionId `91605db7-cf74-46c5-b1a9-dfff584ce505`), worktree `.claude/worktrees/s4`; died 2026-11-10 23:32 mid S4-2 validation.
   Resumed 2026-11-11 as `2066b4f1` (sessionId `2066b4f1-2ca3-4a1f-9fa3-29c671cea48f`); died after
   the user-sim's ACCEPTED, in its final test run; the product owner ran the tests and merged (stopped, removed).
-- S5: `91dc7a35` (sessionId `91dc7a35-91d7-4d4d-a6a1-4f843f3fd54a`), worktree `.claude/worktrees/s5`.
+- S5: `91dc7a35` (sessionId `91dc7a35-91d7-4d4d-a6a1-4f843f3fd54a`), worktree `.claude/worktrees/s5` (stopped, removed).
 - S8: `44bfe2ab` (sessionId `44bfe2ab-9c0d-472b-9ebe-4495e4af90d8`), worktree `.claude/worktrees/s8`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -146,6 +152,13 @@ The human may veto each one.
   breaks resource identities); non-WASI imports trap; TCP, UDP and name lookup are off.
 - S4: `Harness` has only `call`; `deliver` joins with links (step 2), `functions()` with S5.
 - S4: the outside-read check on unit-test builds stays deferred with DEV-S-10 (S8).
+- S5: `Host` gains only `functions`, `set_toolset`, `issue_token`, `end_token`, `Served::mcp_url`;
+  `remove_toolset`, `toolsets`, `tokens` wait for the app. `set_toolset("preview")` is `bad_name`
+  in every home. `/mcp/<toolset>` is on the API host names with a 1 MiB body limit.
+- S5: `Host::functions` is the listing; `Harness::functions` waits for `test.uncovered`.
+  wit-parser is pinned `=0.254.2` (the version in `Cargo.lock`).
+- S5: `serve`'s `next` is `watane-dev test --json` only when the test pipeline fails.
+- S6: `fake-watane` moves to step 2; only the home-host scenarios (S-25 to 31) need it.
 
 ## Friction
 
@@ -166,6 +179,14 @@ The human may veto each one.
   friction.
 - S4: contract `test.contract` errors carry `line: null`; `emits` mismatches show the full event
   name in `got` and the short one in `expected`; one template bug fails a unit and a contract test.
+- S5: Sol's sandbox cannot run dev's ignored tests; a task that needs another's host ends PARTIAL
+  and the validator runs the real tests.
+- S5: a fresh worktree has no `dev/allowlist/vendor`; 4 builder tests fail until
+  `scripts/vendor.sh` runs (into S6 `doctor`).
+- S5: dev's `ac10` unit-limit test (7 s) fails under parallel load; it gets the timing ignore (S8).
+- S5: a refused `serve` leaves the old preview up without saying so (into S6); a trap's text is a
+  long wasm backtrace with the panic message at the end; dev keeps the preview token in
+  `<cache>/previews/*/ready.json` (0600, dev Q6), which reads awkwardly beside host 10.2.
 
 ## Digest
 
@@ -181,3 +202,5 @@ The human may veto each one.
 - S4: the agent runs `watane-dev test`, gets unit and contract failures with file, step, expected
   and got, fixes the code and passes; unit tests run sandboxed with a time limit; `serve` refuses
   a mod whose tests fail.
+- S5: the agent points an MCP client at `serve --json`'s `mcp` URL with its token, lists and
+  calls the mod's functions, and Alice's open page updates by itself.
