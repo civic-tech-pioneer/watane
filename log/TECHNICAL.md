@@ -146,7 +146,7 @@ pub enum DecodeError {                      // in the order of the checks of sec
 pub enum Error {
     #[error("{path}: {source}")]
     Io { path: PathBuf, source: std::io::Error },
-    #[error("{path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
+    #[error("exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
     Exposed { path: PathBuf, mode: u32 },
     #[error("{path} is not a regular file or directory (a symbolic link is refused)")]
     NotPlain { path: PathBuf },
@@ -685,3 +685,5 @@ confirmation after a restore ties the key to the store.
    every stored entry and proof (LOG-F-18); `dist` only stops reading.
 10. **Range of seq and time.** Proposal used: at most 2^53 − 1, so a JSON
     reader (`watane.js`, the app) never loses precision.
+
+11. **Exposed diagnostic (log).** Include "exposed" in `Error::Exposed` so the message names the refusal required by S2.
