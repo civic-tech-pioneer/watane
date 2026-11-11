@@ -1,3 +1,5 @@
+mod add;
+pub use add::add_provider;
 mod component;
 mod deps;
 mod folder;

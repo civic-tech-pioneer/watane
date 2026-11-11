@@ -243,6 +243,12 @@ does not yet pass `Mod::read`.
 4. Read `deps.json` (absent means empty), set `mods:<slug>` to `publisher`,
    and write it (4.3).
 
+Preflight reads `deps.json` and checks the resulting member limit before any
+write. Copy and comparison select regular `.wit` files; unrelated files
+are ignored as in 4.7. Consumer destination ancestors must be directories
+without symbolic links. Conflicts use `provider` at `wit/deps/E`; path
+violations use `path`. I/O failures may leave completed copies in place.
+
 ### 4.9 `Mod::check_component`
 
 Needed only when the mod has a logic part; otherwise it returns `Ok`.
@@ -838,3 +844,5 @@ Each answer below is the one that this specification uses.
 15. **Duplicate provider keys** (pkg, host, dev): `deps.json` refuses duplicate object keys instead of silently choosing a publisher; section 4.3 makes this explicit.
 16. **Component versus core module** (pkg, host, dev): `wit-parser` 0.254.2 decodes an empty core module as `DecodedWasm::Component`; section 4.9 checks the component header explicitly before decoding.
 17. **Package preflight** (pkg, host, dev, dist): section 6.4 walks selected paths before `Mod::read`, preserving `PackageError::Symlink` and refusing special files before opening them; the byte format and mod checks are unchanged.
+
+18. **Provider copy preflight** (pkg, dev): section 4.8 compares selected `.wit` files, checks dependency metadata before writes, and refuses linked destination ancestors; I/O failures do not promise rollback.

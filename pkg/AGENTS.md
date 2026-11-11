@@ -59,3 +59,5 @@ word for word. Follow their intent, and do not ask whether to.
 
 - S7 (pkg, host, dev, dist): package path preflight precedes mod validation so selected links and special files receive package errors before being opened (TECHNICAL.md §6.4, §15.17).
 - S15 (pkg; host, dev, dist see only new message text and one new variant): excess file counts use TooManyFiles, package paths escape controls, hidden links are refused, Unix pack reads use no-follow nonblocking opens, and unpack preserves its original error when cleanup fails (TECHNICAL.md §6.3–6.4, §8, §10).
+
+- S11-1 (pkg, dev): provider copy preflight selects `.wit` files, validates dependency metadata and destination ancestors before writes; I/O failures may leave copies (TECHNICAL.md §4.8, §15.18).
