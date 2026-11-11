@@ -678,3 +678,15 @@ fn ac9_test_plan_marks_subscription_and_revoke_as_step_two() {
         "`counter` without storage grant cannot read state that it wrote before the revoke (step 2)"
     ));
 }
+
+#[test]
+fn ac5_page_files_refuse_other_methods_only_when_they_exist() {
+    let (_home, preview) = setup();
+    let host = format!("counter.localhost:{}", preview.ready.port);
+    for path in ["/", "/index.html", "/watane.js"] {
+        let reply = request(&preview, "POST", &host, path, "", "");
+        assert_eq!(reply.status, 405, "{path}");
+        assert_eq!(reply.header("allow"), Some("GET, HEAD"), "{path}");
+    }
+    request(&preview, "POST", &host, "/missing.html", "", "").plain(404, "not found");
+}
