@@ -140,9 +140,14 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S12a: `48eb6176` (sessionId `48eb6176-882b-4e90-9154-7f8df7a7077e`), worktree `.claude/worktrees/s12a` (stopped, removed).
 - S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
 - S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17`.
+- S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Process change (friction 3x: S7, S14, S12a): foremen try `git push`. Proposal: one line in
+  `.claude/skills/foreman/SKILL.md` §5: "Never push; the product owner merges locally." Cost to
+  undo: none. Also: delete the pushed `slice/s12a` on origin (merged into local main)?
 
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
