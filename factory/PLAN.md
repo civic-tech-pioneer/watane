@@ -56,15 +56,9 @@ Step 2 (Run together, J2).
   Follow-ups: a link inside a hidden folder (`ui/.git/x`) is still a `[path]` rule in `Mod::read`;
   `O_NOFOLLOW` guards only the last path part; `folder.rs` opens with plain `File::open` after
   `symlink_metadata` (a narrow swap window; packed bytes stay safe).
-- [~] **S16 J1 with Codex.** (branch `slice/s16`; foreman: see `Foremen`) The human's call: a second harness proves the maker tools are
-  general. Bob asks Codex (the `codex` CLI, not Claude) for a reading list in an empty folder,
-  with nothing but what `watane-dev` and the template's `AGENTS.md` tell it.
-  - Outcomes: 1. Codex reaches a passing `test` and a running preview with no human help;
-    2. it adds the preview's MCP endpoint to its own config and calls a function; 3. a friction
-    log: each command, each error it hit, each doc it had to read, each place it guessed, side by
-    side with the same story under Claude (J1's user-sim notes). No product code changes; a
-    failure becomes a red test or a line for S17.
-  - Touches: `factory/` (a harness note), new `dev/tests/` red tests only. Can run beside S11.
+- [x] **S16 J1 with Codex.** Delivered 2026-11-11 (main `34c6cc4`). Sol runs: none. Codex made the
+  mod alone (379 s, 31 commands, 6 failed, about 9 source reads); MCP calls needed one approval line.
+  Log: `factory/harness-codex.md`; raw runs in `factory/runs/s16-bob/` (untracked).
 - [ ] **S17 The simplest tool to start with.** The human's call: one slice only for the maker's
   experience, for every harness. Input: S16's friction log and the user-sim notes in `Friction`
   (`next` null after `serve` and on env gaps, doctor's text mode prints raw JSON, `--help` shows no
@@ -148,7 +142,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S11: `23325b72` (sessionId `23325b72-bf6f-4a9b-a8aa-846a03ff376c`), worktree `.claude/worktrees/s11`.
 - S14: `bffc598d` (sessionId `bffc598d-0fb1-4534-afc1-55371b4892e1`), worktree `.claude/worktrees/s14` (stopped, removed).
 - S15: `1fd281db` (sessionId `1fd281db-b26f-4f32-903f-2a9a91d248f9`), worktree `.claude/worktrees/s15` (stopped, removed).
-- S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16`.
+- S16: `c69c6b56` (sessionId `c69c6b56-1fd2-47b8-baf1-9cf4e88e95b5`), worktree `.claude/worktrees/s16` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -225,6 +219,8 @@ The human may veto each one.
   The front tests' idle wait panics after 10 minutes; it never skips.
 - S15: `PackageError::TooManyFiles` (count 0 stays `Format`); `Path`/`Symlink` print the path
   with `escape_debug`; pkg adds `libc` 0.2 (unix) for `O_NOFOLLOW|O_NONBLOCK`, no `unsafe`.
+- S16: Codex ran in its `workspace-write` sandbox with network (as Sol), with its own
+  `CODEX_HOME`, so the human's `~/.codex` was untouched.
 
 ## Friction
 
@@ -289,6 +285,8 @@ The human may veto each one.
 - S9, S15: a brief kept "existing tests stay green" while it changed what an old test asserts;
   Sol stopped or needed a resume (2x).
 - S15: watane-dev has no `pack` command, so pack is reached only through the host or pkg tests.
+- S16: codex-cli 0.163 has no `--full-auto` (use `-s workspace-write`); `codex exec` needs
+  `--skip-git-repo-check` outside a git repo; S6 kept no Claude command log to compare with.
 
 ## Digest
 
@@ -319,3 +317,5 @@ The human may veto each one.
 - S15: a bad file in a mod gives an error that names the real cause (too many files, a link,
   escaped control characters, the unpack error before the cleanup error); reads never follow a
   swapped-in link.
+- S16: a Codex agent makes and previews a mod with no human help; `factory/harness-codex.md`
+  lists what made it guess or read source.
