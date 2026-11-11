@@ -134,6 +134,7 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
 }
 
 #[test]
+#[ignore = "timing: run on a quiescent machine, see factory/README.md"]
 fn ac10_endless_test_stops_with_exact_message_within_deadline() {
     let f = Fixture::new();
     // Warm the build cache before timing the endless test, so this measures execution.
