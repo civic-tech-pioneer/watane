@@ -186,6 +186,13 @@ fn ac1_preview_creates_home_and_reports_ready() {
             })
         );
         assert_ne!(preview.ready.port, 0);
+        assert!(
+            preview
+                .ready
+                .token
+                .as_ref()
+                .is_some_and(|t| t.len() == 46 && t.starts_with("wt_"))
+        );
         assert_eq!(
             fs::read(home.join("home.json")).unwrap(),
             b"{\"watane_home\":1,\"mode\":\"preview\"}"
