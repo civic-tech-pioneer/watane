@@ -72,6 +72,14 @@ Step 2 (Run together, J2).
   missing vendor folder reads as a version mismatch, `serve --stop` drops data silently).
   - Outcomes: the top items fixed, each with a cheap test; the same story under Claude and Codex
     takes fewer commands and fewer errors than in S16, measured the same way.
+  - From S16 (`factory/harness-codex.md`): the vendor fix must work from the agent's own folder
+    (a sandboxed agent cannot write into the watane checkout); `--help` gives each command and
+    option a line; the template `AGENTS.md` says how to add the preview's MCP endpoint and token
+    to an agent's config (the token changes with each preview), that some harnesses need tool
+    approval for it (Codex: `default_tools_approval_mode = "approve"`), and how to try the page
+    without a browser; the missing vendor folder says "missing" (red test
+    `regress_s16_missing_vendor_says_missing`, ignored until S17).
+  - Measure both harnesses the same way: commands, failed commands, source reads, guesses.
   - Touches: dev (`cli.rs`, `outcome.rs`, `preview.rs`, the template `AGENTS.md`). After S11 and
     S13 (shared dev files).
 - [ ] **S12 J2: Alice runs her mods together in the app.** App stage B on the real host. Alice
@@ -145,7 +153,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-(none)
+- S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
+  call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
+  the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
+  convention) and the host passes the hint on. Recommendation: (a). The hint is the mod's own
+  claim, so a mod could mark a write read-only to skip approval, and (b) adds a format. Cost to
+  undo: (a) nothing; (b) a format change in pkg, host and dev. S17 builds (a) meanwhile.
 
 ## Deputy decisions
 
