@@ -1,0 +1,1 @@
+{"fakes":{"mods:reading-list/books":{"all":["Dune"],"list":["Dune"]}},"steps":[{"call":"api.all","returns":["Dune"]},{"deliver":"events.added","args":{"title":"Emma"},"emits":[{"event":"changes.received","args":{"title":"Emma"}}]},{"call":"api.received","returns":["Emma"]}]}

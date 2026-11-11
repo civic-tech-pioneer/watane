@@ -18,6 +18,7 @@ pub struct Step {
 }
 pub enum Target {
     Call(String),
+    Deliver(String),
 }
 pub enum Expect {
     Success,
@@ -91,12 +92,10 @@ fn parse_step(value: Value) -> Result<Step, String> {
     if call.is_some() && deliver.is_some() {
         return Err("exactly one of call and deliver is required".into());
     }
-    if deliver.is_some() {
-        return Err("deliver steps arrive with links between mods (step 2)".into());
-    }
-    let target = match call {
-        Some(Value::String(name)) if !name.is_empty() => Target::Call(name),
-        _ => return Err("call must name an export function".into()),
+    let target = match (call, deliver) {
+        (Some(Value::String(name)), None) if !name.is_empty() => Target::Call(name),
+        (None, Some(Value::String(name))) if !name.is_empty() => Target::Deliver(name),
+        _ => return Err("call or deliver must name an export function".into()),
     };
     let args = step.remove("args").unwrap_or_else(|| json!({}));
     if !args.is_object() && !args.is_array() {
@@ -203,7 +202,7 @@ pub fn run_steps(
             (!same).then(|| (json!(expected), json!(got)))
         });
         if let Some((expected, got)) = mismatch {
-            let Target::Call(name) = &step.target;
+            let (Target::Call(name) | Target::Deliver(name)) = &step.target;
             let number = index as u32 + 1;
             failures.push(ContractFailure {
                 file: file.into(),
@@ -267,9 +266,9 @@ pub fn contract_tests(
                     &file,
                     &contract.steps,
                     slug.as_str(),
-                    &mut |target, args| {
-                        let Target::Call(name) = target;
-                        harness.call(name, args)
+                    &mut |target, args| match target {
+                        Target::Call(name) => harness.call(name, args),
+                        Target::Deliver(name) => harness.deliver(name, args),
                     },
                 );
                 report.passed += passed;
@@ -307,6 +306,120 @@ mod tests {
     use super::*;
     use serde_json::json;
     use watane_host::{CallError, EventRecord, Outcome};
+
+    #[test]
+    fn ac3_parse_accepts_deliver_and_run_steps_dispatches_it() {
+        let file = parse(r#"{"steps":[{"deliver":"events.added","args":{"title":"Emma"},"emits":[]},{"call":"api.received","returns":["Emma"]}]}"#).unwrap();
+        for invalid in [
+            json!({"deliver":""}),
+            json!({"deliver":null}),
+            json!({"deliver":3}),
+            json!({"call":"api.get","deliver":"events.added"}),
+        ] {
+            assert!(parse(&json!({"steps":[invalid]}).to_string()).is_err());
+        }
+        let mut delivered = false;
+        let (passed, failures) = run_steps(
+            "tests/recs.json",
+            &file.steps,
+            "recommendations",
+            &mut |target, args| {
+                // Deliver must remain distinct from a page call.
+                if args == json!({"title":"Emma"}) {
+                    assert!(matches!(target, Target::Deliver(name) if name == "events.added"));
+                    delivered = true;
+                    Ok(Outcome {
+                        value: Value::Null,
+                        events: vec![],
+                    })
+                } else {
+                    assert!(matches!(target, Target::Call(name) if name == "api.received"));
+                    assert!(delivered);
+                    Ok(Outcome {
+                        value: json!(["Emma"]),
+                        events: vec![],
+                    })
+                }
+            },
+        );
+        assert_eq!(passed, 2, "{failures:?}");
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn ac2_deliver_compares_events_and_no_function_errors() {
+        for (emits, passes) in [
+            (
+                json!([{"event":"changes.received","args":{"title":"Emma"}}]),
+                true,
+            ),
+            (json!([]), false),
+        ] {
+            let steps = parse(&json!({"steps":[{"deliver":"events.added","args":{"title":"Emma"},"emits":emits}]}).to_string()).unwrap().steps;
+            let (passed, failures) = run_steps(
+                "tests/recs.json",
+                &steps,
+                "recommendations",
+                &mut |target, args| {
+                    assert!(matches!(target, Target::Deliver(name) if name == "events.added"));
+                    Ok(Outcome {
+                        value: Value::Null,
+                        events: vec![EventRecord {
+                            interface: "mods:recommendations/changes@0.1.0".parse().unwrap(),
+                            function: "received".into(),
+                            args,
+                        }],
+                    })
+                },
+            );
+            assert_eq!(passed, u32::from(passes));
+            assert_eq!(failures.len(), usize::from(!passes));
+        }
+        let steps = parse(r#"{"steps":[{"deliver":"api.received"}]}"#)
+            .unwrap()
+            .steps;
+        let (passed, failures) =
+            run_steps("tests/recs.json", &steps, "recommendations", &mut |_, _| {
+                Err(CallError {
+                    code: watane_host::CallCode::NoFunction,
+                    message: "no subscription function api.received".into(),
+                })
+            });
+        assert_eq!(passed, 0);
+        assert_eq!(failures[0].call, "api.received");
+        assert!(failures[0].message.contains("no_function"));
+    }
+
+    #[test]
+    fn ac1_fake_answer_and_missing_fake_are_compared_by_run_steps() {
+        let file = parse(r#"{"fakes":{"mods:reading-list/books":{"all":["Dune"]}},"steps":[{"call":"api.all","returns":["Dune"]}]}"#).unwrap();
+        let (passed, failures) = run_steps(
+            "tests/recs.json",
+            &file.steps,
+            "recommendations",
+            &mut |_, _| {
+                Ok(Outcome {
+                    value: file.fakes["mods:reading-list/books"]["all"].clone(),
+                    events: vec![],
+                })
+            },
+        );
+        assert_eq!(passed, 1);
+        assert!(failures.is_empty());
+        let (passed, failures) = run_steps(
+            "tests/recs.json",
+            &file.steps,
+            "recommendations",
+            &mut |_, _| {
+                Err(CallError {
+                    code: watane_host::CallCode::Trap,
+                    message: "no fake for mods:reading-list/books.all".into(),
+                })
+            },
+        );
+        assert_eq!(passed, 0);
+        assert!(failures[0].message.contains("no fake"));
+    }
 
     #[test]
     fn ac6_parse_rejects_literal_invalid_files() {
@@ -378,7 +491,9 @@ mod tests {
             "counter",
             &mut |target, args| {
                 calls += 1;
-                let Target::Call(name) = target;
+                let Target::Call(name) = target else {
+                    panic!("expected call")
+                };
                 if calls == 1 {
                     assert_eq!(name, "api.add");
                     assert_eq!(args, json!({"count":3}));

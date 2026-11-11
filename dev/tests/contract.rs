@@ -221,3 +221,101 @@ fn ac8_serve_does_not_start_preview_for_failed_or_absent_contracts() {
     assert_eq!(v["errors"][0]["code"], "mod.no_contract_tests");
     assert!(!f.temp.path().join("cache/previews").exists());
 }
+
+fn prebuilt_recommendations() -> Fixture {
+    fn copy(from: &std::path::Path, to: &std::path::Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let destination = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &destination);
+            } else {
+                fs::copy(entry.path(), destination).unwrap();
+            }
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("recommendations");
+    copy(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/recommendations"),
+        &dir,
+    );
+    Fixture { temp, dir }
+}
+
+#[test]
+fn ac1_s11_fake_answers_provider_call() {
+    let f = prebuilt_recommendations();
+    let path = f.dir.join("tests/books.json");
+    fs::write(&path, json!({"fakes":{"mods:reading-list/books":{"all":["Dune"]}},"steps":[{"call":"api.all","returns":["Dune"]}]}).to_string()).unwrap();
+    let (code, v) = f.run("test");
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], 1);
+    assert_eq!(v["result"]["build"], Value::Null);
+    assert_eq!(v["result"]["unit"], Value::Null);
+}
+
+#[test]
+fn ac1_s11_missing_fake_fails() {
+    let f = prebuilt_recommendations();
+    let path = f.dir.join("tests/books.json");
+    fs::write(path, r#"{"steps":[{"call":"api.all","returns":["Dune"]}]}"#).unwrap();
+    let (code, v) = f.run("test");
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert!(
+        v["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no fake"),
+        "{v}"
+    );
+}
+
+#[test]
+fn ac2_s11_deliver_retains_state_and_emits() {
+    let f = prebuilt_recommendations();
+    let (code, v) = f.run("test");
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], 3);
+}
+
+#[test]
+fn ac2_s11_deliver_compares_emitted_events() {
+    let f = prebuilt_recommendations();
+    let path = f.dir.join("tests/books.json");
+    fs::write(
+        &path,
+        r#"{"steps":[{"deliver":"events.added","args":{"title":"Emma"},"emits":[]}]}"#,
+    )
+    .unwrap();
+    let (code, v) = f.run("test");
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert_eq!(
+        v["result"]["contract"]["failures"][0]["got"],
+        json!([{"event":"mods:recommendations/changes.received","args":{"title":"Emma"}}])
+    );
+}
+
+#[test]
+fn ac2_s11_deliver_rejects_non_subscription() {
+    let f = prebuilt_recommendations();
+    let path = f.dir.join("tests/books.json");
+    fs::write(
+        &path,
+        json!({"steps":[{"deliver":"api.received"}]}).to_string(),
+    )
+    .unwrap();
+    let (code, v) = f.run("test");
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract");
+    assert!(
+        v["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no_function"),
+        "{v}"
+    );
+}

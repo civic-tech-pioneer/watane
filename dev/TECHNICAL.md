@@ -902,8 +902,16 @@ of the host. `test.uncovered` warns for each function of
 `Harness::functions()` (as `<short iface>.<name>`) that no step of any
 file names.
 
-The S4 cut (section 16) calls only `Harness::call`; `deliver` and uncovered
-warnings wait for links/toolsets. An open failure is one file-level
+Call imports are answered by the file's fakes; a missing fake fails the
+step with `trap` and `no fake`. Delivery invokes only subscription exports;
+a different export or missing function fails with `no_function`. `emits`
+compares the events of either kind of step. Uncovered-function warnings
+remain deferred until `Harness::functions()` exists. Built-only mods
+(`logic.wasm` without `logic/Cargo.toml`) validate the component and run
+contracts without a toolchain, build or unit run; `build` and `unit` stay
+null in the result.
+
+An open failure is one file-level
 `test.contract` Problem; no step failure is recorded since no step ran.
 A malformed file reports `test.contract_file` with its file
 and, for invalid JSON syntax, its line and column. File errors do not
@@ -1153,7 +1161,7 @@ pub fn parse_libtest(stdout: &str, stderr: &str, slug: &str) -> UnitReport;
 pub struct ContractFile { pub fakes: watane_host::Fakes, pub steps: Vec<Step> }
 pub struct Step { pub target: Target, pub args: serde_json::Value, pub expect: Expect,
     pub emits: Option<Vec<ExpectedEvent>> }
-pub enum Target { Call(String) } // S4; Deliver joins with links (step 2)
+pub enum Target { Call(String), Deliver(String) }
 pub enum Expect { Success, Returns(serde_json::Value), Fails(Option<String>) }
 pub struct ExpectedEvent { pub event: String, pub args: serde_json::Value }
 pub fn parse(text: &str) -> Result<ContractFile, String>;   // by hand from serde_json::Value, for exact messages
@@ -1230,7 +1238,8 @@ it and change this list.
   `Fakes`, `Outcome { value, events }`, `EventRecord { interface, function, args }`,
   `CallError { code, message }` whose `CallCode` is serialized to its wire
   text by `CallError` (used for `fails` matching).
-  `Harness::deliver` joins with links (step 2); `Harness::functions()` and
+  `Harness::deliver(function, args)` invokes a short subscription name;
+  `Harness::functions()` and
   `FunctionInfo` join with S5 toolsets, before uncovered-function warnings.
 - The program: `watane --preview <dir>` prints the ready line on stdout
   and then writes only to stderr; SIGTERM stops it and removes `run.json`.
@@ -1270,7 +1279,7 @@ independent tool. Integration tests run the binary
 | allowlist | parse the embedded lock; `verify_vendor` on a temp vendor with one wrong checksum, one missing and one extra folder | literal crate names; expected `env.allowlist` |
 | builder | cargo configuration quoting of a path with `"` and a space, environment whitelist; `outside_reads` on literal `.d` texts, also with `\ ` | literal paths and environment keys |
 | unit | `parse_libtest` on captured outputs: all ok; one FAILED; aborted mid-run with a panic at `/watane-dev/build/x/logic/src/lib.rs:40:9` | literal counts, names, `logic/src/lib.rs` line 40 |
-| contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0` | literal expected failures |
+| contract | `parse` of every field form and every refused form; `run_steps` with a closure for returns, fails (with and without text), emits (short and full names, order), numbers `1` and `1.0`; `Target::Deliver` dispatch, args, state and events; fake answers and missing-fake errors | literal expected failures |
 | preview | MCP result from a literal `Ready`, with and without a token; ignore ready-line URL text; one install POST with all local folders and ordered pages | literal JSON objects, folder order and null; loopback unit server, no host links needed |
 | json_eq | key order, numbers, nesting | literal pairs |
 | deps | local order, missing folders, cycles, `.watane-dev.json` text after two adds | literal paths, codes and text in `tests/add.rs` |
@@ -1283,11 +1292,12 @@ independent tool. Integration tests run the binary
 | `check.rs` | DEV-S-5, 6, 7, 8 | the codes of the table of 2.2 |
 | `builder.rs` | DEV-S-4, 9, 10, 11, 12, 13 | S-4: the test counts `#[test]` in `logic/src/lib.rs` with a regex and the steps in `tests/*.json` with `serde_json`, and loads `logic.wasm` with `wasmtime::component::Component` to find `mods:<slug>/api@0.1.0` among the exports; S-9: a fake toolchain folder whose `bin/cargo` writes a marker file if it runs; S-10: a secret file of random bytes in a temp folder, then a byte search over every file of the mod folder; S-12: the same template at two paths with two caches, `assert_eq!` of the bytes, and a search for `$HOME`, both caches and both mod paths (raw and canonical); S-13: run under `sandbox-exec -p '(version 1)(allow default)(deny network*)'` on macOS or `unshare -rn` on Linux, ignored with a reason where neither works |
 | `unit_tests.rs` | DEV-S-14, 15, 16, 20; S4-2 result and template | source fixtures written into temporary mods assert inside Wasm that `read_dir("/")` fails and `var("HOME")` is unset, and try to write `<tempdir>/escape`; the test checks the file is absent; S-16 with `WATANE_DEV_UNIT_SECONDS=2` and a wall-clock bound after warming the build cache; memory growth and host-import traps are also exercised |
-| `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; fixture `tests/fixtures/recommendations/` (pkg section 9) imports `mods:reading-list/books` |
+| `contract.rs` | DEV-S-17, 18, 19, 20 | literal expected and got values; default S11 command tests use prebuilt `tests/fixtures/recommendations/logic.wasm`, importing `mods:reading-list/books`; source and rebuild instructions in `tests/fixtures/` |
 | `serve.rs` | DEV-S-21, 22, 23, 24 | S-21: GET of the page URL (with `Host: <local>.localhost:<port>`), compared with the bytes the test reads from `ui/index.html`; MCP `tools/list` and `tools/call` as JSON-RPC with `Authorization: Bearer <token>`, tool names compared with `<local>_api_add` and `<local>_api_get` built by the test from the slug; S-22: `tools/call` of `api.add` before the change, `api.get` returns 1 after; S-23: a TCP connect to the port fails, the folder is gone; refused `serve`: literal `preview.previous` message/fix and text warning, unchanged page bytes, no warning without an answering preview |
 | `add.rs` | DEV-S-25, 26; self and missing providers, provider order | literal add result and metadata text; original world and provider WIT bytes; unchanged folder snapshot on refusal; literal order and missing-provider message/fix |
 | `install_publish.rs` | DEV-S-27 to 31 | the fake host (15.3) stores each request; S-29: the stored folders as literal paths; S-31: the stored body decoded with `watane_pkg::Package::from_bytes` (not code under test) and its `paths()` searched for `logic/src/` |
 | `journey.rs` | J1 on the real programs | `new reading-list` → write a reading-list mod with a reversed-list bug → `test` fails with literal expected/got lists and `test.contract` → fix logic → `test` ok → `serve` → page `/call` adds Dune → change `ui/` → `serve` → new bytes → MCP list returns `["Dune"]` → `serve --stop`, closed port and removed home |
+| `journey_s11.rs` | S11 calls and subscriptions on real programs | two `new` mods → `add` lines pasted → contracts with a fake and delivery → ordered served pages → reading-list page adds Dune → recommendations call and received titles both `["Dune"]` → pre-opened stream receives changed within 30 s → stop; ignored as a slow journey, reads `WATANE_BIN` |
 
 S2 `builder.rs` drives `serve` for S-9 and S-11, and checks the built
 component with `watane_pkg::Mod::check_component()`. S-4 joins with S4;
@@ -1318,13 +1328,10 @@ page and no MCP. SIGTERM ends it (the default action).
 
 - S4 (dev): the counter template includes `tests/counter.json`; `test` runs
   check, build, Wasmtime unit tests and contracts through the host Harness.
-  `serve` runs that whole pipeline before touching a preview. S4 accepts
-  and passes `fakes` to the Harness, without linking imports to them.
-  `deliver` is a contract-file error explaining that delivery arrives with
-  links between mods (step 2); `Target::Deliver` and `test.uncovered` wait
-  for `Harness::deliver` and `Harness::functions`. Section 8.1 remains the
-  full form. S8 completes DEV-S-10 outside reads and DEV-S-12 reproducible
-  bytes; both release and unit builds scan compiler dependency files.
+  `serve` runs that whole pipeline before touching a preview. S11 links
+  the file's fakes through Harness and runs `Target::Deliver` through
+  `Harness::deliver`. Only `test.uncovered` waits for `Harness::functions`.
+  S8 completes DEV-S-10 outside reads and DEV-S-12 reproducible bytes; both release and unit builds scan compiler dependency files.
 
 | Stage | Build | Needs | Fake until it exists | Done when |
 |---|---|---|---|---|

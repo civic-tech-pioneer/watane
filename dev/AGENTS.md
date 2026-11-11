@@ -79,3 +79,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S6-2 (dev): refused serve warns with preview.previous only for a verified answering preview; J1 lives in tests/journey.rs and drives the reading-list mod through page calls and MCP.
 
 - S11-3 (dev): local traversal reads pkg Deps before world validation, and add checks cycles before provider Mod validation, so pending import edits cannot hide cycles; serve tests and installs providers first and gives page/doctor/stop follow-ups (§17 item 12).
+
+- S11-4 (dev): contracts dispatch delivery to Harness and compare its events; file fakes answer calls, built-only fixtures validate and run contracts without compilation, and journey_s11 drives two served mods.

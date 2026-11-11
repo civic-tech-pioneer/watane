@@ -1,0 +1,10 @@
+package mods:recommendations@0.1.0;
+interface api { all: func() -> list<string>; %list: func() -> list<string>; received: func() -> list<string>; }
+interface changes { received: func(title: string); }
+world recommendations {
+    import watane:host/state@0.1.0;
+    import mods:reading-list/books@0.1.0;
+    import changes;
+    export mods:reading-list/events@0.1.0;
+    export api;
+}
