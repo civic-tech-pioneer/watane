@@ -209,7 +209,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
-| `host.declined` | 4 | the host answers with error code `refused` | `The person declined installing <slug> in their watane app` (or the mod folder) | `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait` |
+| `host.declined` | 4 | the host answers with error code `refused` | `The person declined installing <slug> in their watane app` (or the mod folder) | `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait` |
 | `internal` | 5 | anything else | the error chain | — |

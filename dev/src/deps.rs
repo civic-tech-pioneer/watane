@@ -119,11 +119,11 @@ fn relative(dir: &Path, provider: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>> {
-    let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
     if !dir.join("mod.toml").is_file() {
         return Err(vec![Problem::new(Code::UsageNotAMod, format!("{} is not a mod folder: it has no mod.toml", dir.display()))
             .fix("Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>")]);
     }
+    let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
     let given = provider;
     let usage = |found: Option<&Path>| {
         let mut message = format!("{} is not a mod folder", given.display());

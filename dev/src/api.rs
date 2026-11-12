@@ -178,7 +178,7 @@ impl Client {
                 if e.code == Code::HostDeclined {
                     let name = folders.last().map_or_else(|| "the mod".into(), |dir| crate::deps::label(dir));
                     e.message = format!("The person declined installing {name} in their watane app");
-                    e.fix = Some(format!("Ask the person whether they want {name} installed in their watane app, then run install again with --wait"));
+                    e.fix = Some(format!("Ask the person whether they want {name} installed in their watane app, then run install again with --wait <seconds>"));
                 }
                 e
             })?;
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(
             e.fix.as_deref(),
             Some(
-                "Ask the person whether they want counter installed in their watane app, then run install again with --wait"
+                "Ask the person whether they want counter installed in their watane app, then run install again with --wait <seconds>"
             )
         );
         assert!(!e.fix.as_deref().unwrap().to_lowercase().contains("correct"));
@@ -345,7 +345,7 @@ mod tests {
             assert_eq!(
                 e.fix.as_deref(),
                 Some(if expected == Code::HostDeclined {
-                    "Ask the person whether they want the mod installed in their watane app, then run install again with --wait"
+                    "Ask the person whether they want the mod installed in their watane app, then run install again with --wait <seconds>"
                 } else {
                     "Correct the reported host error and run the command again"
                 })
