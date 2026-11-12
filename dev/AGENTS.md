@@ -93,3 +93,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S12b-2 (dev): dependency errors name a recovery edge, check reports recorded provider paths, and add resolves provider paths from the current folder while storing them relative to the mod.
 
 - S12b rejection fix (dev): declined installs require asking the person before retrying; missing-app next repeats install with its home and explicit wait, while other environment errors retain doctor (§2.2, §2.4, §9.6).
+
+- S12b second rejection fix (dev): missing-app install next always names the canonical mod folder with --dir, quoting both paths and retaining explicit wait (§2.4).

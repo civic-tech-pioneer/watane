@@ -50,7 +50,8 @@ fn regress_s12b_no_host_next_repeats_install() {
     assert_eq!(
         next,
         format!(
-            "watane-dev install --json --home {}",
+            "watane-dev install --json --dir {} --home {}",
+            home.path().canonicalize().unwrap().display(),
             home.path().canonicalize().unwrap().display()
         )
     );
@@ -82,6 +83,14 @@ fn regress_s12b_no_host_next_keeps_dir() {
         next.contains("--dir") && next.contains(dir.to_str().unwrap()),
         "next should keep --dir {} so it runs from any folder, got {next:?}",
         dir.display()
+    );
+    assert_eq!(
+        next,
+        format!(
+            "watane-dev install --json --dir {} --home {}",
+            dir.display(),
+            home.path().canonicalize().unwrap().display()
+        )
     );
 }
 
@@ -391,7 +400,10 @@ fn ac2_no_host_next_preserves_explicit_wait_and_given_home() {
         assert_eq!(value["errors"][0]["code"], "env.host_not_running");
         assert_eq!(
             value["next"],
-            format!("watane-dev install --json --home missing-home --wait {wait}")
+            format!(
+                "watane-dev install --json --dir {} --home missing-home --wait {wait}",
+                root.path().canonicalize().unwrap().display()
+            )
         );
     }
 }
@@ -411,6 +423,9 @@ fn ac2_no_host_next_quotes_home_for_the_shell() {
     );
     assert_eq!(
         value["next"],
-        r#"watane-dev install --json --home 'Alice'"'"'s home'"#
+        format!(
+            r#"watane-dev install --json --dir {} --home 'Alice'"'"'s home'"#,
+            root.path().canonicalize().unwrap().display()
+        )
     );
 }

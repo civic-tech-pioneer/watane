@@ -277,14 +277,23 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
         let home = home.canonicalize().unwrap_or(home);
         let client = crate::api::Client::for_app(&home).map_err(|e| {
             if e.code == crate::outcome::Code::EnvHostNotRunning {
-                let mut path = home.display().to_string();
-                if !path
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
-                {
-                    path = format!("'{}'", path.replace('\'', "'\"'\"'"));
-                }
-                let mut next = format!("watane-dev install --json --home {path}");
+                let quote = |path: &Path| {
+                    let path = path.display().to_string();
+                    if path
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+                    {
+                        path
+                    } else {
+                        format!("'{}'", path.replace('\'', "'\"'\"'"))
+                    }
+                };
+                let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+                let mut next = format!(
+                    "watane-dev install --json --dir {} --home {}",
+                    quote(&dir),
+                    quote(&home)
+                );
                 if let Some(wait) = wait {
                     next.push_str(&format!(" --wait {wait}"));
                 }

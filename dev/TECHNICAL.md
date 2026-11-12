@@ -335,8 +335,9 @@ answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
 From the host's `InstalledMod` list, in install order, retaining exactly these five fields.
 `next`: `Give the person this page: <url>` for the last entry with a page,
 else null. On `env.host_not_running`, `next` is
-`watane-dev install --json --home <canonical or given home>`, adding
-` --wait <n>` only when `--wait` was explicitly passed. Quote the home for the
+`watane-dev install --json --dir <canonical mod folder> --home <canonical or given home>`,
+including `--dir` when it was omitted from the original command, adding
+` --wait <n>` only when `--wait` was explicitly passed. Quote each path for the
 shell when it contains characters other than letters, digits or `/._-`.
 Run it once the person has started the app. Other `env.*` errors use
 `watane-dev doctor --json`.
