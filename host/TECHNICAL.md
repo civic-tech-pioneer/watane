@@ -195,6 +195,7 @@ pub enum HostError {
     Internal(String),                                      // "internal" (I/O, redb, wasmtime)
 }
 impl HostError { pub fn code(&self) -> &'static str; pub fn status(&self) -> u16; }
+impl Serialize for HostError   // the JSON form below
 
 pub enum VerifyCheck { Kind, ReleaseBody, PackageHash, Mismatch }
 // serialized snake_case: "kind", "release_body", "package_hash", "mismatch" (section 5.2)
