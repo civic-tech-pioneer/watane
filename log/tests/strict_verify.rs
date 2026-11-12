@@ -39,7 +39,8 @@ fn ac7_strict_signature_rule() {
         )),
         Err(D::Author(KeyTextError::NotCanonical))
     );
-    // A valid author still cannot use a small-order or non-canonical R.
+    // A small-order or non-canonical R in place of a valid R is refused. Any verifier
+    // refuses these, as the equation no longer holds; they do not prove verify_strict.
     for r in [small, noncanonical] {
         let mut b = valid.clone();
         let start = b.len() - 64;
