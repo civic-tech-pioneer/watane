@@ -184,7 +184,9 @@ impl App {
     }
     pub fn eval(&self, label: &str, js: &str) -> Value {
         let v = self.call(json!({"op":"eval","label":label,"js":js}));
-        serde_json::from_str(v.as_str().unwrap()).expect("native eval returned invalid JSON")
+        serde_json::from_str(v.as_str().unwrap()).unwrap_or_else(|e| {
+            panic!("native eval returned invalid JSON: {e}; {label}: {js}; {v}")
+        })
     }
     pub fn wait(&self, label: &str, timeout: Duration) -> bool {
         self.send(json!({"op":"wait","label":label,"timeoutMs":timeout.as_millis() as u64}))

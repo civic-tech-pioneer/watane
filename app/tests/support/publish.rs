@@ -1,5 +1,51 @@
 use super::{driver::App, journey::*};
 use serde_json::{Value, json};
+
+pub struct Approve;
+impl watane_dist::Confirm for Approve {
+    fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+        watane_dist::Decision::Approve
+    }
+}
+
+pub fn dist(home: &std::path::Path) -> watane_dist::Dist {
+    watane_dist::Dist::open(home, std::sync::Arc::new(Approve), Default::default()).unwrap()
+}
+
+pub fn choose(app: &App, link: &str) {
+    until(app, "main", "document.body.dataset.ready === 'true'");
+    app.eval("main", &format!("document.querySelector('#index-link').value = {}; document.querySelector('#add-index').click(); null", json!(link)));
+    until(
+        app,
+        "main",
+        &format!(
+            "Array.from(document.querySelectorAll('#indexes [data-index]')).some(e => e.dataset.index === {})",
+            json!(
+                link.split('@')
+                    .next()
+                    .unwrap()
+                    .trim_start_matches("watane:")
+            )
+        ),
+    );
+}
+
+pub fn search_reading(app: &App) {
+    app.eval("main", "document.querySelector('#search-text').value = 'reading'; document.querySelector('#search').click(); null");
+    until(
+        app,
+        "main",
+        "document.querySelectorAll('#results [data-release]').length === 1",
+    );
+}
+
+pub fn refresh_find(app: &App) {
+    // Callers wait for the stale/compromised DOM condition after this click.
+    app.eval(
+        "main",
+        "document.querySelector('#refresh-find').click(); null",
+    );
+}
 pub fn http(port: u16, content: &str, bytes: Vec<u8>) -> (u16, Value) {
     let r = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))

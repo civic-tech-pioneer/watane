@@ -1,4 +1,5 @@
 import { call } from './ipc.js';
+import { signTitle } from './words.js';
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
@@ -54,8 +55,7 @@ try {
   if (view) {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
-    const titles = {profile: 'Sign your profile', release: 'Sign a release', withdraw: 'Sign a withdrawal'};
-    document.querySelector('h1').textContent = request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : titles[request.statement];
+    document.querySelector('h1').textContent = request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : signTitle(request.statement);
     if (request.kind === 'install') {
       if (request.by_program) text(main, 'p', 'Asked by a program on this device');
       for (const mod of request.mods) {

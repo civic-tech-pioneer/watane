@@ -37,7 +37,7 @@ fn backup(app: &App, path: &Path) {
     );
 }
 #[test]
-#[ignore = "slow: journey J4 without index"]
+#[ignore = "slow: journey J4 with index"]
 fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     let alice_home = tempfile::tempdir().unwrap();
     let carol_home = tempfile::tempdir().unwrap();
@@ -45,13 +45,49 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     let carol = App::start(carol_home.path(), &[]);
     let saved = alice_home.path().join("alice.backup");
     backup(&alice, &saved);
+    begin(&alice, "identity_set_name", json!({"name":"Alice"}));
+    consent(&alice);
+    approve(&alice);
+    assert!(finish(&alice).get("error").is_none());
     let site = Site::serve(alice_home.path().join("dist/site"));
     invoke(&alice, "site_set_url", json!({"url":site.base}));
     let first = publish_version(&alice, "0.1.0", false);
-    begin(&carol, "install_link", json!({"link":first["link"]}));
+    let ivy_home = tempfile::tempdir().unwrap();
+    let ivy = dist(ivy_home.path());
+    ivy.set_name("Ivy").unwrap();
+    ivy.list(
+        &first["link"].as_str().unwrap().parse().unwrap(),
+        "good for books",
+    )
+    .unwrap();
+    let ivy_site = Site::serve(ivy.site_dir());
+    ivy.set_site_url(&ivy_site.base).unwrap();
+    let alice_link: watane_dist::Link = first["link"].as_str().unwrap().parse().unwrap();
+    // Explicitly choose this loopback publisher under dist DD-26. It is
+    // still not followed until installation from the result.
+    invoke(
+        &carol,
+        "index_choose",
+        json!({"link":watane_dist::Link::new(alice_link.channel(), alice_link.base(), None).unwrap().to_string()}),
+    );
+    choose(&carol, &ivy.own_link(None).unwrap().to_string());
+    search_reading(&carol);
+    let hit = carol.eval("main", "document.querySelector('#results').textContent");
+    for field in [
+        "Reading list",
+        "signature verified",
+        "listed by Ivy",
+        "good for books",
+    ] {
+        assert!(hit.as_str().unwrap().contains(field), "{hit}");
+    }
+    carol.eval(
+        "main",
+        "document.querySelector('#results .install-release').click(); null",
+    );
     consent(&carol);
     approve(&carol);
-    assert!(finish(&carol).get("error").is_none());
+    installed(&carol, "reading-list");
     let local = mod_view(&carol)["local"].as_str().unwrap().to_string();
     invoke(&carol, "mod_open", json!({"local":local}));
     assert!(carol.wait(&format!("mod-{local}"), TIMEOUT));
@@ -198,6 +234,19 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     assert_eq!(
         mod_view(&carol)["notice"],
         "The publisher's channel is compromised"
+    );
+    carol.eval("main", "window.dispatchEvent(new Event('focus')); null");
+    until(
+        &carol,
+        "main",
+        "document.querySelector('#results').textContent.includes('compromised')",
+    );
+    assert_eq!(
+        carol.eval(
+            "main",
+            "document.querySelector('#results .install-release') === null"
+        ),
+        true
     );
     assert!(fork.quit().success());
     assert!(carol.quit().success());

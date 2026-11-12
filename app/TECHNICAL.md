@@ -166,7 +166,7 @@ pub fn party(publisher: &str, parties: &Parties) -> Party;
 
 | Label | URL | Content |
 |---|---|---|
-| `main` | `tauri://localhost/index.html` | launcher, details, agents, identity and channels |
+| `main` | `tauri://localhost/index.html` | launcher, details, agents, identity, channels and find |
 | `consent` | `tauri://localhost/consent.html` | one request at a time |
 | `mod-<local name>` | `InstalledMod.page` (`Served::page_url`) | one mod page |
 
@@ -216,7 +216,7 @@ answers `Deny` (APP-F-18).
 
 `tauri://localhost/index.html`, 1000 × 700, title `watane`. One page with
 the views launcher, details, agents (toolsets and tokens) and, from stage C,
-identity and channels. It never shows mod content.
+identity and channels, and from stage D, find. It never shows mod content.
 
 ## 6. Consent
 
@@ -715,6 +715,12 @@ watane adds no index by itself (W23). A row of the channels view gets the
 buttons "Use as index" (`index_choose` with the row's link), "Include in my
 index", and for each of its mods "List in my index".
 
+The page gets a followed channel's mods with `search` filtered by that
+channel's publisher key. The channels row builds its channel and mod links
+from `channel`, `base` and the returned slugs; `ChannelRow` needs no extra
+fields. `ui/words.js` holds pure party, count, provenance, freshness and
+sign-title wording functions, shared by the pages and their wording tests.
+
 - `indexes_list`: `dist.indexes()` mapped to `IndexRow`, the own channel
   first (`own: true`, with its live listings). `status` and `cause` as for
   `ChannelRow` (9.3).
@@ -852,9 +858,15 @@ real approval gate. No production security check changes.
 | `tests/api.rs` (C) | each row of section 8.1 | the status codes and codes there; the file tree of `<home>/dist/site/`: new files after an approve, byte-equal before and after a deny |
 | `tests/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
 | `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |
-| `tests/j4.rs` (D part) | J4 without index: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
+| `tests/j4.rs` (D updates) | after the index install: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
 | `tests/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
 | `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
+
+Loopback fixture publishers are explicitly chosen as indexes before reading
+their listings through Ivy. This respects dist DD-26's local-address guard
+without a driver exception. They remain unfollowed until installation;
+`tests/find.rs` checks that transition in `follows.json`. An unrelated local
+publisher stays unchosen and appears in Ivy's skipped rows with its cause.
 
 The hostile fixture (`tests/fixtures/hostile/`, a page-only mod) tries the
 following and writes each result into `window.__report`: `invoke` of every
@@ -884,7 +896,7 @@ record it in `NOTES.md` with the old and the new result.
 | A Shell | sections 1, 3 (no host), 5, 6, 7 (stage A rows), 10, 14; `ui/`; unit, static, `gui_shell`, `gui_isolation` | nothing | `src/fake.rs`: Core reads a catalog from env `WATANE_APP_FAKE` (JSON `{"mods": [ModView]}`); `tests/support` serves the fixture pages on `http://<local>.localhost:<port>` (127.0.0.1 and ::1) with the stand-in CSP `default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'`; requests come from the driver's `ask`; `--home` is required and `--port` defaults to 0 | `cargo test --features driver` passes S1 and S3 to S8 on macOS |
 | B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
-| D Find | Built (S25): APP-F-37 compromised mods, APP-F-39/40; section 9.5, release commands, `j4.rs` without index. To build (S26 design): 8.2, 9.6, the index and search commands of section 7, the `list`, `include`, `unlist` details of 6.2; APP-F-38, APP-F-43 to APP-F-46 | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
+| D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
 | E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 

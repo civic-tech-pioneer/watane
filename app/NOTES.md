@@ -85,3 +85,36 @@
 - The consent model lacked List, Include and Unlist despite TECHNICAL 6.2 already specifying them; `src/consent.rs` now includes those variants. No page code changed.
 - `skipped_rows` maps dist's `IndexView.skipped` (S29-1) to `[{party, cause}]`, the party from the parties cache (validator, round 1).
 - Validation: macOS `cargo build` and `cargo test` pass (64 tests); `cargo clippy --all-targets --features driver -- -D warnings`, `cargo fmt --check` and `git diff --check` pass. `cargo build --release --features driver` fails at the required debug-only compile guard. Native macOS `cargo test --features driver` times out before app readiness with the existing `com.apple.hiservices-xpcservice` connection failure; the same default driver command passes all 85 tests in the existing arm64 Linux image under Xvfb/Openbox (front and slow tests remain ignored). No dependency added.
+
+## S29-3 — find and index pages
+
+- Added the find view, explicit index links, publisher/interface search filters,
+  provenance, freshness, skipped-channel causes, consent-based result installation,
+  and channel-row listing/include actions. Own index rows end either listing kind
+  through a signature. All dynamic text uses `textContent`; no dependency or Rust
+  command/view change was needed. Channel mods use the existing publisher search
+  filter, and links use the existing channel key/base and returned slug.
+- Pure sign-title and find-wording checks first failed on absent functions and
+  passed after implementation. Initial native window attempts could not reach an
+  assertion: the app timed out before readiness with the previously recorded
+  `com.apple.hiservices-xpcservice` connection failure. The existing arm64 Linux
+  image provides real hidden-window validation under Xvfb/Openbox.
+- The loopback publisher in find/J4 is explicitly chosen as an index before Ivy
+  is added. Dist DD-26 otherwise skips a local base supplied only by a listing.
+  This preserves the production guard and keeps Alice unfollowed until the hit
+  is installed; the test reads both states from `follows.json`. Another unchosen
+  loopback publisher proves the skipped fingerprint and local-address cause.
+- J4 now installs through the search result and consent page. Its later update,
+  added grant, refusal, withdrawal/downgrade, preserved-book and fork assertions
+  remain, followed by a compromised-result/no-install-button assertion.
+- The first Linux suite passed the journey and all other find scenarios, but
+  the new listing test's optional DOM wait returned `undefined` before the own
+  row existed. Its wait now returns a boolean; no assertion was relaxed. Driver
+  eval errors now include the expression and returned value for diagnosis. The
+  focused listing test passes, including four signed site entries for list,
+  unlist, include and unlist.
+- Validation: macOS build and all 64 default tests pass; strict all-targets
+  driver clippy, fmt, JavaScript module syntax and diff checks pass. Release
+  with driver fails at the required compile guard. The complete existing Linux
+  runner passes 64 default tests and 98 driver tests with ignored journeys
+  enabled and all four front tests excluded by name. Front tests were not run.

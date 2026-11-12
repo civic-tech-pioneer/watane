@@ -1,5 +1,12 @@
 <!doctype html><html><head><meta charset="utf-8"><title>watane</title><link rel="stylesheet" href="style.css"></head><body>
 <header><span class="mark"></span><button id="install">Install folders</button></header>
+<section id="find"><h2>Find</h2>
+<label>Index link <input id="index-link"></label><button id="add-index">Add index</button>
+<p id="no-index">Add an index from a link that someone shared with you.</p><div id="indexes"></div>
+<label>Words <input id="search-text" type="search"></label>
+<label>Publisher key <input id="search-publisher"></label><label>Interface <input id="search-interface"></label>
+<button id="search">Search</button><button id="refresh-find">Refresh</button><div id="results" aria-live="polite"></div>
+</section>
 <section id="distribution">
 <h2>Install from link</h2><label>Mod or channel link <input id="install-link" type="text"></label><button id="install-from-link">Install from link</button>
 <h2>Identity</h2><p id="identity-info"></p><div id="releases"></div><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>

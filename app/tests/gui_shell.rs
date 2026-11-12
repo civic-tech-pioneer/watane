@@ -630,3 +630,40 @@ fn ac7_real_installed_version_is_a_name_sibling_outside_details() {
     );
     assert!(app.quit().success());
 }
+
+#[test]
+fn ac4b_index_statement_titles() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    for (statement, title) in [
+        ("list", "List in your index"),
+        ("include", "Include in your index"),
+        ("unlist", "End a listing"),
+    ] {
+        let ask = app.ask(json!({"kind":"sign", "statement":statement, "signer":{"name":"Carol", "fingerprint":"abcd1234"}, "details":[]}));
+        consent(&app);
+        assert_eq!(
+            app.eval("consent", "document.querySelector('h1').textContent"),
+            title
+        );
+        app.close("consent");
+        assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    }
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac4b_index_title_words() {
+    let script = format!(
+        "{}\nfor (const [kind, title] of [['list','List in your index'],['include','Include in your index'],['unlist','End a listing']]) {{ if (signTitle(kind) !== title) throw Error(kind); }}",
+        include_str!("../ui/words.js")
+    );
+    assert!(
+        std::process::Command::new("node")
+            .args(["--input-type=module", "-e", &script])
+            .status()
+            .unwrap()
+            .success()
+    );
+}

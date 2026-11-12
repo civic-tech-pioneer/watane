@@ -1,0 +1,396 @@
+#![cfg(feature = "driver")]
+mod support;
+use serde_json::{Value, json};
+use support::{driver::App, journey::*, publish::*};
+use watane_dist::{Dist, Link};
+
+const NOTE: &str = "good for books <img src=x onerror=alert(1)>";
+struct Fixture {
+    alice: Dist,
+    ivy: Dist,
+    alice_site: Option<Site>,
+    _ivy_site: Site,
+    _alice_home: tempfile::TempDir,
+    _ivy_home: tempfile::TempDir,
+    backup: Vec<u8>,
+    release: String,
+    alice_link: Link,
+    ivy_link: Link,
+}
+impl Fixture {
+    fn new() -> Self {
+        let alice_home = tempfile::tempdir().unwrap();
+        let ivy_home = tempfile::tempdir().unwrap();
+        let alice = dist(alice_home.path());
+        let backup = alice.backup("twelve words long enough").unwrap();
+        alice.set_name("Alice").unwrap();
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
+        let published = alice.publish(update_package("0.1.0", false)).unwrap();
+        let ivy = dist(ivy_home.path());
+        ivy.set_name("Ivy").unwrap();
+        ivy.list(published.link.as_ref().unwrap(), NOTE).unwrap();
+        let ivy_site = Site::serve(ivy.site_dir());
+        ivy.set_site_url(&ivy_site.base).unwrap();
+        let alice_link = alice.own_link(None).unwrap();
+        let ivy_link = ivy.own_link(None).unwrap();
+        Self {
+            alice,
+            ivy,
+            alice_site: Some(alice_site),
+            _ivy_site: ivy_site,
+            _alice_home: alice_home,
+            _ivy_home: ivy_home,
+            backup,
+            release: published.info.reference.to_string(),
+            alice_link,
+            ivy_link,
+        }
+    }
+    fn allow_local_alice(&self, app: &App) {
+        // DD-26 permits local bases only when explicitly chosen or followed.
+        // Choosing Alice allows the loopback fixture without following her.
+        invoke(
+            app,
+            "index_choose",
+            json!({"link":self.alice_link.to_string()}),
+        );
+    }
+    fn add(&self, app: &App) {
+        self.allow_local_alice(app);
+        choose(app, &self.ivy_link.to_string());
+    }
+}
+fn text(app: &App, selector: &str) -> String {
+    app.eval(
+        "main",
+        &format!("document.querySelector({})?.textContent", json!(selector)),
+    )
+    .as_str()
+    .unwrap()
+    .to_owned()
+}
+fn contains(app: &App, selector: &str, value: &str) {
+    until(
+        app,
+        "main",
+        &format!(
+            "Boolean(document.querySelector({})?.textContent.includes({}))",
+            json!(selector),
+            json!(value)
+        ),
+    );
+}
+
+#[test]
+fn ac1_find_add_index() {
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    let row = format!("[data-index='{}']", f.ivy.identity());
+    for value in ["Ivy", &f.ivy.fingerprint(), "1 mod", "ok"] {
+        contains(&app, &row, value);
+    }
+    assert!(
+        !app.log()["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["cmd"] == "consent_get")
+    );
+    assert!(!app.windows().iter().any(|w| w["label"] == "consent"));
+    app.eval(
+        "main",
+        &format!(
+            "document.querySelector({}).querySelector('.drop-index').click(); null",
+            json!(row)
+        ),
+    );
+    until(
+        &app,
+        "main",
+        &format!("!document.querySelector({})", json!(row)),
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_find_search_install() {
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    search_reading(&app);
+    for value in [
+        "reading-list",
+        "Reading list",
+        "0.1.0",
+        "Keep books",
+        "Alice",
+        &f.alice.fingerprint(),
+        "signature verified",
+        "listed by Ivy",
+        NOTE,
+        "checked",
+    ] {
+        contains(&app, "#results", value);
+    }
+    assert_eq!(
+        app.eval("main", "document.querySelectorAll('#find img').length"),
+        0
+    );
+    let follows: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        follows["channels"][f.alice.identity().to_string()]["followed"],
+        false
+    );
+    app.eval(
+        "main",
+        "document.querySelector('#results .install-release').click(); null",
+    );
+    consent(&app);
+    let plan = app.eval("consent", "document.body.textContent");
+    for value in ["Reading list", "Alice", "signature verified", &f.release] {
+        assert!(plan.as_str().unwrap().contains(value), "{plan}");
+    }
+    approve(&app);
+    installed(&app, "reading-list");
+    let follows: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        follows["channels"][f.alice.identity().to_string()]["followed"],
+        true
+    );
+    open(&app, "reading-list");
+    until(
+        &app,
+        "mod-reading-list",
+        "!!document.querySelector('#books')",
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_find_stale_mark() {
+    let mut f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    search_reading(&app);
+    let follows: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    let checked = follows["channels"][f.alice.identity().to_string()]["last_success"]
+        .as_u64()
+        .unwrap();
+    drop(f.alice_site.take());
+    refresh_find(&app);
+    contains(&app, "#results", "could not check since");
+    let time = app.eval("main", &format!("new Date({checked}).toLocaleString()"));
+    assert!(text(&app, "#results").contains(time.as_str().unwrap()));
+    assert!(text(&app, "#results").contains("Reading list"));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_find_compromised() {
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    search_reading(&app);
+    let fork_home = tempfile::tempdir().unwrap();
+    let fork = dist(fork_home.path());
+    fork.restore(&f.backup, "twelve words long enough").unwrap();
+    fork.confirm_own(None).unwrap();
+    fork.set_name("Fork Alice").unwrap();
+    std::fs::remove_dir_all(f.alice.site_dir()).unwrap();
+    copy_dir(&fork.site_dir(), &f.alice.site_dir());
+    refresh_find(&app);
+    contains(&app, "#results", "compromised");
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelector('#results .install-release') === null"
+        ),
+        true
+    );
+    assert!(!text(&app, "#results").contains("signature verified"));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac2_find_skipped_channel_and_cause() {
+    let f = Fixture::new();
+    let skipped_home = tempfile::tempdir().unwrap();
+    let skipped = dist(skipped_home.path());
+    skipped.publish(update_package("0.1.0", false)).unwrap();
+    let site = Site::serve(skipped.site_dir());
+    let link = Link::new(
+        skipped.identity(),
+        &site.base,
+        Some(&"reading-list".parse().unwrap()),
+    )
+    .unwrap();
+    f.ivy.list(&link, "local only").unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    let row = format!("[data-index='{}']", f.ivy.identity());
+    contains(&app, &row, &skipped.fingerprint());
+    contains(&app, &row, "local address");
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_find_list_in_my_index() {
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    invoke(
+        &app,
+        "channel_follow",
+        json!({"link":f.alice_link.to_string()}),
+    );
+    app.eval("main", "window.dispatchEvent(new Event('focus')); null");
+    until(
+        &app,
+        "main",
+        "!!document.querySelector('#channels .list-mod')",
+    );
+    app.eval("main", &format!("document.querySelector('#channels .mod-note').value = {}; document.querySelector('#channels .list-mod').click(); null", json!(NOTE)));
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('h1').textContent"),
+        "List in your index"
+    );
+    let plan = app.eval("consent", "document.body.textContent");
+    for value in [
+        &format!("{}/reading-list", f.alice.identity()),
+        f.alice_link.base(),
+        NOTE,
+    ] {
+        assert!(plan.as_str().unwrap().contains(value), "{plan}");
+    }
+    assert_eq!(
+        app.eval("consent", "document.querySelectorAll('img').length"),
+        0
+    );
+    approve(&app);
+    contains(&app, "#indexes [data-own]", NOTE);
+    assert_eq!(
+        app.eval("main", "document.querySelectorAll('#indexes img').length"),
+        0
+    );
+    // Count signed entry files independently of the page's live-listing rows.
+    fn entries(dir: &std::path::Path) -> usize {
+        if !dir.exists() {
+            return 0;
+        }
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    entries(&p)
+                } else {
+                    usize::from(p.parent().unwrap().file_name().unwrap() == "entries")
+                }
+            })
+            .sum()
+    }
+    assert_eq!(entries(&home.path().join("dist/site")), 1);
+    app.eval(
+        "main",
+        "document.querySelector('#indexes [data-own] .unlist').click(); null",
+    );
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('h1').textContent"),
+        "End a listing"
+    );
+    approve(&app);
+    until(
+        &app,
+        "main",
+        "document.querySelectorAll('#indexes [data-own] .unlist').length === 0",
+    );
+    assert_eq!(entries(&home.path().join("dist/site")), 2);
+    app.eval("main", "document.querySelector('#channels .include-note').value = 'more books'; document.querySelector('#channels .include-index').click(); null");
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('h1').textContent"),
+        "Include in your index"
+    );
+    approve(&app);
+    contains(&app, "#indexes [data-own]", "more books");
+    assert_eq!(entries(&home.path().join("dist/site")), 3);
+    app.eval(
+        "main",
+        "document.querySelector('#indexes [data-own] .unlist').click(); null",
+    );
+    consent(&app);
+    approve(&app);
+    until(
+        &app,
+        "main",
+        "document.querySelectorAll('#indexes [data-own] .unlist').length === 0",
+    );
+    assert_eq!(entries(&home.path().join("dist/site")), 4);
+    app.eval(
+        "main",
+        "document.querySelector('#channels .use-index').click(); null",
+    );
+    contains(
+        &app,
+        &format!("#indexes [data-index='{}']", f.alice.identity()),
+        "Alice",
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_find_wording_and_freshness() {
+    let script = format!(
+        r#"{}
+        import assert from 'node:assert/strict';
+        assert.equal(modCount(1), '1 mod'); assert.equal(modCount(2), '2 mods');
+        const alice = {{name:'Alice', fingerprint:'abcd'}};
+        assert.equal(partyLabel(alice), 'Alice (abcd)');
+        assert.equal(partyLabel({{name:null, fingerprint:'abcd'}}), 'abcd');
+        assert.equal(checkedLabel({{checkedAt:60000, uncheckedSince:null}}, 360000), 'checked 5 min ago');
+        assert.equal(checkedLabel({{checkedAt:null, uncheckedSince:null}}, 0), '');
+        assert.equal(checkedLabel({{checkedAt:0, uncheckedSince:0}}, 360000), 'could not check since ' + new Date(0).toLocaleString());
+        assert.equal(viaLabel({{kind:'index', index:alice, through:null, note:'<img>'}}), 'listed by Alice (abcd) · <img>');
+    "#,
+        include_str!("../ui/words.js")
+    );
+    assert!(
+        std::process::Command::new("node")
+            .args(["--input-type=module", "-e", &script])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn ac1_find_no_index() {
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    assert_eq!(app.eval("main", "document.querySelector('#find')?.textContent.includes('Add an index from a link that someone shared with you.')"), true);
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelectorAll('#indexes [data-index]:not([data-own])').length"
+        ),
+        0
+    );
+    assert!(!app.windows().iter().any(|w| w["label"] == "consent"));
+    assert!(app.quit().success());
+}
