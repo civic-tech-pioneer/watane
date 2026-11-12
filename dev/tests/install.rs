@@ -387,7 +387,7 @@ mod fake {
         assert!(output.status.success());
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains("install: ok"));
-        assert!(text.contains("installed: "));
+        assert!(text.contains("installed.0.slug: counter\n"));
         assert!(text.contains("Give the person this page:"));
     }
 }
