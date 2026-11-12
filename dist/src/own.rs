@@ -50,6 +50,29 @@ impl Dist {
                     release: info.release,
                 }
             }
+            "list" | "include" => {
+                let listing =
+                    Listing::decode(&body).map_err(|cause| DistError::BadNote { cause })?;
+                if kind == "include" {
+                    Statement::Include(listing)
+                } else {
+                    Statement::List(listing)
+                }
+            }
+            "unlist" => {
+                let entry = body::decode_unlist(&body).expect("unlist body encoded under guard");
+                let info = self
+                    .own()?
+                    .listings
+                    .into_iter()
+                    .find(|l| l.entry == entry && l.unlisted.is_none())
+                    .expect("unlist checks live listing under guard");
+                Statement::Unlist {
+                    entry,
+                    listing: info.listing,
+                    include: info.include,
+                }
+            }
             "release" => {
                 let release = Release::decode(&body)?;
                 Statement::Release {
@@ -290,5 +313,99 @@ impl Dist {
             self.log.confirm_own_head()?;
         }
         Ok(())
+    }
+}
+
+impl Dist {
+    pub fn list(&self, link: &Link, note: &str) -> Result<Entry, DistError> {
+        self.add_listing(link, note, false)
+    }
+    pub fn include(&self, link: &Link, note: &str) -> Result<Entry, DistError> {
+        self.add_listing(link, note, true)
+    }
+    fn add_listing(&self, link: &Link, note: &str, include: bool) -> Result<Entry, DistError> {
+        body::note_text(note).map_err(|cause| DistError::BadNote { cause })?;
+        if include == link.slug().is_some() {
+            return Err(DistError::BadLink {
+                cause: if include {
+                    "include needs a channel link"
+                } else {
+                    "list needs a mod link"
+                },
+            });
+        }
+        let key = link.channel();
+        if key == self.identity() {
+            return Err(DistError::OwnListing);
+        }
+        let guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(old) = self.own()?.listings.iter().find(|l| {
+            l.unlisted.is_none()
+                && l.include == include
+                && l.listing.link.channel() == key
+                && l.listing.link.slug() == link.slug()
+        }) {
+            return Err(DistError::AlreadyListed { seq: old.seq });
+        }
+        {
+            let _read = self
+                .read_mutex
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.log.head(&key)?.is_none() {
+                match self.read_channel(key, link.base())?.outcome {
+                    Outcome::Current { .. } | Outcome::Behind { .. } => {}
+                    Outcome::Failed { cause } => return Err(cause),
+                    Outcome::Compromised { seq } => {
+                        return Err(DistError::Compromised { channel: key, seq });
+                    }
+                }
+            }
+        }
+        let channel = self.channel(&key)?;
+        if let Status::Compromised { seq } = channel.status {
+            return Err(DistError::Compromised { channel: key, seq });
+        }
+        if let Some(slug) = link.slug()
+            && !channel
+                .releases
+                .iter()
+                .any(|r| r.reference.slug == *slug && r.withdrawn.is_none())
+        {
+            return Err(DistError::NoRelease {
+                channel: key,
+                slug: slug.clone(),
+            });
+        }
+        self.sign_and_append(
+            guard,
+            if include { "include" } else { "list" },
+            Listing {
+                link: link.clone(),
+                note: note.into(),
+            }
+            .encode(),
+            None,
+        )
+        .map(|(entry, _)| entry)
+    }
+    pub fn unlist(&self, listing: &EntryId) -> Result<Entry, DistError> {
+        let guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !self
+            .own()?
+            .listings
+            .iter()
+            .any(|l| l.entry == *listing && l.unlisted.is_none())
+        {
+            return Err(DistError::NotListed { entry: *listing });
+        }
+        self.sign_and_append(guard, "unlist", body::encode_unlist(listing), None)
+            .map(|(entry, _)| entry)
     }
 }

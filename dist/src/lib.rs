@@ -9,7 +9,7 @@ pub use watane_pkg::{
     Package, PackageError, PackageId, PublisherKey, Release, ReleaseError, ReleaseRef, Version,
 };
 mod confirm;
-pub use confirm::{Confirm, Decision, Profile, SignRequest, Statement, Withdraw};
+pub use confirm::{Confirm, Decision, Listing, Profile, SignRequest, Statement, Withdraw};
 mod body;
 #[derive(Clone, Debug)]
 pub struct ChannelView {
@@ -22,7 +22,18 @@ pub struct ChannelView {
     pub bad: Vec<BadStatement>,     // seq order
     pub status: Status,
     pub followed: bool,
+    pub index: bool,
+    pub listed_by: Vec<PublicKey>,
+    pub listings: Vec<ListingInfo>,
     pub last_success: Option<u64>, // ms since the Unix epoch; None for the own channel
+}
+#[derive(Clone, Debug)]
+pub struct ListingInfo {
+    pub entry: EntryId,
+    pub seq: u64,
+    pub include: bool,
+    pub listing: Listing,
+    pub unlisted: Option<u64>,
 }
 #[derive(Clone, Debug)]
 pub struct ReleaseInfo {
@@ -309,6 +320,8 @@ pub enum Change {
     Release(ReleaseInfo),
     Withdrawn { seq: u64, release: ReleaseInfo },
     Bad(BadStatement),
+    Listed(ListingInfo),
+    Unlisted { seq: u64, listing: ListingInfo },
 }
 #[derive(Debug)]
 pub struct Fetched {

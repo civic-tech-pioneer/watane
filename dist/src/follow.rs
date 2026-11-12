@@ -246,6 +246,13 @@ impl Dist {
                         name: profile.name,
                     });
                 }
+            } else if let Some(listing) = view.listings.iter().find(|l| l.seq == seq) {
+                changes.push(Change::Listed(listing.clone()));
+            } else if let Some(listing) = view.listings.iter().find(|l| l.unlisted == Some(seq)) {
+                changes.push(Change::Unlisted {
+                    seq,
+                    listing: listing.clone(),
+                });
             } else if let Some(release) = view.releases.iter().find(|r| r.seq == seq) {
                 changes.push(Change::Release(release.clone()));
             } else if let Some(release) = view

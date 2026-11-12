@@ -396,9 +396,9 @@ The envelope (channel, seq, prev, time, kind, body, signature) is `log`'s.
 | `include` (step 4) | CBOR array of 2: `[link: text, note: text]`. `link` is a link of 4.2 **with no** slug: another index. |
 | `unlist` (step 4) | CBOR array of 1: `[listing: bytes(32)]`, the entry id of a `list` or `include` statement of the same channel at a lower seq. |
 
-CBOR rules for `profile` and `withdraw` (RFC 8949 section 4.2.1): definite
-lengths, shortest heads, UTF-8 text. Encode with `minicbor::Encoder`. A
-decoder refuses another major type, another array length, trailing bytes,
+CBOR rules for `profile`, `withdraw`, `list`, `include` and `unlist`
+(RFC 8949 section 4.2.1): definite lengths, shortest heads, UTF-8 text.
+Encode with `minicbor::Encoder`. A decoder refuses another major type, another array length, trailing bytes,
 and any input that does not encode back to the same bytes. A change of a
 body later is a new kind, not a new field.
 

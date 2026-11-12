@@ -2,7 +2,8 @@ use crate::*;
 pub trait Confirm: Send + Sync {
     /// Blocks until the participant answers in the app. dist holds its
     /// own-channel lock during the call, so an implementation must not call
-    /// set_name, publish or withdraw of the same Dist (it would wait forever).
+    /// set_name, publish, withdraw, list, include or unlist of the same Dist
+    /// (it would wait forever).
     fn confirm(&self, request: &SignRequest) -> Decision;
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +21,13 @@ pub struct SignRequest {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Profile(Profile),
+    List(Listing),
+    Include(Listing),
+    Unlist {
+        entry: EntryId,
+        listing: Listing,
+        include: bool,
+    },
     /// `reference`: own key, slug and version. `release`: pkg's body (PKG-F-20).
     Release {
         reference: ReleaseRef,
@@ -45,8 +53,17 @@ impl Statement {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Profile(_) => "profile",
+            Self::List(_) => "list",
+            Self::Include(_) => "include",
+            Self::Unlist { .. } => "unlist",
             Self::Release { .. } => "release",
             Self::Withdraw { .. } => "withdraw",
         }
     }
-} // "profile" | "release" | "withdraw"
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listing {
+    pub link: Link,
+    pub note: String,
+}

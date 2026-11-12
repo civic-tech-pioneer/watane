@@ -141,6 +141,8 @@ impl watane_dist::Confirm for DistConfirm {
                     ("Reason", withdraw.reason.clone()),
                 ],
             ),
+            // ponytail: S29 shows index statements in the consent view.
+            _ => return watane_dist::Decision::Refuse,
         };
         let mut signer = words::party(&request.channel.to_string(), &self.parties);
         signer.fingerprint = request.fingerprint.clone();

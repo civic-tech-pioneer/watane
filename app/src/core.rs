@@ -618,6 +618,9 @@ mod stage_d_tests {
             bad: vec![],
             status: Status::Ok,
             followed: true,
+            index: false,
+            listed_by: vec![],
+            listings: vec![],
             last_success: None,
         }
     }

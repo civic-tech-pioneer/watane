@@ -113,6 +113,18 @@ pub enum DistError {
     BadPackage { url: String, cause: PackageError },
     #[error("package mismatch at {}: {}", url.escape_debug(), cause.to_string().escape_debug())]
     PackageMismatch { url: String, cause: ReleaseError },
+    #[error("invalid note: {}", cause.escape_debug())]
+    BadNote { cause: &'static str },
+    #[error("invalid query: {}", cause.escape_debug())]
+    BadQuery { cause: &'static str },
+    #[error("cannot list the own channel")]
+    OwnListing,
+    #[error("already listed at seq {seq}")]
+    AlreadyListed { seq: u64 },
+    #[error("entry {entry} is not a live listing")]
+    NotListed { entry: EntryId },
+    #[error("channel {channel} is not a chosen index")]
+    NotIndex { channel: PublicKey },
 }
 
 #[cfg(test)]

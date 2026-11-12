@@ -10,6 +10,9 @@ pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
         bad: Vec::new(),
         status: Status::Ok,
         followed: false,
+        index: false,
+        listed_by: Vec::new(),
+        listings: Vec::new(),
         last_success: None,
     };
     for entry in entries {
@@ -56,6 +59,43 @@ pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
                         seq: entry.seq(),
                         reason: w.reason,
                     });
+                }
+                "list" | "include" => {
+                    let listing = Listing::decode(entry.body()).map_err(str::to_owned)?;
+                    let include = entry.kind() == "include";
+                    if include && listing.link.slug().is_some() {
+                        return Err("include needs a channel link".into());
+                    }
+                    if !include && listing.link.slug().is_none() {
+                        return Err("list needs a mod link".into());
+                    }
+                    if listing.link.channel() == channel {
+                        return Err("lists its own channel".into());
+                    }
+                    if let Some(old) = view.listings.iter().find(|l| {
+                        l.unlisted.is_none()
+                            && l.include == include
+                            && l.listing.link.channel() == listing.link.channel()
+                            && l.listing.link.slug() == listing.link.slug()
+                    }) {
+                        return Err(format!("already listed at seq {}", old.seq));
+                    }
+                    view.listings.push(ListingInfo {
+                        entry: entry.id(),
+                        seq: entry.seq(),
+                        include,
+                        listing,
+                        unlisted: None,
+                    });
+                }
+                "unlist" => {
+                    let id = body::decode_unlist(entry.body()).map_err(str::to_owned)?;
+                    let info = view
+                        .listings
+                        .iter_mut()
+                        .find(|l| l.entry == id && l.seq < entry.seq() && l.unlisted.is_none())
+                        .ok_or("unlist names no live listing")?;
+                    info.unlisted = Some(entry.seq());
                 }
                 _ => {}
             }
@@ -166,5 +206,103 @@ mod tests {
         );
         assert_eq!(v.bad[2].cause, "withdraw names no earlier release");
         assert_eq!(v.bad[3].cause, "already withdrawn at seq 7");
+    }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+    #[test]
+    fn ac3_derive_rules_step4() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = watane_log::Log::open(&dir.path().join("log")).unwrap();
+        let foreign = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        // Bodies constructed independently of the dist encoder.
+        let listing = |key: &str, slug: &str, base: &str| {
+            let link = format!("watane:{key}@https://{base}/{slug}");
+            let mut b = vec![0x82, 0x78, link.len() as u8];
+            b.extend(link.as_bytes());
+            b.push(0x60);
+            b
+        };
+        let m = listing(foreign, "#reading-list", "alice.example.org");
+        let c = listing(foreign, "", "alice.example.org");
+        log.append("list", &c).unwrap(); // 0 shape
+        log.append("include", &m).unwrap(); // 1 shape
+        log.append(
+            "list",
+            &listing(
+                &log.identity().to_string(),
+                "#reading-list",
+                "own.example.org",
+            ),
+        )
+        .unwrap(); // 2 own
+        log.append(
+            "include",
+            &listing(&log.identity().to_string(), "", "own.example.org"),
+        )
+        .unwrap(); // 3 own
+        let first = log.append("list", &m).unwrap(); // 4
+        log.append(
+            "list",
+            &listing(foreign, "#reading-list", "mirror.example.org"),
+        )
+        .unwrap(); // 5 duplicate ignores base
+        let inc = log.append("include", &c).unwrap(); // 6 different kind allowed
+        log.append("include", &c).unwrap(); // 7 duplicate
+        let unlist = |id: EntryId| {
+            let mut b = vec![0x81, 0x58, 0x20];
+            b.extend(id.as_bytes());
+            b
+        };
+        log.append("unlist", &unlist(EntryId::from_bytes([0x22; 32])))
+            .unwrap(); // 8 unknown
+        log.append("unlist", &unlist(first.id())).unwrap(); // 9
+        log.append("unlist", &unlist(first.id())).unwrap(); // 10 ended
+        let again = log.append("list", &m).unwrap(); // 11 relist
+        log.append("unlist", &unlist(inc.id())).unwrap(); // 12
+        log.append("list", &[0x80]).unwrap(); // 13 bad body
+        log.append("include", &[0x80]).unwrap(); // 14
+        log.append("unlist", &[0x80]).unwrap(); // 15
+        let entries = log.entries(&log.identity(), 0, usize::MAX).unwrap();
+        let v = derive(log.identity(), &entries);
+        assert!(!v.index);
+        assert!(v.listed_by.is_empty());
+        assert_eq!(
+            v.listings
+                .iter()
+                .map(|l| (l.entry, l.seq, l.include, l.unlisted))
+                .collect::<Vec<_>>(),
+            vec![
+                (first.id(), 4, false, Some(9)),
+                (inc.id(), 6, true, Some(12)),
+                (again.id(), 11, false, None)
+            ]
+        );
+        assert_eq!(
+            v.listings[0].listing.link.to_string(),
+            format!("watane:{foreign}@https://alice.example.org/#reading-list")
+        );
+        assert_eq!(v.listings[0].listing.note, "");
+        assert_eq!(
+            v.bad
+                .iter()
+                .map(|b| (b.seq, b.kind.as_str(), b.cause.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, "list", "list needs a mod link"),
+                (1, "include", "include needs a channel link"),
+                (2, "list", "lists its own channel"),
+                (3, "include", "lists its own channel"),
+                (5, "list", "already listed at seq 4"),
+                (7, "include", "already listed at seq 6"),
+                (8, "unlist", "unlist names no live listing"),
+                (10, "unlist", "unlist names no live listing"),
+                (13, "list", "listing needs two fields"),
+                (14, "include", "listing needs two fields"),
+                (15, "unlist", "unlist needs one field")
+            ]
+        );
     }
 }
