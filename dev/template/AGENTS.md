@@ -57,7 +57,9 @@ returns a promise for the value or rejects with `code` and `message`.
 For a call without arguments, omit args or pass null.
 Records are JSON objects; option is null or the value; variants are
 "case" or {"case": payload}; result is {"ok": v} or {"err": e}.
-Read once at startup and refresh after your page's calls.
+`watane.on(handler)` opens the event stream. The handler gets `{type: 'changed'}` when the stream opens
+and after a call that changed data, plus the mod's own events as `{type: 'event', ...}`.
+Re-read on `changed`, as ui/app.js does: `watane.on((message) => { if (message.type === 'changed') read(); });`
 
 ## Try the page without a browser
 

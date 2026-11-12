@@ -82,6 +82,43 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
 mod tests {
     use super::*;
     #[test]
+    fn ac1_ac2_s23_guide_explains_live_page_refresh() {
+        let guide = include_str!("../template/AGENTS.md");
+        let page = guide
+            .split("## The page\n")
+            .nth(1)
+            .unwrap()
+            .split("\n## ")
+            .next()
+            .unwrap();
+        for marker in [
+            "watane.on(handler)",
+            "opens the event stream",
+            "{type: 'changed'}",
+            "stream opens",
+            "after a call that changed data",
+            "mod's own events",
+            "watane.on((message) => { if (message.type === 'changed') read(); });",
+        ] {
+            assert!(page.contains(marker), "page guide missing {marker}");
+        }
+    }
+
+    #[test]
+    fn ac3_s23_page_guide_stays_short() {
+        let guide = include_str!("../template/AGENTS.md");
+        let page = guide
+            .split("## The page\n")
+            .nth(1)
+            .unwrap()
+            .split("\n## ")
+            .next()
+            .unwrap();
+        // Before S23 this section has seven lines, excluding its heading and blanks.
+        assert!(page.trim().lines().count() <= 7 + 8);
+    }
+
+    #[test]
     fn ac1_guide_recovers_allowlist_in_sandbox() {
         let guide = render(
             include_str!("../template/AGENTS.md"),

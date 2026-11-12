@@ -604,8 +604,10 @@ with these sections in this order (section 10 joins with its slice):
 6. **The page**: scripts only from files in `ui/` (no inline script, no
    CDN, no other site); `watane.call("<iface>.<fn>", args)` returns the
    value or throws an error with `code` and `message`;
-   `watane.on(handler)` gets `{"type":"changed"}` and
-   `{"type":"event", ...}`; the JSON form of WIT values (the table of host
+   `watane.on(handler)` opens the event stream and gets `{"type":"changed"}`
+   on stream open and after a call that changed data, plus the mod's own
+   events as `{"type":"event", ...}`; show the one-line `ui/app.js` pattern
+   that re-reads on `changed`. The JSON form of WIT values (the table of host
    `TECHNICAL.md` 6.9: records as objects, `option` as null or the value,
    variants as `"case"` or `{"case": payload}`, `result` as `{"ok": v}` or
    `{"err": e}`).
