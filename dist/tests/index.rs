@@ -1128,3 +1128,31 @@ fn ac12_refresh_listed_failure_has_listed_key() {
     );
     assert!(reports.iter().all(|r| r.channel != carol.dist.identity()));
 }
+
+#[test]
+fn ac7_index_equal_heads_keep_first_base() {
+    let alice = Home::new();
+    let ivy = Home::new();
+    let jay = Home::new();
+    let carol = Home::new();
+    alice.dist.publish(fixture("1.0.0", false)).unwrap();
+    let copy = tempfile::tempdir().unwrap();
+    alice.dist.export(copy.path()).unwrap();
+    let mirror = TestHost::serve(copy.path());
+    let slug = "reading-list".parse().unwrap();
+    let mirror_link = Link::new(alice.dist.identity(), &mirror.url, Some(&slug)).unwrap();
+    ivy.dist.list(&mirror_link, "").unwrap();
+    jay.dist.list(&alice.mod_link(), "").unwrap();
+    carol.dist.choose_index(&ivy.link()).unwrap();
+    carol.dist.choose_index(&jay.link()).unwrap();
+    let key = alice.dist.identity().to_string();
+    let bases = carol.records()["channels"][&key]["bases"].clone();
+    assert_eq!(bases.as_array().unwrap().len(), 2);
+    let (a, m) = (alice.host.count(), mirror.count());
+    for _ in 0..2 {
+        carol.dist.refresh();
+        // Both bases serve head 1: every base is read, the first read keeps the front.
+        assert_eq!(carol.records()["channels"][&key]["bases"], bases);
+    }
+    assert!(alice.host.count() > a && mirror.count() > m);
+}

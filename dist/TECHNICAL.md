@@ -784,9 +784,9 @@ either.
 
 **Listed records.** A channel in some read set that is neither followed
 nor chosen has a listed record (`followed: false`, `index: false`). Its
-`bases` are the distinct bases of the listings that name it, in the order
-of the walk (own channel first, then chosen indexes in key order), at most
-4. A followed or chosen channel is read only from its own `base`: a
+`bases` are the distinct bases of the listings that name it, at most 4:
+first learned in the order of the walk (own channel first, then chosen
+indexes in key order), then reordered by the read below. A followed or chosen channel is read only from its own `base`: a
 listing never changes it. dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
