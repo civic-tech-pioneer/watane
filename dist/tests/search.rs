@@ -17,6 +17,13 @@ fn setup() -> (SearchHome, SearchHome, SearchHome) {
 fn refs(hits: &[Hit]) -> Vec<String> {
     hits.iter().map(|h| h.info.reference.to_string()).collect()
 }
+/// `last_success` of `key` in `home`'s follows.json, read without `watane_dist`.
+fn last_success(home: &SearchHome, key: PublicKey) -> Option<u64> {
+    let file: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.dir.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    file["channels"][key.to_string()]["last_success"].as_u64()
+}
 fn reference(home: &SearchHome, slug: &str, version: &str) -> String {
     format!("{}/{slug}@{version}", home.dist.identity())
 }
@@ -51,14 +58,7 @@ fn ac1_search_finds() {
             }]
         );
         assert_eq!(hit.status, Status::Ok);
-        assert_eq!(
-            hit.checked_at,
-            carol
-                .dist
-                .channel(&alice.dist.identity())
-                .unwrap()
-                .last_success
-        );
+        assert_eq!(hit.checked_at, last_success(&carol, alice.dist.identity()));
         assert!(hit.checked_at.is_some());
         assert_eq!(hit.unchecked_since, None);
     }
@@ -134,11 +134,8 @@ fn ac2_search_listing_without_stored_publisher() {
 #[test]
 fn ac3_search_mark() {
     let (mut alice, _ivy, carol) = setup();
-    let before = carol
-        .dist
-        .channel(&alice.dist.identity())
-        .unwrap()
-        .last_success;
+    let before = last_success(&carol, alice.dist.identity());
+    assert!(before.is_some());
     alice.host.take();
     let reports = carol.dist.refresh();
     assert!(
@@ -151,6 +148,7 @@ fn ac3_search_mark() {
     assert_eq!(refs(&hits), [reference(&alice, "reading-list", "0.2.0")]);
     assert_eq!(hits[0].checked_at, before);
     assert_eq!(hits[0].unchecked_since, before);
+    assert_eq!(last_success(&carol, alice.dist.identity()), before);
 }
 #[test]
 fn ac4_search_bad_query() {
