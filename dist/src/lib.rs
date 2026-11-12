@@ -25,6 +25,7 @@ pub struct ChannelView {
     pub index: bool,
     pub listed_by: Vec<PublicKey>,
     pub listings: Vec<ListingInfo>,
+    pub last_attempt: Option<u64>,
     pub last_success: Option<u64>, // ms since the Unix epoch; None for the own channel
 }
 #[derive(Clone, Debug)]
@@ -77,6 +78,10 @@ pub struct Options {
     pub max_entry_file: u64,       // default watane_log::MAX_ENTRY (65_728 bytes)
     pub max_package: u64,          // default watane_pkg::MAX_PACKAGE_BYTES (64 MiB)
     pub max_entries_per_read: u64, // default 10_000 entry files per channel per read
+    pub max_listed: usize,
+    pub max_listed_per_index: usize,
+    pub max_listed_entries: u64,
+    pub listed_local: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -87,6 +92,10 @@ impl Default for Options {
             max_entry_file: watane_log::MAX_ENTRY as u64,
             max_package: watane_pkg::MAX_PACKAGE_BYTES,
             max_entries_per_read: 10_000,
+            max_listed: 512,
+            max_listed_per_index: 128,
+            max_listed_entries: 1_000,
+            listed_local: false,
         }
     }
 }
@@ -171,6 +180,27 @@ impl Dist {
                     })?
                     .base()
                     .into();
+                if record.bases.len() > 4 {
+                    return Err(DistError::Corrupt {
+                        path: path.clone(),
+                        cause: "more than four listed bases".into(),
+                    });
+                }
+                for base in &mut record.bases {
+                    *base = Link::new(channel, base, None)
+                        .map_err(|e| DistError::Corrupt {
+                            path: path.clone(),
+                            cause: e.to_string(),
+                        })?
+                        .base()
+                        .into();
+                }
+                if !record.followed && !record.index {
+                    if record.bases.is_empty() {
+                        record.bases.push(record.base.clone());
+                    }
+                    record.base = record.bases[0].clone();
+                }
                 follows.insert(channel, record);
             }
         }
@@ -229,11 +259,20 @@ mod own;
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Follow {
     base: String,
+    #[serde(default = "default_followed")]
+    followed: bool,
+    #[serde(default)]
+    index: bool,
+    #[serde(default)]
+    bases: Vec<String>,
     #[serde(rename = "followed_at")]
     _followed_at: u64,
     #[serde(rename = "last_attempt")]
     _last_attempt: u64,
     last_success: Option<u64>,
+}
+fn default_followed() -> bool {
+    true
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Follows {
@@ -331,3 +370,6 @@ pub struct Fetched {
     pub publisher_name: Option<String>,
     pub checked_at: Option<u64>,
 }
+
+mod index;
+pub use index::IndexView;

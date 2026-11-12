@@ -222,8 +222,22 @@ impl Dist {
             .get(key)
         {
             view.base = Some(record.base.clone());
-            view.followed = true;
+            view.followed = record.followed;
+            view.index = record.index;
+            view.last_attempt = Some(record._last_attempt);
             view.last_success = record.last_success;
+        }
+        if *key != self.identity() {
+            view.listed_by = self
+                .read_sets()?
+                .iter()
+                .filter(|s| {
+                    s.whole.iter().any(|(k, _)| k == key)
+                        || s.mods.iter().any(|m| m.channel == *key)
+                })
+                .map(|s| s.index)
+                .collect();
+            view.listed_by.sort();
         }
         Ok(view)
     }

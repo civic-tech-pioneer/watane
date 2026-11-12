@@ -13,6 +13,7 @@ pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
         index: false,
         listed_by: Vec::new(),
         listings: Vec::new(),
+        last_attempt: None,
         last_success: None,
     };
     for entry in entries {

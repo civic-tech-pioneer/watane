@@ -1,14 +1,17 @@
 use crate::*;
 use std::collections::BTreeMap;
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
 }
 impl Dist {
-    fn save_follows(&self, records: &BTreeMap<PublicKey, Follow>) -> Result<(), DistError> {
+    pub(crate) fn save_follows(
+        &self,
+        records: &BTreeMap<PublicKey, Follow>,
+    ) -> Result<(), DistError> {
         let file = Follows {
             version: 1,
             channels: records
@@ -50,13 +53,19 @@ impl Dist {
         let time = now();
         let record = next.entry(link.channel()).or_insert(Follow {
             base: link.base().into(),
+            followed: true,
+            index: false,
+            bases: Vec::new(),
             _followed_at: time,
             _last_attempt: time,
             last_success: None,
         });
+        record.followed = true;
         record.base = link.base().into();
         record._last_attempt = time;
-        record.last_success = Some(time);
+        if matches!(report.outcome, Outcome::Current { .. }) {
+            record.last_success = Some(time);
+        }
         self.save_follows(&next)?;
         *records = next;
         Ok(report)
@@ -71,66 +80,81 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut next = records.clone();
-        next.remove(channel);
+        let record = next
+            .get_mut(channel)
+            .filter(|r| r.followed)
+            .ok_or(DistError::NotFollowed { channel: *channel })?;
+        record.followed = false;
         self.save_follows(&next)?;
         *records = next;
-        Ok(())
+        drop(records);
+        self.prune_listed()
     }
     pub fn followed(&self) -> Result<Vec<ChannelView>, DistError> {
         let keys: Vec<_> = self
             .follows
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .keys()
-            .copied()
+            .iter()
+            .filter(|(_, r)| r.followed)
+            .map(|(k, _)| *k)
             .collect();
         keys.iter().map(|key| self.channel(key)).collect()
     }
     pub fn refresh(&self) -> Vec<RefreshReport> {
+        let _guard = self
+            .read_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let keys: Vec<_> = self
             .follows
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .keys()
-            .copied()
+            .iter()
+            .filter(|(_, r)| r.followed || r.index)
+            .map(|(k, r)| (*k, r.base.clone()))
             .collect();
-        keys.iter()
-            .map(|key| {
-                self.refresh_channel(key)
+        let mut seen = std::collections::BTreeSet::new();
+        let mut reports = Vec::new();
+        for (key, base) in keys {
+            seen.insert(key);
+            reports.push(
+                self.read_channel(key, &base)
                     .unwrap_or_else(|cause| RefreshReport {
-                        channel: *key,
+                        channel: key,
                         outcome: Outcome::Failed { cause },
                         changes: Vec::new(),
-                    })
-            })
-            .collect()
+                    }),
+            );
+        }
+        if let Err(cause) = self.read_listed(&mut reports, &mut seen) {
+            reports.push(RefreshReport {
+                channel: self.identity(),
+                outcome: Outcome::Failed { cause },
+                changes: Vec::new(),
+            });
+        }
+        reports
     }
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError> {
         let _guard = self
             .read_mutex
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let base = self
-            .follows
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(channel)
-            .ok_or(DistError::NotFollowed { channel: *channel })?
-            .base
-            .clone();
-        let report = self
-            .read_channel(*channel, &base)
-            .unwrap_or_else(|cause| RefreshReport {
-                channel: *channel,
-                outcome: Outcome::Failed { cause },
-                changes: Vec::new(),
-            });
-        Ok(report)
+        self.read_record(*channel)
     }
     pub(crate) fn read_channel(
         &self,
         key: PublicKey,
         base: &str,
+    ) -> Result<RefreshReport, DistError> {
+        self.read_channel_mode(key, base, false)
+    }
+    pub(crate) fn read_channel_mode(
+        &self,
+        key: PublicKey,
+        base: &str,
+        listed: bool,
     ) -> Result<RefreshReport, DistError> {
         // A channel already stopped by a fork makes no request or new attempt.
         if let watane_log::Status::Compromised(fork) = self.log.status(&key)? {
@@ -142,7 +166,7 @@ impl Dist {
                 changes: Vec::new(),
             });
         }
-        let result = self.read_channel_entries(key, base);
+        let result = self.read_channel_entries(key, base, listed);
         let mut records = self
             .follows
             .lock()
@@ -154,7 +178,7 @@ impl Dist {
             if matches!(
                 &result,
                 Ok(RefreshReport {
-                    outcome: Outcome::Current { .. } | Outcome::Behind { .. },
+                    outcome: Outcome::Current { .. },
                     ..
                 })
             ) {
@@ -165,7 +189,19 @@ impl Dist {
         }
         result
     }
-    fn read_channel_entries(&self, key: PublicKey, base: &str) -> Result<RefreshReport, DistError> {
+    fn read_channel_entries(
+        &self,
+        key: PublicKey,
+        base: &str,
+        listed: bool,
+    ) -> Result<RefreshReport, DistError> {
+        let entry_limit = if listed {
+            self.options
+                .max_listed_entries
+                .min(self.options.max_entries_per_read)
+        } else {
+            self.options.max_entries_per_read
+        };
         let head_url = http::file_url(base, "head");
         let head = self.read_entry(key, &head_url, None)?;
         let stored = self.log.head(&key)?.map(|h| h.seq);
@@ -174,7 +210,7 @@ impl Dist {
         let mut entries = Vec::new();
         let mut failure = None;
         let mut next = start;
-        while next < served && (entries.len() as u64) < self.options.max_entries_per_read {
+        while next < served && (entries.len() as u64) < entry_limit {
             let url = http::file_url(base, &format!("entries/{next}"));
             match self.read_entry(key, &url, Some(next)) {
                 Ok(entry) => entries.push(entry),
@@ -186,7 +222,11 @@ impl Dist {
             next += 1;
         }
         if failure.is_none() {
-            if next < served {
+            if next < served
+                || (listed
+                    && entries.len() as u64 >= entry_limit
+                    && stored.is_none_or(|s| served > s))
+            {
                 failure = Some(DistError::TooManyEntries {
                     channel: key,
                     stored,
