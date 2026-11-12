@@ -228,7 +228,11 @@ impl Outcome {
         ));
         if let Some(serde_json::Value::Object(fields)) = &self.result {
             for (k, v) in fields {
-                text_fields(k, v, &mut text);
+                if self.command == "publish" && k == "link" && v.is_null() {
+                    text.push_str("link: none yet\n");
+                } else {
+                    text_fields(k, v, &mut text);
+                }
             }
         }
         if let Some(next) = &self.next {
@@ -273,6 +277,22 @@ fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac1_publish_null_link_is_none_yet_only_in_text() {
+        let mut out = Outcome::new("publish", None);
+        out.result = Some(serde_json::json!({"link": null, "other": null}));
+        assert_eq!(
+            out.to_text(),
+            "publish: ok\nlink: none yet\nother: missing\n"
+        );
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&out.to_json()).unwrap()["result"]["link"]
+                .is_null()
+        );
+        out.command = "check";
+        assert_eq!(out.to_text(), "check: ok\nlink: missing\nother: missing\n");
+    }
 
     #[test]
     fn ac1_empty_text_lists_print_none_and_nonempty_lists_are_unchanged() {

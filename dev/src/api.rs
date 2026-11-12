@@ -130,7 +130,7 @@ impl Client {
                         .unwrap_or("version already published"),
                 )
                 .at("wit/world.wit", None, None)
-                .fix("Raise the version in wit/world.wit, then run publish again"));
+                .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"));
             }
             let code = if path != "releases" && value["error"]["code"] == "refused" {
                 Code::HostDeclined
@@ -337,7 +337,9 @@ mod tests {
         assert_eq!(e.file.as_deref(), Some("wit/world.wit"));
         assert_eq!(
             e.fix.as_deref(),
-            Some("Raise the version in wit/world.wit, then run publish again")
+            Some(
+                "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"
+            )
         );
     }
 

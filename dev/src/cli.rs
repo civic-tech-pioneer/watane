@@ -396,7 +396,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                     format!("mods:{slug} is a local provider; it has no release"),
                 )
                 .at("deps.json", None, None)
-                .fix(format!("Publish {slug} first, then depend on its release"))
+                .fix(format!("Publish {slug} first (if it is already published, that run reports its release), then depend on its release"))
             })
             .collect();
         if !errors.is_empty() {
@@ -408,7 +408,14 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 .map(|path| {
                     let path = dir.join(path);
                     let path = path.canonicalize().unwrap_or(path);
-                    format!("watane-dev publish --json --dir {}", quote(&path))
+                    let mut next = format!("watane-dev publish --json --dir {}", quote(&path));
+                    if let Some(home) = &home {
+                        let home = home.canonicalize().unwrap_or_else(|_| {
+                            std::path::absolute(home).unwrap_or_else(|_| home.clone())
+                        });
+                        next.push_str(&format!(" --home {}", quote(&home)));
+                    }
+                    next
                 });
             return Err(errors);
         }
@@ -422,6 +429,9 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 })
             })
         {
+            outcome.result = Some(serde_json::json!({
+                "home": home, "release": release["release"], "link": release["link"]
+            }));
             let link = release["link"].as_str().map_or_else(
                 || "it has no link yet: set your site's URL in the watane app".into(),
                 |link| format!("its link is {link}"),
@@ -437,7 +447,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                     ),
                 )
                 .at("wit/world.wit", None, None)
-                .fix("Raise the version in wit/world.wit, then run publish again"),
+                .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"),
             ]);
         }
         let tested = test(dir);

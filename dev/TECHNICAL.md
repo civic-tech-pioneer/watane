@@ -209,8 +209,8 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
-| `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `Raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
+| `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait`. If the person approved meanwhile, publish reports the release and its link on retry |
@@ -229,7 +229,10 @@ change `ok` or the exit status.
 
 For a violation in managed `deps.json`, `wit/deps/` or `.watane-dev.json`,
 the fix names an author action rather than telling the agent to edit that
-file. For an unused provider: import its interface in `wit/world.wit`, or
+file. For an unused provider the message is `deps.json lists mods:<slug> but
+wit/world.wit imports none of its interfaces`; for an own provider it is
+`deps.json lists this mod itself as mods:<slug>`. For an unused provider:
+import its interface in `wit/world.wit`, or
 ask before deleting `wit/deps/<slug>/` and `mods:<slug>` from `deps.json`.
 There is no dependency-removal command today. Other managed dependency
 violations point to `watane-dev add <provider folder>` to refresh the files.
@@ -390,13 +393,19 @@ while no site URL is set. With a link, `next` is
 `Put the site folder on your static web host`; without one, it is
 `Set your site's URL in the watane app, then run publish again to get the link`.
 That rerun checks existing releases and reports the release and current link.
+It keeps `publish.version_exists` and exit 1, with `result` containing only
+`home`, `release` and `link` from the listed release (home is resolved).
+In publish text output only, a null `link` prints `link: none yet`; JSON
+keeps null. The general null-to-`missing` rule of 2.3 is unchanged.
 
 Every publish refusal has a `next`:
 
 - `publish.version_exists`: the version-bump fix of 2.2.
 - `publish.local_dependency`: `watane-dev publish --json --dir <absolute provider folder>`
   for the first local provider whose folder `.watane-dev.json` knows; quote the
-  path for the shell as above. If none is known, use the first error's fix.
+  paths for the shell as above. If `--home <h>` was passed, append
+  `--home <absolute h>` to keep the same home, without contacting it.
+  If none is known, use the first error's fix.
 - `env.host_not_running`: repeat publish with `--json`, canonical `--dir`,
   home and explicit wait, as in 9.7 step 2; other environment gaps use doctor.
 - Pipeline failures retain their test `next`; other failures use the first
@@ -1181,7 +1190,8 @@ next command and fixes of `serve`.
    `Mod` identity. Invalid mods retain the test pipeline's diagnostics. On a
    match, return one `publish.version_exists` (2.2), with the existing release
    and its current link (or the missing-site-URL message), file `wit/world.wit`,
-   and `next` equal to the fix. Run no test pipeline, pack or POST. Another
+   `result` containing `home`, `release` and `link`, and `next` equal to the
+   fix. Run no test pipeline, pack or POST. Another
    slug or version does not block publishing. Error answers are `host.refused`.
 3. Test the mod (sections 5 to 8). Failures send no publish request and
    retain the test pipeline's errors and `next`, as `install` does.

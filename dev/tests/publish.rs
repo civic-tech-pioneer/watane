@@ -80,7 +80,9 @@ fn ac1_local_providers_precede_status_and_pipeline() {
             );
             assert_eq!(
                 error["fix"],
-                format!("Publish {slug} first, then depend on its release")
+                format!(
+                    "Publish {slug} first (if it is already published, that run reports its release), then depend on its release"
+                )
             );
             assert_eq!(error["file"], "deps.json");
         }
@@ -233,7 +235,7 @@ fn ac4_declined_names_publishing_and_asks_before_retry() {
 }
 
 #[test]
-fn ac1_existing_version_precedes_pipeline_with_or_without_link() {
+fn ac2_existing_version_reports_release_and_link_without_post() {
     for (link, suffix) in [
         (
             json!("https://example.test/#demo"),
@@ -267,9 +269,26 @@ fn ac1_existing_version_precedes_pipeline_with_or_without_link() {
         assert_eq!(value["errors"][0]["file"], "wit/world.wit");
         assert_eq!(
             value["errors"][0]["fix"],
-            "Raise the version in wit/world.wit, then run publish again"
+            "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"
         );
         assert_eq!(value["next"], value["errors"][0]["fix"]);
+        assert_eq!(
+            value["result"],
+            json!({"home": home.path().canonicalize().unwrap(), "release": "key/demo@0.2.3", "link": link})
+        );
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&dir)
+            .args(["publish", "--home"])
+            .arg(home.path())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("release: key/demo@0.2.3\n"), "{text}");
+        assert!(
+            text.contains(&format!("link: {}\n", link.as_str().unwrap_or("none yet"))),
+            "{text}"
+        );
         assert!(
             !dir.join("wit/deps").exists(),
             "check pipeline must not run"
@@ -299,7 +318,7 @@ fn ac1_other_slug_or_version_continues() {
 }
 
 #[test]
-fn ac3_missing_link_then_retry_recovers_link() {
+fn ac2_missing_link_then_retry_recovers_link() {
     let root = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     fs::write(home.path().join("fake.json"), r#"{"link":null}"#).unwrap();
@@ -329,15 +348,18 @@ fn ac3_missing_link_then_retry_recovers_link() {
         )
     );
     assert_eq!(
+        value["result"],
+        json!({"home": home.path().canonicalize().unwrap(), "release": format!("{}/demo@0.2.3", "y".repeat(52)), "link": "https://site.test/#demo"})
+    );
+    assert_eq!(
         fs::read_dir(home.path().join("requests")).unwrap().count(),
         1
     );
 }
 
 #[test]
-fn ac4_local_provider_next_uses_first_known_folder_and_quotes_it() {
+fn ac3_local_provider_next_preserves_home_and_quotes_paths() {
     let root = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
     let dir = page(root.path());
     let provider = root.path().join("Bob's provider");
     fs::create_dir(&provider).unwrap();
@@ -347,15 +369,31 @@ fn ac4_local_provider_next_uses_first_known_folder_and_quotes_it() {
         r#"{"local_providers":{"b":"../Bob's provider"}}"#,
     )
     .unwrap();
-    let (code, value) = publish(&dir, home.path(), &[]);
-    assert_eq!(code, 1, "{value}");
-    assert_eq!(
-        value["next"],
-        format!(
+    let home = dir.join("Bob's home");
+    fs::create_dir(&home).unwrap();
+    let _host = start(&home);
+    for home_arg in [Some(home.as_path()), Some(Path::new("Bob's home")), None] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        command.current_dir(&dir).args(["publish", "--json"]);
+        if let Some(home_arg) = home_arg {
+            command.arg("--home").arg(home_arg);
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let mut expected = format!(
             r#"watane-dev publish --json --dir '{}/Bob'"'"'s provider'"#,
             root.path().canonicalize().unwrap().display()
-        )
-    );
+        );
+        if home_arg.is_some() {
+            expected.push_str(&format!(
+                r#" --home '{}/Bob'"'"'s home'"#,
+                home.parent().unwrap().canonicalize().unwrap().display()
+            ));
+        }
+        assert_eq!(value["next"], expected);
+        assert!(!home.join("requests").exists());
+    }
 }
 
 fn releases(home: &Path) -> Value {
@@ -382,4 +420,18 @@ fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
     drop(host);
     let _host = start(home.path());
     assert_eq!(releases(home.path()), expected);
+}
+
+#[test]
+fn ac5_publish_spec_texts_and_template_line_budget() {
+    let technical = include_str!("../TECHNICAL.md");
+    for text in [
+        "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again",
+        "Publish <slug> first (if it is already published, that run reports its release), then depend on its release",
+        "link: none yet",
+        "--home <absolute h>",
+    ] {
+        assert!(technical.contains(text), "missing spec text: {text}");
+    }
+    assert!(include_str!("../template/AGENTS.md").lines().count() <= 143);
 }

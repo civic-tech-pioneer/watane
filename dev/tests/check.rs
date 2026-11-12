@@ -74,7 +74,7 @@ fn ac2_check_repairs_host_wit() {
 }
 
 #[test]
-fn ac3_unused_provider_fix_respects_managed_files() {
+fn ac4_unused_provider_message_and_fix_respect_managed_files() {
     let t = tempfile::tempdir().unwrap();
     for slug in ["consumer", "provider"] {
         assert_eq!(run(t.path(), &["new", slug, "--json"]).0, 0);
@@ -90,7 +90,40 @@ fn ac3_unused_provider_fix_respects_managed_files() {
         .find(|error| error["file"] == "deps.json")
         .unwrap();
     assert_eq!(
+        error["message"],
+        "[provider] deps.json lists mods:provider but wit/world.wit imports none of its interfaces"
+    );
+    assert_eq!(
         error["fix"],
         "Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/provider/ and mods:provider from deps.json"
+    );
+}
+
+#[test]
+fn ac4_own_provider_message_does_not_claim_own_events_are_unused() {
+    let t = tempfile::tempdir().unwrap();
+    assert_eq!(run(t.path(), &["new", "consumer", "--json"]).0, 0);
+    let dir = t.path().join("consumer");
+    let world = fs::read_to_string(dir.join("wit/world.wit")).unwrap();
+    fs::write(
+        dir.join("wit/world.wit"),
+        world.replace(
+            "package mods:",
+            "/* package mods:wrong@1.0.0; /* nested */ */\npackage /* identity */ mods:",
+        ),
+    )
+    .unwrap();
+    fs::write(dir.join("deps.json"), r#"{"mods:consumer":null}"#).unwrap();
+    let (code, value) = run(&dir, &["check", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    let error = value["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|error| error["file"] == "deps.json")
+        .unwrap();
+    assert_eq!(
+        error["message"],
+        "[provider] deps.json lists this mod itself as mods:consumer"
     );
 }
