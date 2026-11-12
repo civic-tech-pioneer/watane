@@ -137,7 +137,7 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
   Traces: F-FIND-1, F-QUAL-3.
 - **DIST-F-48** A listing shall never decide the version, the bytes or the withdrawals of a mod: they come only from the channel of its publisher.
   Traces: F-FIND-4, F-INST-6.
-- **DIST-F-49** dist shall read a listed channel from each base that listings give, until one serves its newest state, and shall not read a listed base on the participant's own device or local network.
+- **DIST-F-49** dist shall read a listed channel from every base that listings give on each refresh, within the base and channel limits, and shall not read a listed base on the participant's own device or local network.
   Traces: F-FIND-4, V5.
 
 ## 3. Acceptance scenarios

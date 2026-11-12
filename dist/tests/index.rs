@@ -1029,3 +1029,102 @@ fn ac13_record_bases_validated_on_open() {
         Err(DistError::Corrupt { .. })
     ));
 }
+
+#[test]
+fn ac7_index_stale_mirror_after_outage() {
+    let alice = Home::new();
+    let jay = Home::new();
+    let ivy = Home::new();
+    let carol = Home::new();
+    let release = alice.dist.publish(fixture("1.0.0", false)).unwrap();
+    let copy = tempfile::tempdir().unwrap();
+    alice.dist.export(copy.path()).unwrap();
+    let mirror = TestHost::serve(copy.path());
+    jay.dist.list(&alice.mod_link(), "real").unwrap();
+    ivy.dist
+        .list(
+            &Link::new(
+                alice.dist.identity(),
+                &mirror.url,
+                Some(&"reading-list".parse().unwrap()),
+            )
+            .unwrap(),
+            "mirror",
+        )
+        .unwrap();
+    carol.dist.choose_index(&jay.link()).unwrap();
+    carol.dist.choose_index(&ivy.link()).unwrap();
+    let head = std::fs::read(alice.dist.site_dir().join("head")).unwrap();
+    std::fs::remove_file(alice.dist.site_dir().join("head")).unwrap();
+    let reports = carol.dist.refresh();
+    assert!(matches!(
+        reports
+            .iter()
+            .find(|r| r.channel == alice.dist.identity())
+            .unwrap()
+            .outcome,
+        Outcome::Current { head: 1 }
+    ));
+    assert_eq!(
+        carol.records()["channels"][alice.dist.identity().to_string()]["bases"][0],
+        mirror.url
+    );
+    std::fs::write(alice.dist.site_dir().join("head"), head).unwrap();
+    alice
+        .dist
+        .withdraw(&release.info.reference, "gone")
+        .unwrap();
+    alice.host.requests.lock().unwrap().clear();
+    mirror.requests.lock().unwrap().clear();
+    for _ in 0..3 {
+        carol.dist.refresh();
+    }
+    let view = carol.dist.channel(&alice.dist.identity()).unwrap();
+    assert!(view.releases[0].withdrawn.is_some());
+    assert_eq!(view.last_attempt, view.last_success);
+    assert_eq!(view.base.as_deref(), Some(alice.host.url.as_str()));
+    assert_eq!(
+        alice
+            .host
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.as_str() == "/head")
+            .count(),
+        3
+    );
+    assert_eq!(
+        mirror
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.as_str() == "/head")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn ac12_refresh_listed_failure_has_listed_key() {
+    let alice = Home::new();
+    let ivy = Home::new();
+    let carol = Home::new();
+    alice.dist.publish(fixture("1.0.0", false)).unwrap();
+    ivy.dist.list(&alice.mod_link(), "").unwrap();
+    carol.dist.choose_index(&ivy.link()).unwrap();
+    // An unwritable record destination makes the listed-record sync fail.
+    let path = carol.dir.path().join("dist/follows.json");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    let reports = carol.dist.refresh();
+    assert_eq!(
+        reports.iter().map(|r| r.channel).collect::<Vec<_>>(),
+        [ivy.dist.identity(), alice.dist.identity()]
+    );
+    assert!(
+        matches!(&reports[1].outcome, Outcome::Failed {cause: DistError::ExportConflict {path: failed, ..}} if failed == &path)
+    );
+    assert!(reports.iter().all(|r| r.channel != carol.dist.identity()));
+}

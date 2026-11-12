@@ -127,9 +127,10 @@ impl Dist {
                     }),
             );
         }
-        if let Err(cause) = self.read_listed(&mut reports, &mut seen) {
+        if let Err(error) = self.read_listed(&mut reports, &mut seen) {
+            let (channel, cause) = *error;
             reports.push(RefreshReport {
-                channel: self.identity(),
+                channel,
                 outcome: Outcome::Failed { cause },
                 changes: Vec::new(),
             });

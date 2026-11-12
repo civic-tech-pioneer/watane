@@ -1,6 +1,9 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+// Keep the channel attached to failures until refresh builds its report.
+type ChannelError = Box<(PublicKey, DistError)>;
+
 #[derive(Clone, Debug)]
 pub struct IndexView {
     pub view: ChannelView,
@@ -30,6 +33,9 @@ impl Dist {
         Ok(self.walk()?.sets)
     }
     fn walk(&self) -> Result<Walk, DistError> {
+        self.walk_channels().map_err(|error| error.1)
+    }
+    fn walk_channels(&self) -> Result<Walk, ChannelError> {
         let mut walk = Walk::default();
         let records = self
             .follows
@@ -44,11 +50,19 @@ impl Dist {
                 mods: Vec::new(),
                 skipped: 0,
             };
-            if matches!(self.log.status(&key)?, watane_log::Status::Compromised(_)) {
+            if matches!(
+                self.log
+                    .status(&key)
+                    .map_err(|cause| Box::new((key, cause.into())))?,
+                watane_log::Status::Compromised(_)
+            ) {
                 walk.sets.push(set);
                 continue;
             }
-            let listings = self.stored_view(key)?.listings;
+            let listings = self
+                .stored_view(key)
+                .map_err(|cause| Box::new((key, cause)))?
+                .listings;
             let mut per_index = BTreeSet::new();
             let mut skipped = BTreeSet::new();
             for l in listings
@@ -69,13 +83,16 @@ impl Dist {
             }
             for (included, _) in set.whole.clone().into_iter().skip(1) {
                 if matches!(
-                    self.log.status(&included)?,
+                    self.log
+                        .status(&included)
+                        .map_err(|cause| Box::new((included, cause.into())))?,
                     watane_log::Status::Compromised(_)
                 ) {
                     continue;
                 }
                 for l in self
-                    .stored_view(included)?
+                    .stored_view(included)
+                    .map_err(|cause| Box::new((included, cause)))?
                     .listings
                     .iter()
                     .filter(|l| l.unlisted.is_none() && !l.include)
@@ -247,14 +264,15 @@ impl Dist {
         drop(records);
         let mut reports = vec![report];
         let mut seen = BTreeSet::from([link.channel()]);
-        self.read_listed(&mut reports, &mut seen)?;
+        self.read_listed(&mut reports, &mut seen)
+            .map_err(|error| error.1)?;
         Ok(reports)
     }
     pub(crate) fn read_listed(
         &self,
         reports: &mut Vec<RefreshReport>,
         seen: &mut BTreeSet<PublicKey>,
-    ) -> Result<(), DistError> {
+    ) -> Result<(), ChannelError> {
         let explicit: BTreeSet<_> = self
             .follows
             .lock()
@@ -266,7 +284,7 @@ impl Dist {
         let mut read = BTreeSet::new();
         let mut per_index: BTreeMap<PublicKey, BTreeSet<PublicKey>> = BTreeMap::new();
         for indirect in [false, true] {
-            let walk = self.walk()?;
+            let walk = self.walk_channels()?;
             let keys = if indirect {
                 &walk.indirect
             } else {
@@ -297,13 +315,17 @@ impl Dist {
                         per_index.entry(owner).or_default().insert(*key);
                     }
                 }
-                self.sync_listed(*key, &walk.bases[key])?;
+                self.sync_listed(*key, &walk.bases[key])
+                    .map_err(|cause| Box::new((*key, cause)))?;
                 if seen.insert(*key) {
-                    reports.push(self.read_record(*key)?);
+                    reports.push(
+                        self.read_record(*key)
+                            .map_err(|cause| Box::new((*key, cause)))?,
+                    );
                 }
             }
         }
-        self.prune_listed()?;
+        self.prune_listed_channels()?;
         Ok(())
     }
     fn sync_listed(&self, key: PublicKey, bases: &[String]) -> Result<(), DistError> {
@@ -322,13 +344,13 @@ impl Dist {
             last_success: None,
         });
         if !record.followed && !record.index {
-            // Probe newly learned locations before trusting the cached current mirror.
-            let mut ordered: Vec<_> = bases
+            let mut ordered: Vec<_> = record
+                .bases
                 .iter()
-                .filter(|b| !record.bases.contains(b))
+                .filter(|b| bases.contains(b))
                 .cloned()
                 .collect();
-            ordered.extend(record.bases.iter().filter(|b| bases.contains(b)).cloned());
+            ordered.extend(bases.iter().filter(|b| !record.bases.contains(b)).cloned());
             record.bases = ordered;
             record.base = record.bases[0].clone();
         }
@@ -351,6 +373,8 @@ impl Dist {
         };
         let mut best = None;
         let mut changes = Vec::new();
+        let mut highest: Option<(u64, String)> = None;
+        let mut any_current = false;
         for base in bases {
             if !record.followed && !record.index && !self.options.listed_local && local_base(&base)
             {
@@ -365,32 +389,48 @@ impl Dist {
                 });
             changes.append(&mut report.changes);
             let current = matches!(report.outcome, Outcome::Current { .. });
-            let stop = current || matches!(report.outcome, Outcome::Compromised { .. });
+            any_current |= current;
+            let stop = matches!(report.outcome, Outcome::Compromised { .. });
+            let served = match report.outcome {
+                Outcome::Current { head } => Some(head),
+                Outcome::Behind { served, .. } => Some(served),
+                _ => None,
+            };
+            if let Some(head) = served
+                && highest.as_ref().is_none_or(|(old, _)| head > *old)
+            {
+                highest = Some((head, base.clone()));
+            }
             let rank = |r: &RefreshReport| match r.outcome {
-                Outcome::Compromised { .. } => 4,
-                Outcome::Current { .. } => 3,
-                Outcome::Behind { .. } => 2,
-                Outcome::Failed { .. } => 1,
+                Outcome::Compromised { .. } => (4, 0),
+                Outcome::Current { head } => (3, head),
+                Outcome::Behind { served, .. } => (2, served),
+                Outcome::Failed { .. } => (1, 0),
             };
             if best.as_ref().is_none_or(|old| rank(&report) > rank(old)) {
                 best = Some(report);
             }
-            if current && !record.followed && !record.index {
-                let mut records = self
-                    .follows
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let mut next = records.clone();
-                let r = next.get_mut(&key).expect("listed record");
-                r.bases.retain(|b| b != &base);
-                r.bases.insert(0, base.clone());
-                r.base = base;
-                self.save_follows(&next)?;
-                *records = next;
-            }
             if stop {
                 break;
             }
+        }
+        if !record.followed && !record.index && (highest.is_some() || any_current) {
+            let mut records = self
+                .follows
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut next = records.clone();
+            let r = next.get_mut(&key).expect("listed record");
+            if let Some((_, base)) = highest {
+                r.bases.retain(|b| b != &base);
+                r.bases.insert(0, base.clone());
+                r.base = base;
+            }
+            if any_current {
+                r.last_success = Some(r._last_attempt);
+            }
+            self.save_follows(&next)?;
+            *records = next;
         }
         let mut report = best.unwrap_or(RefreshReport {
             channel: key,
@@ -405,7 +445,10 @@ impl Dist {
         Ok(report)
     }
     pub(crate) fn prune_listed(&self) -> Result<(), DistError> {
-        let walk = self.walk()?;
+        self.prune_listed_channels().map_err(|error| error.1)
+    }
+    fn prune_listed_channels(&self) -> Result<(), ChannelError> {
+        let walk = self.walk_channels()?;
         let stored: BTreeSet<_> = self
             .follows
             .lock()
@@ -415,7 +458,8 @@ impl Dist {
             .collect();
         for (key, bases) in &walk.bases {
             if stored.contains(key) {
-                self.sync_listed(*key, bases)?;
+                self.sync_listed(*key, bases)
+                    .map_err(|cause| Box::new((*key, cause)))?;
             }
         }
         let mut records = self
@@ -423,8 +467,17 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut next = records.clone();
+        let removed = next
+            .iter()
+            .find(|(k, r)| !r.followed && !r.index && !walk.bases.contains_key(k))
+            .map(|(k, _)| *k);
+        let channel = removed
+            .or_else(|| walk.bases.keys().next().copied())
+            .or_else(|| next.keys().next().copied())
+            .unwrap_or_else(|| self.identity());
         next.retain(|k, r| r.followed || r.index || walk.bases.contains_key(k));
-        self.save_follows(&next)?;
+        self.save_follows(&next)
+            .map_err(|cause| Box::new((channel, cause)))?;
         *records = next;
         Ok(())
     }

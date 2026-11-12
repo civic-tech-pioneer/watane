@@ -537,7 +537,7 @@ version stays 1 and a step 3 file reads unchanged:
 index holds it (5.9), and removes the record when no read set holds it any
 more. A listed record also has `"bases": [text]`: all distinct bases that
 listings give (5.9), at most 4, default `[]`; its `base` equals the first
-element. A successful current base moves to the front.
+element. The base that serves the highest head moves to the front.
 
 `site.json`: `{"version":1,"url":"https://alice.example.org/mods/"}`.
 Times are milliseconds since the Unix epoch, from `SystemTime::now()`. A
@@ -791,14 +791,20 @@ listing never changes it. dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
 
-**Read of a listed channel.** `read_channel` (5.4) from each of its bases
-in order, until one gives `Current`; newly learned bases are probed before
-the cached bases, so a previously current mirror cannot hide a newly
-available withdrawal. That current base moves to the front of
-`bases`. The outcome is the best one (`Current`, `Behind`, `Failed`). So a
-listing that names a stale mirror first cannot hide a withdrawal that
-another listed base serves. With the limits of 4.5, but at most
-`max_listed_entries` (default 1000) entry files per read.
+**Read of a listed channel.** `read_channel` (5.4) from every base in
+`bases`, in order, on each read (at most 4 reads per listed channel per
+refresh). Each base's entries are ingested as usual; later bases start from
+the head stored so far. `Current` means current against the stored head,
+so a mirror serving exactly that head must not stop the remaining reads:
+another base may hold a newer withdrawal. The outcome is the best one
+(`Current` > `Behind` > `Failed`), with the highest served head breaking
+ties. A fork still stops further reads and reports `Compromised` (5.4).
+`last_success` is set to `last_attempt` when any base gives `Current`;
+otherwise the previous success is retained. The base that served the
+highest head moves to the front of `bases` (first read wins a tie). Newly
+learned bases are appended after retained bases; every base is checked.
+The limits of 4.5 and the channel caps below still apply, with at most
+`max_listed_entries` (default 1000) entry files per base read.
 
 **Local addresses.** Unless `Options::listed_local` is set (tests only;
 default `false`), dist skips a listed base whose host is `localhost`, ends
@@ -1158,6 +1164,6 @@ Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
 | DD-22 | The read set is three passes; listed channels get a record in `follows.json` with `followed: false`. | Freshness marks need `last_attempt` and `last_success` for each channel a hit comes from; one file keeps one rule. Undo: cheap (local file, serde defaults). |
 | DD-23 | Search is a local filter over stored channels: words as lower-case substrings, filters by key and interface, an order made only from the participant's choices, at most 200 hits. | Offline (F-QUAL-1); no global ranking (V6, non-goals); good enough for a few thousand mods. Undo: cheap, reader-only; a later full-text index changes no format. |
 | DD-24 | Installing a hit follows the publisher. | Updates and withdrawals keep coming after an index drops the mod (F-INST-7, F-INST-8). Undo: cheap (app). |
-| DD-25 | A listed channel is read from up to 4 listed bases until one is `Current`, probing newly learned bases before cached mirrors; only `Current` sets `last_success` (a step 3 change: `Behind` did too). | S26 review: a hostile index could list a stale mirror first and hide a withdrawal behind a fresh mark. Undo: cheap, reader-only. |
+| DD-25 | A listed channel reads every listed base in order (at most 4 per refresh), ingesting each against the head stored so far. The best outcome wins (`Current` > `Behind` > `Failed`); any `Current` sets `last_success`. The base serving the highest head moves first. Channel caps and per-base entry limits still apply. | A mirror serving exactly the stored head can hide a later withdrawal, including after an outage promoted it; stopping at `Current` is insufficient. Undo: cheap, reader-only. |
 | DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
