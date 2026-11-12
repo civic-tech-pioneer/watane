@@ -90,6 +90,40 @@ fn ac3_self_and_missing_provider() {
     assert_eq!(code, 2);
     assert_eq!(v["errors"][0]["code"], "usage.provider");
     assert_eq!(v["errors"][0]["message"], "../missing is not a mod folder");
+    assert_eq!(v["errors"][0]["fix"], RELATIVE_FIX);
+    assert_eq!(snapshot(&b), before);
+}
+const RELATIVE_FIX: &str = "A relative provider folder is read from the current folder, not from --dir. Run add in the provider's folder or pass its absolute path";
+#[test]
+fn regress_s12b_add_dot_outside_provider_names_folder_and_cwd_rule() {
+    let t = mods();
+    let b = t.path().join("b");
+    let before = snapshot(&b);
+    for (cwd, shown) in [
+        (t.path().to_path_buf(), t.path()),
+        (t.path().join("a/logic"), &*t.path().join("a/logic")),
+    ] {
+        let (code, v) = run(&cwd, &["add", ".", "--dir", b.to_str().unwrap(), "--json"]);
+        assert_eq!(code, 2, "{v}");
+        assert_eq!(v["errors"][0]["code"], "usage.provider");
+        let found = shown.canonicalize().unwrap();
+        assert_eq!(
+            v["errors"][0]["message"],
+            format!(
+                ". is not a mod folder ({} has no mod.toml)",
+                found.display()
+            )
+        );
+        assert_eq!(v["errors"][0]["fix"], RELATIVE_FIX);
+    }
+    // An absolute canonical path names itself once and needs no current-folder fix.
+    let wit = b.canonicalize().unwrap().join("wit");
+    let (_, v) = run(&b, &["add", wit.to_str().unwrap(), "--json"]);
+    assert_eq!(
+        v["errors"][0]["message"],
+        format!("{} is not a mod folder", wit.display())
+    );
+    assert_eq!(v["errors"][0]["fix"], Value::Null);
     assert_eq!(snapshot(&b), before);
 }
 #[test]

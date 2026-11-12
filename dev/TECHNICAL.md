@@ -184,7 +184,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `usage.not_a_mod` | 2 | the folder has no `mod.toml` | `<dir> is not a mod folder: it has no mod.toml` | `Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>` |
 | `usage.slug` | 2 | `watane_pkg::Slug::from_str` refuses it | `"<s>" is not a valid slug: <pkg reason>` | `Use lowercase words of letters and digits joined by "-", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list` |
 | `usage.exists` | 2 | `new` into an existing path | `<path> exists` | `Choose another slug, or pass --dir <new folder>` |
-| `usage.provider` | 2 | `add`: the path is not a mod folder | `<path> is not a mod folder` | — |
+| `usage.provider` | 2 | `add`: the path is not a mod folder | `<path> is not a mod folder`, plus ` (<canonical path> has no mod.toml)` when the folder exists under another name | for a relative `<path>`: `A relative provider folder is read from the current folder, not from --dir. Run add in the provider's folder or pass its absolute path`; else — |
 | `env.toolchain` | 3 | no rustup, no cargo, no rustc | `no Rust toolchain found: <detail>` | `Install rustup with your package manager, then run: rustup default stable` |
 | `env.no_wasm_target` | 3 | the sysroot has no `wasm32-wasip2` | `the Rust toolchain at <sysroot> has no wasm32-wasip2 target` | `rustup target add wasm32-wasip2` |
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
@@ -1076,6 +1076,9 @@ From a provider folder, `add . --dir <consumer>` works with a relative or
 absolute consumer folder and records the same relative provider path as
 `add <absolute provider> --dir <consumer>`. The command regression
 `add::ac4_add_dot_from_provider_with_relative_and_absolute_consumer` proves both forms.
+Run elsewhere (the consumer's parent, a subfolder of the provider), `.` is
+`usage.provider` naming the canonical folder and the current-folder rule (2.2);
+`add::regress_s12b_add_dot_outside_provider_names_folder_and_cwd_rule` proves it.
 
 1. Canonicalize the folders; a missing provider or one without `mod.toml`
    is `usage.provider`. The same canonical folder as this mod is

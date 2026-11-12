@@ -124,13 +124,20 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         return Err(vec![Problem::new(Code::UsageNotAMod, format!("{} is not a mod folder: it has no mod.toml", dir.display()))
             .fix("Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>")]);
     }
-    let usage = || {
-        vec![Problem::new(
-            Code::UsageProvider,
-            format!("{} is not a mod folder", provider.display()),
-        )]
+    let given = provider;
+    let usage = |found: Option<&Path>| {
+        let mut message = format!("{} is not a mod folder", given.display());
+        if let Some(found) = found.filter(|found| *found != given) {
+            message = format!("{message} ({} has no mod.toml)", found.display());
+        }
+        let e = Problem::new(Code::UsageProvider, message);
+        vec![if given.is_relative() {
+            e.fix("A relative provider folder is read from the current folder, not from --dir. Run add in the provider's folder or pass its absolute path")
+        } else {
+            e
+        }]
     };
-    let provider = provider.canonicalize().map_err(|_| usage())?;
+    let provider = provider.canonicalize().map_err(|_| usage(None))?;
     if provider == dir {
         return Err(vec![
             Problem::new(Code::ModSelfDependency, "a mod cannot depend on itself")
@@ -138,7 +145,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         ]);
     }
     if !provider.join("mod.toml").is_file() {
-        return Err(usage());
+        return Err(usage(Some(&provider)));
     }
     // Include the consumer on the active path before traversing the proposed edge.
     visit(
@@ -158,7 +165,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         };
         vec![e]
     })?;
-    let m = Mod::read(&provider).map_err(|_| usage())?;
+    let m = Mod::read(&provider).map_err(|_| usage(None))?;
     let path = relative(&dir, &provider);
     let mut local = read_local(&dir).map_err(|e| vec![e])?;
     local.insert(m.slug().to_string(), path.clone());
