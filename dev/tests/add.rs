@@ -89,6 +89,7 @@ fn ac3_self_and_missing_provider() {
     let (code, v) = run(&b, &["add", "../missing", "--json"]);
     assert_eq!(code, 2);
     assert_eq!(v["errors"][0]["code"], "usage.provider");
+    assert_eq!(v["errors"][0]["message"], "../missing is not a mod folder");
     assert_eq!(snapshot(&b), before);
 }
 #[test]

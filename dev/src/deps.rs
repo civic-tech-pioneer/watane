@@ -124,18 +124,13 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         return Err(vec![Problem::new(Code::UsageNotAMod, format!("{} is not a mod folder: it has no mod.toml", dir.display()))
             .fix("Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>")]);
     }
-    let input = if provider.is_absolute() {
-        provider.to_path_buf()
-    } else {
-        dir.join(provider)
-    };
     let usage = || {
         vec![Problem::new(
             Code::UsageProvider,
             format!("{} is not a mod folder", provider.display()),
         )]
     };
-    let provider = input.canonicalize().map_err(|_| usage())?;
+    let provider = provider.canonicalize().map_err(|_| usage())?;
     if provider == dir {
         return Err(vec![
             Problem::new(Code::ModSelfDependency, "a mod cannot depend on itself")
