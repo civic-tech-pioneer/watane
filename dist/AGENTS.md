@@ -53,3 +53,7 @@ word for word. Follow their intent, and do not ask whether to.
 - A sibling offers another signature: adapt the call; update section 10.
 - A design question (a new kind, a new site file, a new wire form): decide
   it as "Reading the specs" says, record it in section 12, and go on.
+
+## Spec gaps settled
+
+- S21a (dist): DD-11 clarifies the private empty site directory in S1/S2; public export modes start in S3.

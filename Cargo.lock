@@ -6036,6 +6036,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "watane-dist"
+version = "0.1.0"
+dependencies = [
+ "minicbor",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "url",
+ "watane-log",
+ "watane-pkg",
+]
+
+[[package]]
 name = "watane-host"
 version = "0.1.0"
 dependencies = [

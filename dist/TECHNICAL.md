@@ -843,3 +843,4 @@ Not to build now. The design above keeps these open:
 | DD-8 | A fetch asks `pkg` whether release and package agree (PKG-F-23); dist compares no field itself. | One rule in one place; `pkg` owns the body. |
 | DD-9 | `dist` keeps `<home>/dist/site/` current after every statement. | J3 is then: publish, confirm, copy one folder. |
 | DD-10 | A follow is added only after a first successful read. | A mistyped link leaves nothing behind. |
+| DD-11 | In S1/S2 the empty `site/` directory stays 0700; S3 export applies the public site modes. | S21a AC5 requires all initial dist directories to be private; no files are exported in this slice. |

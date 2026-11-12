@@ -1,0 +1,262 @@
+mod link;
+pub use link::Link;
+pub use watane_log::PublicKey;
+pub use watane_pkg::Slug;
+mod error;
+pub use error::DistError;
+pub use watane_log::{DecodeError, Entry, EntryId, KeyTextError};
+pub use watane_pkg::{
+    Package, PackageError, PackageId, PublisherKey, Release, ReleaseError, ReleaseRef, Version,
+};
+mod confirm;
+pub use confirm::{Confirm, Decision, Profile, SignRequest, Statement, Withdraw};
+mod body;
+#[derive(Clone, Debug)]
+pub struct ChannelView {
+    pub channel: PublicKey,
+    pub fingerprint: String,
+    pub name: Option<String>, // the last valid profile
+    pub base: Option<String>, // followed: the base of its link; own: the site URL
+    pub head: Option<u64>,
+    pub releases: Vec<ReleaseInfo>, // seq order; withdrawn ones included
+    pub bad: Vec<BadStatement>,     // seq order
+    pub status: Status,
+    pub followed: bool,
+    pub last_success: Option<u64>, // ms since the Unix epoch; None for the own channel
+}
+#[derive(Clone, Debug)]
+pub struct ReleaseInfo {
+    pub reference: ReleaseRef, // channel key, release.slug, release.version
+    pub channel: PublicKey,
+    pub entry: EntryId,
+    pub seq: u64,
+    pub release: Release,
+    pub withdrawn: Option<Withdrawal>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Withdrawal {
+    pub seq: u64,
+    pub reason: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BadStatement {
+    pub seq: u64,
+    pub kind: String,
+    pub cause: String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Status {
+    Ok,
+    Compromised { seq: u64 },
+} // seq of the first contradicting position
+
+mod view;
+
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+#[derive(Clone, Debug)]
+pub struct Options {
+    pub connect_timeout: Duration, // default 10 s
+    pub entry_timeout: Duration,   // default 30 s: one whole GET of `head` or `entries/<n>`
+    pub package_timeout: Duration, // default 300 s: one whole GET of `packages/<id>`
+    pub max_entry_file: u64,       // default watane_log::MAX_ENTRY (65_728 bytes)
+    pub max_package: u64,          // default watane_pkg::MAX_PACKAGE_BYTES (64 MiB)
+    pub max_entries_per_read: u64, // default 10_000 entry files per channel per read
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(10),
+            entry_timeout: Duration::from_secs(30),
+            package_timeout: Duration::from_secs(300),
+            max_entry_file: watane_log::MAX_ENTRY as u64,
+            max_package: watane_pkg::MAX_PACKAGE_BYTES,
+            max_entries_per_read: 10_000,
+        }
+    }
+}
+
+pub struct Dist {
+    home: PathBuf,
+    _lock: File,
+    log: watane_log::Log,
+    confirm: Arc<dyn Confirm>,
+    own_mutex: Mutex<()>,
+    base: Option<String>,
+    follows: std::collections::BTreeMap<PublicKey, Follow>,
+}
+impl Dist {
+    pub fn open(
+        home: &Path,
+        confirm: Arc<dyn Confirm>,
+        _options: Options,
+    ) -> Result<Self, DistError> {
+        use std::fs::{self, OpenOptions};
+        use std::os::unix::fs::OpenOptionsExt;
+        let dir = home.join("dist");
+        private_dir(&dir)?;
+        let path = dir.join("lock");
+        if let Ok(meta) = fs::symlink_metadata(&path)
+            && !meta.is_file()
+        {
+            return Err(DistError::Corrupt {
+                path,
+                cause: "lock is not a regular file".into(),
+            });
+        }
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|source| DistError::Io {
+                path: path.clone(),
+                source,
+            })?;
+        match lock.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => return Err(DistError::Locked { path }),
+            Err(std::fs::TryLockError::Error(source)) => {
+                return Err(DistError::Io { path, source });
+            }
+        }
+        for name in ["packages", "site"] {
+            private_dir(&dir.join(name))?;
+        }
+        let tmp = dir.join("tmp");
+        match fs::remove_dir_all(&tmp) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => return Err(DistError::Io { path: tmp, source }),
+        }
+        private_dir(&tmp)?;
+        let log = watane_log::Log::open(&home.join("log"))?;
+        let mut follows = std::collections::BTreeMap::new();
+        if let Some(file) = read_json::<Follows>(&dir.join("follows.json"))? {
+            let path = dir.join("follows.json");
+            if file.version != 1 {
+                return Err(DistError::Corrupt {
+                    path,
+                    cause: "unsupported version".into(),
+                });
+            }
+            for (key, mut record) in file.channels {
+                let channel = key.parse().map_err(|e: KeyTextError| DistError::Corrupt {
+                    path: path.clone(),
+                    cause: e.to_string(),
+                })?;
+                record.base = Link::new(channel, &record.base, None)
+                    .map_err(|e| DistError::Corrupt {
+                        path: path.clone(),
+                        cause: e.to_string(),
+                    })?
+                    .base()
+                    .into();
+                follows.insert(channel, record);
+            }
+        }
+        let base = match read_json::<Site>(&dir.join("site.json"))? {
+            None => None,
+            Some(file) => {
+                let path = dir.join("site.json");
+                if file.version != 1 {
+                    return Err(DistError::Corrupt {
+                        path,
+                        cause: "unsupported version".into(),
+                    });
+                }
+                Some(
+                    Link::new(log.identity(), &file.url, None)
+                        .map_err(|e| DistError::Corrupt {
+                            path,
+                            cause: e.to_string(),
+                        })?
+                        .base()
+                        .into(),
+                )
+            }
+        };
+        Ok(Self {
+            home: home.to_owned(),
+            _lock: lock,
+            log,
+            confirm,
+            own_mutex: Mutex::new(()),
+            base,
+            follows,
+        })
+    }
+    pub fn identity(&self) -> PublicKey {
+        self.log.identity()
+    }
+    pub fn fingerprint(&self) -> String {
+        self.identity().fingerprint()
+    }
+    pub fn site_dir(&self) -> PathBuf {
+        self.home.join("dist/site")
+    }
+}
+mod own;
+
+#[derive(serde::Deserialize)]
+struct Follow {
+    base: String,
+    #[serde(rename = "followed_at")]
+    _followed_at: u64,
+    #[serde(rename = "last_attempt")]
+    _last_attempt: u64,
+    last_success: Option<u64>,
+}
+#[derive(serde::Deserialize)]
+struct Follows {
+    version: u64,
+    channels: std::collections::BTreeMap<String, Follow>,
+}
+#[derive(serde::Deserialize)]
+struct Site {
+    version: u64,
+    url: String,
+}
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, DistError> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| DistError::Corrupt {
+                path: path.to_owned(),
+                cause: e.to_string(),
+            }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(DistError::Io {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+fn private_dir(path: &Path) -> Result<(), DistError> {
+    use std::{
+        fs,
+        os::unix::fs::{DirBuilderExt, PermissionsExt},
+    };
+    let io = |source| DistError::Io {
+        path: path.to_owned(),
+        source,
+    };
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .map_err(io)?;
+    if !fs::symlink_metadata(path).map_err(io)?.is_dir() {
+        return Err(DistError::Corrupt {
+            path: path.to_owned(),
+            cause: "not a plain directory".into(),
+        });
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(io)
+}
