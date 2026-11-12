@@ -23,3 +23,35 @@ impl Confirm for RecordingConfirm {
             .expect("unexpected confirmation")
     }
 }
+
+#[allow(dead_code)]
+pub fn fixture(version: &str, source: bool) -> Vec<u8> {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_fixture("reading-list", tmp.path());
+    std::fs::write(
+        tmp.path().join("wit/world.wit"),
+        format!("package mods:reading-list@{version};\nworld reading-list {{}}\n"),
+    )
+    .unwrap();
+    watane_pkg::pack(tmp.path(), source).unwrap().into_bytes()
+}
+#[allow(dead_code)]
+pub fn copy_fixture(name: &str, dest: &std::path::Path) {
+    fn copy(src: &std::path::Path, dst: &std::path::Path) {
+        std::fs::create_dir_all(dst).unwrap();
+        for e in std::fs::read_dir(src).unwrap() {
+            let e = e.unwrap();
+            if e.file_type().unwrap().is_dir() {
+                copy(&e.path(), &dst.join(e.file_name()));
+            } else {
+                std::fs::copy(e.path(), dst.join(e.file_name())).unwrap();
+            }
+        }
+    }
+    copy(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name),
+        dest,
+    );
+}

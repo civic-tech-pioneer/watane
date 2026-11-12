@@ -57,3 +57,5 @@ word for word. Follow their intent, and do not ask whether to.
 ## Spec gaps settled
 
 - S21a (dist): DD-11 clarifies the private empty site directory in S1/S2; public export modes start in S3.
+
+- S21a-2 (dist): DD-11 makes S3 site modes public on open; DD-12 removes withdrawn packages only from the managed site (external exports keep files).

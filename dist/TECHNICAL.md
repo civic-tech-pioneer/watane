@@ -843,4 +843,5 @@ Not to build now. The design above keeps these open:
 | DD-8 | A fetch asks `pkg` whether release and package agree (PKG-F-23); dist compares no field itself. | One rule in one place; `pkg` owns the body. |
 | DD-9 | `dist` keeps `<home>/dist/site/` current after every statement. | J3 is then: publish, confirm, copy one folder. |
 | DD-10 | A follow is added only after a first successful read. | A mistyped link leaves nothing behind. |
-| DD-11 | In S1/S2 the empty `site/` directory stays 0700; S3 export applies the public site modes. | S21a AC5 requires all initial dist directories to be private; no files are exported in this slice. |
+| DD-11 | In S1/S2 the empty `site/` directory stays 0700; from S3, open creates it with 0755 and export writes 0644 files. | S21a-2 AC10a supersedes the S1/S2 private empty site rule. The earlier open mode test is retained and conflicts with this requirement. |
+| DD-12 | S3 removes withdrawn package files only from the built-in `site/`; external export never deletes files. This overrides the blanket no-delete rule of §4.3 for that managed directory. | S21a-2 AC6 requires the built-in site to contain exactly the live packages; §4.3 and Q5 still apply to external exports. |

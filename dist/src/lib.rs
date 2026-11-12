@@ -86,14 +86,15 @@ pub struct Dist {
     log: watane_log::Log,
     confirm: Arc<dyn Confirm>,
     own_mutex: Mutex<()>,
-    base: Option<String>,
+    base: Mutex<Option<String>>,
+    options: Options,
     follows: std::collections::BTreeMap<PublicKey, Follow>,
 }
 impl Dist {
     pub fn open(
         home: &Path,
         confirm: Arc<dyn Confirm>,
-        _options: Options,
+        options: Options,
     ) -> Result<Self, DistError> {
         use std::fs::{self, OpenOptions};
         use std::os::unix::fs::OpenOptionsExt;
@@ -126,9 +127,8 @@ impl Dist {
                 return Err(DistError::Io { path, source });
             }
         }
-        for name in ["packages", "site"] {
-            private_dir(&dir.join(name))?;
-        }
+        private_dir(&dir.join("packages"))?;
+        site::public_dir(&dir.join("site"))?;
         let tmp = dir.join("tmp");
         match fs::remove_dir_all(&tmp) {
             Ok(()) => {}
@@ -188,7 +188,8 @@ impl Dist {
             log,
             confirm,
             own_mutex: Mutex::new(()),
-            base,
+            base: Mutex::new(base),
+            options,
             follows,
         })
     }
@@ -259,4 +260,20 @@ fn private_dir(path: &Path) -> Result<(), DistError> {
         });
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(io)
+}
+
+mod fetch;
+mod site;
+#[derive(Debug)]
+pub struct Published {
+    pub entry: Entry,
+    pub info: ReleaseInfo,
+    pub link: Option<Link>,
+    pub site: Exported,
+}
+#[derive(Debug)]
+pub struct Exported {
+    pub dir: PathBuf,
+    pub head: Option<u64>,
+    pub written: Vec<PathBuf>,
 }

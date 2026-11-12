@@ -6,14 +6,21 @@ impl Dist {
             .own_mutex
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.sign_and_append(guard, "profile", Profile { name: name.into() }.encode())
+        self.sign_and_append(
+            guard,
+            "profile",
+            Profile { name: name.into() }.encode(),
+            None,
+        )
+        .map(|(entry, _)| entry)
     }
     fn sign_and_append(
         &self,
         _guard: std::sync::MutexGuard<'_, ()>,
         kind: &str,
         body: Vec<u8>,
-    ) -> Result<Entry, DistError> {
+        package: Option<&Package>,
+    ) -> Result<(Entry, Exported), DistError> {
         let own = self.identity();
         if let watane_log::Status::Compromised(fork) = self.log.status(&own)? {
             return Err(DistError::Compromised {
@@ -43,7 +50,18 @@ impl Dist {
                     release: info.release,
                 }
             }
-            _ => unreachable!("only profile and withdraw are signed in S1/S2"),
+            "release" => {
+                let release = Release::decode(&body)?;
+                Statement::Release {
+                    reference: ReleaseRef {
+                        publisher: PublisherKey::from_bytes(*own.as_bytes()),
+                        slug: release.slug.clone(),
+                        version: release.version.clone(),
+                    },
+                    release,
+                }
+            }
+            _ => unreachable!("only known statement kinds are signed"),
         };
         let request = SignRequest {
             channel: self.identity(),
@@ -53,12 +71,77 @@ impl Dist {
         if self.confirm.confirm(&request) == Decision::Refuse {
             return Err(DistError::Refused);
         }
-        let entry = self.log.append(kind, &body)?;
-        self.after_append(&entry);
-        Ok(entry)
+        let created = match package {
+            Some(p) => self.cache_write(p)?,
+            None => false,
+        };
+        let entry = match self.log.append(kind, &body) {
+            Ok(entry) => entry,
+            Err(error) => {
+                if created && let Some(p) = package {
+                    let _ = std::fs::remove_file(self.cache_path(&p.id()));
+                }
+                return Err(error.into());
+            }
+        };
+        let site =
+            self.export_unlocked(&self.site_dir())
+                .map_err(|cause| DistError::SiteNotWritten {
+                    entry: entry.id(),
+                    cause: Box::new(cause),
+                })?;
+        Ok((entry, site))
     }
-    // S21a-2 fills this hook with site export after a successful append.
-    fn after_append(&self, _entry: &Entry) {}
+    pub fn publish(&self, bytes: Vec<u8>) -> Result<Published, DistError> {
+        if bytes.len() as u64 > self.options.max_package {
+            return Err(DistError::PackageTooLarge {
+                size: bytes.len() as u64,
+                max: self.options.max_package,
+            });
+        }
+        let package = Package::from_bytes(bytes)?;
+        let (_tmp, m) = self.unpacked(&package)?;
+        let release = Release::new(&m, &package).map_err(|error| match error {
+            ReleaseError::LocalProvider { slug } => {
+                DistError::UnreleasedProvider { provider: slug }
+            }
+            other => DistError::Release(other),
+        })?;
+        let guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(info) = self
+            .own()?
+            .releases
+            .into_iter()
+            .find(|r| r.release.slug == release.slug && r.release.version == release.version)
+        {
+            return Err(DistError::VersionExists {
+                release: info.reference,
+                seq: info.seq,
+            });
+        }
+        let (entry, site) =
+            self.sign_and_append(guard, "release", release.encode(), Some(&package))?;
+        let info = self
+            .own()?
+            .releases
+            .into_iter()
+            .find(|r| r.entry == entry.id())
+            .expect("appended release");
+        let link = match self.own_link(Some(&release.slug)) {
+            Ok(link) => Some(link),
+            Err(DistError::NoSiteUrl) => None,
+            Err(e) => return Err(e),
+        };
+        Ok(Published {
+            entry,
+            info,
+            link,
+            site,
+        })
+    }
     pub fn withdraw(&self, release: &ReleaseRef, reason: &str) -> Result<Entry, DistError> {
         body::text(reason, 280).map_err(|cause| DistError::BadReason { cause })?;
         let guard = self
@@ -87,7 +170,9 @@ impl Dist {
                 reason: reason.into(),
             }
             .encode(),
+            None,
         )
+        .map(|(entry, _)| entry)
     }
     pub fn own(&self) -> Result<ChannelView, DistError> {
         self.channel(&self.identity())
@@ -102,7 +187,11 @@ impl Dist {
             },
         };
         if *key == self.identity() {
-            view.base = self.base.clone();
+            view.base = self
+                .base
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
         } else if let Some(record) = self.follows.get(key) {
             view.base = Some(record.base.clone());
             view.followed = true;

@@ -6039,6 +6039,7 @@ dependencies = [
 name = "watane-dist"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "minicbor",
  "rusqlite",
  "serde",

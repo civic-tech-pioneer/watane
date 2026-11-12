@@ -110,3 +110,102 @@ fn ac11_error_text_escapes_controls() {
     assert!(text.contains("\\u{1b}"));
     assert!(!text.contains('\u{1b}'));
 }
+
+#[test]
+fn ac1_own_refuse_publish() {
+    let home = tempfile::tempdir().unwrap();
+    let c = Arc::new(RecordingConfirm::new([Decision::Refuse]));
+    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let bytes = support::fixture("1.0.0", false);
+    let id = blake3::hash(&bytes).to_hex().to_string();
+    let key = dist.identity();
+    assert!(matches!(dist.publish(bytes), Err(DistError::Refused)));
+    assert_eq!(c.requests.lock().unwrap().len(), 1);
+    assert_eq!(std::fs::read_dir(dist.site_dir()).unwrap().count(), 0);
+    assert!(!home.path().join("dist/packages").join(id).exists());
+    drop(dist);
+    assert_eq!(
+        watane_log::Log::open(&home.path().join("log"))
+            .unwrap()
+            .head(&key)
+            .unwrap(),
+        None
+    );
+}
+#[test]
+fn ac2_own_request_publish() {
+    for source in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
+        let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+        let bytes = support::fixture("1.2.3", source);
+        let size = bytes.len() as u64;
+        let published = dist.publish(bytes).unwrap();
+        let release = Release::decode(published.entry.body()).unwrap();
+        assert_eq!(release.size, size);
+        assert_eq!(release.source, source);
+        let requests = c.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let Statement::Release {
+            reference,
+            release: recorded,
+        } = &requests[0].statement
+        else {
+            panic!()
+        };
+        assert_eq!(recorded, &release);
+        assert_eq!(reference.publisher.as_bytes(), dist.identity().as_bytes());
+        assert_eq!(reference.slug.to_string(), "reading-list");
+        assert_eq!(reference.version.to_string(), "1.2.3");
+        drop(dist);
+        let log = watane_log::Log::open(&home.path().join("log")).unwrap();
+        assert_eq!(
+            log.entries(&requests[0].channel, 0, 10).unwrap()[0].body(),
+            published.entry.body()
+        );
+    }
+}
+#[test]
+fn ac3_version_exists_before_confirm() {
+    let home = tempfile::tempdir().unwrap();
+    let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
+    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    dist.publish(support::fixture("1.0.0", false)).unwrap();
+    assert!(matches!(
+        dist.publish(support::fixture("1.0.0", true)),
+        Err(DistError::VersionExists { seq: 0, .. })
+    ));
+    assert_eq!(c.requests.lock().unwrap().len(), 1);
+}
+#[test]
+fn ac4_unreleased_provider_before_confirm() {
+    let home = tempfile::tempdir().unwrap();
+    let c = Arc::new(RecordingConfirm::new([]));
+    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    support::copy_fixture("recommendations", tmp.path());
+    let bytes = watane_pkg::pack(tmp.path(), false).unwrap().into_bytes();
+    assert!(
+        matches!(dist.publish(bytes), Err(DistError::UnreleasedProvider { provider }) if provider.to_string()=="reading-list")
+    );
+    assert!(c.requests.lock().unwrap().is_empty());
+}
+#[test]
+fn ac5_package_too_large_before_parsing() {
+    let home = tempfile::tempdir().unwrap();
+    let c = Arc::new(RecordingConfirm::new([]));
+    let dist = Dist::open(
+        home.path(),
+        c.clone(),
+        Options {
+            max_package: 3,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        dist.publish(vec![0; 4]),
+        Err(DistError::PackageTooLarge { size: 4, max: 3 })
+    ));
+    assert!(c.requests.lock().unwrap().is_empty());
+}
