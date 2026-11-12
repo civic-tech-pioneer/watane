@@ -20,9 +20,7 @@ pub(crate) struct ReadSet {
 pub(crate) struct ListedMod {
     pub channel: PublicKey,
     pub slug: Slug,
-    #[allow(dead_code)] // Consumed by S28-3 search.
     pub through: Option<PublicKey>,
-    #[allow(dead_code)] // Consumed by S28-3 search.
     pub note: String,
 }
 impl Dist {

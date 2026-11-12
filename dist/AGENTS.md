@@ -25,8 +25,8 @@
    Network tests use `tiny_http` on `127.0.0.1:0` only.
 6. Do not redefine a type of `log` or `pkg`. Change a format of section 4
    only by changing section 4 first.
-7. No async runtime, no thread, no timer, no listening socket. Step 4
-   (index, search) is not built now; section 11 says what to keep open.
+7. No async runtime, no thread, no timer, no listening socket. Step 5
+   is not built now; section 11 says what to keep open.
 
 ## Reading the specs
 
