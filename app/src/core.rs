@@ -41,7 +41,7 @@ pub(crate) struct Core {
     pub host: Arc<Host>,
     pub dist: Arc<watane_dist::Dist>,
     failures: Mutex<std::collections::BTreeMap<String, String>>,
-    update_failures: Mutex<std::collections::BTreeMap<String, (String, String)>>,
+    update_failures: Mutex<std::collections::BTreeMap<String, String>>,
     pub served: Mutex<Option<Served>>,
     app: tauri::AppHandle,
     parties: Arc<Parties>,
@@ -65,7 +65,7 @@ fn own_releases(own: &watane_dist::ChannelView) -> Vec<serde_json::Value> {
 fn release_notice(
     installed: Option<&watane_dist::ReleaseRef>,
     channel: Option<&watane_dist::ChannelView>,
-    failure: Option<&(String, String)>,
+    failure: Option<&String>,
 ) -> Option<String> {
     let installed = installed?;
     let channel = channel?;
@@ -80,7 +80,7 @@ fn release_notice(
     {
         return Some(words::withdrawn(&withdrawal.reason));
     }
-    failure.map(|(_, message)| message.clone())
+    failure.cloned()
 }
 fn update_failure(version: &str, error: &CmdError) -> String {
     if error.code == "refused" {
@@ -399,10 +399,7 @@ impl Core {
                 }) {
                     self.update_failures.lock().unwrap().insert(
                         m.local.to_string(),
-                        (
-                            release.version.to_string(),
-                            update_failure(&release.version.to_string(), error),
-                        ),
+                        update_failure(&release.version.to_string(), error),
                     );
                 }
             }
@@ -679,7 +676,7 @@ mod stage_d_more_tests {
     fn ac2_notice_priority_and_unfollowed_or_local() {
         let mut view = channel();
         let installed = reference("0.3.0");
-        let failure = ("0.4.0".to_string(), words::update_declined("0.4.0"));
+        let failure = words::update_declined("0.4.0");
         assert_eq!(release_notice(Some(&installed), Some(&view), None), None);
         assert_eq!(
             release_notice(Some(&installed), Some(&view), Some(&failure)).as_deref(),
