@@ -235,8 +235,10 @@ pub struct IndexView {
     pub view: ChannelView,             // index is true
     pub included: Vec<PublicKey>,      // the live includes that are read (depth 1)
     pub mods: usize,                   // listed mods with a stored, verified release
-    pub skipped: usize,                // channels of its walk not read: a cap or a local base (5.9)
+    pub skipped: Vec<Skipped>,         // channels of its walk not read, walk order, each once (5.9)
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Skipped { pub channel: PublicKey, pub cause: &'static str } // "own channel" | "local address" | "over the listing limit"
 #[derive(Clone, Debug)]
 pub struct ReleaseInfo {
     pub reference: ReleaseRef,         // channel key, release.slug, release.version
@@ -818,8 +820,10 @@ is not checked (section 6, "Not protected").
 **Cap.** At most `max_listed` (default 512) listed channels in all, and at
 most `max_listed_per_index` (default 128) for each chosen index, counted
 in the walk order (an included `J` counts too). A channel past either cap
-gets no record and is not read; `IndexView.skipped` counts the channels
-that the walk of that index skipped for a cap or for a local base. So no
+gets no record and is not read; `IndexView.skipped` names each channel
+that the walk of that index skipped, once, with its cause: `own channel`,
+`local address` or `over the listing limit` (S29: a count told the
+participant nothing). So no
 one index can use up the whole cap.
 
 **`refresh()`** returns one report per channel read, in pass order, key

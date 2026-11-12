@@ -423,7 +423,8 @@ ChannelRow {channel (key text), fingerprint, name: null | string, base: null | s
             status: "ok" | "compromised" | "failed", cause: null | string}
 IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string,
-            own: bool, mods: number, skipped: number, included: [Party],
+            own: bool, mods: number, included: [Party],
+            skipped: [{party: Party, cause: string}],   // dist's IndexView.skipped (S29)
             listings: [{entry, kind: "list" | "include", target (ReleaseRef without
                         version, or key text), note}]}            // own index only: its live listings
 HitView    {release (ReleaseRef), slug, name, summary, version, link (link text) | null,
@@ -719,7 +720,13 @@ index", and for each of its mods "List in my index".
   `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
   cache; answer `indexes_list`. A failed first read is a command error with
   dist's cause (APP-F-37).
+  Choosing the own link is `bad_input` "Your own channel is always your
+  index." (`words.rs`), not dist's follow text.
 - `index_drop(channel)`: `dist.drop_index`.
+- Parties: `Via::Index` carries only keys; `HitView.via.index`, `through`
+  and `IndexRow.included`/`skipped` take name and fingerprint from the
+  parties cache, which Core also fills from `dist.indexes()` and the
+  `channel(key)` of each listed channel (S29).
 - `search`: as 8.2, mapped to `HitView`. `verified` is `status == ok`
   (every hit comes from a verified channel; a compromised one is not
   shown as verified); `installed` from `host.list()` by `ReleaseRef`
@@ -735,7 +742,10 @@ index", and for each of its mods "List in my index".
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view
   (`OwnListing`, `AlreadyListed`, `NoRelease`, `BadNote`) are command
-  errors with dist's cause.
+  errors with dist's cause. `BadNote { cause }` reads as
+  `words::bad_note(cause)`: `invalid character count` gives `Give a note of
+  at most 280 characters.`; every other cause gives `This note cannot be
+  used: <cause>.` (as `bad_reason`, 9.5).
 - The refresh loop (9.5) needs no change: `dist.refresh()` reads the
   read sets too.
 
