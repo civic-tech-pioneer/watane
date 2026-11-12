@@ -192,7 +192,12 @@ impl Dist {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
-        } else if let Some(record) = self.follows.get(key) {
+        } else if let Some(record) = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(key)
+        {
             view.base = Some(record.base.clone());
             view.followed = true;
             view.last_success = record.last_success;
@@ -210,5 +215,82 @@ impl Dist {
             .into_iter()
             .rev()
             .find(|r| r.reference.slug == *slug && r.withdrawn.is_none()))
+    }
+}
+
+impl Dist {
+    pub fn backup(&self, passphrase: &str) -> Result<Vec<u8>, DistError> {
+        Ok(self.log.export_identity(passphrase)?)
+    }
+    pub fn own_confirmed(&self) -> Result<bool, DistError> {
+        Ok(self.log.own_head_confirmed()?)
+    }
+    pub fn restore(&self, backup: &[u8], passphrase: &str) -> Result<PublicKey, DistError> {
+        let _guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let key = self.log.restore_identity(backup, passphrase)?;
+        let mut base = self
+            .base
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = self.home.join("dist/site.json");
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(site::io(&path, e)),
+        }
+        *base = None;
+        Ok(key)
+    }
+    pub fn confirm_own(&self, own: Option<&Link>) -> Result<(), DistError> {
+        let _guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _read = self
+            .read_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(link) = own {
+            let key = self.identity();
+            if link.channel() != key {
+                return Err(DistError::WrongChannel {
+                    url: link.base().into(),
+                    expected: key,
+                    found: link.channel(),
+                });
+            }
+            match self.read_channel(key, link.base())?.outcome {
+                Outcome::Current { .. } => {}
+                Outcome::Failed { cause } => return Err(cause),
+                Outcome::Compromised { seq } => {
+                    return Err(DistError::Compromised { channel: key, seq });
+                }
+                Outcome::Behind { served, stored } => {
+                    return Err(DistError::WrongSeq {
+                        url: http::file_url(link.base(), "head"),
+                        expected: stored,
+                        found: served,
+                    });
+                }
+            }
+            // Restored homes have the entries but still need the verified packages to export.
+            for info in self
+                .own()?
+                .releases
+                .iter()
+                .filter(|r| r.withdrawn.is_none())
+            {
+                self.fetch_package(info, Some(link.base()))?;
+            }
+            self.log.confirm_own_head()?;
+            self.set_site_url(link.base())?;
+            self.export_unlocked(&self.site_dir())?;
+        } else {
+            self.log.confirm_own_head()?;
+        }
+        Ok(())
     }
 }

@@ -88,7 +88,9 @@ pub struct Dist {
     own_mutex: Mutex<()>,
     base: Mutex<Option<String>>,
     options: Options,
-    follows: std::collections::BTreeMap<PublicKey, Follow>,
+    follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
+    read_mutex: Mutex<()>,
+    agent: ureq::Agent,
 }
 impl Dist {
     pub fn open(
@@ -189,8 +191,16 @@ impl Dist {
             confirm,
             own_mutex: Mutex::new(()),
             base: Mutex::new(base),
+            agent: ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .max_redirects(5)
+                .timeout_connect(Some(options.connect_timeout))
+                .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .into(),
             options,
-            follows,
+            follows: Mutex::new(follows),
+            read_mutex: Mutex::new(()),
         })
     }
     pub fn identity(&self) -> PublicKey {
@@ -205,7 +215,7 @@ impl Dist {
 }
 mod own;
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Follow {
     base: String,
     #[serde(rename = "followed_at")]
@@ -214,7 +224,7 @@ struct Follow {
     _last_attempt: u64,
     last_success: Option<u64>,
 }
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Follows {
     version: u64,
     channels: std::collections::BTreeMap<String, Follow>,
@@ -276,4 +286,35 @@ pub struct Exported {
     pub dir: PathBuf,
     pub head: Option<u64>,
     pub written: Vec<PathBuf>,
+}
+
+mod follow;
+mod http;
+#[derive(Debug)]
+pub struct RefreshReport {
+    pub channel: PublicKey,
+    pub outcome: Outcome,
+    pub changes: Vec<Change>,
+}
+#[derive(Debug)]
+pub enum Outcome {
+    Current { head: u64 },
+    Behind { served: u64, stored: u64 },
+    Compromised { seq: u64 },
+    Failed { cause: DistError },
+}
+#[derive(Clone, Debug)]
+pub enum Change {
+    Name { seq: u64, name: String },
+    Release(ReleaseInfo),
+    Withdrawn { seq: u64, release: ReleaseInfo },
+    Bad(BadStatement),
+}
+#[derive(Debug)]
+pub struct Fetched {
+    pub package: Package,
+    pub entry: Entry,
+    pub info: ReleaseInfo,
+    pub publisher_name: Option<String>,
+    pub checked_at: Option<u64>,
 }

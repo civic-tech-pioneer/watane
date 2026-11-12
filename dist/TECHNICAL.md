@@ -828,6 +828,7 @@ Not to build now. The design above keeps these open:
 | Q7 | F-PUB-1, F-PUB-7 | One identity on two devices forks its channel. | The first version supports one device per identity. Document it in spec §6 "Not protected". |
 | Q8 | TECHNICAL §2 | `app` depends on `host` and `dist` only, but the backup (F-APP-6) is `log`'s. | `dist` passes `backup`, `restore` and `confirm_own` through; only `dist` opens `<home>/log/`. Say so in §2. |
 | Q9 | spec/ (none) | spec/ sets no limit on the size of a package; `pkg` drafts 64 MiB. | 64 MiB everywhere: `pkg` refuses at pack and decode, `dist` at publish and as the body limit of a fetch. Name it in spec §3. |
+| Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
 
@@ -845,3 +846,5 @@ Not to build now. The design above keeps these open:
 | DD-10 | A follow is added only after a first successful read. | A mistyped link leaves nothing behind. |
 | DD-11 | In S1/S2 the empty `site/` directory stays 0700; from S3, open creates it with 0755 and export writes 0644 files. | S21a-2 AC10a supersedes the S1/S2 private empty site rule. |
 | DD-12 | S3 removes withdrawn package files only from the built-in `site/`; external export never deletes files. Section 4.3 states this exception for that managed directory. | S21a-2 AC6 requires the built-in site to contain exactly the live packages; §4.3 and Q5 still apply to external exports. |
+| DD-13 | After reading a restored identity's channel, `confirm_own(Some(link))` fetches missing live packages from that base with the same hash, package and release checks as fetch, before confirming the head. | Export requires these packages; an unsuccessful recovery must leave a restored head unconfirmed. No follow record is created for the own channel. |
+| DD-14 | The HTTP reader probes at most one byte beyond the acceptance limit and rejects any excess; the accepted body limit remains exactly that of §4.5. This refines the `limit(limit)` pseudocode there. | ureq 3.5's limit reader refuses at the boundary before probing EOF; an exact `release.size` package must succeed. |

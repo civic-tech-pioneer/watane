@@ -99,7 +99,7 @@ pub enum DistError {
         stored: Option<u64>,
         served: u64,
     },
-    #[error("{url:?}: expected hash {expected}, found {found}")]
+    #[error("{url:?}: hash mismatch: expected {expected}, found {found}")]
     HashMismatch {
         url: String,
         expected: PackageId,

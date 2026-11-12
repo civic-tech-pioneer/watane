@@ -61,3 +61,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S21a-2 (dist): DD-11 makes S3 site modes public on open; DD-12 removes withdrawn packages only from the managed site (external exports keep files).
 
 - S21a-2 follow-up (dist): aligned §4.3 and Q5 with DD-12 and updated the open mode test to DD-11.
+
+- S21a S4/S5 (dist): DD-13 restores verified live packages before own-head confirmation/export; DD-14 clarifies the bounded EOF probe for exact-size HTTP bodies.
