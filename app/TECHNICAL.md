@@ -743,8 +743,9 @@ pub struct CmdError { pub code: &'static str, pub message: String }
 `missing_providers`, `unavailable`, `host`, `dist`, `io`. The host's own
 code replaces `host` when it has one (HOST-F-20). `message` is the whole
 cause chain: start with `{e}` and append each `source()` with `: ` only
-when the text so far does not already end with that cause’s text (F-QUAL-3). dist already escapes untrusted text in its
-`Display`.
+when the text so far does not already end with that cause's text, so no
+cause is hidden or printed twice (F-QUAL-3). dist already escapes untrusted
+text in its `Display`.
 
 ## 14. Security properties
 
