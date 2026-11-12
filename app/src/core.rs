@@ -830,6 +830,28 @@ mod find_tests {
     use super::*;
     use watane_dist::*;
     #[test]
+    fn ac1_own_index_counts_only_live_list_listings() {
+        let mut own = stage_d_tests::channel();
+        own.releases = vec![stage_d_tests::release("0.1.0", None)];
+        let listing = Listing {
+            link: Link::new(own.channel, "https://example.org/", None).unwrap(),
+            note: "Index".into(),
+        };
+        own.listings = [(true, None), (false, Some(4)), (false, None), (false, None)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (include, unlisted))| ListingInfo {
+                entry: EntryId::from_bytes([i as u8; 32]),
+                seq: i as u64,
+                include,
+                listing: listing.clone(),
+                unlisted,
+            })
+            .collect();
+        let rows = index_rows(&own, vec![], &Default::default(), &Parties::new());
+        assert_eq!(rows[0]["mods"], 2);
+    }
+    #[test]
     fn ac3_hit_view_status_parties_times_and_installed_identity() {
         let parties = Parties::new();
         let key = stage_d_tests::channel().channel;
@@ -1067,12 +1089,10 @@ fn index_rows(
     let mut rows = vec![index_row(
         own,
         true,
-        own.releases
+        own.listings
             .iter()
-            .filter(|r| r.withdrawn.is_none())
-            .map(|r| &r.reference.slug)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
+            .filter(|listing| !listing.include && listing.unlisted.is_none())
+            .count(),
         &[],
         vec![],
         None,

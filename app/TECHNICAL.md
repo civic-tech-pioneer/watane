@@ -722,7 +722,8 @@ fields. `ui/words.js` holds pure party, count, provenance, freshness and
 sign-title wording functions, shared by the pages and their wording tests.
 
 - `indexes_list`: `dist.indexes()` mapped to `IndexRow`, the own channel
-  first (`own: true`, with its live listings). `status` and `cause` as for
+  first (`own: true`, with its live listings); the own row's `mods` counts
+  its live `list` listings. `status` and `cause` as for
   `ChannelRow` (9.3).
 - `index_choose(link)`: `Link::from_str`, `dist.choose_index(&link)` in
   `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
