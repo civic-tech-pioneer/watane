@@ -20,16 +20,16 @@ dist/
   src/
     lib.rs        Dist, Options; re-exports; the only `pub` items (section 3)
     error.rs      DistError
-    confirm.rs    Confirm, Decision, SignRequest, Statement, Profile, Withdraw
+    confirm.rs    Confirm, Decision, SignRequest, Statement, Profile, Withdraw, Listing
     link.rs       Link: parse and format (section 4.2)
-    body.rs       profile and withdraw bodies; text rules (section 4.1)
+    body.rs       profile, withdraw, list, include and unlist bodies; text rules (section 4.1)
     view.rs       derive(): entries -> ChannelView; the statement rules (section 4.1)
-    own.rs        identity, sign_and_append, publish, withdraw, set_name, restore
+    own.rs        identity, sign_and_append, publish, withdraw, set_name, restore; list, include, unlist
     site.rs       export: the site folder (section 4.3); atomic file writes
     http.rs       Reader: GET with limits and timeouts (section 4.5)
     follow.rs     follows.json, site.json, read_channel, follow, refresh
     fetch.rs      package cache, unpacked() (section 5.2), fetch, open_link
-    index.rs      list, include, unlist bodies; the read set (5.9); choose_index    (step 4)
+    index.rs      the read set (5.9); choose_index, drop_index, indexes             (step 4)
     search.rs     Query, InterfaceQuery, Hit; search (5.10)                       (step 4)
   tests/
     support/mod.rs  TestHost, RecordingConfirm, fixtures
