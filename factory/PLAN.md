@@ -104,24 +104,18 @@ Step 3 (Publish, J3).
 Step 3 done 2026-11-12: J3 passes (`app/tests/j3.rs`); every step-3 stage is done.
 
 Between steps 3 and 4.
-- [~] **S24 Publish and install edges.** (branch `slice/s24`; foreman: see `Foremen`) The S21c and S23 user-sim leftovers, one cheap test each:
-  - First, a red test or a note: "once Alice follows Bob, `install_link` with Bob's key and another
-    site URL installs with no consent and no error" (S21c user-sim). Decide whether it is HOST-F-27
-    (an update with no new grant needs no question) or a fresh install that skipped consent. If
-    the latter, it is a security fix: report to the PO before the brief, since the fix is likely
-    in `app/src/core.rs` (S25's file).
-  - Approving after `host.no_answer` signs the release but the agent never gets the link, and
-    `next` ("longer --wait") then hits "already exists" (shared consent behaviour from S12b).
-  - `next` texts: no site URL set (link null) says to set one in the app; "already exists at seq N"
-    says to raise the version, and dev checks it before the build; `publish.local_dependency` and a
-    declined `install` get a `next`.
-  - The 422 for a corrupt package leaks a temp path and names the location twice (`app/src/api.rs`).
-  - dev text (S23): the progress line prints twice and says "first build" on warm builds; `serve`'s
-    `next` ends the URL with `.` and names JSON paths in text mode; `check` says to correct the
-    do-not-edit `deps.json` for an unused provider; text mode prints object lists on one line and an
-    argument error as `: failed`. The template guide is at its 143-line cap: cut before adding.
-  - Touches: dev, host (consent wait), dist, `app/src/api.rs`, new app test files. Not
-    `app/src/core.rs`, `app/src/commands.rs` or `app/ui/` (S25).
+- [x] **S24 Publish and install edges.** Delivered 2026-11-12 (main `f6b40d9`). Sol runs: S24-1 1,
+  S24-2 1, S24-3 1. The `install_link` question was no security gap: the host asks consent for every
+  new mod (`Change::New`); for a followed channel dist ignores the link's site URL and refreshes from
+  the stored one, so the already-installed mod came back unchanged.
+- [~] **S30 The agent's publish texts read right.** (branch `slice/s30`; foreman: see `Foremen`) S24's
+  user-sim leftovers, dev only, one cheap test each: a null link prints `link: missing` in text
+  mode; after "run publish again to get the link", the rerun exits 1 and says to raise the version
+  (it should report the release and link); the `publish.local_dependency` next drops a non-default
+  `--home` and points at a provider that may already be published; the unused-provider message says
+  "remove" while its fix says "ask before deleting".
+  - Touches: dev only. Not app (consent requests from clients that stopped waiting pile up in the
+    app: later, with S27's files).
 - [x] **S25 Carol stays up to date.** Delivered 2026-11-12 (main `ff754cb`). Sol runs: S25-1 1. Refresh
   updates with no new grant quietly, with a new grant through consent; Alice withdraws with a reason
   and Carol sees it with an offer of the newest live version; a fork shows as compromised.
@@ -217,7 +211,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23` (stopped, removed).
 - S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b` (stopped, removed).
 - S21c: `d7c44cac` (sessionId `d7c44cac-2e5d-4889-86c2-0f58fd762649`), worktree `.claude/worktrees/s21c` (stopped, removed).
-- S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24`.
+- S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24` (stopped, removed).
 - S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26` (stopped, removed).
 - S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27`.
@@ -234,6 +228,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S24: new route `GET /api/releases` (`{"releases":[{slug,version,release,seq,link|null}]}`); a
+  duplicate publish answers 409 `version_exists` (was `publish_refused`); both additive (app
+  TECHNICAL 8.1.1, dev TECHNICAL 14). dev checks the release list after the status check and before
+  the build (`publish.version_exists`, class 1, with the existing link). A late approval is handled
+  by the rerun reporting the release; host is untouched. Builder progress is one `building <slug>`
+  line; text mode prints object lists with indexed keys (`pages.0.slug`).
 - S28: dist's new `Statement` variants and `ChannelView` fields break app's build. S28 edits app in
   two places only: `confirm.rs` refuses an unknown statement kind (`_ => Refuse`, `ponytail:`; S29
   shows index statements), and `core.rs`'s test helper gains the three fields.
@@ -502,6 +502,11 @@ The human may veto each one.
   validator is the first to run them on macOS (2x).
 - PO: three PLAN commits (c51f210, 68124ae, 07b82e4) used `git commit -a` and swept in another
   session's uncommitted skill and `impl.sh` edits. PLAN commits now add `factory/PLAN.md` by name.
+- S24: Sol's sandbox refuses nested `sandbox-exec`, so dev's slow `ac6_build_with_network_denied`
+  always fails for Sol; Sol also ran the driver GUI tests, which time out in its sandbox. The
+  foreman force-pushed `slice/s24` with a lease after a rebase, since the branch was on origin.
+- S24: the S24 foreman did not run app's driver tests; the PO ran `--features driver --test api`
+  after the merge (green).
 
 ## Digest
 
@@ -567,3 +572,5 @@ The human may veto each one.
   a withdrawal shows Alice's reason and offers the newest live version; a fork shows as compromised.
 - S26: the step-4 design is in the specs: indexes as `list`, `include`, `unlist` statements, local
   offline search, hostile-index defences; S28 builds dist's part.
+- S24: Bob's agent learns that a version is already out before it builds, with its release and link;
+  each publish or install refusal says what to do next; dev's text output reads cleanly.
