@@ -296,6 +296,7 @@ pub(crate) fn compile(
     fs::File::open(copy.join("logic/src/lib.rs"))
         .and_then(|file| file.set_modified(SystemTime::now()))
         .map_err(|e| vec![Problem::internal(e)])?;
+    eprintln!("building {slug} (the first build takes a minute or more)");
     let output = cargo(ctx, copy, args)
         .output()
         .map_err(|e| vec![Problem::internal(e)])?;
@@ -499,6 +500,63 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_release_and_unit_build_progress_stays_on_stderr() {
+        const CHILD: &str = "WATANE_TEST_BUILD_PROGRESS";
+        if std::env::var_os(CHILD).is_some() {
+            let root = tempfile::tempdir().unwrap();
+            let copy = root.path().join("copy");
+            fs::create_dir_all(copy.join("logic/src")).unwrap();
+            fs::write(
+                copy.join("logic/Cargo.toml"),
+                "[package]\nname = 'counter'\n",
+            )
+            .unwrap();
+            fs::write(copy.join("logic/src/lib.rs"), "").unwrap();
+            let env = Env {
+                cache: root.path().join("cache"),
+                unit_seconds: 60,
+            };
+            let toolchain = Toolchain {
+                cargo: "/usr/bin/false".into(),
+                rustc: "/unused/rustc".into(),
+                sysroot: "/unused/sysroot".into(),
+                version: "test".into(),
+            };
+            let allow = Allowlist::embedded();
+            let ctx = BuildCtx {
+                env: &env,
+                toolchain: &toolchain,
+                vendor: root.path(),
+                allow: &allow,
+            };
+            for args in [&["build", "--release"][..], &["test", "--no-run"][..]] {
+                assert!(compile(&ctx, &copy, &"counter".parse().unwrap(), args).is_err());
+            }
+            println!("{{\"ok\":false}}");
+            std::process::exit(0);
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "builder::tests::ac1_release_and_unit_build_progress_stays_on_stderr",
+                "--nocapture",
+                "--quiet",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "building counter (the first build takes a minute or more)\nbuilding counter (the first build takes a minute or more)\n"
+        );
+        // libtest writes its own leading newline and test count before the child exits.
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "\nrunning 1 test\n{\"ok\":false}\n"
+        );
+    }
     #[test]
     fn ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots() {
         let allowed = [

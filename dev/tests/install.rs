@@ -104,6 +104,29 @@ mod fake {
         path::{Path, PathBuf},
         process::{Child, Stdio},
     };
+    #[test]
+    fn ac2_fake_help_and_wrong_arguments() {
+        for args in [
+            vec!["--help"],
+            vec!["-h"],
+            vec![],
+            vec!["--unknown"],
+            vec!["--home"],
+        ] {
+            let output = Command::new(env!("CARGO_BIN_EXE_fake-watane"))
+                .args(&args)
+                .output()
+                .unwrap();
+            let help = args == ["--help"] || args == ["-h"];
+            assert_eq!(output.status.success(), help, "{args:?}: {output:?}");
+            let text = String::from_utf8(if help { output.stdout } else { output.stderr }).unwrap();
+            assert!(text.contains("Usage:"), "{text}");
+            assert!(text.contains("--preview <dir>"), "{text}");
+            assert!(text.contains("--home <dir>"), "{text}");
+            assert!(text.contains("preview host"), "{text}");
+            assert!(text.contains("home host"), "{text}");
+        }
+    }
     struct Host(Child);
     impl Drop for Host {
         fn drop(&mut self) {
@@ -195,7 +218,10 @@ mod fake {
         let (code, value) = install(&page(root.path(), "counter"), home.path());
         assert_eq!(code, 4, "{value}");
         assert_eq!(value["errors"][0]["code"], "host.declined");
-        assert_eq!(value["errors"][0]["message"], "declined");
+        assert_eq!(
+            value["errors"][0]["message"],
+            "The person declined installing counter in their watane app"
+        );
     }
     #[test]
     fn ac4_page_only_result_and_failed_pipeline() {

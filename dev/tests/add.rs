@@ -128,3 +128,36 @@ fn ac4_add_resolves_provider_from_current_folder() {
         serde_json::from_slice(&fs::read(t.path().join("b/.watane-dev.json")).unwrap()).unwrap();
     assert_eq!(local, json!({"local_providers":{"a":"../a"}}));
 }
+
+#[test]
+fn ac4_add_dot_from_provider_with_relative_and_absolute_consumer() {
+    let t = mods();
+    let provider = t.path().join("a");
+    for consumer in [
+        "../b".to_string(),
+        t.path().join("c").to_str().unwrap().to_string(),
+    ] {
+        let (code, value) = run(&provider, &["add", ".", "--dir", &consumer, "--json"]);
+        assert_eq!(code, 0, "{value}");
+        assert_eq!(value["result"]["path"], "../a");
+        let local: Value = serde_json::from_slice(
+            &fs::read(provider.join(&consumer).join(".watane-dev.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(local, json!({"local_providers":{"a":"../a"}}));
+        let before = snapshot(&provider.join(&consumer));
+        let (code, absolute) = run(
+            &provider,
+            &[
+                "add",
+                provider.to_str().unwrap(),
+                "--dir",
+                &consumer,
+                "--json",
+            ],
+        );
+        assert_eq!(code, 0, "{absolute}");
+        assert_eq!(absolute["result"], value["result"]);
+        assert_eq!(snapshot(&provider.join(&consumer)), before);
+    }
+}

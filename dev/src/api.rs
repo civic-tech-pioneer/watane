@@ -172,7 +172,16 @@ impl Client {
         struct Installed {
             installed: Vec<InstalledMod>,
         }
-        let value = self.request("install", Some(json!({"folders":folders})), timeout)?;
+        let value = self
+            .request("install", Some(json!({"folders":folders})), timeout)
+            .map_err(|mut e| {
+                if e.code == Code::HostDeclined {
+                    let name = folders.last().map_or_else(|| "the mod".into(), |dir| crate::deps::label(dir));
+                    e.message = format!("The person declined installing {name} in their watane app");
+                    e.fix = Some(format!("Ask the person whether they want {name} installed in their watane app, then run install again with --wait"));
+                }
+                e
+            })?;
         serde_json::from_value::<Installed>(value)
             .map(|v| v.installed)
             .map_err(Problem::internal)
@@ -281,13 +290,22 @@ mod tests {
             json!({"error":{"code":"refused","message":"declined"}}),
             Duration::ZERO,
         );
-        let e = Client { port }.install_wait(&[], 2).unwrap_err();
+        let e = Client { port }
+            .install_wait(&["/mods/counter".into()], 2)
+            .unwrap_err();
         thread.join().unwrap();
         assert_eq!(e.code, Code::HostDeclined);
         assert_eq!(
-            e.fix.as_deref(),
-            Some("The person declined in the app. Ask them before you run install again")
+            e.message,
+            "The person declined installing counter in their watane app"
         );
+        assert_eq!(
+            e.fix.as_deref(),
+            Some(
+                "Ask the person whether they want counter installed in their watane app, then run install again with --wait"
+            )
+        );
+        assert!(!e.fix.as_deref().unwrap().to_lowercase().contains("correct"));
         assert_ne!(
             e.fix.as_deref(),
             Some("Correct the reported host error and run the command again"),
@@ -307,7 +325,12 @@ mod tests {
         );
         thread.join().unwrap();
         for (status, code, expected, message) in [
-            (403, "refused", Code::HostDeclined, "declined"),
+            (
+                403,
+                "refused",
+                Code::HostDeclined,
+                "The person declined installing the mod in their watane app",
+            ),
             (500, "broken", Code::HostRefused, "[broken] broken host"),
             (200, "broken", Code::HostRefused, "[broken] broken host"),
         ] {
@@ -322,7 +345,7 @@ mod tests {
             assert_eq!(
                 e.fix.as_deref(),
                 Some(if expected == Code::HostDeclined {
-                    "The person declined in the app. Ask them before you run install again"
+                    "Ask the person whether they want the mod installed in their watane app, then run install again with --wait"
                 } else {
                     "Correct the reported host error and run the command again"
                 })

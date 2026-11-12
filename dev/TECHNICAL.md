@@ -122,7 +122,9 @@ watane-dev [--json] [--dir <path>] <command>
 - `--wait` defaults to 600 seconds: the time that the participant has to
   answer in the app.
 - With `--json`, standard output holds exactly one JSON object and a
-  newline. Standard error may hold progress lines, for people only.
+  newline. Standard error may hold progress lines, for people only. Before each
+  release or unit cargo build, write `building <slug> (the first build takes a
+  minute or more)` to stderr; stdout remains the single result object.
 - Without `--json`, dev prints text for people (2.3). The text is not a
   contract.
 
@@ -207,7 +209,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
-| `host.declined` | 4 | the host answers with error code `refused` | the host's message | `The person declined in the app. Ask them before you run install again` |
+| `host.declined` | 4 | the host answers with error code `refused` | `The person declined installing <slug> in their watane app` (or the mod folder) | `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait` |
 | `internal` | 5 | anything else | the error chain | — |
@@ -350,6 +352,11 @@ including `--dir` when it was omitted from the original command, adding
 shell when it contains characters other than letters, digits or `/._-`.
 Run it once the person has started the app. Other `env.*` errors use
 `watane-dev doctor --json`.
+
+A declined install returns `host.declined` with the consumer slug (or mod
+folder), says the person declined installing it in their watane app, and
+asks whether they want it installed before running install again with
+`--wait` (9.6).
 
 **publish** (step 3)
 ```json
@@ -767,6 +774,13 @@ the build, so a failed build leaves none.
 
 ### 6.4 Cargo
 
+Before each release and unit compilation, dev writes one progress line to
+stderr: `building <slug> (the first build takes a minute or more)`. This
+also applies to warm builds; no progress goes to stdout. Both builds use
+`builder::compile`, whose subprocess test
+`ac1_release_and_unit_build_progress_stays_on_stderr` proves the two lines
+and unchanged stdout without compiling a mod.
+
 All cargo runs use one command builder, `builder::cargo(...)`:
 
 - Program: the `cargo` of 6.1. Working folder: `<cache>/build/<slug>/logic`.
@@ -1058,6 +1072,10 @@ when no preview folder matches.
 ### 9.5 `add <mod folder>` (step 2)
 
 Resolve a relative provider folder against the current working folder, independently of `--dir`.
+From a provider folder, `add . --dir <consumer>` works with a relative or
+absolute consumer folder and records the same relative provider path as
+`add <absolute provider> --dir <consumer>`. The command regression
+`add::ac4_add_dot_from_provider_with_relative_and_absolute_consumer` proves both forms.
 
 1. Canonicalize the folders; a missing provider or one without `mod.toml`
    is `usage.provider`. The same canonical folder as this mod is
@@ -1087,7 +1105,11 @@ without the app"). Run 9.2, then one `POST /api/install` with
 participant in the app. `--wait <seconds>` (default 600) bounds this request.
 No answer is `host.no_answer`: `no answer from the home host in <n> s`,
 fix `Run the command again with a longer --wait`. A `refused` answer is
-`host.declined` with the host message and the fix from 2.2; other errors are `host.refused`
+`host.declined`: say the person declined installing the requested consumer
+slug (or its mod folder) in their watane app. The fix asks the person
+whether they want it installed, then says to run install again with
+`--wait` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
+proves the message and fix; the fix must not say "correct". Other errors are `host.refused`
 with `[<code>] <message>`. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
 next command and fixes of `serve`.
@@ -1449,7 +1471,11 @@ is slow and uses one isolated cache for both templates.
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
-Arguments `--preview <dir>` or `--home <dir>`. It listens on
+Arguments `--preview <dir>` (run a fake preview host) or `--home <dir>`
+(run a fake home host with app consent). `--help` and `-h` print usage
+with both arguments and their purposes, then exit 0. Wrong arguments
+print usage and exit non-zero. `install::fake::ac2_fake_help_and_wrong_arguments`
+proves both help flags and invalid invocations. It listens on
 `127.0.0.1:0` with `tiny_http`, writes `<dir>/run.json`
 (`{"watane":1,"pid","port","mode"}`), prints a ready line in the form of
 `watane_host::Ready` (token `wt_fake` in a preview, `null` in a home), and

@@ -9,6 +9,11 @@ use tiny_http::{Response, Server};
 use watane_host::{InstalledMod, LocalName, Ready, RunInfo};
 use watane_pkg::Mod;
 
+const USAGE: &str = "Usage: fake-watane --preview <dir> | --home <dir>
+  --preview <dir>  Run a fake preview host in <dir>.
+  --home <dir>     Run a fake home host with app consent in <dir>.
+  -h, --help       Print this help.";
+
 fn installed(folder: &Path, port: u16) -> Result<InstalledMod, Box<dyn std::error::Error>> {
     let m = Mod::read(folder)?;
     let local = LocalName::parse(
@@ -41,8 +46,12 @@ fn installed(folder: &Path, port: u16) -> Result<InstalledMod, Box<dyn std::erro
 }
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
+        println!("{USAGE}");
+        return Ok(());
+    }
     if args.len() != 2 || (args[0] != "--preview" && args[0] != "--home") {
-        return Err("use fake-watane --preview <dir> or --home <dir>".into());
+        return Err(USAGE.into());
     }
     let mode = if args[0] == "--preview" {
         "preview"
