@@ -346,13 +346,17 @@ impl Mod {
                     .map(|i| i.package())
                     .collect();
                 for (slug, _) in deps.iter() {
-                    if slug == &c.slug || !used.contains(slug.as_str()) {
-                        add(
-                            &mut violations,
-                            Rule::Provider,
-                            "deps.json",
-                            format!("remove the unused or own provider mods:{slug}"),
-                        );
+                    let message = if slug == &c.slug {
+                        Some(format!("deps.json lists this mod itself as mods:{slug}"))
+                    } else if !used.contains(slug.as_str()) {
+                        Some(format!(
+                            "deps.json lists mods:{slug} but wit/world.wit imports none of its interfaces"
+                        ))
+                    } else {
+                        None
+                    };
+                    if let Some(message) = message {
+                        add(&mut violations, Rule::Provider, "deps.json", message);
                     }
                 }
                 for (interfaces, subscribe) in

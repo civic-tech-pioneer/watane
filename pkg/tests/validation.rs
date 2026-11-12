@@ -226,6 +226,43 @@ fn ac3_rules_wit_contracts() {
 }
 
 #[test]
+fn ac1_s31_unused_provider_message() {
+    let dir = temporary("hello");
+    put(dir.path(), "deps.json", r#"{"mods:unused":null}"#);
+    let v = refused(dir.path(), Rule::Provider, "deps.json");
+    assert_eq!(
+        v,
+        [Violation {
+            rule: Rule::Provider,
+            file: "deps.json".into(),
+            message: "deps.json lists mods:unused but wit/world.wit imports none of its interfaces"
+                .into(),
+        }]
+    );
+}
+
+#[test]
+fn ac2_s31_own_provider_message_once() {
+    for fixture in ["hello", "reading-list"] {
+        let dir = temporary(fixture);
+        put(
+            dir.path(),
+            "deps.json",
+            format!(r#"{{"mods:{fixture}":null}}"#),
+        );
+        let v = refused(dir.path(), Rule::Provider, "deps.json");
+        assert_eq!(
+            v,
+            [Violation {
+                rule: Rule::Provider,
+                file: "deps.json".into(),
+                message: format!("deps.json lists this mod itself as mods:{fixture}"),
+            }]
+        );
+    }
+}
+
+#[test]
 fn ac3_rules_provider_contracts() {
     for (world, wanted) in [
         (

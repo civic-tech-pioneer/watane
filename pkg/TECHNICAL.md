@@ -227,7 +227,7 @@ file remains `Ok(None)`.
 `Mod::read` collects every violation that it can find and returns them all
 in `ModError::Invalid`. If `mod.toml`, `deps.json` or the WIT does not
 parse, the cross checks that need it are skipped. Tests check `rule` and
-`file`, not the message words.
+`file`, and the exact provider messages specified below.
 
 | Rule | File | Refused when |
 |---|---|---|
@@ -242,6 +242,13 @@ parse, the cross checks that need it are skipped. Tests check `rule` and
 | `http` | `mod.toml` | `wasi:http/outgoing-handler` imported with no `[http] hosts`, or hosts listed without that import |
 | `parts` | `.` (the mod folder) | a rule of 4.6 |
 | `component` | `logic.wasm` | a rule of 4.9 (only in `check_component`) |
+
+For a `deps.json` member that no call or subscription uses, other than the
+mod's own package, the `provider` message is exactly
+`deps.json lists mods:<slug> but wit/world.wit imports none of its interfaces`.
+For a member equal to the mod's own slug, it is exactly
+`deps.json lists this mod itself as mods:<slug>`. The own-package case emits
+one violation, even when the world exports its own interfaces.
 
 ### 4.8 `add_provider` (step 2)
 
