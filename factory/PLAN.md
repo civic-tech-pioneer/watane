@@ -123,15 +123,25 @@ Between steps 3 and 4.
   only, after one independent review (5 security issues, about 10 gaps, all fixed). Indexes are
   three new statement kinds (`list`, `include`, `unlist`); includes one level deep; search is local
   and offline; no shipped index. Open: Q12, log entries of unlisted channels are never removed.
-- [~] **S28 Carol's dist finds Alice's mod (dist S6).** (branch `slice/s28`; foreman: see `Foremen`)
-  dist stage S6 as designed in dist TECHNICAL (rules 9 to 14, 4.4, 5.9, 5.10, the S6 row): Ivy's
-  channel lists Alice's reading list; Carol's dist chooses Ivy's index from its link, searches
-  "reading", and gets Alice's newest live release, verified and "listed by Ivy"; a stale or
-  local-address base is skipped; the own key is never read through a listing.
-  - Outcomes: the S6 "Done when" (`body_vectors`, `derive_rules` step 4 rows, `index_*`,
-    `search_*`, `j4_dist`), and the step 3 tests still pass unchanged.
-  - Touches: dist only (new modules; `src/error.rs` only gains variants at the end of its enum,
-    since S24 rewrites its Display texts). Not app or dev (S29 builds on this).
+- [x] **S28 Carol's dist finds Alice's mod (dist S6).** Delivered 2026-11-12 (main `9e4752e`). Sol runs:
+  S28-1 1, S28-2 2 (new, resume), S28-3 1. Through dist's API: Carol chooses Ivy's index, searches
+  "reading", and gets Alice's newest live release, verified from Alice's channel, listed by Ivy.
+- [~] **S29 Carol finds Alice's mod in her app (J4).** (branch `slice/s29`; foreman: see `Foremen`) app
+  stage D's index part as designed (app TECHNICAL 8.2, 9.6, the index and search commands of 7, the
+  `list`, `include`, `unlist` details of 6.2; APP-F-38, 43 to 46): Carol adds Ivy's link as an index,
+  searches "reading", sees Alice's mod verified and listed by Ivy, installs it after consent; Ivy
+  lists a mod in her own index through a signature. Done when `tests/find.rs` and the whole
+  `tests/j4.rs` (with index) pass and `static_config` lists the new commands; this closes J4's app
+  part. Replace S28's `_ => Refuse` arm in `confirm.rs` with the index statement details.
+  - Also (S28 user-sim): choosing the own channel as an index says "cannot follow the own channel";
+    `IndexView.skipped` is only a count (say which channel and why); a listing of the own key shows
+    nowhere; when only a stale mirror answers, `hit.link` carries the mirror's base; `Via::Index`
+    has only the key (use `channel(index)` for "listed by Ivy"); error texts show raw 52-character
+    keys; "invalid note: invalid character count" gives no limit.
+  - Touches: app; dist only where the notes above need it. Not dev (S30, then S31).
+- [ ] **S31 The agent searches (dev stage 8).** `watane-dev search` (dev TECHNICAL 10, stage 8):
+  app status, `POST /api/search`, the result, a `next`; `fake-watane` answers `/api/search`;
+  DEV-S-33, 34. dev only; after S30 (both edit the command files). A cloud candidate.
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -175,7 +185,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | E build on | 5 | open |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
-| dist | S6 find | 4 | designed (S26); build in S28 |
+| dist | S6 find | 4 | done (S28) |
 
 ## Foremen
 
@@ -209,7 +219,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26` (stopped, removed).
 - S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27` (stopped, removed).
-- S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28`.
+- S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28` (stopped, removed).
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -223,6 +233,13 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S28 (validator escalation): a listed channel is read from every listed base (at most 4) on each
+  read, the best outcome wins, any `Current` sets `last_success`, and the base with the highest head
+  moves to the front. Stopping at the first `Current` let a stale mirror hide a withdrawal. Up to 4
+  reads per listed channel per refresh, under the caps (dist TECHNICAL 4.4, 5.9, DD-25, DIST-F-49).
+  `list`/`include` hold the own lock across their validation read and refuse a compromised channel.
+  Read budgets span the refresh passes. Search filter tests use prebuilt components
+  (`dist/tests/fixtures/search/*.wasm`, PREBUILT.md).
 - S27: a busy port shows "Port P is in use, maybe by another watane app. Start this one with
   --port <n> or WATANE_PORT=<n> ..." in the window and once on stderr; the app does not fall back to
   another port itself. A decline is recognised by host's `refused` code, kept in memory only;
@@ -514,6 +531,11 @@ The human may veto each one.
   never gets focus; same on main before S27). `App::front` waits for an idle human but not for an
   unlocked screen; it should wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`.
   The front tests of main `292cd7f` still need one run on an unlocked screen.
+- S28: step-3 HTTP tests flake under load on the 300 ms `entry_timeout` of `fast_options`; give only
+  the timeout tests a short timeout. A rebased pushed branch needs a force-push, which auto mode
+  denies (S24 forced with a lease, S28 was denied): foremen push only after the delivery rebase.
+- S28: running dependent tasks ahead of their dependency's validation, each in its own worktree,
+  saved about one validator round per task; the rebases were clean.
 
 ## Digest
 
@@ -583,3 +605,5 @@ The human may veto each one.
   each publish or install refusal says what to do next; dev's text output reads cleanly.
 - S27: a second app on a busy port says how to pick another; updates, declines, withdrawals and
   offers read plainly, the offer names the new grant, and the mods list shows each version.
+- S28: Carol's dist chooses Ivy's index from its link and searches it; hits are verified from the
+  publisher's channel and say which index listed them.
