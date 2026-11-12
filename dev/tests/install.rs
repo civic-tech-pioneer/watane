@@ -366,3 +366,22 @@ fn ac2_no_host_next_preserves_explicit_wait_and_given_home() {
         );
     }
 }
+
+#[test]
+fn ac2_no_host_next_quotes_home_for_the_shell() {
+    let root = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(root.path())
+        .args(["install", "--json", "--home", "Alice's home"])
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["errors"][0]["code"], "env.host_not_running",
+        "{value}"
+    );
+    assert_eq!(
+        value["next"],
+        r#"watane-dev install --json --home 'Alice'"'"'s home'"#
+    );
+}

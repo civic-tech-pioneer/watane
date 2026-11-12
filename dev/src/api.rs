@@ -199,6 +199,10 @@ mod tests {
                 "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
+            // Drain until the client closes: closing with unread request bytes sends a
+            // reset, which the client reports as no answer.
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let _ = std::io::copy(&mut stream, &mut std::io::sink());
         });
         (port, thread)
     }
