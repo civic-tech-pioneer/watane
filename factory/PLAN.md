@@ -98,7 +98,21 @@ Step 3 (Publish, J3).
   text prints twice in the app ("X: X": `DistError::Log` is `#[error("{0}")]` with `#[from]`, `Io`
   prints its source too; app's ac4 test expects the doubled text); the 422 message shows Debug
   text; URLs show in Debug quotes.
-- [ ] **S21c The agent publishes.** dev 7 `publish` (DEV-S-30, 31). After S21b and S12b.
+- [~] **S21c The agent publishes.** (branch `slice/s21c`; foreman: see `Foremen`) Bob's coding
+  agent runs `watane-dev publish --json` in his mod folder; Bob sees "Sign a release" in his app
+  (with or without source), approves, and the agent gets back the release, site and link; Alice
+  follows that link in her app and installs. Closes step 3 (dev stage 7, dev TECHNICAL 9.7).
+  - Outcomes: (1) a mod with a local provider gets `publish.local_dependency` naming it, and the
+    app received nothing (DEV-S-30); (2) `--no-source` sends a package with no `logic/src/` and the
+    app's consent says so (DEV-S-31); (3) on the real app, the result carries `release`, `site`,
+    `link`, `package`, `source`, and the link installs in a second home; (4) a decline or a missing
+    app comes back with a `next`, as `install` does; (5) a refused publish or follow reads cleanly in
+    the app and in dev's output: no doubled cause ("X: X"), no Debug text in the 422 message, URLs and
+    paths without Debug quotes (S21b leftovers; app's ac4 test changes with it, name it in the brief).
+  - Touches: dev (`publish` in cli/api/outcome, `fake-watane`'s `/api/publish`, a new
+    `tests/publish.rs`, its spec rows), dist (`src/error.rs` Display texts), app (the error mapping
+    and its tests). May use `fake-watane` for (1), (2), (4); (3) needs the real app.
+  - Leaves out: the S23 dev text leftovers (progress line, `serve` next, text-mode lists).
 
 ## Stage coverage
 
