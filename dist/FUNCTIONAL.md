@@ -129,8 +129,6 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
   Traces: F-FIND-1.
 - **DIST-F-44** dist shall read at most a fixed number of channels because of listings, in all and for each chosen index, and report how many it left out.
   Traces: F-RUN-3, F-QUAL-3.
-- **DIST-F-49** dist shall read a listed channel from each base that listings give, until one serves its newest state, and shall not read a listed base on the participant's own device or local network.
-  Traces: F-FIND-4, V5.
 - **DIST-F-45** dist shall search with no network, over what it read before.
   Traces: F-QUAL-1.
 - **DIST-F-46** When the participant lists a mod or includes an index, dist shall append a `list` or `include` statement with its link and a note; when the participant ends a listing, an `unlist` statement. Each asks for a confirmation (DIST-F-5).
@@ -139,6 +137,8 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
   Traces: F-FIND-1, F-QUAL-3.
 - **DIST-F-48** A listing shall never decide the version, the bytes or the withdrawals of a mod: they come only from the channel of its publisher.
   Traces: F-FIND-4, F-INST-6.
+- **DIST-F-49** dist shall read a listed channel from each base that listings give, until one serves its newest state, and shall not read a listed base on the participant's own device or local network.
+  Traces: F-FIND-4, V5.
 
 ## 3. Acceptance scenarios
 
