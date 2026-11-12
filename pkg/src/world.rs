@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-use wit_parser::{Resolve, UnresolvedPackageGroup, WorldItem, WorldKey};
+use wit_parser::{Resolve, SourceMap, UnresolvedPackageGroup, WorldItem, WorldKey};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct World {
@@ -21,6 +21,7 @@ pub(crate) struct Contract {
     pub version: Version,
     pub world: World,
     pub has_imports: bool,
+    pub imports: BTreeSet<String>,
     pub providers: BTreeMap<Slug, ProviderWorld>,
 }
 #[derive(Clone, Debug)]
@@ -120,6 +121,7 @@ pub(crate) fn read(
 ) -> Result<Option<Contract>, ModError> {
     let mut total = 0usize;
     let mut world_bytes = Vec::new();
+    let mut checked = BTreeMap::new();
     let mut safe = true;
     if !files.iter().any(|f| f == "wit/world.wit") {
         violation(
@@ -154,6 +156,7 @@ pub(crate) fn read(
         if file == "wit/world.wit" {
             world_bytes.clone_from(&bytes);
         }
+        checked.insert(file.clone(), bytes.clone());
         if too_deep(&bytes) {
             violation(
                 violations,
@@ -167,15 +170,41 @@ pub(crate) fn read(
     if !safe {
         return Ok(None);
     }
-    let parsed = std::panic::catch_unwind(|| {
-        // Each package can span files; require the identity declaration in world.wit itself.
+    let parsed = std::panic::catch_unwind(|| -> Result<_, String> {
+        // Feed only bytes read and bounded above to the parser, never a path to reopen.
         let text = std::str::from_utf8(&world_bytes).unwrap_or("");
         UnresolvedPackageGroup::parse(dir.join("wit/world.wit"), package_header(text))
-            .map_err(|(_, error)| error)?;
+            .map_err(|(_, e)| e.to_string())?;
+        let mut maps: BTreeMap<std::path::PathBuf, SourceMap> = BTreeMap::new();
+        for (file, bytes) in &checked {
+            let path = dir.join(file);
+            let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+            maps.entry(path.parent().unwrap_or(dir).to_path_buf())
+                .or_default()
+                .push(&path, text);
+        }
+        let mut groups = Vec::new();
+        let mut sources = BTreeMap::new();
+        let mut main = None;
+        for (parent, map) in maps {
+            let paths: Vec<_> = map.source_names().map(std::path::PathBuf::from).collect();
+            let group = map
+                .parse()
+                .map_err(|(_, e)| format!("failed to parse package: {}: {e}", parent.display()))?;
+            for package in std::iter::once(&group.main).chain(&group.nested) {
+                sources.insert(package.name.to_string(), paths.clone());
+            }
+            if parent == dir.join("wit") {
+                main = Some(group);
+            } else {
+                groups.push(group);
+            }
+        }
         let mut resolve = Resolve::default();
-        resolve
-            .push_dir(dir.join("wit"))
-            .map(|(main, sources)| (resolve, main, sources))
+        let main = resolve
+            .push_groups(main.ok_or("missing WIT package")?, groups)
+            .map_err(|e| e.to_string())?;
+        Ok((resolve, main, sources))
     });
     let (resolve, main, sources) = match parsed {
         Ok(Ok(value)) => value,
@@ -215,8 +244,8 @@ pub(crate) fn read(
     for (id, package) in resolve.packages.iter() {
         let name = &package.name;
         let file = sources
-            .package_paths(id)
-            .and_then(|mut p| p.next())
+            .get(&name.to_string())
+            .and_then(|p| p.first())
             .and_then(|p| p.strip_prefix(dir).ok())
             .and_then(Path::to_str)
             .unwrap_or("wit/world.wit");
@@ -250,8 +279,8 @@ pub(crate) fn read(
         if name.namespace == "mods" && id != main {
             let parent = dir.join("wit/deps").join(&name.name);
             if sources
-                .package_paths(id)
-                .is_none_or(|mut paths| !paths.all(|p| p.parent() == Some(parent.as_path())))
+                .get(&name.to_string())
+                .is_none_or(|paths| !paths.iter().all(|p| p.parent() == Some(parent.as_path())))
             {
                 violation(
                     violations,
@@ -430,6 +459,11 @@ pub(crate) fn read(
         version,
         world,
         has_imports: !wit_world.imports.is_empty(),
+        imports: wit_world
+            .imports
+            .keys()
+            .map(|key| resolve.name_world_key(key))
+            .collect(),
         providers,
     }))
 }

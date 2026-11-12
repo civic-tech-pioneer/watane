@@ -84,33 +84,38 @@ pub(crate) fn read_file(
     optional: bool,
 ) -> Result<Option<Vec<u8>>, ModError> {
     let path = dir.join(file);
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    let opened = match crate::open::file(dir, file) {
+        Ok(file) => file,
+        Err((part, e)) if crate::open::is_link(&e) => {
+            return Err(invalid(
+                Rule::Path,
+                &part,
+                "replace the symbolic link with a regular file",
+            ));
+        }
+        Err((_, e)) if e.kind() == std::io::ErrorKind::NotFound => {
             return if optional {
                 Ok(None)
             } else {
                 Err(invalid(rule, file, "required file is missing"))
             };
         }
-        Err(e) => return Err(io(&path, e)),
+        Err((_, e))
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Err(invalid(rule, file, "expected a regular file"));
+        }
+        Err((part, e)) => return Err(io(&dir.join(part), e)),
     };
-    if metadata.file_type().is_symlink() {
-        return Err(invalid(
-            Rule::Path,
-            file,
-            "replace the symbolic link with a regular file",
-        ));
-    }
-    if !metadata.is_file() {
-        return Err(invalid(rule, file, "expected a regular file"));
-    }
+    let metadata = opened.metadata().map_err(|e| io(&path, e))?;
     if metadata.len() > limit {
         return Err(invalid(rule, file, format!("file exceeds {limit} bytes")));
     }
     let mut bytes = Vec::new();
-    fs::File::open(&path)
-        .map_err(|e| io(&path, e))?
+    opened
         .take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| io(&path, e))?;
@@ -468,34 +473,11 @@ impl Mod {
         if !violations.is_empty() {
             return Err(ModError::Invalid(violations));
         }
-        if contract.is_none() {
-            return Err(invalid(
-                Rule::Wit,
-                "wit/world.wit",
-                "could not read the contract",
-            ));
-        }
-        let parsed = std::panic::catch_unwind(|| {
-            let mut resolve = wit_parser::Resolve::default();
-            let (package, _) = resolve.push_dir(self.dir.join("wit")).ok()?;
-            let world = resolve.select_world(&[package], None).ok()?;
-            Some(
-                resolve.worlds[world]
-                    .imports
-                    .keys()
-                    .map(|key| resolve.name_world_key(key))
-                    .collect(),
-            )
-        });
-        match parsed {
-            Ok(Some(imports)) => Ok(imports),
-            _ => Err(invalid(
-                Rule::Wit,
-                "wit/world.wit",
-                "could not resolve component imports",
-            )),
-        }
+        contract
+            .map(|c| c.imports)
+            .ok_or_else(|| invalid(Rule::Wit, "wit/world.wit", "could not read the contract"))
     }
+
     pub fn grants(&self) -> Vec<Grant> {
         let w = self.world();
         let mut grants = Vec::new();
@@ -546,5 +528,49 @@ impl Mod {
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ac3_s22_missing_optional_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            read_file(dir.path(), "deps.json", 100, Rule::DepsJson, true).unwrap(),
+            None
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac3_s22_checked_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mod.toml");
+        std::os::unix::fs::symlink("missing", &path).unwrap();
+        let Err(ModError::Invalid(v)) =
+            read_file(dir.path(), "mod.toml", 100, Rule::ModToml, false)
+        else {
+            panic!("expected invalid")
+        };
+        assert_eq!(v[0].rule, Rule::Path);
+        assert_eq!(
+            v[0].message,
+            "replace the symbolic link with a regular file"
+        );
+        fs::remove_file(&path).unwrap();
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let Err(ModError::Invalid(v)) =
+            read_file(dir.path(), "mod.toml", 100, Rule::ModToml, false)
+        else {
+            panic!("expected invalid")
+        };
+        assert_eq!(v[0].message, "expected a regular file");
     }
 }

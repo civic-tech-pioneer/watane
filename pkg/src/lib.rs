@@ -6,6 +6,7 @@ mod folder;
 mod grant;
 mod meta;
 mod names;
+mod open;
 mod package;
 mod release;
 mod world;

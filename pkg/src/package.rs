@@ -289,29 +289,18 @@ fn finish_unpack(dest: &Path, result: Result<Mod, PackageError>) -> Result<Mod, 
 }
 
 fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
-    let path = root.join(relative);
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = options.open(&path).map_err(|e| {
-        #[cfg(unix)]
-        {
-            if e.raw_os_error() == Some(libc::ELOOP) {
-                return PackageError::Symlink {
-                    path: relative.into(),
-                };
-            }
+    crate::open::file(root, relative).map_err(|(part, e)| {
+        if crate::open::is_link(&e) {
+            PackageError::Symlink { path: part }
+        } else if matches!(
+            e.kind(),
+            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
+        ) {
+            path_error(&part, "expected a regular file or a content directory")
+        } else {
+            io(&root.join(part), e)
         }
-        io(&path, e)
-    })?;
-    if !file.metadata().map_err(|e| io(&path, e))?.is_file() {
-        return Err(path_error(relative, "expected a regular file"));
-    }
-    Ok(file)
+    })
 }
 
 fn create_dir(path: &Path) -> std::io::Result<()> {
@@ -333,6 +322,31 @@ fn permissions(path: &Path, mode: u32) -> Result<(), PackageError> {
     }
     #[cfg(not(unix))]
     let _ = (path, mode);
+    Ok(())
+}
+
+// Hidden content is omitted, but every descendant must still be link-free.
+fn hidden_links(root: &Path, relative: &str) -> Result<(), PackageError> {
+    let mut stack = vec![root.join(relative)];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).map_err(|e| io(&dir, e))? {
+            let entry = entry.map_err(|e| io(&dir, e))?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|e| io(&path, e))?;
+            if kind.is_symlink() {
+                return Err(PackageError::Symlink {
+                    path: path
+                        .strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .into_owned(),
+                });
+            }
+            if kind.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -369,6 +383,9 @@ impl Input {
                         return Err(PackageError::Symlink {
                             path: format!("{relative}/{}", name.to_string_lossy()),
                         });
+                    }
+                    if metadata.is_dir() {
+                        hidden_links(root, &format!("{relative}/{}", name.to_string_lossy()))?;
                     }
                     continue;
                 }
@@ -490,6 +507,43 @@ mod tests {
             && v[0].rule == crate::Rule::ModToml && v[0].file == "mod.toml"
             && v[0].message == "invalid manifest")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac2_s22_every_part_no_follow() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tempfile::tempdir().unwrap();
+        fs::write(real.path().join("index.html"), "ok").unwrap();
+        for (link, file) in [
+            ("ui", "ui/index.html"),
+            ("wit/deps/x", "wit/deps/x/index.html"),
+        ] {
+            let path = tmp.path().join(link);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            symlink(real.path(), &path).unwrap();
+            assert!(
+                matches!(open_pack_file(tmp.path(), file), Err(PackageError::Symlink { path }) if path == link)
+            );
+        }
+        let fifo = tmp.path().join("pipe");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        for file in ["pipe", "pipe/child"] {
+            assert!(matches!(
+                open_pack_file(tmp.path(), file),
+                Err(PackageError::Path { .. })
+            ));
+        }
+        let root = tmp.path().join("root");
+        symlink(real.path(), &root).unwrap();
+        assert!(open_pack_file(&root, "index.html").is_ok());
     }
 
     #[cfg(unix)]

@@ -260,8 +260,16 @@ impl Release {
 }
 
 fn malformed(message: impl Into<String>) -> ReleaseError {
-    ReleaseError::Malformed(message.into())
+    let message = message.into();
+    ReleaseError::Malformed(
+        message
+            .strip_prefix("release: ")
+            .or_else(|| message.strip_prefix("release "))
+            .unwrap_or(&message)
+            .to_owned(),
+    )
 }
+
 fn ascending<T: Ord>(values: &[T], field: &str) -> Result<(), ReleaseError> {
     if values.windows(2).any(|w| w[0] >= w[1]) {
         return Err(malformed(format!("{field} must be strictly ascending")));
@@ -334,9 +342,14 @@ impl<'a> Reader<'a> {
         &mut self,
         field: &str,
     ) -> Result<T, ReleaseError> {
-        self.text(field)?
-            .parse()
-            .map_err(|e: NameError| malformed(format!("{field}: {e}")))
+        self.text(field)?.parse().map_err(|e: NameError| {
+            let context = field.strip_suffix(e.kind).unwrap_or(field).trim_end();
+            malformed(if context.is_empty() {
+                e.to_string()
+            } else {
+                format!("{context}: {e}")
+            })
+        })
     }
     fn key(&mut self, field: &str) -> Result<[u8; 32], ReleaseError> {
         self.definite(field)?;

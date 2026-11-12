@@ -44,9 +44,24 @@ pub fn built_fixture(name: &str) -> tempfile::TempDir {
             .join(name),
         dir.path(),
     );
+    dir
+}
+
+#[test]
+#[ignore = "regenerates fixtures"]
+fn regenerate_fixtures() {
+    for name in ["reading-list", "recommendations"] {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name);
+        regenerate(&dir);
+    }
+}
+
+fn regenerate(dir: &Path) {
     // Independent producer: the fixture's WIT -> dummy core module -> component.
     let mut resolve = Resolve::default();
-    let (package, _) = resolve.push_dir(dir.path().join("wit")).unwrap();
+    let (package, _) = resolve.push_dir(dir.join("wit")).unwrap();
     let world = resolve.select_world(&[package], None).unwrap();
     let mut module = dummy_module(&resolve, world, ManglingAndAbi::Standard32);
     embed_component_metadata(&mut module, &resolve, world, StringEncoding::UTF8).unwrap();
@@ -56,6 +71,5 @@ pub fn built_fixture(name: &str) -> tempfile::TempDir {
         .validate(true)
         .encode()
         .unwrap();
-    put(dir.path(), "logic.wasm", component);
-    dir
+    put(dir, "logic.wasm", component);
 }

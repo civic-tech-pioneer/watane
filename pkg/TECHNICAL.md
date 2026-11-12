@@ -29,7 +29,8 @@ pkg/
   tests/            integration tests; tests/fixtures/<case>/ folders
 ```
 
-All I/O is blocking `std::fs`. No async, no threads, no global state.
+All I/O is blocking filesystem I/O (`std::fs` and Unix `rustix`). No async,
+no threads, no global state.
 
 ## 2. Dependencies
 
@@ -43,6 +44,7 @@ All I/O is blocking `std::fs`. No async, no threads, no global state.
 | `serde_json` | `1` | default | `deps.json`, JSON forms |
 | `toml` | `1.2` | default | `mod.toml` |
 | `thiserror` | `2` | default | error types |
+| Unix: `rustix` | `1` | `fs` | safe descriptor-relative no-follow reads (6.4) |
 | dev: `tempfile` | `3.27` | default | test folders |
 | dev: `wit-component` | `0.254` | `dummy-module` | make test components (`dummy_module`, `ComponentEncoder`) |
 
@@ -108,6 +110,10 @@ ui/index.html                the page; ui/ holds its other files
 tests/                       contract tests (source; their form is dev's)
 ```
 
+Every file read below the mod folder uses the private shared opener of 6.4.
+Size and regular-file checks and the bounded read use the same opened handle;
+there is no path metadata check followed by a second open for content.
+
 The slug and the version are the package line of `wit/world.wit`:
 `package mods:<slug>@<version>;`. The namespace is always `mods`.
 
@@ -157,9 +163,11 @@ on is `<publisher>/<slug>@<that version>` (a `ReleaseRef`).
 
 1. Walk `wit/` (4.7 rule `path`), and check the sizes and the nesting
    (rule `limit`) before any parse.
-2. `wit_parser::Resolve::push_dir("<dir>/wit")` inside
-   `std::panic::catch_unwind`. An error or a panic is rule `wit`, with the
-   first 2000 bytes of the parser message.
+2. Group the checked bytes by WIT package directory in `SourceMap`s and
+   resolve with `Resolve::push_groups` inside `std::panic::catch_unwind`.
+   Never pass filesystem paths to a parser that reopens them. Component
+   import checking uses the imports from this same checked resolution.
+   An error or a panic is rule `wit`, with the first 2000 bytes of the parser message.
 3. The main package must be `mods:<slug>@<version>` with a valid `Slug` and
    `Version`, and hold exactly one world.
 4. Classify each item of that world (4.5). `wit-parser` has elaborated the
@@ -209,6 +217,12 @@ grant: the table of spec §3 is applied as written.
 - At least one part exists (F-RUN-1). All of these are rule `parts`.
 
 ### 4.7 Rules
+
+`read_file` opens once through 6.4, takes file type and size from that
+handle and reads it with a cap. A refused link is rule `path`, with
+`replace the symbolic link with a regular file`; a non-regular file is
+`expected a regular file` under the caller's rule. A missing optional
+file remains `Ok(None)`.
 
 `Mod::read` collects every violation that it can find and returns them all
 in `ModError::Invalid`. If `mod.toml`, `deps.json` or the WIT does not
@@ -351,7 +365,8 @@ interface, and `compatible(self.version(), offered.version())`.
 | `tests/<path>` | source | `include_source` |
 
 A decoded package may hold only these paths. `has_source()` is true when
-it holds a path of class source.
+it holds a path of class source. Hidden regular files and directory contents
+are omitted; hidden directories are still walked for links at every depth.
 
 ### 6.2 Paths
 
@@ -391,23 +406,30 @@ pack and decode. The package id is `blake3(all bytes)`.
 
 `pack(dir, include_source)`:
 1. Walk the paths of 6.1 with `symlink_metadata`. Skip each entry whose
-   name starts with `.` only after checking whether it is a symbolic link:
-   hidden regular files and directories are skipped, hidden links are refused.
+   name starts with `.` only after checking it and every descendant for
+   symbolic links. Hidden regular content is omitted; links under hidden
+   directories (including nested hidden directories under `ui/` and `wit/`)
+   are `Symlink` with the full relative path, before mod validation.
    Refuse a symbolic link (`PackageError::Symlink`),
    anything that is not a regular file or a directory, and a name outside
    6.2 (`PackageError::Path`). Never walk outside these paths, so
-   `logic/target/`, `.git/` and `.cargo/` are never read.
+   `logic/target/`, root `.git/` and root `.cargo/` are never read.
 2. `Mod::read(dir)?` and `check_component()?`. The path walk comes first
    so selected links and special files are refused as package errors before
    any mod parser or file read can reach them.
 3. Sort, check 6.2 and the limits, write the bytes of 6.3. Stop when the
-   size passes the limit. Open every file for reading on Unix with
-   `O_NOFOLLOW | O_NONBLOCK` (`OpenOptionsExt::custom_flags`, using the
-   Unix-only `libc = "0.2"` dependency); map `ELOOP` (macOS gives it too) to
-   `Symlink`. Check metadata on the opened file and refuse a non-regular
-   file with `Path`, before reading. Thus a last component swapped for a
-   link is never followed, and a FIFO cannot block the open. Non-Unix uses
-   a plain open followed by the same regular-file check.
+   size passes the limit. The private opener shared with `folder.rs` returns
+   an I/O result plus the relative prefix that failed. Open the caller's
+   mod root normally (it may itself be a link, e.g. `/tmp` on macOS).
+   On Unix, walk every part below it with safe `rustix::fs::openat`,
+   `NOFOLLOW | RDONLY | CLOEXEC`, plus `DIRECTORY` for middle parts and
+   `NONBLOCK` for the last part. Map `ELOOP` and `EMLINK` to `Symlink`;
+   when `DIRECTORY` reports `ENOTDIR`, use no-follow `statat` relative to
+   the open parent to distinguish a link. Name the prefix through the link,
+   e.g. `wit/deps/x`. Non-directory middle parts and non-regular final
+   handles give `Path`; FIFOs never block. Check size/type and read through
+   the same final handle. Non-Unix uses a plain open and handle metadata.
+
 4. Return `Package::from_bytes` of the result, so pack only gives what
    decode accepts.
 
@@ -430,7 +452,7 @@ nothing in proportion to a declared size. Refusals are `TooLarge`,
 
 ### 6.5 Example (golden)
 
-The folder `hello`, packed without source:
+The committed folder `tests/fixtures/hello`, packed without source:
 - `mod.toml`: `name = "Hello"\nsummary = "Says hello."\n`
 - `ui/index.html`: `<p>hello</p>\n`
 - `wit/world.wit`: `package mods:hello@0.1.0;\n\nworld hello {}\n`
@@ -511,7 +533,7 @@ order of 7.1.
 
 ### 7.3 Example (golden)
 
-The release of `hello` (6.5):
+The release of the committed `tests/fixtures/hello` (6.5):
 `[1, "hello", "0.1.0", "Hello", "Says hello.", h'0866e9df…f62ff87b', 159, false, [], [], [], null]`,
 73 bytes:
 
@@ -660,6 +682,12 @@ pub enum ReleaseError {
 }
 ```
 
+`Malformed` adds the context `bad release body:` once. Its cause does
+not repeat that context: empty input displays `bad release body: end of
+input bytes`; truncation keeps its field and end-of-input cause. Name
+errors similarly avoid `slug: invalid slug` and `version: invalid version`,
+while preserving any distinct enclosing field context.
+
 ## 9. Example folders (fixtures for J2)
 
 `reading-list` (`deps.json` absent):
@@ -722,8 +750,8 @@ world recommendations {
 | No path traversal | path grammar (6.2) in pack and decode, before any write; `unpack` writes only below a directory it has just created, with `create_new`. |
 | No overwrite through case or file/directory clashes | the lowercase and parent checks of 6.2. |
 | No size bomb | no compression; the length limit is checked first; each declared size is compared with the remaining input; `.wit`, `mod.toml`, `deps.json` and release limits are checked before parsing; WIT nesting ≤ 32. |
-| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
-| No secret leaves through a package | only the paths of 6.1; hidden entries checked for links before being skipped; symbolic links refused; every pack read uses the no-follow open and opened-file regularity check of 6.4 on Unix; private state lives in the home, never in a mod folder. |
+| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. Malformed release errors name context and cause once. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
+| No secret leaves through a package | only the paths of 6.1; hidden directory descendants checked for links before omission; symbolic links refused; every mod and pack content read uses the shared all-components no-follow walk and same-handle checks of 6.4 on Unix; WIT resolves checked bytes without reopening; private state lives in the home, never in a mod folder. |
 | One meaning, one byte string | canonical package bytes (6.3) and canonical release CBOR (7.2) with decode-then-re-encode; so one id and one signature per meaning. |
 | A package matches its release | `Release::check` re-derives the body from the unpacked mod and compares every field. |
 | `pkg` runs nothing | it only parses; it starts no process and loads no Wasm into a runtime. |
@@ -756,6 +784,22 @@ expected value.
 | `release_golden` | A21; `decode` of the hex of 7.3 equals the literal struct; the grant and origin hex of 7.3 | hex of 7.3 |
 | `release_refusals` | A22, A23, a `null` publisher, unsorted offers, 13 items, format `2` | hand-edited hex |
 | `release_check` | A24 and one case for each field | literal structs |
+
+S22 tests: `ac1_s22_hidden_links` and `ac1_s22_hidden_regular_files_omitted`
+check hidden descendant links and byte/id equality; private opener unit test
+`ac2_s22_every_part_no_follow` checks linked middle parts, FIFOs and linked
+roots; `read_file` unit tests `ac3_s22_checked_handle` and
+`ac3_s22_missing_optional_file` preserve diagnostics and optional absence.
+`ac4_s22_committed_fixtures_pack` packs both on-disk logic fixtures and
+checks the local-provider refusal. Their committed `logic.wasm` files are
+produced independently by `dummy_module` → metadata → `ComponentEncoder`;
+regenerate with `cargo test -p watane-pkg --test s22 regenerate_fixtures -- --ignored`
+(the test is `#[ignore = "regenerates fixtures"]`). Ordinary release tests
+copy these committed files without rebuilding. `ac5_s22_disk_hello_golden`
+checks the disk fixture against both 6.5's id and 7.3's 73 literal bytes.
+`ac6_s22_release_cause_once` and `ac6_s22_other_repeated_contexts` check
+non-repeating contexts and the retained cause. All existing golden bytes
+and ids remain fixed.
 
 `cargo test` runs all of them; no network, no Wasm runtime, no toolchain
 for `wasm32-wasip2`.
@@ -847,3 +891,11 @@ Each answer below is the one that this specification uses.
 17. **Package preflight** (pkg, host, dev, dist): section 6.4 walks selected paths before `Mod::read`, preserving `PackageError::Symlink` and refusing special files before opening them; the byte format and mod checks are unchanged.
 
 18. **Provider copy preflight** (pkg, dev): section 4.8 compares selected `.wit` files, checks dependency metadata before writes, and refuses linked destination ancestors; I/O failures do not promise rollback.
+
+19. **Folder reads and fixture provenance** (pkg; host, dev, dist see no API change):
+    6.4's private safe `rustix` walk checks each child component, permits a
+    linked caller root, and shares checked handles with folder reads. WIT
+    parses the bounded bytes instead of reopening paths. Hidden descendant
+    links are refused before omission. J2 logic fixtures commit independently
+    generated components; the on-disk hello is exactly 6.5 and 7.3. Malformed
+    release contexts appear once. Public signatures and byte formats stay fixed.
