@@ -239,8 +239,12 @@ pub struct Fetched {
 
 ### 3.1 Errors
 
-One enum. `Display` writes untrusted text (URLs, names, causes from a
-host) in Rust debug form (`{:?}`), so control characters are escaped.
+One enum. `Display` writes untrusted text (URLs, paths, names, causes from a
+host) escaped with `escape_debug()` and unquoted; paths use `path.display()`
+before escaping. A variant never repeats the error exposed by `source()`;
+`Log`, `Package` and `Release` are transparent. `Io` displays only the escaped
+path and exposes its `io::Error` as its source. `SiteNotWritten` displays its
+cause and does not expose it as a source.
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -644,7 +648,7 @@ data only.
 | The site folder holds only public data | export writes only own entries and own packages, only under `head`, `entries/`, `packages/` | A6 |
 | Private data stays private | `<home>/dist/` is 0700; the secret key never leaves `log` except in an encrypted backup | `open_modes` |
 | One writer per home | `File::try_lock` on `<home>/dist/lock` | `open_twice_is_locked` |
-| Untrusted text cannot steer a terminal | errors print URLs, names and causes in debug form | `error_text_escapes_controls` |
+| Untrusted text cannot steer a terminal | errors print URLs, paths, names and host causes escaped and unquoted | `error_text_escapes_controls` |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a host that withholds
 new entries; another program of the same user; the use of one identity on
