@@ -82,6 +82,15 @@ Step 3 (Publish, J3).
   packed before `logic.wasm` is built; the on-disk `hello` has `ui/app.js` (213 bytes), so its id
   differs from 7.3's 159-byte golden; the empty-input error repeats itself ("bad release body:
   release: end of input bytes").
+- [~] **S22 Packages are safe on every path.** (branch `slice/s22`; foreman: see `Foremen`) The pkg
+  leftovers of S15 and S20, so dist can trust pkg in J3.
+  - Outcomes: a link inside a hidden folder (`ui/.git/x`) is refused like any link; every part of
+    a path is opened with no-follow, not only the last; `folder.rs` reads through the handle it
+    checked (no swap window); the on-disk fixtures `reading-list` and `recommendations` pack
+    (their `logic.wasm` built once, or packed by a test that builds it); `hello`'s id matches the
+    7.3 golden or 7.3 is corrected; the empty-input release error reads once.
+  - Touches: pkg only (`package.rs`, `folder.rs`, `release.rs`, its tests and fixtures). Not dev,
+    host, app or log.
 - [ ] **S21 J3: Bob installs Alice's mod from a link.** dist S1 to S5 on the real `log` and
   `pkg`, log L5, host stage 8 (`Source::Release`, verify), app stage C (`DistConfirm`, publish and
   follow), dev 7 `publish` (DEV-S-30, 31). After S19 and S20. Too big for one slice: cut it into
@@ -354,7 +363,7 @@ The human may veto each one.
 - S18: the foreman ignored the "you may push" correction because a peer relayed it; fine, pushing is optional.
 - S12b, S19, S20 (2026-11-12 night): load reached about 140 with three slices building at once
   next to the Mac's endpoint scanners (Defender, ManageEngine); one Sol run sat 8 h without
-  progress and validators were cut off. Part of it was the laptop sleeping on low battery (external).
+  progress and validators were cut off. The laptop slept and clocked down on low battery (external); the human: three slices are fine.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
