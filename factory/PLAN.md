@@ -77,13 +77,11 @@ Step 3 (Publish, J3).
     chain is refused with a cause; a restored identity confirms its own head before it appends.
   - Touches: `log/` (new crate), the workspace `Cargo.toml` members line. Nothing else.
   - Leaves out: L5 (dist and host use it): S21.
-- [~] **S20 A mod becomes a release.** (branch `slice/s20`; foreman: see `Foremen`) pkg stage 7,
-  `release.rs` (pkg TECHNICAL 7): the release format dist publishes and the host verifies.
-  - Outcomes: `release_*` tests pass; a changed byte in a release is refused and the error names
-    the cause; a release round-trips to the same package id.
-  - Touches: `pkg/src/release.rs`, `pkg/tests/release_*.rs`, one line in `pkg/src/lib.rs`, pkg's
-    error codes (append only). Not dev, host or app.
-  - Leaves out: signing with the log key (dist S3, S21).
+- [x] **S20 A mod becomes a release.** Delivered 2026-11-12 (main `0349cf0`). Sol runs: S20-1 2 (new, resume).
+  Left for later (user-sim): the on-disk fixtures `reading-list` and `recommendations` cannot be
+  packed before `logic.wasm` is built; the on-disk `hello` has `ui/app.js` (213 bytes), so its id
+  differs from 7.3's 159-byte golden; the empty-input error repeats itself ("bad release body:
+  release: end of input bytes").
 - [ ] **S21 J3: Bob installs Alice's mod from a link.** dist S1 to S5 on the real `log` and
   `pkg`, log L5, host stage 8 (`Source::Release`, verify), app stage C (`DistConfirm`, publish and
   follow), dev 7 `publish` (DEV-S-30, 31). After S19 and S20. Too big for one slice: cut it into
@@ -102,7 +100,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
 | pkg | 6 add_provider | 2 | done (S11) |
-| pkg | 7 release | 3 | open (S20) |
+| pkg | 7 release | 3 | done (S20) |
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
@@ -149,7 +147,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18` (stopped, removed; the product owner rebased it on main).
 - S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b`.
 - S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19`.
-- S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20`.
+- S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -263,6 +261,8 @@ The human may veto each one.
 - S18: stage F runs on arm64 Linux in Docker under Xvfb with Openbox (focus needs a window
   manager); WebKitGTK resolves `<local>.localhost`; `webkit2gtk` is a Linux driver-only dependency.
 - S18: `tools_list` returns `{entry, tool}`; the app shows the host's MCP tool name (APP-F-25).
+- S20: the name/summary rule (pkg 4.2) lives once in `meta::text_violation`, shared by `meta::read`
+  and `Release::decode`; release tests build `logic.wasm` in a tempdir (no prebuilt fixture).
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -399,3 +399,5 @@ The human may veto each one.
   its MCP tools from watane-dev's output and the template `AGENTS.md` alone.
 - S18: every app test passes on arm64 Linux (`app/scripts/linux-test.sh`); the toolset view shows
   the MCP tool name an agent calls.
+- S20: pkg turns a mod into a canonical release body that dist can publish and the host can
+  verify; any changed byte is refused with its cause.
