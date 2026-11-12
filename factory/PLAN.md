@@ -93,16 +93,11 @@ Step 3 (Publish, J3).
   JSON paths in text mode; `check` says to correct the do-not-edit deps.json for an unused provider;
   text mode prints object lists on one line and an argument error as `: failed`. The template guide
   is at its 143-line cap: the next guide line raises the cap or cuts a line.
-- [~] **S21b J3 in the app.** (branch `slice/s21b`; foreman: see `Foremen`) Host stage 8
-  (`Source::Release`, verify with `Entry::decode`), app stage C (`DistConfirm`, publish and
-  follow), `app/tests/j3.rs`: Alice publishes in her app, Bob follows the link in his and
-  installs; his plan shows Alice as the verified publisher; a changed file on the host is refused
-  with its cause.
-  - Also (S21a user-sim): a damaged `entries/<head seq>` on a host goes unnoticed (readers take the
-    head from `head`); a first `follow` that hits a bad entry returns `Err`, not `Ok(Failed)`, so
-    the app sees two shapes of failure; `confirm_own` with another key's link should read "this
-    link is not your channel".
-  - Touches: host (stage 8), app (stage C), dist (the notes above). Not dev (S23).
+- [x] **S21b J3 in the app.** Delivered 2026-11-12 (main `cf65328`). Sol runs: S21b-1 1, S21b-2 1,
+  S21b-3 1; S21b-fix1 by the validator (two intermittent window tests). Left for later: dist cause
+  text prints twice in the app ("X: X": `DistError::Log` is `#[error("{0}")]` with `#[from]`, `Io`
+  prints its source too; app's ac4 test expects the doubled text); the 422 message shows Debug
+  text; URLs show in Debug quotes.
 - [ ] **S21c The agent publishes.** dev 7 `publish` (DEV-S-30, 31). After S21b and S12b.
 
 ## Stage coverage
@@ -125,6 +120,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
 | host | 5 catalog and home | 1, 2 | done (S8, S11, S12a: plan, `Source::Folder`, grants, revoke, update, remove, home mode) |
 | host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
+| host | 8 releases | 3 | done (S21b: `Source::Release`, S31, S32) |
 | dev | 0 cli, outcome | 1 | done (S1) |
 | dev | 1 template, new, check | 1 | done (S4) |
 | dev | 2 allowlist, toolchain, builder | 1 | done (S8) |
@@ -136,10 +132,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
-| app | C dist | 3 | open |
+| app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
-| log | L1 to L5 | 3 | part (S19: L1 to L4; S21a: dist side of L5): host side of L5 (S21b) |
+| log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | open |
 
@@ -169,7 +165,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22` (stopped, removed).
 - S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a` (stopped, removed).
 - S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23` (stopped, removed).
-- S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b`.
+- S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -278,6 +274,14 @@ The human may veto each one.
   names the canonical path and this rule. The declined-install text says `--wait <seconds>`. The
   build progress line goes to stderr before every mod build (release and unit).
 - S23: spec-gap lines come in each task's final message; the foreman writes them to AGENTS.md once.
+- S21b: a reader that reads up to a new head also GETs `entries/<head seq>` and needs it byte-equal to
+  `head`, else `HeadMismatch` naming that URL. `confirm_own` with another key's link is `NotOwnLink`;
+  `WrongChannel` stays for a host serving another channel. A first follow returns every failure as
+  `Err`; refresh reports `Failed` per channel; the app maps them to a command error and a row status.
+- S21b: host recovery repacks a release-installed folder with `pack(dir, true)` (source kept); local
+  mods still `pack(dir, false)` (host Q26). The app's API router takes a dist-only handle (no
+  server/Core cycle). Restoring the same key again is idempotent; a different key into a home that
+  has published is refused.
 
 ## Friction
 
@@ -423,6 +427,8 @@ The human may veto each one.
   shutdown. Fixed with a bounded wait (S12a-fix1).
 - S23: a stale slow-test expectation surfaced only at delivery, because Sol runs the default tests
   only; one extra fix task. Same root as "briefs not naming changed tests" (4x).
+- S21b: Sol cannot run window tests, so an app task's main oracle (J3) first runs in the validator;
+  window-test flakes showed only in the foreman's serial full run, after acceptance (one fix task).
 
 ## Digest
 
@@ -478,3 +484,7 @@ The human may veto each one.
   fetches, verifies and unpacks the same bytes; a changed file is refused with its cause and URL.
 - S23: a maker's coding agent gets live refresh (`watane.on`) from the guide, sees the first build
   building, gets a `next` from `check`, `serve` and a declined install, and `add . --dir x` works.
+
+- S21b: Alice publishes a mod from her app and shares her link; Bob enters it in his app, sees "by
+  Alice (fingerprint) · signature verified", approves, and it runs; a changed package or head entry
+  is refused with its cause and URL, and nothing is installed (J3 passes in `app/tests/j3.rs`).
