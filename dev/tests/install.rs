@@ -25,6 +25,27 @@ fn ac1_no_host_precedes_pipeline() {
     );
 }
 
+/// With no app, install's `next` sends the agent to `doctor --json`, which takes no `--home`,
+/// reports `ok: true` about another home and then says `watane-dev new <slug> --json`.
+/// The useful next step is to run install again once the person has started the app.
+#[test]
+fn regress_s12b_no_host_next_repeats_install() {
+    let home = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(home.path())
+        .args(["install", "--json", "--home"])
+        .arg(home.path())
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["errors"][0]["code"], "env.host_not_running", "{value}");
+    let next = value["next"].as_str().unwrap_or("");
+    assert!(
+        next.contains("watane-dev install"),
+        "next should repeat the install once the app runs, got {next:?}"
+    );
+}
+
 #[cfg(feature = "fake-host")]
 mod fake {
     use super::*;
