@@ -222,6 +222,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24`.
 - S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26`.
+- S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
