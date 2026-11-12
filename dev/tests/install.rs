@@ -120,7 +120,7 @@ mod fake {
             let help = args == ["--help"] || args == ["-h"];
             assert_eq!(output.status.success(), help, "{args:?}: {output:?}");
             let text = String::from_utf8(if help { output.stdout } else { output.stderr }).unwrap();
-            assert!(text.contains("Usage:"), "{text}");
+            assert!(text.starts_with("Usage:"), "{text}");
             assert!(text.contains("--preview <dir>"), "{text}");
             assert!(text.contains("--home <dir>"), "{text}");
             assert!(text.contains("preview host"), "{text}");

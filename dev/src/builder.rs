@@ -551,11 +551,10 @@ mod tests {
             String::from_utf8(output.stderr).unwrap(),
             "building counter (the first build takes a minute or more)\nbuilding counter (the first build takes a minute or more)\n"
         );
-        // libtest writes its own leading newline and test count before the child exits.
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap(),
-            "\nrunning 1 test\n{\"ok\":false}\n"
-        );
+        // libtest writes its own preamble; the rest of stdout is the one result object.
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.ends_with("\n{\"ok\":false}\n"), "{stdout}");
+        assert!(!stdout.contains("building"), "{stdout}");
     }
     #[test]
     fn ac3_dep_info_parses_escaped_spaces_and_checks_all_allowed_roots() {

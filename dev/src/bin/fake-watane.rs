@@ -51,7 +51,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Ok(());
     }
     if args.len() != 2 || (args[0] != "--preview" && args[0] != "--home") {
-        return Err(USAGE.into());
+        eprintln!("{USAGE}");
+        std::process::exit(2);
     }
     let mode = if args[0] == "--preview" {
         "preview"
