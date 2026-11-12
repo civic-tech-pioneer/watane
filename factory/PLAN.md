@@ -69,14 +69,10 @@ Step 2 (Run together, J2).
 
 Step 3 (Publish, J3).
 
-- [~] **S19 Alice's app holds her identity.** (branch `slice/s19`; foreman: see `Foremen`) The
-  `log` crate, stages L1 to L4: keys and their text forms, the identity file, entries with the
-  strict rule, the SQLite store (append, ingest, entries, head, status), backup and restore with
-  own-head confirmation. No server.
-  - Outcomes: each stage's "Done when" tests pass (`log/TECHNICAL.md` 9); a corrupt or forked
-    chain is refused with a cause; a restored identity confirms its own head before it appends.
-  - Touches: `log/` (new crate), the workspace `Cargo.toml` members line. Nothing else.
-  - Leaves out: L5 (dist and host use it): S21.
+- [x] **S19 Alice's app holds her identity.** Delivered 2026-11-12 (main `48a9b2f`). Sol runs: S19-1 1, S19-2 2 (new, resume).
+  Left for later (user-sim): `Log::open` on a file says "is not a regular file or directory" (should
+  say "not a directory"); `Log::open("")` gives ": empty path"; "bad backup: length" does not say
+  108 bytes are expected.
 - [x] **S20 A mod becomes a release.** Delivered 2026-11-12 (main `0349cf0`). Sol runs: S20-1 2 (new, resume).
   Left for later (user-sim): the on-disk fixtures `reading-list` and `recommendations` cannot be
   packed before `logic.wasm` is built; the on-disk `hello` has `ui/app.js` (213 bytes), so its id
@@ -91,10 +87,20 @@ Step 3 (Publish, J3).
     7.3 golden or 7.3 is corrected; the empty-input release error reads once.
   - Touches: pkg only (`package.rs`, `folder.rs`, `release.rs`, its tests and fixtures). Not dev,
     host, app or log.
-- [ ] **S21 J3: Bob installs Alice's mod from a link.** dist S1 to S5 on the real `log` and
-  `pkg`, log L5, host stage 8 (`Source::Release`, verify), app stage C (`DistConfirm`, publish and
-  follow), dev 7 `publish` (DEV-S-30, 31). After S19 and S20. Too big for one slice: cut it into
-  dist first, then host and app, then dev, once S19 and S20 land.
+- [~] **S21a Alice publishes, Bob follows (dist).** (branch `slice/s21a`; foreman: see `Foremen`)
+  dist stages S1 to S5 on the real `log` and `pkg` (no stubs), and log L5's dist side.
+  - Outcomes: dist's "Done when" tests pass (`dist/TECHNICAL.md` 8), `j3_dist` included: Alice's
+    dist publishes the reading list's release into a site folder; Bob's dist follows the link,
+    fetches, verifies and unpacks the same package; a changed file in the site folder is refused
+    and the error names the cause. Backup and restore keep Alice's channel.
+  - Briefs must say: dist calls `log` `status()` before it publishes (a corrupt chain is refused),
+    and `confirm_own_head` after ingesting its own channel.
+  - Touches: `dist/` (new crate), the workspace `Cargo.toml` members line. Not pkg (S22), not dev
+    (S12b), not host or app.
+  - Leaves out: host stage 8 and app stage C (S21b), dev `publish` (S21c).
+- [ ] **S21b J3 in the app.** Host stage 8 (`Source::Release`, verify with `Entry::decode`), app
+  stage C (`DistConfirm`, publish and follow), `app/tests/j3.rs`. After S21a.
+- [ ] **S21c The agent publishes.** dev 7 `publish` (DEV-S-30, 31). After S21b and S12b.
 
 ## Stage coverage
 
@@ -130,7 +136,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
-| log | L1 to L5 | 3 | open (S19: L1 to L4) |
+| log | L1 to L5 | 3 | part (S19: L1 to L4): L5 with dist and host (S21) |
 | dist | S1 to S5 | 3 | open |
 | dist | S6 find | 4 | open |
 
@@ -155,7 +161,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17` (stopped, removed).
 - S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18` (stopped, removed; the product owner rebased it on main).
 - S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b`.
-- S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19`.
+- S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19` (stopped, removed).
 - S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
 - S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -273,6 +279,10 @@ The human may veto each one.
 - S18: `tools_list` returns `{entry, tool}`; the app shows the host's MCP tool name (APP-F-25).
 - S20: the name/summary rule (pkg 4.2) lives once in `meta::text_violation`, shared by `meta::read`
   and `Release::decode`; release tests build `logic.wasm` in a tempdir (no prebuilt fixture).
+- S19: `status()` read-checks every stored entry (log TECHNICAL 12); append and ingest check only
+  the fork row inside the write transaction (a full scan made append O(n²)).
+- S19: `append` may extend a chain whose lower entries are corrupt on disk (log 5.1). Deputy: dist
+  calls `status()` before it publishes and refuses with its cause; log stays as specified.
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -365,6 +375,7 @@ The human may veto each one.
 - S12b, S19, S20 (2026-11-12 night): load reached about 140 with three slices building at once
   next to the Mac's endpoint scanners (Defender, ManageEngine); one Sol run sat 8 h without
   progress and validators were cut off. The laptop slept and clocked down on low battery (external); the human: three slices are fine.
+- S19: a validator died 3 times on "computer went to sleep"; a fresh validator under `caffeinate -i` worked.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -411,3 +422,5 @@ The human may veto each one.
   the MCP tool name an agent calls.
 - S20: pkg turns a mod into a canonical release body that dist can publish and the host can
   verify; any changed byte is refused with its cause.
+- S19: the log crate keeps Alice's identity and her signed, hash-chained entries, refuses corrupt
+  rows and forks with their cause, and restores from a 108-byte passphrase backup.
