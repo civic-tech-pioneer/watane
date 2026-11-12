@@ -22,10 +22,7 @@ impl Parties {
 pub fn party(publisher: &str, parties: &Parties) -> Party {
     Party {
         name: parties.0.read().unwrap().get(publisher).cloned(),
-        fingerprint: publisher
-            .parse::<watane_dist::PublicKey>()
-            .map(|k| k.fingerprint())
-            .unwrap_or_else(|_| publisher.chars().take(10).collect()),
+        fingerprint: publisher.chars().take(10).collect(), // PublicKey::fingerprint
     }
 }
 pub(crate) fn provider(provider: &Provider, parties: &Parties) -> String {

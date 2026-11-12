@@ -92,8 +92,12 @@ fn ac7_journey_j3_identity_publish_install_and_tamper() {
         refused["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("own channel"),
+            .contains("has signed entries; it cannot be replaced"),
         "{refused}"
+    );
+    assert_eq!(
+        invoke(&alice, "status", json!({}))["identity"]["fingerprint"],
+        fingerprint
     );
     begin(&bob, "install_link", json!({"link":link}));
     consent(&bob);
