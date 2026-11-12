@@ -317,6 +317,10 @@ pub struct Fetched {
 
 ### 3.1 Errors
 
+Direct `PublicKey` fields in error text use `PublicKey::fingerprint()` (10
+characters); their fields retain the full key. Invalid key input keeps the
+text the participant typed.
+
 One enum. `Display` writes untrusted text (URLs, paths, names, causes from a
 host) escaped with `escape_debug()` and unquoted; paths use `path.display()`
 before escaping. A variant never repeats the error exposed by `source()`;

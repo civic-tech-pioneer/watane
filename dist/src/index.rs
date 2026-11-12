@@ -9,13 +9,18 @@ pub struct IndexView {
     pub view: ChannelView,
     pub included: Vec<PublicKey>,
     pub mods: usize,
-    pub skipped: usize,
+    pub skipped: Vec<Skipped>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Skipped {
+    pub channel: PublicKey,
+    pub cause: &'static str,
 }
 pub(crate) struct ReadSet {
     pub index: PublicKey,
     pub whole: Vec<(PublicKey, Option<PublicKey>)>,
     pub mods: Vec<ListedMod>,
-    pub skipped: usize,
+    pub skipped: Vec<Skipped>,
 }
 pub(crate) struct ListedMod {
     pub channel: PublicKey,
@@ -46,7 +51,7 @@ impl Dist {
                 index: key,
                 whole: vec![(key, None)],
                 mods: Vec::new(),
-                skipped: 0,
+                skipped: Vec::new(),
             };
             if matches!(
                 self.log
@@ -62,7 +67,7 @@ impl Dist {
                 .map_err(|cause| Box::new((key, cause)))?
                 .listings;
             let mut per_index = BTreeSet::new();
-            let mut skipped = BTreeSet::new();
+            let mut skipped = Vec::new();
             for l in listings
                 .iter()
                 .filter(|l| l.unlisted.is_none() && !l.include)
@@ -102,11 +107,11 @@ impl Dist {
             }
             set.skipped = skipped
                 .into_iter()
-                .filter(|k| {
-                    !set.whole.iter().any(|(key, _)| key == k)
-                        && !set.mods.iter().any(|m| m.channel == *k)
+                .filter(|s| {
+                    !set.whole.iter().any(|(key, _)| *key == s.channel)
+                        && !set.mods.iter().any(|m| m.channel == s.channel)
                 })
-                .count();
+                .collect();
             walk.sets.push(set);
         }
         Ok(walk)
@@ -117,24 +122,31 @@ impl Dist {
         records: &BTreeMap<PublicKey, Follow>,
         all: &mut BTreeSet<PublicKey>,
         per_index: &mut BTreeSet<PublicKey>,
-        skipped: &mut BTreeSet<PublicKey>,
+        skipped: &mut Vec<Skipped>,
     ) -> bool {
         let key = l.listing.link.channel();
+        let mut skip = |cause| {
+            if !skipped.iter().any(|s| s.channel == key) {
+                skipped.push(Skipped {
+                    channel: key,
+                    cause,
+                });
+            }
+            false
+        };
         if key == self.identity() {
-            return false;
+            return skip("own channel");
         }
         if records.get(&key).is_some_and(|r| r.followed || r.index) {
             return true;
         }
         if !self.options.listed_local && local_base(l.listing.link.base()) {
-            skipped.insert(key);
-            return false;
+            return skip("local address");
         }
         if (!all.contains(&key) && all.len() >= self.options.max_listed)
             || (!per_index.contains(&key) && per_index.len() >= self.options.max_listed_per_index)
         {
-            skipped.insert(key);
-            return false;
+            return skip("over the listing limit");
         }
         all.insert(key);
         per_index.insert(key);

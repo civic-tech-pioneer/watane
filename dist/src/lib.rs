@@ -372,7 +372,7 @@ pub struct Fetched {
 }
 
 mod index;
-pub use index::IndexView;
+pub use index::{IndexView, Skipped};
 
 mod search;
 pub use search::{Hit, InterfaceQuery, Query, Via};

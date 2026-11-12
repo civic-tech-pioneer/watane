@@ -345,7 +345,8 @@ fn ac1_index_choose() {
     );
     let indexes = carol.dist.indexes().unwrap();
     assert_eq!(indexes.len(), 1);
-    assert_eq!((indexes[0].mods, indexes[0].skipped), (1, 0));
+    assert_eq!(indexes[0].mods, 1);
+    assert!(indexes[0].skipped.is_empty());
     assert!(matches!(
         carol.dist.choose_index(&alice.mod_link()),
         Err(DistError::BadLink { .. })
@@ -498,7 +499,7 @@ fn ac5_index_compromised() {
 }
 
 #[test]
-fn ac6_index_cap() {
+fn ac1_index_cap() {
     for per_index in [false, true] {
         let ivy = Home::new();
         let publishers: Vec<_> = (0..3).map(|_| Home::new()).collect();
@@ -523,7 +524,14 @@ fn ac6_index_cap() {
             [3, 3, 0]
         );
         let index = carol.dist.indexes().unwrap().remove(0);
-        assert_eq!((index.mods, index.skipped), (2, 1));
+        assert_eq!(index.mods, 2);
+        assert_eq!(
+            index.skipped,
+            vec![Skipped {
+                channel: publishers[2].dist.identity(),
+                cause: "over the listing limit"
+            }]
+        );
         assert!(carol.records()["channels"][publishers[2].dist.identity().to_string()].is_null());
     }
 }
@@ -585,7 +593,13 @@ fn ac8_index_no_local() {
     let reports = carol.dist.choose_index(&ivy.link()).unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(alice.host.count(), 0);
-    assert_eq!(carol.dist.indexes().unwrap()[0].skipped, 1);
+    assert_eq!(
+        carol.dist.indexes().unwrap()[0].skipped,
+        vec![Skipped {
+            channel: alice.dist.identity(),
+            cause: "local address"
+        }]
+    );
     assert!(carol.records()["channels"][alice.dist.identity().to_string()].is_null());
 }
 
@@ -597,6 +611,13 @@ fn ac9_index_own_skipped() {
     ivy.dist.list(&carol.mod_link(), "").unwrap();
     carol.host.requests.lock().unwrap().clear();
     let reports = carol.dist.choose_index(&ivy.link()).unwrap();
+    assert_eq!(
+        carol.dist.indexes().unwrap()[0].skipped,
+        vec![Skipped {
+            channel: carol.dist.identity(),
+            cause: "own channel"
+        }]
+    );
     assert_eq!(carol.host.count(), 0);
     assert_eq!(reports.len(), 1);
     assert!(carol.records()["channels"][carol.dist.identity().to_string()].is_null());
@@ -895,7 +916,7 @@ fn ac3_index_mod_count_includes_whole_channels() {
 }
 
 #[test]
-fn ac8_index_skipped_counts_channels() {
+fn ac1_index_skipped_once() {
     let alice = Home::new();
     let ivy = Home::new();
     let carol = Home::with_options(fast_options());
@@ -905,7 +926,13 @@ fn ac8_index_skipped_counts_channels() {
     alice.host.requests.lock().unwrap().clear();
     carol.dist.choose_index(&ivy.link()).unwrap();
     assert_eq!(alice.host.count(), 0);
-    assert_eq!(carol.dist.indexes().unwrap()[0].skipped, 1);
+    assert_eq!(
+        carol.dist.indexes().unwrap()[0].skipped,
+        vec![Skipped {
+            channel: alice.dist.identity(),
+            cause: "local address"
+        }]
+    );
 }
 
 #[test]
@@ -1155,4 +1182,48 @@ fn ac7_index_equal_heads_keep_first_base() {
         assert_eq!(carol.records()["channels"][&key]["bases"], bases);
     }
     assert!(alice.host.count() > a && mirror.count() > m);
+}
+
+#[test]
+fn ac1_skipped_walk_order() {
+    let ivy = Home::new();
+    let alice = Home::new();
+    let bob = Home::new();
+    let carol = Home::with_options(fast_options());
+    for home in [&alice, &bob, &carol] {
+        home.dist.publish(fixture("1.0.0", false)).unwrap();
+    }
+    let (first, second) = if alice.dist.identity() > bob.dist.identity() {
+        (&alice, &bob)
+    } else {
+        (&bob, &alice)
+    };
+    ivy.dist.list(&first.mod_link(), "first").unwrap();
+    ivy.dist.list(&carol.mod_link(), "own").unwrap();
+    ivy.dist.list(&second.mod_link(), "second").unwrap();
+    ivy.dist.include(&first.link(), "duplicate").unwrap();
+    for home in [&alice, &bob, &carol] {
+        home.host.requests.lock().unwrap().clear();
+    }
+    carol.dist.choose_index(&ivy.link()).unwrap();
+    assert_eq!(
+        carol.dist.indexes().unwrap()[0].skipped,
+        vec![
+            Skipped {
+                channel: first.dist.identity(),
+                cause: "local address"
+            },
+            Skipped {
+                channel: carol.dist.identity(),
+                cause: "own channel"
+            },
+            Skipped {
+                channel: second.dist.identity(),
+                cause: "local address"
+            },
+        ]
+    );
+    for home in [&alice, &bob, &carol] {
+        assert_eq!(home.host.count(), 0);
+    }
 }

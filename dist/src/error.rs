@@ -51,18 +51,18 @@ pub enum DistError {
     BadUrl { url: String, cause: &'static str },
     #[error("cannot follow the own channel")]
     OwnChannel,
-    #[error("this link is not your channel: found {found}")]
+    #[error("this link is not your channel: found {}", found.fingerprint())]
     NotOwnLink { found: PublicKey },
-    #[error("channel {channel} is not followed")]
+    #[error("channel {} is not followed", channel.fingerprint())]
     NotFollowed { channel: PublicKey },
-    #[error("channel {channel} compromised at seq {seq}")]
+    #[error("channel {} compromised at seq {seq}", channel.fingerprint())]
     Compromised { channel: PublicKey, seq: u64 },
     #[error("invalid publisher key {key}: {cause}")]
     BadKey {
         key: PublisherKey,
         cause: KeyTextError,
     },
-    #[error("channel {channel} has no release of {slug}")]
+    #[error("channel {} has no release of {slug}", channel.fingerprint())]
     NoRelease { channel: PublicKey, slug: Slug },
     #[error("unknown release {release}")]
     UnknownRelease { release: ReleaseRef },
@@ -83,7 +83,7 @@ pub enum DistError {
         url: String,
         cause: watane_log::DecodeError,
     },
-    #[error("{}: expected channel {expected}, found {found}", url.escape_debug())]
+    #[error("{}: expected channel {}, found {}", url.escape_debug(), expected.fingerprint(), found.fingerprint())]
     WrongChannel {
         url: String,
         expected: PublicKey,
@@ -97,7 +97,7 @@ pub enum DistError {
     },
     #[error("entry from {} differs from head", url.escape_debug())]
     HeadMismatch { url: String },
-    #[error("channel {channel}: too many entries from {} to {served}", stored.map(|seq| seq.to_string()).unwrap_or_else(|| "none".into()))]
+    #[error("channel {}: too many entries from {} to {served}", channel.fingerprint(), stored.map(|seq| seq.to_string()).unwrap_or_else(|| "none".into()))]
     TooManyEntries {
         channel: PublicKey,
         stored: Option<u64>,
@@ -123,13 +123,53 @@ pub enum DistError {
     AlreadyListed { seq: u64 },
     #[error("entry {entry} is not a live listing")]
     NotListed { entry: EntryId },
-    #[error("channel {channel} is not a chosen index")]
+    #[error("channel {} is not a chosen index", channel.fingerprint())]
     NotIndex { channel: PublicKey },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac2_channel_errors_show_fingerprints() {
+        let key: PublicKey = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy"
+            .parse()
+            .unwrap();
+        let other = PublicKey::from_bytes(&[1; 32]).unwrap();
+        let cases = [
+            DistError::NotIndex { channel: key },
+            DistError::WrongChannel {
+                url: "http://example.org/head".into(),
+                expected: key,
+                found: other,
+            },
+            DistError::NotOwnLink { found: key },
+            DistError::NotFollowed { channel: key },
+            DistError::Compromised {
+                channel: key,
+                seq: 1,
+            },
+            DistError::NoRelease {
+                channel: key,
+                slug: "reading-list".parse().unwrap(),
+            },
+            DistError::TooManyEntries {
+                channel: key,
+                stored: None,
+                served: 2,
+            },
+        ];
+        for error in cases {
+            let text = error.to_string();
+            assert!(text.contains(&key.fingerprint()), "{text}");
+            assert!(!text.contains(&key.to_string()), "{text}");
+            if let DistError::WrongChannel { found, .. } = error {
+                assert!(text.contains(&found.fingerprint()), "{text}");
+                assert!(!text.contains(&found.to_string()), "{text}");
+            }
+        }
+    }
 
     fn chain(error: &dyn std::error::Error) -> String {
         let mut text = error.to_string();
