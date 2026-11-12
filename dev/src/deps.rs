@@ -213,6 +213,18 @@ mod tests {
     }
 
     #[test]
+    fn regress_s23_add_missing_dir_is_not_a_mod() {
+        // `add . --dir ../typo` from the provider folder: a missing --dir has no mod.toml,
+        // as with check; it must not be an internal error without the path.
+        let t = tempfile::tempdir().unwrap();
+        let a = t.path().join("a");
+        crate::template::new_mod(&a, "a").unwrap();
+        let errors = add_local(&t.path().join("typo"), &a).err().unwrap();
+        assert_eq!(errors[0].code, Code::UsageNotAMod);
+        assert!(errors[0].message.contains("typo"), "{}", errors[0].message);
+    }
+
+    #[test]
     fn ac2_cycle_fixes_name_the_edge() {
         let t = tempfile::tempdir().unwrap();
         for slug in ["a", "b", "c"] {
