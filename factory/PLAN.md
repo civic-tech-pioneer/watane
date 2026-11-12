@@ -61,11 +61,15 @@ Step 2 (Run together, J2).
   Left for later (user-sim): the runner prints versions without names; about 17 AT-SPI warnings
   bury the output (`NO_AT_BRIDGE=1` in the image); the app's JS repeats the tool-name rule for
   saved entries.
-- [~] **S12b The agent installs a mod into Alice's home.** `watane-dev install` (DEV-S-27 to 29)
-  and `fake-watane`, against the home host S12a built. (branch `slice/s12b`; foreman: see `Foremen`)
-  Also the S11 user-sim notes: `fix` for `mod.dependency_cycle`/`self_dependency`,
-  `check.providers[].path` for a local provider, `add --dir` path resolution, a subscriber's
-  `/events` getting the provider's raw `event` messages.
+- [x] **S12b The agent installs a mod into Alice's home.** Delivered 2026-11-12 (main `0c58053`). Sol runs: S12b-1 2 (new, hung; resume), S12b-2 1, S12b-3 1, S12b-fix1 1, S12b-fix2 1.
+  The user-sim ran `install` against `fake-watane` and the real `watane --home`, not the app; the
+  product owner ran app j2 (hidden) after the merge: green.
+  Left for later (user-sim): `fake-watane --help` prints an error; the fake has no never-answer
+  mode; the decline message is just "declined"; `--wait` does not count the test pipeline;
+  the no-app result's `dir` is as typed while `next` is canonical; `add . --dir x` says ". is not a
+  mod folder"; host `install::ac2_real_home_without_app` leaves `watane` running if it panics.
+
+Step 2 done 2026-11-12: J2 passes (`app/tests/j2.rs`); every step-2 stage is done.
 
 Step 3 (Publish, J3).
 
@@ -123,7 +127,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 3 unit | 1 | done (S4) |
 | dev | 4 contract | 1 | done (S4, S11: fakes and `deliver`) |
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
-| dev | 6 deps, add, install | 2 | part (S11: deps, add): `install` (DEV-S-27 to 29) |
+| dev | 6 deps, add, install | 2 | done (S11, S12b; `fake-watane` too) |
 | dev | 7 publish | 3 | open |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
@@ -155,7 +159,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S13: `93875efd` (sessionId `93875efd-ef7d-4863-a9eb-7cad24dda18f`), worktree `.claude/worktrees/s13` (stopped, removed).
 - S17: `2894d2f6` (sessionId `2894d2f6-5753-4f2c-8189-388e2022683d`), worktree `.claude/worktrees/s17` (stopped, removed).
 - S18: `2a36dab3` (sessionId `2a36dab3-8ee4-4149-a9b7-8446fa03e19c`), worktree `.claude/worktrees/s18` (stopped, removed; the product owner rebased it on main).
-- S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b`.
+- S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b` (stopped, removed).
 - S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19` (stopped, removed).
 - S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
 - S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22` (stopped, removed).
@@ -163,6 +167,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Process change (friction 3x: S6, S17, S12b): parallel tasks in one subsystem conflict on its
+  `AGENTS.md` "Spec gaps" lines. Proposal: each task records its spec gaps in its own
+  `factory/tasks/<task>.md` report, and the foreman copies them into `AGENTS.md` once, at delivery.
+  Cost to undo: none.
 
 - Process change (friction 3x: S11 twice, S17): Sol changes files outside its brief's list. Proposal:
   `factory/impl.sh` lists the changed files after each run, and the foreman returns any that the
@@ -284,6 +293,12 @@ The human may veto each one.
   a link. `world.rs` parses WIT from the checked bytes, not `Resolve::push_dir`. The fixtures
   `reading-list` and `recommendations` commit their `logic.wasm`; `hello` lost `ui/app.js`, and
   pkg 6.5 names the on-disk fixture.
+- S12b (host Q25): a page gets only its own mod's events; subscriber pages no longer get the
+  provider's raw `event`, only `changed` when their state changes (host 8.4, 9.2, HOST-F-13).
+  Narrows what a page sees; undo: restore one send.
+- S12b: dev's `fake-host` is a default feature (a distribution build uses `--no-default-features`);
+  `install` checks `/api/status` before the test pipeline; `host.declined` has `next` null;
+  `add <provider>` resolves from the current folder.
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -379,6 +394,11 @@ The human may veto each one.
 - S19: a validator died 3 times on "computer went to sleep"; a fresh validator under `caffeinate -i` worked.
 - S22: the rm guard hook refuses deletes under `$CLAUDE_JOB_DIR/tmp` and in the worktree, so
   user-sim probe crates stay behind.
+- S12b: a Codex run hung 6.5 h after a test command at load 140 to 170; Sol spent about 7 h in
+  dev's `--ignored` set. Briefs should say: Sol runs the default tests only (README, "Test pyramid").
+- S12b: Sol edited files outside its brief again (host FUNCTIONAL, dev `journey_s11.rs`, dev
+  `AGENTS.md`); needed consequences this time, accepted (4x; proposal pending).
+- S6, S17, S12b: rebase conflicts on dev `AGENTS.md` "Spec gaps" lines between parallel tasks (3x).
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -429,3 +449,6 @@ The human may veto each one.
   rows and forks with their cause, and restores from a 108-byte passphrase backup.
 - S22: pkg refuses every link in a mod folder, in any part of a path, and reads each file through
   the handle it checked (about 400k swap attempts, none read through a link).
+- S12b: in a mod folder, the agent runs `watane-dev install --json`; dev tests the mod and its
+  providers, the home host installs them after the person approves, and a decline or a missing app
+  comes back with guidance (step 2 done).
