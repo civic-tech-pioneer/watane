@@ -43,8 +43,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When blocked
@@ -54,12 +52,3 @@ word for word. Follow their intent, and do not ask whether to.
   with a proposed signature, use the proposal, and go on.
 - If the spec is unclear, decide the simplest answer that keeps the formats
   stable, record it in section 15, and go on.
-
-## Spec gaps
-
-- S7 (pkg, host, dev, dist): package path preflight precedes mod validation so selected links and special files receive package errors before being opened (TECHNICAL.md §6.4, §15.17).
-- S15 (pkg; host, dev, dist see only new message text and one new variant): excess file counts use TooManyFiles, package paths escape controls, hidden links are refused, Unix pack reads use no-follow nonblocking opens, and unpack preserves its original error when cleanup fails (TECHNICAL.md §6.3–6.4, §8, §10).
-
-- S11-1 (pkg, dev): provider copy preflight selects `.wit` files, validates dependency metadata and destination ancestors before writes; I/O failures may leave copies (TECHNICAL.md §4.8, §15.18).
-
-- S22 (pkg; host, dev, dist see no API change): shared all-component no-follow reads, hidden descendant link refusal, committed independent components, on-disk hello goldens and non-repeating release errors (TECHNICAL.md §4.1, §4.4, §4.7, §6.1, §6.4–6.5, §7.3, §8, §10–11, §15.19).

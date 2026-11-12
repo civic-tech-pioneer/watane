@@ -43,8 +43,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When blocked

@@ -43,8 +43,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When a sibling is missing
@@ -52,50 +50,3 @@ word for word. Follow their intent, and do not ask whether to.
 - Follow the "Fake until it exists" column of TECHNICAL 16. Mark each test that needs the sibling `#[ignore = "needs <crate or program>"]`.
 - If a sibling gives an item under another name or shape, use the sibling's and update TECHNICAL 14.
 - If you need something no sibling offers, do not build it in dev. Add it to the owner's spec, record it under TECHNICAL 14 and 17, fake it, and go on.
-
-## Spec gaps resolved
-
-- S1 (dev): stage 1 ships a page-only template and next instruction; section 4 remains the full template.
-- S1 (spec, pkg, host, dev): workspace resolver 3, one root lock file and shared target directory.
-- S1-3 (dev): stop locates previews by canonical-path hash without checking mod files; absent matches report home null; §12 records the typed S1 check entry point.
-
-- S2 cut (dev): counter template has no tests/; check stage 6, unit and contract tests join in S4; serve runs check and build only.
-- S2 (dev): page reads once at startup; S3 restores watane.on(read).
-- S2 (dev): cargo target directory uses shared build.target-dir config; generate-lockfile has no --target-dir argument.
-
-- S3-2 (dev): the counter page displays counted event values and reads on changed, including stream open (host 8.4–8.5).
-- S3-2 (dev): the fake-host feature does not exist yet; the commands run the real-host tests with WATANE_BIN and --include-ignored.
-
-- S4-2 (dev): test runs sandboxed Wasm units with counts and locations; check stage 6 and the template contract file ship now; contract execution and serve testing wait for S4-3.
-- S4-2 (dev): Wasmtime 48.0.8 unknown-import helper breaks WASI resource aliases; dev traps non-WASI functions directly and preserves the typed, capability-free WASI linker.
-- S4-2 (dev): libtest needs --nocapture to retain panic locations on Wasm abort; the parser tracks a test across its printed output.
-- S4-3 (dev): test runs contracts after units and serve gates previews on the whole pipeline; deliver and uncovered warnings wait for links/toolsets, fakes pass through unlinked, and CallError supplies code text through serialization.
-- S4-3 (dev): a contract host-open error is one file Problem without a synthetic step; invalid-file errors retain syntax locations and do not stop other files.
-
-- S5-2 (dev): serve builds API and MCP URLs from the cached Ready port, reuses its preview token, and points failed test pipelines to watane-dev test --json.
-- S8 (dev): release cdylibs emit `<crate>.d` as well as hashed dependency names; scan and clear both forms for release and unit builds, refreshing the copied crate root to force new dep-info, completing DEV-S-10/12.
-
-- S6-1 (dev): doctor retains targetless toolchain details, reports every environment gap, and shares the absolute vendor bootstrap fix with test/serve; template work starts with doctor.
-- S6-2 (dev): refused serve warns with preview.previous only for a verified answering preview; J1 lives in tests/journey.rs and drives the reading-list mod through page calls and MCP.
-
-- S11-3 (dev): local traversal reads pkg Deps before world validation, and add checks cycles before provider Mod validation, so pending import edits cannot hide cycles; serve tests and installs providers first and gives page/doctor/stop follow-ups (§17 item 12).
-
-- S11-4 (dev): contracts dispatch delivery to Harness and compare its events; file fakes answer calls, and journey_s11 drives two served mods.
-
-- S11 rejection fix (dev): refused serve points next and problem fixes to the first failing provider with an absolute --dir; the template documents working fakes and delivery.
-
-- S13 (dev): §15 records the cache-copy fingerprint experiment, shared warm per-binary fixtures, unit rule replacements, slow/timing reasons and the complete current scenario proof map (27–31 remain planned).
-
-- S17-1 (dev): help describes all inputs and destructive stop; vendor bootstraps into the caller/cache without exports, text flattens fields, available WIT/contract locations survive, env gaps point to doctor, and refused previews name their page.
-- S17-2 (dev): the template guide covers sandbox-safe allowlist recovery, page calls with curl, and preview MCP setup with rotating tokens and Claude Code/Codex tool approvals (§4.1).
-
-- S12b (dev): install verifies the app home before testing local providers, waits with --wait, and reports consent; default fake-host enables page-only integration proofs, distribution omits it with --no-default-features.
-- S12b-2 (dev): dependency errors name a recovery edge, check reports recorded provider paths, and add resolves provider paths from the current folder while storing them relative to the mod.
-
-- S12b rejection fix (dev): declined installs require asking the person before retrying; missing-app next repeats install with its home and explicit wait, while other environment errors retain doctor (§2.2, §2.4, §9.6).
-
-- S12b second rejection fix (dev): missing-app install next always names the canonical mod folder with --dir, quoting both paths and retaining explicit wait (§2.4).
-
-- S23 (dev): the template guide covers `watane.on` and `changed` (§4.1); text prints empty lists as `none`; doctor in a mod folder, failed check and new previews give fitting `next` lines (§2.3, §2.4); builds print a stderr progress line; fake-watane has help; declines name what to ask; a relative `add` provider is read from the current folder and `usage.provider` says so (§6.4, §9.5, §9.6, §15.3).
-
-- S21c-2 (dev): publish refuses local providers before shared app-status recovery, tests and packs source by default, posts package bytes with consent wait, reports release/site/link/id/source, and fake publish decodes slug/version (§2.4, §9.7, §15.3, stage 7).

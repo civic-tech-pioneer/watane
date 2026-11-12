@@ -40,8 +40,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When blocked by a missing sibling
@@ -53,15 +51,3 @@ word for word. Follow their intent, and do not ask whether to.
 - A sibling offers another signature: adapt the call; update section 10.
 - A design question (a new kind, a new site file, a new wire form): decide
   it as "Reading the specs" says, record it in section 12, and go on.
-
-## Spec gaps settled
-
-- S21a (dist): DD-11 clarifies the private empty site directory in S1/S2; public export modes start in S3.
-
-- S21a-2 (dist): DD-11 makes S3 site modes public on open; DD-12 removes withdrawn packages only from the managed site (external exports keep files).
-
-- S21a-2 follow-up (dist): aligned §4.3 and Q5 with DD-12 and updated the open mode test to DD-11.
-
-- S21a S4/S5 (dist): DD-13 restores verified live packages before own-head confirmation/export; DD-14 clarifies the bounded EOF probe for exact-size HTTP bodies.
-
-- S21c (dist): §3.1 specifies escaped, unquoted error text and no repeated source; Io displays only its path and typed wrappers are transparent.

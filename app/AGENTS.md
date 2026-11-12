@@ -44,8 +44,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When a sibling is missing
@@ -54,11 +52,3 @@ Follow TECHNICAL.md section 12: stage A needs no sibling (`src/fake.rs`,
 the driver's `ask`). If a sibling's API differs from section 15, adapt only
 `src/core.rs` and `src/confirm.rs`. If an item is missing, stub it there
 with code `unavailable` and record it in `NOTES.md`; never build it here.
-
-## Spec gaps settled
-
-- S21b-3 (app, dist, host): TECHNICAL 8/9.2 uses a dist-only router handle to avoid a server/Core cycle, a shared name cache for DistConfirm, and dist's actual `Package` error name.
-
-- S21c-3 (app): TECHNICAL 13 appends a source unless the chain so far equals its text or ends with `: ` and its text.
-
-- S25 (app): TECHNICAL 7/9.5/11/12 records stage D updates, release withdrawal and notices; APP-F-38 waits on index design.

@@ -43,8 +43,6 @@ word for word. Follow their intent, and do not ask whether to.
   document that owns the fact (any folder's spec, never another folder's
   code), fix each document that cites it, and keep it true to the documents
   above it.
-- Record each change in one line where this file records spec gaps, naming
-  the subsystems it affects.
 - Ask only to go against a vision document or to weaken a security check.
 
 ## When a sibling is missing
@@ -54,23 +52,3 @@ word for word. Follow their intent, and do not ask whether to.
   TECHNICAL.md): adapt the call site, and record the difference in section 17.
 - `log` missing: stage 8 waits. Do not add the `watane-log` dependency before it.
 - A spec gap: propose an answer, use it, and add it to TECHNICAL.md section 18.
-
-## Spec gaps
-
-- Q12 (host, dev, pkg): S8 stages preview folders with pkg pack/unpack and uses canonical package ids for install and recovery; remove the S1/S2 temporary digest cut.
-- Q19 (host, dev): S4 provides Harness open/call and recorded events; defer linked fakes and deliver to links and functions to S5, keep tempfile for tests, and distinguish a missing Origin header.
-
-- Q20 (host, dev): S5 adds MCP and preview tokens, reserves preview in every home, and defers app toolset management and Harness functions; wit-parser resolves to 0.254.2.
-
-- Q21 (host): S9 rejects repeated Host headers, returns 404 for missing page files on every method, closes HTTP/1 connections after body-size refusals, and marks subscription and revoke hostile probes as step 2.
-- Q22 (host, dev): S9 adds fixed Home and Preview modes, default participant startup, and no-app install refusal; Mode::Home gains its app field with confirmation in step 2.
-
-- Q23 (host, dev): S11 uses shelf instead of the keyword list; preview links and event limits, fake imports and Harness deliver end the S2/S3/S4 link cuts.
-
-- Q23 correction (host): Validator round 1 replaces global serialization with per-emitter delivery and commit-ordered page queues; unrelated mods execute concurrently.
-
-- Q24 (host, app, dev): S12a adds participant plans and confirmation, live grant checks, lifecycle management, app routes and tool metadata; disabled calls return 409 and pages return 404.
-
-- Q25 (host): S12b sends page events only to the emitter's pages; subscribers keep state-based changed messages.
-
-- Q26 (host): S21b keeps verified release metadata across restart; recovery includes shipped source when comparing release folders with the committed package.
