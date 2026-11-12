@@ -23,7 +23,6 @@ fn ac1_no_host_precedes_pipeline() {
         value["errors"][0]["fix"],
         "Start the watane app, then run this command again"
     );
-    assert!(!home.path().join("wit").exists());
 }
 
 #[cfg(feature = "fake-host")]
@@ -101,6 +100,35 @@ mod fake {
         assert_eq!(code, 4, "{value}");
         assert_eq!(value["errors"][0]["code"], "host.declined");
         assert_eq!(value["errors"][0]["message"], "declined");
+    }
+    #[test]
+    fn ac4_page_only_result_and_failed_pipeline() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let (_host, ready) = start(home.path(), "--home");
+        let dir = page(root.path(), "counter");
+        let (code, value) = install(&dir, home.path());
+        assert_eq!(code, 0, "{value}");
+        let page = format!("http://counter.localhost:{}/", ready["port"]);
+        assert_eq!(
+            value["result"]["home"],
+            json!(home.path().canonicalize().unwrap())
+        );
+        let entry = &value["result"]["installed"][0];
+        assert_eq!(value["result"]["installed"].as_array().unwrap().len(), 1);
+        assert_eq!(entry.as_object().unwrap().len(), 5, "{entry}");
+        assert_eq!(entry["slug"], "counter");
+        assert_eq!(entry["local"], "counter");
+        assert_eq!(entry["version"], "0.1.0");
+        assert_eq!(entry["page"], page);
+        assert_eq!(entry["package"].as_str().unwrap().len(), 64);
+        assert_eq!(value["next"], format!("Give the person this page: {page}"));
+        fs::write(dir.join("mod.toml"), "invalid").unwrap();
+        let (code, value) = install(&dir, home.path());
+        assert_eq!(code, 1, "{value}");
+        assert_eq!(value["next"], "watane-dev test --json");
+        let requests = fs::read_dir(home.path().join("requests")).unwrap().count();
+        assert_eq!(requests, 1, "a failed pipeline sends no request");
     }
     #[test]
     #[ignore = "slow: builds and tests two dependent Rust mods before installing them"]

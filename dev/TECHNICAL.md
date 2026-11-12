@@ -1235,7 +1235,9 @@ pub struct Client { /* base URL, ureq::Agent */ }
 impl Client {
     pub fn for_home(home: &Path) -> Result<Option<Client>, Problem>;   // None: no run.json or no answer
     pub fn status(&self) -> Result<serde_json::Value, Problem>;
-    pub fn install(&self, folders: &[PathBuf], wait: Duration) -> Result<serde_json::Value, Problem>;
+    pub fn for_app(home: &Path) -> Result<Client, Problem>;   // 9.6: a home host with the app, else env.host_not_running
+    pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem>;   // preview: 60 s
+    pub fn install_wait(&self, folders: &[PathBuf], wait: u64) -> Result<Vec<InstalledMod>, Problem>;   // home: --wait seconds
     pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<serde_json::Value, Problem>;
 }
 
@@ -1382,7 +1384,7 @@ rules belong to 15.1.
 | DEV-S-26 | `add::ac2_dev_s26_cycle_changes_nothing`, `ac3_self_and_missing_provider` | integration |
 | DEV-S-27 | `install::ac1_no_host_precedes_pipeline`; `api::tests::ac2_wrong_host_status`; `install::ac2_real_home_without_app` | integration without build; loopback unit; slow real host |
 | DEV-S-28 | `install::fake::ac3_declined` | integration: page-only, no Rust build |
-| DEV-S-29 | `install::fake::ac4_provider_order_result_and_failed_pipeline` | slow integration: builds two dependent Rust templates |
+| DEV-S-29 | `install::fake::ac4_page_only_result_and_failed_pipeline`; `install::fake::ac4_provider_order_result_and_failed_pipeline` | integration: page-only result, next and no request on failure; slow integration: order of two dependent Rust templates |
 | DEV-S-30 | planned publish local dependency refusal: no existing implementation/test | planned |
 | DEV-S-31 | planned publish source exclusion: no existing implementation/test | planned |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
