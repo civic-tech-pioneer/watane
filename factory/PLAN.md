@@ -132,17 +132,11 @@ Between steps 3 and 4.
     `search_*`, `j4_dist`), and the step 3 tests still pass unchanged.
   - Touches: dist only (new modules; `src/error.rs` only gains variants at the end of its enum,
     since S24 rewrites its Display texts). Not app or dev (S29 builds on this).
-- [~] **S27 The app says what happened.** (branch `slice/s27`; foreman: see `Foremen`)
-  - A second app on a busy port: `watane-app --home B` while another app holds 47341 stays open with
-    no local API and no message, and writes no `run.json` (found in the demo). It should say the
-    port is in use and how to pick another (`--port`, `WATANE_PORT`).
-  - S25 user-sim notes: Alice's own withdrawn release says "by the publisher"; an empty or too-long
-    reason gives "invalid reason: invalid character count"; the update consent heading says
-    "Install 1 mod(s)"; a decline reads "Update to 0.3.0 failed: install was not approved"; after a
-    restart the decline notice is gone but "Install 0.3.0" stays without naming the new grant; the
-    mods list shows no installed version outside Details.
-  - Touches: app (`src/lib.rs`, `src/core.rs`, `src/commands.rs`, `src/consent.rs`, `ui/`). Not
-    `app/src/api.rs` or dev, dist, host (S24).
+- [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
+  resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
+  `button()` both call showError); the busy-port window still shows "Install folders" with no
+  working local API; hidden windows poll only on focus; consent requests from clients that stopped
+  waiting pile up (S24).
 
 ## Stage coverage
 
@@ -214,7 +208,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24` (stopped, removed).
 - S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26` (stopped, removed).
-- S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27`.
+- S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27` (stopped, removed).
 - S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28`.
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -229,6 +223,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S27: a busy port shows "Port P is in use, maybe by another watane app. Start this one with
+  --port <n> or WATANE_PORT=<n> ..." in the window and once on stderr; the app does not fall back to
+  another port itself. A decline is recognised by host's `refused` code, kept in memory only;
+  `ModView.offerGrants` lists the offered release's grants that the installed mod lacks. dist's
+  BadReason maps to `bad_input` with app words. `app/ui/words.js` holds UI text helpers.
 - S24: new route `GET /api/releases` (`{"releases":[{slug,version,release,seq,link|null}]}`); a
   duplicate publish answers 409 `version_exists` (was `publish_refused`); both additive (app
   TECHNICAL 8.1.1, dev TECHNICAL 14). dev checks the release list after the status check and before
@@ -508,6 +507,9 @@ The human may veto each one.
   foreman force-pushed `slice/s24` with a lease after a rebase, since the branch was on origin.
 - S24: the S24 foreman did not run app's driver tests; the PO ran `--features driver --test api`
   after the merge (green).
+- S27: `--features driver --include-ignored` also runs the `front:` tests, so a background foreman
+  skips them by name and the PO runs them after the merge. One api.rs run failed on ENOBUFS (passed
+  on rerun).
 
 ## Digest
 
@@ -575,3 +577,5 @@ The human may veto each one.
   offline search, hostile-index defences; S28 builds dist's part.
 - S24: Bob's agent learns that a version is already out before it builds, with its release and link;
   each publish or install refusal says what to do next; dev's text output reads cleanly.
+- S27: a second app on a busy port says how to pick another; updates, declines, withdrawals and
+  offers read plainly, the offer names the new grant, and the mods list shows each version.
