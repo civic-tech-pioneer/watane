@@ -144,25 +144,61 @@ mod tests {
         ));
         assert!(Link::new(channel, "https://@example.org", None).is_err());
         let invalid = [
-            format!("{KEY}@https://example.org"),
-            format!("Watane:{KEY}@https://example.org"),
-            "watane:bad@https://example.org".into(),
-            format!("watane:{KEY}https://example.org"),
-            format!("watane:{KEY}@https://u@example.org"),
-            format!("watane:{KEY}@https://u:p@example.org"),
-            format!("watane:{KEY}@https://example.org/?q=1"),
-            format!("watane:{KEY}@ftp://example.org"),
-            format!("watane:{KEY}@https://"),
-            format!("watane:{KEY}@/relative"),
-            format!("watane:{KEY}@https://example.org/#"),
-            format!("watane:{KEY}@https://example.org/#Bad"),
-            format!("watane:{KEY}@https://example.org/#a#b"),
-            format!("watane:{KEY}@https://example.org/{}", "a".repeat(2048)),
+            (
+                format!("{KEY}@https://example.org"),
+                "missing watane: prefix",
+            ),
+            (
+                format!("Watane:{KEY}@https://example.org"),
+                "missing watane: prefix",
+            ),
+            (
+                "watane:bad@https://example.org".into(),
+                "invalid channel key",
+            ),
+            (
+                format!("watane:{KEY}https://example.org"),
+                "missing @ separator",
+            ),
+            (
+                format!("watane:{KEY}@https://u@example.org"),
+                "userinfo refused",
+            ),
+            (
+                format!("watane:{KEY}@https://u:p@example.org"),
+                "userinfo refused",
+            ),
+            (
+                format!("watane:{KEY}@https://example.org/?q=1"),
+                "query refused",
+            ),
+            (
+                format!("watane:{KEY}@ftp://example.org"),
+                "scheme must be http or https",
+            ),
+            (format!("watane:{KEY}@https://"), "invalid absolute URL"),
+            (format!("watane:{KEY}@/relative"), "invalid absolute URL"),
+            (
+                format!("watane:{KEY}@https://example.org/#"),
+                "invalid slug",
+            ),
+            (
+                format!("watane:{KEY}@https://example.org/#Bad"),
+                "invalid slug",
+            ),
+            (
+                format!("watane:{KEY}@https://example.org/#a#b"),
+                "invalid slug",
+            ),
+            (
+                format!("watane:{KEY}@https://example.org/{}", "a".repeat(2048)),
+                "link exceeds 2048 bytes",
+            ),
         ];
-        for s in invalid {
+        for (s, expected) in invalid {
             match s.parse::<Link>().unwrap_err() {
                 DistError::BadLink { cause } | DistError::BadUrl { cause, .. } => {
-                    assert!(!cause.is_empty())
+                    assert_eq!(cause, expected, "{s}")
                 }
                 e => panic!("{e}"),
             }
