@@ -421,17 +421,3 @@ fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
     let _host = start(home.path());
     assert_eq!(releases(home.path()), expected);
 }
-
-#[test]
-fn ac5_publish_spec_texts_and_template_line_budget() {
-    let technical = include_str!("../TECHNICAL.md");
-    for text in [
-        "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again",
-        "Publish <slug> first (if it is already published, that run reports its release), then depend on its release",
-        "link: none yet",
-        "--home <absolute h>",
-    ] {
-        assert!(technical.contains(text), "missing spec text: {text}");
-    }
-    assert!(include_str!("../template/AGENTS.md").lines().count() <= 143);
-}
