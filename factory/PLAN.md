@@ -125,21 +125,19 @@ Between steps 3 and 4.
 - [x] **S25 Carol stays up to date.** Delivered 2026-11-12 (main `ff754cb`). Sol runs: S25-1 1. Refresh
   updates with no new grant quietly, with a new grant through consent; Alice withdraws with a reason
   and Carol sees it with an offer of the newest live version; a fork shows as compromised.
-- [~] **S26 Design: indexes and search (step 4).** Delivered 2026-11-12; accepted under the human's rule, rebasing onto S25 (branch `slice/s26`). The
-  human approved a design slice (2026-11-12). Its product is a spec draft for the human to review;
-  nothing is built for real, and the PO does not merge it until the human approves.
-  - Decide and write the four open points of spec/TECHNICAL 9: the statements of an index (W15's
-    new kinds, their bodies), how deep includes go, search by text, publisher and interface, and
-    whether watane ships with a first index. Also freshness marks (DIST-F-42) and how J4's Carol
-    "chooses an index".
-  - Write them where the facts live: spec/TECHNICAL 9 (and W15), dist FUNCTIONAL and TECHNICAL
-    (stage S6, its tests), app TECHNICAL 8.2 and APP-F-38, dev TECHNICAL 10 (`search`). Name the
-    J4 test and each stage's "Done when".
-  - For each choice: the options, the pick, why, and the cost to undo. List what is on the wire or
-    on disk. Throwaway spikes outside the repo are fine; no Sol and no user-sim: the human reviews.
-  - Touches: spec documents only. S24 and S25 may edit other sections of the same documents.
-  - Starting point (PO): an index is a channel whose statements list releases and other indexes;
-    includes one level deep; search over verified, followed indexes; no shipped index at first.
+- [x] **S26 Design: indexes and search (step 4).** Merged 2026-11-12 (main `b5b58c9`), spec documents
+  only, after one independent review (5 security issues, about 10 gaps, all fixed). Indexes are
+  three new statement kinds (`list`, `include`, `unlist`); includes one level deep; search is local
+  and offline; no shipped index. Open: Q12, log entries of unlisted channels are never removed.
+- [~] **S28 Carol's dist finds Alice's mod (dist S6).** (branch `slice/s28`; foreman: see `Foremen`)
+  dist stage S6 as designed in dist TECHNICAL (rules 9 to 14, 4.4, 5.9, 5.10, the S6 row): Ivy's
+  channel lists Alice's reading list; Carol's dist chooses Ivy's index from its link, searches
+  "reading", and gets Alice's newest live release, verified and "listed by Ivy"; a stale or
+  local-address base is skipped; the own key is never read through a listing.
+  - Outcomes: the S6 "Done when" (`body_vectors`, `derive_rules` step 4 rows, `index_*`,
+    `search_*`, `j4_dist`), and the step 3 tests still pass unchanged.
+  - Touches: dist only (new modules; `src/error.rs` only gains variants at the end of its enum,
+    since S24 rewrites its Display texts). Not app or dev (S29 builds on this).
 - [~] **S27 The app says what happened.** (branch `slice/s27`; foreman: see `Foremen`)
   - A second app on a busy port: `watane-app --home B` while another app holds 47341 stays open with
     no local API and no message, and writes no `run.json` (found in the demo). It should say the
@@ -189,7 +187,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | E build on | 5 | open |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
-| dist | S6 find | 4 | open |
+| dist | S6 find | 4 | designed (S26); build in S28 |
 
 ## Foremen
 
@@ -221,24 +219,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S21c: `d7c44cac` (sessionId `d7c44cac-2e5d-4889-86c2-0f58fd762649`), worktree `.claude/worktrees/s21c` (stopped, removed).
 - S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24`.
 - S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
-- S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26`.
+- S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26` (stopped, removed).
 - S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
-
-- Process change (friction 3x: S9, S15, S21a): a brief that changes a behaviour must name each
-  existing test that asserts the old one, and say it changes. One line in the foreman skill's
-  brief section. Cost to undo: none.
-
-- Process change (friction 3x: S6, S17, S12b): parallel tasks in one subsystem conflict on its
-  `AGENTS.md` "Spec gaps" lines. Proposal: each task records its spec gaps in its own
-  `factory/tasks/<task>.md` report, and the foreman copies them into `AGENTS.md` once, at delivery.
-  Cost to undo: none.
-
-- Process change (friction 3x: S11 twice, S17): Sol changes files outside its brief's list. Proposal:
-  `factory/impl.sh` lists the changed files after each run, and the foreman returns any that the
-  brief does not name before the validator starts. Cost to undo: drop the check.
 
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
@@ -248,6 +233,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- Human (2026-11-12, process): briefs get a "## Changed tests" section (foreman skill); the
+  "Spec gaps" logs in */AGENTS.md are removed (the spec edit, Sol's CHANGED SPECS and git history
+  are the record; host Q ids and dist DD ids stay in their TECHNICAL); new worktrees clone main's
+  build with `cp -c -R target`. Declined: a check of Sol's unlisted files (20 such files in 17 of 62
+  runs; validators accepted nearly all and returned 2), so the validator stays the only check.
 - Human (2026-11-12): a design or spec change that is in line with the specs, passed review and
   improves on what was there needs no separate approval. A change that is hard to revert still
   goes to the human, briefly: what it is, the alternatives, and the consequences of each. S26's
@@ -506,6 +496,8 @@ The human may veto each one.
   The user-sim died once on an API ENOTFOUND; resuming it worked.
 - S21b, S25: Sol's sandbox cannot run the macOS window tests (S25 ran them on Linux in Docker); the
   validator is the first to run them on macOS (2x).
+- PO: three PLAN commits (c51f210, 68124ae, 07b82e4) used `git commit -a` and swept in another
+  session's uncommitted skill and `impl.sh` edits. PLAN commits now add `factory/PLAN.md` by name.
 
 ## Digest
 
@@ -569,3 +561,5 @@ The human may veto each one.
   and the agent gets the release, site and link; Alice installs from that link (step 3 done).
 - S25: Carol's refresh updates Alice's mod quietly or through consent when it asks for a new grant;
   a withdrawal shows Alice's reason and offers the newest live version; a fork shows as compromised.
+- S26: the step-4 design is in the specs: indexes as `list`, `include`, `unlist` statements, local
+  offline search, hostile-index defences; S28 builds dist's part.
