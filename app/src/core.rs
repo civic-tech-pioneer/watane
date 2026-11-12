@@ -36,6 +36,8 @@ fn tool_row(local: &str, interface: &str, function: &str) -> ToolRow {
 }
 pub(crate) struct Core {
     pub host: Arc<Host>,
+    pub dist: Arc<watane_dist::Dist>,
+    failures: Mutex<std::collections::BTreeMap<String, String>>,
     pub served: Mutex<Option<Served>>,
     app: tauri::AppHandle,
     parties: Arc<Parties>,
@@ -51,13 +53,15 @@ impl Core {
     pub fn new(
         app: tauri::AppHandle,
         host: Arc<Host>,
-        served: Served,
+        dist: Arc<watane_dist::Dist>,
         parties: Arc<Parties>,
     ) -> Self {
         Self {
             app,
             host,
-            served: Mutex::new(Some(served)),
+            served: Mutex::new(None),
+            dist,
+            failures: Mutex::new(Default::default()),
             parties,
         }
     }
@@ -134,6 +138,160 @@ impl Core {
         Ok(tools)
     }
 }
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChannelRow {
+    channel: String,
+    fingerprint: String,
+    name: Option<String>,
+    base: Option<String>,
+    status: &'static str,
+    cause: Option<String>,
+}
+fn channel_row(view: &watane_dist::ChannelView, failure: Option<&String>) -> ChannelRow {
+    ChannelRow {
+        channel: view.channel.to_string(),
+        fingerprint: view.fingerprint.clone(),
+        name: view.name.clone(),
+        base: view.base.clone(),
+        status: if matches!(view.status, watane_dist::Status::Compromised { .. }) {
+            "compromised"
+        } else if failure.is_some() {
+            "failed"
+        } else {
+            "ok"
+        },
+        cause: failure.cloned(),
+    }
+}
+fn keep_outcome(
+    failures: &mut std::collections::BTreeMap<String, String>,
+    channel: watane_dist::PublicKey,
+    outcome: watane_dist::Outcome,
+) {
+    match outcome {
+        watane_dist::Outcome::Failed { cause } => {
+            failures.insert(channel.to_string(), CmdError::from(cause).message);
+        }
+        _ => {
+            failures.remove(&channel.to_string());
+        }
+    }
+}
+fn resolve_plan<S, P>(
+    mut sources: Vec<S>,
+    mut plan: impl FnMut(&[S]) -> Result<(P, Vec<Option<watane_dist::ReleaseRef>>), CmdError>,
+    mut fetch: impl FnMut(&watane_dist::ReleaseRef) -> Result<S, CmdError>,
+) -> Result<P, CmdError> {
+    let mut added = std::collections::BTreeSet::new();
+    for _ in 0..32 {
+        let (plan, missing) = plan(&sources)?;
+        if missing.is_empty() {
+            return Ok(plan);
+        }
+        let before = sources.len();
+        for release in missing {
+            let release = release.ok_or_else(|| {
+                CmdError::new("missing_providers", "a local provider has no release")
+            })?;
+            if added.insert(release.clone()) {
+                sources.push(fetch(&release)?);
+            }
+        }
+        if before == sources.len() {
+            return Err(CmdError::new(
+                "missing_providers",
+                "provider resolution added no source",
+            ));
+        }
+    }
+    Err(CmdError::new(
+        "missing_providers",
+        "provider resolution exceeded 32 rounds",
+    ))
+}
+
+impl Core {
+    pub fn status(&self) -> Result<(serde_json::Value, serde_json::Value), CmdError> {
+        let own = self.dist.own()?;
+        let link = if own.base.is_some() {
+            Some(self.dist.own_link(None)?.to_string())
+        } else {
+            None
+        };
+        Ok((
+            serde_json::json!({"name":own.name,"fingerprint":self.dist.fingerprint(),"ownConfirmed":self.dist.own_confirmed()?}),
+            serde_json::json!({"dir":self.dist.site_dir(),"url":own.base,"link":link}),
+        ))
+    }
+    pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
+        let followed = self.dist.followed()?;
+        let mut parties = followed.clone();
+        parties.push(self.dist.own()?);
+        self.parties.replace(&parties);
+        let failures = self.failures.lock().unwrap();
+        Ok(followed
+            .iter()
+            .map(|v| channel_row(v, failures.get(&v.channel.to_string())))
+            .collect())
+    }
+    pub fn refresh(&self) -> Result<Vec<ChannelRow>, CmdError> {
+        for report in self.dist.refresh() {
+            let mut failures = self.failures.lock().unwrap();
+            keep_outcome(&mut failures, report.channel, report.outcome);
+        }
+        self.channels()
+    }
+    pub fn follow(&self, text: &str) -> Result<ChannelRow, CmdError> {
+        let link: watane_dist::Link = text.parse()?;
+        self.dist.follow(&link)?;
+        self.failures
+            .lock()
+            .unwrap()
+            .remove(&link.channel().to_string());
+        self.channels()?
+            .into_iter()
+            .find(|c| c.channel == link.channel().to_string())
+            .ok_or_else(|| CmdError::new("not_found", "followed channel missing"))
+    }
+    pub fn plan_link(&self, text: &str) -> Result<watane_host::Plan, CmdError> {
+        let link: watane_dist::Link = text.parse()?;
+        if link.slug().is_none() {
+            self.follow(text)?;
+            return Err(CmdError::new(
+                "bad_input",
+                "the channel is followed; the link names no mod",
+            ));
+        }
+        let first = self.dist.open_link(&link)?;
+        self.channels()?;
+        let plan = resolve_plan(
+            vec![first],
+            |fetched| {
+                let plan = self.host.plan(
+                    fetched
+                        .iter()
+                        .map(|f| watane_host::Source::Release {
+                            package: f.package.clone(),
+                            entry: f.entry.clone(),
+                        })
+                        .collect(),
+                )?;
+                if plan.missing().iter().any(|m| m.release.is_none()) {
+                    return Err(
+                        watane_host::HostError::MissingProviders(plan.missing().to_vec()).into(),
+                    );
+                }
+                let missing = plan.missing().iter().map(|m| m.release.clone()).collect();
+                Ok((plan, missing))
+            },
+            |r| Ok(self.dist.fetch(r)?),
+        )?;
+        self.channels()?;
+        Ok(plan)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +324,106 @@ mod tests {
                 watane_host::watane_pkg::Grant::Storage
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod stage_c_tests {
+    use super::*;
+    #[test]
+    fn ac2_channel_row_prioritizes_compromise_and_keeps_failure() {
+        let home = tempfile::tempdir().unwrap();
+        struct Refuse;
+        impl watane_dist::Confirm for Refuse {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Refuse
+            }
+        }
+        let d = watane_dist::Dist::open(home.path(), Arc::new(Refuse), Default::default()).unwrap();
+        let mut view = d.own().unwrap();
+        assert_eq!(channel_row(&view, None).status, "ok");
+        let mut failures = std::collections::BTreeMap::new();
+        keep_outcome(
+            &mut failures,
+            view.channel,
+            watane_dist::Outcome::Failed {
+                cause: watane_dist::DistError::Timeout {
+                    url: "http://site/head".into(),
+                },
+            },
+        );
+        let cause = failures.get(&view.channel.to_string()).unwrap().clone();
+        let row = channel_row(&view, Some(&cause));
+        assert_eq!(row.status, "failed");
+        assert_eq!(row.cause.as_deref(), Some(cause.as_str()));
+        view.status = watane_dist::Status::Compromised { seq: 2 };
+        assert_eq!(channel_row(&view, Some(&cause)).status, "compromised");
+        keep_outcome(
+            &mut failures,
+            view.channel,
+            watane_dist::Outcome::Current { head: 3 },
+        );
+        assert!(failures.is_empty());
+    }
+    #[test]
+    fn ac3_install_link_fetches_missing_and_rejects_stalled_or_32_rounds() {
+        let reference: watane_dist::ReleaseRef = format!("{}/reading-list@0.1.0", "y".repeat(52))
+            .parse()
+            .unwrap();
+        let mut fetched = vec![];
+        let result = resolve_plan(
+            vec![0],
+            |sources| {
+                Ok((
+                    sources.len(),
+                    if sources.len() == 1 {
+                        vec![Some(reference.clone())]
+                    } else {
+                        vec![]
+                    },
+                ))
+            },
+            |r| {
+                fetched.push(r.clone());
+                Ok(1)
+            },
+        )
+        .unwrap();
+        assert_eq!(result, 2);
+        assert_eq!(fetched, vec![reference.clone()]);
+        let e = resolve_plan(vec![0], |_| Ok(((), vec![None])), |_| Ok(1)).unwrap_err();
+        assert_eq!(e.code, "missing_providers");
+        let e = resolve_plan(
+            vec![0],
+            |_| Ok(((), vec![Some(reference.clone())])),
+            |_| Ok(1),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "missing_providers");
+        let mut rounds = 0;
+        let e = resolve_plan(
+            vec![0],
+            |_| {
+                rounds += 1;
+                let mut r = reference.clone();
+                r.version = format!("0.0.{rounds}").parse().unwrap();
+                Ok(((), vec![Some(r)]))
+            },
+            |_| Ok(1),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "missing_providers");
+        assert_eq!(rounds, 32);
+    }
+    #[test]
+    fn ac4_dist_error_keeps_whole_cause_chain() {
+        let e = watane_dist::DistError::Io {
+            path: "/home/dist/site/head".into(),
+            source: std::io::Error::other("disk broke"),
+        };
+        let outer = e.to_string();
+        let converted = CmdError::from(e);
+        assert_eq!(converted.code, "dist");
+        assert_eq!(converted.message, format!("{outer}: disk broke"));
     }
 }

@@ -102,8 +102,10 @@ function refresh() {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     const status = await call('status');
-    if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
+    if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
     $('.mark').textContent = status.mark;
+    identityView(status);
+    await channelsView();
     modsView(await call('mods_list'));
     await agentsView();
     document.body.dataset.ready = 'true';
@@ -114,3 +116,42 @@ window.addEventListener('focus', () => refresh().catch(showError));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(showError); });
 setInterval(() => { if (!document.hidden) refresh().catch(showError); }, 2000);
 refresh().catch(showError);
+
+function identityView(status) {
+  const id = status.identity, site = status.site;
+  $('#identity-info').textContent = id ? `${id.name || 'No profile name'} (${id.fingerprint})` : 'Identity unavailable';
+  $('#confirm-own').hidden = !id || id.ownConfirmed;
+  $('#site-dir').textContent = site ? `Site folder: ${site.dir}${site.url ? ' · ' + site.url : ''}` : '';
+  $('#own-link').textContent = site?.link || '';
+  $('#copy-link').disabled = !site?.link;
+}
+let lastChannels = '';
+async function channelsView() {
+  const channels = await call('channels_list');
+  const signature = JSON.stringify(channels); if (signature === lastChannels) return;
+  lastChannels = signature; $('#channels').replaceChildren();
+  for (const channel of channels) {
+    const row = element('p', `${channel.name || ''} (${channel.fingerprint}) · ${channel.base || ''} · ${channel.status}${channel.cause ? ': ' + channel.cause : ''} `, $('#channels'));
+    button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));
+  }
+}
+$('#install-from-link').onclick = () => action('install_link', {link: $('#install-link').value}).catch(showError);
+$('#set-name').onclick = () => action('identity_set_name', {name: $('#profile-name').value}).catch(showError);
+$('#set-site').onclick = () => action('site_set_url', {url: $('#site-url').value}).catch(showError);
+$('#copy-link').onclick = () => navigator.clipboard.writeText($('#own-link').textContent).catch(showError);
+$('#follow-channel').onclick = () => action('channel_follow', {link: $('#follow-link').value}).catch(showError);
+$('#refresh-channels').onclick = () => action('channels_refresh').catch(showError);
+$('#identity-backup').onclick = async () => {
+  const passphrase = $('#passphrase').value;
+  if (Array.from(passphrase).length < 12 || passphrase !== $('#passphrase-repeat').value) { showError({message:'Use matching passphrases of at least 12 characters'}); return; }
+  try { await action('identity_backup', {passphrase}); } catch (e) { showError(e); }
+  finally { $('#passphrase').value = ''; $('#passphrase-repeat').value = ''; }
+};
+$('#identity-restore').onclick = async () => {
+  try { await action('identity_restore', {passphrase: $('#passphrase').value}); } catch (e) { showError(e); }
+  finally { $('#passphrase').value = ''; $('#passphrase-repeat').value = ''; }
+};
+$('#confirm-identity').onclick = () => {
+  if (!$('#never-published').checked && !$('#own-channel').value) {showError({message:'Enter your channel link or state that this identity never published'});return;}
+  action('identity_confirm_own', {link: $('#never-published').checked ? null : $('#own-channel').value}).catch(showError);
+};

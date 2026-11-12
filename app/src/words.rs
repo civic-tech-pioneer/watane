@@ -1,12 +1,31 @@
 use crate::consent::{GrantKind, GrantLine, Party};
 use std::collections::BTreeMap;
 use watane_host::watane_pkg::{Grant, Provider};
-pub type Parties = BTreeMap<String, String>;
+#[derive(Default)]
+pub struct Parties(std::sync::RwLock<BTreeMap<String, String>>);
+impl Parties {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    #[cfg(test)]
+    pub fn insert(&self, key: String, name: String) {
+        self.0.write().unwrap().insert(key, name);
+    }
+    pub fn replace(&self, views: &[watane_dist::ChannelView]) {
+        *self.0.write().unwrap() = views
+            .iter()
+            .filter_map(|v| v.name.clone().map(|n| (v.channel.to_string(), n)))
+            .collect();
+    }
+}
 
 pub fn party(publisher: &str, parties: &Parties) -> Party {
     Party {
-        name: parties.get(publisher).cloned(),
-        fingerprint: publisher.chars().take(10).collect(),
+        name: parties.0.read().unwrap().get(publisher).cloned(),
+        fingerprint: publisher
+            .parse::<watane_dist::PublicKey>()
+            .map(|k| k.fingerprint())
+            .unwrap_or_else(|_| publisher.chars().take(10).collect()),
     }
 }
 pub(crate) fn provider(provider: &Provider, parties: &Parties) -> String {
@@ -110,7 +129,7 @@ mod tests {
     #[test]
     fn ac1_party_uses_the_first_ten_key_characters_before_stage_c() {
         let key = "y".repeat(52);
-        let mut parties = Parties::new();
+        let parties = Parties::new();
         assert_eq!(
             party(&key, &parties),
             Party {

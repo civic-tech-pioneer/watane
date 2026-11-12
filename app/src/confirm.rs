@@ -108,6 +108,59 @@ impl Confirm for HostConfirm {
     }
 }
 
+pub(crate) struct DistConfirm {
+    pub broker: Arc<consent::Broker>,
+    pub parties: Arc<Parties>,
+}
+impl watane_dist::Confirm for DistConfirm {
+    fn confirm(&self, request: &watane_dist::SignRequest) -> watane_dist::Decision {
+        use watane_dist::Statement;
+        let (statement, details) = match &request.statement {
+            Statement::Profile(p) => (consent::Statement::Profile, vec![("Name", p.name.clone())]),
+            Statement::Release { reference, release } => (
+                consent::Statement::Release,
+                vec![
+                    ("Release", reference.to_string()),
+                    ("Package", release.package.to_string()),
+                    ("Size", release.size.to_string()),
+                    (
+                        "Source included",
+                        if release.source { "yes" } else { "no" }.into(),
+                    ),
+                    ("Summary", release.summary.clone()),
+                ],
+            ),
+            Statement::Withdraw {
+                reference,
+                withdraw,
+                ..
+            } => (
+                consent::Statement::Withdraw,
+                vec![
+                    ("Release", reference.to_string()),
+                    ("Reason", withdraw.reason.clone()),
+                ],
+            ),
+        };
+        let mut signer = words::party(&request.channel.to_string(), &self.parties);
+        signer.fingerprint = request.fingerprint.clone();
+        match self.broker.ask_blocking(consent::Request::Sign {
+            statement,
+            signer,
+            details: details
+                .into_iter()
+                .map(|(label, value)| consent::Detail {
+                    label: label.into(),
+                    value,
+                })
+                .collect(),
+        }) {
+            consent::Answer::Approve { .. } => watane_dist::Decision::Approve,
+            consent::Answer::Deny => watane_dist::Decision::Refuse,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

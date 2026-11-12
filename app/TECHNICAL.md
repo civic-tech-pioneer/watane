@@ -88,14 +88,14 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    parties })) }, Limits::default())`. It is first because it refuses a
    non-empty home without `home.json` (host 3.1).
 3. Create `<home>/app/` if missing. Read or create the mark (section 6.4).
-4. `Dist::open(home, Arc::new(DistConfirm(broker)), Options::default())`
+4. `Dist::open(home, Arc::new(DistConfirm { broker, parties }), Options::default())`
    (stage C). It creates the identity at the first open, offline
    (APP-F-28).
 5. Build Tauri: `tauri_plugin_dialog::init()`, `manage(AppState)`,
    `invoke_handler(generate_handler![<the commands of section 7>])`.
 6. In `setup`:
    1. Make the `Core`. `tauri::async_runtime::block_on(host.serve(port,
-      api::router(core)))` gives the `Served`; keep it in `Core.served`.
+      api::router(Some(dist.clone()))))` gives the `Served`; keep it in `Core.served`.
    2. `broker.set_listener(...)`: on each change of the head request, close
       the consent window and, if a request remains, open a new one.
    3. Fill the parties cache (section 9.2). Open the main window.
@@ -122,7 +122,7 @@ pub(crate) struct Core {
     pub parties: Arc<Parties>,                       // section 9.2
     pub served: std::sync::Mutex<Option<watane_host::Served>>, // port, page_url, mcp_url
     pub app: tauri::AppHandle,
-    pub channels: std::sync::Mutex<Vec<ChannelRow>>, // last refresh, stage C
+    failures: std::sync::Mutex<BTreeMap<String, String>>, // last failed refresh by channel
 }
 ```
 
@@ -448,12 +448,18 @@ The pages call commands only through `ui/ipc.js`:
 
 The host owns the local API, its guards (host 8.1: the API host names
 only; no `Origin` header) and its discovery by `watane-dev` (`run.json`).
-The app hands `api::router(core)` to `host.serve`, which merges it on the
+The app hands `api::router(Some(dist))` to `host.serve`, which merges it on the
 same port behind the same guards (HOST-F-38).
 
 ```rust
-pub fn router(core: Arc<Core>) -> axum::Router;   // full paths: /api/publish, ...
+pub fn router(dist: Option<Arc<watane_dist::Dist>>) -> axum::Router;   // full paths: /api/publish, ...
 ```
+
+The router owns only a dist handle, not `Core`: host is not served until
+startup succeeds, and this avoids a server/router/Core ownership cycle.
+`None` gives the route's 503 response in isolation; failed startup serves
+nothing (APP-F-2). Three publish-specific errors are mapped by the table;
+all other dist errors use its generic 409 row, including new variants.
 
 An error body is `{"error": {"code": "<code>", "message": "<cause chain>"}}`
 (D-A5), the same shape as host's.
@@ -474,7 +480,7 @@ and writes the site folder.
 | wrong content type, empty body | 400 | `bad_request` |
 | body over the limit | 413 | `too_large` |
 | `DistError::Refused` | 403 | `refused` |
-| `DistError::Pkg` | 422 | `invalid_package` |
+| `DistError::Package` | 422 | `invalid_package` |
 | `DistError::SiteNotWritten` | 500 | `site_not_written`; the release is signed and stored; the message says so |
 | any other `DistError` (a used version, an unreleased provider, an unconfirmed own head, ...) | 409 | `publish_refused` |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
@@ -517,9 +523,9 @@ authority. `watane-dev new --from` and `add <release>` use it.
 ### 9.2 HostConfirm, DistConfirm and the parties cache
 
 ```rust
-pub(crate) struct Parties(std::sync::RwLock<HashMap<String, Party>>);  // key text -> Party
+pub(crate) struct Parties(std::sync::RwLock<BTreeMap<String, String>>); // key text -> profile name; fingerprint from PublicKey
 pub(crate) struct HostConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties>, pub host: OnceLock<Weak<Host>> } // impl watane_host::Confirm
-pub(crate) struct DistConfirm(pub Arc<Broker>);                                      // impl watane_dist::Confirm
+pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties> }                                      // impl watane_dist::Confirm
 ```
 
 - The parties cache maps a publisher key to its profile name and

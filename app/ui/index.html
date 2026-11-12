@@ -1,5 +1,17 @@
 <!doctype html><html><head><meta charset="utf-8"><title>watane</title><link rel="stylesheet" href="style.css"></head><body>
 <header><span class="mark"></span><button id="install">Install folders</button></header>
+<section id="distribution">
+<h2>Install from link</h2><label>Mod or channel link <input id="install-link" type="text"></label><button id="install-from-link">Install from link</button>
+<h2>Identity</h2><p id="identity-info"></p><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>
+<details><summary>Back up or restore identity</summary>
+<label>Passphrase <input id="passphrase" type="password" autocomplete="new-password"></label><label>Repeat passphrase for backup <input id="passphrase-repeat" type="password" autocomplete="new-password"></label>
+<button id="identity-backup">Save backup</button><button id="identity-restore">Restore backup</button></details>
+<div id="confirm-own" hidden><p>Confirm your restored identity before signing. A wrong “never published” answer forks your channel.</p>
+<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button id="confirm-identity">Confirm identity</button></div>
+<h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button id="set-site">Set site URL</button>
+<p id="own-link"></p><button id="copy-link">Copy link</button>
+<h2>Channels</h2><label>Channel link <input id="follow-link"></label><button id="follow-channel">Follow channel</button><button id="refresh-channels">Refresh channels</button><div id="channels"></div>
+</section>
 <main id="launcher"></main>
 <section id="agents"><h2>Agents</h2>
 <label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button id="save-toolset">Save toolset</button><div id="toolsets"></div>

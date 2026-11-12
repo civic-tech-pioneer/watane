@@ -18,6 +18,16 @@
     "allow-toolset-save",
     "allow-tokens-list",
     "allow-token-issue",
-    "allow-token-end"
+    "allow-token-end",
+    "allow-install-link",
+    "allow-identity-set-name",
+    "allow-site-set-url",
+    "allow-identity-backup",
+    "allow-identity-restore",
+    "allow-identity-confirm-own",
+    "allow-channels-list",
+    "allow-channel-follow",
+    "allow-channel-unfollow",
+    "allow-channels-refresh"
   ]
 }

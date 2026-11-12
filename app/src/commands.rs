@@ -15,7 +15,7 @@ fn record(webview: &tauri::Webview, cmd: &str) {
     #[cfg(not(feature = "driver"))]
     let _ = (webview, cmd);
 }
-fn core(state: &AppState) -> Result<&crate::core::Core, CmdError> {
+fn core(state: &AppState) -> Result<&std::sync::Arc<crate::core::Core>, CmdError> {
     state.core.get().ok_or_else(|| {
         CmdError::new(
             "unavailable",
@@ -28,9 +28,22 @@ fn core(state: &AppState) -> Result<&crate::core::Core, CmdError> {
     })
 }
 #[tauri::command]
-pub(crate) fn status(webview: tauri::Webview, state: tauri::State<'_, AppState>) -> Value {
+pub(crate) async fn status(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, CmdError> {
     record(&webview, "status");
-    json!({"home":state.home,"port":state.core.get().map_or(state.port, |c| c.port()),"mark":state.mark,"error":state.failed.get(),"identity":null,"site":null})
+    let mut value = json!({"home":state.home,"port":state.core.get().map_or(state.port, |c| c.port()),"mark":state.mark,"error":state.failed.get(),"identity":null,"site":null});
+    if let Some(core) = state.core.get().cloned() {
+        match blocking(move || core.status()).await {
+            Ok((identity, site)) => {
+                value["identity"] = identity;
+                value["site"] = site;
+            }
+            Err(e) => value["error"] = json!(e.message),
+        }
+    }
+    Ok(value)
 }
 #[tauri::command]
 pub(crate) fn mods_list(
@@ -269,4 +282,214 @@ pub(crate) fn token_end(
     } else {
         Err(CmdError::new("not_found", "token not found"))
     }
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, CmdError> + Send + 'static,
+) -> Result<T, CmdError> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| CmdError::new("io", e.to_string()))?
+}
+#[tauri::command]
+pub(crate) async fn install_link(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "install_link");
+    let planner = core(&state)?.clone();
+    let host = planner.host.clone();
+    let plan = blocking(move || planner.plan_link(&link)).await?;
+    let installed = host.install(plan, watane_host::Requester::App).await?;
+    Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
+}
+#[tauri::command]
+pub(crate) async fn identity_set_name(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), CmdError> {
+    record(&webview, "identity_set_name");
+    let core = core(&state)?.clone();
+    blocking(move || {
+        core.dist.set_name(&name)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn site_set_url(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "site_set_url");
+    let core = core(&state)?.clone();
+    blocking(move || {
+        core.dist.set_site_url(&url)?;
+        Ok(())
+    })
+    .await?;
+    status(webview, state).await
+}
+fn picked_file(state: &AppState) -> Option<Option<std::path::PathBuf>> {
+    #[cfg(feature = "driver")]
+    {
+        state
+            .driver
+            .pick
+            .lock()
+            .unwrap()
+            .take()
+            .map(|p| p.into_iter().next())
+    }
+    #[cfg(not(feature = "driver"))]
+    {
+        let _ = state;
+        None
+    }
+}
+#[tauri::command]
+pub(crate) async fn identity_backup(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    passphrase: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "identity_backup");
+    if passphrase.chars().count() < 12 {
+        return Err(CmdError::new(
+            "bad_input",
+            "passphrase needs at least 12 characters",
+        ));
+    }
+    let dist = core(&state)?.dist.clone();
+    let picked = picked_file(&state);
+    let app = webview.app_handle().clone();
+    blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let path = match picked {
+            Some(p) => p,
+            None => app
+                .dialog()
+                .file()
+                .set_file_name("watane-identity.backup")
+                .blocking_save_file()
+                .map(|p| p.into_path())
+                .transpose()
+                .map_err(|e| CmdError::new("bad_input", e.to_string()))?,
+        };
+        let Some(path) = path else {
+            return Ok(Value::Null);
+        };
+        let bytes = dist.backup(&passphrase)?;
+        use std::{
+            io::Write,
+            os::unix::fs::{OpenOptionsExt, PermissionsExt},
+        };
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)?;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(&bytes)?;
+        Ok(json!({"path":path}))
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn identity_restore(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    passphrase: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "identity_restore");
+    let core = core(&state)?.clone();
+    let picked = picked_file(&state);
+    let app = webview.app_handle().clone();
+    blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let path = match picked {
+            Some(p) => p,
+            None => app
+                .dialog()
+                .file()
+                .blocking_pick_file()
+                .map(|p| p.into_path())
+                .transpose()
+                .map_err(|e| CmdError::new("bad_input", e.to_string()))?,
+        };
+        let Some(path) = path else {
+            return Ok(Value::Null);
+        };
+        let key = core.dist.restore(&std::fs::read(path)?, &passphrase)?;
+        core.channels()?;
+        Ok(json!({"fingerprint":key.fingerprint()}))
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn identity_confirm_own(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: Option<String>,
+) -> Result<Value, CmdError> {
+    record(&webview, "identity_confirm_own");
+    let dist = core(&state)?.dist.clone();
+    blocking(move || {
+        let link = link.map(|s| s.parse::<watane_dist::Link>()).transpose()?;
+        dist.confirm_own(link.as_ref())?;
+        Ok(())
+    })
+    .await?;
+    status(webview, state).await
+}
+#[tauri::command]
+pub(crate) async fn channels_list(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<crate::core::ChannelRow>, CmdError> {
+    record(&webview, "channels_list");
+    let core = core(&state)?.clone();
+    blocking(move || core.channels()).await
+}
+#[tauri::command]
+pub(crate) async fn channel_follow(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: String,
+) -> Result<crate::core::ChannelRow, CmdError> {
+    record(&webview, "channel_follow");
+    let core = core(&state)?.clone();
+    blocking(move || core.follow(&link)).await
+}
+#[tauri::command]
+pub(crate) async fn channel_unfollow(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    channel: String,
+) -> Result<(), CmdError> {
+    record(&webview, "channel_unfollow");
+    let core = core(&state)?.clone();
+    blocking(move || {
+        let key = channel
+            .parse::<watane_dist::PublicKey>()
+            .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
+        core.dist.unfollow(&key)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn channels_refresh(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<crate::core::ChannelRow>, CmdError> {
+    record(&webview, "channels_refresh");
+    let core = core(&state)?.clone();
+    blocking(move || core.refresh()).await
 }

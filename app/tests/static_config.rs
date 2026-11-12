@@ -24,6 +24,16 @@ fn ac8_static_security_configuration() {
         "tokens_list",
         "token_issue",
         "token_end",
+        "install_link",
+        "identity_set_name",
+        "site_set_url",
+        "identity_backup",
+        "identity_restore",
+        "identity_confirm_own",
+        "channels_list",
+        "channel_follow",
+        "channel_unfollow",
+        "channels_refresh",
     ];
     let consent = ["consent_get", "consent_answer"];
     let mut files: Vec<_> = std::fs::read_dir(root().join("capabilities"))
@@ -77,6 +87,16 @@ fn ac8_static_security_configuration() {
             "tokens_list",
             "token_issue",
             "token_end",
+            "install_link",
+            "identity_set_name",
+            "site_set_url",
+            "identity_backup",
+            "identity_restore",
+            "identity_confirm_own",
+            "channels_list",
+            "channel_follow",
+            "channel_unfollow",
+            "channels_refresh",
             "consent_get",
             "consent_answer"
         ]

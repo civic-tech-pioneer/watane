@@ -5,3 +5,6 @@ pub mod pages;
 
 #[allow(dead_code)]
 pub mod journey;
+
+#[allow(dead_code)]
+pub mod publish;

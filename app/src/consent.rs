@@ -545,3 +545,132 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod stage_c_tests {
+    use super::*;
+    use watane_dist::{Confirm, Decision, SignRequest};
+    #[test]
+    fn ac1_dist_confirm_maps_each_statement_and_broker_answer() {
+        let mut key = [0x66; 32];
+        key[0] = 0x58;
+        let channel = watane_dist::PublicKey::from_bytes(&key).unwrap();
+        let release = watane_dist::Release {
+            slug: "reading-list".parse().unwrap(),
+            version: "0.1.0".parse().unwrap(),
+            name: "Reading list".into(),
+            summary: "Books".into(),
+            package: "ab".repeat(32).parse().unwrap(),
+            size: 123,
+            source: true,
+            offers: vec![],
+            events: vec![],
+            grants: vec![],
+            origin: None,
+        };
+        let reference: watane_dist::ReleaseRef =
+            format!("{channel}/reading-list@0.1.0").parse().unwrap();
+        let cases = [
+            (
+                watane_dist::Statement::Profile(watane_dist::Profile {
+                    name: "Alice".into(),
+                }),
+                Statement::Profile,
+                vec![("Name", "Alice".to_string())],
+            ),
+            (
+                watane_dist::Statement::Release {
+                    reference: reference.clone(),
+                    release: release.clone(),
+                },
+                Statement::Release,
+                vec![
+                    ("Release", reference.to_string()),
+                    ("Package", release.package.to_string()),
+                    ("Size", "123".into()),
+                    ("Source included", "yes".into()),
+                    ("Summary", "Books".into()),
+                ],
+            ),
+            (
+                watane_dist::Statement::Withdraw {
+                    reference: reference.clone(),
+                    release,
+                    withdraw: watane_dist::Withdraw {
+                        release: "00".repeat(32).parse().unwrap(),
+                        reason: "Retired".into(),
+                    },
+                },
+                Statement::Withdraw,
+                vec![
+                    ("Release", reference.to_string()),
+                    ("Reason", "Retired".into()),
+                ],
+            ),
+        ];
+        for (statement, expected, details) in cases {
+            for approve in [true, false] {
+                let broker = Broker::new();
+                let (tx, rx) = std::sync::mpsc::channel();
+                broker.set_listener(Box::new(move |id| {
+                    let _ = tx.send(id);
+                }));
+                let parties = std::sync::Arc::new(crate::words::Parties::new());
+                parties.insert(channel.to_string(), "Alice".into());
+                let adapter = crate::confirm::DistConfirm {
+                    broker: broker.clone(),
+                    parties,
+                };
+                let request = SignRequest {
+                    channel,
+                    fingerprint: "request fingerprint".into(),
+                    statement: statement.clone(),
+                };
+                let worker = std::thread::spawn(move || adapter.confirm(&request));
+                let id = rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap();
+                let Request::Sign {
+                    statement,
+                    signer,
+                    details: actual,
+                } = broker.current().unwrap().1
+                else {
+                    panic!("sign expected")
+                };
+                assert_eq!(statement, expected);
+                assert_eq!(signer.fingerprint, "request fingerprint");
+                assert_eq!(signer.name.as_deref(), Some("Alice"));
+                assert_eq!(
+                    actual,
+                    details
+                        .iter()
+                        .map(|(k, v)| Detail {
+                            label: (*k).into(),
+                            value: v.clone()
+                        })
+                        .collect::<Vec<_>>()
+                );
+                broker
+                    .answer(
+                        &id,
+                        if approve {
+                            Answer::Approve { withheld: vec![] }
+                        } else {
+                            Answer::Deny
+                        },
+                    )
+                    .unwrap();
+                assert_eq!(
+                    worker.join().unwrap(),
+                    if approve {
+                        Decision::Approve
+                    } else {
+                        Decision::Refuse
+                    }
+                );
+            }
+        }
+    }
+}

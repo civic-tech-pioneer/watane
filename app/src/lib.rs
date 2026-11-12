@@ -1,5 +1,6 @@
 #[cfg(all(feature = "driver", not(debug_assertions)))]
 compile_error!("the driver feature is only for debug test builds");
+pub mod api;
 mod commands;
 mod confirm;
 pub mod consent;
@@ -22,6 +23,8 @@ pub enum AppError {
     #[error(transparent)]
     Host(#[from] watane_host::HostError),
     #[error(transparent)]
+    Dist(#[from] watane_dist::DistError),
+    #[error(transparent)]
     Tauri(#[from] tauri::Error),
 }
 #[derive(Debug, serde::Serialize)]
@@ -39,26 +42,32 @@ impl CmdError {
 }
 impl From<tauri::Error> for CmdError {
     fn from(e: tauri::Error) -> Self {
-        let mut message = e.to_string();
-        let mut cause = std::error::Error::source(&e);
-        while let Some(error) = cause {
-            message.push_str(": ");
-            message.push_str(&error.to_string());
-            cause = error.source();
-        }
-        Self::new("io", message)
+        Self::new("io", cause_chain(&e))
     }
 }
 impl From<watane_host::HostError> for CmdError {
     fn from(e: watane_host::HostError) -> Self {
-        let mut message = e.to_string();
-        let mut cause = std::error::Error::source(&e);
-        while let Some(error) = cause {
-            message.push_str(": ");
-            message.push_str(&error.to_string());
-            cause = error.source();
-        }
-        Self::new(e.code(), message)
+        Self::new(e.code(), cause_chain(&e))
+    }
+}
+pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
+    let mut message = e.to_string();
+    let mut cause = e.source();
+    while let Some(e) = cause {
+        message.push_str(": ");
+        message.push_str(&e.to_string());
+        cause = e.source();
+    }
+    message
+}
+impl From<watane_dist::DistError> for CmdError {
+    fn from(e: watane_dist::DistError) -> Self {
+        Self::new("dist", cause_chain(&e))
+    }
+}
+impl From<std::io::Error> for CmdError {
+    fn from(e: std::io::Error) -> Self {
+        Self::new("io", cause_chain(&e))
     }
 }
 pub struct Config {
@@ -112,7 +121,7 @@ pub(crate) struct AppState {
     mark: Option<String>,
     failed: OnceLock<String>,
     broker: Arc<Broker>,
-    core: OnceLock<core::Core>,
+    core: OnceLock<Arc<core::Core>>,
     consent_id: Mutex<Option<AskId>>,
     #[cfg(feature = "driver")]
     driver: driver::DriverState,
@@ -141,9 +150,29 @@ pub fn run(config: Config) -> Result<(), AppError> {
         Ok(_) => mark::read_or_create(&config.home).map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };
+    let dist = if mark.is_ok() {
+        let home = config.home.clone();
+        let confirm = Arc::new(confirm::DistConfirm {
+            broker: broker.clone(),
+            parties: parties.clone(),
+        });
+        tauri::async_runtime::block_on(async move {
+            tauri::async_runtime::spawn_blocking(move || {
+                watane_dist::Dist::open(&home, confirm, Default::default()).map(Arc::new)
+            })
+            .await
+        })
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.map_err(|e| cause_chain(&e)))
+    } else {
+        Err("home unavailable".into())
+    };
     let failed = OnceLock::new();
     if let Err(e) = &mark {
         let _ = failed.set(format!("cannot open home {}: {e}", config.home.display()));
+    }
+    if let Err(e) = &dist {
+        let _ = failed.set(e.clone());
     }
     let state = AppState {
         home: config.home,
@@ -179,6 +208,16 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::tokens_list,
             commands::token_issue,
             commands::token_end,
+            commands::install_link,
+            commands::identity_set_name,
+            commands::site_set_url,
+            commands::identity_backup,
+            commands::identity_restore,
+            commands::identity_confirm_own,
+            commands::channels_list,
+            commands::channel_follow,
+            commands::channel_unfollow,
+            commands::channels_refresh,
             commands::consent_get,
             commands::consent_answer
         ])
@@ -189,21 +228,47 @@ pub fn run(config: Config) -> Result<(), AppError> {
             }
             let h = app.handle().clone();
             let state = h.state::<AppState>();
-            if state.failed.get().is_none() {
-                match host {
-                    Ok(host) => match tauri::async_runtime::block_on(
-                        host.serve(config.port, axum::Router::new()),
+            if state.failed.get().is_none()
+                && let (Ok(host), Ok(dist)) = (host, dist)
+            {
+                let core = Arc::new(core::Core::new(
+                    h.clone(),
+                    host.clone(),
+                    dist.clone(),
+                    parties,
+                ));
+                let initial = core.clone();
+                let result = tauri::async_runtime::block_on(async move {
+                    tauri::async_runtime::spawn_blocking(move || initial.channels()).await
+                });
+                match result {
+                    Ok(Ok(_)) => match tauri::async_runtime::block_on(
+                        host.serve(config.port, api::router(Some(dist))),
                     ) {
                         Ok(served) => {
-                            let _ =
-                                state
-                                    .core
-                                    .set(core::Core::new(h.clone(), host, served, parties));
+                            *core.served.lock().unwrap() = Some(served);
+                            let _ = state.core.set(core.clone());
+                            let weak = Arc::downgrade(&core);
+                            tauri::async_runtime::spawn(async move {
+                                let mut timer =
+                                    tokio::time::interval(std::time::Duration::from_secs(600));
+                                loop {
+                                    timer.tick().await;
+                                    let Some(core) = weak.upgrade() else { break };
+                                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                                        core.refresh()
+                                    })
+                                    .await;
+                                }
+                            });
                         }
                         Err(e) => {
-                            let _ = state.failed.set(e.to_string());
+                            let _ = state.failed.set(cause_chain(&e));
                         }
                     },
+                    Ok(Err(e)) => {
+                        let _ = state.failed.set(e.message);
+                    }
                     Err(e) => {
                         let _ = state.failed.set(e.to_string());
                     }
