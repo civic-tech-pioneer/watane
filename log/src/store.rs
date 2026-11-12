@@ -1,0 +1,168 @@
+use crate::{Entry, Error, Fork, PublicKey, Status};
+use rusqlite::{Connection, OptionalExtension, params};
+use std::{
+    fs::OpenOptions,
+    os::unix::fs::OpenOptionsExt,
+    path::Path,
+    time::{Duration, Instant},
+};
+pub(crate) fn open(dir: &Path) -> Result<Connection, Error> {
+    let path = dir.join("channels.db");
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+    {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(source) => return Err(Error::Io { path, source }),
+    }
+    let mut db = Connection::open(&path)?;
+    db.busy_timeout(Duration::from_secs(5))?;
+    check_version(&db)?;
+    let start = Instant::now();
+    loop {
+        match db.pragma_update(None, "journal_mode", "WAL") {
+            Ok(()) => break,
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if matches!(
+                    e.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) && start.elapsed() < Duration::from_secs(5) =>
+            {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    db.pragma_update(None, "synchronous", "FULL")?;
+    let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    if check_version(&tx)? == 0 {
+        tx.execute_batch(include_str!("schema.sql"))?;
+    }
+    tx.commit()?;
+    Ok(db)
+}
+fn check_version(db: &Connection) -> Result<i64, Error> {
+    // Read both facts in one SQLite snapshot while another first open may create the schema.
+    let (version, tables): (i64, i64) = db.query_row(
+        "SELECT user_version, (SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%') FROM pragma_user_version",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if version != 1 && !(version == 0 && tables == 0) {
+        return Err(Error::Storage(format!(
+            "unsupported schema version {version}"
+        )));
+    }
+    Ok(version)
+}
+fn corrupt(author: &PublicKey, seq: u64, cause: impl ToString) -> Error {
+    Error::CorruptStore {
+        author: *author,
+        seq,
+        cause: cause.to_string(),
+    }
+}
+fn row(author: &PublicKey, r: &rusqlite::Row<'_>) -> Result<Entry, Error> {
+    let seq: i64 = r.get(0)?;
+    let id: Vec<u8> = r.get(1)?;
+    let raw: Vec<u8> = r.get(2)?;
+    let e = Entry::decode(&raw).map_err(|cause| corrupt(author, seq as u64, cause))?;
+    if seq < 0
+        || e.seq() != seq as u64
+        || e.author() != *author
+        || e.id().as_bytes().as_slice() != id
+    {
+        return Err(corrupt(
+            author,
+            seq as u64,
+            "columns differ from signed bytes",
+        ));
+    }
+    Ok(e)
+}
+pub(crate) fn entries(
+    db: &Connection,
+    author: &PublicKey,
+    from: u64,
+    limit: usize,
+) -> Result<Vec<Entry>, Error> {
+    if from > i64::MAX as u64 {
+        return Ok(vec![]);
+    }
+    let mut stmt = db.prepare(
+        "SELECT seq,id,raw FROM entries WHERE author=?1 AND seq>=?2 ORDER BY seq LIMIT ?3",
+    )?;
+    let mut rows = stmt.query(params![
+        author.as_bytes(),
+        from as i64,
+        limit.min(i64::MAX as usize) as i64
+    ])?;
+    let mut out = vec![];
+    while let Some(r) = rows.next()? {
+        out.push(row(author, r)?);
+    }
+    Ok(out)
+}
+pub(crate) fn head(db: &Connection, author: &PublicKey) -> Result<Option<Entry>, Error> {
+    let mut stmt =
+        db.prepare("SELECT seq,id,raw FROM entries WHERE author=?1 ORDER BY seq DESC LIMIT 1")?;
+    let mut rows = stmt.query([author.as_bytes()])?;
+    rows.next()?.map(|r| row(author, r)).transpose()
+}
+pub(crate) fn at(db: &Connection, author: &PublicKey, seq: u64) -> Result<Option<Entry>, Error> {
+    Ok(entries(db, author, seq, 1)?
+        .into_iter()
+        .next()
+        .filter(|e| e.seq() == seq))
+}
+pub(crate) fn insert(db: &Connection, e: &Entry) -> Result<(), Error> {
+    db.execute(
+        "INSERT INTO entries(author,seq,id,raw) VALUES (?1,?2,?3,?4)",
+        params![
+            e.author().as_bytes(),
+            e.seq() as i64,
+            e.id().as_bytes(),
+            e.bytes()
+        ],
+    )?;
+    Ok(())
+}
+pub(crate) fn status(db: &Connection, author: &PublicKey) -> Result<Status, Error> {
+    // Status must not hide damaged stored entries when there is no fork row.
+    let mut stmt = db.prepare("SELECT seq,id,raw FROM entries WHERE author=?1 ORDER BY seq")?;
+    let mut rows = stmt.query([author.as_bytes()])?;
+    while let Some(r) = rows.next()? {
+        row(author, r)?;
+    }
+    let proof: Option<(Vec<u8>, Vec<u8>)> = db
+        .query_row(
+            "SELECT chain,other FROM forks WHERE author=?1",
+            [author.as_bytes()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((chain, other)) = proof else {
+        return Ok(Status::Ok);
+    };
+    let chain = Entry::decode(&chain).map_err(|e| corrupt(author, 0, e))?;
+    let other = Entry::decode(&other).map_err(|e| corrupt(author, chain.seq(), e))?;
+    if chain.author() != *author
+        || other.author() != *author
+        || !((other.seq() == chain.seq() && other.id() != chain.id())
+            || (other.seq() == chain.seq() + 1 && other.prev() != Some(chain.id())))
+    {
+        return Err(corrupt(author, chain.seq(), "invalid fork proof"));
+    }
+    Ok(Status::Compromised(Box::new(Fork { chain, other })))
+}
+pub(crate) fn confirmed(db: &Connection, author: &PublicKey) -> Result<bool, Error> {
+    let value: Option<Vec<u8>> = db
+        .query_row("SELECT value FROM meta WHERE key='unconfirmed'", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    Ok(value.as_deref() != Some(author.as_bytes().as_slice()))
+}

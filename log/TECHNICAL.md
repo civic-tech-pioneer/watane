@@ -467,7 +467,9 @@ it compromised like any other.
   seq ≥ from_seq, in seq order, at most `limit`. A `from_seq` above i64::MAX
   gives an empty list.
 - `head(author)`: the entry with the highest seq, or None.
-- `status(author)`: `Compromised` with the fork row, or `Ok`.
+- `status(author)`: validate all stored entries of the author, then return
+  `Compromised` with the checked fork row, or `Ok`. A corrupt stored entry
+  must not appear as a healthy channel (S26).
 - Each read applies the read check (section 4.8).
 
 `log` keeps every stored entry, also of a channel that `dist` no longer
@@ -687,3 +689,5 @@ confirmation after a restore ties the key to the store.
     reader (`watane.js`, the app) never loses precision.
 
 11. **Exposed diagnostic (log).** Include "exposed" in `Error::Exposed` so the message names the refusal required by S2.
+
+12. **Status read check (log).** Clarified section 5.3: status validates the stored channel entries as well as its fork proof, so S26 cannot report a corrupt channel as healthy.

@@ -134,3 +134,33 @@ pub const GOLDEN0: &str = "875820d75a980182b10ab7d54bfed3c964073a0ee172f3daa6232
 pub const GOLDEN1: &str = "875820d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a01582026e9f56befea2e5c43ba15e0fbfb28ac527d50d703ea3db5b0a6d89732a2fa201b0000019b76daabe86772656c656173654301020358402b5caac5bf68e6075addc9d84f83f737ed5c9c42bbbe904d9cb55f8c9696246ebb3b3bd03c2d3a1d2cd28fd986d507d3acbc66b89cd61cf886b16b9db53c9107";
 pub const ID0: &str = "26e9f56befea2e5c43ba15e0fbfb28ac527d50d703ea3db5b0a6d89732a2fa20";
 pub const ID1: &str = "4f193a17cf9a3f16a29b3a58da0ac358cf6ff3eef28669a2ce8e4e4367abd176";
+
+pub fn chain(seed: [u8; 32], count: u64) -> Vec<Vec<u8>> {
+    let public = *ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).pk;
+    let mut prev = None;
+    (0..count)
+        .map(|seq| {
+            let msg = cbor::signed(&public, seq, prev.as_ref(), seq, "a", b"");
+            let raw = cbor::entry(
+                &public,
+                seq,
+                prev.as_ref(),
+                seq,
+                "a",
+                b"",
+                &sign(seed, &msg),
+            );
+            prev = Some(*blake3::hash(&raw).as_bytes());
+            raw
+        })
+        .collect()
+}
+pub const BACKUP: &str = "776174616e656b31000001000300000004000000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627e2d8d174adbc08bfce3774a8a87915ecea1faa48eab9e5bc6b51f1727ca433d267325d6d08ee1b378c413ad95e167c5d";
+
+pub fn directory() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .unwrap()
+}

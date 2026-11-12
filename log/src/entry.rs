@@ -235,8 +235,7 @@ impl Entry {
         &self.body
     }
 }
-// S19-2's append will call this after validating the kind, body and sequence.
-#[allow(dead_code)]
+// Append validates the kind, body and sequence before signing.
 pub(crate) fn sign_entry(
     key: &SigningKey,
     seq: u64,

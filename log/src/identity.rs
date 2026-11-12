@@ -109,3 +109,111 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
         .map_err(|e| io_error(dir, e))?;
     read(&path)
 }
+
+pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
+    let mut random = [0; 16];
+    getrandom::fill(&mut random).map_err(|e| io_error(dir, io::Error::other(e)))?;
+    let tmp = dir.join(format!(
+        ".identity.key.{}.tmp",
+        data_encoding::HEXLOWER.encode(&random)
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)
+        .map_err(|e| io_error(&tmp, e))?;
+    let result = (|| {
+        let seed = Zeroizing::new(key.to_bytes());
+        file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
+        file.sync_all().map_err(|e| io_error(&tmp, e))?;
+        let path = dir.join("identity.key");
+        fs::rename(&tmp, &path).map_err(|e| io_error(&path, e))?;
+        File::open(dir)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| io_error(dir, e))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+use chacha20poly1305::{
+    KeyInit, XChaCha20Poly1305,
+    aead::{Aead, Payload},
+};
+use unicode_normalization::UnicodeNormalization;
+fn password(passphrase: &str) -> Result<Zeroizing<String>, Error> {
+    let p = Zeroizing::new(passphrase.nfc().collect::<String>());
+    if p.is_empty() {
+        return Err(Error::EmptyPassphrase);
+    }
+    Ok(p)
+}
+fn derive(header: &[u8], password: &str) -> Result<Zeroizing<[u8; 32]>, Error> {
+    let n = |i| u32::from_le_bytes(header[i..i + 4].try_into().expect("checked header"));
+    let params = argon2::Params::new(n(8), n(12), n(16), Some(32))
+        .map_err(|_| Error::BadBackup("memory"))?;
+    let mut key = Zeroizing::new([0; 32]);
+    argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+        .hash_password_into(password.as_bytes(), &header[20..36], &mut *key)
+        .map_err(|e| Error::Storage(e.to_string()))?;
+    Ok(key)
+}
+pub(crate) fn export(seed: &[u8; 32], passphrase: &str) -> Result<Vec<u8>, Error> {
+    let password = password(passphrase)?;
+    let mut header = b"watanek1".to_vec();
+    for n in [65536u32, 3, 4] {
+        header.extend(n.to_le_bytes());
+    }
+    header.resize(60, 0);
+    getrandom::fill(&mut header[20..60]).map_err(|e| Error::Storage(e.to_string()))?;
+    let key = derive(&header, &password)?;
+    let cipher = XChaCha20Poly1305::new((&*key).into());
+    let encrypted = cipher
+        .encrypt(
+            <&chacha20poly1305::XNonce>::try_from(&header[36..60]).unwrap(),
+            Payload {
+                msg: seed,
+                aad: &header,
+            },
+        )
+        .map_err(|_| Error::Storage("backup encryption failed".into()))?;
+    header.extend(encrypted);
+    Ok(header)
+}
+pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Error> {
+    if backup.len() != crate::BACKUP_LEN {
+        return Err(Error::BadBackup("length"));
+    }
+    if &backup[..8] != b"watanek1" {
+        return Err(Error::BadBackup("magic"));
+    }
+    let n = |i| u32::from_le_bytes(backup[i..i + 4].try_into().expect("checked backup length"));
+    let (memory, passes, lanes) = (n(8), n(12), n(16));
+    if !(8192..=1048576).contains(&memory) || u64::from(memory) < 8 * u64::from(lanes) {
+        return Err(Error::BadBackup("memory"));
+    }
+    if !(1..=10).contains(&passes) {
+        return Err(Error::BadBackup("passes"));
+    }
+    if !(1..=16).contains(&lanes) {
+        return Err(Error::BadBackup("lanes"));
+    }
+    let password = password(passphrase)?;
+    let key = derive(backup, &password)?;
+    let plain = Zeroizing::new(
+        XChaCha20Poly1305::new((&*key).into())
+            .decrypt(
+                <&chacha20poly1305::XNonce>::try_from(&backup[36..60]).unwrap(),
+                Payload {
+                    msg: &backup[60..],
+                    aad: &backup[..60],
+                },
+            )
+            .map_err(|_| Error::WrongPassphrase)?,
+    );
+    let seed =
+        Zeroizing::new(<[u8; 32]>::try_from(plain.as_slice()).map_err(|_| Error::WrongPassphrase)?);
+    Ok(SigningKey::from_bytes(&seed))
+}

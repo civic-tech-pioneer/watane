@@ -1,0 +1,113 @@
+mod oracle;
+use chacha20poly1305::{
+    KeyInit, XChaCha20Poly1305,
+    aead::{Aead, Payload},
+};
+use watane_log::{Error, Log};
+#[test]
+fn ac6_backup_roundtrip_and_independent_decryption() {
+    let d = oracle::directory();
+    let l = Log::open(d.path()).unwrap();
+    let raw = l.export_identity("correct horse").unwrap();
+    assert_eq!(raw.len(), 108);
+    assert_eq!(&raw[..8], b"watanek1");
+    let n = |i| u32::from_le_bytes(raw[i..i + 4].try_into().unwrap());
+    assert_eq!((n(8), n(12), n(16)), (65536, 3, 4));
+    let params = argon2::Params::new(n(8), n(12), n(16), Some(32)).unwrap();
+    let mut key = [0; 32];
+    argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+        .hash_password_into(b"correct horse", &raw[20..36], &mut key)
+        .unwrap();
+    let seed = XChaCha20Poly1305::new((&key).into())
+        .decrypt(
+            <&chacha20poly1305::XNonce>::try_from(&raw[36..60]).unwrap(),
+            Payload {
+                msg: &raw[60..],
+                aad: &raw[..60],
+            },
+        )
+        .unwrap();
+    assert_eq!(seed, std::fs::read(d.path().join("identity.key")).unwrap());
+    let dest = oracle::directory();
+    let restored = Log::open(dest.path()).unwrap();
+    assert_eq!(
+        restored.restore_identity(&raw, "correct horse").unwrap(),
+        l.identity()
+    );
+    drop(restored);
+    assert_eq!(Log::open(dest.path()).unwrap().identity(), l.identity());
+}
+#[test]
+fn ac6_golden_nfc_and_unused_identity_replacement() {
+    let d = oracle::directory();
+    let l = Log::open(d.path()).unwrap();
+    assert_eq!(
+        l.restore_identity(&oracle::hex(oracle::BACKUP), "correct horse")
+            .unwrap()
+            .as_bytes(),
+        &oracle::PUBLIC
+    );
+    let backup = l.export_identity("é").unwrap();
+    let dest = oracle::directory();
+    let r = Log::open(dest.path()).unwrap();
+    assert_eq!(
+        r.restore_identity(&backup, "e\u{301}").unwrap(),
+        l.identity()
+    );
+    assert_eq!(r.restore_identity(&backup, "é").unwrap(), l.identity());
+}
+#[test]
+fn ac6_failures_keep_identity_and_reject_bounds_fast() {
+    let d = oracle::directory();
+    let l = Log::open(d.path()).unwrap();
+    let before = std::fs::read(d.path().join("identity.key")).unwrap();
+    assert!(matches!(l.export_identity(""), Err(Error::EmptyPassphrase)));
+    let backup = oracle::hex(oracle::BACKUP);
+    assert!(matches!(
+        l.restore_identity(&backup, ""),
+        Err(Error::EmptyPassphrase)
+    ));
+    assert!(matches!(
+        l.restore_identity(&backup, "wrong"),
+        Err(Error::WrongPassphrase)
+    ));
+    let mut changed = backup.clone();
+    changed[70] ^= 1;
+    assert!(matches!(
+        l.restore_identity(&changed, "correct horse"),
+        Err(Error::WrongPassphrase)
+    ));
+    for (field, raw) in [
+        ("length", backup[..107].to_vec()),
+        ("magic", {
+            let mut b = backup.clone();
+            b[0] ^= 1;
+            b
+        }),
+        ("memory", {
+            let mut b = backup.clone();
+            b[8..12].copy_from_slice(&1048577u32.to_le_bytes());
+            b
+        }),
+    ] {
+        let start = std::time::Instant::now();
+        assert!(
+            matches!(l.restore_identity(&raw,"correct horse"),Err(Error::BadBackup(f)) if f==field)
+        );
+        assert!(start.elapsed() < std::time::Duration::from_millis(50));
+    }
+    assert_eq!(
+        std::fs::read(d.path().join("identity.key")).unwrap(),
+        before
+    );
+    l.append("a", b"").unwrap();
+    let identity = l.identity();
+    assert!(
+        matches!(l.restore_identity(&backup,"correct horse"),Err(Error::IdentityInUse(a)) if a==identity)
+    );
+    assert_eq!(l.identity(), identity);
+    assert_eq!(
+        std::fs::read(d.path().join("identity.key")).unwrap(),
+        before
+    );
+}
