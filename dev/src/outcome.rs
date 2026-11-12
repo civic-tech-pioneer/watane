@@ -236,6 +236,7 @@ fn text_value(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "missing".into(),
         serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(items) if items.is_empty() => "none".into(),
         serde_json::Value::Array(items) => {
             items.iter().map(text_value).collect::<Vec<_>>().join(", ")
         }
@@ -260,6 +261,19 @@ fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac1_empty_text_lists_print_none_and_nonempty_lists_are_unchanged() {
+        assert_eq!(text_value(&serde_json::json!([])), "none");
+        assert_eq!(text_value(&serde_json::json!(["a", "b"])), "a, b");
+        assert_eq!(
+            text_value(&serde_json::json!([1, true, null])),
+            "1, true, missing"
+        );
+        let mut out = Outcome::new("check", None);
+        out.result = Some(serde_json::json!({"calls": []}));
+        assert_eq!(out.to_text(), "check: ok\ncalls: none\n");
+    }
 
     #[test]
     fn ac4_text_flattens_objects_and_formats_values() {

@@ -231,7 +231,8 @@ Then one line `<command>: ok` or `<command>: failed`, the main fields of
 `result` as `key: value` lines, and `next: <next>`.
 Nested objects emit one line per field with dotted keys (for example
 `allowlist.vendor: /abs/vendor`, `toolchain.wasm32_wasip2: true`). Lists
-join their values with `, `; strings are unquoted, null is `missing`, and
+join their values with `, `; an empty list prints `none` (for example,
+`calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
 are added to these values.
 
@@ -256,6 +257,9 @@ are added to these values.
 `grants` are the `Display` texts of `watane_pkg::Grant`. The four lists
 are the fields of `watane_pkg::World`. `path` is the value recorded for
 the slug in `.watane-dev.json`, or null when none is recorded.
+When the first error is mod-class (including `mod.invalid`), `next` is
+`Fix the errors, then run: watane-dev check --json`. Env-class failures
+retain `watane-dev doctor --json`.
 
 **test**
 ```json
@@ -295,7 +299,11 @@ dev preserves the line, column and the specific WIT file.
 first); `url` is null for a mod with no page. The token reaches the tools
 as `Authorization: Bearer <token>`. On success, `next` is
 `Give the person this page: <url>`, using the served mod's own (last)
-`pages` entry; it is null when that mod has no page. On failure with an
+`pages` entry. With `reused: false`, append: `The MCP url and token are new.
+Set or update your agent's MCP config with result.mcp.url and result.mcp.token
+(see AGENTS.md, "MCP tools for your agent").` This MCP instruction is also
+returned when the mod has no page. With `reused: true`, the page instruction
+is unchanged, or null when the mod has no page. On failure with an
 `env.*` first error, `next` is `watane-dev doctor --json`; other test
 pipeline failures use `watane-dev test --json`, adding
 `--dir <absolute provider folder>` (single-quoted for the shell when it has other characters than letters, digits, `/._-`) when the first failing folder is a provider. **serve --stop**:
@@ -316,8 +324,9 @@ its Wasm target remains an object with `wasm32_wasip2: false` and adds
 `doctor` reports every gap, not only the first. A home host that does not
 run is no error. `running` requires a readable `run.json` and a status
 answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
-`next` is `watane-dev new <slug> --json` on success and
-`Run each error's fix, then run: watane-dev doctor --json` on a gap.
+On success, `next` is `watane-dev serve --json` when the current folder
+(or `--dir`) contains `mod.toml`, otherwise `watane-dev new <slug> --json`.
+On a gap, it is `Run each error's fix, then run: watane-dev doctor --json`.
 
 **add** (step 2)
 ```json

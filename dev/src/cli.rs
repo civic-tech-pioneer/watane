@@ -78,7 +78,7 @@ pub fn run(cli: Cli) -> Outcome {
     };
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
-        Command::Doctor => return crate::doctor::doctor(),
+        Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
         Command::New { slug } => template::new_mod(&dir, &slug)
             .map_err(|e| vec![e])
@@ -149,6 +149,11 @@ pub fn run(cli: Cli) -> Outcome {
                 .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
             {
                 outcome.next = Some("watane-dev doctor --json".into());
+            } else if name == "check"
+                && e.first()
+                    .is_some_and(|p| p.code.class() == crate::outcome::Class::Mod)
+            {
+                outcome.next = Some("Fix the errors, then run: watane-dev check --json".into());
             }
             outcome.fail(e)
         }
@@ -162,9 +167,15 @@ fn serve_next(result: &serde_json::Value) -> Option<String> {
                 .into(),
         );
     }
-    result["pages"].as_array()?.last()?["url"]
+    let page = result["pages"].as_array()?.last()?["url"]
         .as_str()
-        .map(|url| format!("Give the person this page: {url}"))
+        .map(|url| format!("Give the person this page: {url}"));
+    if result["reused"] == false {
+        let setup = "The MCP url and token are new. Set or update your agent's MCP config with result.mcp.url and result.mcp.token (see AGENTS.md, \"MCP tools for your agent\").";
+        Some(page.map_or_else(|| setup.into(), |page| format!("{page}. {setup}")))
+    } else {
+        page
+    }
 }
 
 fn test_local(dir: &Path) -> Outcome {
@@ -347,6 +358,102 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac2_new_preview_next_includes_page_and_mcp_setup() {
+        let next = serve_next(&json!({
+            "reused": false,
+            "pages": [{"url": "http://demo.localhost:7/"}],
+            "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_new"}
+        }))
+        .unwrap();
+        for text in [
+            "Give the person this page: http://demo.localhost:7/",
+            "MCP url and token are new",
+            "Set or update your agent's MCP config",
+            "result.mcp.url",
+            "result.mcp.token",
+            "MCP tools for your agent",
+        ] {
+            assert!(next.contains(text), "missing {text}: {next}");
+        }
+    }
+
+    #[test]
+    fn ac2_reused_preview_next_keeps_page_instruction() {
+        assert_eq!(
+            serve_next(&json!({
+                "reused": true,
+                "pages": [{"url": "http://demo.localhost:7/"}],
+                "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_old"}
+            }))
+            .as_deref(),
+            Some("Give the person this page: http://demo.localhost:7/")
+        );
+    }
+
+    #[test]
+    fn ac4_failed_check_mod_errors_give_recovery_next() {
+        for (file, contents, expected_code) in [
+            (
+                "wit/world.wit",
+                "package mods:demo@0.1.0; world demo { export interface; }",
+                crate::outcome::Code::ModInvalid,
+            ),
+            (
+                "logic/build.rs",
+                "fn main() {}",
+                crate::outcome::Code::ModLogicFile,
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let dir = root.path().join("demo");
+            template::new_mod(&dir, "demo").unwrap();
+            std::fs::write(dir.join(file), contents).unwrap();
+            let checked = run(Cli {
+                json: true,
+                dir: Some(dir.clone()),
+                command: Command::Check,
+            });
+            assert!(!checked.ok);
+            assert_eq!(checked.errors[0].code, expected_code);
+            assert_eq!(
+                checked.next.as_deref(),
+                Some("Fix the errors, then run: watane-dev check --json")
+            );
+        }
+    }
+
+    #[test]
+    fn ac5_spec_documents_text_and_recovery_next() {
+        let spec = include_str!("../TECHNICAL.md");
+        let text = spec
+            .split("### 2.3 Text output")
+            .nth(1)
+            .unwrap()
+            .split("### 2.4")
+            .next()
+            .unwrap();
+        assert!(text.contains("empty list prints `none`"));
+        let results = spec
+            .split("### 2.4 The result of each command")
+            .nth(1)
+            .unwrap()
+            .split("## 3.")
+            .next()
+            .unwrap();
+        for instruction in [
+            "Fix the errors, then run: watane-dev check --json",
+            "`reused: false`",
+            "result.mcp.url",
+            "result.mcp.token",
+            "MCP tools for your agent",
+            "contains `mod.toml`",
+            "watane-dev serve --json",
+        ] {
+            assert!(results.contains(instruction), "missing {instruction}");
+        }
+    }
 
     #[test]
     fn ac4_install_next_uses_last_available_page() {

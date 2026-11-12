@@ -6,8 +6,9 @@ use crate::{
     preview, toolchain,
 };
 use serde_json::{Value, json};
+use std::path::Path;
 
-pub fn doctor() -> Outcome {
+pub fn doctor(dir: &Path) -> Outcome {
     let mut outcome = Outcome::new("doctor", None);
     let mut errors = Vec::new();
     let toolchain = match Env::from_process().and_then(|env| toolchain::discover(&env)) {
@@ -60,11 +61,40 @@ pub fn doctor() -> Outcome {
     };
     outcome.result = Some(json!({"toolchain":toolchain,"allowlist":allowlist,
         "watane":watane,"home":home}));
+    outcome.next = Some(doctor_next(dir, errors.is_empty()).into());
     if errors.is_empty() {
-        outcome.next = Some("watane-dev new <slug> --json".into());
         outcome
     } else {
-        outcome.next = Some("Run each error's fix, then run: watane-dev doctor --json".into());
         outcome.fail(errors)
+    }
+}
+
+fn doctor_next(dir: &Path, ok: bool) -> &'static str {
+    if !ok {
+        "Run each error's fix, then run: watane-dev doctor --json"
+    } else if dir.join("mod.toml").is_file() {
+        "watane-dev serve --json"
+    } else {
+        "watane-dev new <slug> --json"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac3_doctor_next_serves_existing_mod_and_creates_outside() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            doctor_next(dir.path(), true),
+            "watane-dev new <slug> --json"
+        );
+        std::fs::write(dir.path().join("mod.toml"), "").unwrap();
+        assert_eq!(doctor_next(dir.path(), true), "watane-dev serve --json");
+        assert_eq!(
+            doctor_next(dir.path(), false),
+            "Run each error's fix, then run: watane-dev doctor --json"
+        );
     }
 }
