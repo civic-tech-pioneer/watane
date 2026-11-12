@@ -34,6 +34,16 @@ fn ac11_restore_confirms_published_head_before_signing() {
         Err(DistError::WrongChannel { .. })
     ));
     assert!(!restored.own_confirmed().unwrap());
+    // Alice's key, but the host serves Carol's channel: the read fails, so no confirmation.
+    carol.set_name("Carol").unwrap();
+    let carol_host = TestHost::serve(&carol.site_dir());
+    assert!(matches!(
+        restored.confirm_own(Some(
+            &Link::new(alice.identity(), &carol_host.url, None).unwrap()
+        )),
+        Err(DistError::WrongChannel { .. })
+    ));
+    assert!(!restored.own_confirmed().unwrap());
     restored.confirm_own(Some(&link)).unwrap();
     assert!(restored.own_confirmed().unwrap());
     let next = restored.publish(fixture("1.1.0", false)).unwrap();
