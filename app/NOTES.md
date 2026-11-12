@@ -119,3 +119,4 @@
   runner passes 64 default tests and 98 driver tests with ignored journeys
   enabled and all four front tests excluded by name. Front tests were not run.
 - Validator (S29-3, round 1): natively on macOS, `cargo test --features driver -- --include-ignored` with the four front tests skipped by name passes all 98 tests, including `tests/find.rs` and the whole `tests/j4.rs`. J4 also checks that the compromised hit loses "signature verified" (its install button is absent anyway, the hit being installed).
+- S29-fix1 changed test fact: the own `IndexRow.mods` now counts live `list` listings (not includes, not unlisted), no longer the own release slugs. `find_tests::ac3_indexes_put_own_channel_first_and_name_included_parties` asserted the old count (`1`, from two releases of one slug, no listings) and now asserts `0`. No other src/tests assertion (including ignored J4 and `tests/find.rs`) reads the own row's count.
