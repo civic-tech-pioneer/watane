@@ -249,8 +249,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 - Human (2026-11-12): a design or spec change that is in line with the specs, passed review and
-  improves on what was there needs no human approval, also when it adds wire or disk formats.
-  S26 (step-4 index design) merges on that basis.
+  improves on what was there needs no separate approval. A change that is hard to revert still
+  goes to the human, briefly: what it is, the alternatives, and the consequences of each. S26's
+  formats are used by no published channel yet, so they are cheap to change now; S26 merges.
 
 The human may veto each one.
 
