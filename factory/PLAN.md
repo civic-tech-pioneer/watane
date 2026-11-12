@@ -510,6 +510,10 @@ The human may veto each one.
 - S27: `--features driver --include-ignored` also runs the `front:` tests, so a background foreman
   skips them by name and the PO runs them after the merge. One api.rs run failed on ENOBUFS (passed
   on rerun).
+- PO, after S27: the `front:` tests fail on a locked screen (`gui_isolation` ac1: the hostile page
+  never gets focus; same on main before S27). `App::front` waits for an idle human but not for an
+  unlocked screen; it should wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`.
+  The front tests of main `292cd7f` still need one run on an unlocked screen.
 
 ## Digest
 
