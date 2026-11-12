@@ -69,6 +69,14 @@ pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) ->
     }
 }
 
+pub(crate) const COMPROMISED: &str = "The publisher's channel is compromised";
+pub(crate) fn withdrawn(reason: &str) -> String {
+    format!("Withdrawn by the publisher: {reason}")
+}
+pub(crate) fn update_failed(version: &str, cause: &str) -> String {
+    format!("Update to {version} failed: {cause}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

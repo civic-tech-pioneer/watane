@@ -62,7 +62,7 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-36** The app shall refresh each followed channel at start, every 10 minutes and on request. Traces: F-PUB-6, F-QUAL-1.
 - **APP-F-37** If a refresh, a fetch or a verification fails, then the app shall show the channel or the release with the cause that dist names. If a channel is compromised, then the app shall show it as compromised. Traces: F-PUB-7, F-QUAL-3, J3.
 
-## Step 4: Find (sketch)
+## Step 4: Find (index search remains a sketch)
 
 - **APP-F-38** The participant shall be able to choose indexes, search them by text, publisher and interface, and install a result after consent. Traces: F-FIND-2, F-FIND-3, F-FIND-4, J4.
 - **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. Traces: F-INST-7, J4.
@@ -154,3 +154,15 @@ then his consent view shows Alice's profile name, her fingerprint and
 static server, when a byte of the package file changes before Bob enters
 the link, then Bob's app shows a cause that names the hash mismatch and
 installs nothing.
+
+
+**S16 Stay up to date without an index** (APP-F-33, APP-F-36, APP-F-37,
+APP-F-39, APP-F-40). Given Carol installed Alice's reading list from a link,
+a refresh installs 0.2.0 with unchanged grants without opening consent and
+keeps her books. A 0.3.0 update requesting network access shows the new
+grant; declining leaves 0.2.0 and shows the failure until a successful
+install. Alice sees her releases and withdraws 0.3.0 with reason `breaks
+lists`, signing in consent. Carol's next refresh shows that reason and an
+`Install 0.2.0` button. Installing it keeps data and asks no question.
+A different signed statement at an already read position marks both the
+channel and the installed mod as compromised.

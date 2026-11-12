@@ -20,6 +20,8 @@
     "allow-token-issue",
     "allow-token-end",
     "allow-install-link",
+    "allow-release-install",
+    "allow-release-withdraw",
     "allow-identity-set-name",
     "allow-site-set-url",
     "allow-identity-backup",

@@ -46,12 +46,13 @@ pub(crate) async fn status(
     Ok(value)
 }
 #[tauri::command]
-pub(crate) fn mods_list(
+pub(crate) async fn mods_list(
     webview: tauri::Webview,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ModView>, CmdError> {
     record(&webview, "mods_list");
-    Ok(core(&state)?.mods())
+    let core = core(&state)?.clone();
+    blocking(move || core.mods()).await
 }
 #[tauri::command]
 pub(crate) async fn mod_open(
@@ -60,8 +61,10 @@ pub(crate) async fn mod_open(
     local: String,
 ) -> Result<(), CmdError> {
     record(&webview, "mod_open");
-    let m = core(&state)?
-        .get(&local)?
+    let core = core(&state)?.clone();
+    let name = local.clone();
+    let m = blocking(move || core.get(&name))
+        .await?
         .filter(|m| m.enabled)
         .ok_or_else(|| CmdError::new("not_found", "mod not found or disabled"))?;
     let page = m
@@ -165,7 +168,8 @@ pub(crate) async fn install_folders(
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, CmdError> {
     record(&webview, "install_folders");
-    let host = core(&state)?.host.clone();
+    let core = core(&state)?.clone();
+    let host = core.host.clone();
     #[cfg(feature = "driver")]
     let picked = state.driver.pick.lock().unwrap().take();
     #[cfg(not(feature = "driver"))]
@@ -200,6 +204,7 @@ pub(crate) async fn install_folders(
     .await
     .map_err(|e| CmdError::new("io", e.to_string()))??;
     let installed = host.install(plan, watane_host::Requester::App).await?;
+    core.installed(&installed);
     Ok(json!({"installed": installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
 #[tauri::command]
@@ -298,10 +303,12 @@ pub(crate) async fn install_link(
     link: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "install_link");
-    let planner = core(&state)?.clone();
+    let core = core(&state)?.clone();
+    let planner = core.clone();
     let host = planner.host.clone();
     let plan = blocking(move || planner.plan_link(&link)).await?;
     let installed = host.install(plan, watane_host::Requester::App).await?;
+    core.installed(&installed);
     Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
 }
 #[tauri::command]
@@ -491,5 +498,71 @@ pub(crate) async fn channels_refresh(
 ) -> Result<Vec<crate::core::ChannelRow>, CmdError> {
     record(&webview, "channels_refresh");
     let core = core(&state)?.clone();
-    blocking(move || core.refresh()).await
+    let refresher = core.clone();
+    let (rows, updates) = blocking(move || refresher.refresh()).await?;
+    core.spawn_updates(updates);
+    Ok(rows)
+}
+
+fn parse_release(text: &str) -> Result<watane_dist::ReleaseRef, CmdError> {
+    text.parse::<watane_dist::ReleaseRef>()
+        .map_err(|e| CmdError::new("bad_input", e.to_string()))
+}
+#[tauri::command]
+pub(crate) async fn release_install(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    release: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "release_install");
+    let release = parse_release(&release)?;
+    let installed = core(&state)?.install_release(release).await?;
+    Ok(json!({"installed":installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
+}
+#[tauri::command]
+pub(crate) async fn release_withdraw(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    release: String,
+    reason: String,
+) -> Result<(), CmdError> {
+    record(&webview, "release_withdraw");
+    let release = parse_release(&release)?;
+    let dist = core(&state)?.dist.clone();
+    blocking(move || {
+        dist.withdraw(&release, &reason)?;
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(test)]
+mod stage_d_tests {
+    use super::*;
+    #[test]
+    fn ac5_release_commands_reject_bad_reference_as_bad_input() {
+        for text in ["", "bad", "watane:bad", "publisher/reading-list@invalid"] {
+            assert_eq!(parse_release(text).unwrap_err().code, "bad_input");
+        }
+    }
+    #[test]
+    fn ac6_withdraw_errors_preserve_dist_cause() {
+        let reference: watane_dist::ReleaseRef = format!("{}/reading-list@0.1.0", "y".repeat(52))
+            .parse()
+            .unwrap();
+        for error in [
+            watane_dist::DistError::BadReason { cause: "empty" },
+            watane_dist::DistError::NotOwnRelease {
+                release: reference.clone(),
+            },
+            watane_dist::DistError::AlreadyWithdrawn {
+                release: reference,
+                seq: 2,
+            },
+        ] {
+            let expected = error.to_string();
+            let converted = CmdError::from(error);
+            assert_eq!(converted.message, expected);
+        }
+    }
 }

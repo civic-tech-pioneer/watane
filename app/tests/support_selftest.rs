@@ -185,6 +185,8 @@ fn ac5_script_names_all_app_and_plugin_commands() {
         "token_issue",
         "token_end",
         "install_link",
+        "release_install",
+        "release_withdraw",
         "identity_set_name",
         "site_set_url",
         "identity_backup",
@@ -247,7 +249,7 @@ async function run(allowed, before, missing = false) {
   assert.equal(report.storageBefore, before);
   const names = report.attacks.map(a => a.name);
   assert.equal(new Set(names).size, names.length);
-  assert.equal(report.attacks.length, 109);
+  assert.equal(report.attacks.length, 111);
   for (const target of ['tauri', 'api', 'other', 'listener']) {
     for (const method of ['fetch', 'xhr']) assert(names.includes(`${method}:${target}`));
   }
@@ -263,7 +265,7 @@ async function run(allowed, before, missing = false) {
   assert.equal(downloads.length, 2);
   assert(calls.some(url => typeof url === 'string' && url.includes('localhost:23456/api/')));
   assert(calls.some(url => typeof url === 'string' && url.includes('other.localhost:23456')));
-  if (!missing) assert.equal(calls.filter(Array.isArray).length, 94);
+  if (!missing) assert.equal(calls.filter(Array.isArray).length, 96);
 }
 (async () => { await run(false, null); await run(true, 'previous'); await run(false, null, true); })().catch(e => { console.error(e); process.exitCode = 1; });
 "#;
@@ -334,4 +336,17 @@ fn ac5_all_window_builders_and_focus_calls_share_screen_helpers() {
     assert_eq!(views.matches(".request_user_attention(").count(), 1);
     assert!(views.contains("focus(&w, false)?"));
     assert!(views.contains("focus(&w, true)"));
+}
+
+#[allow(dead_code)]
+#[path = "support/journey.rs"]
+mod journey;
+#[allow(dead_code)]
+#[path = "support/publish.rs"]
+mod publish;
+#[test]
+fn ac8_prebuilt_j4_versions_and_grants_pack_without_building() {
+    for (version, network) in [("0.1.0", false), ("0.2.0", false), ("0.3.0", true)] {
+        assert!(!publish::update_package(version, network).is_empty());
+    }
 }

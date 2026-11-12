@@ -40,6 +40,8 @@
   }
 
   const commands = {
+    "release_install": { release: "bad" },
+    "release_withdraw": { release: "bad", reason: "hostile" },
     "status": {},
     "mods_list": {},
     "mod_open": { local: "hostile" },

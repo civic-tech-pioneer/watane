@@ -1,8 +1,8 @@
 # app: technical specification
 
 How the app does what `FUNCTIONAL.md` says. Steps 2 and 3 are complete.
-Sections marked **(sketch)** are for steps 4 and 5: enough to not block
-them, not enough to build.
+Stage D updates and withdrawals are built; index search and step 5 remain
+**(sketch)**.
 
 ## 1. Crate and layout
 
@@ -378,6 +378,8 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
 | `install_link` | main | `link` | `{installed: [local]}` | C |
+| `release_install` | main | `release` (ReleaseRef text) | `{installed: [local]}` | D |
+| `release_withdraw` | main | `release` (ReleaseRef text), `reason` | null | D |
 | `identity_set_name` | main | `name` | `null` | C |
 | `site_set_url` | main | `url` | `Status` | C |
 | `identity_backup` | main | `passphrase` | `{path} \| null` (cancelled) | C |
@@ -394,12 +396,14 @@ View types:
 
 ```text
 Status     {home, port, mark, error: null | string,
-            identity: null | {name: null | string, fingerprint, ownConfirmed: bool},
+            identity: null | {name: null | string, fingerprint, ownConfirmed: bool,
+                              releases: [{release, version, slug, withdrawn: null | reason}]},
             site: null | {dir, url: null | string, link: null | string}}
 ModView    {local, name, slug, version, release: null | string (ReleaseRef),
             publisher: null | Party, enabled, page: null | string (page URL),
             package (package id), derivedFrom: null | string (ReleaseRef),
-            error: null | string, grants: [GrantLine]} // granted false = withdrawn or withheld
+            error: null | string, notice: null | string, offer: null | string (ReleaseRef),
+            grants: [GrantLine]} // granted false = withdrawn or withheld
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string}
 ```
@@ -577,13 +581,35 @@ dist and host verify. The app passes their cause through (APP-F-37).
 ### 9.5 Refresh loop
 
 A tokio task with `interval(600 s)`; the first tick is at once. Each tick
-and each `channels_refresh` run `dist.refresh()` in `spawn_blocking`, keep
+and each `channels_refresh` run `Core::refresh` in `spawn_blocking`, keep
 each `Outcome::Failed` cause, map `dist.followed()` to `[ChannelRow]`, and
-refill the parties cache. A failure of one channel never stops the loop.
-Step 4 adds here, matching by ReleaseRef with `InstalledMod.release`: for
-`Change::Release` of an installed publisher and slug, plan the update (the
-host installs it with no question when it asks for no new grant); for
-`Change::Withdrawn` of an installed release, a notice (APP-F-39, APP-F-40).
+refill the parties cache. Core also returns one update ReleaseRef per
+installed mod whose publisher report contains a `Change::Release` of its
+slug above its installed version and whose newest live version is higher
+than the installed version.
+Compromised channels produce no automatic updates.
+
+Both callers spawn one independent task per update and return without
+waiting for installs or consent. Each task fetches the release in
+`spawn_blocking`, shares `install_link`'s provider resolution, and calls
+`host.install(plan, Requester::App)`. Host decides whether confirmation is
+needed. Errors, including refusal, are retained by local name with the
+target version until a successful app install of that mod clears them.
+`channels_refresh` still returns `[ChannelRow]`.
+
+For followed published mods, the offer is the highest version of the slug
+with no withdrawal, unless already installed; it can be a downgrade.
+Notice priority is compromised channel, installed release withdrawal with
+reason, then last update failure with version and whole cause. Local mods
+and unfollowed publishers have neither notice nor offer. Text comes from
+`words.rs`; the launcher renders it through `textContent` and offers
+`Install <version>` via `release_install` (bad ReleaseRef: `bad_input`).
+
+`Status.identity.releases` lists `dist.own().releases`. Live releases have a
+reason input and `Withdraw` button. `release_withdraw` parses the reference
+(`bad_input` on failure), calls `dist.withdraw` in `spawn_blocking`, and
+passes every dist failure and cause through. DistConfirm handles signing
+consent, including the release and withdrawal reason.
 
 ## 10. Test driver (feature `driver`)
 
@@ -683,6 +709,7 @@ real approval gate. No production security check changes.
 | `tests/api.rs` (C) | each row of section 8.1 | the status codes and codes there; the file tree of `<home>/dist/site/`: new files after an approve, byte-equal before and after a deny |
 | `tests/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
 | `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |
+| `tests/j4.rs` (D part) | J4 without index: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
 
 The hostile fixture (`tests/fixtures/hostile/`, a page-only mod) tries the
 following and writes each result into `window.__report`: `invoke` of every
@@ -712,7 +739,7 @@ record it in `NOTES.md` with the old and the new result.
 | A Shell | sections 1, 3 (no host), 5, 6, 7 (stage A rows), 10, 14; `ui/`; unit, static, `gui_shell`, `gui_isolation` | nothing | `src/fake.rs`: Core reads a catalog from env `WATANE_APP_FAKE` (JSON `{"mods": [ModView]}`); `tests/support` serves the fixture pages on `http://<local>.localhost:<port>` (127.0.0.1 and ::1) with the stand-in CSP `default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'`; requests come from the driver's `ask`; `--home` is required and `--port` defaults to 0 | `cargo test --features driver` passes S1 and S3 to S8 on macOS |
 | B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
-| D Find (sketch) | 8.2, APP-F-38 to APP-F-40 | dist step 4 | — | J4 passes |
+| D Find (part built) | APP-F-37 compromised mods, APP-F-39/40; section 9.5, release commands, `j4.rs` without index | dist refresh/fetch/withdraw, host updates | none | J4 without index passes; APP-F-38 waits on the index design (8.2) |
 | E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 

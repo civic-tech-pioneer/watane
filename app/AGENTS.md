@@ -60,3 +60,5 @@ with code `unavailable` and record it in `NOTES.md`; never build it here.
 - S21b-3 (app, dist, host): TECHNICAL 8/9.2 uses a dist-only router handle to avoid a server/Core cycle, a shared name cache for DistConfirm, and dist's actual `Package` error name.
 
 - S21c-3 (app): TECHNICAL 13 appends a source unless the chain so far equals its text or ends with `: ` and its text.
+
+- S25 (app): TECHNICAL 7/9.5/11/12 records stage D updates, release withdrawal and notices; APP-F-38 waits on index design.

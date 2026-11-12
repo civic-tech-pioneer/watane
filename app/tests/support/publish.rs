@@ -69,3 +69,53 @@ impl Drop for Site {
         self.thread.take().unwrap().join().unwrap();
     }
 }
+
+// Reuse the committed component. Equal-length interface version edits only
+// rename its existing imports/exports; neither its code nor its state changes.
+pub fn update_package(version: &str, network: bool) -> Vec<u8> {
+    let temp = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("reading-list"), temp.path());
+    let world = temp.path().join("wit/world.wit");
+    let mut wit = std::fs::read_to_string(&world).unwrap().replace(
+        "mods:reading-list@0.1.0",
+        &format!("mods:reading-list@{version}"),
+    );
+    let wasm = temp.path().join("logic.wasm");
+    let mut bytes = std::fs::read(&wasm).unwrap();
+    for interface in ["books", "events"] {
+        let old = format!("mods:reading-list/{interface}@0.1.0");
+        let new = format!("mods:reading-list/{interface}@{version}");
+        assert_eq!(old.len(), new.len());
+        let positions: Vec<_> = bytes
+            .windows(old.len())
+            .enumerate()
+            .filter_map(|(i, b)| (b == old.as_bytes()).then_some(i))
+            .collect();
+        for i in positions {
+            bytes[i..i + old.len()].copy_from_slice(new.as_bytes());
+        }
+    }
+    std::fs::write(wasm, bytes).unwrap();
+    if network {
+        let dep = temp.path().join("wit/deps/http");
+        std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(
+            dep.join("http.wit"),
+            "package wasi:http@0.2.0; interface outgoing-handler {} ",
+        )
+        .unwrap();
+        wit = wit.replace(
+            "world reading-list {",
+            "world reading-list { import wasi:http/outgoing-handler@0.2.0;",
+        );
+        let meta = temp.path().join("mod.toml");
+        let mut text = std::fs::read_to_string(&meta).unwrap();
+        text.push_str("\n[http]\nhosts = [\"example.org\"]\n");
+        std::fs::write(meta, text).unwrap();
+    }
+    std::fs::write(world, wit).unwrap();
+    watane_host::watane_pkg::pack(temp.path(), false)
+        .unwrap()
+        .as_bytes()
+        .to_vec()
+}

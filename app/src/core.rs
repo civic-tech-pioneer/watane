@@ -22,6 +22,8 @@ pub(crate) struct ModView {
     pub derived_from: Option<String>,
     pub error: Option<String>,
     pub grants: Vec<GrantLine>,
+    pub notice: Option<String>,
+    pub offer: Option<String>,
 }
 #[derive(serde::Serialize)]
 pub(crate) struct ToolRow {
@@ -38,9 +40,61 @@ pub(crate) struct Core {
     pub host: Arc<Host>,
     pub dist: Arc<watane_dist::Dist>,
     failures: Mutex<std::collections::BTreeMap<String, String>>,
+    update_failures: Mutex<std::collections::BTreeMap<String, (String, String)>>,
     pub served: Mutex<Option<Served>>,
     app: tauri::AppHandle,
     parties: Arc<Parties>,
+}
+fn release_offer(
+    installed: Option<&watane_dist::ReleaseRef>,
+    channel: Option<&watane_dist::ChannelView>,
+) -> Option<watane_dist::ReleaseRef> {
+    let installed = installed?;
+    channel?
+        .releases
+        .iter()
+        .filter(|r| r.reference.slug == installed.slug && r.withdrawn.is_none())
+        .max_by(|a, b| a.reference.version.cmp(&b.reference.version))
+        .filter(|r| r.reference.version != installed.version)
+        .map(|r| r.reference.clone())
+}
+fn own_releases(own: &watane_dist::ChannelView) -> Vec<serde_json::Value> {
+    own.releases.iter().map(|r| serde_json::json!({"release":r.reference.to_string(),"version":r.reference.version.to_string(),"slug":r.reference.slug.to_string(),"withdrawn":r.withdrawn.as_ref().map(|w| &w.reason)})).collect()
+}
+fn release_notice(
+    installed: Option<&watane_dist::ReleaseRef>,
+    channel: Option<&watane_dist::ChannelView>,
+    failure: Option<&(String, String)>,
+) -> Option<String> {
+    let installed = installed?;
+    let channel = channel?;
+    if matches!(channel.status, watane_dist::Status::Compromised { .. }) {
+        return Some(words::COMPROMISED.into());
+    }
+    if let Some(withdrawal) = channel
+        .releases
+        .iter()
+        .find(|r| &r.reference == installed)
+        .and_then(|r| r.withdrawn.as_ref())
+    {
+        return Some(words::withdrawn(&withdrawal.reason));
+    }
+    failure.map(|(version, cause)| words::update_failed(version, cause))
+}
+fn update_offer(
+    installed: Option<&watane_dist::ReleaseRef>,
+    channel: &watane_dist::ChannelView,
+    changes: &[watane_dist::Change],
+) -> Option<watane_dist::ReleaseRef> {
+    let installed = installed?;
+    if matches!(channel.status, watane_dist::Status::Compromised { .. })
+        || !changes.iter().any(
+            |c| matches!(c, watane_dist::Change::Release(r) if r.reference.slug == installed.slug && r.reference.version > installed.version),
+        )
+    {
+        return None;
+    }
+    release_offer(Some(installed), Some(channel)).filter(|r| r.version > installed.version)
 }
 fn find_grant(states: &[GrantState], key: &str) -> Result<Grant, CmdError> {
     states
@@ -63,13 +117,25 @@ impl Core {
             dist,
             failures: Mutex::new(Default::default()),
             parties,
+            update_failures: Mutex::new(Default::default()),
         }
     }
     pub fn port(&self) -> u16 {
         self.served.lock().unwrap().as_ref().map_or(0, |s| s.port)
     }
-    fn view(&self, m: watane_host::InstalledMod) -> ModView {
-        ModView {
+    fn view(&self, m: watane_host::InstalledMod) -> Result<ModView, CmdError> {
+        let followed = self.dist.followed()?;
+        let channel = m.publisher.as_ref().and_then(|p| {
+            followed
+                .iter()
+                .find(|c| c.channel.to_string() == p.to_string())
+        });
+        let failures = self.update_failures.lock().unwrap();
+        let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()));
+        let offer = release_offer(m.release.as_ref(), channel).map(|r| r.to_string());
+        Ok(ModView {
+            notice,
+            offer,
             local: m.local.to_string(),
             name: m.name,
             slug: m.slug.to_string(),
@@ -88,16 +154,16 @@ impl Core {
                 .iter()
                 .map(|g| words::grant_line(&g.grant, &self.parties, g.granted, false))
                 .collect(),
-        }
+        })
     }
-    pub fn mods(&self) -> Vec<ModView> {
+    pub fn mods(&self) -> Result<Vec<ModView>, CmdError> {
         self.host.mods().into_iter().map(|m| self.view(m)).collect()
     }
     pub fn get(&self, local: &str) -> Result<Option<ModView>, CmdError> {
-        Ok(self
-            .host
+        self.host
             .get(&LocalName::parse(local)?)
-            .map(|m| self.view(m)))
+            .map(|m| self.view(m))
+            .transpose()
     }
     pub fn disable(&self, local: &str) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
@@ -220,7 +286,7 @@ impl Core {
             None
         };
         Ok((
-            serde_json::json!({"name":own.name,"fingerprint":self.dist.fingerprint(),"ownConfirmed":self.dist.own_confirmed()?}),
+            serde_json::json!({"name":own.name,"fingerprint":self.dist.fingerprint(),"ownConfirmed":self.dist.own_confirmed()?,"releases":own_releases(&own)}),
             serde_json::json!({"dir":self.dist.site_dir(),"url":own.base,"link":link}),
         ))
     }
@@ -235,12 +301,77 @@ impl Core {
             .map(|v| channel_row(v, failures.get(&v.channel.to_string())))
             .collect())
     }
-    pub fn refresh(&self) -> Result<Vec<ChannelRow>, CmdError> {
-        for report in self.dist.refresh() {
-            let mut failures = self.failures.lock().unwrap();
-            keep_outcome(&mut failures, report.channel, report.outcome);
+    pub fn refresh(&self) -> Result<(Vec<ChannelRow>, Vec<watane_dist::ReleaseRef>), CmdError> {
+        let reports = self.dist.refresh();
+        let followed = self.dist.followed()?;
+        let mut updates = Vec::new();
+        for report in reports {
+            if let Some(channel) = followed.iter().find(|c| c.channel == report.channel) {
+                for m in self.host.mods().iter().filter(|m| {
+                    m.publisher
+                        .as_ref()
+                        .is_some_and(|p| p.to_string() == report.channel.to_string())
+                }) {
+                    if let Some(offer) = update_offer(m.release.as_ref(), channel, &report.changes)
+                    {
+                        updates.push(offer);
+                    }
+                }
+            }
+            keep_outcome(
+                &mut self.failures.lock().unwrap(),
+                report.channel,
+                report.outcome,
+            );
         }
-        self.channels()
+        Ok((self.channels()?, updates))
+    }
+    pub fn spawn_updates(self: &Arc<Self>, updates: Vec<watane_dist::ReleaseRef>) {
+        for release in updates {
+            let core = self.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = core.install_release(release).await;
+            });
+        }
+    }
+    pub fn installed(&self, installed: &[watane_host::InstalledMod]) {
+        let mut failures = self.update_failures.lock().unwrap();
+        for m in installed {
+            failures.remove(m.local.as_ref());
+        }
+    }
+    pub async fn install_release(
+        self: &Arc<Self>,
+        release: watane_dist::ReleaseRef,
+    ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
+        let planner = self.clone();
+        let target = release.clone();
+        let result = async {
+            let plan = tauri::async_runtime::spawn_blocking(move || {
+                let fetched = planner.dist.fetch(&target)?;
+                planner.plan_fetched(fetched)
+            })
+            .await
+            .map_err(|e| CmdError::new("io", e.to_string()))??;
+            Ok::<_, CmdError>(self.host.install(plan, watane_host::Requester::App).await?)
+        }
+        .await;
+        match &result {
+            Ok(installed) => self.installed(installed),
+            Err(error) => {
+                for m in self.host.mods().iter().filter(|m| {
+                    m.release
+                        .as_ref()
+                        .is_some_and(|r| r.publisher == release.publisher && r.slug == release.slug)
+                }) {
+                    self.update_failures.lock().unwrap().insert(
+                        m.local.to_string(),
+                        (release.version.to_string(), error.message.clone()),
+                    );
+                }
+            }
+        }
+        result
     }
     pub fn follow(&self, text: &str) -> Result<ChannelRow, CmdError> {
         let link: watane_dist::Link = text.parse()?;
@@ -265,6 +396,9 @@ impl Core {
         }
         let first = self.dist.open_link(&link)?;
         self.channels()?;
+        self.plan_fetched(first)
+    }
+    fn plan_fetched(&self, first: watane_dist::Fetched) -> Result<watane_host::Plan, CmdError> {
         let plan = resolve_plan(
             vec![first],
             |fetched| {
@@ -425,5 +559,187 @@ mod stage_c_tests {
         assert_eq!(converted.code, "dist");
         assert_eq!(converted.message, "/home/dist/site/head: disk broke");
         assert_eq!(converted.message.matches("disk broke").count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod stage_d_tests {
+    use super::*;
+    use watane_dist::*;
+    pub(super) fn reference(version: &str) -> ReleaseRef {
+        format!("{}/reading-list@{version}", channel().channel)
+            .parse()
+            .unwrap()
+    }
+    pub(super) fn channel() -> ChannelView {
+        let mut bytes = [0x66; 32];
+        bytes[0] = 0x58;
+        let channel = PublicKey::from_bytes(&bytes).unwrap();
+        ChannelView {
+            channel,
+            fingerprint: "yyyyyyyyyy".into(),
+            name: None,
+            base: None,
+            head: None,
+            releases: vec![],
+            bad: vec![],
+            status: Status::Ok,
+            followed: true,
+            last_success: None,
+        }
+    }
+    pub(super) fn release(version: &str, withdrawn: Option<&str>) -> ReleaseInfo {
+        let reference = reference(version);
+        ReleaseInfo {
+            channel: channel().channel,
+            entry: EntryId::from_bytes([0; 32]),
+            seq: 1,
+            release: Release {
+                slug: reference.slug.clone(),
+                version: reference.version.clone(),
+                name: "Reading list".into(),
+                summary: "Books".into(),
+                package: PackageId::from_bytes([0; 32]),
+                size: 1,
+                source: false,
+                offers: vec![],
+                events: vec![],
+                grants: vec![],
+                origin: None,
+            },
+            reference,
+            withdrawn: withdrawn.map(|reason| Withdrawal {
+                seq: 2,
+                reason: reason.into(),
+            }),
+        }
+    }
+    #[test]
+    fn ac1_offer_highest_live_including_downgrade() {
+        let mut view = channel();
+        assert_eq!(release_offer(Some(&reference("0.1.0")), Some(&view)), None);
+        view.releases = vec![
+            release("0.3.0", Some("breaks lists")),
+            release("0.2.0", None),
+            release("0.1.0", None),
+        ];
+        for installed in ["0.1.0", "0.3.0"] {
+            assert_eq!(
+                release_offer(Some(&reference(installed)), Some(&view)),
+                Some(reference("0.2.0"))
+            );
+        }
+        assert_eq!(release_offer(Some(&reference("0.2.0")), Some(&view)), None);
+        assert_eq!(release_offer(None, Some(&view)), None);
+        assert_eq!(release_offer(Some(&reference("0.1.0")), None), None);
+    }
+}
+
+#[cfg(test)]
+mod stage_d_more_tests {
+    use super::stage_d_tests::{channel, reference, release};
+    use super::*;
+    #[test]
+    fn ac2_notice_priority_and_unfollowed_or_local() {
+        let mut view = channel();
+        let installed = reference("0.3.0");
+        let failure = ("0.4.0".to_string(), "refused: declined".to_string());
+        assert_eq!(release_notice(Some(&installed), Some(&view), None), None);
+        assert_eq!(
+            release_notice(Some(&installed), Some(&view), Some(&failure)).as_deref(),
+            Some("Update to 0.4.0 failed: refused: declined")
+        );
+        view.releases.push(release("0.3.0", Some("breaks lists")));
+        assert_eq!(
+            release_notice(Some(&installed), Some(&view), Some(&failure)).as_deref(),
+            Some("Withdrawn by the publisher: breaks lists")
+        );
+        view.status = watane_dist::Status::Compromised { seq: 1 };
+        assert_eq!(
+            release_notice(Some(&installed), Some(&view), Some(&failure)).as_deref(),
+            Some("The publisher's channel is compromised")
+        );
+        assert_eq!(release_notice(None, Some(&view), Some(&failure)), None);
+        assert_eq!(release_notice(Some(&installed), None, Some(&failure)), None);
+    }
+    #[test]
+    fn ac6_identity_release_rows_include_withdrawal_reason() {
+        let mut view = channel();
+        view.releases = vec![
+            release("0.2.0", None),
+            release("0.3.0", Some("breaks lists")),
+        ];
+        assert_eq!(
+            own_releases(&view),
+            vec![
+                serde_json::json!({"release":reference("0.2.0").to_string(),"version":"0.2.0","slug":"reading-list","withdrawn":null}),
+                serde_json::json!({"release":reference("0.3.0").to_string(),"version":"0.3.0","slug":"reading-list","withdrawn":"breaks lists"}),
+            ]
+        );
+    }
+    #[test]
+    fn ac7_mod_view_serializes_notice_and_offer_as_nullable_text() {
+        for (notice, offer) in [
+            (None, None),
+            (
+                Some("Withdrawn by the publisher: <reason>"),
+                Some("release text"),
+            ),
+        ] {
+            let row = ModView {
+                local: "reading-list".into(),
+                name: "Reading list".into(),
+                slug: "reading-list".into(),
+                version: "0.1.0".into(),
+                release: None,
+                publisher: None,
+                enabled: true,
+                page: None,
+                package: "package".into(),
+                derived_from: None,
+                error: None,
+                grants: vec![],
+                notice: notice.map(str::to_string),
+                offer: offer.map(str::to_string),
+            };
+            let value = serde_json::to_value(row).unwrap();
+            assert_eq!(value["notice"], serde_json::json!(notice));
+            assert_eq!(value["offer"], serde_json::json!(offer));
+        }
+    }
+    #[test]
+    fn ac3_refresh_updates_only_installed_new_releases_once() {
+        let mut view = channel();
+        view.releases = vec![release("0.2.0", None), release("0.3.0", None)];
+        let changes = vec![
+            watane_dist::Change::Release(view.releases[0].clone()),
+            watane_dist::Change::Release(view.releases[1].clone()),
+        ];
+        assert_eq!(
+            update_offer(Some(&reference("0.1.0")), &view, &changes),
+            Some(reference("0.3.0"))
+        );
+        assert_eq!(
+            update_offer(Some(&reference("0.3.0")), &view, &changes),
+            None
+        );
+        assert_eq!(update_offer(None, &view, &changes), None);
+        assert_eq!(update_offer(Some(&reference("0.1.0")), &view, &[]), None);
+        let mut other = reference("0.1.0");
+        other.slug = "other".parse().unwrap();
+        assert_eq!(update_offer(Some(&other), &view, &changes), None);
+        assert_eq!(
+            update_offer(
+                Some(&reference("0.2.0")),
+                &view,
+                &[watane_dist::Change::Release(release("0.1.0", None))]
+            ),
+            None
+        );
+        view.status = watane_dist::Status::Compromised { seq: 1 };
+        assert_eq!(
+            update_offer(Some(&reference("0.1.0")), &view, &changes),
+            None
+        );
     }
 }

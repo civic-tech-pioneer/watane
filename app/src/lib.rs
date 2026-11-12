@@ -213,6 +213,8 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::token_issue,
             commands::token_end,
             commands::install_link,
+            commands::release_install,
+            commands::release_withdraw,
             commands::identity_set_name,
             commands::site_set_url,
             commands::identity_backup,
@@ -260,7 +262,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
                                     timer.tick().await;
                                     let Some(core) = weak.upgrade() else { break };
                                     let _ = tauri::async_runtime::spawn_blocking(move || {
-                                        core.refresh()
+                                        let (rows, updates) = core.refresh()?;
+                                        core.spawn_updates(updates);
+                                        Ok::<_, CmdError>(rows)
                                     })
                                     .await;
                                 }

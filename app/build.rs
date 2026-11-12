@@ -17,6 +17,8 @@ fn main() {
             "token_issue",
             "token_end",
             "install_link",
+            "release_install",
+            "release_withdraw",
             "identity_set_name",
             "site_set_url",
             "identity_backup",
