@@ -621,6 +621,7 @@ mod stage_d_tests {
             index: false,
             listed_by: vec![],
             listings: vec![],
+            last_attempt: None,
             last_success: None,
         }
     }
