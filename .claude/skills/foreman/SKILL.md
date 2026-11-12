@@ -24,8 +24,9 @@ and no way to message the product owner. Everything below holds, with these chan
 - Reports go through git. Push your work to `slice/<id>`, or to the branch this session was
   given if that push is refused. Then add an empty commit
   `git commit --allow-empty -m "DELIVERED <id>" -m "<the section 5 report>"`, or
-  `-m "BLOCKED <id>" -m "<the section 4 question>"`, push it, and end your turn. The product owner
-  answers a `BLOCKED` with a message to this session.
+  `-m "BLOCKED <id>" -m "<the section 4 question>"`, push it, and end your turn. Before a
+  `BLOCKED`, commit and push all work, the briefs too: the product owner answers by starting a
+  new cloud foreman that continues from `slice/<id>`.
 
 ## 1. Brief each task
 

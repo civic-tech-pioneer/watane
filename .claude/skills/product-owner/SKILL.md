@@ -71,17 +71,27 @@ The human follows a foreman with `claude logs <id>` or `claude attach <id>`.
 **Cloud.** Local, with Sol, is the default. A slice may go to an Anthropic cloud foreman instead
 when its `Touches` has no `app/` (the cloud is Linux: no front tests, no `sandbox-exec`) and 3
 local slices are already in flight, or the human asks. There Sonnet implements and Opus validates.
-Mark the slice `in flight (cloud)`, commit, push main, then:
+Mark the slice `in flight (cloud)`, commit, push main, then start it as a one-off routine
+(`RemoteTrigger`, action `create`; `claude --cloud` needs a TTY and a full login, so it fails here):
 
-```bash
-claude --cloud "/foreman <id> ... (the sketch's place in PLAN.md; you run in the cloud)"
+```json
+{"name": "foreman <id>", "run_once_at": "<now + 1 min, UTC, RFC3339>",
+ "job_config": {"ccr": {"environment_id": "env_01KZVAm2cjSpN4wbfAFeQNPD",
+  "session_context": {"model": "claude-opus-5-5",
+   "sources": [{"git_repository": {"url": "https://github.com/civic-tech-pioneer/watane"}}],
+   "allowed_tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "SendMessage"]},
+  "events": [{"data": {"uuid": "<new lowercase uuid>", "session_id": "", "type": "user",
+   "parent_tool_use_id": null, "message": {"role": "user",
+   "content": "/foreman <id> ... (the sketch's place in PLAN.md; you run in the cloud)"}}}]}}}
 ```
 
-Put the session id or URL it prints on the slice's line. Run `factory/watch-cloud.sh <id>` with Bash
-`run_in_background`: a cloud foreman cannot message you, so it reports with a pushed
-`DELIVERED <id>` or `BLOCKED <id>` commit, and the script prints its branch and message. Answer a
-`BLOCKED` with `SendMessage` to that cloud session (its name from `ListAgents`), then run the script
-again with the BLOCKED commit as its second argument.
+Put the routine id on the slice's line; `list_runs` and `get_run_log` show its session. Run
+`factory/watch-cloud.sh <id>` with Bash `run_in_background`: a cloud foreman cannot message you,
+so it reports with a pushed `DELIVERED <id>` or `BLOCKED <id>` commit, and the script prints its
+branch and message. Answer a `BLOCKED` with a new routine on the same branch: "/foreman <id>,
+continue from branch slice/<id>; the answer to your question: ...". Then run the script again
+with the BLOCKED commit as its second argument. A cloud container has 4 cores: the slice's full
+test run is slower than on the Mac, but it costs the Mac nothing.
 
 ## 4. Questions: decide or escalate
 
