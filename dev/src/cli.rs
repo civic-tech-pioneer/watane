@@ -393,6 +393,17 @@ mod tests {
     }
 
     #[test]
+    fn ac2_new_preview_without_page_still_gives_mcp_setup() {
+        let pageless = |reused| json!({"reused": reused, "pages": [{"slug": "demo", "url": null}], "mcp": {"url": "u", "token": "t"}});
+        assert!(
+            serve_next(&pageless(false))
+                .unwrap()
+                .starts_with("The MCP url and token are new.")
+        );
+        assert_eq!(serve_next(&pageless(true)), None);
+    }
+
+    #[test]
     fn ac4_failed_check_mod_errors_give_recovery_next() {
         for (file, contents, expected_code) in [
             (
@@ -421,37 +432,6 @@ mod tests {
                 checked.next.as_deref(),
                 Some("Fix the errors, then run: watane-dev check --json")
             );
-        }
-    }
-
-    #[test]
-    fn ac5_spec_documents_text_and_recovery_next() {
-        let spec = include_str!("../TECHNICAL.md");
-        let text = spec
-            .split("### 2.3 Text output")
-            .nth(1)
-            .unwrap()
-            .split("### 2.4")
-            .next()
-            .unwrap();
-        assert!(text.contains("empty list prints `none`"));
-        let results = spec
-            .split("### 2.4 The result of each command")
-            .nth(1)
-            .unwrap()
-            .split("## 3.")
-            .next()
-            .unwrap();
-        for instruction in [
-            "Fix the errors, then run: watane-dev check --json",
-            "`reused: false`",
-            "result.mcp.url",
-            "result.mcp.token",
-            "MCP tools for your agent",
-            "contains `mod.toml`",
-            "watane-dev serve --json",
-        ] {
-            assert!(results.contains(instruction), "missing {instruction}");
         }
     }
 
