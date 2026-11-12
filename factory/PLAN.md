@@ -234,6 +234,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S28: dist's new `Statement` variants and `ChannelView` fields break app's build. S28 edits app in
+  two places only: `confirm.rs` refuses an unknown statement kind (`_ => Refuse`, `ponytail:`; S29
+  shows index statements), and `core.rs`'s test helper gains the three fields.
 - Human (2026-11-12, process): briefs get a "## Changed tests" section (foreman skill); the
   "Spec gaps" logs in */AGENTS.md are removed (the spec edit, Sol's CHANGED SPECS and git history
   are the record; host Q ids and dist DD ids stay in their TECHNICAL); new worktrees clone main's
