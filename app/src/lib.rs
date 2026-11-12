@@ -55,7 +55,7 @@ pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
     let mut cause = e.source();
     while let Some(e) = cause {
         let text = e.to_string();
-        if !message.ends_with(&text) {
+        if message != text && !message.ends_with(&format!(": {text}")) {
             message.push_str(": ");
             message.push_str(&text);
         }
@@ -314,6 +314,10 @@ mod tests {
     #[error("a: b")]
     struct Outer(#[source] std::io::Error);
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("disk broke")]
+    struct Whole(#[source] std::io::Error);
+
     #[test]
     fn ac1_cause_chain_appends_only_missing_suffix() {
         assert_eq!(
@@ -323,6 +327,10 @@ mod tests {
         assert_eq!(
             super::cause_chain(&Outer(std::io::Error::other("c"))),
             "a: b: c"
+        );
+        assert_eq!(
+            super::cause_chain(&Whole(std::io::Error::other("broke"))),
+            "disk broke: broke"
         );
     }
 }
