@@ -207,7 +207,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
-| `host.declined` | 4 | the host answers with error code `refused` | the host's message | — |
+| `host.declined` | 4 | the host answers with error code `refused` | the host's message | `The person declined in the app. Ask them before you run install again` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait` |
 | `internal` | 5 | anything else | the error chain | — |
@@ -334,7 +334,12 @@ answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
 ```
 From the host's `InstalledMod` list, in install order, retaining exactly these five fields.
 `next`: `Give the person this page: <url>` for the last entry with a page,
-else null.
+else null. On `env.host_not_running`, `next` is
+`watane-dev install --json --home <canonical or given home>`, adding
+` --wait <n>` only when `--wait` was explicitly passed. Quote the home for the
+shell when it contains characters other than letters, digits or `/._-`.
+Run it once the person has started the app. Other `env.*` errors use
+`watane-dev doctor --json`.
 
 **publish** (step 3)
 ```json
@@ -1070,7 +1075,7 @@ without the app"). Run 9.2, then one `POST /api/install` with
 participant in the app. `--wait <seconds>` (default 600) bounds this request.
 No answer is `host.no_answer`: `no answer from the home host in <n> s`,
 fix `Run the command again with a longer --wait`. A `refused` answer is
-`host.declined` with the host message; other errors are `host.refused`
+`host.declined` with the host message and the fix from 2.2; other errors are `host.refused`
 with `[<code>] <message>`. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
 next command and fixes of `serve`.
@@ -1151,7 +1156,7 @@ impl Outcome { pub fn exit_code(&self) -> u8; pub fn to_json(&self) -> String; p
 pub struct Cli { pub json: bool, pub dir: Option<PathBuf>, pub command: Command }
 pub enum Command { New { slug: String }, Check, Test, Serve { stop: bool }, Doctor,
     Add { provider: PathBuf },
-    Install { home: Option<PathBuf>, wait: u64 },
+    Install { home: Option<PathBuf>, wait: Option<u64> },
     Publish { no_source: bool, home: Option<PathBuf>, wait: u64 } }
 pub fn run(cli: Cli) -> Outcome;
 

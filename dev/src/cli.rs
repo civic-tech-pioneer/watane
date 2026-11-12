@@ -44,12 +44,8 @@ pub enum Command {
     Install {
         #[arg(long, help = "Home of the running watane app")]
         home: Option<PathBuf>,
-        #[arg(
-            long,
-            default_value_t = 600,
-            help = "Seconds to wait for the person to answer"
-        )]
-        wait: u64,
+        #[arg(long, help = "Seconds to wait for the person to answer [default: 600]")]
+        wait: Option<u64>,
     },
     /// Test the mod and serve it in a preview
     Serve {
@@ -271,7 +267,7 @@ pub fn test(dir: &Path) -> Outcome {
     }
 }
 
-fn install(dir: &Path, home: Option<PathBuf>, wait: u64) -> Outcome {
+fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
     let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
     let result = (|| {
         let home = home
@@ -279,7 +275,23 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: u64) -> Outcome {
             .unwrap_or_else(watane_host::default_home)
             .map_err(|e| vec![Problem::internal(e)])?;
         let home = home.canonicalize().unwrap_or(home);
-        let client = crate::api::Client::for_app(&home).map_err(|e| vec![e])?;
+        let client = crate::api::Client::for_app(&home).map_err(|e| {
+            if e.code == crate::outcome::Code::EnvHostNotRunning {
+                let mut path = home.display().to_string();
+                if !path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+                {
+                    path = format!("'{}'", path.replace('\'', "'\"'\"'"));
+                }
+                let mut next = format!("watane-dev install --json --home {path}");
+                if let Some(wait) = wait {
+                    next.push_str(&format!(" --wait {wait}"));
+                }
+                outcome.next = Some(next);
+            }
+            vec![e]
+        })?;
         let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
         outcome.dir = Some(dir.clone());
         let tested = test_local(&dir);
@@ -288,7 +300,9 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: u64) -> Outcome {
             return Err(tested.errors);
         }
         let folders = deps::local_order(&dir).map_err(|e| vec![e])?;
-        let installed = client.install_wait(&folders, wait).map_err(|e| vec![e])?;
+        let installed = client
+            .install_wait(&folders, wait.unwrap_or(600))
+            .map_err(|e| vec![e])?;
         let installed: Vec<_> = installed.into_iter().map(|m| serde_json::json!({
             "slug":m.slug, "local":m.local, "version":m.version, "package":m.package, "page":m.page
         })).collect();
@@ -301,10 +315,10 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: u64) -> Outcome {
             outcome
         }
         Err(errors) => {
-            if errors
-                .first()
-                .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
-            {
+            if errors.first().is_some_and(|p| {
+                p.code.class() == crate::outcome::Class::Env
+                    && p.code != crate::outcome::Code::EnvHostNotRunning
+            }) {
                 outcome.next = Some("watane-dev doctor --json".into());
             }
             outcome.fail(errors)
@@ -346,7 +360,7 @@ mod tests {
             cli.command,
             Command::Install {
                 home: None,
-                wait: 600
+                wait: None
             }
         ));
         use clap::CommandFactory;

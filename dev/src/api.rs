@@ -138,7 +138,11 @@ impl Client {
                     )
                 },
             )
-            .fix("Correct the reported host error and run the command again"));
+            .fix(if code == Code::HostDeclined {
+                "The person declined in the app. Ask them before you run install again"
+            } else {
+                "Correct the reported host error and run the command again"
+            }));
         }
         Ok(value)
     }
@@ -265,7 +269,7 @@ mod tests {
     }
 
     /// The person said no in the app: there is no host error to correct, and running the
-    /// command again asks them again. TECHNICAL 2.2 gives `host.declined` no fix.
+    /// command again asks them again. TECHNICAL 2.2 requires asking before retrying.
     #[test]
     fn regress_s12b_declined_fix_does_not_ask_to_correct_and_retry() {
         let (port, thread) = stub(
@@ -276,6 +280,10 @@ mod tests {
         let e = Client { port }.install_wait(&[], 2).unwrap_err();
         thread.join().unwrap();
         assert_eq!(e.code, Code::HostDeclined);
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("The person declined in the app. Ask them before you run install again")
+        );
         assert_ne!(
             e.fix.as_deref(),
             Some("Correct the reported host error and run the command again"),
@@ -307,6 +315,14 @@ mod tests {
             let e = Client { port }.install_wait(&[], 2).unwrap_err();
             assert_eq!(e.code, expected);
             assert_eq!(e.message, message);
+            assert_eq!(
+                e.fix.as_deref(),
+                Some(if expected == Code::HostDeclined {
+                    "The person declined in the app. Ask them before you run install again"
+                } else {
+                    "Correct the reported host error and run the command again"
+                })
+            );
             thread.join().unwrap();
         }
     }

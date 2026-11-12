@@ -38,11 +38,21 @@ fn regress_s12b_no_host_next_repeats_install() {
         .output()
         .unwrap();
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["errors"][0]["code"], "env.host_not_running", "{value}");
+    assert_eq!(
+        value["errors"][0]["code"], "env.host_not_running",
+        "{value}"
+    );
     let next = value["next"].as_str().unwrap_or("");
     assert!(
         next.contains("watane-dev install"),
         "next should repeat the install once the app runs, got {next:?}"
+    );
+    assert_eq!(
+        next,
+        format!(
+            "watane-dev install --json --home {}",
+            home.path().canonicalize().unwrap().display()
+        )
     );
 }
 
@@ -111,6 +121,33 @@ mod fake {
             serde_json::from_slice(&output.stdout).unwrap(),
         )
     }
+    #[test]
+    fn ac2_pipeline_environment_errors_keep_doctor_next() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let dir = root.path().join("counter");
+        watane_dev::template::new_mod(&dir, "counter").unwrap();
+        for (variable, code) in [
+            ("WATANE_DEV_TOOLCHAIN", "env.toolchain"),
+            ("WATANE_DEV_VENDOR", "env.allowlist"),
+        ] {
+            let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+                .current_dir(&dir)
+                .env_remove("WATANE_DEV_TOOLCHAIN")
+                .env(variable, root.path().join("missing"))
+                .env("WATANE_DEV_CACHE", root.path().join("cache"))
+                .args(["install", "--json", "--home"])
+                .arg(home.path())
+                .output()
+                .unwrap();
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(output.status.code(), Some(3), "{value}");
+            assert_eq!(value["errors"][0]["code"], code, "{value}");
+            assert_eq!(value["next"], "watane-dev doctor --json");
+        }
+    }
+
     #[test]
     fn ac3_declined() {
         let root = tempfile::tempdir().unwrap();
@@ -303,4 +340,29 @@ fn ac2_real_home_without_app() {
             home.path().canonicalize().unwrap().display()
         )
     );
+}
+
+#[test]
+fn ac2_no_host_next_preserves_explicit_wait_and_given_home() {
+    let root = tempfile::tempdir().unwrap();
+    for wait in ["17", "600"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(root.path())
+            .args([
+                "install",
+                "--json",
+                "--home",
+                "missing-home",
+                "--wait",
+                wait,
+            ])
+            .output()
+            .unwrap();
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["errors"][0]["code"], "env.host_not_running");
+        assert_eq!(
+            value["next"],
+            format!("watane-dev install --json --home missing-home --wait {wait}")
+        );
+    }
 }
