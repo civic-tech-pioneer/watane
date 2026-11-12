@@ -98,21 +98,39 @@ Step 3 (Publish, J3).
   text prints twice in the app ("X: X": `DistError::Log` is `#[error("{0}")]` with `#[from]`, `Io`
   prints its source too; app's ac4 test expects the doubled text); the 422 message shows Debug
   text; URLs show in Debug quotes.
-- [~] **S21c The agent publishes.** (branch `slice/s21c`; foreman: see `Foremen`) Bob's coding
-  agent runs `watane-dev publish --json` in his mod folder; Bob sees "Sign a release" in his app
-  (with or without source), approves, and the agent gets back the release, site and link; Alice
-  follows that link in her app and installs. Closes step 3 (dev stage 7, dev TECHNICAL 9.7).
-  - Outcomes: (1) a mod with a local provider gets `publish.local_dependency` naming it, and the
-    app received nothing (DEV-S-30); (2) `--no-source` sends a package with no `logic/src/` and the
-    app's consent says so (DEV-S-31); (3) on the real app, the result carries `release`, `site`,
-    `link`, `package`, `source`, and the link installs in a second home; (4) a decline or a missing
-    app comes back with a `next`, as `install` does; (5) a refused publish or follow reads cleanly in
-    the app and in dev's output: no doubled cause ("X: X"), no Debug text in the 422 message, URLs and
-    paths without Debug quotes (S21b leftovers; app's ac4 test changes with it, name it in the brief).
-  - Touches: dev (`publish` in cli/api/outcome, `fake-watane`'s `/api/publish`, a new
-    `tests/publish.rs`, its spec rows), dist (`src/error.rs` Display texts), app (the error mapping
-    and its tests). May use `fake-watane` for (1), (2), (4); (3) needs the real app.
-  - Leaves out: the S23 dev text leftovers (progress line, `serve` next, text-mode lists).
+- [x] **S21c The agent publishes.** Delivered 2026-11-12 (main `355656d`). Sol runs: S21c-1 1, S21c-2 1,
+  S21c-3 1 (one validator round-2 fix).
+
+Step 3 done 2026-11-12: J3 passes (`app/tests/j3.rs`); every step-3 stage is done.
+
+Between steps 3 and 4.
+- [ ] **S24 Publish and install edges.** The S21c and S23 user-sim leftovers, one cheap test each:
+  - First, a red test or a note: "once Alice follows Bob, `install_link` with Bob's key and another
+    site URL installs with no consent and no error" (S21c user-sim). Decide whether it is HOST-F-27
+    (an update with no new grant needs no question) or a fresh install that skipped consent. If
+    the latter, it is a security fix: report to the PO before the brief, since the fix is likely
+    in `app/src/core.rs` (S25's file).
+  - Approving after `host.no_answer` signs the release but the agent never gets the link, and
+    `next` ("longer --wait") then hits "already exists" (shared consent behaviour from S12b).
+  - `next` texts: no site URL set (link null) says to set one in the app; "already exists at seq N"
+    says to raise the version, and dev checks it before the build; `publish.local_dependency` and a
+    declined `install` get a `next`.
+  - The 422 for a corrupt package leaks a temp path and names the location twice (`app/src/api.rs`).
+  - dev text (S23): the progress line prints twice and says "first build" on warm builds; `serve`'s
+    `next` ends the URL with `.` and names JSON paths in text mode; `check` says to correct the
+    do-not-edit `deps.json` for an unused provider; text mode prints object lists on one line and an
+    argument error as `: failed`. The template guide is at its 143-line cap: cut before adding.
+  - Touches: dev, host (consent wait), dist, `app/src/api.rs`, new app test files. Not
+    `app/src/core.rs`, `app/src/commands.rs` or `app/ui/` (S25).
+- [ ] **S25 Carol stays up to date.** The half of J4 that is designed (no index): Carol has Alice's
+  mod; Alice releases 0.2.0 with no new grant, and Carol's refresh updates it without a question
+  (APP-F-39, HOST-F-27); 0.3.0 asks for a new grant, and Carol sees the plan in the consent view;
+  Alice withdraws a version in her app with a reason (DIST-F-15, APP-F-33), and Carol's app tells
+  her and offers the newest version that is not withdrawn (APP-F-40); a second statement at a used
+  position shows Alice's channel as compromised (APP-F-37, DIST-F-26).
+  - Touches: app (`core.rs` refresh, `commands.rs`, `ui/`, a withdraw command, its capability and
+    `static_config` lists), host only if the update path needs it. Not dev.
+  - Leaves out: indexes and search (waiting on the human).
 
 ## Stage coverage
 
@@ -142,12 +160,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 4 contract | 1 | done (S4, S11: fakes and `deliver`) |
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | done (S11, S12b; `fake-watane` too) |
-| dev | 7 publish | 3 | open |
+| dev | 7 publish | 3 | done (S21c) |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
-| app | D find | 4 | open |
+| app | D find | 4 | open: S25 takes APP-F-37, 39, 40; APP-F-38 waits on the index design |
 | app | E build on | 5 | open |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
@@ -180,10 +198,19 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a` (stopped, removed).
 - S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23` (stopped, removed).
 - S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b` (stopped, removed).
-- S21c: `d7c44cac` (sessionId `d7c44cac-2e5d-4889-86c2-0f58fd762649`), worktree `.claude/worktrees/s21c`.
+- S21c: `d7c44cac` (sessionId `d7c44cac-2e5d-4889-86c2-0f58fd762649`), worktree `.claude/worktrees/s21c` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Step 4 design (spec/TECHNICAL 9 lists it as "not designed yet"): the statements of an index, how
+  deep includes go, search by interface, and whether watane ships with a first index. These are
+  formats on the wire and on disk, so they are yours. Recommendation: a design slice where a foreman
+  drafts the index statements in `dist` (an index is a channel whose statements list releases or
+  other indexes; includes one level deep; search by text, publisher and interface over the
+  verified, followed indexes; no shipped index in the first version), with a thin spike behind
+  it, and you review the draft before it is built for real. Cost to undo: a spec draft only.
+  Meanwhile S25 builds the half of J4 that needs no index.
 
 - Process change (friction 3x: S9, S15, S21a): a brief that changes a behaviour must name each
   existing test that asserts the old one, and say it changes. One line in the foreman skill's
@@ -297,6 +324,12 @@ The human may veto each one.
   mods still `pack(dir, false)` (host Q26). The app's API router takes a dist-only handle (no
   server/Core cycle). Restoring the same key again is idempotent; a different key into a home that
   has published is refused.
+- S21c: dist error texts use `escape_debug()` with no Debug quotes, and a variant never prints its
+  own `source()` (`Io` shows only its path; `Log`, `Package`, `Release` transparent; dist TECHNICAL
+  3.1). The app's `cause_chain` appends a cause unless the text so far equals it or ends with ": "
+  plus it (app TECHNICAL 13). dev `publish` checks local providers, host status, the pipeline,
+  pack, then posts. DEV-S-31 for a logic mod is `slow:`; the default suite proves `--no-source`
+  with a page-only package. The template guide does not mention publish (cap; `--help` covers it).
 
 ## Friction
 
@@ -444,6 +477,8 @@ The human may veto each one.
   only; one extra fix task. Same root as "briefs not naming changed tests" (4x).
 - S21b: Sol cannot run window tests, so an app task's main oracle (J3) first runs in the validator;
   window-test flakes showed only in the foreman's serial full run, after acceptance (one fix task).
+- S21c: `scripts/vendor.sh` is at `dev/scripts/vendor.sh` (hand-out prompts named the wrong path).
+  The user-sim died once on an API ENOTFOUND; resuming it worked.
 
 ## Digest
 
@@ -503,3 +538,5 @@ The human may veto each one.
 - S21b: Alice publishes a mod from her app and shares her link; Bob enters it in his app, sees "by
   Alice (fingerprint) · signature verified", approves, and it runs; a changed package or head entry
   is refused with its cause and URL, and nothing is installed (J3 passes in `app/tests/j3.rs`).
+- S21c: Bob's coding agent runs `watane-dev publish --json`; Bob approves "Sign a release" in his app
+  and the agent gets the release, site and link; Alice installs from that link (step 3 done).
