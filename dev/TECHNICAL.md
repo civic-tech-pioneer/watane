@@ -1393,8 +1393,15 @@ it and change this list.
 **app**: `POST /api/publish` with the package bytes
 (`application/octet-stream`) on the home host's port →
 `{"release": "<publisher key>/<slug>@<version>", "site", "link"}`
-after the participant confirms; code `refused` for a no; the consent view
-shows whether the package holds source. Steps 4 and 5: `/api/search`,
+after the participant confirms; code `refused` for a no. A duplicate version
+returns 409 `version_exists` with message `release <ref> already exists at seq <n>`.
+`GET /api/releases` returns 200
+`{"releases":[{"slug":string,"version":string,"release":string,"seq":number,"link":string|null}]}`,
+one object per own release in seq order (empty: `{"releases":[]}`), using the
+current site URL; no site URL means `link: null`. Dist not open gives 503
+`unavailable`. This supports discovery before building and after a publish
+wait expires. The consent view shows whether the package holds source.
+Steps 4 and 5: `/api/search`,
 `/api/fetch`.
 
 **log**, **dist**: nothing directly; through the home host only.

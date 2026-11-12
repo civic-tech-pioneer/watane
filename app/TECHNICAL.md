@@ -479,13 +479,13 @@ The app hands `api::router(Some(dist))` to `host.serve`, which merges it on the
 same port behind the same guards (HOST-F-38).
 
 ```rust
-pub fn router(dist: Option<Arc<watane_dist::Dist>>) -> axum::Router;   // full paths: /api/publish, ...
+pub fn router(dist: Option<Arc<watane_dist::Dist>>) -> axum::Router;   // full paths: /api/publish, /api/releases, ...
 ```
 
 The router owns only a dist handle, not `Core`: host is not served until
 startup succeeds, and this avoids a server/router/Core ownership cycle.
 `None` gives the route's 503 response in isolation; failed startup serves
-nothing (APP-F-2). Three publish-specific errors are mapped by the table;
+nothing (APP-F-2). Publish-specific errors are mapped by the table;
 all other dist errors use its generic 409 row, including new variants.
 
 An error body is `{"error": {"code": "<code>", "message": "<cause chain>"}}`
@@ -509,13 +509,32 @@ and writes the site folder.
 | `DistError::Refused` | 403 | `refused` |
 | `DistError::Package` | 422 | `invalid_package` |
 | `DistError::SiteNotWritten` | 500 | `site_not_written`; the release is signed and stored; the message says so |
-| any other `DistError` (a used version, an unreleased provider, an unconfirmed own head, ...) | 409 | `publish_refused` |
+| `DistError::VersionExists` | 409 | `version_exists`; `release <ref> already exists at seq <n>` (dist's text) |
+| any other `DistError` (an unreleased provider, an unconfirmed own head, ...) | 409 | `publish_refused` |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
 
 `link` is `dist.own_link(Some(slug))`; it is `null` while no site URL is
 set (`NoSiteUrl`). The route never answers a confirmation: only
 `consent_answer` and the `Destroyed` handler call `Broker::answer`
 (APP-F-13).
+
+### 8.1.1 `GET /api/releases` (step 3)
+
+In `spawn_blocking`: read `dist.own().releases` in seq order. Answer 200
+`{"releases":[{"slug":string,"version":string,"release":string,"seq":number,"link":string|null}]}`,
+one object per own release, including withdrawn releases, with no withdrawal
+field yet. An empty channel answers `{"releases":[]}`. Each link comes from
+`dist.own_link(Some(&slug))` using the current site URL; `NoSiteUrl` means
+`null`. No confirmation is needed. This lets an agent discover a completed
+publish before building or after its publish wait expired.
+
+No dist handle gives 503 `unavailable`, with message `dist did not open`.
+Other read failures give 500 `unavailable` with the cause. Other methods
+return 405, `Allow: GET`, and `bad_request` with message `use GET`, as host's
+built-in API routes do (HEAD has no response body).
+
+For a corrupt component body, the publish 422 diagnostic names the package
+file once: `the mod breaks 1 rule(s): [component] logic.wasm: is not a WebAssembly component`.
 
 ### 8.2 `POST /api/search` (step 4)
 
@@ -919,7 +938,7 @@ still needs the participant in the consent view.
 | Item | To | Form |
 |---|---|---|
 | The program `watane-app [--home <dir>] [--port <n>]` | participants, journey tests | section 1 |
-| `POST /api/publish` (step 3); `/api/search` (step 4); `/api/fetch` (step 5, sketch) | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
+| `POST /api/publish`, `GET /api/releases` (step 3); `/api/search` (step 4); `/api/fetch` (step 5, sketch) | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
 | The answers to the confirmations of `host` (install, new grant) and `dist` (signature), in process | `host`, `dist` | section 9.2 |
 | The grant words | the consent view; `dev` may print the same words | section 4 |
 | The driver protocol | the journey tests J2 to J4 | section 10 |

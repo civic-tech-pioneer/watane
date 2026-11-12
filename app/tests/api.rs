@@ -95,7 +95,7 @@ async fn ac6_publish_http_rows_without_window() {
     assert!(dist.site_dir().join("head").is_file());
     let (status, body) = post(router, "application/octet-stream", bytes.clone()).await;
     assert_eq!(status, 409);
-    assert_eq!(body["error"]["code"], "publish_refused");
+    assert_eq!(body["error"]["code"], "version_exists");
     let denied_home = tempfile::tempdir().unwrap();
     let denied = Arc::new(
         watane_dist::Dist::open(
@@ -206,7 +206,7 @@ fn ac6_publish_through_consent_window_and_host_guards() {
             413,
             "too_large",
         ),
-        ("application/octet-stream", bytes, 409, "publish_refused"),
+        ("application/octet-stream", bytes, 409, "version_exists"),
         ("application/octet-stream", vec![1], 422, "invalid_package"),
     ] {
         let (actual, body) = http(app.port, content, body);
