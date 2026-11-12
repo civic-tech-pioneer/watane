@@ -15,14 +15,19 @@ fn ac5_open_offline_locked_reopen_modes() {
         Dist::open(home.path(), c.clone(), Options::default()),
         Err(DistError::Locked { .. })
     ));
-    for path in ["dist", "dist/packages", "dist/tmp", "dist/site"] {
+    for (path, mode) in [
+        ("dist", 0o700),
+        ("dist/packages", 0o700),
+        ("dist/tmp", 0o700),
+        ("dist/site", 0o755),
+    ] {
         assert_eq!(
             std::fs::metadata(home.path().join(path))
                 .unwrap()
                 .permissions()
                 .mode()
                 & 0o777,
-            0o700
+            mode
         );
     }
     assert_eq!(

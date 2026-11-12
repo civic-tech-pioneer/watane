@@ -383,7 +383,7 @@ link is the identity: the base is only where to read.
 - Refuse with `ExportConflict` (DIST-F-20): `entries/<n>` exists with other
   bytes; `head` exists and is not an entry, is an entry of another key, or
   has a seq above the own head.
-- Never delete a file. Never write outside `head`, `entries/`, `packages/`.
+- Delete only withdrawn package files from the built-in `site/` (DD-12), never delete files from external exports, and never write outside `head`, `entries/`, `packages/`.
 
 ### 4.4 Storage in the home
 
@@ -823,7 +823,7 @@ Not to build now. The design above keeps these open:
 | Q2 | TECHNICAL §3, W14; F-INST-4, J5 | Where to read the channel of a provider's publisher. A provider from a channel that is not followed cannot be fetched. | **Partly decided.** D-A1 names the release (`ReleaseRef`); D-A2 fixes `deps.json` as `mods:<slug>` to a key or null, so the earlier proposal (a link in `deps.json`) is dropped. Open for step 5: where the base URL comes from. Until then, `fetch` needs a followed channel. |
 | Q3 | F-APP-6, F-PUB-7, J3 | A restore of an identity with no copy of its channel starts again at seq 0, and the next publish forks the own channel. | As `log` proposes: no statement until the own head is confirmed. `confirm_own(link)` reads the own channel from its link; `confirm_own(None)` only after the participant states it never published. F-APP-6 should name this step. |
 | Q4 | F-PUB-6 | "keeps a followed channel up to date" has no trigger: static files cannot push. | `dist` has no timer. The app calls `refresh` at start, every 10 minutes, and on request (APP-F-36). |
-| Q5 | F-PUB-2, F-PUB-5 | Whether the bytes of a withdrawn version stay published. | The statement stays forever. Export stops writing the package; it deletes nothing, so the maker removes it from the host if needed. |
+| Q5 | F-PUB-2, F-PUB-5 | Whether the bytes of a withdrawn version stay published. | The statement stays forever, the built-in `site/` removes withdrawn package files (DD-12), and external exports retain them for the maker to remove from the host if needed. |
 | Q6 | W15 | The body of `profile` is not specified. | Name only (4.1). The key is the identity; the name is a claim the app shows beside the fingerprint. |
 | Q7 | F-PUB-1, F-PUB-7 | One identity on two devices forks its channel. | The first version supports one device per identity. Document it in spec §6 "Not protected". |
 | Q8 | TECHNICAL §2 | `app` depends on `host` and `dist` only, but the backup (F-APP-6) is `log`'s. | `dist` passes `backup`, `restore` and `confirm_own` through; only `dist` opens `<home>/log/`. Say so in §2. |
@@ -843,5 +843,5 @@ Not to build now. The design above keeps these open:
 | DD-8 | A fetch asks `pkg` whether release and package agree (PKG-F-23); dist compares no field itself. | One rule in one place; `pkg` owns the body. |
 | DD-9 | `dist` keeps `<home>/dist/site/` current after every statement. | J3 is then: publish, confirm, copy one folder. |
 | DD-10 | A follow is added only after a first successful read. | A mistyped link leaves nothing behind. |
-| DD-11 | In S1/S2 the empty `site/` directory stays 0700; from S3, open creates it with 0755 and export writes 0644 files. | S21a-2 AC10a supersedes the S1/S2 private empty site rule. The earlier open mode test is retained and conflicts with this requirement. |
-| DD-12 | S3 removes withdrawn package files only from the built-in `site/`; external export never deletes files. This overrides the blanket no-delete rule of §4.3 for that managed directory. | S21a-2 AC6 requires the built-in site to contain exactly the live packages; §4.3 and Q5 still apply to external exports. |
+| DD-11 | In S1/S2 the empty `site/` directory stays 0700; from S3, open creates it with 0755 and export writes 0644 files. | S21a-2 AC10a supersedes the S1/S2 private empty site rule. |
+| DD-12 | S3 removes withdrawn package files only from the built-in `site/`; external export never deletes files. Section 4.3 states this exception for that managed directory. | S21a-2 AC6 requires the built-in site to contain exactly the live packages; §4.3 and Q5 still apply to external exports. |
