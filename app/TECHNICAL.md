@@ -324,7 +324,8 @@ Sign details, in this order. A release is named by its ReleaseRef text
   with `textContent`, never with `innerHTML`.
 - Header: the mark, and the title `Install <name>` for one new mod, `Update <name> to <version>`
   for one mod with `replaces`, or `Install <n> mods` for multiple mods; `Sign a release`,
-  `Sign a withdrawal` or `Sign your profile`; for `by_program` also
+  `Sign a withdrawal`, `Sign your profile`, `List in your index`,
+  `Include in your index` or `End a listing` (step 4); for `by_program` also
   `Asked by a program on this device`.
 - An install shows one block per mod: name, version, then the ReleaseRef
   with `by <party> · signature verified`, or `local`; `replaces <version>`
