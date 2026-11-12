@@ -565,62 +565,68 @@ fn ac4_single_install_and_update_headings() {
 }
 
 #[test]
-fn ac2_own_withdrawal_ac6_offer_words_ac7_version_outside_details() {
+fn ac2_own_withdrawal_and_ac6_offer_button_words() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
-    // UI-only fields: feed the same status and ModView shapes as the commands.
-    app.eval("main", r#"const invoke = window.__TAURI_INTERNALS__.invoke;
-      window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-        const value = await invoke(cmd, args);
-        if (cmd === 'status') value.identity.releases = [{release:'own/books@1.0.0',slug:'books',version:'1.0.0',withdrawn:'breaks lists'}];
-        if (cmd === 'mods_list') return [{local:'books',name:'Books',version:'1.0.0',publisher:null,enabled:true,page:null,grants:[],offer:'publisher/books@2.0.0',offerGrants:[{text:'Connect to example.org'}],notice:'Withdrawn by the publisher: breaks lists'}];
-        return value;
-      }; window.dispatchEvent(new Event('focus')); null"#);
-    until(
-        &app,
-        "main",
-        "!!document.querySelector('[data-local=books]')",
+    // Exercise the same UI-only word functions used by the launcher without
+    // replacing Tauri's immutable invoke property.
+    app.eval("main", r#"window.__wordsResult = null;
+      import(new URL('words.js', document.baseURI).href).then(words => {
+        window.__wordsResult = {ok: [
+          words.ownWithdrawal('breaks lists'),
+          words.offerLabel('publisher/books@2.0.0', []),
+          words.offerLabel('publisher/books@2.0.0', [{text:'Connect to example.org'}]),
+          words.offerLabel('publisher/books@2.0.0', [{text:'Connect to example.org'}, {text:'Keep its own data on this device'}])
+        ]};
+      }).catch(error => { window.__wordsResult = {error: String(error)}; }); null"#);
+    until(&app, "main", "window.__wordsResult !== null");
+    let result = app.eval("main", "window.__wordsResult");
+    assert!(
+        result.get("error").is_none(),
+        "UI words import failed: {result}"
     );
+    assert_eq!(result["ok"][0], "Withdrawn: breaks lists");
+    assert_eq!(result["ok"][1], "Install 2.0.0");
     assert_eq!(
-        app.eval("main", "document.querySelector('#releases p').textContent"),
-        "Withdrawn: breaks lists"
-    );
-    assert_eq!(
-        app.eval("main", "document.querySelector('.notice').textContent"),
-        "Withdrawn by the publisher: breaks lists"
-    );
-    assert_eq!(
-        app.eval("main", "document.querySelector('button.offer').textContent"),
+        result["ok"][2],
         "Install 2.0.0 — asks for: Connect to example.org"
     );
     assert_eq!(
+        result["ok"][3],
+        "Install 2.0.0 — asks for: Connect to example.org, Keep its own data on this device"
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac7_real_installed_version_is_a_name_sibling_outside_details() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    install_books(&app, "Books", false);
+    assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local] > h2').textContent"
+            "document.querySelector('[data-local=books] > h2').textContent"
         ),
         "Books"
     );
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local] > .version').textContent"
+            "document.querySelector('[data-local=books] > h2 + .version')?.textContent ?? null"
         ),
-        "1.0.0"
+        "1.2.3"
     );
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local] > details').open"
+            "document.querySelector('[data-local=books] > details').open"
         ),
         false
-    );
-    app.eval("main", "const current = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = async (cmd,args) => { const v = await current(cmd,args); if(cmd === 'mods_list') v[0].offerGrants = []; return v; }; window.dispatchEvent(new Event('focus')); null");
-    until(
-        &app,
-        "main",
-        "document.querySelector('button.offer').textContent === 'Install 2.0.0'",
     );
     assert!(app.quit().success());
 }

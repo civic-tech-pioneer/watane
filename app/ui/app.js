@@ -1,4 +1,5 @@
 import { call } from './ipc.js';
+import { ownWithdrawal, offerLabel } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -31,7 +32,7 @@ function modsView(mods) {
     element('h2', mod.name, entry);
     element('span', mod.version, entry, 'version');
     if (mod.notice) element('p', mod.notice, entry, 'notice');
-    if (mod.offer) button(entry, `Install ${mod.offer.slice(mod.offer.lastIndexOf('@') + 1)}${mod.offerGrants.length ? ` — asks for: ${mod.offerGrants.map(g => g.text).join(', ')}` : ''}`, 'offer', () => action('release_install', {release: mod.offer}));
+    if (mod.offer) button(entry, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release: mod.offer}));
     if (mod.error) element('p', mod.error, entry);
     if (mod.enabled && mod.page) button(entry, 'Open', 'open', () => action('mod_open', {local: mod.local}));
     if (!mod.enabled) { element('p', 'Disabled', entry); button(entry, 'Enable', 'enable', () => action('mod_enable', {local: mod.local})); }
@@ -138,7 +139,7 @@ function identityView(status) {
     for (const release of releases) {
       const row = element('div', `${release.slug} ${release.version}`, $('#releases'));
       row.dataset.release = release.release;
-      if (release.withdrawn !== null) element('p', `Withdrawn: ${release.withdrawn}`, row);
+      if (release.withdrawn !== null) element('p', ownWithdrawal(release.withdrawn), row);
       else {
         const reason = document.createElement('input'); reason.placeholder = 'Reason for withdrawal'; reason.setAttribute('aria-label', `Reason for withdrawing ${release.slug} ${release.version}`); row.append(reason);
         button(row, 'Withdraw', 'withdraw-release', () => action('release_withdraw', {release: release.release, reason: reason.value}));
