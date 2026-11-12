@@ -148,7 +148,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   `wit/deps/<own slug>/` gives the own-provider message, not a WIT duplicate-package error; find
   why a fake-app publish takes about 30 s (close to `--wait 30`) and fix it if it is dev's.
   Touches: dev code and tests; pkg only for the own-slug case. Not app, not the spec documents.
-- [ ] **S32 Design: build on (step 5).** Sketch: like S26, spec documents only, then one independent
+- [~] **S32 Design: build on (step 5).** (branch `slice/s32`; foreman: see `Foremen`) like S26, spec documents only, then one independent
   review. Turns the step-5 outlines into designs: F-BUILD-1 to 4 and J5 across dev (`new --from`,
   `add --release`, DEV-F-39), pkg (origin in `mod.toml`), host, dist (derivatives), app (stage E,
   8.3, APP-F-41, 42, the `pick` request). Hand out after S29: it shares app and dist TECHNICAL.
@@ -236,6 +236,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29` (stopped, removed).
 - S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
 - S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33`.
+- S32: `56f5b095` (sessionId `56f5b095-5ed1-4f70-a1a6-fa2c02aa85ab`), worktree `.claude/worktrees/s32`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
