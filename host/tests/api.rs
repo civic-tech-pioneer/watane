@@ -352,3 +352,58 @@ async fn ac2_home_serves_existing_mods_and_ac3_keeps_quiet_updates() {
     assert_eq!(response.bytes().await.unwrap().as_ref(), b"updated page");
     home.stop();
 }
+
+#[tokio::test]
+async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
+    use axum::{Router, body::Bytes, extract::DefaultBodyLimit, routing::post};
+    let home = tempfile::tempdir().unwrap();
+    let host = watane_host::Host::open(
+        home.path(),
+        watane_host::Mode::Home { app: None },
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let extra = Router::new()
+        .route("/api/publish", post(|body: Bytes| async move { body }))
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024));
+    let served = host.serve(0, extra).await.unwrap();
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/publish", served.port);
+    let body: Vec<u8> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
+    let response = client.post(&url).body(body.clone()).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.bytes().await.unwrap().as_ref(), body);
+    let response = client
+        .post(&url)
+        .header("Origin", "null")
+        .body(body.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    let response = client
+        .post(&url)
+        .header("Host", "evil.example")
+        .body(body.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 421);
+    let response = client
+        .post(&url)
+        .header("Host", format!("missing.localhost:{}", served.port))
+        .body(body.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 404);
+    let response = client
+        .post(format!("http://127.0.0.1:{}/api/plan", served.port))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
+    served.shutdown().await;
+}

@@ -433,7 +433,10 @@ An update keeps the local name of the installed mod.
 ```
 
 `release` is the `ReleaseRef` text, or `null` for a local mod; the
-publisher is the release's. Slug, version, name, summary and origin are
+publisher is the release's. Recovery checks that its publisher and slug
+form the saved identity. It repacks release folders with source included,
+so a package that shipped source keeps the same hash (Q26). Local folders
+still use `pack(dir, false)`. Slug, version, name, summary and origin are
 read from `mods/<local>/` at open; they are not repeated here. Each write: serialize, write
 `installed.json.tmp`, `sync_all`, rename over `installed.json`, sync the
 directory. `generation` increases by one on each write.
@@ -1518,3 +1521,10 @@ Each answer below is used in this file.
   page's own mod. Delivering a provider event invokes the subscriber but
   does not forward the raw event to its pages. State changes still send
   `changed`, once per changed mod in the completed chain.
+
+- **Q26 (host)** Release packages may include source. Recovery uses
+  `pack(dir, true)` for a release record when comparing current and `.old`
+  folders with the committed package id. Files absent from a package remain
+  absent after unpack, so this also matches a release without source.
+  Recovery derives the publisher from the saved release and checks that
+  its publisher and slug form the saved identity.

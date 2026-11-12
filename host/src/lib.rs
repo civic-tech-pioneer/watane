@@ -20,7 +20,7 @@ pub use tools::{FunctionInfo, Handle, Token, TokenId, TokenInfo, ToolsetName};
 pub use catalog::{
     Change, GrantState, InstalledMod, LinkKind, LinkView, MissingProvider, Plan, PlanEntry, Source,
 };
-pub use error::{CallCode, CallError, HostError, Limit};
+pub use error::{CallCode, CallError, HostError, Limit, VerifyCheck};
 pub use harness::{EventRecord, Fakes, Harness, Outcome};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, atomic::AtomicBool},
 };
-pub use watane_pkg;
+pub use {watane_log, watane_pkg};
 
 pub const DEFAULT_PORT: u16 = 47341;
 
@@ -178,13 +178,9 @@ impl Host {
         self.commit_plan(plan, &[], port)
     }
     pub fn plan(&self, sources: Vec<Source>) -> Result<Plan, HostError> {
-        let folders = sources
-            .into_iter()
-            .map(|Source::Folder(p)| p)
-            .collect::<Vec<_>>();
         self.catalog.lock().unwrap().plan(
             self.home(),
-            &folders,
+            &sources,
             &self.engine,
             self.is_preview(),
             false,

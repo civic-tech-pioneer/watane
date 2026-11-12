@@ -1,6 +1,15 @@
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifyCheck {
+    Kind,
+    ReleaseBody,
+    PackageHash,
+    Mismatch,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
     #[error("home {} is busy", .0.display())]
@@ -17,6 +26,8 @@ pub enum HostError {
     Cycle(String),
     #[error("ambiguous provider: {0}")]
     AmbiguousProvider(String),
+    #[error("release verification {check:?}: {reason}")]
+    Verify { check: VerifyCheck, reason: String },
     #[error("invalid mod {input}: {reason}")]
     InvalidMod { input: String, reason: String },
     #[error("invalid name {value:?}: {rule}")]
@@ -45,6 +56,7 @@ pub enum HostError {
 impl HostError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::Verify { .. } => "verify",
             Self::Busy(_) => "busy",
             Self::StalePlan => "stale_plan",
             Self::NotDeclared { .. } => "not_declared",
@@ -76,7 +88,7 @@ impl HostError {
             | Self::MissingProviders(_)
             | Self::Cycle(_)
             | Self::AmbiguousProvider(_) => 409,
-            Self::InvalidMod { .. } => 422,
+            Self::InvalidMod { .. } | Self::Verify { .. } => 422,
             _ => 500,
         }
     }
@@ -88,6 +100,9 @@ impl HostError {
         }
         if let Self::Cycle(path) = self {
             value["cycle"] = json!(path.split(" -> ").collect::<Vec<_>>());
+        }
+        if let Self::Verify { check, .. } = self {
+            value["check"] = json!(check);
         }
         value
     }
@@ -191,4 +206,10 @@ fn missing_message(missing: &[crate::MissingProvider]) -> String {
         .map(|m| format!("{} at {} needed by {}", m.provider, m.version, m.needed_by))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+impl serde::Serialize for HostError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.json().serialize(serializer)
+    }
 }

@@ -1,4 +1,4 @@
-use crate::{HostError, LocalName, home};
+use crate::{HostError, LocalName, VerifyCheck, home};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -6,12 +6,19 @@ use std::{
     path::{Path, PathBuf},
 };
 use watane_pkg::{
-    Grant, InterfaceName, Mod, PackageId, Provider, PublisherKey, ReleaseRef, Slug, Version,
+    Grant, InterfaceName, Mod, Package, PackageId, Provider, PublisherKey, RELEASE_KIND, Release,
+    ReleaseRef, Slug, Version,
 };
 
+// The public source interface carries checked package and entry values directly.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Source {
     Folder(PathBuf),
+    Release {
+        package: Package,
+        entry: watane_log::Entry,
+    },
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -221,18 +228,19 @@ impl Catalog {
             if !names.insert(r.local.clone()) || !identities.insert(r.identity.clone()) {
                 return Err(bad("duplicate installed mod"));
             }
-            if r.release.is_some() {
-                return Err(bad("this preview supports only local mods"));
-            }
             let current = home.join("mods").join(r.local.as_ref());
             let old = current.with_extension("old");
             if old.is_dir()
-                && watane_pkg::pack(&current, false)
+                && watane_pkg::pack(&current, r.release.is_some())
                     .map(|p| p.id())
                     .ok()
                     .as_ref()
                     != Some(&r.package)
-                && watane_pkg::pack(&old, false).map(|p| p.id()).ok().as_ref() == Some(&r.package)
+                && watane_pkg::pack(&old, r.release.is_some())
+                    .map(|p| p.id())
+                    .ok()
+                    .as_ref()
+                    == Some(&r.package)
             {
                 if current.exists() {
                     home::remove_entry(&current)?;
@@ -249,12 +257,26 @@ impl Catalog {
         let mut mods = Vec::new();
         let mut components = BTreeMap::new();
         for r in disk.mods {
-            let slug: Slug = r
-                .identity
-                .strip_prefix("local/")
-                .ok_or_else(|| bad("nonlocal preview identity"))?
-                .parse()
-                .map_err(|_| bad("invalid preview identity"))?;
+            let (slug, publisher) = match &r.release {
+                Some(release) => {
+                    let provider = Provider {
+                        slug: release.slug.clone(),
+                        publisher: Some(release.publisher.clone()),
+                    };
+                    if r.identity != provider.to_string() {
+                        return Err(bad("installed identity differs from release"));
+                    }
+                    (release.slug.clone(), Some(release.publisher.clone()))
+                }
+                None => (
+                    r.identity
+                        .strip_prefix("local/")
+                        .ok_or_else(|| bad("nonlocal identity has no release"))?
+                        .parse::<Slug>()
+                        .map_err(|_| bad("invalid local identity"))?,
+                    None,
+                ),
+            };
             let dir = home.join("mods").join(r.local.as_ref());
             let mut installed = match preview_mod(&dir) {
                 Ok(m) if m.slug() == &slug => {
@@ -270,7 +292,7 @@ impl Catalog {
                 }
                 result => InstalledMod {
                     local: r.local,
-                    identity: r.identity,
+                    identity: r.identity.clone(),
                     slug: slug.clone(),
                     name: slug.to_string(),
                     summary: String::new(),
@@ -294,6 +316,9 @@ impl Catalog {
                     }),
                 },
             };
+            installed.identity = r.identity;
+            installed.publisher = publisher;
+            installed.release = r.release;
             installed.enabled = r.enabled;
             installed.grants = r.grants;
             installed.links = r.links;
@@ -310,7 +335,7 @@ impl Catalog {
     pub fn plan(
         &mut self,
         home: &Path,
-        folders: &[PathBuf],
+        sources: &[Source],
         engine: &wasmtime::Engine,
         preview: bool,
         harness: bool,
@@ -325,13 +350,63 @@ impl Catalog {
             }
         }
         let mut names: BTreeSet<_> = self.mods.iter().map(|m| m.local.clone()).collect();
-        for folder in folders {
-            let package = watane_pkg::pack(folder, false).map_err(|e| invalid(folder, e))?;
+        for source in sources {
+            let (package, release_body, release) = match source {
+                Source::Folder(folder) => (
+                    watane_pkg::pack(folder, false).map_err(|e| invalid(folder, e))?,
+                    None,
+                    None,
+                ),
+                Source::Release { package, entry } => {
+                    if entry.kind() != RELEASE_KIND {
+                        return Err(HostError::Verify {
+                            check: VerifyCheck::Kind,
+                            reason: format!("expected {RELEASE_KIND}, found {}", entry.kind()),
+                        });
+                    }
+                    let body = Release::decode(entry.body()).map_err(|e| HostError::Verify {
+                        check: VerifyCheck::ReleaseBody,
+                        reason: e.to_string(),
+                    })?;
+                    if body.package != package.id() {
+                        return Err(HostError::Verify {
+                            check: VerifyCheck::PackageHash,
+                            reason: format!(
+                                "release names {}, package is {}",
+                                body.package,
+                                package.id()
+                            ),
+                        });
+                    }
+                    let release = ReleaseRef {
+                        publisher: PublisherKey::from_bytes(*entry.author().as_bytes()),
+                        slug: body.slug.clone(),
+                        version: body.version.clone(),
+                    };
+                    (package.clone(), Some(body), Some(release))
+                }
+            };
+            let input = match source {
+                Source::Folder(folder) => folder.clone(),
+                Source::Release { .. } => PathBuf::from(release.as_ref().unwrap().to_string()),
+            };
+            let folder = input.as_path();
             let staging = Stage::new(home)?;
             let m = package
                 .unpack(&staging.0.join("mod"))
                 .map_err(|e| invalid(folder, e))?;
-            let identity = format!("local/{}", m.slug());
+            if let Some(body) = release_body {
+                body.check(&m, &package).map_err(|e| HostError::Verify {
+                    check: VerifyCheck::Mismatch,
+                    reason: e.to_string(),
+                })?;
+            }
+            let publisher = release.as_ref().map(|r| r.publisher.clone());
+            let identity = Provider {
+                slug: m.slug().clone(),
+                publisher: publisher.clone(),
+            }
+            .to_string();
             if !seen.insert(identity.clone()) {
                 return Err(invalid(folder, "twice in one plan"));
             }
@@ -346,6 +421,9 @@ impl Catalog {
             names.insert(local.clone());
             let unchanged = old.is_some_and(|m| m.package == package);
             let mut installed = view(&m, local, package);
+            installed.identity = identity.clone();
+            installed.publisher = publisher;
+            installed.release = release;
             let change = match old {
                 None => Change::New,
                 Some(_) if unchanged => Change::Unchanged,
@@ -371,9 +449,9 @@ impl Catalog {
                 name: installed.name.clone(),
                 summary: installed.summary.clone(),
                 version: installed.version.clone(),
-                publisher: None,
+                publisher: installed.publisher.clone(),
                 package: installed.package.clone(),
-                release: None,
+                release: installed.release.clone(),
                 origin: installed.origin.clone(),
                 change,
                 grants,

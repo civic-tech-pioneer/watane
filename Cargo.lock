@@ -6129,6 +6129,7 @@ dependencies = [
  "tokio-stream",
  "wasmtime",
  "wasmtime-wasi",
+ "watane-log",
  "watane-pkg",
  "wit-parser",
 ]

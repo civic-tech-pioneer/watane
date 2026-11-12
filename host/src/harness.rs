@@ -41,7 +41,7 @@ impl Harness {
         *host.fakes.lock().unwrap() = Some(fakes);
         let plan = host.catalog.lock().unwrap().plan(
             host.home(),
-            &[built_mod.to_path_buf()],
+            &[crate::Source::Folder(built_mod.to_path_buf())],
             &host.engine,
             true,
             true,

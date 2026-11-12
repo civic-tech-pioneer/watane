@@ -72,3 +72,5 @@ word for word. Follow their intent, and do not ask whether to.
 - Q24 (host, app, dev): S12a adds participant plans and confirmation, live grant checks, lifecycle management, app routes and tool metadata; disabled calls return 409 and pages return 404.
 
 - Q25 (host): S12b sends page events only to the emitter's pages; subscribers keep state-based changed messages.
+
+- Q26 (host): S21b keeps verified release metadata across restart; recovery includes shipped source when comparing release folders with the committed package.

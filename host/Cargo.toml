@@ -32,8 +32,13 @@ path = "tests/harness.rs"
 name = "mcp"
 path = "tests/mcp.rs"
 
+[[test]]
+name = "verify"
+path = "tests/verify.rs"
+
 [dependencies]
 watane-pkg = { path = "../pkg" }
+watane-log = { path = "../log" }
 axum = "0.8.9"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["sync"] }
