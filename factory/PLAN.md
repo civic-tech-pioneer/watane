@@ -108,14 +108,12 @@ Between steps 3 and 4.
   S24-2 1, S24-3 1. The `install_link` question was no security gap: the host asks consent for every
   new mod (`Change::New`); for a followed channel dist ignores the link's site URL and refreshes from
   the stored one, so the already-installed mod came back unchanged.
-- [~] **S30 The agent's publish texts read right.** (branch `slice/s30`; foreman: see `Foremen`) S24's
-  user-sim leftovers, dev only, one cheap test each: a null link prints `link: missing` in text
-  mode; after "run publish again to get the link", the rerun exits 1 and says to raise the version
-  (it should report the release and link); the `publish.local_dependency` next drops a non-default
-  `--home` and points at a provider that may already be published; the unused-provider message says
-  "remove" while its fix says "ask before deleting".
-  - Touches: dev only. Not app (consent requests from clients that stopped waiting pile up in the
-    app: later, with S27's files).
+- [x] **S30 The agent's publish texts read right.** Delivered 2026-11-12 (main `1a2097b`). Sol runs:
+  S30-1 1. Left for later (user-sim): once the provider is published, publishing the consumer still
+  refuses `local_dependency`, and no command depends on a release (step 5, `add --release`); its
+  message still says "it has no release"; the self-dependency fix still offers "Import the
+  provider's interface"; the `version_exists` rerun reports `dir` unresolved (/tmp vs /private/tmp);
+  a fake-app publish took about 30 s, close to `--wait 30`.
 - [x] **S25 Carol stays up to date.** Delivered 2026-11-12 (main `ff754cb`). Sol runs: S25-1 1. Refresh
   updates with no new grant quietly, with a new grant through consent; Alice withdraws with a reason
   and Carol sees it with an offer of the newest live version; a fork shows as compromised.
@@ -139,9 +137,11 @@ Between steps 3 and 4.
     has only the key (use `channel(index)` for "listed by Ivy"); error texts show raw 52-character
     keys; "invalid note: invalid character count" gives no limit.
   - Touches: app; dist only where the notes above need it. Not dev (S30, then S31).
-- [ ] **S31 The agent searches (dev stage 8).** `watane-dev search` (dev TECHNICAL 10, stage 8):
-  app status, `POST /api/search`, the result, a `next`; `fake-watane` answers `/api/search`;
-  DEV-S-33, 34. dev only; after S30 (both edit the command files). A cloud candidate.
+- [~] **S31 The agent searches (dev stage 8).** (branch `slice/s31`; foreman: see `Foremen`)
+  `watane-dev search` (dev TECHNICAL 10, stage 8): app status, `POST /api/search`, the result, a
+  `next`; `fake-watane` answers `/api/search`; DEV-S-33, 34. Also (S30): pkg gives the own-provider
+  case its own message (about one line), and dev drops its own `wit/world.wit` reader for it (about
+  45 lines). Touches: dev, pkg. Not app (S29).
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -220,7 +220,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26` (stopped, removed).
 - S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27` (stopped, removed).
 - S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28` (stopped, removed).
-- S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30`.
+- S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30` (stopped, removed).
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -234,6 +234,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S30: `publish.version_exists` keeps its code and exit 1; the release and link go into `result`
+  (2.3 allows a result on a failure). `local_dependency` does not query the app (DEV-S-30: the host
+  receives no request). `link: none yet` applies to publish's link only; the global `null ->
+  missing` rule stays.
 - S28 (validator escalation): a listed channel is read from every listed base (at most 4) on each
   read, the best outcome wins, any `Current` sets `last_success`, and the base with the highest head
   moves to the front. Stopping at the first `Current` let a stale mirror hide a withdrawal. Up to 4
@@ -537,6 +541,9 @@ The human may veto each one.
   denies (S24 forced with a lease, S28 was denied): foremen push only after the delivery rebase.
 - S28: running dependent tasks ahead of their dependency's validation, each in its own worktree,
   saved about one validator round per task; the rebases were clean.
+- S30: dev's `doctor::ac6_real_preview_home_is_running_without_app` panics without `WATANE_BIN`; the
+  foreman skill's `--include-ignored` step should say to set it. `ac10_endless_test` took 7.85 s
+  against its 7 s bound under parallel builds.
 
 ## Digest
 
@@ -608,3 +615,5 @@ The human may veto each one.
   offers read plainly, the offer names the new grant, and the mods list shows each version.
 - S28: Carol's dist chooses Ivy's index from its link and searches it; hits are verified from the
   publisher's channel and say which index listed them.
+- S30: Bob's agent reads true publish and check texts: the rerun reports the existing release and
+  link, `--home` survives in `next`, and the unused-provider message names what is unused.
