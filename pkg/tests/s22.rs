@@ -95,3 +95,17 @@ fn ac6_s22_other_repeated_contexts() {
         assert_eq!(message.matches(word).count(), 1, "{message}");
     }
 }
+
+#[test]
+fn s22_single_file_deps_are_separate_packages() {
+    // 6.1 allows wit/deps/<s>.wit; each such file is its own package, as push_dir read it.
+    let dir = support::hello();
+    for (file, text) in [
+        ("wit/deps/a.wit", "package wasi:a@0.1.0;\ninterface x {}\n"),
+        ("wit/deps/b.wit", "package wasi:b@0.1.0;\ninterface y {}\n"),
+    ] {
+        fs::create_dir_all(dir.path().join("wit/deps")).unwrap();
+        fs::write(dir.path().join(file), text).unwrap();
+    }
+    Mod::read(dir.path()).unwrap();
+}

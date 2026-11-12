@@ -179,9 +179,14 @@ pub(crate) fn read(
         for (file, bytes) in &checked {
             let path = dir.join(file);
             let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
-            maps.entry(path.parent().unwrap_or(dir).to_path_buf())
-                .or_default()
-                .push(&path, text);
+            // As push_dir: each wit/deps/<s>.wit is its own package; a directory is one.
+            let parent = path.parent().unwrap_or(dir);
+            let key = if parent == dir.join("wit/deps") {
+                path.clone()
+            } else {
+                parent.to_path_buf()
+            };
+            maps.entry(key).or_default().push(&path, text);
         }
         let mut groups = Vec::new();
         let mut sources = BTreeMap::new();
