@@ -1300,4 +1300,34 @@ mod find_integration_tests {
         );
         assert!(api["publisher"]["key"].is_string());
     }
+    #[test]
+    fn regress_s29_own_index_counts_listed_mods() {
+        // APP-F-38: each index row shows the number of mods it lists. Carol
+        // lists Alice's reading-list in her own index; her own row must count it.
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
+        alice.publish(package()).unwrap();
+        let carol_home = tempfile::tempdir().unwrap();
+        let carol = open(&carol_home);
+        carol.follow(&alice.own_link(None).unwrap()).unwrap();
+        carol
+            .list(
+                &alice
+                    .own_link(Some(&"reading-list".parse().unwrap()))
+                    .unwrap(),
+                "Books",
+            )
+            .unwrap();
+        let rows = index_rows(
+            &carol.own().unwrap(),
+            carol.indexes().unwrap(),
+            &Default::default(),
+            &Parties::new(),
+        );
+        assert_eq!(rows[0]["own"], true);
+        assert_eq!(rows[0]["listings"].as_array().unwrap().len(), 1);
+        assert_eq!(rows[0]["mods"], 1, "{}", rows[0]);
+    }
 }
