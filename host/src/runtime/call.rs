@@ -412,7 +412,7 @@ struct Delivery {
 struct Publication {
     job: Arc<Job>,
     // Emitted event messages are included only if they survive the limits.
-    messages: Vec<(Option<Arc<AtomicBool>>, String)>,
+    messages: Vec<(Arc<AtomicBool>, String)>,
 }
 impl Deliveries {
     fn enqueue(&self, invocation: &Invocation, events: &[EventRecord], changed: bool) {
@@ -427,7 +427,7 @@ impl Deliveries {
         for event in events {
             let accepted = Arc::new(AtomicBool::new(false));
             messages.push((
-                Some(accepted.clone()),
+                accepted.clone(),
                 crate::bus::event_message(&invocation.local, event),
             ));
             emitter.events.push_back(Delivery {
@@ -482,7 +482,7 @@ impl Deliveries {
                         && publication.job.changed.lock().unwrap().remove(local);
                     let sender = host.bus.publication();
                     for (accepted, message) in publication.messages {
-                        if accepted.is_none_or(|flag| flag.load(Ordering::Acquire)) {
+                        if accepted.load(Ordering::Acquire) {
                             let _ = sender.send((local.clone(), message.into()));
                         }
                     }
