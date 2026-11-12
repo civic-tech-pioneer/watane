@@ -518,6 +518,10 @@ set (`NoSiteUrl`). The route never answers a confirmation: only
 `consent_answer` and the `Destroyed` handler call `Broker::answer`
 (APP-F-13).
 
+For `ModError::Invalid`, the 422 message drops a violation text's leading
+file name, which the location already gives, so the file is named once:
+`the mod breaks 1 rule(s): [component] logic.wasm: is not a WebAssembly component`.
+
 ### 8.1.1 `GET /api/releases` (step 3)
 
 In `spawn_blocking`: read `dist.own().releases` in seq order. Answer 200
@@ -532,9 +536,6 @@ No dist handle gives 503 `unavailable`, with message `dist did not open`.
 Other read failures give 500 `unavailable` with the cause. Other methods
 return 405, `Allow: GET`, and `bad_request` with message `use GET`, as host's
 built-in API routes do (HEAD has no response body).
-
-For a corrupt component body, the publish 422 diagnostic names the package
-file once: `the mod breaks 1 rule(s): [component] logic.wasm: is not a WebAssembly component`.
 
 ### 8.2 `POST /api/search` (step 4)
 
