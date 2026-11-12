@@ -122,15 +122,9 @@ Between steps 3 and 4.
     argument error as `: failed`. The template guide is at its 143-line cap: cut before adding.
   - Touches: dev, host (consent wait), dist, `app/src/api.rs`, new app test files. Not
     `app/src/core.rs`, `app/src/commands.rs` or `app/ui/` (S25).
-- [~] **S25 Carol stays up to date.** (branch `slice/s25`; foreman: see `Foremen`) The half of J4 that is designed (no index): Carol has Alice's
-  mod; Alice releases 0.2.0 with no new grant, and Carol's refresh updates it without a question
-  (APP-F-39, HOST-F-27); 0.3.0 asks for a new grant, and Carol sees the plan in the consent view;
-  Alice withdraws a version in her app with a reason (DIST-F-15, APP-F-33), and Carol's app tells
-  her and offers the newest version that is not withdrawn (APP-F-40); a second statement at a used
-  position shows Alice's channel as compromised (APP-F-37, DIST-F-26).
-  - Touches: app (`core.rs` refresh, `commands.rs`, `ui/`, a withdraw command, its capability and
-    `static_config` lists), host only if the update path needs it. Not dev.
-  - Leaves out: indexes and search (waiting on the human).
+- [x] **S25 Carol stays up to date.** Delivered 2026-11-12 (main `ff754cb`). Sol runs: S25-1 1. Refresh
+  updates with no new grant quietly, with a new grant through consent; Alice withdraws with a reason
+  and Carol sees it with an offer of the newest live version; a fork shows as compromised.
 - [~] **S26 Design: indexes and search (step 4).** Delivered 2026-11-12, waiting on the human's review (branch `slice/s26`). The
   human approved a design slice (2026-11-12). Its product is a spec draft for the human to review;
   nothing is built for real, and the PO does not merge it until the human approves.
@@ -146,10 +140,17 @@ Between steps 3 and 4.
   - Touches: spec documents only. S24 and S25 may edit other sections of the same documents.
   - Starting point (PO): an index is a channel whose statements list releases and other indexes;
     includes one level deep; search over verified, followed indexes; no shipped index at first.
-- [ ] **S27 A second app on a busy port.** `watane-app --home B` while another app holds 47341:
-  the app stays open with no local API and no message, and writes no `run.json` (found in the
-  demo). It should say the port is in use and how to pick another (`--port`, `WATANE_PORT`).
-  `app/src/lib.rs`; after S25 (which registers a command there).
+- [~] **S27 The app says what happened.** (branch `slice/s27`; foreman: see `Foremen`)
+  - A second app on a busy port: `watane-app --home B` while another app holds 47341 stays open with
+    no local API and no message, and writes no `run.json` (found in the demo). It should say the
+    port is in use and how to pick another (`--port`, `WATANE_PORT`).
+  - S25 user-sim notes: Alice's own withdrawn release says "by the publisher"; an empty or too-long
+    reason gives "invalid reason: invalid character count"; the update consent heading says
+    "Install 1 mod(s)"; a decline reads "Update to 0.3.0 failed: install was not approved"; after a
+    restart the decline notice is gone but "Install 0.3.0" stays without naming the new grant; the
+    mods list shows no installed version outside Details.
+  - Touches: app (`src/lib.rs`, `src/core.rs`, `src/commands.rs`, `src/consent.rs`, `ui/`). Not
+    `app/src/api.rs` or dev, dist, host (S24).
 
 ## Stage coverage
 
@@ -184,7 +185,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
-| app | D find | 4 | open: S25 takes APP-F-37, 39, 40; APP-F-38 waits on the index design |
+| app | D find | 4 | part (S25: APP-F-37, 39, 40); APP-F-38 waits on the index design (S26) |
 | app | E build on | 5 | open |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
@@ -219,7 +220,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b` (stopped, removed).
 - S21c: `d7c44cac` (sessionId `d7c44cac-2e5d-4889-86c2-0f58fd762649`), worktree `.claude/worktrees/s21c` (stopped, removed).
 - S24: `914583bf` (sessionId `914583bf-3f00-4827-a975-2cfb3569557b`), worktree `.claude/worktrees/s24`.
-- S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25`.
+- S25: `dd222b8a` (sessionId `dd222b8a-1ffd-4037-a0d3-be25b4c43145`), worktree `.claude/worktrees/s25` (stopped, removed).
 - S26: `cf5f9224` (sessionId `cf5f9224-c1de-440a-bacf-ab19ed939ca5`), worktree `.claude/worktrees/s26`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -350,6 +351,12 @@ The human may veto each one.
   plus it (app TECHNICAL 13). dev `publish` checks local providers, host status, the pipeline,
   pack, then posts. DEV-S-31 for a logic mod is `slow:`; the default suite proves `--no-source`
   with a page-only package. The template guide does not mention publish (cap; `--help` covers it).
+- S25: refresh notices and offers are derived from dist's ChannelView each time, not stored (only
+  "Update to X failed" is kept, in memory). An update starts only on a `Change::Release` in that
+  refresh, for the newest live version; a declined update is not asked again. The offer is the
+  newest live version even when it is a downgrade, quiet when it adds no grant. A compromised
+  channel gets no automatic update. Updates run in their own tasks; a refresh never waits on
+  consent. New commands `release_install`, `release_withdraw`; `status.identity.releases`.
 
 ## Friction
 
@@ -499,6 +506,8 @@ The human may veto each one.
   window-test flakes showed only in the foreman's serial full run, after acceptance (one fix task).
 - S21c: `scripts/vendor.sh` is at `dev/scripts/vendor.sh` (hand-out prompts named the wrong path).
   The user-sim died once on an API ENOTFOUND; resuming it worked.
+- S21b, S25: Sol's sandbox cannot run the macOS window tests (S25 ran them on Linux in Docker); the
+  validator is the first to run them on macOS (2x).
 
 ## Digest
 
@@ -560,3 +569,5 @@ The human may veto each one.
   is refused with its cause and URL, and nothing is installed (J3 passes in `app/tests/j3.rs`).
 - S21c: Bob's coding agent runs `watane-dev publish --json`; Bob approves "Sign a release" in his app
   and the agent gets the release, site and link; Alice installs from that link (step 3 done).
+- S25: Carol's refresh updates Alice's mod quietly or through consent when it asks for a new grant;
+  a withdrawal shows Alice's reason and offers the newest live version; a fork shows as compromised.
