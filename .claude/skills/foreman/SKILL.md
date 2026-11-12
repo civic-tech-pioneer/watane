@@ -24,6 +24,8 @@ Slice: <id> — <story>
 ## Spec            the sections to follow (file and section numbers), not copies of them
 ## Interface       what this task provides to / takes from a sibling: exact names and types (fixed)
 ## Files           the files this task may touch
+## Changed tests   each existing test (file and name) that asserts a behaviour this task changes,
+                   and what it asserts after; "none" only after you searched the tests, slow ones too
 ## Out of scope    what a later slice does
 ```
 Effort for Sol 6.1. Write `medium` unless a rule below says otherwise; `high` is the exception,

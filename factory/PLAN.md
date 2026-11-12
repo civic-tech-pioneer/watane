@@ -131,7 +131,7 @@ Between steps 3 and 4.
   - Touches: app (`core.rs` refresh, `commands.rs`, `ui/`, a withdraw command, its capability and
     `static_config` lists), host only if the update path needs it. Not dev.
   - Leaves out: indexes and search (waiting on the human).
-- [~] **S26 Design: indexes and search (step 4).** (branch `slice/s26`; foreman: see `Foremen`) The
+- [~] **S26 Design: indexes and search (step 4).** Delivered 2026-11-12, waiting on the human's review (branch `slice/s26`). The
   human approved a design slice (2026-11-12). Its product is a spec draft for the human to review;
   nothing is built for real, and the PO does not merge it until the human approves.
   - Decide and write the four open points of spec/TECHNICAL 9: the statements of an index (W15's
@@ -225,14 +225,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- Step 4 design (spec/TECHNICAL 9 lists it as "not designed yet"): the statements of an index, how
-  deep includes go, search by interface, and whether watane ships with a first index. These are
-  formats on the wire and on disk, so they are yours. Recommendation: a design slice where a foreman
-  drafts the index statements in `dist` (an index is a channel whose statements list releases or
-  other indexes; includes one level deep; search by text, publisher and interface over the
-  verified, followed indexes; no shipped index in the first version), with a thin spike behind
-  it, and you review the draft before it is built for real. Cost to undo: a spec draft only.
-  Meanwhile S25 builds the half of J4 that needs no index.
+- Step 4 design: S26 delivered a spec draft on `slice/s26` (not merged; worktree kept for
+  revisions). Review it; the foreman marks decisions 2 (a listing names a mod, never a version),
+  4 (includes one level deep), 8 (no shipped index) and 10 (hostile-index defences) as most worth a
+  veto, plus Q12 (log entries of unlisted channels are never removed). Merge after approval;
+  rejecting it also undoes spec/README rule 3 ("design up to step 4"). Expect merge conflicts with
+  S25 in app TECHNICAL 7, 9, 11 and `app/tests/j4.rs`.
 
 - Process change (friction 3x: S9, S15, S21a): a brief that changes a behaviour must name each
   existing test that asserts the old one, and say it changes. One line in the foreman skill's
