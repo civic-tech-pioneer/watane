@@ -143,6 +143,19 @@ Between steps 3 and 4.
   `search --help` lists the global `--dir`, which search ignores; a hand-made `wit/deps/<own slug>/`
   hides the own-provider message behind a WIT duplicate-package error; the default home in `next`
   shows `/tmp` where an explicit `--home` shows `/private/tmp`.
+- [~] **S33 The agent's texts, second pass.** (branch `slice/s33`; foreman: see `Foremen`) Bob's
+  coding agent gets a fitting `next` from each dev command in the S30 and S31 leftovers: `next` and
+  `dir` show the same resolved path for a default and an explicit `--home` (/tmp vs /private/tmp);
+  a 503 or other app error from search gets a fix that names the app, not "Correct the reported host
+  error"; `search --help` does not list `--dir` (or search honours it); a hand-made
+  `wit/deps/<own slug>/` gives the own-provider message, not a WIT duplicate-package error; find
+  why a fake-app publish takes about 30 s (close to `--wait 30`) and fix it if it is dev's.
+  Touches: dev code and tests; pkg only for the own-slug case. Not app, not the spec documents.
+- [ ] **S32 Design: build on (step 5).** Sketch: like S26, spec documents only, then one independent
+  review. Turns the step-5 outlines into designs: F-BUILD-1 to 4 and J5 across dev (`new --from`,
+  `add --release`, DEV-F-39), pkg (origin in `mod.toml`), host, dist (derivatives), app (stage E,
+  8.3, APP-F-41, 42, the `pick` request). Hand out after S29: it shares app and dist TECHNICAL.
+  Escalate only formats that are hard to revert once published (change, alternatives, consequences).
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -225,6 +238,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30` (stopped, removed).
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29`.
 - S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
+- S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
