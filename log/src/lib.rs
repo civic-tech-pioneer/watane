@@ -139,7 +139,7 @@ impl Log {
         let author =
             PublicKey::from_bytes(key.verifying_key().as_bytes()).expect("generated public key");
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        if matches!(store::status(&tx, &author)?, Status::Compromised(_)) {
+        if matches!(store::fork(&tx, &author)?, Status::Compromised(_)) {
             return Err(Error::Compromised(author));
         }
         if !store::confirmed(&tx, &author)? {
@@ -174,7 +174,7 @@ impl Log {
         let tx = inner
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let status = store::status(&tx, author)?;
+        let status = store::fork(&tx, author)?;
         if matches!(status, Status::Compromised(_)) {
             return Ok(Ingest {
                 stored: vec![],
@@ -221,7 +221,7 @@ impl Log {
             stored.push(e.id());
             head = Some(e.clone());
         }
-        let status = store::status(&tx, author)?;
+        let status = store::fork(&tx, author)?;
         tx.commit()?;
         Ok(Ingest {
             stored,

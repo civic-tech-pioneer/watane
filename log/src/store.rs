@@ -137,6 +137,10 @@ pub(crate) fn status(db: &Connection, author: &PublicKey) -> Result<Status, Erro
     while let Some(r) = rows.next()? {
         row(author, r)?;
     }
+    fork(db, author)
+}
+// The fork row alone, with its read check: the write paths need no scan of the channel.
+pub(crate) fn fork(db: &Connection, author: &PublicKey) -> Result<Status, Error> {
     let proof: Option<(Vec<u8>, Vec<u8>)> = db
         .query_row(
             "SELECT chain,other FROM forks WHERE author=?1",

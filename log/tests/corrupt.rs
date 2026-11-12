@@ -34,3 +34,22 @@ fn ac8_unsupported_schema_leaves_file_unchanged() {
     );
     assert_eq!(std::fs::read(path).unwrap(), before);
 }
+#[test]
+fn ac3_status_checks_entries_below_the_head() {
+    let d = oracle::directory();
+    let l = Log::open(d.path()).unwrap();
+    let e = l.append("a", b"").unwrap();
+    l.append("a", b"").unwrap();
+    let db = rusqlite::Connection::open(d.path().join("channels.db")).unwrap();
+    db.execute_batch("DROP TRIGGER entries_no_update").unwrap();
+    let mut raw = e.bytes().to_vec();
+    let last = raw.len() - 1;
+    raw[last] ^= 1;
+    db.execute("UPDATE entries SET raw=?1 WHERE seq=0", [raw])
+        .unwrap();
+    assert_eq!(l.head(&e.author()).unwrap().unwrap().seq, 1);
+    assert!(matches!(
+        l.status(&e.author()).unwrap_err(),
+        Error::CorruptStore{author,seq:0,..} if author==e.author()
+    ));
+}
