@@ -56,6 +56,35 @@ fn regress_s12b_no_host_next_repeats_install() {
     );
 }
 
+/// With no app and `--dir`, install's `next` drops the `--dir`: run from where the agent was,
+/// it fails with `usage.not_a_mod` instead of installing the mod once the app runs.
+#[test]
+fn regress_s12b_no_host_next_keeps_dir() {
+    let home = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let mod_dir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(elsewhere.path())
+        .args(["install", "--json", "--home"])
+        .arg(home.path())
+        .arg("--dir")
+        .arg(mod_dir.path())
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["errors"][0]["code"], "env.host_not_running",
+        "{value}"
+    );
+    let next = value["next"].as_str().unwrap_or("");
+    let dir = mod_dir.path().canonicalize().unwrap();
+    assert!(
+        next.contains("--dir") && next.contains(dir.to_str().unwrap()),
+        "next should keep --dir {} so it runs from any folder, got {next:?}",
+        dir.display()
+    );
+}
+
 #[cfg(feature = "fake-host")]
 mod fake {
     use super::*;
