@@ -8,9 +8,6 @@
 # task that ran before first moves the old files to <task>.<n>.*, so no log is lost.
 set -u
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"  # rustup's cargo (has wasm32-wasip2) before Homebrew's
-# ~/.cargo/config.toml wraps rustc in sccache. Start its server here, outside Codex's sandbox: a server
-# started inside would inherit the sandbox and could not write another worktree's target/. Never idles out.
-command -v sccache >/dev/null && SCCACHE_IDLE_TIMEOUT=0 sccache --start-server >/dev/null 2>&1
 F=$(cd "$(dirname "$0")" && pwd); W=$(dirname "$F")
 G=$(git -C "$W" rev-parse --path-format=absolute --git-common-dir); GD=$(git -C "$W" rev-parse --absolute-git-dir)
 R=$(dirname "$G")/factory/runs

@@ -131,6 +131,25 @@ Between steps 3 and 4.
   - Touches: app (`core.rs` refresh, `commands.rs`, `ui/`, a withdraw command, its capability and
     `static_config` lists), host only if the update path needs it. Not dev.
   - Leaves out: indexes and search (waiting on the human).
+- [~] **S26 Design: indexes and search (step 4).** (branch `slice/s26`; foreman: see `Foremen`) The
+  human approved a design slice (2026-11-12). Its product is a spec draft for the human to review;
+  nothing is built for real, and the PO does not merge it until the human approves.
+  - Decide and write the four open points of spec/TECHNICAL 9: the statements of an index (W15's
+    new kinds, their bodies), how deep includes go, search by text, publisher and interface, and
+    whether watane ships with a first index. Also freshness marks (DIST-F-42) and how J4's Carol
+    "chooses an index".
+  - Write them where the facts live: spec/TECHNICAL 9 (and W15), dist FUNCTIONAL and TECHNICAL
+    (stage S6, its tests), app TECHNICAL 8.2 and APP-F-38, dev TECHNICAL 10 (`search`). Name the
+    J4 test and each stage's "Done when".
+  - For each choice: the options, the pick, why, and the cost to undo. List what is on the wire or
+    on disk. Throwaway spikes outside the repo are fine; no Sol and no user-sim: the human reviews.
+  - Touches: spec documents only. S24 and S25 may edit other sections of the same documents.
+  - Starting point (PO): an index is a channel whose statements list releases and other indexes;
+    includes one level deep; search over verified, followed indexes; no shipped index at first.
+- [ ] **S27 A second app on a busy port.** `watane-app --home B` while another app holds 47341:
+  the app stays open with no local API and no message, and writes no `run.json` (found in the
+  demo). It should say the port is in use and how to pick another (`--port`, `WATANE_PORT`).
+  `app/src/lib.rs`; after S25 (which registers a command there).
 
 ## Stage coverage
 
