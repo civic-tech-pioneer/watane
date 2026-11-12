@@ -675,7 +675,7 @@ fn ac7a_successful_serve_gives_own_page_or_null() {
     assert_eq!(
         v["next"],
         format!(
-            "Give the person this page: {}. The MCP url and token are new. Set or update your agent's MCP config with result.mcp.url and result.mcp.token (see AGENTS.md, \"MCP tools for your agent\").",
+            "The MCP url and token are new. Set or update your agent's MCP config with result.mcp.url and result.mcp.token (see AGENTS.md, \"MCP tools for your agent\"). Give the person this page: {}",
             v["result"]["pages"][0]["url"].as_str().unwrap()
         )
     );

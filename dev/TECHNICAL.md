@@ -122,9 +122,10 @@ watane-dev [--json] [--dir <path>] <command>
 - `--wait` defaults to 600 seconds: the time that the participant has to
   answer in the app.
 - With `--json`, standard output holds exactly one JSON object and a
-  newline. Standard error may hold progress lines, for people only. Before each
-  release or unit cargo build, write `building <slug> (the first build takes a
-  minute or more)` to stderr; stdout remains the single result object.
+  newline. Standard error may hold progress lines, for people only. Before
+  release compilation, write one `building <slug>` line to stderr.
+  Unit compilation adds no line; cold and warm builds use the same text
+  without a timing hint. stdout remains the single result object.
 - Without `--json`, dev prints text for people (2.3). The text is not a
   contract.
 
@@ -226,6 +227,13 @@ answers; message `the preview at <page url> still serves the previous build`
 fix `Fix the errors, then run: watane-dev serve --json`). Warnings never
 change `ok` or the exit status.
 
+For a violation in managed `deps.json`, `wit/deps/` or `.watane-dev.json`,
+the fix names an author action rather than telling the agent to edit that
+file. For an unused provider: import its interface in `wit/world.wit`, or
+ask before deleting `wit/deps/<slug>/` and `mods:<slug>` from `deps.json`.
+There is no dependency-removal command today. Other managed dependency
+violations point to `watane-dev add <provider folder>` to refresh the files.
+
 ### 2.3 Text output
 
 For each error: `error[<code>]: <message>`, then `  --> <file>:<line>:<column>`
@@ -234,10 +242,15 @@ Then one line `<command>: ok` or `<command>: failed`, the main fields of
 `result` as `key: value` lines, and `next: <next>`.
 Nested objects emit one line per field with dotted keys (for example
 `allowlist.vendor: /abs/vendor`, `toolchain.wasm32_wasip2: true`). Lists
-join their values with `, `; an empty list prints `none` (for example,
+of objects emit indexed dotted keys, one field per line (for example,
+`pages.0.slug: x`, `pages.0.url: http://x.localhost/`). Lists of plain values
+join with `, `; an empty list prints `none` (for example,
 `calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
 are added to these values.
+Argument errors use the first known subcommand name found in the arguments
+for `<command>`, or `watane-dev` if none is found; JSON uses the same name.
+They end with `<command>: failed`, never a blank command name.
 
 ### 2.4 The result of each command
 
@@ -302,9 +315,12 @@ dev preserves the line, column and the specific WIT file.
 first); `url` is null for a mod with no page. The token reaches the tools
 as `Authorization: Bearer <token>`. On success, `next` is
 `Give the person this page: <url>`, using the served mod's own (last)
-`pages` entry. With `reused: false`, append: `The MCP url and token are new.
+`pages` entry, with no punctuation after the URL. With `reused: false`,
+prepend: `The MCP url and token are new.
 Set or update your agent's MCP config with result.mcp.url and result.mcp.token
-(see AGENTS.md, "MCP tools for your agent").` This MCP instruction is also
+(see AGENTS.md, "MCP tools for your agent").` In text mode the keys are
+`mcp.url` and `mcp.token`; JSON mode keeps `result.mcp.*`. This MCP instruction
+is also
 returned when the mod has no page. With `reused: true`, the page instruction
 is unchanged, or null when the mod has no page. On failure with an
 `env.*` first error, `next` is `watane-dev doctor --json`; other test
@@ -808,12 +824,12 @@ the build, so a failed build leaves none.
 
 ### 6.4 Cargo
 
-Before each release and unit compilation, dev writes one progress line to
-stderr: `building <slug> (the first build takes a minute or more)`. This
-also applies to warm builds; no progress goes to stdout. Both builds use
-`builder::compile`, whose subprocess test
-`ac1_release_and_unit_build_progress_stays_on_stderr` proves the two lines
-and unchanged stdout without compiling a mod.
+Before release compilation, dev writes one progress line to stderr:
+`building <slug>`. Unit compilation adds no line, so the release-plus-unit
+pipeline prints once per mod. The rule is identical for cold and warm
+builds and makes no first-build timing claim. Both builds use
+`builder::compile`; `ac1_release_and_unit_build_progress_stays_on_stderr`
+proves the single line and unchanged stdout without compiling a mod.
 
 All cargo runs use one command builder, `builder::cargo(...)`:
 

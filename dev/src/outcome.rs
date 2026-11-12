@@ -259,6 +259,12 @@ fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
         for (field, value) in fields {
             text_fields(&format!("{key}.{field}"), value, text);
         }
+    } else if let serde_json::Value::Array(items) = value
+        && items.iter().any(serde_json::Value::is_object)
+    {
+        for (index, item) in items.iter().enumerate() {
+            text_fields(&format!("{key}.{index}"), item, text);
+        }
     } else {
         text.push_str(&format!("{key}: {}\n", text_value(value)));
     }
@@ -279,6 +285,19 @@ mod tests {
         let mut out = Outcome::new("check", None);
         out.result = Some(serde_json::json!({"calls": []}));
         assert_eq!(out.to_text(), "check: ok\ncalls: none\n");
+    }
+
+    #[test]
+    fn ac4_object_lists_use_indexed_dotted_keys() {
+        let mut out = Outcome::new("serve", None);
+        out.result = Some(serde_json::json!({
+            "pages": [{"slug": "x", "url": "http://x.localhost/"}, {"slug": "y", "url": null}],
+            "providers": [], "grants": ["storage", "call"]
+        }));
+        assert_eq!(
+            out.to_text(),
+            "serve: ok\ngrants: storage, call\npages.0.slug: x\npages.0.url: http://x.localhost/\npages.1.slug: y\npages.1.url: missing\nproviders: none\n"
+        );
     }
 
     #[test]

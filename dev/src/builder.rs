@@ -296,7 +296,9 @@ pub(crate) fn compile(
     fs::File::open(copy.join("logic/src/lib.rs"))
         .and_then(|file| file.set_modified(SystemTime::now()))
         .map_err(|e| vec![Problem::internal(e)])?;
-    eprintln!("building {slug} (the first build takes a minute or more)");
+    if args[0] == "build" {
+        eprintln!("building {slug}");
+    }
     let output = cargo(ctx, copy, args)
         .output()
         .map_err(|e| vec![Problem::internal(e)])?;
@@ -549,7 +551,7 @@ mod tests {
         assert!(output.status.success(), "{output:?}");
         assert_eq!(
             String::from_utf8(output.stderr).unwrap(),
-            "building counter (the first build takes a minute or more)\nbuilding counter (the first build takes a minute or more)\n"
+            "building counter\n"
         );
         // libtest writes its own preamble; the rest of stdout is the one result object.
         let stdout = String::from_utf8(output.stdout).unwrap();

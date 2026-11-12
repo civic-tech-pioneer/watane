@@ -72,3 +72,25 @@ fn ac2_check_repairs_host_wit() {
         watane_host::HOST_WIT
     );
 }
+
+#[test]
+fn ac3_unused_provider_fix_respects_managed_files() {
+    let t = tempfile::tempdir().unwrap();
+    for slug in ["consumer", "provider"] {
+        assert_eq!(run(t.path(), &["new", slug, "--json"]).0, 0);
+    }
+    let dir = t.path().join("consumer");
+    assert_eq!(run(&dir, &["add", "../provider", "--json"]).0, 0);
+    let (code, value) = run(&dir, &["check", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    let error = value["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|error| error["file"] == "deps.json")
+        .unwrap();
+    assert_eq!(
+        error["fix"],
+        "Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/provider/ and mods:provider from deps.json"
+    );
+}

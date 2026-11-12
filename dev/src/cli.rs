@@ -147,7 +147,7 @@ pub fn run(cli: Cli) -> Outcome {
     match result {
         Ok(v) => {
             if name == "serve" {
-                outcome.next = serve_next(&v);
+                outcome.next = serve_next(&v, cli.json);
             }
             outcome.result = Some(v);
             if name == "new" {
@@ -171,7 +171,7 @@ pub fn run(cli: Cli) -> Outcome {
     }
 }
 
-fn serve_next(result: &serde_json::Value) -> Option<String> {
+fn serve_next(result: &serde_json::Value, json: bool) -> Option<String> {
     if result["stopped"] == true {
         return Some(
             "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
@@ -182,8 +182,14 @@ fn serve_next(result: &serde_json::Value) -> Option<String> {
         .as_str()
         .map(|url| format!("Give the person this page: {url}"));
     if result["reused"] == false {
-        let setup = "The MCP url and token are new. Set or update your agent's MCP config with result.mcp.url and result.mcp.token (see AGENTS.md, \"MCP tools for your agent\").";
-        Some(page.map_or_else(|| setup.into(), |page| format!("{page}. {setup}")))
+        let prefix = if json { "result." } else { "" };
+        let setup = format!(
+            "The MCP url and token are new. Set or update your agent's MCP config with {prefix}mcp.url and {prefix}mcp.token (see AGENTS.md, \"MCP tools for your agent\")."
+        );
+        Some(match page {
+            Some(page) => format!("{setup} {page}"),
+            None => setup,
+        })
     } else {
         page
     }
@@ -506,12 +512,30 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn ac2_serve_next_url_is_last_and_mcp_keys_match_mode() {
+        let result = json!({"reused": false, "pages": [{"url": "http://demo.localhost:7/"}]});
+        for json in [false, true] {
+            let next = serve_next(&result, json).unwrap();
+            let prefix = if json { "result." } else { "" };
+            assert_eq!(
+                next,
+                format!(
+                    "The MCP url and token are new. Set or update your agent's MCP config with {prefix}mcp.url and {prefix}mcp.token (see AGENTS.md, \"MCP tools for your agent\"). Give the person this page: http://demo.localhost:7/"
+                )
+            );
+        }
+    }
+
+    #[test]
     fn ac2_new_preview_next_includes_page_and_mcp_setup() {
-        let next = serve_next(&json!({
-            "reused": false,
-            "pages": [{"url": "http://demo.localhost:7/"}],
-            "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_new"}
-        }))
+        let next = serve_next(
+            &json!({
+                "reused": false,
+                "pages": [{"url": "http://demo.localhost:7/"}],
+                "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_new"}
+            }),
+            true,
+        )
         .unwrap();
         for text in [
             "Give the person this page: http://demo.localhost:7/",
@@ -528,11 +552,14 @@ mod tests {
     #[test]
     fn ac2_reused_preview_next_keeps_page_instruction() {
         assert_eq!(
-            serve_next(&json!({
-                "reused": true,
-                "pages": [{"url": "http://demo.localhost:7/"}],
-                "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_old"}
-            }))
+            serve_next(
+                &json!({
+                    "reused": true,
+                    "pages": [{"url": "http://demo.localhost:7/"}],
+                    "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_old"}
+                }),
+                true
+            )
             .as_deref(),
             Some("Give the person this page: http://demo.localhost:7/")
         );
@@ -542,11 +569,11 @@ mod tests {
     fn ac2_new_preview_without_page_still_gives_mcp_setup() {
         let pageless = |reused| json!({"reused": reused, "pages": [{"slug": "demo", "url": null}], "mcp": {"url": "u", "token": "t"}});
         assert!(
-            serve_next(&pageless(false))
+            serve_next(&pageless(false), true)
                 .unwrap()
                 .starts_with("The MCP url and token are new.")
         );
-        assert_eq!(serve_next(&pageless(true)), None);
+        assert_eq!(serve_next(&pageless(true), true), None);
     }
 
     #[test]
@@ -656,7 +683,7 @@ mod tests {
                 .contains("deletes its data")
         );
         assert_eq!(
-            serve_next(&json!({"stopped":true})).as_deref(),
+            serve_next(&json!({"stopped":true}), true).as_deref(),
             Some(
                 "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
             )
@@ -746,18 +773,24 @@ mod tests {
     #[test]
     fn ac7a_next_uses_consumer_page_after_providers() {
         assert_eq!(
-            serve_next(&json!({"pages":[
-                {"slug":"a","url":"http://a.localhost:123/"},
-                {"slug":"b","url":"http://b.localhost:123/"}
-            ]}))
+            serve_next(
+                &json!({"pages":[
+                    {"slug":"a","url":"http://a.localhost:123/"},
+                    {"slug":"b","url":"http://b.localhost:123/"}
+                ]}),
+                true
+            )
             .as_deref(),
             Some("Give the person this page: http://b.localhost:123/")
         );
         assert_eq!(
-            serve_next(&json!({"pages":[
-                {"slug":"a","url":"http://a.localhost:123/"},
-                {"slug":"b","url":null}
-            ]})),
+            serve_next(
+                &json!({"pages":[
+                    {"slug":"a","url":"http://a.localhost:123/"},
+                    {"slug":"b","url":null}
+                ]}),
+                true
+            ),
             None
         );
     }

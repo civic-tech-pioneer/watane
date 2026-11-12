@@ -25,9 +25,15 @@ fn main() {
                     "new" => Some("new"),
                     "check" => Some("check"),
                     "serve" => Some("serve"),
+                    "doctor" => Some("doctor"),
+                    "test" => Some("test"),
+                    "add" => Some("add"),
+                    "install" => Some("install"),
+                    "publish" => Some("publish"),
+                    "help" => Some("help"),
                     _ => None,
                 })
-                .unwrap_or("");
+                .unwrap_or("watane-dev");
             Outcome::new(command, None).fail(vec![
                 Problem::new(Code::UsageArgs, e.to_string()).fix("watane-dev --help"),
             ])

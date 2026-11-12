@@ -125,6 +125,17 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                         };
                         (file, Some(line), Some(column))
                     });
+                let fix = if file == "deps.json"
+                    && let Some(slug) = v.message.strip_prefix("remove the unused or own provider mods:")
+                {
+                    format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
+                } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
+                    || Path::new(&file).starts_with("wit/deps")
+                {
+                    "Run: watane-dev add <provider folder> to refresh the dependency files, then check imports in wit/world.wit".into()
+                } else {
+                    format!("Correct {} according to the reported rule", v.file)
+                };
                 Problem::new(
                     Code::ModInvalid,
                     format!(
@@ -134,7 +145,7 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                     ),
                 )
                 .at(file, line, column)
-                .fix(format!("Correct {} according to the reported rule", v.file))
+                .fix(fix)
             })
             .collect(),
         ModError::Io { path, source } => {
@@ -386,6 +397,23 @@ pub fn check_manifest(text: &str, allow: &Allowlist) -> Vec<Problem> {
 #[cfg(test)]
 mod manifest_tests {
     use super::*;
+    #[test]
+    fn ac3_managed_violation_fixes_name_the_add_action() {
+        for file in ["deps.json", "wit/deps/books/world.wit", ".watane-dev.json"] {
+            let problems = mod_problems(ModError::Invalid(vec![watane_pkg::Violation {
+                rule: watane_pkg::Rule::Provider,
+                file: file.into(),
+                message: "invalid dependency".into(),
+            }]));
+            assert_eq!(
+                problems[0].fix.as_deref(),
+                Some(
+                    "Run: watane-dev add <provider folder> to refresh the dependency files, then check imports in wit/world.wit"
+                )
+            );
+        }
+    }
+
     #[test]
     fn ac5_wit_location_in_message_is_retained() {
         assert_eq!(

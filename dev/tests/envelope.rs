@@ -263,3 +263,40 @@ fn ac9_s17_builder_commands_document_bootstrap_and_slow_set() {
     assert!(!guide.contains("--skip regress_s16_missing_vendor_says_missing"));
     assert!(guide.contains("- S17-1 (dev):"));
 }
+
+#[test]
+fn ac5_argument_errors_name_every_command_in_text_and_json() {
+    for (args, expected) in [
+        (vec!["new", "--bogus"], "new"),
+        (vec!["check", "--bogus"], "check"),
+        (vec!["serve", "--bogus"], "serve"),
+        (vec!["doctor", "--bogus"], "doctor"),
+        (vec!["test", "--bogus"], "test"),
+        (vec!["add", "--bogus"], "add"),
+        (vec!["install", "--bogus"], "install"),
+        (vec!["publish", "--wait", "x"], "publish"),
+        (vec!["help", "--bogus"], "help"),
+        (vec!["frobnicate"], "watane-dev"),
+        (vec![], "watane-dev"),
+    ] {
+        for json in [false, true] {
+            let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+                .args(&args)
+                .args(if json { vec!["--json"] } else { vec![] })
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2), "{args:?}");
+            if json {
+                let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(value["command"], expected, "{args:?}");
+                assert_eq!(value["errors"][0]["code"], "usage.args");
+            } else {
+                let text = String::from_utf8(output.stdout).unwrap();
+                assert!(
+                    text.ends_with(&format!("{expected}: failed\n")),
+                    "{args:?}: {text}"
+                );
+            }
+        }
+    }
+}
