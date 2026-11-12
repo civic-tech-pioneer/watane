@@ -127,8 +127,10 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
   Traces: F-FIND-4, F-INST-8.
 - **DIST-F-43** dist shall read includes one level deep: the listings of an included index count, its own includes do not.
   Traces: F-FIND-1.
-- **DIST-F-44** dist shall read at most a fixed number of channels because of listings, and report how many it left out.
+- **DIST-F-44** dist shall read at most a fixed number of channels because of listings, in all and for each chosen index, and report how many it left out.
   Traces: F-RUN-3, F-QUAL-3.
+- **DIST-F-49** dist shall read a listed channel from each base that listings give, until one serves its newest state, and shall not read a listed base on the participant's own device or local network.
+  Traces: F-FIND-4, V5.
 - **DIST-F-45** dist shall search with no network, over what it read before.
   Traces: F-QUAL-1.
 - **DIST-F-46** When the participant lists a mod or includes an index, dist shall append a `list` or `include` statement with its link and a note; when the participant ends a listing, an `unlist` statement. Each asks for a confirmation (DIST-F-5).
@@ -275,3 +277,10 @@ its own local host.
   and the refresh reports the withdrawal; a second statement at a used
   position marks Alice compromised and the hit carries that status.
   (DIST-F-40 to DIST-F-42, DIST-F-25, DIST-F-26)
+- **A34 A stale mirror.** Given Ivy lists Alice with a base that serves
+  Alice's channel before her withdrawal, and Jay lists Alice with her real
+  base, when Carol chooses Ivy and Jay, then the hit is the version that is
+  not withdrawn and has no freshness mark. (DIST-F-49, DIST-F-42)
+- **A35 No local reads.** Given Ivy lists a mod at `http://127.0.0.1:<p>/`
+  and `listed_local` is false, when Carol chooses Ivy, then that server
+  gets no request and `skipped` is 1. (DIST-F-49)

@@ -116,7 +116,7 @@ impl Dist {
     // Other channels.
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError>;
     pub fn unfollow(&self, channel: &PublicKey) -> Result<(), DistError>;
-    pub fn refresh(&self) -> Vec<RefreshReport>;               // one per followed channel, key order
+    pub fn refresh(&self) -> Vec<RefreshReport>;               // one per channel read: followed and chosen, then listed (5.9)
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError>;
 
     // Views, derived from the stored entries on each call (section 5.6).
@@ -155,7 +155,10 @@ pub struct Options {
     pub max_entry_file: u64,         // default watane_log::MAX_ENTRY (65_728 bytes)
     pub max_package: u64,            // default watane_pkg::MAX_PACKAGE_BYTES (64 MiB)
     pub max_entries_per_read: u64,   // default 10_000 entry files per channel per read
-    pub max_listed: usize,           // default 512 channels read only because an index lists them (5.9)
+    pub max_listed: usize,           // default 512 listed channels in all (5.9)
+    pub max_listed_per_index: usize, // default 128 listed channels per chosen index
+    pub max_listed_entries: u64,     // default 1_000 entry files per read of a listed channel
+    pub listed_local: bool,          // default false; tests set true to list 127.0.0.1 hosts
 }
 impl Default for Options { /* the defaults above */ }
 
@@ -232,7 +235,7 @@ pub struct IndexView {
     pub view: ChannelView,             // index is true
     pub included: Vec<PublicKey>,      // the live includes that are read (depth 1)
     pub mods: usize,                   // listed mods with a stored, verified release
-    pub skipped: usize,                // channels not read because of max_listed
+    pub skipped: usize,                // channels of its walk not read: a cap or a local base (5.9)
 }
 #[derive(Clone, Debug)]
 pub struct ReleaseInfo {
@@ -412,7 +415,7 @@ Byte vectors (the test oracle, computed by hand):
 The link text in a body is the `Display` form of `Link` (4.2): a decoder
 refuses a link that does not format back to the same text.
 
-Text rules (`body.rs`, one function for both fields):
+Text rules (`body.rs`, one function for every field):
 
 | Field | Length (Unicode scalar values) | Refused characters |
 |---|---|---|
@@ -532,7 +535,9 @@ version stays 1 and a step 3 file reads unchanged:
 `"index": bool` (default `false`). A record with both `false` is a
 **listed** channel: dist reads it only because the read set of a chosen
 index holds it (5.9), and removes the record when no read set holds it any
-more. Its `base` is the base of the listing that put it there.
+more. A listed record also has `"bases": [text]`: the other bases that
+listings give (5.9), at most 3, default `[]`; its `base` is the one read
+first.
 
 `site.json`: `{"version":1,"url":"https://alice.example.org/mods/"}`.
 Times are milliseconds since the Unix epoch, from `SystemTime::now()`. A
@@ -661,8 +666,10 @@ Used by follow, refresh and `confirm_own`.
    Else `Current`.
 6. Changes: derive the view; report each item whose seq is above the old
    stored head (section 3, `Change`).
-7. Update `follows.json` when the key is followed: `last_attempt = now`;
-   `last_success = now` for `Current` and `Behind`.
+7. Update `follows.json` when the key has a record: `last_attempt = now`;
+   `last_success = now` for `Current` only. (Step 4 changes this from
+   "`Current` and `Behind`": a host that serves an older state cannot show
+   newer withdrawals, so the freshness mark must not call it checked.)
 
 `follow(link)`: own key: `OwnChannel`. Already compromised: `Compromised`.
 `read_channel`. `Failed` or `Compromised` at the first follow: return the
@@ -674,6 +681,7 @@ not change).
 
 `refresh()`: for each followed key in key order: compromised gives
 `Outcome::Compromised` with no request (DIST-F-26); else `read_channel`.
+From step 4, this is pass (a) of 5.9.
 
 ### 5.5 Restore
 
@@ -748,50 +756,82 @@ data only.
 An index is a channel, not a second kind of channel (W20). Every channel
 can hold `list`, `include` and `unlist` statements; a channel becomes an
 index for this home only when the participant chooses it. The own channel
-always counts as a chosen index.
+always counts as a chosen index, but has no record: `ChannelView.index` is
+`false` for it and `drop_index(own)` is `NotIndex`.
 
-**Read set** of a chosen index `I` (one level of includes, W21):
+**Records.** `follows.json` (4.4) holds one record per channel that is
+followed, chosen, or listed. `followed()` returns only records with
+`followed: true`. `channel`, `refresh_channel` and `fetch` work for any
+record. `ChannelView.base` is the record's `base`.
+
+**Read set** of a chosen index `I` (one level of includes, W21), walked in
+this order:
 
 1. `I` itself: all its releases.
-2. For each live `list` of `I`: the channel of its link, for that slug.
-3. For each live `include` of `I`: the included channel `J`, all its
-   releases; and for each live `list` of `J`, that channel for that slug.
-   The `include` statements of `J` are ignored: dist never reads a
-   channel because of them.
+2. Each live `list` of `I`, in seq order: the channel of its link, for that
+   slug.
+3. Each live `include` of `I`, in seq order: the included channel `J`, all
+   its releases.
+4. For each such `J`, in the order of step 3, each live `list` of `J`, in
+   seq order: that channel, for that slug. The `include` statements of `J`
+   are ignored: dist never reads a channel because of them.
 
-A chosen index that is compromised contributes nothing but its own
-releases up to the fork (its stored listings are ignored), and no channel
-is read because of it. An included channel that is compromised gives no
-listing either.
+The own key is never in a read set: a listing of it is skipped. A chosen
+index that is compromised contributes its own releases up to the fork and
+nothing else: its stored listings are ignored, and no channel is read
+because of it. An included channel that is compromised gives no listing
+either.
 
-**Base.** A channel is read from one base: the base of its follow when it
-is followed or chosen; else the base of the first listing that names it,
-in this order: own channel, then chosen indexes in key order, each in seq
-order, its includes after its lists. A listing that names a followed
-channel with another base changes nothing.
+**Listed records.** A channel in some read set that is neither followed
+nor chosen has a listed record (`followed: false`, `index: false`). Its
+`bases` are the distinct bases of the listings that name it, in the order
+of the walk (own channel first, then chosen indexes in key order), at most
+4. A followed or chosen channel is read only from its own `base`: a
+listing never changes it. dist creates a listed record when the walk first
+reaches the channel, before it reads it, and removes it after a refresh in
+which no read set holds it.
 
-**Cap.** At most `max_listed` channels that are neither followed nor
-chosen, in the order above. The rest are not read; `IndexView.skipped`
-counts them for the index whose listing came first.
+**Read of a listed channel.** `read_channel` (5.4) from each of its bases
+in order, until one gives `Current`; that base moves to the front of
+`bases`. The outcome is the best one (`Current`, `Behind`, `Failed`). So a
+listing that names a stale mirror first cannot hide a withdrawal that
+another listed base serves. With the limits of 4.5, but at most
+`max_listed_entries` (default 1000) entry files per read.
 
-**`refresh()`**, in three passes, each in key order and with the rules of
-5.4: (a) the followed channels and the chosen indexes; (b) the channels
-that a list or include of a chosen index names; (c) the channels that a
-list of an included channel names. A channel is read at most once per
-refresh. After pass (c), add a record (`followed: false`, `index: false`)
-for each listed channel that has none, and remove each listed record that
-no read set holds. A listed channel's first failed read keeps its record:
-its failure shows as a freshness mark, not as a lost listing.
+**Local addresses.** Unless `Options::listed_local` is set (tests only;
+default `false`), dist skips a listed base whose host is `localhost`, ends
+in `.localhost`, or is an IP literal that is loopback, unspecified,
+private (10/8, 172.16/12, 192.168/16, fc00::/7) or link-local. A third
+party's listing must not make dist send requests into the participant's
+own network. A followed or chosen channel may use any base (DD-6): the
+participant gave that link. A host name that resolves to a local address
+is not checked (section 6, "Not protected").
 
-**`choose_index(link)`**: no slug (`BadLink`); own key (`OwnChannel`).
-`read_channel` as `follow` does (a failed or compromised first read is the
-`Err`, and nothing changes). Then set `index: true` (and keep `followed`
-when it was set; a new record has `followed: false`), and read the
-channels of its read set as passes (b) and (c) do for it alone. Return a
-report for each channel read.
+**Cap.** At most `max_listed` (default 512) listed channels in all, and at
+most `max_listed_per_index` (default 128) for each chosen index, counted
+in the walk order (an included `J` counts too). A channel past either cap
+gets no record and is not read; `IndexView.skipped` counts the channels
+that the walk of that index skipped for a cap or for a local base. So no
+one index can use up the whole cap.
 
-**`unfollow(channel)`** from step 4: set `followed: false`; remove the
-record only when it is no chosen index and no read set holds it.
+**`refresh()`** returns one report per channel read, in pass order, key
+order within a pass. Pass (a): the followed channels and the chosen
+indexes (5.4, compromised ones give `Outcome::Compromised` with no
+request). Pass (b): the channels of steps 2 and 3 of every walk. Pass (c):
+the channels of step 4. A channel is read at most once per refresh. Then
+remove the listed records that no read set holds.
+
+**`choose_index(link)`**: a link with a slug is `BadLink`; own key is
+`OwnChannel`. `read_channel` as `follow` does (a failed or compromised
+first read is the `Err`, and nothing changes). Then set `index: true` and
+the link's base (as `follow` does: the base of the newest link wins), keep
+`followed` as it was (a new record has `followed: false`), and run passes
+(b) and (c) for the whole read set. Returns the reports. A second choose
+of a chosen index reads it again.
+
+**`unfollow(channel)`** from step 4: no record with `followed: true` is
+`NotFollowed`. Set `followed: false`; remove the record when it is no
+chosen index and no read set holds it.
 
 **`drop_index(channel)`**: not a chosen index: `NotIndex`. Set `index:
 false`; remove the record when it is not followed and no other read set
@@ -810,6 +850,11 @@ body)`.
 **`unlist(entry)`**: the own view has a live listing with that entry id
 (`NotListed`); lock; `sign_and_append("unlist", body)`.
 
+**Views.** `listed_by`, `IndexView.included`, `mods` and `skipped` come
+from a walk of the chosen indexes on each call, as 5.6 derives a view on
+each call. `mods` counts the listed mods that would give a hit (5.10 step
+2).
+
 ### 5.10 Search (step 4)
 
 `search(query)` reads only stored entries and `follows.json`: no request,
@@ -824,8 +869,9 @@ so it works offline (F-QUAL-1). It derives each view once.
      (`Via::Index`, with the note, `through` for a list of an included
      channel).
 2. **Release.** The candidate's newest release that is not withdrawn
-   (DD-7, `latest`) from the stored channel of its publisher. None (never
-   read, no release of that slug, or every version withdrawn): no hit
+   (DD-7, `latest`) from the stored channel of its publisher. None (no
+   record for a publisher that is not the own key, never read, no release
+   of that slug, or every version withdrawn): no hit
    (F-FIND-4: a withdrawn version is hidden, and an index alone never
    makes a hit).
 3. **Filters**, all that are set must hold:
@@ -846,15 +892,18 @@ so it works offline (F-QUAL-1). It derives each view once.
 5. At most 200 hits (the first 200 of the order).
 6. **Marks** (DIST-F-42): `checked_at` is the publisher record's
    `last_success`; `unchecked_since` is `Some(last_success)` when
-   `last_attempt > last_success`, i.e. the newest read failed. A hit of a
+   `last_attempt > last_success`, i.e. the newest read did not give
+   `Current` (5.4 step 7). A hit of a
    compromised channel stays in the result with `status: Compromised`, so
    the participant sees why it cannot be installed (F-QUAL-3); `fetch`
    refuses it.
 
-**Install a hit.** The hit's `link` names the publisher's channel and the
-mod. The caller follows it (`follow(&link)`, so that updates and
-withdrawals keep coming after the index drops the mod) and then fetches
-`hit.info.reference` (5.7). A search never installs and never follows.
+**Install a hit** (the one definition; app 9.6 cites it). `hit.link` names
+the publisher's channel, the front base of its record, and the mod; it is
+`None` for the own channel. The caller follows `hit.link` when it is set
+(`follow`, so that updates and withdrawals keep coming after the index
+drops the mod) and then fetches `hit.info.reference` (5.7). A search never
+installs and never follows.
 
 ## 6. Security properties
 
@@ -874,12 +923,16 @@ withdrawals keep coming after the index drops the mod) and then fetches
 | Untrusted text cannot steer a terminal | errors print URLs, paths, names and host causes escaped and unquoted | `error_text_escapes_controls` |
 | An index cannot vouch for bytes or versions (F-FIND-4) | a `list` names a mod, never a version or a package id; a hit's release comes only from the publisher's verified channel; a channel read through a listing is checked against the key in the listing | A23 |
 | An index cannot hide a withdrawal | the release of a hit is the newest that the publisher's channel does not withdraw | A24 |
-| An index cannot make dist read without bound | one level of includes; at most `max_listed` listed channels; each read has the limits of 4.5 | A26, A31 |
+| An index cannot make dist read without bound | one level of includes; at most `max_listed` listed channels, `max_listed_per_index` per index, `max_listed_entries` per read; each read has the limits of 4.5 | A26, A31 |
+| A stale mirror cannot hide a withdrawal | a listed channel is read from each listed base until one is `Current`; only `Current` counts as checked | A34 |
+| A listing cannot reach the local network | listed bases on `localhost` or local IP literals are skipped | A35 |
+| The own channel is never read from a listing | the own key is skipped in every read set | `index_own_skipped` |
 | A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
 
-Not protected (see `spec/TECHNICAL.md` section 6): a host that withholds
-new entries; another program of the same user; the use of one identity on
+Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
+resolves to a local address (step 4; only IP literals and `localhost` are
+skipped); a host that withholds new entries; another program of the same user; the use of one identity on
 two devices, which forks the channel (question Q7).
 
 ## 7. Test plan
@@ -919,7 +972,7 @@ literal values, `std::fs`, the `blake3` crate, and `watane_log` and
 | `error_text_escapes_controls` | a URL with `\u{1b}` prints escaped | literal string |
 | `body_vectors` (step 4 rows) | the three vectors of 4.1 for `list`, `include`, `unlist`; a link that does not format back is refused | literal bytes |
 | `derive_rules` (step 4 rows) | rules 9 to 14 of 4.1 | literal expected views |
-| `index_*` | A21, A23, A26, A27, A28, A30, A31; `index_base_*`: a followed base wins over a listing's base | request counts per path; `follows.json` with `serde_json` |
+| `index_*` | A21, A23, A26, A27, A28, A30, A31, A34, A35; `index_base_*`: a followed base wins over a listing's base; `index_own_skipped`: a listing of the own key makes no request | request counts per path; `follows.json` with `serde_json` |
 | `search_*` | A22, A24, A25, A29, A32 | the test's own list of what each home published |
 | `j4_dist` | the dist half of J4 (A33) | values the test created |
 
@@ -1070,6 +1123,7 @@ Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
 | Q8 | TECHNICAL §2 | `app` depends on `host` and `dist` only, but the backup (F-APP-6) is `log`'s. | `dist` passes `backup`, `restore` and `confirm_own` through; only `dist` opens `<home>/log/`. Say so in §2. |
 | Q9 | spec/ (none) | spec/ sets no limit on the size of a package; `pkg` drafts 64 MiB. | 64 MiB everywhere: `pkg` refuses at pack and decode, `dist` at publish and as the body limit of a fetch. Name it in spec §3. |
 | Q11 | spec TECHNICAL §9, W15 | The four open points of step 4 (S26). | Decided in 4.1, 5.9, 5.10 and DD-18 to DD-24; spec W20 to W23 name them. |
+| Q12 | log | A listed channel that no index lists any more leaves its entries in `<home>/log/`; storage grows with every channel ever listed. | Step 4 keeps them (they are small, and a later listing reuses them). A `Log::forget(key)` is a later log stage. |
 | Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
@@ -1100,3 +1154,6 @@ Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
 | DD-22 | The read set is three passes; listed channels get a record in `follows.json` with `followed: false`. | Freshness marks need `last_attempt` and `last_success` for each channel a hit comes from; one file keeps one rule. Undo: cheap (local file, serde defaults). |
 | DD-23 | Search is a local filter over stored channels: words as lower-case substrings, filters by key and interface, an order made only from the participant's choices, at most 200 hits. | Offline (F-QUAL-1); no global ranking (V6, non-goals); good enough for a few thousand mods. Undo: cheap, reader-only; a later full-text index changes no format. |
 | DD-24 | Installing a hit follows the publisher. | Updates and withdrawals keep coming after an index drops the mod (F-INST-7, F-INST-8). Undo: cheap (app). |
+| DD-25 | A listed channel is read from up to 4 listed bases until one is `Current`; only `Current` sets `last_success` (a step 3 change: `Behind` did too). | S26 review: a hostile index could list a stale mirror first and hide a withdrawal behind a fresh mark. Undo: cheap, reader-only. |
+| DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
+| DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |

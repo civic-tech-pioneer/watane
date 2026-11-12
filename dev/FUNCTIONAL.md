@@ -70,7 +70,7 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-35** When the maker runs `publish`, dev shall test the mod, pack it with its source unless the maker gives `--no-source`, send it to the running home host, and report the release or the refusal. Traces: F-PUB-2, F-PUB-4, F-AGENT-4, J3.
 - **DEV-F-36** If the mod depends on a provider with no release, then `publish` shall fail before it sends anything, and name the provider. Traces: F-PUB-2.
 
-## 5. Find and build on (steps 4 and 5; outline only)
+## 5. Find and build on (step 4; step 5 outline only)
 
 - **DEV-F-37** (step 4) When the maker runs `search` with words, a publisher or an interface, dev shall ask the running app of the home and report its verified results, with the indexes that list each one and its freshness marks. dev shall never install a result. Traces: F-FIND-3, F-FIND-4, F-AGENT-4.
 - **DEV-F-38** (step 5) When the maker runs `new <slug> --from <link>`, dev shall make a mod folder from the source of that release and record the release as its origin. Traces: F-BUILD-1, J5.

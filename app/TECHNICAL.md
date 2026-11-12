@@ -396,7 +396,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `index_choose` | main | `link` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
 | `search` | main | `text`, `publisher: string \| null`, `interface: string \| null` | `[HitView]` | D |
-| `install_release` | main | `release` (ReleaseRef text) | `{installed: [local]}` | D |
+| `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local]}` | D |
 | `index_list` | main | `link` (with a slug), `note` | `null` | D |
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
@@ -521,7 +521,7 @@ set (`NoSiteUrl`). The route never answers a confirmation: only
 
 Request: `Content-Type: application/json`,
 `{"text": string, "publisher": string|null, "interface": string|null}`
-(`text` may be `""`; at most 256 bytes). In `spawn_blocking`:
+(`text` may be `""`; its limit is dist's `Query`). In `spawn_blocking`:
 `dist.search(&Query)`. No consent: a search reads only what the
 participant chose to read, and gives no authority. It makes no network
 request (dist 5.10), so it never waits on a web host.
@@ -529,7 +529,7 @@ request (dist 5.10), so it never waits on a web host.
 | Result | Status | Body or code |
 |---|---|---|
 | searched | 200 | `{"indexes": <number of chosen indexes, own excluded>, "results": [Result]}` |
-| bad JSON, a `publisher` that is no key, an `interface` that is no interface name, `text` over 256 bytes | 400 | `bad_request` |
+| bad JSON, a `publisher` that is no key, an `interface` that is no interface name, `text` over dist's limit | 400 | `bad_request` |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
 
 ```text
@@ -540,7 +540,10 @@ Result {release (ReleaseRef), name, summary, link (link text) | null,
         offers: [string], events: [string], uses: [string]}
 ```
 
-The fields are those of `HitView` (section 7) in snake case; `uses` holds
+Derived from `dist::Hit` as `HitView` (section 7) is, in snake case, with
+these differences: `publisher` always has its `key`; `via.index` and
+`via.through` are key texts, not `Party`; no `slug`, `version`, `verified`
+or `installed` (the `release` text holds slug and version). `uses` holds
 the interfaces of the call and subscribe grants. The route exists for
 `watane-dev search` (dev 10).
 
@@ -673,16 +676,17 @@ index", and for each of its mods "List in my index".
   cache; answer `indexes_list`. A failed first read is a command error with
   dist's cause (APP-F-37).
 - `index_drop(channel)`: `dist.drop_index`.
-- `search`: as 8.2, mapped to `HitView`. `verified` is `true` for every hit
-  (dist gives no other); `installed` from `host.list()` by `ReleaseRef`
+- `search`: as 8.2, mapped to `HitView`. `verified` is `status == ok`
+  (every hit comes from a verified channel; a compromised one is not
+  shown as verified); `installed` from `host.list()` by `ReleaseRef`
   publisher and slug. The page shows `checkedAt` as an age ("checked 5 min
   ago"), and for `uncheckedSince` the mark "could not check since <local
   time>". A `compromised` hit shows "compromised" and no install button.
-- `install_release(release)`: `ReleaseRef::from_str`; the base from
-  `dist.channel(&key)?.base` (none: `not_found`); `dist.follow` of the link
-  with that key, base and slug (DD-24 of dist); then steps 3 and 4 of 9.4
-  with `dist.fetch(&release)` as the first source. The consent view shows
-  the plan as for a link.
+- `install_release(release, link)`: `ReleaseRef::from_str`,
+  `Link::from_str`; then dist 5.10 "Install a hit" (follow the link when
+  it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the
+  fetched release as the first source. The consent view shows the plan as
+  for a link.
 - `index_list`, `index_include`, `index_unlist`: `dist.list`,
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view

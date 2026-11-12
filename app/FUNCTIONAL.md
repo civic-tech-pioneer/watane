@@ -62,10 +62,10 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-36** The app shall refresh each followed channel at start, every 10 minutes and on request. Traces: F-PUB-6, F-QUAL-1.
 - **APP-F-37** If a refresh, a fetch or a verification fails, then the app shall show the channel or the release with the cause that dist names. If a channel is compromised, then the app shall show it as compromised. Traces: F-PUB-7, F-QUAL-3, J3.
 
-## Step 4: Find (index search remains a sketch)
+## Step 4: Find
 
 - **APP-F-38** The participant shall be able to add an index from a link, and to use a followed channel as an index, see each chosen index with its name, fingerprint, state and the number of mods it lists, and drop it. The app shall add no index by itself. Traces: F-FIND-2, J4, W23.
-- **APP-F-43** The participant shall be able to search the chosen indexes by words, by publisher and by interface. Each result shall show the mod's name, summary and version, its publisher by profile name and fingerprint with "signature verified", and the indexes that list it with their notes. Traces: F-FIND-3, F-FIND-4, F-APP-3, J4.
+- **APP-F-43** The participant shall be able to search the chosen indexes by words, by publisher and by interface. Each result shall show the mod's name, summary and version, its publisher by profile name and fingerprint with "signature verified" (or "compromised", APP-F-44), and the indexes that list it with their notes. Traces: F-FIND-3, F-FIND-4, F-APP-3, J4.
 - **APP-F-44** The app shall show when each result's channel was last read, and mark a result whose channel could not be read since then. It shall show a result of a compromised channel as compromised and offer no install for it. Traces: F-FIND-4, F-QUAL-3.
 - **APP-F-45** When the participant installs a result, the app shall follow its publisher, fetch that release and show the install plan in the consent view. Traces: F-FIND-4, F-INST-1, F-INST-6, J4.
 - **APP-F-46** The participant shall be able to list a mod of a followed channel in the own index with a note, include a followed channel as an index, and end each listing. Each one is a signature in the consent view. Traces: F-FIND-1, F-AGENT-4, APP-F-33.

@@ -214,7 +214,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | W18 | After a restore of the identity, nothing is signed until the newest statement of the own channel is known. |
 | W19 | A confirmation with no answer is a no: closing the consent view, quitting the app, or 10 minutes without an answer. |
 | W20 | An index is a channel, not a new thing: any channel may hold `list`, `include` and `unlist` statements, and it is an index for a participant who chooses it from its link. The own channel always counts. A listing names a mod, never a version or bytes: those come only from the publisher's channel. (step 4, S26 draft) |
-| W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads at most 512 channels because of listings. (step 4, S26 draft) |
+| W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads a bounded number of channels because of listings (dist 5.9), and never a listed address on its own device or network. (step 4, S26 draft) |
 | W22 | Search is local: a filter over the channels already read and verified, by words in the text, by publisher key and by interface (offered, sent as events, or used). No network, no global ranking; the order uses only the participant's own choices. (step 4, S26 draft) |
 | W23 | watane ships with no index and no default channel. The participant adds the first index from a link that a person gave them. (step 4, S26 draft) |
 
