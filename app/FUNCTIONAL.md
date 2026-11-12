@@ -64,7 +64,11 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 
 ## Step 4: Find (index search remains a sketch)
 
-- **APP-F-38** The participant shall be able to choose indexes, search them by text, publisher and interface, and install a result after consent. Traces: F-FIND-2, F-FIND-3, F-FIND-4, J4.
+- **APP-F-38** The participant shall be able to add an index from a link, and to use a followed channel as an index, see each chosen index with its name, fingerprint, state and the number of mods it lists, and drop it. The app shall add no index by itself. Traces: F-FIND-2, J4, W23.
+- **APP-F-43** The participant shall be able to search the chosen indexes by words, by publisher and by interface. Each result shall show the mod's name, summary and version, its publisher by profile name and fingerprint with "signature verified", and the indexes that list it with their notes. Traces: F-FIND-3, F-FIND-4, F-APP-3, J4.
+- **APP-F-44** The app shall show when each result's channel was last read, and mark a result whose channel could not be read since then. It shall show a result of a compromised channel as compromised and offer no install for it. Traces: F-FIND-4, F-QUAL-3.
+- **APP-F-45** When the participant installs a result, the app shall follow its publisher, fetch that release and show the install plan in the consent view. Traces: F-FIND-4, F-INST-1, F-INST-6, J4.
+- **APP-F-46** The participant shall be able to list a mod of a followed channel in the own index with a note, include a followed channel as an index, and end each listing. Each one is a signature in the consent view. Traces: F-FIND-1, F-AGENT-4, APP-F-33.
 - **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. Traces: F-INST-7, J4.
 - **APP-F-40** When a refresh reports a withdrawn installed version, the app shall tell the participant and offer the newest version that is not withdrawn. Traces: F-INST-8, J4.
 
@@ -166,3 +170,30 @@ lists`, signing in consent. Carol's next refresh shows that reason and an
 `Install 0.2.0` button. Installing it keeps data and asks no question.
 A different signed statement at an already read position marks both the
 channel and the installed mod as compromised.
+
+**S17 Add an index** (APP-F-38, J4). Given Ivy's site folder, which lists
+Alice's `reading-list`, and Alice's site folder, each on a local static
+server, when the participant adds Ivy's link as an index, then the find
+view lists Ivy with her name and "1 mod", and no consent view opened.
+
+**S18 Search and install** (APP-F-43, APP-F-45, J4). Given S17, when the
+participant searches `reading`, then one result shows `reading-list`, its
+version, Alice's name and fingerprint with "signature verified", and
+"listed by Ivy" with Ivy's note; when the participant installs it and
+approves, then the mod runs and Alice is a followed channel.
+
+**S19 Stale mark** (APP-F-44). Given S17, when Alice's server stops and the
+participant refreshes, then the result still shows, with "could not check
+since" and the time of the last read that succeeded.
+
+**S20 Compromised result** (APP-F-44). Given S17, when Alice's channel forks,
+then the result shows "compromised" and has no install button.
+
+**S21 List in my index** (APP-F-46). Given the participant follows Alice,
+when they list `reading-list` with the note `good for books`, then the
+consent view shows "list", the mod `<Alice key>/reading-list`, Alice's
+location and the note; after approve, the own site folder has the new
+entry; after a later "unlist", another entry.
+
+**S22 No index at first** (APP-F-38, W23). Given a new home, the find view
+lists no index and says to add one from a link.

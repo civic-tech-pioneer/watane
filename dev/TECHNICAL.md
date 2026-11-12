@@ -110,7 +110,7 @@ watane-dev [--json] [--dir <path>] <command>
   add <mod folder>                                          (step 2)
   install [--home <path>] [--wait <seconds>]                (step 2)
   publish [--no-source] [--home <path>] [--wait <seconds>]  (step 3)
-  search <text>                                             (step 4, outline)
+  search [<text>] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
   new <slug> --from <link>                                  (step 5, outline)
   add --release <link>                                      (step 5, outline)
 ```
@@ -148,7 +148,7 @@ Every command, also a failed one, prints this object:
 | Field | Type | Meaning |
 |---|---|---|
 | `schema` | integer | 1. Raised on an incompatible change. |
-| `command` | string | `new`, `check`, `test`, `serve`, `doctor`, `add`, `install`, `publish`. |
+| `command` | string | `new`, `check`, `test`, `serve`, `doctor`, `add`, `install`, `publish`, `search`. |
 | `ok` | bool | `errors` is empty. |
 | `dir` | string or null | The mod folder; null when the command has none (`doctor`). |
 | `result` | object or null | 2.4. Present also on a failure, where a part ran. |
@@ -368,6 +368,21 @@ asks whether they want it installed before running install again with
 is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
 while no site URL is set. `next`: `Put the site folder on your static web host`.
+
+**search** (step 4)
+```json
+{"home": "/abs/.watane", "indexes": 1,
+ "results": [{"release": "<key>/reading-list@0.1.0", "name": "Reading list",
+              "summary": "...", "publisher": {"key": "<key>", "name": "Alice", "fingerprint": "..."},
+              "link": "watane:<key>@https://alice.example.org/mods/#reading-list",
+              "status": "ok", "checked_at": 1762783600000, "unchecked_since": null,
+              "via": [{"kind": "index", "index": "<Ivy key>", "through": null, "note": "good for books"}],
+              "offers": ["mods:reading-list/books@0.1.0"], "events": [], "uses": []}]}
+```
+`results` is the app's answer as it is (app 8.2), in its order. `next`:
+with results, null; with none and `indexes` 0, `Ask the person to add an
+index in the watane app, then run search again`; with none otherwise,
+`Try fewer words, or search with --interface <name>`.
 
 ## 3. Environment
 
@@ -1147,11 +1162,22 @@ only a package and duration. A timeout uses the message and fix of 9.6;
 other errors are `host.refused` with `[<code>] <message>`. For these host
 failures, `next` is the fix. Success gives the static-host instruction of 2.4.
 
-## 10. Steps 4 and 5 (outline; not designed)
+## 10. Step 4: `search`; step 5 (outline; not designed)
 
-Only enough to keep the design open. `search` sends
-`POST /api/search {"text"}`; `new --from <link>` and `add --release <link>`
-send `POST /api/fetch {"link"}` and read the package file that the answer
+`search` needs no mod folder (`dir` is null). It resolves the home and
+checks the app status as `install` does (9.6, step 1: `env.host_not_running`
+with the same causes), then sends one `POST /api/search` with
+`{"text": <the words joined with one space, or "">, "publisher", "interface"}`
+over the proxy-free localhost transport, with a 30 s timeout (a search
+makes no network request in the app). dev checks nothing of the query
+itself: a `400` answer is `host.refused` with `[bad_request] <message>`,
+whose fix is `Check --publisher (a 52-character key) and --interface (for
+example mods:reading-list/books or mods:reading-list/books@0.1.0)`. A
+search gives no authority and asks the participant nothing. dev never
+installs a result: the person does that in the app (F-AGENT-4).
+
+Step 5, only enough to keep the design open. `new --from <link>` and
+`add --release <link>` send `POST /api/fetch {"link"}` and read the package file that the answer
 names (app `TECHNICAL.md` 8.2, 8.3). `new --from` unpacks it with
 `Package::unpack`, sets the new slug in the package line and the origin
 in `mod.toml`. `add --release` copies the provider's WIT as 9.5 does and
@@ -1450,6 +1476,8 @@ rules belong to 15.1.
 | DEV-S-29 | `install::fake::ac4_page_only_result_and_failed_pipeline`; `install::fake::ac4_provider_order_result_and_failed_pipeline` | integration: page-only result, next and no request on failure; slow integration: order of two dependent Rust templates |
 | DEV-S-30 | `publish::ac1_local_providers_precede_status_and_pipeline` | integration: no build or host request |
 | DEV-S-31 | `publish::ac3_ac6_page_package_and_answer`, `publish::ac3_logic_source_selection` | page-only integration; slow Rust source selection |
+| DEV-S-33 | `search::s33_results_pass_through` (planned, stage 8) | integration against `fake-watane` |
+| DEV-S-34 | `search::s34_no_index_next` (planned, stage 8) | integration against `fake-watane` |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -1542,8 +1570,9 @@ page and no MCP. SIGTERM ends it (the default action).
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
 | 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` checks app status first, tests providers and requests home install | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
 | 7 (step 3) | `publish`: local-provider refusal, app status, tests, pack, consent POST, result | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31 implemented; dev's part of J3 |
+| 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` with a fixed result | S-33, 34 |
 
-Steps 4 and 5 are not designed (section 10).
+Step 5 is not designed (section 10).
 
 ## 17. Questions for spec/
 

@@ -24,7 +24,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | channel | The public, ordered, append-only record of the signed statements of one participant. |
 | package | One immutable version of a mod, as a file. |
 | release | A statement in a channel that publishes one package. |
-| index | A channel that lists releases, also of other participants. |
+| index | A channel that lists mods, also of other participants, and that a participant chose to search. |
 
 ## 2. Requirements
 
@@ -87,8 +87,8 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 
 ### 2.7 Find (step 4)
 
-- **F-FIND-1** An index lists releases of its owner and of other participants, and it can include other indexes.
-- **F-FIND-2** The participant chooses the indexes that watane reads.
+- **F-FIND-1** An index lists releases of its owner and mods of other participants, and it can include other indexes. Includes count one level deep.
+- **F-FIND-2** The participant chooses the indexes that watane reads, each from a link. watane has no index of its own.
 - **F-FIND-3** The participant searches the chosen indexes by text, by publisher, and by the interfaces that a mod offers or uses.
 - **F-FIND-4** watane shows a result only after it verified the release against the channel of its publisher. It hides a withdrawn version, and it marks a result whose withdrawals it could not check.
 
@@ -139,8 +139,9 @@ changed, Bob's watane refuses it and names the cause.
 
 ### J4: Find a mod
 
-Carol chooses an index that lists Alice's mod. She describes her need, and
-the search shows the mod, verified. She installs it. Alice releases a new
+Ivy shares the link of her index, which lists Alice's mod. Carol adds it
+as an index. She describes her need in a few words, and the search shows
+the mod, verified, with Ivy's note. She installs it. Alice releases a new
 version with no new grant, and Carol's watane updates it without a
 question. Alice withdraws that version, and Carol's watane tells her. A
 second statement at a used position marks Alice's channel as compromised.

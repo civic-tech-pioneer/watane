@@ -37,7 +37,8 @@ verified package to the caller.
   `dist` accept a changed byte.
 - **Never a second format owner.** The entry envelope is `log`'s. The
   package and the release body are `pkg`'s. `dist` owns only the bodies of
-  `profile` and `withdraw`, the folder layout, the link and the follow list.
+  `profile`, `withdraw` and the index kinds (`list`, `include`, `unlist`),
+  the folder layout, the link and the follow list.
 
 ## Success
 

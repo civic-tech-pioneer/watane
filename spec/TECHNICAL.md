@@ -145,7 +145,7 @@ interface caller {            // "page", "agent:<handle>" or "mod:<local name>"
 | mod | mod | WIT imports that the host links and grants; events |
 | agent | host | MCP at `/mcp/<toolset>`, with a token |
 | `watane-dev` | a preview host | it starts the program `watane` on a preview home, then uses the local API |
-| `watane-dev` | the home host | the local API of the running app: `host` answers status, list, plan and install; `app` adds publish (and later search and fetch) on the same port |
+| `watane-dev` | the home host | the local API of the running app: `host` answers status, list, plan and install; `app` adds publish, search (step 4) and later fetch on the same port |
 | app | `host`, `dist` | library calls in one process |
 | `dist` | a static web host | HTTP GET to read; a folder of plain files to publish |
 
@@ -208,11 +208,15 @@ Each one closes a gap of the old specification. Veto any of them.
 | W12 | An agent has a toolset and a token, and the confirmation floor holds. Finer tool controls come later. |
 | W13 | Only `dist` signs, and only after a confirmation in the app. A publish needs the running app. |
 | W14 | `deps.json` pins the publisher of each provider. |
-| W15 | The statement kinds are `profile`, `release` and `withdraw`. Step 4 adds the kinds of an index. |
+| W15 | The statement kinds are `profile`, `release` and `withdraw`. Step 4 adds the kinds of an index: `list` (a mod), `include` (another index) and `unlist` (dist 4.1). |
 | W16 | A release is named `<publisher key>/<slug>@<version>` outside its channel. |
 | W17 | The slug and the version are in the WIT package line `mods:<slug>@<version>`, not in `mod.toml`. |
 | W18 | After a restore of the identity, nothing is signed until the newest statement of the own channel is known. |
 | W19 | A confirmation with no answer is a no: closing the consent view, quitting the app, or 10 minutes without an answer. |
+| W20 | An index is a channel, not a new thing: any channel may hold `list`, `include` and `unlist` statements, and it is an index for a participant who chooses it from its link. The own channel always counts. A listing names a mod, never a version or bytes: those come only from the publisher's channel. (step 4, S26 draft) |
+| W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads at most 512 channels because of listings. (step 4, S26 draft) |
+| W22 | Search is local: a filter over the channels already read and verified, by words in the text, by publisher key and by interface (offered, sent as events, or used). No network, no global ranking; the order uses only the participant's own choices. (step 4, S26 draft) |
+| W23 | watane ships with no index and no default channel. The participant adds the first index from a link that a person gave them. (step 4, S26 draft) |
 
 ## 8. Build order
 
@@ -235,8 +239,11 @@ allowlist and the contract test form in `dev`, the grant words in `app`,
 the local name in `host`, the published folder, the link and the statement
 bodies in `dist`, the backup format in `log`. These wait for their step:
 
-- Step 4: the statements of an index; how deep includes go; the search by
-  interface; whether watane ships with a first index.
+Step 4 is designed (S26 draft, W20 to W23): the statements of an index,
+the read set and the search in `dist/TECHNICAL.md` 4.1, 5.9 and 5.10; the
+find view and `/api/search` in `app/TECHNICAL.md` 7, 8.2 and 9.6;
+`watane-dev search` in `dev/TECHNICAL.md` 10. These wait for their step:
+
 - Step 5: when the interface of another provider "fits"; where to read the
   channel of a provider that is not followed (a link in `deps.json`).
 

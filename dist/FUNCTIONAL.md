@@ -9,7 +9,10 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
 
 | Term | Meaning |
 |---|---|
-| statement | One signed entry of a channel, of kind `profile`, `release` or `withdraw` (W15). |
+| statement | One signed entry of a channel, of kind `profile`, `release` or `withdraw`, and from step 4 `list`, `include` or `unlist` (W15). |
+| listing | A `list` statement (one mod of a channel) or an `include` statement (another index) that no `unlist` ended. (step 4) |
+| chosen index | A channel whose listings the participant chose to search. The own channel is always one. (step 4) |
+| read set | The channels that dist reads for one chosen index: the index, the channels it lists or includes, and the channels that an included index lists. (step 4) |
 | site folder | The folder of plain files that holds the own channel and its packages, ready for a static host. |
 | site URL | The address where the maker serves the site folder. |
 | link | Text that names a channel by its key and its site URL, and optionally one mod in it by slug. |
@@ -114,14 +117,26 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
 - **DIST-F-37** When dist refuses or fails, dist shall name the cause, the file or address involved, and the statement involved.
   Traces: F-QUAL-3.
 
-### 2.8 Find and updates (step 4, outline only; do not build yet)
+### 2.8 Find (step 4)
 
-- **DIST-F-40** When the participant chooses an index, dist shall follow it as a channel and read its statements with the same verification.
-  Traces: F-FIND-1, F-FIND-2.
-- **DIST-F-41** When the participant searches, dist shall search the releases of the followed channels and the chosen indexes by text, publisher and interface, and show a release of another participant only after it verified that release against the channel of its publisher.
+- **DIST-F-40** When the participant chooses an index from a link, dist shall read it as a channel with the same verification, and then read every channel of its read set.
+  Traces: F-FIND-1, F-FIND-2, J4.
+- **DIST-F-41** When the participant searches, dist shall search the releases of the own channel, the followed channels and the read sets of the chosen indexes by text, publisher and interface, and give a release of another participant only from the verified channel of its publisher.
   Traces: F-FIND-3, F-FIND-4, J4.
-- **DIST-F-42** dist shall hide a withdrawn version in a search result, and mark a result whose channel it could not read since a stated time.
+- **DIST-F-42** dist shall give, for each mod, only its newest version that is not withdrawn, and shall mark a result whose channel it could not read since the time of the last read that succeeded.
   Traces: F-FIND-4, F-INST-8.
+- **DIST-F-43** dist shall read includes one level deep: the listings of an included index count, its own includes do not.
+  Traces: F-FIND-1.
+- **DIST-F-44** dist shall read at most a fixed number of channels because of listings, and report how many it left out.
+  Traces: F-RUN-3, F-QUAL-3.
+- **DIST-F-45** dist shall search with no network, over what it read before.
+  Traces: F-QUAL-1.
+- **DIST-F-46** When the participant lists a mod or includes an index, dist shall append a `list` or `include` statement with its link and a note; when the participant ends a listing, an `unlist` statement. Each asks for a confirmation (DIST-F-5).
+  Traces: F-FIND-1, F-AGENT-4.
+- **DIST-F-47** If a listing names the own channel, names a mod with no release that is not withdrawn, repeats a live listing, or its note breaks the text rules, then dist shall refuse it before it asks for a confirmation.
+  Traces: F-FIND-1, F-QUAL-3.
+- **DIST-F-48** A listing shall never decide the version, the bytes or the withdrawals of a mod: they come only from the channel of its publisher.
+  Traces: F-FIND-4, F-INST-6.
 
 ## 3. Acceptance scenarios
 
@@ -205,3 +220,58 @@ Each scenario is one test. "Alice" and "Bob" are two homes on one device.
   DIST-F-4, DIST-F-26)
 - **A20 Bad name.** Given the name `"Al\u{202E}ice"`, when Alice sets it,
   then dist refuses it before the app is asked. (DIST-F-9)
+
+### Step 4
+
+"Ivy" owns an index, "Carol" searches. Each home's site folder is served by
+its own local host.
+
+- **A21 Choose an index.** Given Ivy lists Alice's `reading-list`, when
+  Carol chooses Ivy's link, then Carol holds Ivy's and Alice's verified
+  channels, `follows.json` marks Ivy as an index and Alice as listed (not
+  followed). (DIST-F-40)
+- **A22 Search finds a verified mod.** Given A21, when Carol searches
+  `reading`, then one hit is Alice's `reading-list` at its newest version,
+  with Alice's profile name and `Via::Index` of Ivy with Ivy's note.
+  (DIST-F-41)
+- **A23 A listing cannot vouch.** Given Ivy lists Alice's key with a base
+  that serves Mallory's channel, when Carol chooses Ivy, then the read of
+  that base fails as "wrong channel" and no search gives a hit of it.
+  (DIST-F-41, DIST-F-48)
+- **A24 Withdrawn versions are hidden.** Given A21 and Alice withdraws her
+  newest version, when Carol refreshes and searches, then the hit is the
+  version before it; when Alice withdraws every version, there is no hit.
+  (DIST-F-42)
+- **A25 Freshness mark.** Given A21 and Alice's host stops, when Carol
+  refreshes and searches, then the hit is still there, with
+  `unchecked_since` equal to the time of the last read that succeeded.
+  (DIST-F-42)
+- **A26 One level of includes.** Given Ivy includes Jay, Jay lists Ken's
+  mod and includes Lou, when Carol chooses Ivy, then the search gives Jay's
+  mods and Ken's mod, nothing of Lou, and Lou's host gets no request.
+  (DIST-F-43)
+- **A27 Unlist.** Given A21 and Ivy unlists Alice's mod, when Carol
+  refreshes, then no hit of Alice remains and her listed record is gone; a
+  followed Alice stays. (DIST-F-40, DIST-F-46)
+- **A28 A compromised index lists nothing.** Given A21, when Ivy's channel
+  forks, then Carol's search gives no hit through Ivy's listings and Alice
+  is no longer read. (DIST-F-26, DIST-F-40)
+- **A29 Filters.** Given hits that offer, call and subscribe to
+  `mods:reading-list/books@0.1.0`, when Carol searches by that interface
+  with and without the version, and by Alice's key, then exactly the
+  matching hits come back. (DIST-F-41)
+- **A30 Own listings.** Given an app that refuses, when Ivy lists a mod,
+  then nothing is signed. A list of her own channel, of a slug with no
+  release, or of a mod already listed fails before the app is asked.
+  (DIST-F-46, DIST-F-47)
+- **A31 Cap.** Given Ivy lists 513 channels and `max_listed` is 512, when
+  Carol chooses Ivy, then 512 channels are read and `skipped` is 1.
+  (DIST-F-44)
+- **A32 Offline search.** Given A21, when every host stops, then the
+  search gives the same hits. (DIST-F-45)
+- **A33 J4, dist half.** Alice publishes; Ivy lists it; Carol chooses Ivy,
+  searches, follows the hit's link and fetches the release; Alice
+  publishes 0.2.0 and Carol's refresh reports it; Alice withdraws 0.2.0
+  and the refresh reports the withdrawal; a second statement at a used
+  position marks Alice compromised and the hit carries that status.
+  (DIST-F-40 to DIST-F-42, DIST-F-25, DIST-F-26)

@@ -283,7 +283,7 @@ pub struct GrantLine { pub key: String, pub kind: GrantKind, pub text: String, p
 pub enum GrantKind { Storage, Http, Call, Subscribe }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Statement { Profile, Release, Withdraw }
+pub enum Statement { Profile, Release, Withdraw, List, Include, Unlist }   // step 4: the last three
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Detail { pub label: String, pub value: String }
 ```
@@ -307,6 +307,9 @@ Sign details, in this order. A release is named by its ReleaseRef text
 | `release` | `Release`: ReleaseRef; `Package`: package id (64 hex); `Size`: bytes; `Source included`: `yes` or `no`; `Summary` |
 | `withdraw` | `Release`: ReleaseRef of the withdrawn release; `Reason` |
 | `profile` | `Name` |
+| `list` (step 4) | `Mod`: `<key>/<slug>` with the publisher's name and fingerprint when known; `Location`: the link's base; `Note` (or `none`) |
+| `include` (step 4) | `Index`: the key with its name and fingerprint when known; `Location`; `Note` (or `none`) |
+| `unlist` (step 4) | `Ends`: `list` or `include`, and its `Mod` or `Index` value as above |
 
 `signer` is the own identity: profile name and fingerprint.
 
@@ -389,6 +392,14 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `channel_follow` | main | `link` | `ChannelRow` | C |
 | `channel_unfollow` | main | `channel` | `null` | C |
 | `channels_refresh` | main | — | `[ChannelRow]` | C |
+| `indexes_list` | main | — | `[IndexRow]` | D |
+| `index_choose` | main | `link` | `[IndexRow]` | D |
+| `index_drop` | main | `channel` | `null` | D |
+| `search` | main | `text`, `publisher: string \| null`, `interface: string \| null` | `[HitView]` | D |
+| `install_release` | main | `release` (ReleaseRef text) | `{installed: [local]}` | D |
+| `index_list` | main | `link` (with a slug), `note` | `null` | D |
+| `index_include` | main | `link` (no slug), `note` | `null` | D |
+| `index_unlist` | main | `entry` (entry id text) | `null` | D |
 | `consent_get` | consent | — | `ConsentView \| null` | A |
 | `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]` | `null` | A |
 
@@ -406,6 +417,18 @@ ModView    {local, name, slug, version, release: null | string (ReleaseRef),
             grants: [GrantLine]} // granted false = withdrawn or withheld
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string}
+IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
+            status: "ok" | "compromised" | "failed", cause: null | string,
+            own: bool, mods: number, skipped: number, included: [Party],
+            listings: [{entry, kind: "list" | "include", target (ReleaseRef without
+                        version, or key text), note}]}            // own index only: its live listings
+HitView    {release (ReleaseRef), slug, name, summary, version, link (link text) | null,
+            publisher: null | Party, verified: bool, status: "ok" | "compromised",
+            checkedAt: null | number, uncheckedSince: null | number,   // ms since the Unix epoch
+            via: [{kind: "own" | "followed" | "index", index: null | Party,
+                   through: null | Party, note: string}],
+            offers: [string], events: [string], uses: [string],     // interface names
+            installed: null | string}                                // local name when installed
 ```
 
 Behaviour:
@@ -494,10 +517,32 @@ set (`NoSiteUrl`). The route never answers a confirmation: only
 `consent_answer` and the `Destroyed` handler call `Broker::answer`
 (APP-F-13).
 
-### 8.2 `POST /api/search` (step 4, sketch)
+### 8.2 `POST /api/search` (step 4)
 
-Request `{"text": string, "publisher": string|null, "interface": string|null}`;
-answer `{"results": [...]}`, one per verified release. No consent.
+Request: `Content-Type: application/json`,
+`{"text": string, "publisher": string|null, "interface": string|null}`
+(`text` may be `""`; at most 256 bytes). In `spawn_blocking`:
+`dist.search(&Query)`. No consent: a search reads only what the
+participant chose to read, and gives no authority. It makes no network
+request (dist 5.10), so it never waits on a web host.
+
+| Result | Status | Body or code |
+|---|---|---|
+| searched | 200 | `{"indexes": <number of chosen indexes, own excluded>, "results": [Result]}` |
+| bad JSON, a `publisher` that is no key, an `interface` that is no interface name, `text` over 256 bytes | 400 | `bad_request` |
+| dist did not open (APP-F-2) | 503 | `unavailable` |
+
+```text
+Result {release (ReleaseRef), name, summary, link (link text) | null,
+        publisher: {key, name: null | string, fingerprint},
+        status: "ok" | "compromised", checked_at: null | number, unchecked_since: null | number,
+        via: [{kind: "own" | "followed" | "index", index: null | key, through: null | key, note}],
+        offers: [string], events: [string], uses: [string]}
+```
+
+The fields are those of `HitView` (section 7) in snake case; `uses` holds
+the interfaces of the call and subscribe grants. The route exists for
+`watane-dev search` (dev 10).
 
 ### 8.3 `POST /api/fetch` (step 5, sketch)
 
@@ -611,6 +656,44 @@ reason input and `Withdraw` button. `release_withdraw` parses the reference
 passes every dist failure and cause through. DistConfirm handles signing
 consent, including the release and withdrawal reason.
 
+### 9.6 Indexes and search (step 4)
+
+The main window gets a view **find**: the chosen indexes on top, a search
+form (words, publisher, interface) and the results below. With no chosen
+index it says: "Add an index from a link that someone shared with you."
+watane adds no index by itself (W23). A row of the channels view gets the
+buttons "Use as index" (`index_choose` with the row's link), "Include in my
+index", and for each of its mods "List in my index".
+
+- `indexes_list`: `dist.indexes()` mapped to `IndexRow`, the own channel
+  first (`own: true`, with its live listings). `status` and `cause` as for
+  `ChannelRow` (9.3).
+- `index_choose(link)`: `Link::from_str`, `dist.choose_index(&link)` in
+  `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
+  cache; answer `indexes_list`. A failed first read is a command error with
+  dist's cause (APP-F-37).
+- `index_drop(channel)`: `dist.drop_index`.
+- `search`: as 8.2, mapped to `HitView`. `verified` is `true` for every hit
+  (dist gives no other); `installed` from `host.list()` by `ReleaseRef`
+  publisher and slug. The page shows `checkedAt` as an age ("checked 5 min
+  ago"), and for `uncheckedSince` the mark "could not check since <local
+  time>". A `compromised` hit shows "compromised" and no install button.
+- `install_release(release)`: `ReleaseRef::from_str`; the base from
+  `dist.channel(&key)?.base` (none: `not_found`); `dist.follow` of the link
+  with that key, base and slug (DD-24 of dist); then steps 3 and 4 of 9.4
+  with `dist.fetch(&release)` as the first source. The consent view shows
+  the plan as for a link.
+- `index_list`, `index_include`, `index_unlist`: `dist.list`,
+  `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
+  the `Sign` request (6.2). dist's refusals before the consent view
+  (`OwnListing`, `AlreadyListed`, `NoRelease`, `BadNote`) are command
+  errors with dist's cause.
+- The refresh loop (9.5) needs no change: `dist.refresh()` reads the
+  read sets too.
+
+Each new command goes into `build.rs`, the `main` capability and the
+literal lists of `tests/static_config.rs`.
+
 ## 10. Test driver (feature `driver`)
 
 Only for tests. It adds nothing to any webview: it uses the native
@@ -710,6 +793,8 @@ real approval gate. No production security check changes.
 | `tests/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
 | `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |
 | `tests/j4.rs` (D part) | J4 without index: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
+| `tests/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
+| `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
 
 The hostile fixture (`tests/fixtures/hostile/`, a page-only mod) tries the
 following and writes each result into `window.__report`: `invoke` of every
@@ -739,7 +824,7 @@ record it in `NOTES.md` with the old and the new result.
 | A Shell | sections 1, 3 (no host), 5, 6, 7 (stage A rows), 10, 14; `ui/`; unit, static, `gui_shell`, `gui_isolation` | nothing | `src/fake.rs`: Core reads a catalog from env `WATANE_APP_FAKE` (JSON `{"mods": [ModView]}`); `tests/support` serves the fixture pages on `http://<local>.localhost:<port>` (127.0.0.1 and ::1) with the stand-in CSP `default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'`; requests come from the driver's `ask`; `--home` is required and `--port` defaults to 0 | `cargo test --features driver` passes S1 and S3 to S8 on macOS |
 | B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
-| D Find (part built) | APP-F-37 compromised mods, APP-F-39/40; section 9.5, release commands, `j4.rs` without index | dist refresh/fetch/withdraw, host updates | none | J4 without index passes; APP-F-38 waits on the index design (8.2) |
+| D Find | Built (S25): APP-F-37 compromised mods, APP-F-39/40; section 9.5, release commands, `j4.rs` without index. To build (S26 design): 8.2, 9.6, the index and search commands of section 7, the `list`, `include`, `unlist` details of 6.2; APP-F-38, APP-F-43 to APP-F-46 | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
 | E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -830,7 +915,7 @@ still needs the participant in the consent view.
 | Item | To | Form |
 |---|---|---|
 | The program `watane-app [--home <dir>] [--port <n>]` | participants, journey tests | section 1 |
-| `POST /api/publish` (step 3); `/api/search` (step 4) and `/api/fetch` (step 5), sketches | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
+| `POST /api/publish` (step 3); `/api/search` (step 4); `/api/fetch` (step 5, sketch) | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
 | The answers to the confirmations of `host` (install, new grant) and `dist` (signature), in process | `host`, `dist` | section 9.2 |
 | The grant words | the consent view; `dev` may print the same words | section 4 |
 | The driver protocol | the journey tests J2 to J4 | section 10 |

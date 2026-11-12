@@ -72,7 +72,7 @@ test; `TECHNICAL.md` section 15 names its oracle.
 
 ## 5. Find and build on (steps 4 and 5; outline only)
 
-- **DEV-F-37** (step 4) When the maker runs `search <text>`, dev shall ask the home host and report its verified results. Traces: F-FIND-3, F-FIND-4.
+- **DEV-F-37** (step 4) When the maker runs `search` with words, a publisher or an interface, dev shall ask the running app of the home and report its verified results, with the indexes that list each one and its freshness marks. dev shall never install a result. Traces: F-FIND-3, F-FIND-4, F-AGENT-4.
 - **DEV-F-38** (step 5) When the maker runs `new <slug> --from <link>`, dev shall make a mod folder from the source of that release and record the release as its origin. Traces: F-BUILD-1, J5.
 - **DEV-F-39** (step 5) When the maker runs `add --release <link>`, dev shall add a dependency on the interface of that published provider, as for a local provider, with its publisher and release. Traces: F-BUILD-2, J5.
 
@@ -112,3 +112,5 @@ test; `TECHNICAL.md` section 15 names its oracle.
 | DEV-S-30 | a mod with a local provider | `publish --json` | exit 1; error `publish.local_dependency` names the provider; the host received no request. |
 | DEV-S-31 | a mod with no local provider, a home host that approves | `publish --no-source --json` | exit 0; `result.release` is set; the sent package holds no `logic/src/`. |
 | DEV-S-32 | any command | `--json` | standard output parses as one JSON object with the fields of the envelope. |
+| DEV-S-33 | a home app whose search answers one result | `search reading --json` | exit 0; `result.results` equals the app's results; the app received `{"text":"reading","publisher":null,"interface":null}`; `next` is null. |
+| DEV-S-34 | a home app with no chosen index | `search reading --json` | exit 0; `result.results` is empty; `next` says to ask the person to add an index in the app. |

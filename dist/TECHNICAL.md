@@ -29,10 +29,13 @@ dist/
     http.rs       Reader: GET with limits and timeouts (section 4.5)
     follow.rs     follows.json, site.json, read_channel, follow, refresh
     fetch.rs      package cache, unpacked() (section 5.2), fetch, open_link
+    index.rs      list, include, unlist bodies; the read set (5.9); choose_index    (step 4)
+    search.rs     Query, InterfaceQuery, Hit; search (5.10)                       (step 4)
   tests/
     support/mod.rs  TestHost, RecordingConfirm, fixtures
     fixtures/reading-list/   a page-only mod folder (mod.toml, wit/world.wit, ui/index.html)
     site.rs  follow.rs  fetch.rs  restore.rs  j3_dist.rs
+    index.rs  search.rs  j4_dist.rs                                             (step 4)
 ```
 
 Inner modules are private (`mod x;`, not `pub mod`). Only `lib.rs` exports.
@@ -126,6 +129,22 @@ impl Dist {
     // Packages (section 5.7).
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError>;
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError>;  // the link must have a slug
+
+    // Indexes (step 4, section 5.9).
+    /// Marks the channel of `link` (no slug) as a chosen index, reads it and
+    /// then every channel of its read set (DIST-F-40). Fails like `follow`
+    /// when the first read of the index fails; then nothing changes.
+    pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
+    /// Removes the index mark. The channel stays when it is followed.
+    pub fn drop_index(&self, channel: &PublicKey) -> Result<(), DistError>;
+    pub fn indexes(&self) -> Result<Vec<IndexView>, DistError>;     // chosen indexes, key order
+    // Own index statements. Each asks `confirm` exactly once (section 5.2).
+    pub fn list(&self, link: &Link, note: &str) -> Result<Entry, DistError>;      // a link with a slug
+    pub fn include(&self, link: &Link, note: &str) -> Result<Entry, DistError>;   // a link with no slug
+    pub fn unlist(&self, listing: &EntryId) -> Result<Entry, DistError>;          // an own live list or include
+
+    // Search (step 4, section 5.10). Reads only stored channels: no network.
+    pub fn search(&self, query: &Query) -> Result<Vec<Hit>, DistError>;
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +155,7 @@ pub struct Options {
     pub max_entry_file: u64,         // default watane_log::MAX_ENTRY (65_728 bytes)
     pub max_package: u64,            // default watane_pkg::MAX_PACKAGE_BYTES (64 MiB)
     pub max_entries_per_read: u64,   // default 10_000 entry files per channel per read
+    pub max_listed: usize,           // default 512 channels read only because an index lists them (5.9)
 }
 impl Default for Options { /* the defaults above */ }
 
@@ -161,12 +181,18 @@ pub enum Statement {
     Release { reference: ReleaseRef, release: Release },
     /// `reference` and `release`: the release that it withdraws.
     Withdraw { withdraw: Withdraw, reference: ReleaseRef, release: Release },
+    List(Listing),                                     // step 4: the link has a slug
+    Include(Listing),                                  // step 4: the link has no slug
+    /// `listing`: the own `list` or `include` that it ends; `include` says which kind.
+    Unlist { entry: EntryId, listing: Listing, include: bool },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Profile { pub name: String }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Withdraw { pub release: EntryId, pub reason: String }   // the body (4.1)
-impl Statement { pub fn kind(&self) -> &'static str; }  // "profile" | "release" | "withdraw"
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listing { pub link: Link, pub note: String }             // the body of list and include (4.1)
+impl Statement { pub fn kind(&self) -> &'static str; }  // "profile" | "release" | "withdraw" | "list" | "include" | "unlist"
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link { /* channel: PublicKey, base: url::Url, slug: Option<Slug> */ }
@@ -190,7 +216,23 @@ pub struct ChannelView {
     pub bad: Vec<BadStatement>,        // seq order
     pub status: Status,
     pub followed: bool,
+    pub index: bool,                   // a chosen index (step 4)
+    pub listed_by: Vec<PublicKey>,     // chosen indexes whose read set holds it (5.9), key order
+    pub listings: Vec<ListingInfo>,    // its own list and include statements, seq order; unlisted ones included
+    pub last_attempt: Option<u64>,     // ms since the Unix epoch; None for the own channel
     pub last_success: Option<u64>,     // ms since the Unix epoch; None for the own channel
+}
+#[derive(Clone, Debug)]
+pub struct ListingInfo {
+    pub entry: EntryId, pub seq: u64, pub include: bool,
+    pub listing: Listing, pub unlisted: Option<u64>,   // seq of the unlist
+}
+#[derive(Clone, Debug)]
+pub struct IndexView {
+    pub view: ChannelView,             // index is true
+    pub included: Vec<PublicKey>,      // the live includes that are read (depth 1)
+    pub mods: usize,                   // listed mods with a stored, verified release
+    pub skipped: usize,                // channels not read because of max_listed
 }
 #[derive(Clone, Debug)]
 pub struct ReleaseInfo {
@@ -225,6 +267,37 @@ pub enum Change {                            // only for entries stored by this 
     Release(ReleaseInfo),
     Withdrawn { seq: u64, release: ReleaseInfo },   // release.withdrawn is Some
     Bad(BadStatement),
+    Listed(ListingInfo),                            // step 4: a new list or include
+    Unlisted { seq: u64, listing: ListingInfo },    // step 4: listing.unlisted is Some
+}
+
+// Search (step 4, section 5.10).
+#[derive(Clone, Debug, Default)]
+pub struct Query {
+    pub text: String,                        // at most 256 bytes; words separated by whitespace
+    pub publisher: Option<PublicKey>,
+    pub interface: Option<InterfaceQuery>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InterfaceQuery { /* ns:pkg/iface, version: Option<Version> */ }
+impl std::str::FromStr for InterfaceQuery { type Err = DistError; }   // BadQuery; an InterfaceName with or without "@<version>"
+#[derive(Clone, Debug)]
+pub struct Hit {
+    pub info: ReleaseInfo,                   // the newest release of the mod that is not withdrawn
+    pub publisher_name: Option<String>,
+    pub link: Option<Link>,                  // the publisher key, the base it is read from, the slug; None for the own channel
+    pub status: Status,                      // of the publisher's channel
+    pub checked_at: Option<u64>,             // last_success of the publisher's channel; None for the own channel
+    pub unchecked_since: Option<u64>,        // Some(last_success) when the last read of that channel failed (DIST-F-42)
+    pub via: Vec<Via>,                       // why it is in the search set; Own, Followed, then Index in key order
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Via {
+    Own,
+    Followed,
+    /// A chosen index lists it, or its owner published it. `through`: the
+    /// included index whose statement or channel it comes from. `note`: of the list statement, or "".
+    Index { index: PublicKey, through: Option<PublicKey>, note: String },
 }
 
 #[derive(Debug)]
@@ -294,6 +367,13 @@ pub enum DistError {
     HashMismatch { url: String, expected: PackageId, found: PackageId },
     BadPackage { url: String, cause: PackageError },  // from_bytes or unpack refused it
     PackageMismatch { url: String, cause: ReleaseError },   // Mismatch { field } (PKG-F-23)
+    // Indexes and search (step 4)
+    BadNote { cause: &'static str },
+    BadQuery { cause: &'static str },
+    OwnListing,                              // list or include of the own channel
+    AlreadyListed { seq: u64 },              // a live listing of the same mod or index
+    NotListed { entry: EntryId },            // unlist: no live own list or include
+    NotIndex { channel: PublicKey },         // drop_index of a channel that is no chosen index
 }
 ```
 
@@ -309,6 +389,9 @@ The envelope (channel, seq, prev, time, kind, body, signature) is `log`'s.
 | `profile` | CBOR array of 1: `[name: text]` |
 | `release` (`watane_pkg::RELEASE_KIND`) | the bytes of `Release::encode()`; read with `Release::decode` |
 | `withdraw` | CBOR array of 2: `[release: bytes(32), reason: text]`. `release` is the entry id of a `release` statement of the same channel at a lower seq. |
+| `list` (step 4) | CBOR array of 2: `[link: text, note: text]`. `link` is a link of 4.2 **with** a slug: the mod `<key>/<slug>` and where its channel is read. |
+| `include` (step 4) | CBOR array of 2: `[link: text, note: text]`. `link` is a link of 4.2 **with no** slug: another index. |
+| `unlist` (step 4) | CBOR array of 1: `[listing: bytes(32)]`, the entry id of a `list` or `include` statement of the same channel at a lower seq. |
 
 CBOR rules for `profile` and `withdraw` (RFC 8949 section 4.2.1): definite
 lengths, shortest heads, UTF-8 text. Encode with `minicbor::Encoder`. A
@@ -322,6 +405,12 @@ Byte vectors (the test oracle, computed by hand):
 |---|---|
 | `Profile { name: "Alice" }` | `81 65 41 6c 69 63 65` |
 | `Withdraw { release: [0x11; 32], reason: "bug" }` | `82 58 20` then 32 × `11` then `63 62 75 67` |
+| `list`: link `watane:47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy@https://alice.example.org/mods/#reading-list` (104 bytes), note `good for books` | `82 78 68`, the 104 link bytes, `6e`, the 14 note bytes |
+| `include`: the same link with no `#reading-list` (91 bytes), note `""` | `82 78 5b`, the 91 link bytes, `60` |
+| `unlist`: `[0x22; 32]` | `81 58 20` then 32 × `22` |
+
+The link text in a body is the `Display` form of `Link` (4.2): a decoder
+refuses a link that does not format back to the same text.
 
 Text rules (`body.rs`, one function for both fields):
 
@@ -329,6 +418,7 @@ Text rules (`body.rs`, one function for both fields):
 |---|---|---|
 | name | 1 to 64 | `char::is_control`; U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069; whitespace at the start or the end |
 | reason | 1 to 280 | the same |
+| note (step 4) | 0 to 280 | the same |
 
 `dist` checks these rules before a confirmation (DIST-F-9) and again when it
 reads a body of another channel.
@@ -338,7 +428,7 @@ for every other channel). Walk the entries in seq order:
 
 | # | Condition | Effect |
 |---|---|---|
-| 1 | kind is not `profile`, `release` or `withdraw` | ignored, not reported (step 4 adds kinds) |
+| 1 | kind is not one of the six of this table | ignored, not reported (a later kind) |
 | 2 | body does not decode, or a text rule fails | `BadStatement { cause }` |
 | 3 | `profile` | `name` becomes this name |
 | 4 | `release` with a slug and version that an earlier release of this channel has | `BadStatement { cause: "version <v> of <slug> already released at seq <n>" }`. So one `ReleaseRef` names at most one release. |
@@ -346,6 +436,17 @@ for every other channel). Walk the entries in seq order:
 | 6 | `withdraw` whose `release` is no earlier `release` entry of this channel | `BadStatement { cause: "withdraw names no earlier release" }` |
 | 7 | `withdraw` of a release that is already withdrawn | `BadStatement { cause: "already withdrawn at seq <n>" }` |
 | 8 | `withdraw` | sets `withdrawn` of that release |
+| 9 | `list` whose link has no slug, or `include` whose link has a slug | `BadStatement { cause: "list needs a mod link" / "include needs a channel link" }` |
+| 10 | `list` or `include` whose link key is this channel's key | `BadStatement { cause: "lists its own channel" }`: its own releases count already (5.9) |
+| 11 | `list` of a key and slug, or `include` of a key, with a live listing in this channel | `BadStatement { cause: "already listed at seq <n>" }` |
+| 12 | `list` or `include` | a new `ListingInfo` |
+| 13 | `unlist` whose `listing` is no earlier `list` or `include` entry of this channel, or one already unlisted | `BadStatement { cause: "unlist names no live listing" }` |
+| 14 | `unlist` | sets `unlisted` of that listing |
+
+A listing is **live** while it has no `unlisted`. A `list` says only "this
+mod is worth finding" and where to read its publisher's channel. It names
+no version and no package id: the versions, the withdrawals and the bytes
+come only from the publisher's own channel (DD-18).
 
 ### 4.2 Link
 
@@ -424,6 +525,14 @@ except in `site/` (0644, 0755).
   }
 }
 ```
+
+Step 4 adds two fields to a channel record, with serde defaults, so the
+version stays 1 and a step 3 file reads unchanged:
+`"followed": bool` (default `true`: every step 3 record is a follow) and
+`"index": bool` (default `false`). A record with both `false` is a
+**listed** channel: dist reads it only because the read set of a chosen
+index holds it (5.9), and removes the record when no read set holds it any
+more. Its `base` is the base of the listing that put it there.
 
 `site.json`: `{"version":1,"url":"https://alice.example.org/mods/"}`.
 Times are milliseconds since the Unix epoch, from `SystemTime::now()`. A
@@ -599,7 +708,8 @@ small, and one derivation keeps one rule.
    `Withdrawn { reason }`.
 3. Cache: if `packages/<id>` exists and its `PackageId::of` equals
    `release.package`, use it (no request). If it differs, delete the file.
-4. Else the channel must be followed (`NotFollowed`). GET the package with
+4. Else the channel must have a record in `follows.json` (followed, a
+   chosen index, or listed; `NotFollowed`). GET the package with
    its limit (`release.size`, at most `max_package`) and timeout.
 5. `PackageId::of(&bytes) != release.package`: `HashMismatch`.
 6. `Package::from_bytes`, then `unpacked` (`BadPackage`).
@@ -633,6 +743,119 @@ The decision to update without a question (F-INST-7) and the offer after a
 withdrawal (F-INST-8) are step 4, in `host` and `app`. Step 3 provides the
 data only.
 
+### 5.9 Indexes and the read set (step 4)
+
+An index is a channel, not a second kind of channel (W20). Every channel
+can hold `list`, `include` and `unlist` statements; a channel becomes an
+index for this home only when the participant chooses it. The own channel
+always counts as a chosen index.
+
+**Read set** of a chosen index `I` (one level of includes, W21):
+
+1. `I` itself: all its releases.
+2. For each live `list` of `I`: the channel of its link, for that slug.
+3. For each live `include` of `I`: the included channel `J`, all its
+   releases; and for each live `list` of `J`, that channel for that slug.
+   The `include` statements of `J` are ignored: dist never reads a
+   channel because of them.
+
+A chosen index that is compromised contributes nothing but its own
+releases up to the fork (its stored listings are ignored), and no channel
+is read because of it. An included channel that is compromised gives no
+listing either.
+
+**Base.** A channel is read from one base: the base of its follow when it
+is followed or chosen; else the base of the first listing that names it,
+in this order: own channel, then chosen indexes in key order, each in seq
+order, its includes after its lists. A listing that names a followed
+channel with another base changes nothing.
+
+**Cap.** At most `max_listed` channels that are neither followed nor
+chosen, in the order above. The rest are not read; `IndexView.skipped`
+counts them for the index whose listing came first.
+
+**`refresh()`**, in three passes, each in key order and with the rules of
+5.4: (a) the followed channels and the chosen indexes; (b) the channels
+that a list or include of a chosen index names; (c) the channels that a
+list of an included channel names. A channel is read at most once per
+refresh. After pass (c), add a record (`followed: false`, `index: false`)
+for each listed channel that has none, and remove each listed record that
+no read set holds. A listed channel's first failed read keeps its record:
+its failure shows as a freshness mark, not as a lost listing.
+
+**`choose_index(link)`**: no slug (`BadLink`); own key (`OwnChannel`).
+`read_channel` as `follow` does (a failed or compromised first read is the
+`Err`, and nothing changes). Then set `index: true` (and keep `followed`
+when it was set; a new record has `followed: false`), and read the
+channels of its read set as passes (b) and (c) do for it alone. Return a
+report for each channel read.
+
+**`unfollow(channel)`** from step 4: set `followed: false`; remove the
+record only when it is no chosen index and no read set holds it.
+
+**`drop_index(channel)`**: not a chosen index: `NotIndex`. Set `index:
+false`; remove the record when it is not followed and no other read set
+holds it; remove the listed records that only it held.
+
+**`list(link, note)`**, **`include(link, note)`**: text rules for the note
+(`BadNote`); link shape (`BadLink`); own key (`OwnListing`); a live
+listing of the same mod or index in the own channel (`AlreadyListed`).
+For `list`, the channel must be stored with a release of that slug that is
+not withdrawn: if it is not stored, read it once from the link's base as
+`read_channel` does, with no record; then `NoRelease` when there is none.
+For `include`, the channel must be readable the same way. All of this
+happens before `confirm`. Then lock, `sign_and_append("list" | "include",
+body)`.
+
+**`unlist(entry)`**: the own view has a live listing with that entry id
+(`NotListed`); lock; `sign_and_append("unlist", body)`.
+
+### 5.10 Search (step 4)
+
+`search(query)` reads only stored entries and `follows.json`: no request,
+so it works offline (F-QUAL-1). It derives each view once.
+
+1. **Candidates.** One per mod (`publisher key`, `slug`):
+   - each slug of the own channel (`Via::Own`);
+   - each slug of each followed channel (`Via::Followed`);
+   - each slug of each chosen index, and of each channel that it includes
+     (`Via::Index`, `through` the included channel);
+   - each mod of a live `list` in the read set of each chosen index
+     (`Via::Index`, with the note, `through` for a list of an included
+     channel).
+2. **Release.** The candidate's newest release that is not withdrawn
+   (DD-7, `latest`) from the stored channel of its publisher. None (never
+   read, no release of that slug, or every version withdrawn): no hit
+   (F-FIND-4: a withdrawn version is hidden, and an index alone never
+   makes a hit).
+3. **Filters**, all that are set must hold:
+   - `publisher`: the publisher key equals it.
+   - `interface`: one of `offers`, `events`, or the interface of a call or
+     subscribe grant of the release equals it; with no version in the
+     query, the interface name without its `@<version>` equals it.
+   - `text`: lower-case the query and the haystack with
+     `str::to_lowercase`; every whitespace-separated word of the query is a
+     substring of the haystack. The haystack is the slug, the release
+     name and summary, the publisher's profile name, the notes of every
+     `Via::Index` of the candidate, and the interface names of `offers`,
+     `events` and grants, joined with `\n`. An empty text matches all.
+4. **Order.** More distinct `Via::Index` indexes first, then `Via::Own` and
+   `Via::Followed` before the others, then the release name
+   (lower-cased), then the `ReleaseRef` text. This order uses only the
+   participant's own choices (V6); it is no global ranking.
+5. At most 200 hits (the first 200 of the order).
+6. **Marks** (DIST-F-42): `checked_at` is the publisher record's
+   `last_success`; `unchecked_since` is `Some(last_success)` when
+   `last_attempt > last_success`, i.e. the newest read failed. A hit of a
+   compromised channel stays in the result with `status: Compromised`, so
+   the participant sees why it cannot be installed (F-QUAL-3); `fetch`
+   refuses it.
+
+**Install a hit.** The hit's `link` names the publisher's channel and the
+mod. The caller follows it (`follow(&link)`, so that updates and
+withdrawals keep coming after the index drops the mod) and then fetches
+`hit.info.reference` (5.7). A search never installs and never follows.
+
 ## 6. Security properties
 
 | Property | Enforcement | Test |
@@ -649,6 +872,11 @@ data only.
 | Private data stays private | `<home>/dist/` is 0700; the secret key never leaves `log` except in an encrypted backup | `open_modes` |
 | One writer per home | `File::try_lock` on `<home>/dist/lock` | `open_twice_is_locked` |
 | Untrusted text cannot steer a terminal | errors print URLs, paths, names and host causes escaped and unquoted | `error_text_escapes_controls` |
+| An index cannot vouch for bytes or versions (F-FIND-4) | a `list` names a mod, never a version or a package id; a hit's release comes only from the publisher's verified channel; a channel read through a listing is checked against the key in the listing | A23 |
+| An index cannot hide a withdrawal | the release of a hit is the newest that the publisher's channel does not withdraw | A24 |
+| An index cannot make dist read without bound | one level of includes; at most `max_listed` listed channels; each read has the limits of 4.5 | A26, A31 |
+| A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
+| A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a host that withholds
 new entries; another program of the same user; the use of one identity on
@@ -689,6 +917,15 @@ literal values, `std::fs`, the `blake3` crate, and `watane_log` and
 | `restore_*` | A19; a link of another key leaves the head unconfirmed; a statement before `confirm_own` is `OwnHeadUnconfirmed` and asks nothing | `Log::entries`; recorded requests |
 | `j3_dist` | the dist half of J3 end to end: open, set name, publish, set site URL, serve, link, `open_link`, tamper, refuse | values the test created |
 | `error_text_escapes_controls` | a URL with `\u{1b}` prints escaped | literal string |
+| `body_vectors` (step 4 rows) | the three vectors of 4.1 for `list`, `include`, `unlist`; a link that does not format back is refused | literal bytes |
+| `derive_rules` (step 4 rows) | rules 9 to 14 of 4.1 | literal expected views |
+| `index_*` | A21, A23, A26, A27, A28, A30, A31; `index_base_*`: a followed base wins over a listing's base | request counts per path; `follows.json` with `serde_json` |
+| `search_*` | A22, A24, A25, A29, A32 | the test's own list of what each home published |
+| `j4_dist` | the dist half of J4 (A33) | values the test created |
+
+Step 4 tests use one `TestHost` per channel (Alice, Ivy, Jay, ...), each
+serving that home's site folder. The index owner's statements are made by
+its own `Dist` with an approving `RecordingConfirm`.
 
 The fork in A15 is made without `dist` code under test: the test opens a
 `watane_log::Log` in a temp folder, restores Alice's backup into it,
@@ -716,7 +953,7 @@ stub in another subsystem's folder.
 | S3 | `publish`, `unpacked`, package cache, `export`, `site_dir`, `set_site_url`, `own_link` | `pkg`: section 10 (pkg stages 1, 5, 7) | none: `pkg` needs no sibling, so wait for it | `own_request_*`, `site_*` pass |
 | S4 | `http`, `read_channel`, `follow`, `unfollow`, `refresh` | `log`: `ingest`, `status` (L3) | none new | `follow_*`, `refresh_*` pass |
 | S5 | `fetch`, `open_link`, `backup`, `restore`, `confirm_own` | `log`: backup and own-head confirmation (L4) | none new | `fetch_*`, `restore_*`, `j3_dist` pass with the real `../log` and `../pkg` |
-| S6 (step 4, later) | index kinds, `search`, freshness marks | `spec/` decisions of step 4 | none | J4 passes |
+| S6 (step 4) | `list`, `include`, `unlist` bodies and rules 9 to 14; `Statement` and `Change` additions; `follows.json` fields; the read set, `choose_index`, `drop_index`, `indexes`, three-pass `refresh`; `search`, `Query`, `Hit` and the marks | nothing new: `log` and `pkg` as for S5 | none | `body_vectors` and `derive_rules` with the step 4 rows, `index_*`, `search_*` and `j4_dist` pass; the step 3 tests still pass unchanged |
 
 J3 itself passes only with `host`, `app` and `dev` (spec/TECHNICAL.md
 section 8). `app` integrates `dist` after S5.
@@ -807,23 +1044,17 @@ installs again") sees the cause only for a release not fetched before.
 
 **`dev`**: nothing directly.
 
-## 11. Steps 4 and 5: only what must not be blocked
+## 11. Step 5: only what must not be blocked
 
-Not to build now. The design above keeps these open:
+Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
 
-- **Index kinds** (W15, step 4) are new kinds. Rule 1 of 4.1 ignores
-  unknown kinds, so a step 3 follower of an index keeps working.
-- **A listed release of another participant** must be verified against the
-  channel of its publisher, and its withdrawals read there (F-FIND-4). An
-  index statement must therefore carry the publisher's link (4.2), not only
-  the key. `read_channel` and `fetch` work for any key with a base.
-- **Chosen indexes** (F-FIND-2): `follows.json` gains `"index": true`
-  (serde default `false`); the version stays 1.
-- **Freshness marks** (F-FIND-4): `last_success` is recorded from step 3.
-- **Search** runs over `view::derive` of the stored channels. The search by
-  interface uses `offers`, `events` and `grants` of `Release` (pkg 7.1).
 - **Step 5**: installing a provider of another publisher needs that
-  provider's base URL (question Q2).
+  provider's base URL (question Q2). From step 4, a listing in a chosen
+  index is one place to find it: `fetch` works for any channel with a
+  record, listed ones too.
+- **F-BUILD-4** (the mods that derive from a mod, as far as the chosen
+  indexes list them): `search` already walks the read set; a filter on
+  `Release.origin` is the step 5 addition.
 
 ## 12. Questions for spec/
 
@@ -838,6 +1069,7 @@ Not to build now. The design above keeps these open:
 | Q7 | F-PUB-1, F-PUB-7 | One identity on two devices forks its channel. | The first version supports one device per identity. Document it in spec §6 "Not protected". |
 | Q8 | TECHNICAL §2 | `app` depends on `host` and `dist` only, but the backup (F-APP-6) is `log`'s. | `dist` passes `backup`, `restore` and `confirm_own` through; only `dist` opens `<home>/log/`. Say so in §2. |
 | Q9 | spec/ (none) | spec/ sets no limit on the size of a package; `pkg` drafts 64 MiB. | 64 MiB everywhere: `pkg` refuses at pack and decode, `dist` at publish and as the body limit of a fetch. Name it in spec §3. |
+| Q11 | spec TECHNICAL §9, W15 | The four open points of step 4 (S26). | Decided in 4.1, 5.9, 5.10 and DD-18 to DD-24; spec W20 to W23 name them. |
 | Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
@@ -861,3 +1093,10 @@ Not to build now. The design above keeps these open:
 | DD-15 | A reader that reads up to a new head also reads `entries/<head seq>` and requires its bytes to equal `head` (`HeadMismatch`). | S21a user-sim: a damaged `entries/<head seq>` went unnoticed, because readers took the head entry from `head`. |
 | DD-16 | `confirm_own` with a link of another key is `NotOwnLink` ("this link is not your channel"), not `WrongChannel`, which stays for a host that serves another channel. | S21a user-sim: the participant gave a wrong link, not a wrong host. |
 | DD-17 | Kept: a first `follow` returns every failure as `Err`; `refresh` reports `Failed` per channel. The app maps the first to a command error and the second to the row's status. | S21a user-sim saw two shapes; they answer two questions (follow or not; how is a followed channel). |
+| DD-18 | A `list` names a mod (key, slug) and where to read it, not a version or a package id. | The publisher's channel is the one authority for versions, withdrawals and bytes (F-FIND-4); an index need not sign again for each version. Undo: a new kind `list-release` with a package id; readers that ignore it keep working (rule 1). |
+| DD-19 | One removal kind, `unlist`, for both `list` and `include`, naming the entry id. | Same shape as `withdraw`; one rule. Undo: cheap before any index exists, a new kind after. |
+| DD-20 | The body carries the link text of 4.2, not a key and a URL apart. | One parser and one form for people and statements. Undo: a new kind. |
+| DD-21 | A chosen index's own releases count as listed; a `list` of the own channel is refused. | F-FIND-1 says an index lists the releases of its owner; listing them again would only add noise. |
+| DD-22 | The read set is three passes; listed channels get a record in `follows.json` with `followed: false`. | Freshness marks need `last_attempt` and `last_success` for each channel a hit comes from; one file keeps one rule. Undo: cheap (local file, serde defaults). |
+| DD-23 | Search is a local filter over stored channels: words as lower-case substrings, filters by key and interface, an order made only from the participant's choices, at most 200 hits. | Offline (F-QUAL-1); no global ranking (V6, non-goals); good enough for a few thousand mods. Undo: cheap, reader-only; a later full-text index changes no format. |
+| DD-24 | Installing a hit follows the publisher. | Updates and withdrawals keep coming after an index drops the mod (F-INST-7, F-INST-8). Undo: cheap (app). |

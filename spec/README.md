@@ -30,7 +30,7 @@ own `VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md` and `AGENTS.md`.
 2. **One fact in one place.** `TECHNICAL.md` says what flows between
    subsystems. A signature is only in the `TECHNICAL.md` of the subsystem that owns it.
    Another subsystem cites it and never redefines it.
-3. **Design up to step 3 only.** Steps 4 and 5 get only what keeps them
-   open, marked as such, not a guess.
+3. **Design up to step 4 only.** Step 5 gets only what keeps it open,
+   marked as such, not a guess. (Step 4: S26 draft, for the human's review.)
 4. **A step is done when its journey passes** on the real programs.
 5. **`../colos` is reference.** Code is written new here.
