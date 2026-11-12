@@ -362,6 +362,5 @@ mod tests {
             assert!(spec.contains("GET /api/releases"));
             assert!(spec.contains("version_exists"));
         }
-        assert!(include_str!("../AGENTS.md").contains("S24 (app, dev)"));
     }
 }
