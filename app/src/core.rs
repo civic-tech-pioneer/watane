@@ -123,8 +123,7 @@ impl Core {
     pub fn port(&self) -> u16 {
         self.served.lock().unwrap().as_ref().map_or(0, |s| s.port)
     }
-    fn view(&self, m: watane_host::InstalledMod) -> Result<ModView, CmdError> {
-        let followed = self.dist.followed()?;
+    fn view(&self, m: watane_host::InstalledMod, followed: &[watane_dist::ChannelView]) -> ModView {
         let channel = m.publisher.as_ref().and_then(|p| {
             followed
                 .iter()
@@ -133,7 +132,7 @@ impl Core {
         let failures = self.update_failures.lock().unwrap();
         let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()));
         let offer = release_offer(m.release.as_ref(), channel).map(|r| r.to_string());
-        Ok(ModView {
+        ModView {
             notice,
             offer,
             local: m.local.to_string(),
@@ -154,16 +153,21 @@ impl Core {
                 .iter()
                 .map(|g| words::grant_line(&g.grant, &self.parties, g.granted, false))
                 .collect(),
-        })
+        }
     }
     pub fn mods(&self) -> Result<Vec<ModView>, CmdError> {
-        self.host.mods().into_iter().map(|m| self.view(m)).collect()
+        let followed = self.dist.followed()?;
+        Ok(self
+            .host
+            .mods()
+            .into_iter()
+            .map(|m| self.view(m, &followed))
+            .collect())
     }
     pub fn get(&self, local: &str) -> Result<Option<ModView>, CmdError> {
-        self.host
-            .get(&LocalName::parse(local)?)
-            .map(|m| self.view(m))
-            .transpose()
+        let name = LocalName::parse(local)?;
+        let followed = self.dist.followed()?;
+        Ok(self.host.get(&name).map(|m| self.view(m, &followed)))
     }
     pub fn disable(&self, local: &str) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
