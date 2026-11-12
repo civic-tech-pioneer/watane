@@ -1,0 +1,257 @@
+use serde_json::Value;
+use std::process::Command;
+
+#[test]
+fn ac1_no_host_precedes_pipeline() {
+    let home = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(home.path())
+        .args(["install", "--json", "--home"])
+        .arg(home.path())
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(3), "{value}");
+    assert_eq!(value["errors"][0]["code"], "env.host_not_running");
+    assert!(
+        value["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains(home.path().to_str().unwrap())
+    );
+    assert_eq!(
+        value["errors"][0]["fix"],
+        "Start the watane app, then run this command again"
+    );
+    assert!(!home.path().join("wit").exists());
+}
+
+#[cfg(feature = "fake-host")]
+mod fake {
+    use super::*;
+    use serde_json::json;
+    use std::{
+        fs,
+        io::{BufRead, BufReader},
+        path::{Path, PathBuf},
+        process::{Child, Stdio},
+    };
+    struct Host(Child);
+    impl Drop for Host {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn start(home: &Path, mode: &str) -> (Host, Value) {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_fake-watane"))
+            .args([mode])
+            .arg(home)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let ready: Value = serde_json::from_str(&line).unwrap();
+        (Host(child), ready)
+    }
+    fn page(root: &Path, slug: &str) -> PathBuf {
+        let dir = root.join(slug);
+        fs::create_dir_all(dir.join("wit")).unwrap();
+        fs::create_dir_all(dir.join("ui")).unwrap();
+        fs::write(
+            dir.join("mod.toml"),
+            format!("name = \"{slug}\"\nsummary = \"a page\"\n"),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("wit/world.wit"),
+            format!("package mods:{slug}@0.1.0;\nworld {slug} {{}}\n"),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("ui/index.html"),
+            "<!doctype html><title>Page</title>",
+        )
+        .unwrap();
+        dir.canonicalize().unwrap()
+    }
+    fn install(dir: &Path, home: &Path) -> (i32, Value) {
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(dir)
+            .env("WATANE_DEV_CACHE", home.join("build-cache"))
+            .args(["install", "--json", "--home"])
+            .arg(home)
+            .output()
+            .unwrap();
+        (
+            output.status.code().unwrap(),
+            serde_json::from_slice(&output.stdout).unwrap(),
+        )
+    }
+    #[test]
+    fn ac3_declined() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let (code, value) = install(&page(root.path(), "counter"), home.path());
+        assert_eq!(code, 4, "{value}");
+        assert_eq!(value["errors"][0]["code"], "host.declined");
+        assert_eq!(value["errors"][0]["message"], "declined");
+    }
+    #[test]
+    #[ignore = "slow: builds and tests two dependent Rust mods before installing them"]
+    fn ac4_provider_order_result_and_failed_pipeline() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let (_host, ready) = start(home.path(), "--home");
+        let a = root.path().canonicalize().unwrap().join("a");
+        let b = root.path().canonicalize().unwrap().join("b");
+        watane_dev::template::new_mod(&a, "a").unwrap();
+        watane_dev::template::new_mod(&b, "b").unwrap();
+        watane_dev::deps::add_local(&b, &a).unwrap();
+        let world = fs::read_to_string(b.join("wit/world.wit")).unwrap();
+        fs::write(
+            b.join("wit/world.wit"),
+            world.replace("world b {", "world b {\n    import mods:a/api@0.1.0;"),
+        )
+        .unwrap();
+        let (code, value) = install(&b, home.path());
+        assert_eq!(code, 0, "{value}");
+        let requests: Vec<_> = fs::read_dir(home.path().join("requests"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].file_name().unwrap(), "1-install");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(&requests[0]).unwrap()).unwrap(),
+            json!({"folders":[a,b]})
+        );
+        assert_eq!(
+            value["result"]["home"],
+            json!(home.path().canonicalize().unwrap())
+        );
+        for (entry, slug) in value["result"]["installed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(["a", "b"])
+        {
+            assert_eq!(
+                entry
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                ["local", "package", "page", "slug", "version"]
+            );
+            assert_eq!(entry["slug"], slug);
+            assert_eq!(entry["local"], slug);
+            assert_eq!(entry["version"], "0.1.0");
+            assert_eq!(
+                entry["page"],
+                format!("http://{slug}.localhost:{}/", ready["port"])
+            );
+            assert_eq!(entry["package"].as_str().unwrap().len(), 64);
+        }
+        assert_eq!(value["result"]["installed"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            value["next"],
+            format!(
+                "Give the person this page: http://b.localhost:{}/",
+                ready["port"]
+            )
+        );
+        fs::write(a.join("mod.toml"), "invalid").unwrap();
+        let (code, value) = install(&b, home.path());
+        assert_eq!(code, 1, "{value}");
+        assert_eq!(
+            value["next"],
+            format!("watane-dev test --json --dir {}", a.display())
+        );
+        assert_eq!(value["errors"][0]["fix"], value["next"]);
+        assert_eq!(
+            fs::read_dir(home.path().join("requests")).unwrap().count(),
+            1
+        );
+    }
+    #[test]
+    fn ac6_fake_preview_status_publish_and_ready() {
+        let home = tempfile::tempdir().unwrap();
+        let (_host, ready) = start(home.path(), "--preview");
+        assert_eq!(ready["token"], "wt_fake");
+        let _: watane_host::Ready = serde_json::from_value(ready.clone()).unwrap();
+        let run = watane_host::RunInfo::read(home.path()).unwrap().unwrap();
+        assert_eq!(run.mode, "preview");
+        let status =
+            watane_dev::api::Client::home_status(&home.path().canonicalize().unwrap()).unwrap();
+        assert_eq!(status["app"], false);
+        let mut response = ureq::post(format!("http://127.0.0.1:{}/api/publish", ready["port"]))
+            .send(b"package bytes")
+            .unwrap();
+        let value: Value = response.body_mut().read_json().unwrap();
+        assert!(value["release"].is_string());
+        assert_eq!(
+            fs::read(home.path().join("requests/1-publish")).unwrap(),
+            b"package bytes"
+        );
+    }
+    #[test]
+    fn ac7_text_output() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let dir = page(root.path(), "counter");
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&dir)
+            .args(["install", "--home"])
+            .arg(home.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("install: ok"));
+        assert!(text.contains("installed: "));
+        assert!(text.contains("Give the person this page:"));
+    }
+}
+
+#[test]
+#[ignore = "slow: proves real home host without an app is refused before the pipeline"]
+fn ac2_real_home_without_app() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    let home = tempfile::tempdir().unwrap();
+    let mut child = Command::new(std::env::var_os("WATANE_BIN").expect("set WATANE_BIN"))
+        .arg("--home")
+        .arg(home.path())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(home.path())
+        .args(["install", "--json", "--home"])
+        .arg(home.path())
+        .output()
+        .unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(
+        value["errors"][0]["message"],
+        format!(
+            "the host of {} runs without the app",
+            home.path().canonicalize().unwrap().display()
+        )
+    );
+}

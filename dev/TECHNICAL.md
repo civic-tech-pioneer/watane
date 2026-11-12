@@ -55,6 +55,7 @@ rust-version = "1.95"
 publish = false
 
 [features]
+default = ["fake-host"]
 fake-host = ["dep:tiny_http"]
 
 [dependencies]
@@ -80,6 +81,9 @@ name = "fake-watane"
 path = "src/bin/fake-watane.rs"
 required-features = ["fake-host"]
 ```
+
+Distribution builds use `cargo build --release --no-default-features` to omit
+the fake host. Default builds include it so integration tests need no feature flag.
 
 Version notes:
 - S2 adds `toml` and `semver` to the S1 manifest. S4-2 adds direct `wasmtime`
@@ -328,7 +332,9 @@ answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
 {"home": "/abs/.watane", "installed": [{"slug": "a", "local": "a", "version": "0.1.0",
   "package": "<64 hex>", "page": "http://a.localhost:47341/"}]}
 ```
-From the host's `InstalledMod` list, in install order.
+From the host's `InstalledMod` list, in install order, retaining exactly these five fields.
+`next`: `Give the person this page: <url>` for the last entry with a page,
+else null.
 
 **publish** (step 3)
 ```json
@@ -1052,12 +1058,20 @@ when no preview folder matches.
 
 ### 9.6 `install` (step 2)
 
-Home: `--home`, else `watane_host::default_home()`. `GET /api/status` must
+Before any mod traversal or test pipeline, resolve home: `--home`, else
+`watane_host::default_home()`; canonicalize when it exists. Read its `RunInfo`.
+`GET /api/status` must match the home, port and protocol version and
 say `mode: "home"` and `app: true`; else `env.host_not_running` with the
 cause ("the host of <home> is a preview" / "the host of <home> runs
 without the app"). Run 9.2, then one `POST /api/install` with
 `{"folders": [...]}`. The host packs the folders, plans, and waits for the
-participant in the app. dev reports the `installed` answer.
+participant in the app. `--wait <seconds>` (default 600) bounds this request.
+No answer is `host.no_answer`: `no answer from the home host in <n> s`,
+fix `Run the command again with a longer --wait`. A `refused` answer is
+`host.declined` with the host message; other errors are `host.refused`
+with `[<code>] <message>`. dev reports the `installed` answer.
+Pipeline failures send no install request and retain the provider-specific
+next command and fixes of `serve`.
 
 ### 9.7 `publish` (step 3)
 
@@ -1326,7 +1340,8 @@ stop before compilation need no warmed cache. No product code changes.
 | unit | existing `ac1_parse_*`, `ac2_parse_*`; `ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `ac3_unit_host_imports_are_unknown_import_traps` | unit: literal libtest output; tiny literal WASI commands prove unsuccessful exit, interrupt, memory limit and trap classifications without Cargo |
 | contract | existing parse/run_steps tests, `ac3_single_event_equality_and_failure_payloads` | unit: literal returns, failures, events, short/full names, order, numeric equality, delivery and fakes |
 | preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac7_previous_warning_requires_answering_preview_and_names_page` | unit: literal Ready/JSON, loopback server; no real host |
-| cli | existing provider-failure and next-page tests | unit: absolute next/fixes, first failing provider, consumer page |
+| cli | existing provider-failure and next-page tests; `ac4_install_next_uses_last_available_page`, `ac7_install_help_and_default_wait`, `ac8_template_explains_home_install` | unit: absolute next/fixes, first failing provider, consumer page, install follow-up/help/guide |
+| api | `ac2_wrong_host_status`, `ac5_install_timeout_and_host_errors`, `ac5_install_timeout_in_response_body` | loopback unit: literal status and error answers, delayed headers and body |
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 
@@ -1365,9 +1380,9 @@ rules belong to 15.1.
 | DEV-S-24 | `serve::ac7b_missing_host_has_environment_error_and_doctor_next` | integration |
 | DEV-S-25 | `add::ac1_dev_s25_add_copies_wit_and_reports_lines`, `ac1_two_adds_write_sorted_local_paths_and_preserve_consumer_world` | integration |
 | DEV-S-26 | `add::ac2_dev_s26_cycle_changes_nothing`, `ac3_self_and_missing_provider` | integration |
-| DEV-S-27 | planned missing home-host error: no existing implementation/test | planned |
-| DEV-S-28 | planned install refusal: no existing implementation/test | planned |
-| DEV-S-29 | planned ordered home install: no existing implementation/test | planned |
+| DEV-S-27 | `install::ac1_no_host_precedes_pipeline`; `api::tests::ac2_wrong_host_status`; `install::ac2_real_home_without_app` | integration without build; loopback unit; slow real host |
+| DEV-S-28 | `install::fake::ac3_declined` | integration: page-only, no Rust build |
+| DEV-S-29 | `install::fake::ac4_provider_order_result_and_failed_pipeline` | slow integration: builds two dependent Rust templates |
 | DEV-S-30 | planned publish local dependency refusal: no existing implementation/test | planned |
 | DEV-S-31 | planned publish source exclusion: no existing implementation/test | planned |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
@@ -1403,6 +1418,13 @@ DEV-S-13 may be refused by the outer OS sandbox; `timing:` tests require a
 quiet machine. `envelope::ac4_ignored_tests_explain_their_cost_or_refusal`
 checks the ignore reasons; `unit_tests::ac1_ac2_template_unit_counts_and_warm_pipeline`
 checks cache identity and unchanged dependency artifact timestamps across reuse.
+S12b adds page-only decline/text command pipelines and loopback unit stubs
+to the default suite; no additional Rust fixture build or warm cache is needed.
+The ordered successful install needs two logic mods (pkg forbids imports in
+a page-only mod), so `install::fake::ac4_provider_order_result_and_failed_pipeline`
+is slow and uses one isolated cache for both templates.
+`api::tests::ac5_install_timeout_and_host_errors` proves the wait/error mapping;
+`install::fake::ac6_fake_preview_status_publish_and_ready` proves the fake transport.
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
@@ -1415,7 +1437,11 @@ answers `GET /api/status` (`app: true` in a home), `POST /api/install` and
 `<dir>/requests/<n>-<path>`. `<dir>/fake.json` (`{"answer": "approve" |
 "decline"}`, default approve) sets the answer; decline answers 403
 `{"error":{"code":"refused","message":"declined"}}`. An installed folder
-gets local name = folder name and a page URL if it has `ui/`. It serves no
+gets local name = folder name and a page URL if it has `ui/`. Publish approves
+with a synthetic `release`, `site` and `link`; it records raw
+package bytes. Status requests are not recorded; POST requests are numbered
+from 1, with names such as `1-install` and `2-publish`. Install uses pkg
+metadata and package ids and returns the host `InstalledMod` type. It serves no
 page and no MCP. SIGTERM ends it (the default action).
 
 ## 16. Build plan
@@ -1435,7 +1461,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | 3 | `unit`, `test` pipeline, check stage 6, template contract file | — | — | S4-2: S-14 to 16, S-20 check; S-4 with `contract: null` |
 | 4 | `contract`, `json_eq` | host stage 5: `Harness` | `run_steps` tested with closures; integration tests ignored | S-17 to 20; S-4 complete |
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
-| 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` follows with the app | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
+| 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` checks app status first, tests providers and requests home install | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
 | 7 (step 3) | `publish` | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31; dev's part of J3 |
 
 Steps 4 and 5 are not designed (section 10).

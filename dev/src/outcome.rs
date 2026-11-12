@@ -13,6 +13,7 @@ pub enum Code {
     ModProviderMissing,
     EnvWataneMissing,
     EnvPreviewStart,
+    EnvHostNotRunning,
     ModInvalid,
     ModSymlink,
     HostDeclined,
@@ -49,6 +50,7 @@ impl Code {
             Self::ModProviderMissing => "mod.provider_missing",
             Self::EnvWataneMissing => "env.watane_missing",
             Self::EnvPreviewStart => "env.preview_start",
+            Self::EnvHostNotRunning => "env.host_not_running",
             Self::ModInvalid => "mod.invalid",
             Self::ModSymlink => "mod.symlink",
             Self::HostDeclined => "host.declined",
@@ -82,6 +84,7 @@ impl Code {
             | Self::UsageExists
             | Self::UsageProvider => Class::Usage,
             Self::EnvWataneMissing
+            | Self::EnvHostNotRunning
             | Self::EnvPreviewStart
             | Self::EnvToolchain
             | Self::EnvNoWasmTarget

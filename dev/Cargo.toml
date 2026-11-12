@@ -5,7 +5,12 @@ edition = "2024"
 rust-version = "1.95"
 publish = false
 
+[features]
+default = ["fake-host"]
+fake-host = ["dep:tiny_http"]
+
 [dependencies]
+tiny_http = { version = "0.12", optional = true }
 watane-pkg = { path = "../pkg" }
 watane-host = { path = "../host" }
 clap = { version = "4", features = ["derive"] }
@@ -20,3 +25,8 @@ wasmtime-wasi = { version = "=48.0.8", default-features = false, features = ["p2
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "fake-watane"
+path = "src/bin/fake-watane.rs"
+required-features = ["fake-host"]

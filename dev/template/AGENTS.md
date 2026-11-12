@@ -136,5 +136,6 @@ Exit statuses: 0 success, 1 mod, 2 usage, 3 environment, 4 refusal,
 
 ## Rules
 
-Work autonomously; do not ask questions. Finish with a passing
-`watane-dev test --json`, then `watane-dev serve --json`.
+Work autonomously; do not ask questions. Finish with a passing `watane-dev test --json`, then `watane-dev serve --json`.
+
+When the person wants the mod in their own app, run `watane-dev install --json`. The person approves in the app. `env.host_not_running` means ask them to start the app, then run the command again.

@@ -40,6 +40,17 @@ pub enum Command {
         /// Folder of the provider mod
         provider: PathBuf,
     },
+    /// Test local mods and ask the person to install them in their app
+    Install {
+        #[arg(long, help = "Home of the running watane app")]
+        home: Option<PathBuf>,
+        #[arg(
+            long,
+            default_value_t = 600,
+            help = "Seconds to wait for the person to answer"
+        )]
+        wait: u64,
+    },
     /// Test the mod and serve it in a preview
     Serve {
         #[arg(long, help = "Stops the preview and deletes its data")]
@@ -54,6 +65,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Test => "test",
         Command::Add { .. } => "add",
         Command::Serve { .. } => "serve",
+        Command::Install { .. } => "install",
     };
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
@@ -71,6 +83,7 @@ pub fn run(cli: Cli) -> Outcome {
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
         Command::Doctor => return crate::doctor::doctor(),
+        Command::Install { home, wait } => return install(&dir, home, wait),
         Command::New { slug } => template::new_mod(&dir, &slug)
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
@@ -258,10 +271,105 @@ pub fn test(dir: &Path) -> Outcome {
     }
 }
 
+fn install(dir: &Path, home: Option<PathBuf>, wait: u64) -> Outcome {
+    let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
+    let result = (|| {
+        let home = home
+            .map(Ok)
+            .unwrap_or_else(watane_host::default_home)
+            .map_err(|e| vec![Problem::internal(e)])?;
+        let home = home.canonicalize().unwrap_or(home);
+        let client = crate::api::Client::for_app(&home).map_err(|e| vec![e])?;
+        let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
+        outcome.dir = Some(dir.clone());
+        let tested = test_local(&dir);
+        if !tested.ok {
+            outcome.next = tested.next;
+            return Err(tested.errors);
+        }
+        let folders = deps::local_order(&dir).map_err(|e| vec![e])?;
+        let installed = client.install_wait(&folders, wait).map_err(|e| vec![e])?;
+        let installed: Vec<_> = installed.into_iter().map(|m| serde_json::json!({
+            "slug":m.slug, "local":m.local, "version":m.version, "package":m.package, "page":m.page
+        })).collect();
+        outcome.next = install_next(&installed);
+        Ok(serde_json::json!({"home":home, "installed":installed}))
+    })();
+    match result {
+        Ok(value) => {
+            outcome.result = Some(value);
+            outcome
+        }
+        Err(errors) => {
+            if errors
+                .first()
+                .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
+            {
+                outcome.next = Some("watane-dev doctor --json".into());
+            }
+            outcome.fail(errors)
+        }
+    }
+}
+
+fn install_next(installed: &[serde_json::Value]) -> Option<String> {
+    installed
+        .iter()
+        .rev()
+        .find_map(|m| m["page"].as_str())
+        .map(|url| format!("Give the person this page: {url}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac4_install_next_uses_last_available_page() {
+        assert_eq!(
+            install_next(&[
+                json!({"page":"http://a.localhost:7/"}),
+                json!({"page":null})
+            ])
+            .as_deref(),
+            Some("Give the person this page: http://a.localhost:7/")
+        );
+        assert_eq!(install_next(&[json!({"page":null})]), None);
+        assert_eq!(install_next(&[]), None);
+    }
+
+    #[test]
+    fn ac7_install_help_and_default_wait() {
+        let cli = Cli::try_parse_from(["watane-dev", "install"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Install {
+                home: None,
+                wait: 600
+            }
+        ));
+        use clap::CommandFactory;
+        let help = Cli::command()
+            .find_subcommand_mut("install")
+            .unwrap()
+            .render_help()
+            .to_string();
+        assert!(help.contains("--home"));
+        assert!(help.contains("--wait"));
+    }
+    #[test]
+    fn ac8_template_explains_home_install() {
+        let guide = include_str!("../template/AGENTS.md");
+        for text in [
+            "watane-dev install --json",
+            "approves in the app",
+            "env.host_not_running",
+            "start the app",
+        ] {
+            assert!(guide.contains(text), "missing {text}");
+        }
+    }
 
     #[test]
     fn ac1_all_commands_and_arguments_have_help() {
