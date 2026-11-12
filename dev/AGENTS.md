@@ -95,3 +95,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S12b rejection fix (dev): declined installs require asking the person before retrying; missing-app next repeats install with its home and explicit wait, while other environment errors retain doctor (§2.2, §2.4, §9.6).
 
 - S12b second rejection fix (dev): missing-app install next always names the canonical mod folder with --dir, quoting both paths and retaining explicit wait (§2.4).
+
+- S23 (dev): the template guide covers `watane.on` and `changed` (§4.1); text prints empty lists as `none`; doctor in a mod folder, failed check and new previews give fitting `next` lines (§2.3, §2.4); builds print a stderr progress line; fake-watane has help; declines name what to ask; a relative `add` provider is read from the current folder and `usage.provider` says so (§6.4, §9.5, §9.6, §15.3).
