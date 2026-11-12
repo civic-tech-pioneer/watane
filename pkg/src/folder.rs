@@ -302,6 +302,19 @@ impl Mod {
             || metadata(&dir.join("logic.wasm"))?.is_some();
         let mut logic = false;
         if let Some(c) = &contract {
+            if c.own_package_copy
+                && !deps
+                    .as_ref()
+                    .is_some_and(|deps| deps.get(&c.slug).is_some())
+            {
+                let file = format!("wit/deps/{}", c.slug);
+                add(
+                    &mut violations,
+                    Rule::Provider,
+                    &file,
+                    format!("{file} holds this mod's own package mods:{}", c.slug),
+                );
+            }
             logic = !c.world.exports.is_empty() || !c.world.subscriptions.is_empty();
             if logic && !source && !built {
                 add(

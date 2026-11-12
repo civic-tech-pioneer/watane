@@ -226,6 +226,46 @@ fn ac3_rules_wit_contracts() {
 }
 
 #[test]
+fn ac1_s33_own_provider_copy_reports_deps_once() {
+    let dir = temporary("hello");
+    let world = "package mods:s@0.1.0; world s {}";
+    put(dir.path(), "wit/world.wit", world);
+    put(dir.path(), "wit/deps/s/world.wit", world);
+    put(dir.path(), "deps.json", r#"{"mods:s":null}"#);
+    let v = refused(dir.path(), Rule::Provider, "deps.json");
+    assert_eq!(
+        v,
+        [Violation {
+            rule: Rule::Provider,
+            file: "deps.json".into(),
+            message: "deps.json lists this mod itself as mods:s".into(),
+        }]
+    );
+}
+
+#[test]
+fn ac2_s33_own_provider_copy_without_deps_reports_folder() {
+    for deps in [None, Some("{}")] {
+        let dir = temporary("hello");
+        let world = "package mods:s@0.1.0; world s {}";
+        put(dir.path(), "wit/world.wit", world);
+        put(dir.path(), "wit/deps/s/world.wit", world);
+        if let Some(deps) = deps {
+            put(dir.path(), "deps.json", deps);
+        }
+        let v = refused(dir.path(), Rule::Provider, "wit/deps/s");
+        assert_eq!(
+            v,
+            [Violation {
+                rule: Rule::Provider,
+                file: "wit/deps/s".into(),
+                message: "wit/deps/s holds this mod's own package mods:s".into(),
+            }]
+        );
+    }
+}
+
+#[test]
 fn ac1_s31_unused_provider_message() {
     let dir = temporary("hello");
     put(dir.path(), "deps.json", r#"{"mods:unused":null}"#);

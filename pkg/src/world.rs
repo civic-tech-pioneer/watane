@@ -23,6 +23,7 @@ pub(crate) struct Contract {
     pub has_imports: bool,
     pub imports: BTreeSet<String>,
     pub providers: BTreeMap<Slug, ProviderWorld>,
+    pub own_package_copy: bool,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct ProviderWorld {
@@ -173,8 +174,11 @@ pub(crate) fn read(
     let parsed = std::panic::catch_unwind(|| -> Result<_, String> {
         // Feed only bytes read and bounded above to the parser, never a path to reopen.
         let text = std::str::from_utf8(&world_bytes).unwrap_or("");
-        UnresolvedPackageGroup::parse(dir.join("wit/world.wit"), package_header(text))
-            .map_err(|(_, e)| e.to_string())?;
+        let own_name =
+            UnresolvedPackageGroup::parse(dir.join("wit/world.wit"), package_header(text))
+                .map_err(|(_, e)| e.to_string())?
+                .main
+                .name;
         let mut maps: BTreeMap<std::path::PathBuf, SourceMap> = BTreeMap::new();
         for (file, bytes) in &checked {
             let path = dir.join(file);
@@ -191,11 +195,21 @@ pub(crate) fn read(
         let mut groups = Vec::new();
         let mut sources = BTreeMap::new();
         let mut main = None;
+        let mut own_package_copy = false;
         for (parent, map) in maps {
             let paths: Vec<_> = map.source_names().map(std::path::PathBuf::from).collect();
             let group = map
                 .parse()
                 .map_err(|(_, e)| format!("failed to parse package: {}: {e}", parent.display()))?;
+            // Diagnose the own-provider copy before resolution can obscure it
+            // with a duplicate-package error. Its checked bytes were parsed above.
+            if own_name.namespace == "mods"
+                && parent == dir.join("wit/deps").join(&own_name.name)
+                && group.main.name == own_name
+            {
+                own_package_copy = true;
+                continue;
+            }
             for package in std::iter::once(&group.main).chain(&group.nested) {
                 sources.insert(package.name.to_string(), paths.clone());
             }
@@ -209,9 +223,9 @@ pub(crate) fn read(
         let main = resolve
             .push_groups(main.ok_or("missing WIT package")?, groups)
             .map_err(|e| e.to_string())?;
-        Ok((resolve, main, sources))
+        Ok((resolve, main, sources, own_package_copy))
     });
-    let (resolve, main, sources) = match parsed {
+    let (resolve, main, sources, own_package_copy) = match parsed {
         Ok(Ok(value)) => value,
         Ok(Err(e)) => {
             let message = format!("{e:#}");
@@ -470,5 +484,6 @@ pub(crate) fn read(
             .map(|key| resolve.name_world_key(key))
             .collect(),
         providers,
+        own_package_copy,
     }))
 }
