@@ -84,6 +84,7 @@ fn ac1_local_providers_precede_status_and_pipeline() {
             );
             assert_eq!(error["file"], "deps.json");
         }
+        assert_eq!(value["next"], value["errors"][0]["fix"]);
         assert!(value["result"].is_null());
         assert!(!home.path().join("requests").exists());
         assert!(!home.path().join("build-cache").exists());
@@ -143,6 +144,8 @@ fn approved(dir: &Path, home: &Path, number: usize, source: bool, slug: &str, ve
 fn ac3_ac6_page_package_and_answer() {
     let root = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
+    // This package-source proof uses a stale empty list; duplicate detection is tested separately.
+    fs::write(home.path().join("fake.json"), r#"{"releases":[]}"#).unwrap();
     let _host = start(home.path());
     let dir = page(root.path());
     fs::create_dir(dir.join("tests")).unwrap();
@@ -155,6 +158,8 @@ fn ac3_ac6_page_package_and_answer() {
 fn ac3_logic_source_selection() {
     let root = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
+    // This package-source proof uses a stale empty list; duplicate detection is tested separately.
+    fs::write(home.path().join("fake.json"), r#"{"releases":[]}"#).unwrap();
     let _host = start(home.path());
     let dir = root.path().join("counter");
     watane_dev::template::new_mod(&dir, "counter").unwrap();
@@ -225,4 +230,156 @@ fn ac4_declined_names_publishing_and_asks_before_retry() {
         "Ask the person whether they want demo published, then run publish again with --wait <seconds>"
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
+}
+
+#[test]
+fn ac1_existing_version_precedes_pipeline_with_or_without_link() {
+    for (link, suffix) in [
+        (
+            json!("https://example.test/#demo"),
+            "its link is https://example.test/#demo",
+        ),
+        (
+            Value::Null,
+            "it has no link yet: set your site's URL in the watane app",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fs::write(
+            home.path().join("fake.json"),
+            json!({"releases":[
+                {"slug":"demo","version":"0.2.3","release":"key/demo@0.2.3","seq":7,"link":link}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let _host = start(home.path());
+        let dir = page(root.path());
+        let (code, value) = publish(&dir, home.path(), &[]);
+        assert_eq!(code, 1, "{value}");
+        assert_eq!(value["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(value["errors"][0]["code"], "publish.version_exists");
+        assert_eq!(
+            value["errors"][0]["message"],
+            format!("demo 0.2.3 is already published as key/demo@0.2.3; {suffix}")
+        );
+        assert_eq!(value["errors"][0]["file"], "wit/world.wit");
+        assert_eq!(
+            value["errors"][0]["fix"],
+            "Raise the version in wit/world.wit, then run publish again"
+        );
+        assert_eq!(value["next"], value["errors"][0]["fix"]);
+        assert!(
+            !dir.join("wit/deps").exists(),
+            "check pipeline must not run"
+        );
+        assert!(!home.path().join("requests").exists());
+        assert!(!home.path().join("build-cache").exists());
+    }
+}
+
+#[test]
+fn ac1_other_slug_or_version_continues() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    fs::write(
+        home.path().join("fake.json"),
+        json!({"releases":[
+            {"slug":"demo","version":"0.2.2","release":"key/demo@0.2.2","seq":1,"link":null},
+            {"slug":"other","version":"0.2.3","release":"key/other@0.2.3","seq":2,"link":null}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let _host = start(home.path());
+    let (code, value) = publish(&page(root.path()), home.path(), &[]);
+    assert_eq!(code, 0, "{value}");
+    assert!(home.path().join("requests/1-publish").exists());
+}
+
+#[test]
+fn ac3_missing_link_then_retry_recovers_link() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    fs::write(home.path().join("fake.json"), r#"{"link":null}"#).unwrap();
+    let _host = start(home.path());
+    let dir = page(root.path());
+    let (code, value) = publish(&dir, home.path(), &[]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["ok"], true);
+    assert!(value["result"]["link"].is_null());
+    assert_eq!(
+        value["next"],
+        "Set your site's URL in the watane app, then run publish again to get the link"
+    );
+    fs::write(
+        home.path().join("fake.json"),
+        r#"{"link":"https://site.test/#demo"}"#,
+    )
+    .unwrap();
+    let (code, value) = publish(&dir, home.path(), &[]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(value["errors"][0]["code"], "publish.version_exists");
+    assert_eq!(
+        value["errors"][0]["message"],
+        format!(
+            "demo 0.2.3 is already published as {}/demo@0.2.3; its link is https://site.test/#demo",
+            "y".repeat(52)
+        )
+    );
+    assert_eq!(
+        fs::read_dir(home.path().join("requests")).unwrap().count(),
+        1
+    );
+}
+
+#[test]
+fn ac4_local_provider_next_uses_first_known_folder_and_quotes_it() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let dir = page(root.path());
+    let provider = root.path().join("Bob's provider");
+    fs::create_dir(&provider).unwrap();
+    fs::write(dir.join("deps.json"), r#"{"mods:a":null,"mods:b":null}"#).unwrap();
+    fs::write(
+        dir.join(".watane-dev.json"),
+        r#"{"local_providers":{"b":"../Bob's provider"}}"#,
+    )
+    .unwrap();
+    let (code, value) = publish(&dir, home.path(), &[]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(
+        value["next"],
+        format!(
+            r#"watane-dev publish --json --dir '{}/Bob'"'"'s provider'"#,
+            root.path().canonicalize().unwrap().display()
+        )
+    );
+}
+
+fn releases(home: &Path) -> Value {
+    let run: Value = serde_json::from_slice(&fs::read(home.join("run.json")).unwrap()).unwrap();
+    ureq::get(format!("http://127.0.0.1:{}/api/releases", run["port"]))
+        .call()
+        .unwrap()
+        .body_mut()
+        .read_json()
+        .unwrap()
+}
+
+#[test]
+fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let host = start(home.path());
+    assert_eq!(releases(home.path()), json!({"releases":[]}));
+    let (code, value) = publish(&page(root.path()), home.path(), &[]);
+    assert_eq!(code, 0, "{value}");
+    let expected = json!({"releases":[{"slug":"demo","version":"0.2.3",
+        "release":format!("{}/demo@0.2.3", "y".repeat(52)),"seq":1,"link":"https://fake.invalid/#demo"}]});
+    assert_eq!(releases(home.path()), expected);
+    drop(host);
+    let _host = start(home.path());
+    assert_eq!(releases(home.path()), expected);
 }

@@ -119,7 +119,20 @@ impl Client {
             }
         })?;
         if !status.is_success() || value.get("error").is_some() {
-            let code = if value["error"]["code"] == "refused" {
+            if path == "publish"
+                && status.as_u16() == 409
+                && value["error"]["code"] == "version_exists"
+            {
+                return Err(Problem::new(
+                    Code::PublishVersionExists,
+                    value["error"]["message"]
+                        .as_str()
+                        .unwrap_or("version already published"),
+                )
+                .at("wit/world.wit", None, None)
+                .fix("Raise the version in wit/world.wit, then run publish again"));
+            }
+            let code = if path != "releases" && value["error"]["code"] == "refused" {
                 Code::HostDeclined
             } else {
                 Code::HostRefused
@@ -153,6 +166,10 @@ impl Client {
         }
         Ok(value)
     }
+    pub fn releases(&self) -> Result<Value, Problem> {
+        self.request("releases", None, Duration::from_secs(2))
+    }
+
     pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<Value, Problem> {
         self.request(
             "publish",
@@ -250,6 +267,78 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("ui/index.html"), "demo").unwrap();
         watane_pkg::pack(dir.path(), false).unwrap()
+    }
+
+    #[test]
+    fn ac1_releases_uses_get_without_origin() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            let header = String::from_utf8(header).unwrap();
+            assert!(
+                header.starts_with("GET /api/releases HTTP/1.1\r\n"),
+                "{header}"
+            );
+            assert!(!header.to_lowercase().contains("origin:"));
+            let body = r#"{"releases":[]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        assert_eq!(Client { port }.releases().unwrap(), json!({"releases":[]}));
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn ac1_releases_status_timeout_and_refused_errors() {
+        let (port, thread) = stub(200, json!({"releases":[]}), Duration::from_millis(2200));
+        assert_eq!(
+            Client { port }.releases().unwrap_err().code,
+            Code::HostNoAnswer
+        );
+        thread.join().unwrap();
+        for status in [200, 403, 500] {
+            let (port, thread) = stub(
+                status,
+                json!({"error":{"code":"refused","message":"unavailable"}}),
+                Duration::ZERO,
+            );
+            let e = Client { port }.releases().unwrap_err();
+            assert_eq!(e.code, Code::HostRefused);
+            assert_eq!(e.message, "[refused] unavailable");
+            thread.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn ac2_publish_version_race() {
+        let (port, thread) = stub(
+            409,
+            json!({"error":{"code":"version_exists","message":"release key/demo@0.2.3 already exists at seq 7"}}),
+            Duration::ZERO,
+        );
+        let e = Client { port }
+            .publish(&publish_package(), Duration::from_secs(2))
+            .unwrap_err();
+        thread.join().unwrap();
+        assert_eq!(e.code.as_str(), "publish.version_exists");
+        assert_eq!(e.code.class() as i32, 1);
+        assert_eq!(e.message, "release key/demo@0.2.3 already exists at seq 7");
+        assert_eq!(e.file.as_deref(), Some("wit/world.wit"));
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Raise the version in wit/world.wit, then run publish again")
+        );
     }
 
     #[test]

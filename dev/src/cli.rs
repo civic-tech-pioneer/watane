@@ -322,6 +322,12 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
             }) {
                 outcome.next = Some("watane-dev doctor --json".into());
             }
+            if outcome.next.is_none() {
+                outcome.next = errors
+                    .first()
+                    .and_then(|e| e.fix.clone())
+                    .or_else(|| Some("watane-dev test --json".into()));
+            }
             outcome.fail(errors)
         }
     }
@@ -386,9 +392,54 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
             })
             .collect();
         if !errors.is_empty() {
+            let local = deps::read_local(dir).unwrap_or_default();
+            outcome.next = providers
+                .iter()
+                .filter(|(_, publisher)| publisher.is_none())
+                .find_map(|(slug, _)| local.get(&slug.to_string()))
+                .map(|path| {
+                    let path = dir.join(path);
+                    let path = path.canonicalize().unwrap_or(path).display().to_string();
+                    let quoted = if path
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+                    {
+                        path
+                    } else {
+                        format!("'{}'", path.replace('\'', "'\"'\"'"))
+                    };
+                    format!("watane-dev publish --json --dir {quoted}")
+                });
             return Err(errors);
         }
         let (home, client) = app_client(&mut outcome, home, wait)?;
+        let releases = client.releases().map_err(|e| vec![e])?;
+        // Mod owns WIT identity parsing. Invalid mods retain the pipeline's diagnostics.
+        if let Ok(m) = watane_pkg::Mod::read(dir)
+            && let Some(release) = releases["releases"].as_array().and_then(|entries| {
+                entries.iter().find(|r| {
+                    r["slug"] == m.slug().as_str() && r["version"] == m.version().to_string()
+                })
+            })
+        {
+            let link = release["link"].as_str().map_or_else(
+                || "it has no link yet: set your site's URL in the watane app".into(),
+                |link| format!("its link is {link}"),
+            );
+            return Err(vec![
+                Problem::new(
+                    Code::PublishVersionExists,
+                    format!(
+                        "{} {} is already published as {}; {link}",
+                        m.slug(),
+                        m.version(),
+                        release["release"].as_str().unwrap_or_default()
+                    ),
+                )
+                .at("wit/world.wit", None, None)
+                .fix("Raise the version in wit/world.wit, then run publish again"),
+            ]);
+        }
         let tested = test(dir);
         outcome.dir = tested.dir;
         if !tested.ok {
@@ -412,7 +463,14 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 outcome.next = e.fix.clone();
                 vec![e]
             })?;
-        outcome.next = Some("Put the site folder on your static web host".into());
+        outcome.next = Some(
+            if answer["link"].is_null() {
+                "Set your site's URL in the watane app, then run publish again to get the link"
+            } else {
+                "Put the site folder on your static web host"
+            }
+            .into(),
+        );
         Ok(
             serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source()}),
         )
@@ -428,6 +486,12 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 .is_some_and(|e| e.code.class() == Class::Env && e.code != Code::EnvHostNotRunning)
             {
                 outcome.next = Some("watane-dev doctor --json".into());
+            }
+            if outcome.next.is_none() {
+                outcome.next = errors
+                    .first()
+                    .and_then(|e| e.fix.clone())
+                    .or_else(|| Some("watane-dev test --json".into()));
             }
             outcome.fail(errors)
         }

@@ -9,6 +9,7 @@ pub enum Code {
     UsageExists,
     UsageProvider,
     PublishLocalDependency,
+    PublishVersionExists,
     ModSelfDependency,
     ModDependencyCycle,
     ModProviderMissing,
@@ -47,6 +48,7 @@ impl Code {
             Self::UsageExists => "usage.exists",
             Self::UsageProvider => "usage.provider",
             Self::PublishLocalDependency => "publish.local_dependency",
+            Self::PublishVersionExists => "publish.version_exists",
             Self::ModSelfDependency => "mod.self_dependency",
             Self::ModDependencyCycle => "mod.dependency_cycle",
             Self::ModProviderMissing => "mod.provider_missing",
@@ -91,7 +93,8 @@ impl Code {
             | Self::EnvToolchain
             | Self::EnvNoWasmTarget
             | Self::EnvAllowlist => Class::Env,
-            Self::PublishLocalDependency
+            Self::PublishVersionExists
+            | Self::PublishLocalDependency
             | Self::ModInvalid
             | Self::ModSelfDependency
             | Self::ModDependencyCycle

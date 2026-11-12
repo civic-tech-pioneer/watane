@@ -224,6 +224,17 @@ mod fake {
         );
     }
     #[test]
+    fn ac5_declined_next_is_first_fix() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let (code, value) = install(&page(root.path(), "counter"), home.path());
+        assert_eq!(code, 4, "{value}");
+        assert_eq!(value["errors"][0]["code"], "host.declined");
+        assert_eq!(value["next"], value["errors"][0]["fix"]);
+    }
+    #[test]
     fn ac4_page_only_result_and_failed_pipeline() {
         let root = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();

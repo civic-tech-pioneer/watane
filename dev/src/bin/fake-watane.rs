@@ -92,6 +92,31 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut count = 0;
     for mut request in server.incoming_requests() {
         let path = request.url().to_owned();
+        let config: Value = fs::read(home.join("fake.json"))
+            .ok()
+            .map(|bytes| serde_json::from_slice(&bytes))
+            .transpose()?
+            .unwrap_or(json!({}));
+        let mut releases: Vec<Value> = if let Some(entries) = config.get("releases") {
+            serde_json::from_value(entries.clone())?
+        } else {
+            fs::read(home.join("releases.json"))
+                .ok()
+                .map(|bytes| serde_json::from_slice(&bytes))
+                .transpose()?
+                .unwrap_or_default()
+        };
+        if let Some(link) = config.get("link") {
+            for release in &mut releases {
+                release["link"] = link.clone();
+            }
+        }
+        if request.method() == &tiny_http::Method::Get && path == "/api/releases" {
+            request.respond(Response::from_string(
+                json!({"releases":releases}).to_string(),
+            ))?;
+            continue;
+        }
         if request.method() == &tiny_http::Method::Get && path == "/api/status" {
             request.respond(Response::from_string(
                 json!({"watane":1,"mode":mode,"home":home,"port":port,"app":mode=="home"})
@@ -114,11 +139,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .join(format!("{count}-{}", path.trim_start_matches("/api/"))),
             &body,
         )?;
-        let config: Value = fs::read(home.join("fake.json"))
-            .ok()
-            .map(|bytes| serde_json::from_slice(&bytes))
-            .transpose()?
-            .unwrap_or(json!({}));
         let (status, value) = if config["answer"] == "decline" {
             (
                 403,
@@ -129,14 +149,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let result =
                 watane_pkg::Package::from_bytes(body).and_then(|package| package.unpack(&unpacked));
             let answer = match result {
-                Ok(m) => (
-                    200,
-                    json!({
-                        "release": format!("{}/{}@{}", "y".repeat(52), m.slug(), m.version()),
-                        "site": home.join("site"),
-                        "link": format!("https://fake.invalid/#{}", m.slug())
-                    }),
-                ),
+                Ok(m) => {
+                    let seq = releases
+                        .iter()
+                        .filter_map(|r| r["seq"].as_u64())
+                        .max()
+                        .unwrap_or(0)
+                        + 1;
+                    let release = format!("{}/{}@{}", "y".repeat(52), m.slug(), m.version());
+                    let link = config
+                        .get("link")
+                        .cloned()
+                        .unwrap_or_else(|| json!(format!("https://fake.invalid/#{}", m.slug())));
+                    releases.push(json!({"slug":m.slug(), "version":m.version(), "release":release, "seq":seq, "link":link}));
+                    fs::write(home.join("releases.json"), serde_json::to_vec(&releases)?)?;
+                    (
+                        200,
+                        json!({"release":release, "seq":seq, "site":home.join("site"), "link":link}),
+                    )
+                }
                 Err(e) => (
                     400,
                     json!({"error":{"code":"invalid_package","message":e.to_string()}}),

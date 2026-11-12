@@ -208,10 +208,11 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
+| `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `Raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
-| `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait` |
+| `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait`. If the person approved meanwhile, publish reports the release and its link on retry |
 | `internal` | 5 | anything else | the error chain | — |
 
 Warning codes: `ui.external` (a file of `ui/` names an `http://` or
@@ -356,7 +357,9 @@ Run it once the person has started the app. Other `env.*` errors use
 A declined install returns `host.declined` with the consumer slug (or mod
 folder), says the person declined installing it in their watane app, and
 asks whether they want it installed before running install again with
-`--wait <seconds>` (9.6).
+`--wait <seconds>` (9.6). Its `next` is the first error's fix. Every refusal
+has a `next`; when no more specific follow-up applies, use the first error's
+fix, or `watane-dev test --json` if no fix is known.
 
 **publish** (step 3)
 ```json
@@ -367,7 +370,21 @@ asks whether they want it installed before running install again with
 `home` is the resolved home; `package` is the posted package id and `source`
 is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
-while no site URL is set. `next`: `Put the site folder on your static web host`.
+while no site URL is set. With a link, `next` is
+`Put the site folder on your static web host`; without one, it is
+`Set your site's URL in the watane app, then run publish again to get the link`.
+That rerun checks existing releases and reports the release and current link.
+
+Every publish refusal has a `next`:
+
+- `publish.version_exists`: the version-bump fix of 2.2.
+- `publish.local_dependency`: `watane-dev publish --json --dir <absolute provider folder>`
+  for the first local provider whose folder `.watane-dev.json` knows; quote the
+  path for the shell as above. If none is known, use the first error's fix.
+- `env.host_not_running`: repeat publish with `--json`, canonical `--dir`,
+  home and explicit wait, as in 9.7 step 2; other environment gaps use doctor.
+- Pipeline failures retain their test `next`; other failures use the first
+  error's fix, or `watane-dev test --json` when no fix is known.
 
 **search** (step 4)
 ```json
@@ -1010,11 +1027,12 @@ prevent the remaining files from running.
   `GET <base>status` answers 200 within 2 s, with `home` equal to the
   canonical home. dev never connects to a host other than `localhost`.
 - **The HTTP client**: one `ureq::Agent` with `proxy(None)` and a global
-  timeout (2 s for `status`, `--wait` for install and publish, 60 s in a
+  timeout (2 s for `status` and `releases`, `--wait` for install and publish, 60 s in a
   preview). dev sends no `Origin` header. An error answer is
   `{"error": {"code": "...", "message": "..."}}`: code `refused` is
   `host.declined`; any other code is `host.refused`; a timeout is
-  `host.no_answer`.
+  `host.no_answer`. Release-list errors are always `host.refused`; a publish
+  409 `version_exists` uses 9.7.
 
 ### 9.2 Local providers and order
 
@@ -1142,6 +1160,13 @@ next command and fixes of `serve`.
 2. Resolve the home and check app status through the same path as `install`
    (9.6), before the pipeline. Missing-app `next` repeats `publish` with
    the canonical mod folder, home and any explicit `--wait` (shell quoted).
+2b. `Client::releases()` sends `GET /api/releases` with the status timeout
+   (2 s). Match the mod's slug and version from `wit/world.wit`, using pkg's
+   `Mod` identity. Invalid mods retain the test pipeline's diagnostics. On a
+   match, return one `publish.version_exists` (2.2), with the existing release
+   and its current link (or the missing-site-URL message), file `wit/world.wit`,
+   and `next` equal to the fix. Run no test pipeline, pack or POST. Another
+   slug or version does not block publishing. Error answers are `host.refused`.
 3. Test the mod (sections 5 to 8). Failures send no publish request and
    retain the test pipeline's errors and `next`, as `install` does.
 4. `watane_pkg::pack(dir, !no_source)`: include source unless `--no-source`.
@@ -1159,8 +1184,11 @@ A `refused` answer is `host.declined`: `The person declined publishing
 <slug> published, then run publish again with --wait <seconds>`.
 The CLI supplies the slug; the fixed `Client::publish` interface carries
 only a package and duration. A timeout uses the message and fix of 9.6;
-other errors are `host.refused` with `[<code>] <message>`. For these host
-failures, `next` is the fix. Success gives the static-host instruction of 2.4.
+a 409 `version_exists` answer (a race after step 2b) is
+`publish.version_exists`, with the app's message unchanged and the same
+version-bump fix, file and `next` as the preflight refusal. Other errors are
+`host.refused` with `[<code>] <message>`. For these host failures, `next` is
+the fix. Success chooses the link-dependent instruction of 2.4.
 
 ## 10. Step 4: `search`; step 5 (outline; not designed)
 
@@ -1327,6 +1355,7 @@ impl Client {
     pub fn for_app(home: &Path) -> Result<Client, Problem>;   // 9.6: a home host with the app, else env.host_not_running
     pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem>;   // preview: 60 s
     pub fn install_wait(&self, folders: &[PathBuf], wait: u64) -> Result<Vec<InstalledMod>, Problem>;   // home: --wait seconds
+    pub fn releases(&self) -> Result<serde_json::Value, Problem>;   // GET /api/releases, status timeout (2 s)
     pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<serde_json::Value, Problem>;
 }
 
@@ -1400,7 +1429,8 @@ returns 409 `version_exists` with message `release <ref> already exists at seq <
 one object per own release in seq order (empty: `{"releases":[]}`), using the
 current site URL; no site URL means `link: null`. Dist not open gives 503
 `unavailable`. This supports discovery before building and after a publish
-wait expires. The consent view shows whether the package holds source.
+wait expires; dev maps an error answer to `host.refused`. The consent view
+shows whether the package holds source.
 Steps 4 and 5: `/api/search`,
 `/api/fetch`.
 
@@ -1544,7 +1574,7 @@ proves both help flags and invalid invocations. It listens on
 `127.0.0.1:0` with `tiny_http`, writes `<dir>/run.json`
 (`{"watane":1,"pid","port","mode"}`), prints a ready line in the form of
 `watane_host::Ready` (token `wt_fake` in a preview, `null` in a home), and
-answers `GET /api/status` (`app: true` in a home), `POST /api/install` and
+answers `GET /api/status` (`app: true` in a home), `GET /api/releases`, `POST /api/install` and
 `POST /api/publish`. It stores each request body as
 `<dir>/requests/<n>-<path>`. `<dir>/fake.json` (`{"answer": "approve" |
 "decline"}`, default approve) sets the answer; decline answers 403
@@ -1552,7 +1582,13 @@ answers `GET /api/status` (`app: true` in a home), `POST /api/install` and
 gets local name = folder name and a page URL if it has `ui/`. Publish approves
 by decoding and unpacking the posted package: `release` is
 `<fake key>/<slug>@<version>`, `site` is `<dir>/site`, and `link` is
-`https://fake.invalid/#<slug>`. Invalid packages get 400 `invalid_package`;
+`https://fake.invalid/#<slug>`. `GET /api/releases` returns `{"releases":[]}`
+before any publish, then the releases published in this home (slug, version,
+release, seq starting at 1, and link), retained in `releases.json` across
+fake restarts. `fake.json` may preset `releases` (including an empty list to
+simulate a stale app view), and `link` (including null); the link override
+also applies to listed releases, modeling a site URL set after publication.
+Invalid packages get 400 `invalid_package`;
 it records raw package bytes and removes the temporary unpacked folder.
 Status requests are not recorded; POST requests are numbered from 1, with names such as `1-install` and `2-publish`. Install uses pkg
 metadata and package ids and returns the host `InstalledMod` type. It serves no
