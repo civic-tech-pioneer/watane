@@ -325,9 +325,7 @@ impl Core {
     }
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
         let followed = self.dist.followed()?;
-        let mut parties = followed.clone();
-        parties.push(self.dist.own()?);
-        self.parties.replace(&parties);
+        self.parties.replace(&party_views(&self.dist)?);
         let failures = self.failures.lock().unwrap();
         Ok(followed
             .iter()
@@ -363,7 +361,7 @@ impl Core {
         for release in updates {
             let core = self.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = core.install_release(release).await;
+                let _ = core.install_release(release, None).await;
             });
         }
     }
@@ -376,12 +374,13 @@ impl Core {
     pub async fn install_release(
         self: &Arc<Self>,
         release: watane_dist::ReleaseRef,
+        link: Option<watane_dist::Link>,
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
         let planner = self.clone();
         let target = release.clone();
         let result = async {
             let plan = tauri::async_runtime::spawn_blocking(move || {
-                let fetched = planner.dist.fetch(&target)?;
+                let fetched = fetch_release(&planner.dist, &target, link.as_ref())?;
                 planner.plan_fetched(fetched)
             })
             .await
@@ -823,5 +822,469 @@ mod stage_d_more_tests {
             update_offer(Some(&reference("0.1.0")), &view, &changes),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod find_tests {
+    use super::*;
+    use watane_dist::*;
+    #[test]
+    fn ac3_hit_view_status_parties_times_and_installed_identity() {
+        let parties = Parties::new();
+        let key = stage_d_tests::channel().channel;
+        parties.insert(key.to_string(), "Ivy".into());
+        let mut hit = Hit {
+            info: stage_d_tests::release("0.1.0", None),
+            publisher_name: Some("Alice".into()),
+            link: None,
+            status: Status::Ok,
+            checked_at: Some(1700000000123),
+            unchecked_since: Some(1700000000456),
+            via: vec![Via::Index {
+                index: key,
+                through: Some(key),
+                note: "Books".into(),
+            }],
+        };
+        let host_home = tempfile::tempdir().unwrap();
+        let host = Host::open(
+            host_home.path(),
+            watane_host::Mode::Preview,
+            Default::default(),
+        )
+        .unwrap();
+        let row = crate::find::hit_view(&hit, &host.mods(), &parties);
+        assert_eq!(row["verified"], true);
+        assert_eq!(row["installed"], serde_json::Value::Null);
+        assert_eq!(row["checkedAt"], 1700000000123u64);
+        assert_eq!(row["uncheckedSince"], 1700000000456u64);
+        assert_eq!(row["via"][0]["index"]["name"], "Ivy");
+        assert_eq!(row["via"][0]["through"]["name"], "Ivy");
+        hit.status = Status::Compromised { seq: 1 };
+        let row = crate::find::hit_view(&hit, &[], &parties);
+        assert_eq!(row["verified"], false);
+        assert_eq!(row["status"], "compromised");
+    }
+    #[test]
+    fn ac3_indexes_put_own_channel_first_and_name_included_parties() {
+        let mut own = stage_d_tests::channel();
+        own.releases = vec![
+            stage_d_tests::release("0.1.0", None),
+            stage_d_tests::release("0.2.0", None),
+        ];
+        let mut chosen = own.clone();
+        chosen.name = Some("Ivy".into());
+        let parties = Parties::new();
+        parties.insert(own.channel.to_string(), "Included".into());
+        let rows = index_rows(
+            &own,
+            vec![IndexView {
+                view: chosen,
+                included: vec![own.channel],
+                mods: 7,
+                skipped: 2,
+            }],
+            &Default::default(),
+            &parties,
+        );
+        assert_eq!(rows[0]["own"], true);
+        assert_eq!(rows[0]["mods"], 1);
+        assert_eq!(rows[1]["own"], false);
+        assert_eq!(rows[1]["name"], "Ivy");
+        assert_eq!(rows[1]["mods"], 7);
+        assert_eq!(rows[1]["included"][0]["name"], "Included");
+        assert_eq!(rows[1]["skipped"], serde_json::json!([]));
+    }
+    #[test]
+    fn ac3_index_row_live_listings_and_channel_status() {
+        let mut own = stage_d_tests::channel();
+        let key = own.channel;
+        let listing = Listing {
+            link: Link::new(
+                key,
+                "https://example.org/",
+                Some(&"reading-list".parse().unwrap()),
+            )
+            .unwrap(),
+            note: "Books".into(),
+        };
+        own.listings = vec![
+            ListingInfo {
+                entry: EntryId::from_bytes([0; 32]),
+                seq: 1,
+                include: false,
+                listing: listing.clone(),
+                unlisted: None,
+            },
+            ListingInfo {
+                entry: EntryId::from_bytes([1; 32]),
+                seq: 2,
+                include: true,
+                listing: Listing {
+                    link: Link::new(key, "https://example.org/", None).unwrap(),
+                    note: "Index".into(),
+                },
+                unlisted: None,
+            },
+            ListingInfo {
+                entry: EntryId::from_bytes([2; 32]),
+                seq: 3,
+                include: false,
+                listing,
+                unlisted: Some(4),
+            },
+        ];
+        let row = index_row(
+            &own,
+            true,
+            3,
+            &[],
+            vec![],
+            Some(&"offline".into()),
+            &Parties::new(),
+        );
+        assert_eq!(row["own"], true);
+        assert_eq!(row["mods"], 3);
+        assert_eq!(row["status"], "failed");
+        assert_eq!(row["cause"], "offline");
+        assert_eq!(row["skipped"], serde_json::json!([]));
+        assert_eq!(
+            row["listings"],
+            serde_json::json!([
+                {"entry":EntryId::from_bytes([0;32]).to_string(),"kind":"list","target":format!("{key}/reading-list"),"note":"Books"},
+                {"entry":EntryId::from_bytes([1;32]).to_string(),"kind":"include","target":key.to_string(),"note":"Index"}
+            ])
+        );
+        own.status = Status::Compromised { seq: 1 };
+        assert_eq!(
+            index_row(&own, false, 0, &[], vec![], None, &Parties::new())["status"],
+            "compromised"
+        );
+        assert_eq!(
+            index_row(&own, false, 0, &[], vec![], None, &Parties::new())["listings"],
+            serde_json::json!([])
+        );
+    }
+}
+
+fn skipped_rows(_skipped: usize, _parties: &Parties) -> Vec<serde_json::Value> {
+    // S29-1 replaces the count with Vec<Skipped>; switch only this adapter on rebase.
+    vec![]
+}
+fn index_row(
+    view: &watane_dist::ChannelView,
+    own: bool,
+    mods: usize,
+    included: &[watane_dist::PublicKey],
+    skipped: Vec<serde_json::Value>,
+    failure: Option<&String>,
+    parties: &Parties,
+) -> serde_json::Value {
+    let mut row = serde_json::to_value(channel_row(view, failure)).unwrap();
+    let object = row.as_object_mut().unwrap();
+    object.insert("own".into(), serde_json::json!(own));
+    object.insert("mods".into(), serde_json::json!(mods));
+    object.insert(
+        "included".into(),
+        serde_json::json!(
+            included
+                .iter()
+                .map(|key| words::party(&key.to_string(), parties))
+                .collect::<Vec<_>>()
+        ),
+    );
+    object.insert("skipped".into(), serde_json::json!(skipped));
+    object.insert("listings".into(), serde_json::json!(view.listings.iter().filter(|l| own && l.unlisted.is_none()).map(|l| {
+        let link = &l.listing.link;
+        serde_json::json!({"entry":l.entry.to_string(), "kind":if l.include {"include"} else {"list"}, "target":link.slug().map(|slug|format!("{}/{slug}",link.channel())).unwrap_or_else(||link.channel().to_string()), "note":l.listing.note})
+    }).collect::<Vec<_>>()));
+    row
+}
+fn party_views(dist: &watane_dist::Dist) -> Result<Vec<watane_dist::ChannelView>, CmdError> {
+    let mut views = dist.followed()?;
+    views.push(dist.own()?);
+    views.extend(dist.indexes()?.into_iter().map(|i| i.view));
+    // Read cached profiles of listed publishers and included indexes, including
+    // the listings of those includes. This performs no network requests.
+    let mut seen: std::collections::BTreeSet<_> = views.iter().map(|v| v.channel).collect();
+    let mut at = 0;
+    while at < views.len() {
+        let keys: Vec<_> = views[at]
+            .listings
+            .iter()
+            .filter(|l| l.unlisted.is_none())
+            .map(|l| l.listing.link.channel())
+            .collect();
+        for key in keys {
+            if seen.insert(key) {
+                views.push(dist.channel(&key)?);
+            }
+        }
+        at += 1;
+    }
+    Ok(views)
+}
+pub(crate) fn choose_index(
+    dist: &watane_dist::Dist,
+    text: &str,
+) -> Result<Vec<watane_dist::RefreshReport>, CmdError> {
+    let link = crate::commands::parse_link(text)?;
+    if link.channel() == dist.identity() {
+        return Err(CmdError::new("bad_input", words::OWN_INDEX));
+    }
+    Ok(dist.choose_index(&link)?)
+}
+pub(crate) fn fetch_release(
+    dist: &watane_dist::Dist,
+    release: &watane_dist::ReleaseRef,
+    link: Option<&watane_dist::Link>,
+) -> Result<watane_dist::Fetched, CmdError> {
+    if let Some(link) = link {
+        dist.follow(link)?;
+    }
+    Ok(dist.fetch(release)?)
+}
+fn index_rows(
+    own: &watane_dist::ChannelView,
+    indexes: Vec<watane_dist::IndexView>,
+    failures: &std::collections::BTreeMap<String, String>,
+    parties: &Parties,
+) -> Vec<serde_json::Value> {
+    let mut rows = vec![index_row(
+        own,
+        true,
+        own.releases
+            .iter()
+            .filter(|r| r.withdrawn.is_none())
+            .map(|r| &r.reference.slug)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        &[],
+        vec![],
+        None,
+        parties,
+    )];
+    for index in indexes {
+        rows.push(index_row(
+            &index.view,
+            false,
+            index.mods,
+            &index.included,
+            skipped_rows(index.skipped, parties),
+            failures.get(&index.view.channel.to_string()),
+            parties,
+        ));
+    }
+    rows
+}
+impl Core {
+    pub fn indexes(&self) -> Result<Vec<serde_json::Value>, CmdError> {
+        self.parties.replace(&party_views(&self.dist)?);
+        let own = self.dist.own()?;
+        let failures = self.failures.lock().unwrap();
+        Ok(index_rows(
+            &own,
+            self.dist.indexes()?,
+            &failures,
+            &self.parties,
+        ))
+    }
+    pub fn choose_index(&self, text: &str) -> Result<Vec<serde_json::Value>, CmdError> {
+        for report in choose_index(&self.dist, text)? {
+            keep_outcome(
+                &mut self.failures.lock().unwrap(),
+                report.channel,
+                report.outcome,
+            );
+        }
+        self.indexes()
+    }
+    pub fn search(&self, query: &watane_dist::Query) -> Result<Vec<serde_json::Value>, CmdError> {
+        self.parties.replace(&party_views(&self.dist)?);
+        let installed = self.host.mods();
+        Ok(self
+            .dist
+            .search(query)?
+            .iter()
+            .map(|h| crate::find::hit_view(h, &installed, &self.parties))
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod find_integration_tests {
+    use super::*;
+    use watane_dist::*;
+    struct Approve;
+    impl Confirm for Approve {
+        fn confirm(&self, _: &SignRequest) -> Decision {
+            Decision::Approve
+        }
+    }
+    struct Site {
+        base: String,
+        stop: Option<tokio::sync::oneshot::Sender<()>>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Site {
+        fn serve(dir: std::path::PathBuf) -> Self {
+            let (stop, rx) = tokio::sync::oneshot::channel();
+            let (tx, ready) = std::sync::mpsc::channel();
+            let thread = std::thread::spawn(move || {
+                tokio::runtime::Runtime::new().unwrap().block_on(async {
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    tx.send(format!("http://{}/", listener.local_addr().unwrap()))
+                        .unwrap();
+                    axum::serve(
+                        listener,
+                        axum::Router::new()
+                            .fallback_service(tower_http::services::ServeDir::new(dir)),
+                    )
+                    .with_graceful_shutdown(async {
+                        let _ = rx.await;
+                    })
+                    .await
+                    .unwrap();
+                });
+            });
+            Self {
+                base: ready
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap(),
+                stop: Some(stop),
+                thread: Some(thread),
+            }
+        }
+    }
+    impl Drop for Site {
+        fn drop(&mut self) {
+            let _ = self.stop.take().unwrap().send(());
+            self.thread.take().unwrap().join().unwrap();
+        }
+    }
+    fn open(home: &tempfile::TempDir) -> Dist {
+        Dist::open(
+            home.path(),
+            Arc::new(Approve),
+            Options {
+                listed_local: true,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+    fn package() -> Vec<u8> {
+        watane_host::watane_pkg::pack(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reading-list"),
+            false,
+        )
+        .unwrap()
+        .into_bytes()
+    }
+    #[test]
+    fn ac5_install_hit_follows_before_fetch_and_keeps_dist_cause() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        let site = Site::serve(alice.site_dir());
+        alice.set_site_url(&site.base).unwrap();
+        let published = alice.publish(package()).unwrap();
+        let carol_home = tempfile::tempdir().unwrap();
+        let host = Host::open(
+            carol_home.path(),
+            watane_host::Mode::Preview,
+            Default::default(),
+        )
+        .unwrap();
+        let carol = open(&carol_home);
+        let reference = &published.info.reference;
+        let expected = carol.fetch(reference).unwrap_err().to_string();
+        let error = fetch_release(&carol, reference, None).unwrap_err();
+        assert_eq!(error.message, expected);
+        assert_eq!(error.code, "dist");
+        assert!(carol.followed().unwrap().is_empty());
+        let fetched = fetch_release(&carol, reference, published.link.as_ref()).unwrap();
+        assert_eq!(carol.followed().unwrap()[0].channel, alice.identity());
+        let plan = host
+            .plan(vec![watane_host::Source::Release {
+                package: fetched.package,
+                entry: fetched.entry,
+            }])
+            .unwrap();
+        let installed = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(host.install(plan, watane_host::Requester::App))
+            .unwrap();
+        let hit = carol.search(&Query::default()).unwrap().remove(0);
+        assert_eq!(
+            crate::find::hit_view(&hit, &installed, &Parties::new())["installed"],
+            "reading-list"
+        );
+        let mut different = hit.clone();
+        different.info.reference.slug = "other-mod".parse().unwrap();
+        assert!(
+            crate::find::hit_view(&different, &installed, &Parties::new())["installed"].is_null()
+        );
+        different = hit.clone();
+        different.info.reference.publisher = "y".repeat(52).parse().unwrap();
+        assert!(
+            crate::find::hit_view(&different, &installed, &Parties::new())["installed"].is_null()
+        );
+    }
+    #[test]
+    fn ac6_parties_include_chosen_indexes_and_listed_publishers() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
+        alice.set_name("Alice").unwrap();
+        alice.publish(package()).unwrap();
+        let ivy_home = tempfile::tempdir().unwrap();
+        let ivy = open(&ivy_home);
+        let ivy_site = Site::serve(ivy.site_dir());
+        ivy.set_site_url(&ivy_site.base).unwrap();
+        ivy.set_name("Ivy").unwrap();
+        ivy.list(
+            &alice
+                .own_link(Some(&"reading-list".parse().unwrap()))
+                .unwrap(),
+            "Books",
+        )
+        .unwrap();
+        let carol_home = tempfile::tempdir().unwrap();
+        let carol = open(&carol_home);
+        choose_index(&carol, &ivy.own_link(None).unwrap().to_string()).unwrap();
+        assert!(carol.followed().unwrap().is_empty());
+        let parties = Parties::new();
+        parties.replace(&party_views(&carol).unwrap());
+        assert_eq!(
+            words::party(&ivy.identity().to_string(), &parties)
+                .name
+                .as_deref(),
+            Some("Ivy")
+        );
+        assert_eq!(
+            words::party(&alice.identity().to_string(), &parties)
+                .name
+                .as_deref(),
+            Some("Alice")
+        );
+        let hit = carol
+            .search(&Query {
+                text: "reading".into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            crate::find::hit_view(&hit, &[], &parties)["via"][0]["index"]["name"],
+            "Ivy"
+        );
+        let api = crate::find::api_result(&hit);
+        assert_eq!(
+            api["via"],
+            serde_json::json!([{"kind":"index","index":ivy.identity().to_string(),"through":null,"note":"Books"}])
+        );
+        assert!(api["publisher"]["key"].is_string());
     }
 }

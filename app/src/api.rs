@@ -23,6 +23,7 @@ pub fn router(dist: Option<Arc<Dist>>) -> Router {
             post(publish).layer(DefaultBodyLimit::max(67_108_864)),
         )
         .route("/api/releases", any(releases))
+        .route("/api/search", post(search))
         .with_state(dist)
 }
 async fn releases(State(dist): State<Option<Arc<Dist>>>, method: Method) -> Response {
@@ -152,6 +153,34 @@ async fn publish(
             "unavailable",
             e.to_string(),
         ),
+    }
+}
+
+async fn search(
+    State(dist): State<Option<Arc<Dist>>>,
+    query: Result<Json<crate::find::SearchQuery>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Some(dist) = dist else {
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "dist did not open",
+        );
+    };
+    let query = match query
+        .map_err(|e| e.to_string())
+        .and_then(|Json(q)| q.parse().map_err(|e| e.message))
+    {
+        Ok(query) => query,
+        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
+    };
+    match tauri::async_runtime::spawn_blocking(move || {
+        let hits = dist.search(&query)?;
+        Ok::<_, DistError>(serde_json::json!({"indexes":dist.indexes()?.len(), "results":hits.iter().map(crate::find::api_result).collect::<Vec<_>>()}))
+    }).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(e)) => error(StatusCode::BAD_REQUEST, "bad_request", crate::cause_chain(&e)),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, "unavailable", e.to_string()),
     }
 }
 

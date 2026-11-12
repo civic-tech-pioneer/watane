@@ -215,3 +215,67 @@ fn ac6_publish_through_consent_window_and_host_guards() {
     }
     assert!(app.quit().success());
 }
+
+#[tokio::test]
+async fn ac2_search_http_rows_and_own_release_shape() {
+    async fn search(router: Router, bytes: Vec<u8>) -> (u16, Value) {
+        let response = router
+            .oneshot(
+                Request::post("/api/search")
+                    .header("content-type", "application/json")
+                    .body(Body::from(bytes))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, body)
+    }
+    let home = tempfile::tempdir().unwrap();
+    let dist = Arc::new(
+        watane_dist::Dist::open(home.path(), Arc::new(Answer(true)), Default::default()).unwrap(),
+    );
+    dist.set_name("Alice").unwrap();
+    let published = dist.publish(package()).unwrap();
+    let router = watane_app::api::router(Some(dist.clone()));
+    for query in [
+        json!({"text":"reading"}),
+        json!({"text":"", "publisher":dist.identity().to_string(), "interface":"mods:reading-list/books"}),
+    ] {
+        let (status, body) = search(router.clone(), serde_json::to_vec(&query).unwrap()).await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["indexes"], 0);
+        let result = &body["results"][0];
+        assert_eq!(result["release"], published.info.reference.to_string());
+        assert_eq!(
+            result["publisher"],
+            json!({"key":dist.identity().to_string(),"name":"Alice","fingerprint":dist.fingerprint()})
+        );
+        assert_eq!(result["link"], Value::Null);
+        assert_eq!(result["via"], json!([{"kind":"own"}]));
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["checked_at"], Value::Null);
+        assert_eq!(result["unchecked_since"], Value::Null);
+        for key in ["name", "summary", "offers", "events", "uses"] {
+            assert!(result.get(key).is_some(), "{key}: {result}");
+        }
+        for key in ["slug", "version", "verified", "installed", "checkedAt"] {
+            assert!(result.get(key).is_none());
+        }
+    }
+    for bytes in [
+        b"{".to_vec(),
+        br#"{"text":"", "publisher":"bad"}"#.to_vec(),
+        br#"{"text":"", "interface":"bad"}"#.to_vec(),
+        serde_json::to_vec(&json!({"text":"x".repeat(257)})).unwrap(),
+    ] {
+        let (status, body) = search(router.clone(), bytes).await;
+        assert_eq!(status, 400, "{body}");
+        assert_eq!(body["error"]["code"], "bad_request");
+    }
+    let (status, body) = search(watane_app::api::router(None), br#"{"text":""}"#.to_vec()).await;
+    assert_eq!(status, 503);
+    assert_eq!(body["error"]["code"], "unavailable");
+}

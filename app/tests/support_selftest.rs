@@ -196,6 +196,14 @@ fn ac5_script_names_all_app_and_plugin_commands() {
         "channel_follow",
         "channel_unfollow",
         "channels_refresh",
+        "indexes_list",
+        "index_choose",
+        "index_drop",
+        "search",
+        "install_release",
+        "index_list",
+        "index_include",
+        "index_unlist",
         "consent_get",
         "consent_answer",
         "plugin:window|create",
@@ -249,7 +257,7 @@ async function run(allowed, before, missing = false) {
   assert.equal(report.storageBefore, before);
   const names = report.attacks.map(a => a.name);
   assert.equal(new Set(names).size, names.length);
-  assert.equal(report.attacks.length, 111);
+  assert.equal(report.attacks.length, 119);
   for (const target of ['tauri', 'api', 'other', 'listener']) {
     for (const method of ['fetch', 'xhr']) assert(names.includes(`${method}:${target}`));
   }
@@ -265,7 +273,7 @@ async function run(allowed, before, missing = false) {
   assert.equal(downloads.length, 2);
   assert(calls.some(url => typeof url === 'string' && url.includes('localhost:23456/api/')));
   assert(calls.some(url => typeof url === 'string' && url.includes('other.localhost:23456')));
-  if (!missing) assert.equal(calls.filter(Array.isArray).length, 96);
+  if (!missing) assert.equal(calls.filter(Array.isArray).length, 104);
 }
 (async () => { await run(false, null); await run(true, 'previous'); await run(false, null, true); })().catch(e => { console.error(e); process.exitCode = 1; });
 "#;

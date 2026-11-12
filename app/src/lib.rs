@@ -7,6 +7,7 @@ pub mod consent;
 mod core;
 #[cfg(feature = "driver")]
 mod driver;
+mod find;
 pub mod mark;
 mod views;
 mod words;
@@ -231,6 +232,14 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::channel_follow,
             commands::channel_unfollow,
             commands::channels_refresh,
+            commands::indexes_list,
+            commands::index_choose,
+            commands::index_drop,
+            commands::search,
+            commands::install_release,
+            commands::index_list,
+            commands::index_include,
+            commands::index_unlist,
             commands::consent_get,
             commands::consent_answer
         ])

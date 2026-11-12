@@ -30,6 +30,14 @@
     "allow-channels-list",
     "allow-channel-follow",
     "allow-channel-unfollow",
-    "allow-channels-refresh"
+    "allow-channels-refresh",
+    "allow-indexes-list",
+    "allow-index-choose",
+    "allow-index-drop",
+    "allow-search",
+    "allow-install-release",
+    "allow-index-list",
+    "allow-index-include",
+    "allow-index-unlist"
   ]
 }

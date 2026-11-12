@@ -516,7 +516,7 @@ pub(crate) async fn release_install(
 ) -> Result<Value, CmdError> {
     record(&webview, "release_install");
     let release = parse_release(&release)?;
-    let installed = core(&state)?.install_release(release).await?;
+    let installed = core(&state)?.install_release(release, None).await?;
     Ok(json!({"installed":installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
 fn withdraw_error(error: watane_dist::DistError) -> CmdError {
@@ -620,4 +620,194 @@ mod stage_d_tests {
             assert_eq!(converted.message, expected);
         }
     }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+    use watane_dist::*;
+    #[test]
+    fn ac4_index_errors_and_bad_text() {
+        for text in ["", "bad", "watane:bad"] {
+            assert_eq!(parse_link(text).unwrap_err().code, "bad_input");
+            assert_eq!(parse_entry(text).unwrap_err().code, "bad_input");
+            assert_eq!(parse_release(text).unwrap_err().code, "bad_input");
+        }
+        for (cause, expected) in [
+            (
+                "invalid character count",
+                "Give a note of at most 280 characters.",
+            ),
+            ("other cause", "This note cannot be used: other cause."),
+        ] {
+            let error = index_error(DistError::BadNote { cause });
+            assert_eq!(error.code, "bad_input");
+            assert_eq!(error.message, expected);
+        }
+        let channel: PublicKey = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy"
+            .parse()
+            .unwrap();
+        for error in [
+            DistError::OwnListing,
+            DistError::AlreadyListed { seq: 2 },
+            DistError::NoRelease {
+                channel,
+                slug: "reading-list".parse().unwrap(),
+            },
+            DistError::NotIndex { channel },
+        ] {
+            let expected = error.to_string();
+            let error = index_error(error);
+            assert_eq!(error.message, expected);
+        }
+        struct Refuse;
+        impl Confirm for Refuse {
+            fn confirm(&self, _: &SignRequest) -> Decision {
+                panic!("must not sign")
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist =
+            Dist::open(home.path(), std::sync::Arc::new(Refuse), Default::default()).unwrap();
+        dist.set_site_url("https://example.org/").unwrap();
+        let error = crate::core::choose_index(&dist, &dist.own_link(None).unwrap().to_string())
+            .unwrap_err();
+        assert_eq!(error.code, "bad_input");
+        assert_eq!(error.message, "Your own channel is always your index.");
+    }
+}
+
+pub(crate) fn parse_link(text: &str) -> Result<watane_dist::Link, CmdError> {
+    text.parse::<watane_dist::Link>()
+        .map_err(|e| CmdError::new("bad_input", e.to_string()))
+}
+fn parse_entry(text: &str) -> Result<watane_dist::EntryId, CmdError> {
+    text.parse::<watane_dist::EntryId>()
+        .map_err(|e| CmdError::new("bad_input", e.to_string()))
+}
+fn index_error(error: watane_dist::DistError) -> CmdError {
+    match error {
+        watane_dist::DistError::BadNote { cause } => {
+            CmdError::new("bad_input", crate::words::bad_note(cause))
+        }
+        other => other.into(),
+    }
+}
+#[tauri::command]
+pub(crate) async fn indexes_list(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Value>, CmdError> {
+    record(&webview, "indexes_list");
+    let core = core(&state)?.clone();
+    blocking(move || core.indexes()).await
+}
+#[tauri::command]
+pub(crate) async fn index_choose(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: String,
+) -> Result<Vec<Value>, CmdError> {
+    record(&webview, "index_choose");
+    let core = core(&state)?.clone();
+    blocking(move || core.choose_index(&link)).await
+}
+#[tauri::command]
+pub(crate) async fn index_drop(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    channel: String,
+) -> Result<(), CmdError> {
+    record(&webview, "index_drop");
+    let core = core(&state)?.clone();
+    let key = channel
+        .parse::<watane_dist::PublicKey>()
+        .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
+    blocking(move || {
+        core.dist.drop_index(&key)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn search(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    text: String,
+    publisher: Option<String>,
+    interface: Option<String>,
+) -> Result<Vec<Value>, CmdError> {
+    record(&webview, "search");
+    let query = crate::find::SearchQuery {
+        text,
+        publisher,
+        interface,
+    }
+    .parse()?;
+    let core = core(&state)?.clone();
+    blocking(move || core.search(&query)).await
+}
+#[tauri::command]
+pub(crate) async fn install_release(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    release: String,
+    link: Option<String>,
+) -> Result<Value, CmdError> {
+    record(&webview, "install_release");
+    let release = parse_release(&release)?;
+    let link = link.as_deref().map(parse_link).transpose()?;
+    let installed = core(&state)?.install_release(release, link).await?;
+    Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
+}
+#[tauri::command]
+pub(crate) async fn index_list(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: String,
+    note: String,
+) -> Result<(), CmdError> {
+    record(&webview, "index_list");
+    let link = parse_link(&link)?;
+    let core = core(&state)?.clone();
+    blocking(move || {
+        core.dist.list(&link, &note).map_err(index_error)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn index_include(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    link: String,
+    note: String,
+) -> Result<(), CmdError> {
+    record(&webview, "index_include");
+    let link = parse_link(&link)?;
+    let core = core(&state)?.clone();
+    blocking(move || {
+        core.dist.include(&link, &note).map_err(index_error)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+pub(crate) async fn index_unlist(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    entry: String,
+) -> Result<(), CmdError> {
+    record(&webview, "index_unlist");
+    let entry = parse_entry(&entry)?;
+    let core = core(&state)?.clone();
+    blocking(move || {
+        core.dist.unlist(&entry)?;
+        core.channels()?;
+        Ok(())
+    })
+    .await
 }

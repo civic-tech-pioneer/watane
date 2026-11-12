@@ -114,52 +114,106 @@ pub(crate) struct DistConfirm {
 }
 impl watane_dist::Confirm for DistConfirm {
     fn confirm(&self, request: &watane_dist::SignRequest) -> watane_dist::Decision {
-        use watane_dist::Statement;
-        let (statement, details) = match &request.statement {
-            Statement::Profile(p) => (consent::Statement::Profile, vec![("Name", p.name.clone())]),
-            Statement::Release { reference, release } => (
-                consent::Statement::Release,
-                vec![
-                    ("Release", reference.to_string()),
-                    ("Package", release.package.to_string()),
-                    ("Size", release.size.to_string()),
-                    (
-                        "Source included",
-                        if release.source { "yes" } else { "no" }.into(),
-                    ),
-                    ("Summary", release.summary.clone()),
-                ],
-            ),
-            Statement::Withdraw {
-                reference,
-                withdraw,
-                ..
-            } => (
-                consent::Statement::Withdraw,
-                vec![
-                    ("Release", reference.to_string()),
-                    ("Reason", withdraw.reason.clone()),
-                ],
-            ),
-            // ponytail: S29 shows index statements in the consent view.
-            _ => return watane_dist::Decision::Refuse,
-        };
-        let mut signer = words::party(&request.channel.to_string(), &self.parties);
-        signer.fingerprint = request.fingerprint.clone();
-        match self.broker.ask_blocking(consent::Request::Sign {
-            statement,
-            signer,
-            details: details
-                .into_iter()
-                .map(|(label, value)| consent::Detail {
-                    label: label.into(),
-                    value,
-                })
-                .collect(),
-        }) {
+        match self.broker.ask_blocking(sign_view(request, &self.parties)) {
             consent::Answer::Approve { .. } => watane_dist::Decision::Approve,
             consent::Answer::Deny => watane_dist::Decision::Refuse,
         }
+    }
+}
+
+fn listing_target(link: &watane_dist::Link, parties: &Parties) -> String {
+    let key = link.channel().to_string();
+    let party = words::party(&key, parties);
+    let label = party
+        .name
+        .map(|name| format!("{name} ({})", party.fingerprint))
+        .unwrap_or(party.fingerprint);
+    let target = link
+        .slug()
+        .map(|slug| format!("{key}/{slug}"))
+        .unwrap_or(key);
+    format!("{target} by {label}")
+}
+fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::Request {
+    use watane_dist::Statement;
+    let (statement, details) = match &request.statement {
+        Statement::Profile(p) => (consent::Statement::Profile, vec![("Name", p.name.clone())]),
+        Statement::Release { reference, release } => (
+            consent::Statement::Release,
+            vec![
+                ("Release", reference.to_string()),
+                ("Package", release.package.to_string()),
+                ("Size", release.size.to_string()),
+                (
+                    "Source included",
+                    if release.source { "yes" } else { "no" }.into(),
+                ),
+                ("Summary", release.summary.clone()),
+            ],
+        ),
+        Statement::Withdraw {
+            reference,
+            withdraw,
+            ..
+        } => (
+            consent::Statement::Withdraw,
+            vec![
+                ("Release", reference.to_string()),
+                ("Reason", withdraw.reason.clone()),
+            ],
+        ),
+        Statement::List(listing) | Statement::Include(listing) => (
+            if matches!(&request.statement, Statement::List(_)) {
+                consent::Statement::List
+            } else {
+                consent::Statement::Include
+            },
+            vec![
+                (
+                    if listing.link.slug().is_some() {
+                        "Mod"
+                    } else {
+                        "Index"
+                    },
+                    listing_target(&listing.link, parties),
+                ),
+                ("Location", listing.link.base().into()),
+                (
+                    "Note",
+                    if listing.note.is_empty() {
+                        "none".into()
+                    } else {
+                        listing.note.clone()
+                    },
+                ),
+            ],
+        ),
+        Statement::Unlist {
+            listing, include, ..
+        } => (
+            consent::Statement::Unlist,
+            vec![(
+                "Ends",
+                format!(
+                    "{} {}",
+                    if *include { "include" } else { "list" },
+                    listing_target(&listing.link, parties)
+                ),
+            )],
+        ),
+    };
+    let mut signer = words::party(&request.channel.to_string(), parties);
+    signer.fingerprint = request.fingerprint.clone();
+    consent::Request::Sign {
+        statement,
+        signer,
+        details: details
+            .into_iter()
+            .map(|(label, value)| consent::Detail {
+                label: label.into(),
+                value,
+            })
+            .collect(),
     }
 }
 
@@ -275,5 +329,104 @@ mod tests {
         assert!(!by_program);
         assert_eq!(mods.len(), 1);
         assert_eq!(mods[0].uses, ["reading-list (local)"]);
+    }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+    use watane_dist::{EntryId, Listing, SignRequest, Statement};
+    #[test]
+    fn ac1_index_sign_details_are_complete_and_ordered() {
+        let key = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy".to_string();
+        let parties = Parties::new();
+        let listing = Listing {
+            link: format!("watane:{key}@https://example.org/#reading-list")
+                .parse()
+                .unwrap(),
+            note: "".into(),
+        };
+        let index = Listing {
+            link: format!("watane:{key}@https://example.org/")
+                .parse()
+                .unwrap(),
+            note: "Useful".into(),
+        };
+        for known in [false, true] {
+            if known {
+                parties.insert(key.clone(), "Alice".into());
+            }
+            let party = if known {
+                "Alice (47pjoycnsr)"
+            } else {
+                "47pjoycnsr"
+            };
+            let target = format!("{key}/reading-list by {party}");
+            let index_target = format!("{key} by {party}");
+            for (statement, kind, details) in [
+                (
+                    Statement::List(listing.clone()),
+                    consent::Statement::List,
+                    vec![
+                        ("Mod", target.clone()),
+                        ("Location", "https://example.org/".into()),
+                        ("Note", "none".into()),
+                    ],
+                ),
+                (
+                    Statement::Include(index.clone()),
+                    consent::Statement::Include,
+                    vec![
+                        ("Index", index_target.clone()),
+                        ("Location", "https://example.org/".into()),
+                        ("Note", "Useful".into()),
+                    ],
+                ),
+                (
+                    Statement::Unlist {
+                        entry: EntryId::from_bytes([0; 32]),
+                        listing: listing.clone(),
+                        include: false,
+                    },
+                    consent::Statement::Unlist,
+                    vec![("Ends", format!("list {target}"))],
+                ),
+                (
+                    Statement::Unlist {
+                        entry: EntryId::from_bytes([0; 32]),
+                        listing: index.clone(),
+                        include: true,
+                    },
+                    consent::Statement::Unlist,
+                    vec![("Ends", format!("include {index_target}"))],
+                ),
+            ] {
+                let request = SignRequest {
+                    channel: key.parse().unwrap(),
+                    fingerprint: "signer-fingerprint".into(),
+                    statement,
+                };
+                let consent::Request::Sign {
+                    statement,
+                    signer,
+                    details: actual,
+                } = sign_view(&request, &parties)
+                else {
+                    panic!("sign expected")
+                };
+                assert_eq!(statement, kind);
+                assert_eq!(signer.fingerprint, "signer-fingerprint");
+                assert_eq!(
+                    actual,
+                    details
+                        .into_iter()
+                        .map(|(label, value)| consent::Detail {
+                            label: label.into(),
+                            value
+                        })
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }

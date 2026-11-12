@@ -36,6 +36,14 @@ fn ac8_static_security_configuration() {
         "channel_follow",
         "channel_unfollow",
         "channels_refresh",
+        "indexes_list",
+        "index_choose",
+        "index_drop",
+        "search",
+        "install_release",
+        "index_list",
+        "index_include",
+        "index_unlist",
     ];
     let consent = ["consent_get", "consent_answer"];
     let mut files: Vec<_> = std::fs::read_dir(root().join("capabilities"))
@@ -101,6 +109,14 @@ fn ac8_static_security_configuration() {
             "channel_follow",
             "channel_unfollow",
             "channels_refresh",
+            "indexes_list",
+            "index_choose",
+            "index_drop",
+            "search",
+            "install_release",
+            "index_list",
+            "index_include",
+            "index_unlist",
             "consent_get",
             "consent_answer"
         ]

@@ -93,6 +93,15 @@ pub(crate) fn update_declined(version: &str) -> String {
     format!("You declined the update to {version}.")
 }
 
+pub(crate) const OWN_INDEX: &str = "Your own channel is always your index.";
+pub(crate) fn bad_note(cause: &str) -> String {
+    if cause == "invalid character count" {
+        "Give a note of at most 280 characters.".into()
+    } else {
+        format!("This note cannot be used: {cause}.")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
