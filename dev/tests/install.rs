@@ -341,14 +341,24 @@ mod fake {
         let status =
             watane_dev::api::Client::home_status(&home.path().canonicalize().unwrap()).unwrap();
         assert_eq!(status["app"], false);
+        let root = tempfile::tempdir().unwrap();
+        let package = watane_pkg::pack(&page(root.path(), "counter"), false).unwrap();
         let mut response = ureq::post(format!("http://127.0.0.1:{}/api/publish", ready["port"]))
-            .send(b"package bytes")
+            .send(package.as_bytes())
             .unwrap();
         let value: Value = response.body_mut().read_json().unwrap();
-        assert!(value["release"].is_string());
+        assert_eq!(
+            value["release"],
+            format!("{}/counter@0.1.0", "y".repeat(52))
+        );
+        assert_eq!(value["link"], "https://fake.invalid/#counter");
+        assert_eq!(
+            value["site"],
+            json!(home.path().canonicalize().unwrap().join("site"))
+        );
         assert_eq!(
             fs::read(home.path().join("requests/1-publish")).unwrap(),
-            b"package bytes"
+            package.as_bytes()
         );
     }
     #[test]

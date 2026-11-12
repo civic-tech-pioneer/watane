@@ -209,7 +209,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first, then depend on its release` |
-| `host.declined` | 4 | the host answers with error code `refused` | `The person declined installing <slug> in their watane app` (or the mod folder) | `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>` |
+| `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait` |
 | `internal` | 5 | anything else | the error chain | — |
@@ -364,6 +364,8 @@ asks whether they want it installed before running install again with
  "release": "<publisher key>/reading-list@0.1.0",
  "package": "<64 hex>", "source": true, "site": "/abs/site folder", "link": "watane:...#reading-list"}
 ```
+`home` is the resolved home; `package` is the posted package id and `source`
+is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
 while no site URL is set. `next`: `Put the site folder on your static web host`.
 
@@ -1119,14 +1121,31 @@ next command and fixes of `serve`.
 
 ### 9.7 `publish` (step 3)
 
-1. Each member of `Mod::deps()` with no publisher is one
-   `publish.local_dependency`, before any request.
-2. Test the mod (sections 5 to 8); `watane_pkg::pack(dir, !no_source)`.
-3. `POST <api>publish`, `Content-Type: application/octet-stream`, the
-   package bytes as the body, on the home host (status as in 9.6). The app
-   asks the participant, who sees whether the source is included; `dist`
-   signs and writes the site folder. dev reports the answer, plus
-   `package` (`Package::id()`) and `source` (`Package::has_source()`).
+1. Read `Deps::read(dir)` before validating the mod or contacting a host.
+   Each provider with no publisher is one `publish.local_dependency` at
+   `deps.json`; report all local providers and stop before the pipeline.
+2. Resolve the home and check app status through the same path as `install`
+   (9.6), before the pipeline. Missing-app `next` repeats `publish` with
+   the canonical mod folder, home and any explicit `--wait` (shell quoted).
+3. Test the mod (sections 5 to 8). Failures send no publish request and
+   retain the test pipeline's errors and `next`, as `install` does.
+4. `watane_pkg::pack(dir, !no_source)`: include source unless `--no-source`.
+5. `Client::publish(&package, wait)` posts to `/api/publish` with
+   `Content-Type: application/octet-stream` and `Package::as_bytes()` as
+   the body, using the proxy-free localhost transport of `install`.
+   `--wait` defaults to 600 seconds. The app asks the participant, who sees
+   whether source is included; consent is the agreement to include it
+   (F-PUB-4). `dist` signs and writes the site folder. dev reports only
+   `home`, the answer's `release`, `site`, `link`, `package` (`Package::id()`)
+   and `source` (`Package::has_source()`), as in 2.4.
+
+A `refused` answer is `host.declined`: `The person declined publishing
+<slug> from their watane app`, with fix `Ask the person whether they want
+<slug> published, then run publish again with --wait <seconds>`.
+The CLI supplies the slug; the fixed `Client::publish` interface carries
+only a package and duration. A timeout uses the message and fix of 9.6;
+other errors are `host.refused` with `[<code>] <message>`. For these host
+failures, `next` is the fix. Success gives the static-host instruction of 2.4.
 
 ## 10. Steps 4 and 5 (outline; not designed)
 
@@ -1429,8 +1448,8 @@ rules belong to 15.1.
 | DEV-S-27 | `install::ac1_no_host_precedes_pipeline`; `api::tests::ac2_wrong_host_status`; `install::ac2_real_home_without_app` | integration without build; loopback unit; slow real host |
 | DEV-S-28 | `install::fake::ac3_declined` | integration: page-only, no Rust build |
 | DEV-S-29 | `install::fake::ac4_page_only_result_and_failed_pipeline`; `install::fake::ac4_provider_order_result_and_failed_pipeline` | integration: page-only result, next and no request on failure; slow integration: order of two dependent Rust templates |
-| DEV-S-30 | planned publish local dependency refusal: no existing implementation/test | planned |
-| DEV-S-31 | planned publish source exclusion: no existing implementation/test | planned |
+| DEV-S-30 | `publish::ac1_local_providers_precede_status_and_pipeline` | integration: no build or host request |
+| DEV-S-31 | `publish::ac3_ac6_page_package_and_answer`, `publish::ac3_logic_source_selection` | page-only integration; slow Rust source selection |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -1470,7 +1489,15 @@ The ordered successful install needs two logic mods (pkg forbids imports in
 a page-only mod), so `install::fake::ac4_provider_order_result_and_failed_pipeline`
 is slow and uses one isolated cache for both templates.
 `api::tests::ac5_install_timeout_and_host_errors` proves the wait/error mapping;
-`install::fake::ac6_fake_preview_status_publish_and_ready` proves the fake transport.
+`install::fake::ac6_fake_preview_status_publish_and_ready` proves the fake transport
+with a real page package. S21c adds `publish::ac2_no_app_precedes_pipeline`,
+`ac4_declined_names_publishing_and_asks_before_retry`,
+`ac5_failed_pipeline_sends_nothing` and `ac7_text_output_and_help_walk`.
+`api::tests::ac4_publish_request_and_answer` and
+`ac4_publish_timeout_and_host_errors` prove the binary request and error mapping.
+`publish::ac3_logic_source_selection` is slow because it builds and tests
+Rust; the default publish proofs use page-only mods with a test source file,
+adding no cold Rust fixture build to the 120-second budget.
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
@@ -1488,9 +1515,11 @@ answers `GET /api/status` (`app: true` in a home), `POST /api/install` and
 "decline"}`, default approve) sets the answer; decline answers 403
 `{"error":{"code":"refused","message":"declined"}}`. An installed folder
 gets local name = folder name and a page URL if it has `ui/`. Publish approves
-with a synthetic `release`, `site` and `link`; it records raw
-package bytes. Status requests are not recorded; POST requests are numbered
-from 1, with names such as `1-install` and `2-publish`. Install uses pkg
+by decoding and unpacking the posted package: `release` is
+`<fake key>/<slug>@<version>`, `site` is `<dir>/site`, and `link` is
+`https://fake.invalid/#<slug>`. Invalid packages get 400 `invalid_package`;
+it records raw package bytes and removes the temporary unpacked folder.
+Status requests are not recorded; POST requests are numbered from 1, with names such as `1-install` and `2-publish`. Install uses pkg
 metadata and package ids and returns the host `InstalledMod` type. It serves no
 page and no MCP. SIGTERM ends it (the default action).
 
@@ -1512,7 +1541,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | 4 | `contract`, `json_eq` | host stage 5: `Harness` | `run_steps` tested with closures; integration tests ignored | S-17 to 20; S-4 complete |
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
 | 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` checks app status first, tests providers and requests home install | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
-| 7 (step 3) | `publish` | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31; dev's part of J3 |
+| 7 (step 3) | `publish`: local-provider refusal, app status, tests, pack, consent POST, result | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31 implemented; dev's part of J3 |
 
 Steps 4 and 5 are not designed (section 10).
 

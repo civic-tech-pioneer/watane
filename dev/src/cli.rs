@@ -47,6 +47,15 @@ pub enum Command {
         #[arg(long, help = "Seconds to wait for the person to answer [default: 600]")]
         wait: Option<u64>,
     },
+    /// Test and package the mod, then ask the person to sign a release in their app
+    Publish {
+        #[arg(long, help = "Exclude the source from the package")]
+        no_source: bool,
+        #[arg(long, help = "Home of the running watane app")]
+        home: Option<PathBuf>,
+        #[arg(long, help = "Seconds to wait for the person to answer [default: 600]")]
+        wait: Option<u64>,
+    },
     /// Test the mod and serve it in a preview
     Serve {
         #[arg(long, help = "Stops the preview and deletes its data")]
@@ -62,6 +71,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Add { .. } => "add",
         Command::Serve { .. } => "serve",
         Command::Install { .. } => "install",
+        Command::Publish { .. } => "publish",
     };
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
@@ -80,6 +90,7 @@ pub fn run(cli: Cli) -> Outcome {
     let result = match cli.command {
         Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
+        Command::Publish { no_source, home, wait } => return publish(&dir, no_source, home, wait),
         Command::New { slug } => template::new_mod(&dir, &slug)
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
@@ -281,37 +292,7 @@ pub fn test(dir: &Path) -> Outcome {
 fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
     let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
     let result = (|| {
-        let home = home
-            .map(Ok)
-            .unwrap_or_else(watane_host::default_home)
-            .map_err(|e| vec![Problem::internal(e)])?;
-        let home = home.canonicalize().unwrap_or(home);
-        let client = crate::api::Client::for_app(&home).map_err(|e| {
-            if e.code == crate::outcome::Code::EnvHostNotRunning {
-                let quote = |path: &Path| {
-                    let path = path.display().to_string();
-                    if path
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
-                    {
-                        path
-                    } else {
-                        format!("'{}'", path.replace('\'', "'\"'\"'"))
-                    }
-                };
-                let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-                let mut next = format!(
-                    "watane-dev install --json --dir {} --home {}",
-                    quote(&dir),
-                    quote(&home)
-                );
-                if let Some(wait) = wait {
-                    next.push_str(&format!(" --wait {wait}"));
-                }
-                outcome.next = Some(next);
-            }
-            vec![e]
-        })?;
+        let (home, client) = app_client(&mut outcome, home, wait)?;
         let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
         outcome.dir = Some(dir.clone());
         let tested = test_local(&dir);
@@ -339,6 +320,113 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
                 p.code.class() == crate::outcome::Class::Env
                     && p.code != crate::outcome::Code::EnvHostNotRunning
             }) {
+                outcome.next = Some("watane-dev doctor --json".into());
+            }
+            outcome.fail(errors)
+        }
+    }
+}
+
+fn app_client(
+    outcome: &mut Outcome,
+    home: Option<PathBuf>,
+    wait: Option<u64>,
+) -> Result<(PathBuf, crate::api::Client), Vec<Problem>> {
+    let home = home
+        .map(Ok)
+        .unwrap_or_else(watane_host::default_home)
+        .map_err(|e| vec![Problem::internal(e)])?;
+    let home = home.canonicalize().unwrap_or(home);
+    let client = crate::api::Client::for_app(&home).map_err(|e| {
+        if e.code == crate::outcome::Code::EnvHostNotRunning {
+            let quote = |path: &Path| {
+                let path = path.display().to_string();
+                if path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+                {
+                    path
+                } else {
+                    format!("'{}'", path.replace('\'', "'\"'\"'"))
+                }
+            };
+            let dir = outcome.dir.as_ref().expect("command has a mod folder");
+            let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let mut next = format!(
+                "watane-dev {} --json --dir {} --home {}",
+                outcome.command,
+                quote(&dir),
+                quote(&home)
+            );
+            if let Some(wait) = wait {
+                next.push_str(&format!(" --wait {wait}"));
+            }
+            outcome.next = Some(next);
+        }
+        vec![e]
+    })?;
+    Ok((home, client))
+}
+
+fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
+    use crate::outcome::{Class, Code};
+    let mut outcome = Outcome::new("publish", Some(dir.to_path_buf()));
+    let result = (|| {
+        let providers = watane_pkg::Deps::read(dir).map_err(check::mod_problems)?;
+        let errors: Vec<_> = providers
+            .iter()
+            .filter(|(_, publisher)| publisher.is_none())
+            .map(|(slug, _)| {
+                Problem::new(
+                    Code::PublishLocalDependency,
+                    format!("mods:{slug} is a local provider; it has no release"),
+                )
+                .at("deps.json", None, None)
+                .fix(format!("Publish {slug} first, then depend on its release"))
+            })
+            .collect();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let (home, client) = app_client(&mut outcome, home, wait)?;
+        let tested = test(dir);
+        outcome.dir = tested.dir;
+        if !tested.ok {
+            outcome.next = tested.next;
+            return Err(tested.errors);
+        }
+        let package = watane_pkg::pack(dir, !no_source).map_err(|e| match e {
+            watane_pkg::PackageError::Mod(e) => check::mod_problems(e),
+            e => vec![
+                Problem::new(Code::ModInvalid, e.to_string())
+                    .fix("Fix the package contents, then run publish again"),
+            ],
+        })?;
+        let answer = client.publish(&package, std::time::Duration::from_secs(wait.unwrap_or(600)))
+            .map_err(|mut e| {
+                if e.code == Code::HostDeclined {
+                    let slug = deps::label(dir);
+                    e.message = format!("The person declined publishing {slug} from their watane app");
+                    e.fix = Some(format!("Ask the person whether they want {slug} published, then run publish again with --wait <seconds>"));
+                }
+                outcome.next = e.fix.clone();
+                vec![e]
+            })?;
+        outcome.next = Some("Put the site folder on your static web host".into());
+        Ok(
+            serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source()}),
+        )
+    })();
+    match result {
+        Ok(value) => {
+            outcome.result = Some(value);
+            outcome
+        }
+        Err(errors) => {
+            if errors
+                .first()
+                .is_some_and(|e| e.code.class() == Class::Env && e.code != Code::EnvHostNotRunning)
+            {
                 outcome.next = Some("watane-dev doctor --json".into());
             }
             outcome.fail(errors)

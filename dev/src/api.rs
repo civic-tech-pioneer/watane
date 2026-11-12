@@ -86,7 +86,7 @@ impl Client {
     fn request(
         &self,
         path: &str,
-        body: Option<Value>,
+        body: Option<(&str, &[u8])>,
         timeout: Duration,
     ) -> Result<Value, Problem> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -97,8 +97,11 @@ impl Client {
             .build()
             .into();
         let url = format!("http://localhost:{}/api/{path}", self.port);
-        let response = if let Some(body) = body {
-            agent.post(&url).send_json(body)
+        let response = if let Some((content_type, body)) = body {
+            agent
+                .post(&url)
+                .header("Content-Type", content_type)
+                .send(body)
         } else {
             agent.get(&url).call()
         };
@@ -139,26 +142,33 @@ impl Client {
                 },
             )
             .fix(if code == Code::HostDeclined {
-                "The person declined in the app. Ask them before you run install again"
+                if path == "publish" {
+                    "The person declined in the app. Ask them before you run publish again"
+                } else {
+                    "The person declined in the app. Ask them before you run install again"
+                }
             } else {
                 "Correct the reported host error and run the command again"
             }));
         }
         Ok(value)
     }
+    pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<Value, Problem> {
+        self.request(
+            "publish",
+            Some(("application/octet-stream", package.as_bytes())),
+            wait,
+        )
+        .map_err(|e| home_wait_error(e, wait))
+    }
+
     pub fn install_wait(
         &self,
         folders: &[PathBuf],
         wait: u64,
     ) -> Result<Vec<InstalledMod>, Problem> {
         self.install_timeout(folders, Duration::from_secs(wait))
-            .map_err(|mut e| {
-                if e.code == Code::HostNoAnswer {
-                    e.message = format!("no answer from the home host in {wait} s");
-                    e.fix = Some("Run the command again with a longer --wait".into());
-                }
-                e
-            })
+            .map_err(|e| home_wait_error(e, Duration::from_secs(wait)))
     }
     pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem> {
         self.install_timeout(folders, Duration::from_secs(60))
@@ -173,7 +183,7 @@ impl Client {
             installed: Vec<InstalledMod>,
         }
         let value = self
-            .request("install", Some(json!({"folders":folders})), timeout)
+            .request("install", Some(("application/json", json!({"folders":folders}).to_string().as_bytes())), timeout)
             .map_err(|mut e| {
                 if e.code == Code::HostDeclined {
                     let name = folders.last().map_or_else(|| "the mod".into(), |dir| crate::deps::label(dir));
@@ -186,6 +196,14 @@ impl Client {
             .map(|v| v.installed)
             .map_err(Problem::internal)
     }
+}
+
+fn home_wait_error(mut e: Problem, wait: Duration) -> Problem {
+    if e.code == Code::HostNoAnswer {
+        e.message = format!("no answer from the home host in {} s", wait.as_secs());
+        e.fix = Some("Run the command again with a longer --wait".into());
+    }
+    e
 }
 
 #[cfg(test)]
@@ -214,6 +232,111 @@ mod tests {
             let _ = std::io::copy(&mut stream, &mut std::io::sink());
         });
         (port, thread)
+    }
+
+    fn publish_package() -> watane_pkg::Package {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("wit")).unwrap();
+        std::fs::create_dir(dir.path().join("ui")).unwrap();
+        std::fs::write(
+            dir.path().join("mod.toml"),
+            "name = \"Demo\"\nsummary = \"a page\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("wit/world.wit"),
+            "package mods:demo@0.2.3; world demo {}",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("ui/index.html"), "demo").unwrap();
+        watane_pkg::pack(dir.path(), false).unwrap()
+    }
+
+    #[test]
+    fn ac4_publish_request_and_answer() {
+        let package = publish_package();
+        let expected = package.as_bytes().to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            let header = String::from_utf8(header).unwrap();
+            assert!(
+                header.starts_with("POST /api/publish HTTP/1.1\r\n"),
+                "{header}"
+            );
+            assert!(
+                header
+                    .to_lowercase()
+                    .contains("content-type: application/octet-stream\r\n"),
+                "{header}"
+            );
+            assert!(!header.to_lowercase().contains("origin:"));
+            let mut body = vec![0; expected.len()];
+            stream.read_exact(&mut body).unwrap();
+            assert_eq!(body, expected);
+            let body = r#"{"release":"key/demo@0.2.3","site":"/site","link":null}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        let result = Client { port }
+            .publish(&package, Duration::from_secs(2))
+            .unwrap();
+        thread.join().unwrap();
+        assert_eq!(
+            result,
+            json!({"release":"key/demo@0.2.3","site":"/site","link":null})
+        );
+    }
+
+    #[test]
+    fn ac4_publish_timeout_and_host_errors() {
+        let package = publish_package();
+        for (status, value, delay, expected, message, fix) in [
+            (
+                403,
+                json!({"error":{"code":"refused","message":"declined"}}),
+                Duration::ZERO,
+                Code::HostDeclined,
+                "declined",
+                "The person declined in the app. Ask them before you run publish again",
+            ),
+            (
+                409,
+                json!({"error":{"code":"conflict","message":"already published"}}),
+                Duration::ZERO,
+                Code::HostRefused,
+                "[conflict] already published",
+                "Correct the reported host error and run the command again",
+            ),
+            (
+                200,
+                json!({}),
+                Duration::from_millis(1200),
+                Code::HostNoAnswer,
+                "no answer from the home host in 1 s",
+                "Run the command again with a longer --wait",
+            ),
+        ] {
+            let (port, thread) = stub(status, value, delay);
+            let e = Client { port }
+                .publish(&package, Duration::from_secs(1))
+                .unwrap_err();
+            thread.join().unwrap();
+            assert_eq!(e.code, expected);
+            assert_eq!(e.message, message);
+            assert_eq!(e.fix.as_deref(), Some(fix));
+        }
     }
 
     #[test]

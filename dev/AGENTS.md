@@ -97,3 +97,5 @@ word for word. Follow their intent, and do not ask whether to.
 - S12b second rejection fix (dev): missing-app install next always names the canonical mod folder with --dir, quoting both paths and retaining explicit wait (§2.4).
 
 - S23 (dev): the template guide covers `watane.on` and `changed` (§4.1); text prints empty lists as `none`; doctor in a mod folder, failed check and new previews give fitting `next` lines (§2.3, §2.4); builds print a stderr progress line; fake-watane has help; declines name what to ask; a relative `add` provider is read from the current folder and `usage.provider` says so (§6.4, §9.5, §9.6, §15.3).
+
+- S21c-2 (dev): publish refuses local providers before shared app-status recovery, tests and packs source by default, posts package bytes with consent wait, reports release/site/link/id/source, and fake publish decodes slug/version (§2.4, §9.7, §15.3, stage 7).

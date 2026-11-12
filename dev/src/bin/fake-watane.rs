@@ -125,10 +125,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 json!({"error":{"code":"refused","message":"declined"}}),
             )
         } else if path == "/api/publish" {
-            (
-                200,
-                json!({"release":format!("{}/fake@0.1.0","y".repeat(52)),"site":home,"link":"https://fake.invalid/fake"}),
-            )
+            let unpacked = home.join(format!("publish-{count}"));
+            let result =
+                watane_pkg::Package::from_bytes(body).and_then(|package| package.unpack(&unpacked));
+            let answer = match result {
+                Ok(m) => (
+                    200,
+                    json!({
+                        "release": format!("{}/{}@{}", "y".repeat(52), m.slug(), m.version()),
+                        "site": home.join("site"),
+                        "link": format!("https://fake.invalid/#{}", m.slug())
+                    }),
+                ),
+                Err(e) => (
+                    400,
+                    json!({"error":{"code":"invalid_package","message":e.to_string()}}),
+                ),
+            };
+            let _ = fs::remove_dir_all(unpacked);
+            answer
         } else {
             let result = (|| -> Result<Vec<InstalledMod>, Box<dyn std::error::Error>> {
                 let value: Value = serde_json::from_slice(&body)?;
