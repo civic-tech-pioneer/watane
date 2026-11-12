@@ -136,29 +136,8 @@ impl Log {
         }
         let mut inner = self.lock();
         let Inner { key, db, .. } = &mut *inner;
-        let author =
-            PublicKey::from_bytes(key.verifying_key().as_bytes()).expect("generated public key");
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        if matches!(store::fork(&tx, &author)?, Status::Compromised(_)) {
-            return Err(Error::Compromised(author));
-        }
-        if !store::confirmed(&tx, &author)? {
-            return Err(Error::OwnHeadUnconfirmed);
-        }
-        let head = store::head(&tx, &author)?;
-        let seq = head.as_ref().map_or(0, |e| e.seq() + 1);
-        if seq > MAX_SEQ {
-            return Err(Error::ChannelFull);
-        }
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .min(MAX_SEQ as u128) as u64;
-        let entry = entry::sign_entry(key, seq, head.map(|e| e.id()), time, kind, body);
-        store::insert(&tx, &entry)?;
-        tx.commit()?;
-        Ok(entry)
+        store::append(tx, key, kind, body)
     }
     pub fn ingest(&self, author: &PublicKey, entries: &[Entry]) -> Result<Ingest, Error> {
         for (index, e) in entries.iter().enumerate() {
@@ -174,60 +153,7 @@ impl Log {
         let tx = inner
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let status = store::fork(&tx, author)?;
-        if matches!(status, Status::Compromised(_)) {
-            return Ok(Ingest {
-                stored: vec![],
-                gap: None,
-                status,
-            });
-        }
-        let mut sorted: Vec<_> = entries.iter().collect();
-        sorted.sort_by_key(|e| (e.seq(), e.id()));
-        sorted.dedup_by_key(|e| e.id());
-        let mut head = store::head(&tx, author)?;
-        let mut stored = vec![];
-        let mut gap = None;
-        for e in sorted {
-            let existing = store::at(&tx, author, e.seq())?;
-            let conflict = if let Some(s) = existing {
-                if s.id() == e.id() {
-                    continue;
-                }
-                Some(s)
-            } else {
-                let next = head.as_ref().map_or(0, |h| h.seq() + 1);
-                if e.seq() > next {
-                    gap.get_or_insert(e.seq());
-                    continue;
-                }
-                if e.seq() != next {
-                    return Err(Error::Storage("non-contiguous channel".into()));
-                }
-                if e.prev() != head.as_ref().map(Entry::id) {
-                    head.clone()
-                } else {
-                    None
-                }
-            };
-            if let Some(chain) = conflict {
-                tx.execute(
-                    "INSERT INTO forks(author,chain,other) VALUES (?1,?2,?3)",
-                    rusqlite::params![author.as_bytes(), chain.bytes(), e.bytes()],
-                )?;
-                break;
-            }
-            store::insert(&tx, e)?;
-            stored.push(e.id());
-            head = Some(e.clone());
-        }
-        let status = store::fork(&tx, author)?;
-        tx.commit()?;
-        Ok(Ingest {
-            stored,
-            gap,
-            status,
-        })
+        store::ingest(tx, author, entries)
     }
     pub fn entries(
         &self,

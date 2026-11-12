@@ -1,5 +1,6 @@
-use crate::{Entry, Error, Fork, PublicKey, Status};
-use rusqlite::{Connection, OptionalExtension, params};
+use crate::{Entry, Error, Fork, Ingest, MAX_SEQ, PublicKey, Status, entry};
+use ed25519_dalek::SigningKey;
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::{
     fs::OpenOptions,
     os::unix::fs::OpenOptionsExt,
@@ -169,4 +170,95 @@ pub(crate) fn confirmed(db: &Connection, author: &PublicKey) -> Result<bool, Err
         })
         .optional()?;
     Ok(value.as_deref() != Some(author.as_bytes().as_slice()))
+}
+
+pub(crate) fn append(
+    tx: Transaction<'_>,
+    key: &SigningKey,
+    kind: &str,
+    body: &[u8],
+) -> Result<Entry, Error> {
+    let author =
+        PublicKey::from_bytes(key.verifying_key().as_bytes()).expect("generated public key");
+    if matches!(fork(&tx, &author)?, Status::Compromised(_)) {
+        return Err(Error::Compromised(author));
+    }
+    if !confirmed(&tx, &author)? {
+        return Err(Error::OwnHeadUnconfirmed);
+    }
+    let head = head(&tx, &author)?;
+    let seq = head.as_ref().map_or(0, |e| e.seq() + 1);
+    if seq > MAX_SEQ {
+        return Err(Error::ChannelFull);
+    }
+    let time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(MAX_SEQ as u128) as u64;
+    let entry = entry::sign_entry(key, seq, head.map(|e| e.id()), time, kind, body);
+    insert(&tx, &entry)?;
+    tx.commit()?;
+    Ok(entry)
+}
+
+pub(crate) fn ingest(
+    tx: Transaction<'_>,
+    author: &PublicKey,
+    entries: &[Entry],
+) -> Result<Ingest, Error> {
+    let status = fork(&tx, author)?;
+    if matches!(status, Status::Compromised(_)) {
+        return Ok(Ingest {
+            stored: vec![],
+            gap: None,
+            status,
+        });
+    }
+    let mut sorted: Vec<_> = entries.iter().collect();
+    sorted.sort_by_key(|e| (e.seq(), e.id()));
+    sorted.dedup_by_key(|e| e.id());
+    let mut head = head(&tx, author)?;
+    let mut stored = vec![];
+    let mut gap = None;
+    for e in sorted {
+        let existing = at(&tx, author, e.seq())?;
+        let conflict = if let Some(s) = existing {
+            if s.id() == e.id() {
+                continue;
+            }
+            Some(s)
+        } else {
+            let next = head.as_ref().map_or(0, |h| h.seq() + 1);
+            if e.seq() > next {
+                gap.get_or_insert(e.seq());
+                continue;
+            }
+            if e.seq() != next {
+                return Err(Error::Storage("non-contiguous channel".into()));
+            }
+            if e.prev() != head.as_ref().map(Entry::id) {
+                head.clone()
+            } else {
+                None
+            }
+        };
+        if let Some(chain) = conflict {
+            tx.execute(
+                "INSERT INTO forks(author,chain,other) VALUES (?1,?2,?3)",
+                rusqlite::params![author.as_bytes(), chain.bytes(), e.bytes()],
+            )?;
+            break;
+        }
+        insert(&tx, e)?;
+        stored.push(e.id());
+        head = Some(e.clone());
+    }
+    let status = fork(&tx, author)?;
+    tx.commit()?;
+    Ok(Ingest {
+        stored,
+        gap,
+        status,
+    })
 }
