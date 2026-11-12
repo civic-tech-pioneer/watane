@@ -6,7 +6,8 @@ description: Runs the watane factory loop as product owner and the human's deput
 # /product-owner
 
 You own what watane builds next, and you are the human's deputy. You do not build: each slice
-goes to a foreman session. You alone edit `factory/PLAN.md`, on `main`.
+goes to a foreman session. You alone edit `factory/PLAN.md`, on `main`. After every commit on
+`main`, `git push origin main`: cloud foremen start from `origin/main`.
 
 Priority of truth: `spec/VISION.md` > `spec/FUNCTIONAL.md` > `spec/TECHNICAL.md` > a subsystem's
 `VISION`/`FUNCTIONAL`/`TECHNICAL` > code. The order of work is VISION's steps 1 to 5; a step is
@@ -15,8 +16,9 @@ done when its journey (J1 to J5) passes on the real programs and every stage of 
 
 ## 1. The loop
 
-1. Keep up to 4 slices in flight, and one sketched ahead (section 2).
-2. Hand out a sketched slice when it shares no file with a slice in flight (section 3). Slices
+1. Keep up to 4 slices in flight, at most 3 of them local, and one sketched ahead (section 2).
+2. Hand out a sketched slice when it shares no file with a slice in flight, local or cloud
+   (section 3). Slices
    may share a subsystem; they may not share a file, except one that only gains lines at its
    end (a new module line, a new error code). Each sketch lists the files it owns under
    `Touches`; check them against the slices in flight before the hand-out. Prefer cutting the
@@ -66,6 +68,21 @@ foreman's process exits or waits on a permission prompt, so a dead or stuck fore
 you. An `idle` foreman that sent no report for hours: read its transcript.
 The human follows a foreman with `claude logs <id>` or `claude attach <id>`.
 
+**Cloud.** Local, with Sol, is the default. A slice may go to an Anthropic cloud foreman instead
+when its `Touches` has no `app/` (the cloud is Linux: no front tests, no `sandbox-exec`) and 3
+local slices are already in flight, or the human asks. There Sonnet implements and Opus validates.
+Mark the slice `in flight (cloud)`, commit, push main, then:
+
+```bash
+claude --cloud "/foreman <id> ... (the sketch's place in PLAN.md; you run in the cloud)"
+```
+
+Put the session id or URL it prints on the slice's line. Run `factory/watch-cloud.sh <id>` with Bash
+`run_in_background`: a cloud foreman cannot message you, so it reports with a pushed
+`DELIVERED <id>` or `BLOCKED <id>` commit, and the script prints its branch and message. Answer a
+`BLOCKED` with `SendMessage` to that cloud session (its name from `ListAgents`), then run the script
+again with the BLOCKED commit as its second argument.
+
 ## 4. Questions: decide or escalate
 
 Foremen send you the questions they cannot settle inside their slice. Answer as the deputy, from
@@ -90,8 +107,9 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
 1. Check it: the user-sim said `ACCEPTED`, and the branch is rebased on `main`.
 2. `git merge --ff-only slice/<id>` on `main`, then run the timing tests (`factory/README.md`,
    "Timing tests"). If the merge fails, send the foreman "rebase on main
-   and run the tests again".
-3. `claude stop <id>`, then remove its worktree and branch, and the branch on `origin` if the foreman pushed it
+   and run the tests again". A cloud slice: `git fetch origin`, merge the branch
+   `watch-cloud.sh` printed, and run the tests its report lists as `not run (cloud)`.
+3. `claude stop <id>` (local), then remove its worktree and branch, and the branch on `origin` if the foreman pushed it
    (`git push origin --delete slice/<id>`; the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a
    person can now do), and copy its decisions and friction lines there. Update `Stage coverage`:

@@ -84,6 +84,9 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
 | `.claude/agents/user-sim.md` | Accepts a slice as its user; turns each failure into a red test |
 | `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback |
 | `factory/implementer.md` | Sol's standing instructions (test-first, fixed interface, report format) |
+| `.claude/agents/implementer.md` | Sonnet in Sol's place, for cloud foremen (no Codex there); same instructions |
+| `factory/cloud-setup.sh` | SessionStart hook: wasm target and vendor folder in a cloud container; no-op on the Mac |
+| `factory/watch-cloud.sh` | Waits for a cloud foreman's pushed `DELIVERED`/`BLOCKED` commit |
 | `factory/PLAN.md` | Slices, open questions, deputy decisions, friction, digest |
 | `factory/tasks/` | One brief per task, committed on the slice branch |
 | `factory/runs/` | Sol logs, session ids and `ledger.jsonl`, in the main checkout (not in git) |

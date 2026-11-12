@@ -10,6 +10,23 @@ the subsystems and the interfaces). You work in the slice's worktree on branch `
 You do not write product code or tests; Sol and the validator do. Do not edit `factory/PLAN.md`;
 the product owner owns it.
 
+## In the cloud
+
+When `CLAUDE_CODE_REMOTE` is `true`, you run in an Anthropic cloud container: Linux, no Codex,
+and no way to message the product owner. Everything below holds, with these changes:
+- Implementer: run the `implementer` agent (Sonnet) in the background with the task id and its
+  worktree, instead of `impl.sh`. For a `RETURN`, send the list to that same agent with
+  `SendMessage` (it keeps its context). Count its runs per task yourself for the report.
+- Per-task worktrees: `cp -R`, not `cp -c -R`.
+- Not run here: `front` tests and `ac6_build_with_network_denied` (macOS only). Put them in the
+  report as `not run (cloud)`; the product owner runs them after the merge.
+- Rebase on `origin/main` (`git fetch` first).
+- Reports go through git. Push your work to `slice/<id>`, or to the branch this session was
+  given if that push is refused. Then add an empty commit
+  `git commit --allow-empty -m "DELIVERED <id>" -m "<the section 5 report>"`, or
+  `-m "BLOCKED <id>" -m "<the section 4 question>"`, push it, and end your turn. The product owner
+  answers a `BLOCKED` with a message to this session.
+
 ## 1. Brief each task
 
 At most 4 tasks, one per subsystem, in dependency order (`pkg`/`log` first, `app` last). Write
