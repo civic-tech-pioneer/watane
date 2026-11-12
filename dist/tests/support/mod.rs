@@ -154,3 +154,107 @@ impl Drop for TestHost {
         self.worker.take().unwrap().join().unwrap();
     }
 }
+
+/// A separate home and static host for search journeys.
+#[allow(dead_code)]
+pub struct SearchHome {
+    pub dist: watane_dist::Dist,
+    pub host: Option<TestHost>,
+    pub dir: tempfile::TempDir,
+    pub url: String,
+}
+#[allow(dead_code)]
+impl SearchHome {
+    pub fn new(name: &str) -> Self {
+        let mut home = Self::offline(name);
+        let host = TestHost::serve(&home.dist.site_dir());
+        home.url = host.url.clone();
+        home.host = Some(host);
+        home
+    }
+    pub fn offline(name: &str) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let dist = watane_dist::Dist::open(
+            dir.path(),
+            std::sync::Arc::new(RecordingConfirm::new(std::iter::repeat_n(
+                Decision::Approve,
+                300,
+            ))),
+            watane_dist::Options {
+                listed_local: true,
+                entry_timeout: std::time::Duration::from_secs(3),
+                ..fast_options()
+            },
+        )
+        .unwrap();
+        dist.set_name(name).unwrap();
+        Self {
+            dist,
+            host: None,
+            dir,
+            url: String::new(),
+        }
+    }
+    pub fn link(&self, slug: Option<&str>) -> watane_dist::Link {
+        watane_dist::Link::new(
+            self.dist.identity(),
+            &self.url,
+            slug.map(|s| s.parse().unwrap()).as_ref(),
+        )
+        .unwrap()
+    }
+}
+
+#[allow(dead_code)]
+pub fn named_fixture(slug: &str, name: &str) -> Vec<u8> {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_fixture("reading-list", tmp.path());
+    std::fs::write(
+        tmp.path().join("wit/world.wit"),
+        format!("package mods:{slug}@0.1.0; world app {{}}"),
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("mod.toml"),
+        format!("name = {name:?}\nsummary = \"Other mod.\"\n"),
+    )
+    .unwrap();
+    watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
+}
+
+#[allow(dead_code)]
+pub fn interface_fixture(kind: &str, publisher: watane_dist::PublicKey) -> Vec<u8> {
+    let (slug, items) = match kind {
+        "offer" => ("reading-list", "export books;"),
+        "call" => (
+            "caller",
+            "import mods:reading-list/books@0.1.0; export api;",
+        ),
+        "subscribe" => ("subscriber", "export mods:reading-list/books@0.1.0;"),
+        _ => panic!("unknown variant"),
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    copy_fixture("reading-list", tmp.path());
+    std::fs::write(tmp.path().join("wit/world.wit"), format!("package mods:{slug}@0.1.0;\ninterface books {{ count: func() -> u32; }}\ninterface api {{ ping: func(); }}\nworld app {{ {items} }}\n")).unwrap();
+    if kind != "offer" {
+        let deps = tmp.path().join("wit/deps/reading-list");
+        std::fs::create_dir_all(&deps).unwrap();
+        std::fs::write(
+            deps.join("world.wit"),
+            if kind == "subscribe" { "package mods:reading-list@0.1.0; interface books { count: func() -> u32; } world reading-list { import books; }" } else { "package mods:reading-list@0.1.0; interface books { count: func() -> u32; } world reading-list { export books; }" },
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("deps.json"),
+            format!(r#"{{"mods:reading-list":"{publisher}"}}"#),
+        )
+        .unwrap();
+    }
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/fixtures/search/{kind}.wasm")),
+        tmp.path().join("logic.wasm"),
+    )
+    .unwrap();
+    watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
+}

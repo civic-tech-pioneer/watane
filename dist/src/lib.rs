@@ -373,3 +373,6 @@ pub struct Fetched {
 
 mod index;
 pub use index::IndexView;
+
+mod search;
+pub use search::{Hit, InterfaceQuery, Query, Via};
