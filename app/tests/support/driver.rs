@@ -20,6 +20,7 @@ pub struct App {
     input: Mutex<ChildStdin>,
     replies: Replies,
     next: AtomicU64,
+    stderr: std::fs::File,
 }
 pub struct AskHandle {
     reply: Mutex<mpsc::Receiver<Value>>,
@@ -85,24 +86,40 @@ fn wait_for_idle() {
 }
 impl App {
     pub fn start(home: &Path, env: &[(&str, &str)]) -> App {
-        Self::spawn(home, env, "hidden")
+        Self::spawn(home, env, "hidden", 0)
     }
     #[allow(dead_code)] // Shared support: gui_isolation uses only hidden/front.
     pub fn background(home: &Path, env: &[(&str, &str)]) -> App {
-        Self::spawn(home, env, "background")
+        Self::spawn(home, env, "background", 0)
     }
     pub fn front(home: &Path, env: &[(&str, &str)]) -> App {
         wait_for_idle();
-        Self::spawn(home, env, "front")
+        Self::spawn(home, env, "front", 0)
     }
-    fn spawn(home: &Path, env: &[(&str, &str)], screen: &str) -> App {
+    pub fn start_port(home: &Path, port: u16) -> App {
+        Self::spawn(home, &[], "hidden", port)
+    }
+    pub fn stderr(&self) -> String {
+        use std::os::unix::fs::FileExt;
+        let mut bytes = vec![0; self.stderr.metadata().unwrap().len() as usize];
+        self.stderr.read_exact_at(&mut bytes, 0).unwrap();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    fn spawn(home: &Path, env: &[(&str, &str)], screen: &str, port: u16) -> App {
+        let stderr = tempfile::tempfile().unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_watane-app"))
-            .args(["--home", home.to_str().unwrap(), "--port", "0"])
+            .args([
+                "--home",
+                home.to_str().unwrap(),
+                "--port",
+                &port.to_string(),
+            ])
             .envs(env.iter().copied())
             .env("WATANE_DRIVER_SCREEN", screen)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(stderr.try_clone().unwrap())
             .spawn()
             .unwrap();
         let input = Mutex::new(child.stdin.take().unwrap());
@@ -131,12 +148,20 @@ impl App {
             input,
             replies,
             next: AtomicU64::new(1),
+            stderr,
         };
         let ready = ready_rx
             .recv_timeout(TIMEOUT)
-            .expect("app did not become ready");
-        assert_eq!(ready["event"], "ready", "{ready}");
-        app.port = ready["port"].as_u64().unwrap() as u16;
+            .unwrap_or_else(|e| panic!("app did not become ready: {e}; {}", app.stderr()));
+        assert!(
+            ready["event"] == "ready"
+                || (port != 0
+                    && ready["event"] == "failed"
+                    && ready["cause"] != "main page load timed out"),
+            "{ready}; {}",
+            app.stderr()
+        );
+        app.port = ready["port"].as_u64().unwrap_or(u64::from(port)) as u16;
         app
     }
     fn send(&self, mut v: Value) -> AskHandle {

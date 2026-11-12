@@ -85,7 +85,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
         let m = mod_view(&carol);
         if m["notice"]
             .as_str()
-            .is_some_and(|s| s.starts_with("Update to 0.3.0 failed:"))
+            .is_some_and(|s| s == "You declined the update to 0.3.0.")
         {
             break;
         }
@@ -96,7 +96,11 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
         mod_view(&carol)["notice"]
             .as_str()
             .unwrap()
-            .starts_with("Update to 0.3.0 failed:")
+            .eq("You declined the update to 0.3.0.")
+    );
+    assert_eq!(
+        mod_view(&carol)["offerGrants"][0]["text"],
+        "Connect to example.org"
     );
     assert!(!carol.windows().iter().any(|w| w["label"] == "consent"));
     begin(

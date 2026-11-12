@@ -24,6 +24,7 @@ pub(crate) struct ModView {
     pub grants: Vec<GrantLine>,
     pub notice: Option<String>,
     pub offer: Option<String>,
+    pub offer_grants: Vec<GrantLine>,
 }
 #[derive(serde::Serialize)]
 pub(crate) struct ToolRow {
@@ -79,7 +80,32 @@ fn release_notice(
     {
         return Some(words::withdrawn(&withdrawal.reason));
     }
-    failure.map(|(version, cause)| words::update_failed(version, cause))
+    failure.map(|(_, message)| message.clone())
+}
+fn update_failure(version: &str, error: &CmdError) -> String {
+    if error.code == "refused" {
+        words::update_declined(version)
+    } else {
+        words::update_failed(version, &error.message)
+    }
+}
+fn offer_grants(
+    offer: Option<&watane_dist::ReleaseRef>,
+    channel: Option<&watane_dist::ChannelView>,
+    installed: &[GrantState],
+    parties: &Parties,
+) -> Vec<GrantLine> {
+    offer
+        .and_then(|offer| channel?.releases.iter().find(|r| &r.reference == offer))
+        .map(|r| {
+            r.release
+                .grants
+                .iter()
+                .filter(|grant| !installed.iter().any(|g| &g.grant == *grant))
+                .map(|grant| words::grant_line(grant, parties, false, true))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 fn update_offer(
     installed: Option<&watane_dist::ReleaseRef>,
@@ -131,10 +157,13 @@ impl Core {
         });
         let failures = self.update_failures.lock().unwrap();
         let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()));
-        let offer = release_offer(m.release.as_ref(), channel).map(|r| r.to_string());
+        let offer = release_offer(m.release.as_ref(), channel);
+        let offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
+        let offer = offer.map(|r| r.to_string());
         ModView {
             notice,
             offer,
+            offer_grants,
             local: m.local.to_string(),
             name: m.name,
             slug: m.slug.to_string(),
@@ -370,7 +399,10 @@ impl Core {
                 }) {
                     self.update_failures.lock().unwrap().insert(
                         m.local.to_string(),
-                        (release.version.to_string(), error.message.clone()),
+                        (
+                            release.version.to_string(),
+                            update_failure(&release.version.to_string(), error),
+                        ),
                     );
                 }
             }
@@ -647,11 +679,11 @@ mod stage_d_more_tests {
     fn ac2_notice_priority_and_unfollowed_or_local() {
         let mut view = channel();
         let installed = reference("0.3.0");
-        let failure = ("0.4.0".to_string(), "refused: declined".to_string());
+        let failure = ("0.4.0".to_string(), words::update_declined("0.4.0"));
         assert_eq!(release_notice(Some(&installed), Some(&view), None), None);
         assert_eq!(
             release_notice(Some(&installed), Some(&view), Some(&failure)).as_deref(),
-            Some("Update to 0.4.0 failed: refused: declined")
+            Some("You declined the update to 0.4.0.")
         );
         view.releases.push(release("0.3.0", Some("breaks lists")));
         assert_eq!(
@@ -665,6 +697,49 @@ mod stage_d_more_tests {
         );
         assert_eq!(release_notice(None, Some(&view), Some(&failure)), None);
         assert_eq!(release_notice(Some(&installed), None, Some(&failure)), None);
+    }
+    #[test]
+    fn ac5_update_failure_uses_code_and_keeps_other_causes() {
+        assert_eq!(
+            update_failure(
+                "0.3.0",
+                &CmdError::new("refused", "install was not approved")
+            ),
+            "You declined the update to 0.3.0."
+        );
+        assert_eq!(
+            update_failure("0.3.0", &CmdError::new("io", "refused")),
+            "Update to 0.3.0 failed: refused"
+        );
+    }
+    #[test]
+    fn ac6_offer_grants_compare_authority_including_withheld_grants() {
+        let mut view = channel();
+        let mut offered = release("0.3.0", None);
+        let network = Grant::Http {
+            host: "example.org".parse().unwrap(),
+        };
+        offered.release.grants = vec![Grant::Storage, network.clone()];
+        view.releases.push(offered);
+        let installed = vec![GrantState {
+            grant: Grant::Storage,
+            granted: false,
+        }];
+        let lines = offer_grants(
+            Some(&reference("0.3.0")),
+            Some(&view),
+            &installed,
+            &Parties::new(),
+        );
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Connect to example.org");
+        assert!(!lines[0].granted);
+        assert!(lines[0].new);
+        assert_eq!(lines[0].key, network.to_string());
+        assert!(offer_grants(None, Some(&view), &installed, &Parties::new()).is_empty());
+        assert!(
+            offer_grants(Some(&reference("0.3.0")), None, &installed, &Parties::new()).is_empty()
+        );
     }
     #[test]
     fn ac6_identity_release_rows_include_withdrawal_reason() {
@@ -686,7 +761,7 @@ mod stage_d_more_tests {
         for (notice, offer) in [
             (None, None),
             (
-                Some("Withdrawn by the publisher: <reason>"),
+                Some("You declined the update to 0.3.0."),
                 Some("release text"),
             ),
         ] {
@@ -705,10 +780,12 @@ mod stage_d_more_tests {
                 grants: vec![],
                 notice: notice.map(str::to_string),
                 offer: offer.map(str::to_string),
+                offer_grants: vec![],
             };
             let value = serde_json::to_value(row).unwrap();
             assert_eq!(value["notice"], serde_json::json!(notice));
             assert_eq!(value["offer"], serde_json::json!(offer));
+            assert_eq!(value["offerGrants"], serde_json::json!([]));
         }
     }
     #[test]

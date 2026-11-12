@@ -64,6 +64,13 @@ pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
     message
 }
 
+fn serve_error(error: &watane_host::HostError) -> String {
+    match error {
+        watane_host::HostError::PortInUse(port) => words::port_in_use(*port),
+        other => cause_chain(other),
+    }
+}
+
 impl From<watane_dist::DistError> for CmdError {
     fn from(e: watane_dist::DistError) -> Self {
         Self::new("dist", cause_chain(&e))
@@ -271,7 +278,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
                             });
                         }
                         Err(e) => {
-                            let _ = state.failed.set(cause_chain(&e));
+                            let message = serve_error(&e);
+                            eprintln!("{message}");
+                            let _ = state.failed.set(message);
                         }
                     },
                     Ok(Err(e)) => {
@@ -322,6 +331,15 @@ mod tests {
     #[error("disk broke")]
     struct Whole(#[source] std::io::Error);
 
+    #[test]
+    fn ac1_serve_error_names_busy_port_and_preserves_other_causes() {
+        assert_eq!(
+            super::serve_error(&watane_host::HostError::PortInUse(47341)),
+            "Port 47341 is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+        );
+        let other = watane_host::HostError::AlreadyServing;
+        assert_eq!(super::serve_error(&other), super::cause_chain(&other));
+    }
     #[test]
     fn ac1_cause_chain_appends_only_missing_suffix() {
         assert_eq!(

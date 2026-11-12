@@ -251,7 +251,7 @@ fn ac5_install_and_each_statement_show_fields_and_withhold() {
         .unwrap()
         .to_string();
     for field in [
-        "Install 2 mod(s)",
+        "Install 2 mods",
         "Asked by a program on this device",
         "Local Books",
         "local",
@@ -508,5 +508,119 @@ fn ac3_consent_takes_focus() {
     );
     app.close("consent");
     assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac1_busy_port_shows_recovery_in_main_status_and_stderr() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start_port(home.path(), port);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    let expected = format!(
+        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+    );
+    assert_eq!(
+        app.eval("main", "document.querySelector('main').textContent"),
+        expected
+    );
+    app.eval("main", "window.__status = null; window.__TAURI_INTERNALS__.invoke('status').then(s => window.__status = s); null");
+    until(&app, "main", "window.__status !== null");
+    assert_eq!(app.eval("main", "window.__status.error"), expected);
+    assert!(!home.path().join("run.json").exists());
+    assert_eq!(
+        app.stderr()
+            .lines()
+            .filter(|line| *line == expected)
+            .count(),
+        1
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac4_single_install_and_update_headings() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    for (replaces, expected) in [
+        (Value::Null, "Install Books"),
+        (json!("1.0.0"), "Update Books to 1.2.3"),
+    ] {
+        let mut request = install("Books");
+        request["mods"][0]["replaces"] = replaces;
+        let ask = app.ask(request);
+        consent(&app);
+        assert_eq!(
+            app.eval("consent", "document.querySelector('h1').textContent"),
+            expected
+        );
+        app.close("consent");
+        assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    }
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac2_own_withdrawal_ac6_offer_words_ac7_version_outside_details() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    // UI-only fields: feed the same status and ModView shapes as the commands.
+    app.eval("main", r#"const invoke = window.__TAURI_INTERNALS__.invoke;
+      window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+        const value = await invoke(cmd, args);
+        if (cmd === 'status') value.identity.releases = [{release:'own/books@1.0.0',slug:'books',version:'1.0.0',withdrawn:'breaks lists'}];
+        if (cmd === 'mods_list') return [{local:'books',name:'Books',version:'1.0.0',publisher:null,enabled:true,page:null,grants:[],offer:'publisher/books@2.0.0',offerGrants:[{text:'Connect to example.org'}],notice:'Withdrawn by the publisher: breaks lists'}];
+        return value;
+      }; window.dispatchEvent(new Event('focus')); null"#);
+    until(
+        &app,
+        "main",
+        "!!document.querySelector('[data-local=books]')",
+    );
+    assert_eq!(
+        app.eval("main", "document.querySelector('#releases p').textContent"),
+        "Withdrawn: breaks lists"
+    );
+    assert_eq!(
+        app.eval("main", "document.querySelector('.notice').textContent"),
+        "Withdrawn by the publisher: breaks lists"
+    );
+    assert_eq!(
+        app.eval("main", "document.querySelector('button.offer').textContent"),
+        "Install 2.0.0 — asks for: Connect to example.org"
+    );
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelector('[data-local] > h2').textContent"
+        ),
+        "Books"
+    );
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelector('[data-local] > .version').textContent"
+        ),
+        "1.0.0"
+    );
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelector('[data-local] > details').open"
+        ),
+        false
+    );
+    app.eval("main", "const current = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = async (cmd,args) => { const v = await current(cmd,args); if(cmd === 'mods_list') v[0].offerGrants = []; return v; }; window.dispatchEvent(new Event('focus')); null");
+    until(
+        &app,
+        "main",
+        "document.querySelector('button.offer').textContent === 'Install 2.0.0'",
+    );
     assert!(app.quit().success());
 }

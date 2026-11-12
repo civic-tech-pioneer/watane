@@ -103,7 +103,10 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    5. With feature `driver`: start the driver.
    If step 2, 3, 4 or 6.1 fails, set `AppState.failed`, skip the other
    steps except opening the main window, and serve nothing (APP-F-2). The
-   main window then shows only the cause.
+   main window then shows only the cause. A serve `PortInUse(P)` uses
+   `words::port_in_use(P)` in `status.error` and the main text, and prints
+   that same line to stderr once. No server means no `run.json`. Other
+   serve failures retain `cause_chain` text.
 7. On `RunEvent::ExitRequested`: `broker.deny_all()`. On `RunEvent::Exit`:
    `block_on(served.shutdown())`. Closing the main window exits the app.
 
@@ -319,7 +322,8 @@ Sign details, in this order. A release is named by its ReleaseRef text
 
 - On load: `consent_get`. Render the request. Set every untrusted string
   with `textContent`, never with `innerHTML`.
-- Header: the mark, and the title `Install <n> mod(s)`, `Sign a release`,
+- Header: the mark, and the title `Install <name>` for one new mod, `Update <name> to <version>`
+  for one mod with `replaces`, or `Install <n> mods` for multiple mods; `Sign a release`,
   `Sign a withdrawal` or `Sign your profile`; for `by_program` also
   `Asked by a program on this device`.
 - An install shows one block per mod: name, version, then the ReleaseRef
@@ -413,7 +417,7 @@ Status     {home, port, mark, error: null | string,
 ModView    {local, name, slug, version, release: null | string (ReleaseRef),
             publisher: null | Party, enabled, page: null | string (page URL),
             package (package id), derivedFrom: null | string (ReleaseRef),
-            error: null | string, notice: null | string, offer: null | string (ReleaseRef),
+            error: null | string, notice: null | string, offer: null | string (ReleaseRef), offerGrants: [GrantLine],
             grants: [GrantLine]} // granted false = withdrawn or withheld
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string}
@@ -668,15 +672,31 @@ target version until a successful app install of that mod clears them.
 For followed published mods, the offer is the highest version of the slug
 with no withdrawal, unless already installed; it can be a downgrade.
 Notice priority is compromised channel, installed release withdrawal with
-reason, then last update failure with version and whole cause. Local mods
+reason, then the last update result. Host code `refused` becomes
+`You declined the update to <version>.`; every other failure remains
+`Update to <version> failed: <cause>` with the whole cause. Local mods
 and unfollowed publishers have neither notice nor offer. Text comes from
 `words.rs`; the launcher renders it through `textContent` and offers
 `Install <version>` via `release_install` (bad ReleaseRef: `bad_input`).
+`ModView.offerGrants` contains the offered release's `ReleaseInfo.release.grants`
+from the followed `ChannelView`, excluding every `Grant` present in
+`InstalledMod.grants` (including withheld grants). Each uses
+`words::grant_line(grant, parties, false, true)`. No offer gives `[]`.
+A nonempty list adds ` — asks for: <text>, <text>` to the offer button.
+This is derived on every read and survives restart; decline notices remain
+in memory only. Each launcher entry keeps its name in `h2` and shows
+`mod.version` in a sibling with class `version`, outside Details.
 
 `Status.identity.releases` lists `dist.own().releases`. Live releases have a
-reason input and `Withdraw` button. `release_withdraw` parses the reference
+reason input and `Withdraw` button. A withdrawn own release reads
+`Withdrawn: <reason>`; another publisher's installed release remains
+`Withdrawn by the publisher: <reason>`. `release_withdraw` parses the reference
 (`bad_input` on failure), calls `dist.withdraw` in `spawn_blocking`, and
-passes every dist failure and cause through. DistConfirm handles signing
+does no reason validation itself. It maps dist `BadReason { cause }` to
+`bad_input` with `words::bad_reason(cause)`: `invalid character count` gives
+`Give a reason of 1 to 280 characters.`; every other cause gives
+`This reason cannot be used: <cause>.`. Other dist failures and their
+causes pass through. DistConfirm handles signing
 consent, including the release and withdrawal reason.
 
 ### 9.6 Indexes and search (step 4)
@@ -882,6 +902,10 @@ cause chain: start with `{e}` and append each `source()` with `: ` unless
 the text so far equals that cause's text or ends with `: ` and that text,
 so no cause is hidden or printed twice (F-QUAL-3). dist already escapes untrusted
 text in its `Display`.
+
+Busy-port startup uses `words::port_in_use(P)`:
+`Port P is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port.`
+The app stays open to show this; it never chooses another port by itself.
 
 ## 14. Security properties
 

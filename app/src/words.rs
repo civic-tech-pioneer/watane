@@ -77,6 +77,22 @@ pub(crate) fn update_failed(version: &str, cause: &str) -> String {
     format!("Update to {version} failed: {cause}")
 }
 
+pub(crate) fn port_in_use(port: u16) -> String {
+    format!(
+        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+    )
+}
+pub(crate) fn bad_reason(cause: &str) -> String {
+    if cause == "invalid character count" {
+        "Give a reason of 1 to 280 characters.".into()
+    } else {
+        format!("This reason cannot be used: {cause}.")
+    }
+}
+pub(crate) fn update_declined(version: &str) -> String {
+    format!("You declined the update to {version}.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

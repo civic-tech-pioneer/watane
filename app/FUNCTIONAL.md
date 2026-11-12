@@ -10,7 +10,7 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 ### Start and launcher
 
 - **APP-F-1** When the app starts, the app shall open the home of the participant, run its host in the app process, and serve the host on the loopback interface. Traces: F-APP-1, J2.
-- **APP-F-2** If the app cannot open the home, then the app shall show the cause, run no mod, and accept no request. Traces: F-QUAL-3.
+- **APP-F-2** If the app cannot open the home, then the app shall show the cause, run no mod, and accept no request. A busy loopback port keeps the main window open with `Port P is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port.` The same line goes to stderr once. Traces: F-QUAL-3.
 - **APP-F-3** The app shall show a launcher with one entry for each installed mod. When no mod is installed, the launcher shall show no entry. Traces: F-APP-1, J2.
 - **APP-F-4** The app shall show the consent mark of the home in the header of each app view. Traces: F-APP-4.
 
@@ -33,13 +33,13 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-16** The approve control shall accept no input until 800 ms after the consent view last got the focus. The approve control shall not be the default control. Traces: F-APP-4.
 - **APP-F-17** The app shall show one request at a time, in the order of arrival.
 - **APP-F-18** If the participant closes the consent view, or the app quits, or a request has no answer for 10 minutes, then the app shall answer "deny" to that request. Traces: F-AGENT-4, W19.
-- **APP-F-19** For an install plan, the consent view shall show each mod in the order of install, with its name, version, publisher (with "signature verified") or "local", the version it replaces if any, each grant in words with each new grant marked, and the provider mods it uses. The participant shall be able to withhold each grant; the app shall then approve only the other grants. Traces: F-INST-1, F-INST-2, F-INST-3, F-INST-4, F-INST-7, J2.
+- **APP-F-19** For an install plan, the consent view shall show each mod in the order of install, with its name, version, publisher (with "signature verified") or "local", the version it replaces if any, each grant in words with each new grant marked, and the provider mods it uses. The heading is `Install <name>` for one new mod, `Update <name> to <version>` for one replacement, or `Install <n> mods` for several. The participant shall be able to withhold each grant; the app shall then approve only the other grants. Traces: F-INST-1, F-INST-2, F-INST-3, F-INST-4, F-INST-7, J2.
 
 ### Manage mods
 
 - **APP-F-20** When the participant chooses one or more mod folders, the app shall ask the host for a plan of all of them and install the plan after consent. Traces: F-INST-1, F-INST-2, F-INST-4, J2.
 - **APP-F-21** If a plan needs a provider that is not installed and not supplied, then the app shall name each missing provider and install nothing. Traces: F-INST-4, F-QUAL-3.
-- **APP-F-22** The app shall show, for each mod, its name, version, publisher or "local", grants in words, page origin and package id. Traces: F-APP-5.
+- **APP-F-22** The app shall show, for each mod, its name and installed version next to each other outside Details, publisher or "local", grants in words, page origin and package id. Traces: F-APP-5.
 - **APP-F-23** The participant shall be able to open, disable, enable and remove each mod, withdraw each grant, and give back a withdrawn or withheld grant. Traces: F-INST-5, J2.
 - **APP-F-24** When the participant removes a mod, the app shall ask whether to delete its data, with "keep data" as the default. Traces: F-INST-5.
 
@@ -69,8 +69,8 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-44** The app shall show when each result's channel was last read, and mark a result whose channel could not be read since then. It shall show a result of a compromised channel as compromised and offer no install for it. Traces: F-FIND-4, F-QUAL-3.
 - **APP-F-45** When the participant installs a result, the app shall follow its publisher, fetch that release and show the install plan in the consent view. Traces: F-FIND-4, F-INST-1, F-INST-6, J4.
 - **APP-F-46** The participant shall be able to list a mod of a followed channel in the own index with a note, include a followed channel as an index, and end each listing. Each one is a signature in the consent view. Traces: F-FIND-1, F-AGENT-4, APP-F-33.
-- **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. Traces: F-INST-7, J4.
-- **APP-F-40** When a refresh reports a withdrawn installed version, the app shall tell the participant and offer the newest version that is not withdrawn. Traces: F-INST-8, J4.
+- **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. A declined update reads `You declined the update to <version>.`; other failures read `Update to <version> failed: <cause>`. Compromise and withdrawal notices take priority. The offer names new grants as `Install <version> — asks for: <text>, <text>` even after a restart; an offer without new grants reads `Install <version>`. Traces: F-INST-7, J4.
+- **APP-F-40** When a refresh reports a withdrawn installed version, the app shall tell the participant and offer the newest version that is not withdrawn. Own withdrawn releases read `Withdrawn: <reason>`; another publisher's release reads `Withdrawn by the publisher: <reason>`. Invalid withdrawal reasons use dist's cause: `invalid character count` reads `Give a reason of 1 to 280 characters.`; others read `This reason cannot be used: <cause>.` Traces: F-INST-8, J4.
 
 ## Step 5: Build on (sketch)
 
@@ -164,7 +164,7 @@ installs nothing.
 APP-F-39, APP-F-40). Given Carol installed Alice's reading list from a link,
 a refresh installs 0.2.0 with unchanged grants without opening consent and
 keeps her books. A 0.3.0 update requesting network access shows the new
-grant; declining leaves 0.2.0 and shows the failure until a successful
+grant; declining leaves 0.2.0 and shows `You declined the update to 0.3.0.` until a successful
 install. Alice sees her releases and withdraws 0.3.0 with reason `breaks
 lists`, signing in consent. Carol's next refresh shows that reason and an
 `Install 0.2.0` button. Installing it keeps data and asks no question.

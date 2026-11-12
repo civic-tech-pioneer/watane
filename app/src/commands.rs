@@ -519,6 +519,14 @@ pub(crate) async fn release_install(
     let installed = core(&state)?.install_release(release).await?;
     Ok(json!({"installed":installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
+fn withdraw_error(error: watane_dist::DistError) -> CmdError {
+    match error {
+        watane_dist::DistError::BadReason { cause } => {
+            CmdError::new("bad_input", crate::words::bad_reason(cause))
+        }
+        other => other.into(),
+    }
+}
 #[tauri::command]
 pub(crate) async fn release_withdraw(
     webview: tauri::Webview,
@@ -530,7 +538,7 @@ pub(crate) async fn release_withdraw(
     let release = parse_release(&release)?;
     let dist = core(&state)?.dist.clone();
     blocking(move || {
-        dist.withdraw(&release, &reason)?;
+        dist.withdraw(&release, &reason).map_err(withdraw_error)?;
         Ok(())
     })
     .await
@@ -544,6 +552,44 @@ mod stage_d_tests {
         for text in ["", "bad", "watane:bad", "publisher/reading-list@invalid"] {
             assert_eq!(parse_release(text).unwrap_err().code, "bad_input");
         }
+    }
+    #[test]
+    fn ac3_withdraw_reason_mapping_and_refusal() {
+        struct Refuse;
+        impl watane_dist::Confirm for Refuse {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                panic!("invalid reasons must never ask for consent")
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist =
+            watane_dist::Dist::open(home.path(), std::sync::Arc::new(Refuse), Default::default())
+                .unwrap();
+        let reference = format!("{}/reading-list@0.1.0", "y".repeat(52))
+            .parse()
+            .unwrap();
+        for (reason, expected) in [
+            (String::new(), "Give a reason of 1 to 280 characters."),
+            ("x".repeat(281), "Give a reason of 1 to 280 characters."),
+            (
+                " leading".into(),
+                "This reason cannot be used: leading or trailing whitespace refused.",
+            ),
+        ] {
+            let error = withdraw_error(dist.withdraw(&reference, &reason).unwrap_err());
+            assert_eq!(error.code, "bad_input");
+            assert_eq!(error.message, expected);
+        }
+        assert_eq!(
+            withdraw_error(watane_dist::DistError::BadReason {
+                cause: "other cause"
+            })
+            .message,
+            "This reason cannot be used: other cause."
+        );
+        let error = watane_dist::DistError::Refused;
+        let expected = error.to_string();
+        assert_eq!(withdraw_error(error).message, expected);
     }
     #[test]
     fn ac6_withdraw_errors_preserve_dist_cause() {
@@ -560,8 +606,17 @@ mod stage_d_tests {
                 seq: 2,
             },
         ] {
-            let expected = error.to_string();
-            let converted = CmdError::from(error);
+            let expected = if matches!(error, watane_dist::DistError::BadReason { .. }) {
+                "This reason cannot be used: empty.".to_string()
+            } else {
+                error.to_string()
+            };
+            let bad_reason = matches!(error, watane_dist::DistError::BadReason { .. });
+            let converted = withdraw_error(error);
+            assert_eq!(
+                converted.code,
+                if bad_reason { "bad_input" } else { "dist" }
+            );
             assert_eq!(converted.message, expected);
         }
     }
