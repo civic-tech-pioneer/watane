@@ -118,3 +118,4 @@
   with driver fails at the required compile guard. The complete existing Linux
   runner passes 64 default tests and 98 driver tests with ignored journeys
   enabled and all four front tests excluded by name. Front tests were not run.
+- Validator (S29-3, round 1): natively on macOS, `cargo test --features driver -- --include-ignored` with the four front tests skipped by name passes all 98 tests, including `tests/find.rs` and the whole `tests/j4.rs`. J4 also checks that the compromised hit loses "signature verified" (its install button is absent anyway, the hit being installed).

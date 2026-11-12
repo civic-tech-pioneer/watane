@@ -248,6 +248,15 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
         ),
         true
     );
+    // The hit is installed, so the missing button alone proves little here;
+    // the compromised hit must also lose its verified mark (S20 covers the button).
+    assert_eq!(
+        carol.eval(
+            "main",
+            "document.querySelector('#results').textContent.includes('signature verified')"
+        ),
+        false
+    );
     assert!(fork.quit().success());
     assert!(carol.quit().success());
     assert!(alice.quit().success());
