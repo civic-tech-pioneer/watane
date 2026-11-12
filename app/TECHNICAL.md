@@ -556,6 +556,7 @@ request (dist 5.10), so it never waits on a web host.
 | searched | 200 | `{"indexes": <number of chosen indexes, own excluded>, "results": [Result]}` |
 | bad JSON, a `publisher` that is no key, an `interface` that is no interface name, `text` over dist's limit | 400 | `bad_request` |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
+| any other read failure | 500 | `unavailable` with the cause (as 8.1.1) |
 
 ```text
 Result {release (ReleaseRef), name, summary, link (link text) | null,

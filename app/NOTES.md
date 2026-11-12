@@ -83,5 +83,5 @@
 
 - Changed fact: the hostile fixture now attempts all eight index/search commands. Its report grows from 111 to 119 attacks and from 96 to 104 invokes. `tests/gui_isolation.rs` and `tests/support_selftest.rs` keep their exact-count checks with the larger totals; every refusal and side-effect assertion remains.
 - The consent model lacked List, Include and Unlist despite TECHNICAL 6.2 already specifying them; `src/consent.rs` now includes those variants. No page code changed.
-- Until S29-1 is rebased, `skipped_rows` adapts dist's count to the required empty array. Its single adapter must switch to the structured skipped records when dist lands.
+- `skipped_rows` maps dist's `IndexView.skipped` (S29-1) to `[{party, cause}]`, the party from the parties cache (validator, round 1).
 - Validation: macOS `cargo build` and `cargo test` pass (64 tests); `cargo clippy --all-targets --features driver -- -D warnings`, `cargo fmt --check` and `git diff --check` pass. `cargo build --release --features driver` fails at the required debug-only compile guard. Native macOS `cargo test --features driver` times out before app readiness with the existing `com.apple.hiservices-xpcservice` connection failure; the same default driver command passes all 85 tests in the existing arm64 Linux image under Xvfb/Openbox (front and slow tests remain ignored). No dependency added.

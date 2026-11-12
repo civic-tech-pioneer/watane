@@ -883,7 +883,10 @@ mod find_tests {
                 view: chosen,
                 included: vec![own.channel],
                 mods: 7,
-                skipped: 2,
+                skipped: vec![Skipped {
+                    channel: own.channel,
+                    cause: "own channel",
+                }],
             }],
             &Default::default(),
             &parties,
@@ -894,7 +897,10 @@ mod find_tests {
         assert_eq!(rows[1]["name"], "Ivy");
         assert_eq!(rows[1]["mods"], 7);
         assert_eq!(rows[1]["included"][0]["name"], "Included");
-        assert_eq!(rows[1]["skipped"], serde_json::json!([]));
+        assert_eq!(
+            rows[1]["skipped"],
+            serde_json::json!([{"party":{"name":"Included","fingerprint":own.channel.fingerprint()},"cause":"own channel"}])
+        );
     }
     #[test]
     fn ac3_index_row_live_listings_and_channel_status() {
@@ -968,9 +974,16 @@ mod find_tests {
     }
 }
 
-fn skipped_rows(_skipped: usize, _parties: &Parties) -> Vec<serde_json::Value> {
-    // S29-1 replaces the count with Vec<Skipped>; switch only this adapter on rebase.
-    vec![]
+fn skipped_rows(skipped: &[watane_dist::Skipped], parties: &Parties) -> Vec<serde_json::Value> {
+    skipped
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "party": words::party(&s.channel.to_string(), parties),
+                "cause": s.cause,
+            })
+        })
+        .collect()
 }
 fn index_row(
     view: &watane_dist::ChannelView,
@@ -1071,7 +1084,7 @@ fn index_rows(
             false,
             index.mods,
             &index.included,
-            skipped_rows(index.skipped, parties),
+            skipped_rows(&index.skipped, parties),
             failures.get(&index.view.channel.to_string()),
             parties,
         ));

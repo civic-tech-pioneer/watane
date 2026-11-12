@@ -25,7 +25,11 @@ impl SearchQuery {
                 .transpose()?,
             interface: self
                 .interface
-                .map(|i| i.parse().map_err(CmdError::from))
+                .map(|i| {
+                    i.parse().map_err(|e: watane_dist::DistError| {
+                        CmdError::new("bad_input", e.to_string())
+                    })
+                })
                 .transpose()?,
         })
     }

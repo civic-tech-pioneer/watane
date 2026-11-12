@@ -633,6 +633,14 @@ mod index_tests {
             assert_eq!(parse_entry(text).unwrap_err().code, "bad_input");
             assert_eq!(parse_release(text).unwrap_err().code, "bad_input");
         }
+        for (publisher, interface) in [(Some("bad"), None), (None, Some("bad"))] {
+            let query = crate::find::SearchQuery {
+                text: String::new(),
+                publisher: publisher.map(Into::into),
+                interface: interface.map(Into::into),
+            };
+            assert_eq!(query.parse().unwrap_err().code, "bad_input");
+        }
         for (cause, expected) in [
             (
                 "invalid character count",

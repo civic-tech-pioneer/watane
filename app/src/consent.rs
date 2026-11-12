@@ -70,12 +70,12 @@ pub enum GrantKind {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Statement {
-    List,
-    Include,
-    Unlist,
     Profile,
     Release,
     Withdraw,
+    List,
+    Include,
+    Unlist,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Detail {

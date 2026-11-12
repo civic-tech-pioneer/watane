@@ -179,7 +179,14 @@ async fn search(
         Ok::<_, DistError>(serde_json::json!({"indexes":dist.indexes()?.len(), "results":hits.iter().map(crate::find::api_result).collect::<Vec<_>>()}))
     }).await {
         Ok(Ok(body)) => Json(body).into_response(),
-        Ok(Err(e)) => error(StatusCode::BAD_REQUEST, "bad_request", crate::cause_chain(&e)),
+        Ok(Err(e @ DistError::BadQuery { .. })) => {
+            error(StatusCode::BAD_REQUEST, "bad_request", crate::cause_chain(&e))
+        }
+        Ok(Err(e)) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "unavailable",
+            crate::cause_chain(&e),
+        ),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, "unavailable", e.to_string()),
     }
 }
