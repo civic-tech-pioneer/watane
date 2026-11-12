@@ -174,7 +174,7 @@ fn ac6_publish_through_consent_window_and_host_guards() {
     let before = tree(&home.path().join("dist/site"));
     let pending = publish(&app, bytes.clone());
     consent(&app);
-    app.eval("consent", "document.querySelector('#deny').click(); null");
+    deny(&app);
     let (status, body) = pending.join().unwrap();
     assert_eq!(status, 403);
     assert_eq!(body["error"]["code"], "refused");

@@ -97,9 +97,12 @@ $('#issue-token').onclick = async () => {
 $('#copy-token').onclick = () => navigator.clipboard.writeText($('#token-secret').textContent).catch(showError);
 $('#close-token').onclick = () => $('#token-dialog').close();
 $('#token-dialog').addEventListener('close', () => { $('#token-secret').textContent = ''; $('#mcp-url').textContent = ''; });
-let refreshing = null;
+// A refresh asked for during another may follow a change that one already
+// read past, so it runs once more after it; callers share that one rerun.
+let refreshing = null, rerun = null;
 function refresh() {
-  if (refreshing) return refreshing;
+  if (rerun) return rerun;
+  if (refreshing) return rerun = refreshing.catch(() => {}).then(() => { rerun = null; return refresh(); });
   refreshing = (async () => {
     const status = await call('status');
     if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }

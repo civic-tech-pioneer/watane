@@ -49,6 +49,15 @@ pub fn begin_install(app: &App, paths: &[PathBuf]) {
 pub fn approve(app: &App) {
     // Field and integration tests run hidden. Front tests prove the focus gate.
     app.eval("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
+    consent_closed(app);
+}
+pub fn deny(app: &App) {
+    app.eval("consent", "document.querySelector('#deny').click(); null");
+    consent_closed(app);
+}
+// The answered window closes asynchronously and keeps the label "consent"
+// until Destroyed. Wait for it, or the next request's driver calls reach it.
+fn consent_closed(app: &App) {
     let end = Instant::now() + TIMEOUT;
     while app.windows().iter().any(|w| w["label"] == "consent") {
         assert!(Instant::now() < end);
