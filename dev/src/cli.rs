@@ -333,6 +333,19 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
     }
 }
 
+/// Quotes a path for a POSIX shell `next` line.
+fn quote(path: &Path) -> String {
+    let path = path.display().to_string();
+    if path
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+    {
+        path
+    } else {
+        format!("'{}'", path.replace('\'', "'\"'\"'"))
+    }
+}
+
 fn app_client(
     outcome: &mut Outcome,
     home: Option<PathBuf>,
@@ -345,17 +358,6 @@ fn app_client(
     let home = home.canonicalize().unwrap_or(home);
     let client = crate::api::Client::for_app(&home).map_err(|e| {
         if e.code == crate::outcome::Code::EnvHostNotRunning {
-            let quote = |path: &Path| {
-                let path = path.display().to_string();
-                if path
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
-                {
-                    path
-                } else {
-                    format!("'{}'", path.replace('\'', "'\"'\"'"))
-                }
-            };
             let dir = outcome.dir.as_ref().expect("command has a mod folder");
             let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
             let mut next = format!(
@@ -399,16 +401,8 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 .find_map(|(slug, _)| local.get(&slug.to_string()))
                 .map(|path| {
                     let path = dir.join(path);
-                    let path = path.canonicalize().unwrap_or(path).display().to_string();
-                    let quoted = if path
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
-                    {
-                        path
-                    } else {
-                        format!("'{}'", path.replace('\'', "'\"'\"'"))
-                    };
-                    format!("watane-dev publish --json --dir {quoted}")
+                    let path = path.canonicalize().unwrap_or(path);
+                    format!("watane-dev publish --json --dir {}", quote(&path))
                 });
             return Err(errors);
         }
