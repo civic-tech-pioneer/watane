@@ -1,6 +1,28 @@
 mod support;
 use support::*;
 use watane_dist::*;
+
+#[test]
+fn ac4_s21b_restore_rejects_another_key_without_request() {
+    let a = tempfile::tempdir().unwrap();
+    let c = tempfile::tempdir().unwrap();
+    let r = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let carol = open(c.path());
+    alice.set_name("Alice").unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    let restored = open(r.path());
+    restored
+        .restore(&alice.backup("secret").unwrap(), "secret")
+        .unwrap();
+    let link = Link::new(carol.identity(), &host.url, None).unwrap();
+    let error = restored.confirm_own(Some(&link)).unwrap_err();
+    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity()));
+    assert!(error.to_string().contains("this link is not your channel"));
+    assert!(!restored.own_confirmed().unwrap());
+    assert_eq!(host.count(), 0);
+}
+
 #[test]
 fn ac11_restore_confirms_published_head_before_signing() {
     let a = tempfile::tempdir().unwrap();
@@ -29,10 +51,13 @@ fn ac11_restore_confirms_published_head_before_signing() {
         Err(DistError::OwnHeadUnconfirmed)
     ));
     assert!(confirm.requests.lock().unwrap().is_empty());
-    assert!(matches!(
-        restored.confirm_own(Some(&Link::new(carol.identity(), &host.url, None).unwrap())),
-        Err(DistError::WrongChannel { .. })
-    ));
+    let requests = host.count();
+    let error = restored
+        .confirm_own(Some(&Link::new(carol.identity(), &host.url, None).unwrap()))
+        .unwrap_err();
+    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity()));
+    assert!(error.to_string().contains("this link is not your channel"));
+    assert_eq!(host.count(), requests);
     assert!(!restored.own_confirmed().unwrap());
     // Alice's key, but the host serves Carol's channel: the read fails, so no confirmation.
     carol.set_name("Carol").unwrap();

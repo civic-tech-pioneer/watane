@@ -51,6 +51,8 @@ pub enum DistError {
     BadUrl { url: String, cause: &'static str },
     #[error("cannot follow the own channel")]
     OwnChannel,
+    #[error("this link is not your channel: found {found}")]
+    NotOwnLink { found: PublicKey },
     #[error("channel {channel} is not followed")]
     NotFollowed { channel: PublicKey },
     #[error("channel {channel} compromised at seq {seq}")]
@@ -93,6 +95,8 @@ pub enum DistError {
         expected: u64,
         found: u64,
     },
+    #[error("entry from {url:?} differs from head")]
+    HeadMismatch { url: String },
     #[error("channel {channel}: too many entries from {stored:?} to {served}")]
     TooManyEntries {
         channel: PublicKey,
@@ -109,4 +113,19 @@ pub enum DistError {
     BadPackage { url: String, cause: PackageError },
     #[error("package mismatch at {url:?}: {cause:?}")]
     PackageMismatch { url: String, cause: ReleaseError },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac1_s21b_head_mismatch_escapes_url() {
+        let error = DistError::HeadMismatch {
+            url: "http://example.invalid/\u{1b}\nentries/2".into(),
+        };
+        let text = error.to_string();
+        assert!(text.contains("http://example.invalid/\\u{1b}\\nentries/2"));
+        assert!(!text.contains(['\u{1b}', '\n']));
+    }
 }

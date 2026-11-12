@@ -256,9 +256,7 @@ impl Dist {
         if let Some(link) = own {
             let key = self.identity();
             if link.channel() != key {
-                return Err(DistError::WrongChannel {
-                    url: link.base().into(),
-                    expected: key,
+                return Err(DistError::NotOwnLink {
                     found: link.channel(),
                 });
             }

@@ -3,6 +3,112 @@ use support::*;
 use watane_dist::*;
 
 #[test]
+fn ac1_s21b_follow_rejects_damaged_head_entry() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let bob = open(b.path());
+    alice.set_name("Alice").unwrap();
+    alice.publish(fixture("1.0.0", false)).unwrap();
+    alice.publish(fixture("1.1.0", false)).unwrap();
+    let path = alice.site_dir().join("entries/2");
+    let mut bytes = std::fs::read(&path).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    assert!(matches!(
+        bob.follow(&link),
+        Err(DistError::HeadMismatch { url }) if url == format!("{}entries/2", host.url)
+    ));
+    assert!(bob.followed().unwrap().is_empty());
+    let log = watane_log::Log::open(&b.path().join("log")).unwrap();
+    assert!(log.entries(&alice.identity(), 2, 1).unwrap().is_empty());
+}
+
+#[test]
+fn ac2_s21b_refresh_rejects_damaged_head_entry() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let bob = open(b.path());
+    alice.set_name("Alice").unwrap();
+    alice.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    bob.follow(&link).unwrap();
+    alice.publish(fixture("1.1.0", false)).unwrap();
+    let path = alice.site_dir().join("entries/2");
+    let mut bytes = std::fs::read(&path).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    assert!(matches!(
+        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        Outcome::Failed { cause: DistError::HeadMismatch { url } }
+            if url == format!("{}entries/2", host.url)
+    ));
+    assert_eq!(bob.channel(&alice.identity()).unwrap().head, Some(1));
+}
+
+#[test]
+fn ac3_s21b_undamaged_follow_and_refresh_check_new_head_file() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let bob = open(b.path());
+    alice.set_name("Alice").unwrap();
+    alice.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    assert!(matches!(
+        bob.follow(&link).unwrap().outcome,
+        Outcome::Current { head: 1 }
+    ));
+    assert_eq!(
+        *host.requests.lock().unwrap(),
+        ["/head", "/entries/0", "/entries/1"]
+    );
+    host.requests.lock().unwrap().clear();
+    alice.publish(fixture("1.1.0", false)).unwrap();
+    assert!(matches!(
+        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        Outcome::Current { head: 2 }
+    ));
+    assert_eq!(*host.requests.lock().unwrap(), ["/head", "/entries/2"]);
+    host.requests.lock().unwrap().clear();
+    assert!(matches!(
+        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        Outcome::Current { head: 2 }
+    ));
+    assert_eq!(*host.requests.lock().unwrap(), ["/head"]);
+}
+
+#[test]
+fn ac5_s21b_first_follow_invalid_intermediate_entry_is_err() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let bob = open(b.path());
+    alice.set_name("Alice").unwrap();
+    alice.publish(fixture("1.0.0", false)).unwrap();
+    alice.publish(fixture("1.1.0", false)).unwrap();
+    let path = alice.site_dir().join("entries/1");
+    let mut bytes = std::fs::read(&path).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    assert!(
+        matches!(bob.follow(&link), Err(DistError::Invalid { url, .. })
+        if url == format!("{}entries/1", host.url))
+    );
+    assert!(bob.followed().unwrap().is_empty());
+}
+
+#[test]
 fn ac1_follow_open_link_verified() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();

@@ -192,6 +192,19 @@ impl Dist {
                     stored,
                     served,
                 });
+            } else if stored.is_none_or(|seq| served > seq) {
+                let url = http::file_url(base, &format!("entries/{served}"));
+                match self.get(
+                    &url,
+                    self.options.max_entry_file,
+                    self.options.entry_timeout,
+                    false,
+                ) {
+                    // Equality to the decoded head verifies these bytes, author and seq too.
+                    Ok(bytes) if bytes == head.bytes() => entries.push(head),
+                    Ok(_) => failure = Some(DistError::HeadMismatch { url }),
+                    Err(cause) => failure = Some(cause),
+                }
             } else {
                 entries.push(head);
             }
