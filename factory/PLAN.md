@@ -104,7 +104,7 @@ Step 3 (Publish, J3).
 Step 3 done 2026-11-12: J3 passes (`app/tests/j3.rs`); every step-3 stage is done.
 
 Between steps 3 and 4.
-- [ ] **S24 Publish and install edges.** The S21c and S23 user-sim leftovers, one cheap test each:
+- [~] **S24 Publish and install edges.** (branch `slice/s24`; foreman: see `Foremen`) The S21c and S23 user-sim leftovers, one cheap test each:
   - First, a red test or a note: "once Alice follows Bob, `install_link` with Bob's key and another
     site URL installs with no consent and no error" (S21c user-sim). Decide whether it is HOST-F-27
     (an update with no new grant needs no question) or a fresh install that skipped consent. If
@@ -122,7 +122,7 @@ Between steps 3 and 4.
     argument error as `: failed`. The template guide is at its 143-line cap: cut before adding.
   - Touches: dev, host (consent wait), dist, `app/src/api.rs`, new app test files. Not
     `app/src/core.rs`, `app/src/commands.rs` or `app/ui/` (S25).
-- [ ] **S25 Carol stays up to date.** The half of J4 that is designed (no index): Carol has Alice's
+- [~] **S25 Carol stays up to date.** (branch `slice/s25`; foreman: see `Foremen`) The half of J4 that is designed (no index): Carol has Alice's
   mod; Alice releases 0.2.0 with no new grant, and Carol's refresh updates it without a question
   (APP-F-39, HOST-F-27); 0.3.0 asks for a new grant, and Carol sees the plan in the consent view;
   Alice withdraws a version in her app with a reason (DIST-F-15, APP-F-33), and Carol's app tells
