@@ -352,6 +352,9 @@ The human may veto each one.
 - S18: app j2 `ac8_remove_defaults_to_keep_data_and_unknown_keys_fail` failed 1 in 9 runs under
   load ("DOM timed out"); watch it on main.
 - S18: the foreman ignored the "you may push" correction because a peer relayed it; fine, pushing is optional.
+- S12b, S19, S20 (2026-11-12 night): load reached about 140 with three slices building at once
+  next to the Mac's endpoint scanners (Defender, ManageEngine); one Sol run sat 8 h without
+  progress and validators were cut off. Part of it was the laptop sleeping on low battery (external).
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
