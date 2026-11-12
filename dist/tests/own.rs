@@ -166,7 +166,7 @@ fn ac2_own_request_publish() {
     }
 }
 #[test]
-fn ac3_version_exists_before_confirm() {
+fn ac3_own_request_version_exists_before_confirm() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
@@ -178,7 +178,7 @@ fn ac3_version_exists_before_confirm() {
     assert_eq!(c.requests.lock().unwrap().len(), 1);
 }
 #[test]
-fn ac4_unreleased_provider_before_confirm() {
+fn ac4_own_request_unreleased_provider_before_confirm() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
@@ -191,7 +191,7 @@ fn ac4_unreleased_provider_before_confirm() {
     assert!(c.requests.lock().unwrap().is_empty());
 }
 #[test]
-fn ac5_package_too_large_before_parsing() {
+fn ac5_own_request_package_too_large_before_parsing() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(

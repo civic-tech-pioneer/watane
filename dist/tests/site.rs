@@ -192,3 +192,22 @@ fn ac10_site_equal_export_does_not_write() {
         );
     }
 }
+#[test]
+fn site_external_export_keeps_withdrawn_package() {
+    let home = tempfile::tempdir().unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let d = Dist::open(
+        home.path(),
+        Arc::new(RecordingConfirm::new([Decision::Approve; 2])),
+        Options::default(),
+    )
+    .unwrap();
+    let bytes = fixture("1.0.0", false);
+    let name = format!("packages/{}", blake3::hash(&bytes).to_hex());
+    let a = d.publish(bytes.clone()).unwrap();
+    d.export(dest.path()).unwrap();
+    d.withdraw(&a.info.reference, "bug").unwrap();
+    d.export(dest.path()).unwrap();
+    assert_eq!(files(dest.path()).get(&name), Some(&bytes));
+    assert!(!files(&d.site_dir()).contains_key(&name));
+}
