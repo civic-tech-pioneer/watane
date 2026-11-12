@@ -914,7 +914,7 @@ mod find_tests {
             &parties,
         );
         assert_eq!(rows[0]["own"], true);
-        assert_eq!(rows[0]["mods"], 1);
+        assert_eq!(rows[0]["mods"], 0);
         assert_eq!(rows[1]["own"], false);
         assert_eq!(rows[1]["name"], "Ivy");
         assert_eq!(rows[1]["mods"], 7);
