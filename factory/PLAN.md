@@ -87,14 +87,12 @@ Step 3 (Publish, J3).
   `ui/extra` passes `Mod::read` but `pack` refuses it; for `wit/.hid/k`, `Mod::read` names the WIT
   folder rule, not the link; release errors strip "release" in `malformed()`, not at the call site.
 - [x] **S21a Alice publishes, Bob follows (dist).** Delivered 2026-11-12 (main `7fad99d`). Sol runs: S21a-1 1, S21a-2 2 (new, resume), S21a-3 1.
-- [~] **S23 The maker's agent stumbles less.** (branch `slice/s23`; foreman: see `Foremen`) The
-  dev leftovers of S17 (`factory/harness-s17.md`) and S12b (its `Left for later`).
-  - Outcomes: the template guide covers `watane.on`; the first build says it is building; text
-    mode prints an empty list as `none`; `serve` with `reused:false` says to update the MCP config;
-    `doctor` inside a mod folder does not suggest `new`; `check` on `mod.invalid` has a `next`;
-    `fake-watane --help` prints help; the decline message names what to ask; `add . --dir x`
-    works. Each with a cheap test. One Claude run of the S17 story, measured as in S17, is no worse.
-  - Touches: dev only. Not dist (S21a). Sol runs the default tests only.
+- [x] **S23 The maker's agent stumbles less.** Delivered 2026-11-12 (main `3a1bbdd`). Sol runs:
+  S23-1 1, S23-2 1, S23-3 1, S23-fix1 1, S23-fix2 1. Left for later (user-sim): the progress line
+  prints twice and says "first build" on warm builds; `serve`'s `next` ends the URL with `.` and names
+  JSON paths in text mode; `check` says to correct the do-not-edit deps.json for an unused provider;
+  text mode prints object lists on one line and an argument error as `: failed`. The template guide
+  is at its 143-line cap: the next guide line raises the cap or cuts a line.
 - [~] **S21b J3 in the app.** (branch `slice/s21b`; foreman: see `Foremen`) Host stage 8
   (`Source::Release`, verify with `Entry::decode`), app stage C (`DistConfirm`, publish and
   follow), `app/tests/j3.rs`: Alice publishes in her app, Bob follows the link in his and
@@ -170,7 +168,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
 - S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22` (stopped, removed).
 - S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a` (stopped, removed).
-- S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23`.
+- S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23` (stopped, removed).
 - S21b: `263282d0` (sessionId `263282d0-baa2-4b4e-bafa-1e8e8c8efa36`), worktree `.claude/worktrees/s21b`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -276,6 +274,10 @@ The human may veto each one.
 - S13: dev tests share one warm cache folder per test binary (a copy at a new path builds cold:
   the path is in the rustflags). A command test may be removed once a unit test proves its rule;
   5 were, each named in TECHNICAL 15.2's replacement table. DEV-S-27 to 31 are marked planned.
+- S23: `add` reads a relative provider from the current folder; when it is not a mod, `usage.provider`
+  names the canonical path and this rule. The declined-install text says `--wait <seconds>`. The
+  build progress line goes to stderr before every mod build (release and unit).
+- S23: spec-gap lines come in each task's final message; the foreman writes them to AGENTS.md once.
 
 ## Friction
 
@@ -419,6 +421,8 @@ The human may veto each one.
   test; Sol stopped with a question (3x). Proposal pending below.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
+- S23: a stale slow-test expectation surfaced only at delivery, because Sol runs the default tests
+  only; one extra fix task. Same root as "briefs not naming changed tests" (4x).
 
 ## Digest
 
@@ -472,3 +476,5 @@ The human may veto each one.
   comes back with guidance (step 2 done).
 - S21a: Alice's dist publishes the reading list into a site folder; Bob's dist follows her link and
   fetches, verifies and unpacks the same bytes; a changed file is refused with its cause and URL.
+- S23: a maker's coding agent gets live refresh (`watane.on`) from the guide, sees the first build
+  building, gets a `next` from `check`, `serve` and a declined install, and `add . --dir x` works.
