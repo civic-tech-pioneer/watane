@@ -137,11 +137,12 @@ Between steps 3 and 4.
     has only the key (use `channel(index)` for "listed by Ivy"); error texts show raw 52-character
     keys; "invalid note: invalid character count" gives no limit.
   - Touches: app; dist only where the notes above need it. Not dev (S30, then S31).
-- [~] **S31 The agent searches (dev stage 8).** (branch `slice/s31`; foreman: see `Foremen`)
-  `watane-dev search` (dev TECHNICAL 10, stage 8): app status, `POST /api/search`, the result, a
-  `next`; `fake-watane` answers `/api/search`; DEV-S-33, 34. Also (S30): pkg gives the own-provider
-  case its own message (about one line), and dev drops its own `wit/world.wit` reader for it (about
-  45 lines). Touches: dev, pkg. Not app (S29).
+- [x] **S31 The agent searches (dev stage 8).** Delivered 2026-11-13 (main `956de83`). Sol runs:
+  S31-1 1, S31-2 1. Tested against `fake-watane`; the real `/api/search` is S29's. Left for later
+  (user-sim): 503 and other app errors get the generic "Correct the reported host error" fix;
+  `search --help` lists the global `--dir`, which search ignores; a hand-made `wit/deps/<own slug>/`
+  hides the own-provider message behind a WIT duplicate-package error; the default home in `next`
+  shows `/tmp` where an explicit `--home` shows `/private/tmp`.
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -177,6 +178,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | done (S11, S12b; `fake-watane` too) |
 | dev | 7 publish | 3 | done (S21c) |
+| dev | 8 search | 4 | done (S31, against `fake-watane`; the app route is S29) |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
@@ -222,7 +224,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28` (stopped, removed).
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30` (stopped, removed).
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29`.
-- S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31`.
+- S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -235,6 +237,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S31: pkg owns two fixed messages, the pkg/dev interface: `deps.json lists mods:<slug> but
+  wit/world.wit imports none of its interfaces` and `deps.json lists this mod itself as
+  mods:<slug>` (own wins, one violation); dev's WIT reader is gone. `fake-watane` answers
+  `/api/search` with fake.json `"search"`, default `{"indexes":0,"results":[]}`.
 - S30: `publish.version_exists` keeps its code and exit 1; the release and link go into `result`
   (2.3 allows a result on a failure). `local_dependency` does not query the app (DEV-S-30: the host
   receives no request). `link: none yet` applies to publish's link only; the global `null ->
@@ -545,6 +551,9 @@ The human may veto each one.
 - S30: dev's `doctor::ac6_real_preview_home_is_running_without_app` panics without `WATANE_BIN`; the
   foreman skill's `--include-ignored` step should say to set it. `ac10_endless_test` took 7.85 s
   against its 7 s bound under parallel builds.
+- S31: Sol reports PARTIAL when Codex's sandbox cannot run `sandbox-exec`
+  (`ac6_build_with_network_denied`); the validator runs it. One Sol run took about 33 minutes,
+  mostly slow builder tests.
 
 ## Digest
 
@@ -618,3 +627,6 @@ The human may veto each one.
   publisher's channel and say which index listed them.
 - S30: Bob's agent reads true publish and check texts: the rerun reports the existing release and
   link, `--home` survives in `next`, and the unused-provider message names what is unused.
+- S31: Bob's coding agent runs `watane-dev search [words] [--publisher] [--interface]` and gets the
+  app's search results with a `next` for no index or no hits; `check` names a mod listed as its own
+  provider.
