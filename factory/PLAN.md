@@ -97,6 +97,14 @@ Step 3 (Publish, J3).
   - Touches: `dist/` (new crate), the workspace `Cargo.toml` members line. Not pkg (S22), not dev
     (S12b), not host or app.
   - Leaves out: host stage 8 and app stage C (S21b), dev `publish` (S21c).
+- [~] **S23 The maker's agent stumbles less.** (branch `slice/s23`; foreman: see `Foremen`) The
+  dev leftovers of S17 (`factory/harness-s17.md`) and S12b (its `Left for later`).
+  - Outcomes: the template guide covers `watane.on`; the first build says it is building; text
+    mode prints an empty list as `none`; `serve` with `reused:false` says to update the MCP config;
+    `doctor` inside a mod folder does not suggest `new`; `check` on `mod.invalid` has a `next`;
+    `fake-watane --help` prints help; the decline message names what to ask; `add . --dir x`
+    works. Each with a cheap test. One Claude run of the S17 story, measured as in S17, is no worse.
+  - Touches: dev only. Not dist (S21a). Sol runs the default tests only.
 - [ ] **S21b J3 in the app.** Host stage 8 (`Source::Release`, verify with `Entry::decode`), app
   stage C (`DistConfirm`, publish and follow), `app/tests/j3.rs`. After S21a.
 - [ ] **S21c The agent publishes.** dev 7 `publish` (DEV-S-30, 31). After S21b and S12b.
