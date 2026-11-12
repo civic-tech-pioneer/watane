@@ -78,15 +78,10 @@ Step 3 (Publish, J3).
   packed before `logic.wasm` is built; the on-disk `hello` has `ui/app.js` (213 bytes), so its id
   differs from 7.3's 159-byte golden; the empty-input error repeats itself ("bad release body:
   release: end of input bytes").
-- [~] **S22 Packages are safe on every path.** (branch `slice/s22`; foreman: see `Foremen`) The pkg
-  leftovers of S15 and S20, so dist can trust pkg in J3.
-  - Outcomes: a link inside a hidden folder (`ui/.git/x`) is refused like any link; every part of
-    a path is opened with no-follow, not only the last; `folder.rs` reads through the handle it
-    checked (no swap window); the on-disk fixtures `reading-list` and `recommendations` pack
-    (their `logic.wasm` built once, or packed by a test that builds it); `hello`'s id matches the
-    7.3 golden or 7.3 is corrected; the empty-input release error reads once.
-  - Touches: pkg only (`package.rs`, `folder.rs`, `release.rs`, its tests and fixtures). Not dev,
-    host, app or log.
+- [x] **S22 Packages are safe on every path.** Delivered 2026-11-12 (main `0d686a3`). Sol runs: S22-1 1.
+  Left for later (user-sim): `decode(&[0x8c])` reads "format: end of input bytes"; a FIFO at
+  `ui/extra` passes `Mod::read` but `pack` refuses it; for `wit/.hid/k`, `Mod::read` names the WIT
+  folder rule, not the link; release errors strip "release" in `malformed()`, not at the call site.
 - [~] **S21a Alice publishes, Bob follows (dist).** (branch `slice/s21a`; foreman: see `Foremen`)
   dist stages S1 to S5 on the real `log` and `pkg` (no stubs), and log L5's dist side.
   - Outcomes: dist's "Done when" tests pass (`dist/TECHNICAL.md` 8), `j3_dist` included: Alice's
@@ -163,7 +158,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S12b: `286375ae` (sessionId `286375ae-b3c5-4052-b381-a219b7cf0104`), worktree `.claude/worktrees/s12b`.
 - S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19` (stopped, removed).
 - S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
-- S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22`.
+- S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22` (stopped, removed).
 - S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -284,6 +279,11 @@ The human may veto each one.
   the fork row inside the write transaction (a full scan made append O(n²)).
 - S19: `append` may extend a chain whose lower entries are corrupt on disk (log 5.1). Deputy: dist
   calls `status()` before it publishes and refuses with its cause; log stays as specified.
+- S22: pkg opens each path part below the mod folder with no-follow (`rustix` openat, already in
+  the lock file; the direct `libc` dependency is dropped; no `unsafe`); the mod folder itself may be
+  a link. `world.rs` parses WIT from the checked bytes, not `Resolve::push_dir`. The fixtures
+  `reading-list` and `recommendations` commit their `logic.wasm`; `hello` lost `ui/app.js`, and
+  pkg 6.5 names the on-disk fixture.
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -377,6 +377,8 @@ The human may veto each one.
   next to the Mac's endpoint scanners (Defender, ManageEngine); one Sol run sat 8 h without
   progress and validators were cut off. The laptop slept and clocked down on low battery (external); the human: three slices are fine.
 - S19: a validator died 3 times on "computer went to sleep"; a fresh validator under `caffeinate -i` worked.
+- S22: the rm guard hook refuses deletes under `$CLAUDE_JOB_DIR/tmp` and in the worktree, so
+  user-sim probe crates stay behind.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -425,3 +427,5 @@ The human may veto each one.
   verify; any changed byte is refused with its cause.
 - S19: the log crate keeps Alice's identity and her signed, hash-chained entries, refuses corrupt
   rows and forks with their cause, and restores from a 108-byte passphrase backup.
+- S22: pkg refuses every link in a mod folder, in any part of a path, and reads each file through
+  the handle it checked (about 400k swap attempts, none read through a link).
