@@ -148,26 +148,20 @@ impl Release {
         if r.0.u64().map_err(|e| malformed(format!("format: {e}")))? != 1 {
             return Err(malformed("format must be 1"));
         }
-        let slug: Slug = r.name()?;
-        let version: Version = r.name()?;
+        let slug: Slug = r.name("slug")?;
+        let version: Version = r.name("version")?;
         let name = r.text("name")?.to_owned();
         let summary = r.text("summary")?.to_owned();
         for (field, text, max) in [("name", &name, 64), ("summary", &summary, 280)] {
-            if text.is_empty()
-                || text.chars().count() > max
-                || text.trim() != text
-                || text.chars().any(char::is_control)
-            {
-                return Err(malformed(format!(
-                    "{field} must have 1..={max} characters, no controls or surrounding whitespace"
-                )));
+            if let Some(message) = crate::meta::text_violation(field, text, max) {
+                return Err(malformed(message));
             }
         }
         let package = PackageId::from_bytes(r.key("package id")?);
         let size = r.0.u64().map_err(|e| malformed(format!("size: {e}")))?;
         let source = r.0.bool().map_err(|e| malformed(format!("source: {e}")))?;
-        let offers = r.interfaces("offers", &slug, &version)?;
-        let events = r.interfaces("events", &slug, &version)?;
+        let offers = r.interfaces("offers", "offer", &slug, &version)?;
+        let events = r.interfaces("events", "event", &slug, &version)?;
         let count = r.array(81, "grants")?;
         let mut grants = Vec::new();
         for _ in 0..count {
@@ -186,9 +180,11 @@ impl Release {
             }
             let grant = match tag {
                 0 => Grant::Storage,
-                1 => Grant::Http { host: r.name()? },
+                1 => Grant::Http {
+                    host: r.name("host")?,
+                },
                 _ => {
-                    let interface: InterfaceName = r.name()?;
+                    let interface: InterfaceName = r.name("interface")?;
                     if interface.namespace() != "mods" || interface.package() == slug.as_str() {
                         return Err(malformed("grant interface must be mods: of another slug"));
                     }
@@ -228,8 +224,8 @@ impl Release {
             r.exact_array(3, "origin")?;
             Some(ReleaseRef {
                 publisher: PublisherKey::from_bytes(r.key("origin publisher")?),
-                slug: r.name()?,
-                version: r.name()?,
+                slug: r.name("origin slug")?,
+                version: r.name("origin version")?,
             })
         };
         let result = Self {
@@ -279,13 +275,14 @@ impl<'a> Reader<'a> {
     fn interfaces(
         &mut self,
         field: &str,
+        item: &str,
         slug: &Slug,
         version: &Version,
     ) -> Result<Vec<InterfaceName>, ReleaseError> {
         let count = self.array(32, field)?;
         let mut list: Vec<InterfaceName> = Vec::new();
         for _ in 0..count {
-            let interface: InterfaceName = self.name()?;
+            let interface: InterfaceName = self.name(item)?;
             if interface.namespace() != "mods"
                 || interface.package() != slug.as_str()
                 || interface.version() != *version
@@ -333,10 +330,13 @@ impl<'a> Reader<'a> {
         self.definite(field)?;
         self.0.str().map_err(|e| malformed(format!("{field}: {e}")))
     }
-    fn name<T: std::str::FromStr<Err = NameError>>(&mut self) -> Result<T, ReleaseError> {
-        self.text("text")?
+    fn name<T: std::str::FromStr<Err = NameError>>(
+        &mut self,
+        field: &str,
+    ) -> Result<T, ReleaseError> {
+        self.text(field)?
             .parse()
-            .map_err(|e: NameError| malformed(e.to_string()))
+            .map_err(|e: NameError| malformed(format!("{field}: {e}")))
     }
     fn key(&mut self, field: &str) -> Result<[u8; 32], ReleaseError> {
         self.definite(field)?;

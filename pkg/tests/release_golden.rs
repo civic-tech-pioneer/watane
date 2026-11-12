@@ -1,11 +1,6 @@
-use std::path::{Path, PathBuf};
 use watane_pkg::*;
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join("release")
-        .join(name)
-}
+#[path = "support/release.rs"]
+mod support;
 fn hex(s: &str) -> Vec<u8> {
     data_encoding::HEXLOWER.decode(s.as_bytes()).unwrap()
 }
@@ -34,9 +29,9 @@ fn literal() -> Release {
 
 #[test]
 fn ac1_release_golden() {
-    let dir = fixture("hello");
-    let m = Mod::read(&dir).unwrap();
-    let p = pack(&dir, false).unwrap();
+    let dir = support::hello();
+    let m = Mod::read(dir.path()).unwrap();
+    let p = pack(dir.path(), false).unwrap();
     let r = Release::new(&m, &p).unwrap();
     assert_eq!(r, literal());
     assert_eq!(r.encode(), hex(GOLDEN));
@@ -94,8 +89,9 @@ fn ac2_grants_and_origin_golden() {
 }
 #[test]
 fn ac3_local_provider_names_slug() {
-    let m = Mod::read(&fixture("recommendations")).unwrap();
-    let p = pack(&fixture("recommendations"), false).unwrap();
+    let dir = support::built_fixture("recommendations");
+    let m = Mod::read(dir.path()).unwrap();
+    let p = pack(dir.path(), false).unwrap();
     let e = Release::new(&m, &p).unwrap_err();
     assert!(matches!(&e,ReleaseError::LocalProvider{slug} if slug.as_str()=="reading-list"));
     assert!(e.to_string().contains("reading-list"));

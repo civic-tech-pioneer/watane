@@ -1,8 +1,0 @@
-package mods:recommendations@0.1.0;
-interface suggest { next: func() -> option<string>; }
-world recommendations {
-  import watane:host/state@0.1.0;
-  import mods:reading-list/books@0.1.0;
-  export mods:reading-list/events@0.1.0;
-  export suggest;
-}

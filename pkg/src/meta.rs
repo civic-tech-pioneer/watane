@@ -30,6 +30,20 @@ struct Origin {
     release: ReleaseRef,
 }
 
+pub(crate) fn text_violation(field: &str, value: &str, max: usize) -> Option<String> {
+    if value.is_empty()
+        || value.chars().count() > max
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        Some(format!(
+            "{field} must have 1..={max} characters, no control characters or surrounding whitespace"
+        ))
+    } else {
+        None
+    }
+}
+
 pub(crate) fn read(dir: &Path) -> Result<Meta, ModError> {
     let bytes = read_file(dir, "mod.toml", 16 * 1024, Rule::ModToml, false)?.unwrap_or_default();
     let bad = |message: String| invalid(Rule::ModToml, "mod.toml", message);
@@ -46,14 +60,8 @@ pub(crate) fn read(dir: &Path) -> Result<Meta, ModError> {
         .try_into()
         .map_err(|e: toml::de::Error| bad(e.to_string()))?;
     for (field, value, max) in [("name", &meta.name, 64), ("summary", &meta.summary, 280)] {
-        if value.is_empty()
-            || value.chars().count() > max
-            || value.trim() != value
-            || value.chars().any(char::is_control)
-        {
-            return Err(bad(format!(
-                "{field} must have 1..={max} characters, no control characters or surrounding whitespace"
-            )));
+        if let Some(message) = text_violation(field, value, max) {
+            return Err(bad(message));
         }
     }
     if let Some(http) = meta.http.take() {

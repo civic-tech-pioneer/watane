@@ -1,14 +1,6 @@
-use std::path::{Path, PathBuf};
 use watane_pkg::*;
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(if matches!(name, "hello" | "reading-list") {
-            format!("release/{name}")
-        } else {
-            name.into()
-        })
-}
+#[path = "support/release.rs"]
+mod support;
 fn literal() -> Release {
     Release {
         slug: "hello".parse().unwrap(),
@@ -29,8 +21,9 @@ fn literal() -> Release {
 
 #[test]
 fn ac5_every_field_and_first_difference() {
-    let p = pack(&fixture("hello"), false).unwrap();
-    let m = Mod::read(&fixture("hello")).unwrap();
+    let dir = support::hello();
+    let p = pack(dir.path(), false).unwrap();
+    let m = Mod::read(dir.path()).unwrap();
     let fields = [
         "slug", "version", "name", "summary", "package", "size", "source", "offers", "events",
         "grants", "origin",
@@ -76,14 +69,15 @@ fn ac5_every_field_and_first_difference() {
 }
 #[test]
 fn ac6_round_trip_and_changed_package() {
-    // The prebuilt reading-list component was independently produced from its WIT
-    // with wit-component's dummy_module, embed_component_metadata and ComponentEncoder.
-
     for name in ["hello", "reading-list"] {
         for source in [false, true] {
-            let dir = fixture(name);
-            let p = pack(&dir, source).unwrap();
-            let m = Mod::read(&dir).unwrap();
+            let dir = if name == "hello" {
+                support::hello()
+            } else {
+                support::built_fixture(name)
+            };
+            let p = pack(dir.path(), source).unwrap();
+            let m = Mod::read(dir.path()).unwrap();
             let r = Release::new(&m, &p).unwrap();
             assert_eq!(Release::decode(&r.encode()).unwrap(), r);
             assert_eq!(r.package, p.id());

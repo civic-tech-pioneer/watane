@@ -127,3 +127,13 @@ fn ac4_truncation_types_and_hostile_lengths() {
         assert!(Release::decode(&bad).is_err());
     }
 }
+
+#[test]
+fn ac4_non_text_slug_names_field() {
+    let mut bytes = hex(GOLDEN);
+    bytes.splice(2..8, [0x01]);
+    assert!(matches!(
+        refusal(&bytes, "slug"),
+        ReleaseError::Malformed(_)
+    ));
+}
