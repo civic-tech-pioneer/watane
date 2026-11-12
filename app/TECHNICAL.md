@@ -742,8 +742,9 @@ pub struct CmdError { pub code: &'static str, pub message: String }
 `CmdError.code` is one of `refused`, `not_found`, `bad_input`,
 `missing_providers`, `unavailable`, `host`, `dist`, `io`. The host's own
 code replaces `host` when it has one (HOST-F-20). `message` is the whole
-cause chain (`{e}` and each `source()`, joined by `: `), so no cause is
-hidden (F-QUAL-3). dist already escapes untrusted text in its `Display`.
+cause chain: start with `{e}` and append each `source()` with `: ` only
+when the text so far does not already end with that cause’s text (F-QUAL-3). dist already escapes untrusted text in its
+`Display`.
 
 ## 14. Security properties
 

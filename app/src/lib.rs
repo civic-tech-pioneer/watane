@@ -54,12 +54,16 @@ pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
     let mut message = e.to_string();
     let mut cause = e.source();
     while let Some(e) = cause {
-        message.push_str(": ");
-        message.push_str(&e.to_string());
+        let text = e.to_string();
+        if !message.ends_with(&text) {
+            message.push_str(": ");
+            message.push_str(&text);
+        }
         cause = e.source();
     }
     message
 }
+
 impl From<watane_dist::DistError> for CmdError {
     fn from(e: watane_dist::DistError) -> Self {
         Self::new("dist", cause_chain(&e))
@@ -302,4 +306,23 @@ pub fn run(config: Config) -> Result<(), AppError> {
         }
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[derive(Debug, thiserror::Error)]
+    #[error("a: b")]
+    struct Outer(#[source] std::io::Error);
+
+    #[test]
+    fn ac1_cause_chain_appends_only_missing_suffix() {
+        assert_eq!(
+            super::cause_chain(&Outer(std::io::Error::other("b"))),
+            "a: b"
+        );
+        assert_eq!(
+            super::cause_chain(&Outer(std::io::Error::other("c"))),
+            "a: b: c"
+        );
+    }
 }

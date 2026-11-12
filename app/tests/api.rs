@@ -70,6 +70,15 @@ async fn ac6_publish_http_rows_without_window() {
             (status, Some(code)),
             "{body}"
         );
+        if status == 422 {
+            let message = body["error"]["message"].as_str().unwrap();
+            assert!(!message.contains(['{', '(', '"']), "{message}");
+            assert_eq!(message, "bad package format: short header");
+            assert!(
+                !message.contains("Format") && !message.contains("Package"),
+                "{message}"
+            );
+        }
     }
     let bytes = package();
     assert!(bytes.len() > 65_536 && bytes.len() < 67_108_864);

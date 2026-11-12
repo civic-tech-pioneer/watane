@@ -421,9 +421,9 @@ mod stage_c_tests {
             path: "/home/dist/site/head".into(),
             source: std::io::Error::other("disk broke"),
         };
-        let outer = e.to_string();
         let converted = CmdError::from(e);
         assert_eq!(converted.code, "dist");
-        assert_eq!(converted.message, format!("{outer}: disk broke"));
+        assert_eq!(converted.message, "/home/dist/site/head: disk broke");
+        assert_eq!(converted.message.matches("disk broke").count(), 1);
     }
 }

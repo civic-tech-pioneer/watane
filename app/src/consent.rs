@@ -593,6 +593,23 @@ mod stage_c_tests {
                 ],
             ),
             (
+                watane_dist::Statement::Release {
+                    reference: reference.clone(),
+                    release: watane_dist::Release {
+                        source: false,
+                        ..release.clone()
+                    },
+                },
+                Statement::Release,
+                vec![
+                    ("Release", reference.to_string()),
+                    ("Package", release.package.to_string()),
+                    ("Size", "123".into()),
+                    ("Source included", "no".into()),
+                    ("Summary", "Books".into()),
+                ],
+            ),
+            (
                 watane_dist::Statement::Withdraw {
                     reference: reference.clone(),
                     release,
