@@ -124,19 +124,16 @@ Between steps 3 and 4.
 - [x] **S28 Carol's dist finds Alice's mod (dist S6).** Delivered 2026-11-12 (main `9e4752e`). Sol runs:
   S28-1 1, S28-2 2 (new, resume), S28-3 1. Through dist's API: Carol chooses Ivy's index, searches
   "reading", and gets Alice's newest live release, verified from Alice's channel, listed by Ivy.
-- [~] **S29 Carol finds Alice's mod in her app (J4).** (branch `slice/s29`; foreman: see `Foremen`) app
-  stage D's index part as designed (app TECHNICAL 8.2, 9.6, the index and search commands of 7, the
-  `list`, `include`, `unlist` details of 6.2; APP-F-38, 43 to 46): Carol adds Ivy's link as an index,
-  searches "reading", sees Alice's mod verified and listed by Ivy, installs it after consent; Ivy
-  lists a mod in her own index through a signature. Done when `tests/find.rs` and the whole
-  `tests/j4.rs` (with index) pass and `static_config` lists the new commands; this closes J4's app
-  part. Replace S28's `_ => Refuse` arm in `confirm.rs` with the index statement details.
-  - Also (S28 user-sim): choosing the own channel as an index says "cannot follow the own channel";
-    `IndexView.skipped` is only a count (say which channel and why); a listing of the own key shows
-    nowhere; when only a stale mirror answers, `hit.link` carries the mirror's base; `Via::Index`
-    has only the key (use `channel(index)` for "listed by Ivy"); error texts show raw 52-character
-    keys; "invalid note: invalid character count" gives no limit.
-  - Touches: app; dist only where the notes above need it. Not dev (S30, then S31).
+- [x] **S29 Carol finds Alice's mod in her app (J4).** Delivered 2026-11-13 (main `6ea4e5f`). Sol runs:
+  S29-1 1, S29-2 1, S29-3 1, S29-fix1 2 (new, resume). User-sim rejected once (the own index row
+  said "0 mods"), then accepted. Front tests not run (screen locked). Left for later (user-sim): own
+  rows and consent details show raw 52-character keys; AlreadyListed says "already listed at seq 1"
+  for an include; own-index hits read "listed by <own fp>", not "you"; an empty search shows no "No
+  mods found"; the own row sits next to the "add an index" hint on a new home; index read failures
+  are raw transport errors that do not name the index; "listed by Ivy" and "listed by Ivy through
+  Alice" show together on one hit.
+
+Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is done.
 - [x] **S31 The agent searches (dev stage 8).** Delivered 2026-11-13 (main `956de83`). Sol runs:
   S31-1 1, S31-2 1. Tested against `fake-watane`; the real `/api/search` is S29's. Left for later
   (user-sim): 503 and other app errors get the generic "Correct the reported host error" fix;
@@ -191,12 +188,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 5 preview, api, doctor, fake-watane | 1 | done (S6); `fake-watane` moved to step 2 (deputy) |
 | dev | 6 deps, add, install | 2 | done (S11, S12b; `fake-watane` too) |
 | dev | 7 publish | 3 | done (S21c) |
-| dev | 8 search | 4 | done (S31, against `fake-watane`; the app route is S29) |
+| dev | 8 search | 4 | done (S31; the app route S29) |
 | app | A shell | 2 | done (S10) |
 | app | B host | 2 | done (S12a) |
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
-| app | D find | 4 | part (S25: APP-F-37, 39, 40); APP-F-38 waits on the index design (S26) |
+| app | D find | 4 | done (S25: APP-F-37, 39, 40; S29: APP-F-38, 43 to 46) |
 | app | E build on | 5 | open |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
@@ -236,7 +233,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S27: `5e751fa3` (sessionId `5e751fa3-948d-46da-84f1-0bb4795fce88`), worktree `.claude/worktrees/s27` (stopped, removed).
 - S28: `0911854d` (sessionId `0911854d-ca31-4a6d-ae04-5713af9399b3`), worktree `.claude/worktrees/s28` (stopped, removed).
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30` (stopped, removed).
-- S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29`.
+- S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29` (stopped, removed).
 - S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
 - S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -251,6 +248,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S29: dist `IndexView.skipped` is a list of `{channel, cause}` (own channel, local address, over the
+  listing limit); the app shows `IndexRow.skipped: [{party, cause}]`. dist error texts name a channel
+  by fingerprint (fields keep the key). `/api/search` answers 400 only for a bad query, else 500
+  `unavailable`. The own index row counts live `list` listings. Consent titles: "List in your
+  index", "Include in your index", "End a listing". `hit.link` keeps the record's front base.
 - S31: pkg owns two fixed messages, the pkg/dev interface: `deps.json lists mods:<slug> but
   wit/world.wit imports none of its interfaces` and `deps.json lists this mod itself as
   mods:<slug>` (own wins, one violation); dev's WIT reader is gone. `fake-watane` answers
@@ -568,6 +570,8 @@ The human may veto each one.
 - S31: Sol reports PARTIAL when Codex's sandbox cannot run `sandbox-exec`
   (`ac6_build_with_network_denied`); the validator runs it. One Sol run took about 33 minutes,
   mostly slow builder tests.
+- S29: Sol's sandbox cannot start the macOS driver (XPC): app window tests run only in Docker until
+  the validator runs them natively. dist `restore.rs` ac11 flakes under parallel load (line 78).
 
 ## Digest
 
@@ -644,3 +648,5 @@ The human may veto each one.
 - S31: Bob's coding agent runs `watane-dev search [words] [--publisher] [--interface]` and gets the
   app's search results with a `next` for no index or no hits; `check` names a mod listed as its own
   provider.
+- S29: Carol adds Ivy's index in her app, searches "reading", sees Alice's mod verified and listed by
+  Ivy, and installs it; Ivy lists, includes and unlists through consent (step 4 done).
