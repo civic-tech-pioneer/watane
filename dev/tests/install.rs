@@ -429,3 +429,28 @@ fn ac2_no_host_next_quotes_home_for_the_shell() {
         )
     );
 }
+
+#[test]
+fn ac1_no_host_next_quotes_dir_for_the_shell() {
+    let root = tempfile::tempdir().unwrap();
+    let mod_dir = root.path().join("Alice's mod");
+    std::fs::create_dir(&mod_dir).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(root.path())
+        .args(["install", "--json", "--home", "missing-home", "--dir"])
+        .arg(&mod_dir)
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["errors"][0]["code"], "env.host_not_running",
+        "{value}"
+    );
+    assert_eq!(
+        value["next"],
+        format!(
+            r#"watane-dev install --json --dir '{}/Alice'"'"'s mod' --home missing-home"#,
+            root.path().canonicalize().unwrap().display()
+        )
+    );
+}
