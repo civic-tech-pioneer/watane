@@ -356,7 +356,7 @@ Run it once the person has started the app. Other `env.*` errors use
 A declined install returns `host.declined` with the consumer slug (or mod
 folder), says the person declined installing it in their watane app, and
 asks whether they want it installed before running install again with
-`--wait` (9.6).
+`--wait <seconds>` (9.6).
 
 **publish** (step 3)
 ```json
@@ -1111,7 +1111,7 @@ fix `Run the command again with a longer --wait`. A `refused` answer is
 `host.declined`: say the person declined installing the requested consumer
 slug (or its mod folder) in their watane app. The fix asks the person
 whether they want it installed, then says to run install again with
-`--wait` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
+`--wait <seconds>` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
 proves the message and fix; the fix must not say "correct". Other errors are `host.refused`
 with `[<code>] <message>`. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
