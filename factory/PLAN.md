@@ -86,17 +86,7 @@ Step 3 (Publish, J3).
   Left for later (user-sim): `decode(&[0x8c])` reads "format: end of input bytes"; a FIFO at
   `ui/extra` passes `Mod::read` but `pack` refuses it; for `wit/.hid/k`, `Mod::read` names the WIT
   folder rule, not the link; release errors strip "release" in `malformed()`, not at the call site.
-- [~] **S21a Alice publishes, Bob follows (dist).** (branch `slice/s21a`; foreman: see `Foremen`)
-  dist stages S1 to S5 on the real `log` and `pkg` (no stubs), and log L5's dist side.
-  - Outcomes: dist's "Done when" tests pass (`dist/TECHNICAL.md` 8), `j3_dist` included: Alice's
-    dist publishes the reading list's release into a site folder; Bob's dist follows the link,
-    fetches, verifies and unpacks the same package; a changed file in the site folder is refused
-    and the error names the cause. Backup and restore keep Alice's channel.
-  - Briefs must say: dist calls `log` `status()` before it publishes (a corrupt chain is refused),
-    and `confirm_own_head` after ingesting its own channel.
-  - Touches: `dist/` (new crate), the workspace `Cargo.toml` members line. Not pkg (S22), not dev
-    (S12b), not host or app.
-  - Leaves out: host stage 8 and app stage C (S21b), dev `publish` (S21c).
+- [x] **S21a Alice publishes, Bob follows (dist).** Delivered 2026-11-12 (main `7fad99d`). Sol runs: S21a-1 1, S21a-2 2 (new, resume), S21a-3 1.
 - [~] **S23 The maker's agent stumbles less.** (branch `slice/s23`; foreman: see `Foremen`) The
   dev leftovers of S17 (`factory/harness-s17.md`) and S12b (its `Left for later`).
   - Outcomes: the template guide covers `watane.on`; the first build says it is building; text
@@ -105,8 +95,16 @@ Step 3 (Publish, J3).
     `fake-watane --help` prints help; the decline message names what to ask; `add . --dir x`
     works. Each with a cheap test. One Claude run of the S17 story, measured as in S17, is no worse.
   - Touches: dev only. Not dist (S21a). Sol runs the default tests only.
-- [ ] **S21b J3 in the app.** Host stage 8 (`Source::Release`, verify with `Entry::decode`), app
-  stage C (`DistConfirm`, publish and follow), `app/tests/j3.rs`. After S21a.
+- [~] **S21b J3 in the app.** (branch `slice/s21b`; foreman: see `Foremen`) Host stage 8
+  (`Source::Release`, verify with `Entry::decode`), app stage C (`DistConfirm`, publish and
+  follow), `app/tests/j3.rs`: Alice publishes in her app, Bob follows the link in his and
+  installs; his plan shows Alice as the verified publisher; a changed file on the host is refused
+  with its cause.
+  - Also (S21a user-sim): a damaged `entries/<head seq>` on a host goes unnoticed (readers take the
+    head from `head`); a first `follow` that hits a bad entry returns `Err`, not `Ok(Failed)`, so
+    the app sees two shapes of failure; `confirm_own` with another key's link should read "this
+    link is not your channel".
+  - Touches: host (stage 8), app (stage C), dist (the notes above). Not dev (S23).
 - [ ] **S21c The agent publishes.** dev 7 `publish` (DEV-S-30, 31). After S21b and S12b.
 
 ## Stage coverage
@@ -143,8 +141,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | C dist | 3 | open |
 | app | D find | 4 | open |
 | app | E build on | 5 | open |
-| log | L1 to L5 | 3 | part (S19: L1 to L4): L5 with dist and host (S21) |
-| dist | S1 to S5 | 3 | open |
+| log | L1 to L5 | 3 | part (S19: L1 to L4; S21a: dist side of L5): host side of L5 (S21b) |
+| dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | open |
 
 ## Foremen
@@ -171,11 +169,15 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S19: `e64dcaff` (sessionId `e64dcaff-ea92-483f-b801-398757d83629`), worktree `.claude/worktrees/s19` (stopped, removed).
 - S20: `e0535e0f` (sessionId `e0535e0f-15f9-4ed8-aa33-a7f69d14b020`), worktree `.claude/worktrees/s20` (stopped, removed).
 - S22: `9b57b9f1` (sessionId `9b57b9f1-8099-46b7-866e-9f7548aae1b9`), worktree `.claude/worktrees/s22` (stopped, removed).
-- S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a`.
+- S21a: `ebd6a828` (sessionId `ebd6a828-3a2c-457c-85ac-d8638809c277`), worktree `.claude/worktrees/s21a` (stopped, removed).
 - S23: `48bcab4a` (sessionId `48bcab4a-1495-4425-9ae1-ba7f4d162caf`), worktree `.claude/worktrees/s23`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Process change (friction 3x: S9, S15, S21a): a brief that changes a behaviour must name each
+  existing test that asserts the old one, and say it changes. One line in the foreman skill's
+  brief section. Cost to undo: none.
 
 - Process change (friction 3x: S6, S17, S12b): parallel tasks in one subsystem conflict on its
   `AGENTS.md` "Spec gaps" lines. Proposal: each task records its spec gaps in its own
@@ -308,6 +310,10 @@ The human may veto each one.
 - S12b: dev's `fake-host` is a default feature (a distribution build uses `--no-default-features`);
   `install` checks `/api/status` before the test pipeline; `host.declined` has `next` null;
   `add <provider>` resolves from the current folder.
+- S21a: `<home>/dist/site/` is 0755 with 0644 files; other dist folders 0700. The managed
+  `site_dir()` removes a withdrawn own release's package; `export` elsewhere deletes nothing.
+  `confirm_own` also fetches and verifies the own live packages. dist calls `log.status(own)`
+  before it signs. (dist TECHNICAL 12, 13)
 - S12a: host shutdown waits for every server-side holder of the host, at most 5 s (host 12.2 unchanged).
 - S1: each foreman turn's closing text reached the product owner as a progress update. Fixed by
   the human's rule (1eed839): foremen report only when blocked or delivered.
@@ -408,6 +414,8 @@ The human may veto each one.
 - S12b: Sol edited files outside its brief again (host FUNCTIONAL, dev `journey_s11.rs`, dev
   `AGENTS.md`); needed consequences this time, accepted (4x; proposal pending).
 - S6, S17, S12b: rebase conflicts on dev `AGENTS.md` "Spec gaps" lines between parallel tasks (3x).
+- S9, S15, S21a: a brief changed a behaviour an earlier task's test asserts without naming that
+  test; Sol stopped with a question (3x). Proposal pending below.
 - S12a: a test flaked 1 in 16 runs after the rebase: a server task kept `Arc<Host>` after
   shutdown. Fixed with a bounded wait (S12a-fix1).
 
@@ -461,3 +469,5 @@ The human may veto each one.
 - S12b: in a mod folder, the agent runs `watane-dev install --json`; dev tests the mod and its
   providers, the home host installs them after the person approves, and a decline or a missing app
   comes back with guidance (step 2 done).
+- S21a: Alice's dist publishes the reading list into a site folder; Bob's dist follows her link and
+  fetches, verifies and unpacks the same bytes; a changed file is refused with its cause and URL.
