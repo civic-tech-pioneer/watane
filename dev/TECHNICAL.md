@@ -110,7 +110,7 @@ watane-dev [--json] [--dir <path>] <command>
   add <mod folder>                                          (step 2)
   install [--home <path>] [--wait <seconds>]                (step 2)
   publish [--no-source] [--home <path>] [--wait <seconds>]  (step 3)
-  search [<text>] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
+  search [<text>...] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
   new <slug> --from <link>                                  (step 5, outline)
   add --release <link>                                      (step 5, outline)
 ```
@@ -151,7 +151,7 @@ Every command, also a failed one, prints this object:
 | `schema` | integer | 1. Raised on an incompatible change. |
 | `command` | string | `new`, `check`, `test`, `serve`, `doctor`, `add`, `install`, `publish`, `search`. |
 | `ok` | bool | `errors` is empty. |
-| `dir` | string or null | The mod folder; null when the command has none (`doctor`). |
+| `dir` | string or null | The mod folder; null when the command has none (`doctor`, `search`). |
 | `result` | object or null | 2.4. Present also on a failure, where a part ran. |
 | `errors` | array of Problem | Empty when `ok`. |
 | `warnings` | array of Problem | Never change `ok` or the exit status. |
@@ -234,6 +234,9 @@ wit/world.wit imports none of its interfaces`; for an own provider it is
 `deps.json lists this mod itself as mods:<slug>`. For an unused provider:
 import its interface in `wit/world.wit`, or
 ask before deleting `wit/deps/<slug>/` and `mods:<slug>` from `deps.json`.
+For an own provider the fix is `Ask before deleting wit/deps/<slug>/ and
+mods:<slug> from deps.json: a mod cannot depend on itself`. dev passes both
+messages through from pkg and does not read `wit/world.wit` to distinguish them.
 There is no dependency-removal command today. Other managed dependency
 violations point to `watane-dev add <provider folder>` to refresh the files.
 
@@ -421,7 +424,9 @@ Every publish refusal has a `next`:
               "via": [{"kind": "index", "index": "<Ivy key>", "through": null, "note": "good for books"}],
               "offers": ["mods:reading-list/books@0.1.0"], "events": [], "uses": []}]}
 ```
-`results` is the app's answer as it is (app 8.2), in its order. `next`:
+`home` is absolute. `indexes` and `results` are the app's answer as it is
+(app 8.2), in its order; dev keeps results as untyped JSON, including unknown
+fields. Text output flattens them as in 2.3. `next`:
 with results, null; with none and `indexes` 0, `Ask the person to add an
 index in the watane app, then run search again`; with none otherwise,
 `Try fewer words, or search with --interface <name>`.
@@ -1220,14 +1225,19 @@ the fix. Success chooses the link-dependent instruction of 2.4.
 
 `search` needs no mod folder (`dir` is null). It resolves the home and
 checks the app status as `install` does (9.6, step 1: `env.host_not_running`
-with the same causes), then sends one `POST /api/search` with
+with the same causes). On a missing app, `next` repeats
+`watane-dev search --json <same words> [--publisher <key>] [--interface <name>] --home <absolute home>`;
+quote each word and option value for the shell as in 2.4 (including empty words).
+No mod folder is read, even with `--dir`. Then send one `POST /api/search` with
 `{"text": <the words joined with one space, or "">, "publisher", "interface"}`
 over the proxy-free localhost transport, with a 30 s timeout (a search
 makes no network request in the app). dev checks nothing of the query
 itself: a `400` answer is `host.refused` with `[bad_request] <message>`,
 whose fix is `Check --publisher (a 52-character key) and --interface (for
 example mods:reading-list/books or mods:reading-list/books@0.1.0)`. A
-search gives no authority and asks the participant nothing. dev never
+search gives no authority and asks the participant nothing. Other error
+answers are `host.refused` with `[<code>] <message>`, including `refused`.
+For every search request error, `next` is the error's fix. dev never
 installs a result: the person does that in the app (F-AGENT-4).
 
 Step 5, only enough to keep the design open. `new --from <link>` and
@@ -1293,7 +1303,8 @@ pub struct Cli { pub json: bool, pub dir: Option<PathBuf>, pub command: Command 
 pub enum Command { New { slug: String }, Check, Test, Serve { stop: bool }, Doctor,
     Add { provider: PathBuf },
     Install { home: Option<PathBuf>, wait: Option<u64> },
-    Publish { no_source: bool, home: Option<PathBuf>, wait: u64 } }
+    Publish { no_source: bool, home: Option<PathBuf>, wait: Option<u64> },
+    Search { text: Vec<String>, publisher: Option<String>, interface: Option<String>, home: Option<PathBuf> } }
 pub fn run(cli: Cli) -> Outcome;
 
 // env.rs
@@ -1381,6 +1392,7 @@ impl Client {
     pub fn for_app(home: &Path) -> Result<Client, Problem>;   // 9.6: a home host with the app, else env.host_not_running
     pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem>;   // preview: 60 s
     pub fn install_wait(&self, folders: &[PathBuf], wait: u64) -> Result<Vec<InstalledMod>, Problem>;   // home: --wait seconds
+    pub fn search(&self, text: &str, publisher: Option<&str>, interface: Option<&str>) -> Result<serde_json::Value, Problem>;   // POST /api/search, 30 s
     pub fn releases(&self) -> Result<serde_json::Value, Problem>;   // GET /api/releases, status timeout (2 s)
     pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<serde_json::Value, Problem>;
 }
@@ -1457,8 +1469,10 @@ current site URL; no site URL means `link: null`. Dist not open gives 503
 `unavailable`. This supports discovery before building and after a publish
 wait expires; dev maps an error answer to `host.refused`. The consent view
 shows whether the package holds source.
-Steps 4 and 5: `/api/search`,
-`/api/fetch`.
+`POST /api/search` takes `{"text":string,"publisher":string|null,"interface":string|null}`
+and returns `{"indexes":number,"results":[...]}` (app 8.2); 400 is
+`bad_request`, 503 is `unavailable`. Stage 8 uses fake-watane while S29 builds
+the real route. Step 5: `/api/fetch`.
 
 **log**, **dist**: nothing directly; through the home host only.
 
@@ -1539,8 +1553,8 @@ rules belong to 15.1.
 | DEV-S-29 | `install::fake::ac4_page_only_result_and_failed_pipeline`; `install::fake::ac4_provider_order_result_and_failed_pipeline` | integration: page-only result, next and no request on failure; slow integration: order of two dependent Rust templates |
 | DEV-S-30 | `publish::ac1_local_providers_precede_status_and_pipeline` | integration: no build or host request |
 | DEV-S-31 | `publish::ac3_ac6_page_package_and_answer`, `publish::ac3_logic_source_selection` | page-only integration; slow Rust source selection |
-| DEV-S-33 | `search::s33_results_pass_through` (planned, stage 8) | integration against `fake-watane` |
-| DEV-S-34 | `search::s34_no_index_next` (planned, stage 8) | integration against `fake-watane` |
+| DEV-S-33 | `search::s33_results_pass_through` | integration against `fake-watane` |
+| DEV-S-34 | `search::s34_no_index_next` | integration against `fake-watane` |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -1586,6 +1600,9 @@ with a real page package. S21c adds `publish::ac2_no_app_precedes_pipeline`,
 `ac5_failed_pipeline_sends_nothing` and `ac7_text_output_and_help_walk`.
 `api::tests::ac4_publish_request_and_answer` and
 `ac4_publish_timeout_and_host_errors` prove the binary request and error mapping.
+`api::tests::ac5_search_errors_preserve_app_messages_and_fixes` proves search
+400/503/refused mapping; `ac5_search_timeout_is_thirty_seconds` is a timing
+proof of the 30 s bound. `search::ac8_search_text_flattens_results` proves text output.
 `publish::ac3_logic_source_selection` is slow because it builds and tests
 Rust; the default publish proofs use page-only mods with a test source file,
 adding no cold Rust fixture build to the 120-second budget.
@@ -1601,7 +1618,10 @@ proves both help flags and invalid invocations. It listens on
 (`{"watane":1,"pid","port","mode"}`), prints a ready line in the form of
 `watane_host::Ready` (token `wt_fake` in a preview, `null` in a home), and
 answers `GET /api/status` (`app: true` in a home), `GET /api/releases`, `POST /api/install` and
-`POST /api/publish`. It stores each request body as
+`POST /api/publish` and `POST /api/search`. Search records its JSON body as
+`<dir>/requests/<n>-search` and returns status 200 with `fake.json`'s `search`
+value unchanged when set (any JSON body), otherwise `{"indexes":0,"results":[]}`.
+Search ignores the consent `answer` setting. It stores each request body as
 `<dir>/requests/<n>-<path>`. `<dir>/fake.json` (`{"answer": "approve" |
 "decline"}`, default approve) sets the answer; decline answers 403
 `{"error":{"code":"refused","message":"declined"}}`. An installed folder
@@ -1639,7 +1659,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | 5 | `preview`, `api`, `doctor`, `fake-watane` | host stage 6: the program, `Ready`, `RunInfo`, `/api/status`, `/api/install` | `fake-watane` | S-21 to 24 on the real `watane`; J1 passes |
 | 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` checks app status first, tests providers and requests home install | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
 | 7 (step 3) | `publish`: local-provider refusal, app status, tests, pack, consent POST, result | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31 implemented; dev's part of J3 |
-| 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` with a fixed result | S-33, 34 |
+| 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` from `fake.json`, with an empty default | S-33, 34 implemented; dev stage 8 complete |
 
 Step 5 is not designed (section 10).
 

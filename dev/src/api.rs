@@ -132,11 +132,12 @@ impl Client {
                 .at("wit/world.wit", None, None)
                 .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"));
             }
-            let code = if path != "releases" && value["error"]["code"] == "refused" {
-                Code::HostDeclined
-            } else {
-                Code::HostRefused
-            };
+            let code =
+                if !matches!(path, "releases" | "search") && value["error"]["code"] == "refused" {
+                    Code::HostDeclined
+                } else {
+                    Code::HostRefused
+                };
             return Err(Problem::new(
                 code,
                 if code == Code::HostDeclined {
@@ -154,7 +155,9 @@ impl Client {
                     )
                 },
             )
-            .fix(if code == Code::HostDeclined {
+            .fix(if path == "search" && status.as_u16() == 400 {
+                "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
+            } else if code == Code::HostDeclined {
                 if path == "publish" {
                     "The person declined in the app. Ask them before you run publish again"
                 } else {
@@ -166,6 +169,24 @@ impl Client {
         }
         Ok(value)
     }
+    pub fn search(
+        &self,
+        text: &str,
+        publisher: Option<&str>,
+        interface: Option<&str>,
+    ) -> Result<Value, Problem> {
+        self.request(
+            "search",
+            Some((
+                "application/json",
+                json!({"text":text,"publisher":publisher,"interface":interface})
+                    .to_string()
+                    .as_bytes(),
+            )),
+            Duration::from_secs(30),
+        )
+    }
+
     pub fn releases(&self) -> Result<Value, Problem> {
         self.request("releases", None, Duration::from_secs(2))
     }
@@ -249,6 +270,47 @@ mod tests {
             let _ = std::io::copy(&mut stream, &mut std::io::sink());
         });
         (port, thread)
+    }
+
+    #[test]
+    fn ac5_search_errors_preserve_app_messages_and_fixes() {
+        for (status, code) in [(400, "bad_request"), (503, "unavailable"), (403, "refused")] {
+            let (port, thread) = stub(
+                status,
+                json!({"error":{"code":code,"message":"query rejected"}}),
+                Duration::ZERO,
+            );
+            let error = Client { port }.search("reading", None, None).unwrap_err();
+            thread.join().unwrap();
+            assert_eq!(error.code, Code::HostRefused);
+            assert_eq!(error.message, format!("[{code}] query rejected"));
+            assert_eq!(
+                error.fix.as_deref(),
+                Some(if status == 400 {
+                    "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
+                } else {
+                    "Correct the reported host error and run the command again"
+                })
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "timing: proves search stops waiting after its fixed 30-second timeout"]
+    fn ac5_search_timeout_is_thirty_seconds() {
+        let (port, thread) = stub(
+            200,
+            json!({"indexes":0,"results":[]}),
+            Duration::from_millis(30_500),
+        );
+        let start = std::time::Instant::now();
+        let error = Client { port }.search("", None, None).unwrap_err();
+        let elapsed = start.elapsed();
+        thread.join().unwrap();
+        assert_eq!(error.code, Code::HostNoAnswer);
+        assert!(elapsed >= Duration::from_secs(29), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(32), "{elapsed:?}");
+        assert!(error.fix.is_some());
     }
 
     fn publish_package() -> watane_pkg::Package {

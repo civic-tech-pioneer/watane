@@ -30,6 +30,7 @@ fn main() {
                     "add" => Some("add"),
                     "install" => Some("install"),
                     "publish" => Some("publish"),
+                    "search" => Some("search"),
                     "help" => Some("help"),
                     _ => None,
                 })

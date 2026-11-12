@@ -3,7 +3,7 @@ use crate::{
     outcome::{Code, Problem},
 };
 use serde::Serialize;
-use std::{fs, io::Read, path::Path};
+use std::{fs, path::Path};
 use watane_pkg::{Mod, ModError};
 fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
     let mut stack = vec![root.to_path_buf()];
@@ -125,11 +125,14 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                         };
                         (file, Some(line), Some(column))
                     });
-                let mut message = v.message.clone();
                 let fix = if file == "deps.json"
-                    && let Some(slug) = v.message.strip_prefix("remove the unused or own provider mods:")
+                    && let Some(slug) = v.message.strip_prefix("deps.json lists this mod itself as mods:")
                 {
-                    message = format!("deps.json lists mods:{slug} but wit/world.wit imports none of its interfaces");
+                    format!("Ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json: a mod cannot depend on itself")
+                } else if file == "deps.json"
+                    && let Some(slug) = v.message.strip_prefix("deps.json lists mods:")
+                        .and_then(|s| s.strip_suffix(" but wit/world.wit imports none of its interfaces"))
+                {
                     format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
                 } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
                     || Path::new(&file).starts_with("wit/deps")
@@ -143,7 +146,7 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                     format!(
                         "[{}] {}",
                         serde_json::to_value(v.rule).unwrap().as_str().unwrap(),
-                        message
+                        v.message
                     ),
                 )
                 .at(file, line, column)
@@ -184,63 +187,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     if !errors.is_empty() {
         return Err(errors);
     }
-    let m = Mod::read(dir).map_err(|error| {
-        let mut problems = mod_problems(error);
-        if !problems
-            .iter()
-            .any(|p| p.message.starts_with("[provider] deps.json lists mods:"))
-        {
-            return problems;
-        }
-        // Only refine diagnostics here; pkg remains the authority on WIT validity.
-        // Strip WIT comments before looking at the package declaration, including
-        // nested block comments and comments between declaration tokens.
-        let mut text = String::new();
-        if let Ok(file) = fs::File::open(dir.join("wit/world.wit")) {
-            let _ = file.take(1_048_576).read_to_string(&mut text);
-        }
-        let mut chars = text.chars().peekable();
-        let mut header = String::new();
-        let mut depth = 0;
-        while let Some(c) = chars.next() {
-            match (c, chars.peek().copied()) {
-                ('/', Some('*')) => {
-                    chars.next();
-                    depth += 1;
-                }
-                ('*', Some('/')) if depth > 0 => {
-                    chars.next();
-                    depth -= 1;
-                    header.push(' ');
-                }
-                _ if depth > 0 => {}
-                ('/', Some('/')) => {
-                    for c in chars.by_ref() {
-                        if c == '\n' {
-                            break;
-                        }
-                    }
-                    header.push(' ');
-                }
-                (';', _) => break,
-                _ => header.push(c),
-            }
-        }
-        let package = header.split_whitespace().collect::<String>();
-        if let Some(slug) = package
-            .strip_prefix("packagemods:")
-            .and_then(|p| p.split_once('@').map(|(slug, _)| slug))
-        {
-            for problem in &mut problems {
-                if problem.file.as_deref() == Some("deps.json")
-                    && problem.message == format!("[provider] deps.json lists mods:{slug} but wit/world.wit imports none of its interfaces")
-                {
-                    problem.message = format!("[provider] deps.json lists this mod itself as mods:{slug}");
-                }
-            }
-        }
-        problems
-    })?;
+    let m = Mod::read(dir).map_err(mod_problems)?;
     if dir.join("logic").exists() {
         let path = dir.join("logic/Cargo.toml");
         let text = fs::read_to_string(&path)

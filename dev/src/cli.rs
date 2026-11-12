@@ -56,6 +56,17 @@ pub enum Command {
         #[arg(long, help = "Seconds to wait for the person to answer [default: 600]")]
         wait: Option<u64>,
     },
+    /// Find published mods in the person's chosen indexes
+    Search {
+        /// Words to search for (joined with one space; empty searches all mods)
+        text: Vec<String>,
+        #[arg(long, help = "Publisher key to filter by (52 characters)")]
+        publisher: Option<String>,
+        #[arg(long, help = "Interface name to filter by, optionally with a version")]
+        interface: Option<String>,
+        #[arg(long, help = "Home of the running watane app")]
+        home: Option<PathBuf>,
+    },
     /// Test the mod and serve it in a preview
     Serve {
         #[arg(long, help = "Stops the preview and deletes its data")]
@@ -72,11 +83,21 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Serve { .. } => "serve",
         Command::Install { .. } => "install",
         Command::Publish { .. } => "publish",
+        Command::Search { .. } => "search",
     };
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
         Err(e) => return Outcome::new(name, None).fail(vec![Problem::internal(e)]),
     };
+    if let Command::Search {
+        text,
+        publisher,
+        interface,
+        home,
+    } = cli.command
+    {
+        return search(&text, publisher.as_deref(), interface.as_deref(), home);
+    }
     let dir = cli.dir.unwrap_or_else(|| match &cli.command {
         Command::New { slug } => cwd.join(slug),
         _ => cwd.clone(),
@@ -88,6 +109,7 @@ pub fn run(cli: Cli) -> Outcome {
     };
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
+        Command::Search { .. } => unreachable!("search needs no mod folder"),
         Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
         Command::Publish { no_source, home, wait } => return publish(&dir, no_source, home, wait),
@@ -295,6 +317,59 @@ pub fn test(dir: &Path) -> Outcome {
     }
 }
 
+fn search(
+    words: &[String],
+    publisher: Option<&str>,
+    interface: Option<&str>,
+    home: Option<PathBuf>,
+) -> Outcome {
+    let mut outcome = Outcome::new("search", None);
+    let result: Result<serde_json::Value, Vec<Problem>> = (|| {
+        let home = app_home(home)?;
+        let home = std::path::absolute(home).map_err(|e| vec![Problem::internal(e)])?;
+        let client = crate::api::Client::for_app(&home).map_err(|e| {
+            let mut next = String::from("watane-dev search --json");
+            for word in words {
+                next.push_str(&format!(" {}", quote(Path::new(word))));
+            }
+            for (flag, value) in [("publisher", publisher), ("interface", interface)] {
+                if let Some(value) = value {
+                    next.push_str(&format!(" --{flag} {}", quote(Path::new(value))));
+                }
+            }
+            next.push_str(&format!(" --home {}", quote(&home)));
+            outcome.next = Some(next);
+            vec![e]
+        })?;
+        let answer = client
+            .search(&words.join(" "), publisher, interface)
+            .map_err(|e| vec![e])?;
+        if answer["results"].as_array().is_some_and(Vec::is_empty) {
+            outcome.next = Some(
+                if answer["indexes"] == 0 {
+                    "Ask the person to add an index in the watane app, then run search again"
+                } else {
+                    "Try fewer words, or search with --interface <name>"
+                }
+                .into(),
+            );
+        }
+        Ok(serde_json::json!({"home":home,"indexes":answer["indexes"],"results":answer["results"]}))
+    })();
+    match result {
+        Ok(value) => {
+            outcome.result = Some(value);
+            outcome
+        }
+        Err(errors) => {
+            if outcome.next.is_none() {
+                outcome.next = errors.first().and_then(|e| e.fix.clone());
+            }
+            outcome.fail(errors)
+        }
+    }
+}
+
 fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
     let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
     let result = (|| {
@@ -342,9 +417,10 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
 /// Quotes a path for a POSIX shell `next` line.
 fn quote(path: &Path) -> String {
     let path = path.display().to_string();
-    if path
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+    if !path.is_empty()
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
     {
         path
     } else {
@@ -352,16 +428,20 @@ fn quote(path: &Path) -> String {
     }
 }
 
+fn app_home(home: Option<PathBuf>) -> Result<PathBuf, Vec<Problem>> {
+    let home = home
+        .map(Ok)
+        .unwrap_or_else(watane_host::default_home)
+        .map_err(|e| vec![Problem::internal(e)])?;
+    Ok(home.canonicalize().unwrap_or(home))
+}
+
 fn app_client(
     outcome: &mut Outcome,
     home: Option<PathBuf>,
     wait: Option<u64>,
 ) -> Result<(PathBuf, crate::api::Client), Vec<Problem>> {
-    let home = home
-        .map(Ok)
-        .unwrap_or_else(watane_host::default_home)
-        .map_err(|e| vec![Problem::internal(e)])?;
-    let home = home.canonicalize().unwrap_or(home);
+    let home = app_home(home)?;
     let client = crate::api::Client::for_app(&home).map_err(|e| {
         if e.code == crate::outcome::Code::EnvHostNotRunning {
             let dir = outcome.dir.as_ref().expect("command has a mod folder");

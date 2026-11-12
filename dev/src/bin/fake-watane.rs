@@ -125,7 +125,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             continue;
         }
         if request.method() != &tiny_http::Method::Post
-            || !matches!(path.as_str(), "/api/install" | "/api/publish")
+            || !matches!(
+                path.as_str(),
+                "/api/install" | "/api/publish" | "/api/search"
+            )
         {
             request.respond(Response::from_string("{}").with_status_code(404))?;
             continue;
@@ -139,7 +142,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .join(format!("{count}-{}", path.trim_start_matches("/api/"))),
             &body,
         )?;
-        let (status, value) = if config["answer"] == "decline" {
+        let (status, value) = if path == "/api/search" {
+            (
+                200,
+                config
+                    .get("search")
+                    .cloned()
+                    .unwrap_or_else(|| json!({"indexes":0,"results":[]})),
+            )
+        } else if config["answer"] == "decline" {
             (
                 403,
                 json!({"error":{"code":"refused","message":"declined"}}),

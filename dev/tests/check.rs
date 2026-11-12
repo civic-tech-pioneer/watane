@@ -126,4 +126,8 @@ fn ac4_own_provider_message_does_not_claim_own_events_are_unused() {
         error["message"],
         "[provider] deps.json lists this mod itself as mods:consumer"
     );
+    assert_eq!(
+        error["fix"],
+        "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself"
+    );
 }
