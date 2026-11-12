@@ -125,7 +125,7 @@ Between steps 3 and 4.
 - [x] **S25 Carol stays up to date.** Delivered 2026-11-12 (main `ff754cb`). Sol runs: S25-1 1. Refresh
   updates with no new grant quietly, with a new grant through consent; Alice withdraws with a reason
   and Carol sees it with an offer of the newest live version; a fork shows as compromised.
-- [~] **S26 Design: indexes and search (step 4).** Delivered 2026-11-12, waiting on the human's review (branch `slice/s26`). The
+- [~] **S26 Design: indexes and search (step 4).** Delivered 2026-11-12; accepted under the human's rule, rebasing onto S25 (branch `slice/s26`). The
   human approved a design slice (2026-11-12). Its product is a spec draft for the human to review;
   nothing is built for real, and the PO does not merge it until the human approves.
   - Decide and write the four open points of spec/TECHNICAL 9: the statements of an index (W15's
@@ -227,13 +227,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- Step 4 design: S26 delivered a spec draft on `slice/s26` (not merged; worktree kept for
-  revisions). Review it; the foreman marks decisions 2 (a listing names a mod, never a version),
-  4 (includes one level deep), 8 (no shipped index) and 10 (hostile-index defences) as most worth a
-  veto, plus Q12 (log entries of unlisted channels are never removed). Merge after approval;
-  rejecting it also undoes spec/README rule 3 ("design up to step 4"). Expect merge conflicts with
-  S25 in app TECHNICAL 7, 9, 11 and `app/tests/j4.rs`.
-
 - Process change (friction 3x: S9, S15, S21a): a brief that changes a behaviour must name each
   existing test that asserts the old one, and say it changes. One line in the foreman skill's
   brief section. Cost to undo: none.
@@ -255,6 +248,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- Human (2026-11-12): a design or spec change that is in line with the specs, passed review and
+  improves on what was there needs no human approval, also when it adds wire or disk formats.
+  S26 (step-4 index design) merges on that basis.
 
 The human may veto each one.
 
