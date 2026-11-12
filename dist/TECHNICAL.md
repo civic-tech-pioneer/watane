@@ -269,6 +269,7 @@ pub enum DistError {
     BadLink { cause: &'static str },
     BadUrl { url: String, cause: &'static str },
     OwnChannel,
+    NotOwnLink { found: PublicKey },   // confirm_own: "this link is not your channel" (DD-16)
     NotFollowed { channel: PublicKey },
     Compromised { channel: PublicKey, seq: u64 },
     BadKey { key: PublisherKey, cause: KeyTextError },  // the bytes are no valid log key
@@ -284,6 +285,7 @@ pub enum DistError {
     Invalid { url: String, cause: watane_log::DecodeError },  // Entry::decode refused the file
     WrongChannel { url: String, expected: PublicKey, found: PublicKey },
     WrongSeq { url: String, expected: u64, found: u64 },
+    HeadMismatch { url: String },    // entries/<head seq> differs from head (DD-15)
     TooManyEntries { channel: PublicKey, stored: Option<u64>, served: u64 },
     HashMismatch { url: String, expected: PackageId, found: PackageId },
     BadPackage { url: String, cause: PackageError },  // from_bytes or unpack refused it
@@ -532,7 +534,9 @@ Used by follow, refresh and `confirm_own`.
    (or 0) up to `head.seq() - 1`, at most `max_entries_per_read` files. Each
    file: decode (`Invalid`), author (`WrongChannel`), `seq() == n`
    (`WrongSeq`). Stop at the first failure and keep the files before it.
-   Add the head entry only when every file before it was read.
+   Add the head entry only when every file before it was read. Then GET
+   `entries/<head.seq()>`: its bytes must equal `head`'s, else `HeadMismatch`
+   naming its URL (DD-15); a failure here is a step-3 failure.
 4. `log.ingest(&key, &entries)` in one call, also when `head.seq() <= stored`
    (then the input is only the head entry).
 5. Outcome, in this order: `ingest.status` is compromised: `Compromised`
@@ -549,7 +553,9 @@ Used by follow, refresh and `confirm_own`.
 
 `follow(link)`: own key: `OwnChannel`. Already compromised: `Compromised`.
 `read_channel`. `Failed` or `Compromised` at the first follow: return the
-cause and do not add the channel (DIST-F-23). Else add or update the
+cause as `Err` and do not add the channel (DIST-F-23). So `follow` never
+returns `Ok` with `Failed` or `Compromised`; only `refresh` and
+`refresh_channel` report them inside `Ok` (DD-17). Else add or update the
 entry in `follows.json` (the base of the newest link wins; the key does
 not change).
 
@@ -564,7 +570,7 @@ statement); remove `site.json` (the site URL belonged to the replaced
 identity); return the new key. The own head is now unconfirmed.
 
 `confirm_own(own)`: lock.
-- With a link: `own.channel() != identity()`: `WrongChannel`.
+- With a link: `own.channel() != identity()`: `NotOwnLink` (DD-16).
   `read_channel(identity, base)` must give `Current`; else its cause, and
   the head stays unconfirmed. Then `log.confirm_own_head()`, write
   `site.json` with the base, and export the site folder.
@@ -848,3 +854,6 @@ Not to build now. The design above keeps these open:
 | DD-12 | S3 removes withdrawn package files only from the built-in `site/`; external export never deletes files. Section 4.3 states this exception for that managed directory. | S21a-2 AC6 requires the built-in site to contain exactly the live packages; §4.3 and Q5 still apply to external exports. |
 | DD-13 | After reading a restored identity's channel, `confirm_own(Some(link))` fetches missing live packages from that base with the same hash, package and release checks as fetch, before confirming the head. | Export requires these packages; an unsuccessful recovery must leave a restored head unconfirmed. No follow record is created for the own channel. |
 | DD-14 | The HTTP reader probes at most one byte beyond the acceptance limit and rejects any excess; the accepted body limit remains exactly that of §4.5. This refines the `limit(limit)` pseudocode there. | ureq 3.5's limit reader refuses at the boundary before probing EOF; an exact `release.size` package must succeed. |
+| DD-15 | A reader that reads up to a new head also reads `entries/<head seq>` and requires its bytes to equal `head` (`HeadMismatch`). | S21a user-sim: a damaged `entries/<head seq>` went unnoticed, because readers took the head entry from `head`. |
+| DD-16 | `confirm_own` with a link of another key is `NotOwnLink` ("this link is not your channel"), not `WrongChannel`, which stays for a host that serves another channel. | S21a user-sim: the participant gave a wrong link, not a wrong host. |
+| DD-17 | Kept: a first `follow` returns every failure as `Err`; `refresh` reports `Failed` per channel. The app maps the first to a command error and the second to the row's status. | S21a user-sim saw two shapes; they answer two questions (follow or not; how is a followed channel). |
