@@ -263,7 +263,7 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   failure is S47's). `repository` in mod.toml is parsed, validated with pkg 4.2's messages, carried
   in the package; `watane-dev check` gives dev 2.2's fix. A non-string value gets the "must start
   with https://" message. Left for later: the fix could fill in the known slug.
-- [ ] **S42 Alice publishes to GitHub with one command (dev stage 10).** `watane-dev publish --push`
+- [~] **S42 Alice publishes to GitHub with one command (dev stage 10).** `watane-dev publish --push`
   (dev 10.4.1): the first run creates the site repository and the mod repository (or, for a mod
   made from another, forks the upstream through the forks API onto branch `watane`, with
   `publish.fork_unavailable` as the fallback), writes `repository`, and its `next` asks for the raw
@@ -373,6 +373,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
+- S42: `9e8c18fd`, worktree `.claude/worktrees/s42`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
