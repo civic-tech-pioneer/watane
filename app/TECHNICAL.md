@@ -559,7 +559,7 @@ and writes the site folder.
 | Result | Status | Body or code |
 |---|---|---|
 | published | 200 | `{"release": "<ReleaseRef>", "site": "<site dir>", "link": "<link text>" \| null, "providers": [{"provider": "<key>/<slug>", "listed": bool}]}` (`providers`: step 5, below) |
-| wrong content type, empty body | 400 | `bad_request` |
+| wrong content type, empty body, invalid provider link or one without a slug, more than 32 provider links | 400 | `bad_request` |
 | body over the limit | 413 | `too_large` |
 | `DistError::Refused` | 403 | `refused` |
 | `DistError::Package` | 422 | `invalid_package` |
@@ -576,7 +576,8 @@ set (`NoSiteUrl`). The route never answers a confirmation: only
 **Providers of another publisher (step 5, W25).** The request may carry
 one header `Watane-Provider-Links`: link texts with a slug, separated by
 one space, at most 32 (dev sends the links it fetched with, dev 9.7). A
-link that does not parse is 400 `bad_request`. After the release is
+link that does not parse or has no slug, more than 32 links, or repeated
+header fields is 400 `bad_request`, before anything is signed. After the release is
 signed, for each distinct `(key, slug)` of a `Call` or `Subscribe` grant of
 the release whose key is not the own key, in grant order:
 
@@ -670,7 +671,8 @@ behind:
 
 No consent: a fetch installs nothing, grants nothing, signs nothing and
 follows nothing; its only lasting effect is a verified package in dist's
-cache and the read entries in `<home>/log/` (dist DD-29). The request body uses host's 64 KiB limit; the answer is at
+cache and the read entries in `<home>/log/` (dist DD-29). The route sets
+`DefaultBodyLimit::max(65_536)` to match host's 64 KiB API limit; the answer is at
 most dist's package limit. `watane-dev new --from` and `add --release`
 use it (dev 10). The route never answers a confirmation.
 

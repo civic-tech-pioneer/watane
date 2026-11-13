@@ -24,6 +24,10 @@ pub fn router(dist: Option<Arc<Dist>>) -> Router {
         )
         .route("/api/releases", any(releases))
         .route("/api/search", post(search))
+        .route(
+            "/api/fetch",
+            post(fetch).layer(DefaultBodyLimit::max(65_536)),
+        )
         .with_state(dist)
 }
 async fn releases(State(dist): State<Option<Arc<Dist>>>, method: Method) -> Response {
@@ -112,13 +116,23 @@ async fn publish(
             );
         }
     };
-    match tauri::async_runtime::spawn_blocking(move || dist.publish(bytes.to_vec())).await {
-        Ok(Ok(p)) => Json(serde_json::json!({
+    let links = match provider_links(&headers) {
+        Ok(links) => links,
+        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
+    };
+    match tauri::async_runtime::spawn_blocking(move || {
+        let p = dist.publish(bytes.to_vec())?;
+        let providers = publish_providers(&dist, &p.info.release, &links);
+        Ok::<_, DistError>(serde_json::json!({
             "release": p.info.reference.to_string(),
             "site": p.site.dir,
             "link": p.link.map(|l| l.to_string()),
+            "providers": providers,
         }))
-        .into_response(),
+    })
+    .await
+    {
+        Ok(Ok(body)) => Json(body).into_response(),
         Ok(Err(e)) => {
             let (status, code) = match &e {
                 DistError::Refused => (StatusCode::FORBIDDEN, "refused"),
@@ -147,6 +161,158 @@ async fn publish(
                 other => CmdError::from(other).message,
             };
             error(status, code, message)
+        }
+        Err(e) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "unavailable",
+            e.to_string(),
+        ),
+    }
+}
+
+fn provider_links(headers: &HeaderMap) -> Result<Vec<watane_dist::Link>, String> {
+    let mut values = headers.get_all("Watane-Provider-Links").iter();
+    let Some(value) = values.next() else {
+        return Ok(Vec::new());
+    };
+    if values.next().is_some() {
+        return Err("give one Watane-Provider-Links header".into());
+    }
+    let value = value.to_str().map_err(|e| e.to_string())?;
+    let texts: Vec<_> = value.split(' ').filter(|s| !s.is_empty()).collect();
+    if texts.len() > 32 {
+        return Err("at most 32 provider links".into());
+    }
+    texts
+        .into_iter()
+        .map(|text| {
+            let link: watane_dist::Link = text.parse().map_err(|e: DistError| e.to_string())?;
+            if link.slug().is_none() {
+                return Err("a provider link needs a slug".into());
+            }
+            Ok(link)
+        })
+        .collect()
+}
+
+fn publish_providers(
+    dist: &Dist,
+    release: &watane_dist::Release,
+    links: &[watane_dist::Link],
+) -> Vec<serde_json::Value> {
+    use watane_host::watane_pkg::Grant;
+    let own = dist.own().ok();
+    let followed = dist.followed().unwrap_or_default();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut result = Vec::new();
+    for grant in &release.grants {
+        let (Grant::Call { provider, .. } | Grant::Subscribe { provider, .. }) = grant else {
+            continue;
+        };
+        let Some(publisher) = &provider.publisher else {
+            continue;
+        };
+        if publisher.as_bytes() == dist.identity().as_bytes() || !seen.insert(provider.clone()) {
+            continue;
+        }
+        let matches = |link: &watane_dist::Link| {
+            link.channel().as_bytes() == publisher.as_bytes() && link.slug() == Some(&provider.slug)
+        };
+        let already = own.as_ref().is_some_and(|own| {
+            own.listings
+                .iter()
+                .any(|l| !l.include && l.unlisted.is_none() && matches(&l.listing.link))
+        });
+        let link = links
+            .iter()
+            .find(|link| matches(link))
+            .cloned()
+            .or_else(|| {
+                followed
+                    .iter()
+                    .find(|c| c.followed && c.channel.as_bytes() == publisher.as_bytes())
+                    .and_then(|c| {
+                        c.base.as_ref().and_then(|base| {
+                            watane_dist::Link::new(c.channel, base, Some(&provider.slug)).ok()
+                        })
+                    })
+            });
+        let listed = already
+            || link.is_some_and(|link| {
+                dist.list(&link, &format!("used by {}", release.slug))
+                    .is_ok()
+            });
+        result.push(serde_json::json!({"provider":provider.to_string(), "listed":listed}));
+    }
+    result
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+enum FetchQuery {
+    Link { link: String },
+    Release { release: String },
+}
+enum FetchTarget {
+    Link(watane_dist::Link),
+    Release(watane_dist::ReleaseRef),
+}
+async fn fetch(
+    State(dist): State<Option<Arc<Dist>>>,
+    query: Result<Json<FetchQuery>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Some(dist) = dist else {
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "dist did not open",
+        );
+    };
+    let target = (|| -> Result<_, String> {
+        let Json(query) = query.map_err(|e| e.to_string())?;
+        match query {
+            FetchQuery::Link { link } => {
+                let link: watane_dist::Link = link.parse().map_err(|e: DistError| e.to_string())?;
+                if link.slug().is_none() {
+                    return Err("a release link needs a slug".into());
+                }
+                Ok(FetchTarget::Link(link))
+            }
+            FetchQuery::Release { release } => {
+                let release: watane_dist::ReleaseRef = release
+                    .parse()
+                    .map_err(|e: watane_host::watane_pkg::NameError| e.to_string())?;
+                Ok(FetchTarget::Release(release))
+            }
+        }
+    })();
+    let target = match target {
+        Ok(target) => target,
+        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
+    };
+    match tauri::async_runtime::spawn_blocking(move || match target {
+        FetchTarget::Link(link) => dist.read_link(&link),
+        FetchTarget::Release(release) => dist.fetch(&release),
+    })
+    .await
+    {
+        Ok(Ok(fetched)) => (
+            [
+                ("content-type", "application/octet-stream".to_owned()),
+                ("Watane-Release", fetched.info.reference.to_string()),
+                ("Watane-Package", fetched.package.id().to_string()),
+            ],
+            fetched.package.into_bytes(),
+        )
+            .into_response(),
+        Ok(Err(e)) => {
+            let (status, code) = match &e {
+                DistError::NoRelease { .. }
+                | DistError::Withdrawn { .. }
+                | DistError::Compromised { .. } => (StatusCode::CONFLICT, "fetch_refused"),
+                _ => (StatusCode::BAD_GATEWAY, "fetch_failed"),
+            };
+            error(status, code, crate::cause_chain(&e))
         }
         Err(e) => error(
             StatusCode::INTERNAL_SERVER_ERROR,

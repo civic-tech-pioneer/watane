@@ -279,3 +279,396 @@ async fn ac2_search_http_rows_and_own_release_shape() {
     assert_eq!(status, 503);
     assert_eq!(body["error"]["code"], "unavailable");
 }
+
+#[path = "support/api.rs"]
+mod api_support;
+use api_support::{Recording, Site, open};
+async fn api_request(
+    dist: Option<Arc<watane_dist::Dist>>,
+    path: &str,
+    bytes: Vec<u8>,
+    links: Option<&str>,
+) -> (u16, axum::http::HeaderMap, Vec<u8>) {
+    let mut request = Request::post(path).header(
+        "content-type",
+        if path == "/api/fetch" {
+            "application/json"
+        } else {
+            "application/octet-stream"
+        },
+    );
+    if let Some(links) = links {
+        request = request.header("Watane-Provider-Links", links);
+    }
+    let response = watane_app::api::router(dist)
+        .oneshot(request.body(Body::from(bytes)).unwrap())
+        .await
+        .unwrap();
+    (
+        response.status().as_u16(),
+        response.headers().clone(),
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+}
+async fn fetch(
+    dist: Option<Arc<watane_dist::Dist>>,
+    query: Value,
+) -> (u16, axum::http::HeaderMap, Vec<u8>) {
+    api_request(
+        dist,
+        "/api/fetch",
+        serde_json::to_vec(&query).unwrap(),
+        None,
+    )
+    .await
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn ac1_fetch_link_verified_without_follow_or_consent() {
+    let carol_home = tempfile::tempdir().unwrap();
+    let carol = open(carol_home.path(), Recording::new(true), true);
+    let site = Site::serve(carol.site_dir()).await;
+    carol.set_site_url(&site.base).unwrap();
+    let published = carol.publish(package()).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dist = open(home.path(), confirm.clone(), true);
+    let follows = home.path().join("dist/follows.json");
+    let before = std::fs::read(&follows).ok();
+    let (status, headers, bytes) = fetch(
+        Some(dist.clone()),
+        json!({"link":published.link.unwrap().to_string()}),
+    )
+    .await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+    assert_eq!(headers["content-type"], "application/octet-stream");
+    assert_eq!(
+        headers["Watane-Release"],
+        published.info.reference.to_string()
+    );
+    assert_eq!(
+        headers["Watane-Package"],
+        watane_dist::PackageId::of(&bytes).to_string()
+    );
+    assert_eq!(bytes, package());
+    assert_eq!(std::fs::read(follows).ok(), before);
+    assert!(dist.followed().unwrap().is_empty());
+    assert!(dist.own().unwrap().releases.is_empty());
+    assert!(confirm.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ac2_fetch_release_followed_and_unknown() {
+    let carol_home = tempfile::tempdir().unwrap();
+    let carol = open(carol_home.path(), Recording::new(true), true);
+    let site = Site::serve(carol.site_dir()).await;
+    carol.set_site_url(&site.base).unwrap();
+    let published = carol.publish(package()).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dist = open(home.path(), confirm.clone(), true);
+    let query = json!({"release":published.info.reference.to_string()});
+    let (status, _, bytes) = fetch(Some(dist.clone()), query.clone()).await;
+    assert_eq!(status, 502);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+        "fetch_failed"
+    );
+    dist.follow(published.link.as_ref().unwrap()).unwrap();
+    let before = std::fs::read(home.path().join("dist/follows.json")).unwrap();
+    let (status, headers, bytes) = fetch(Some(dist.clone()), query).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        headers["Watane-Release"],
+        published.info.reference.to_string()
+    );
+    assert_eq!(
+        headers["Watane-Package"],
+        watane_dist::PackageId::of(&bytes).to_string()
+    );
+    assert_eq!(headers["content-type"], "application/octet-stream");
+    assert_eq!(bytes, package());
+    assert_eq!(
+        std::fs::read(home.path().join("dist/follows.json")).unwrap(),
+        before
+    );
+    assert!(confirm.requests.lock().unwrap().is_empty());
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
+    let carol_home = tempfile::tempdir().unwrap();
+    let carol = open(carol_home.path(), Recording::new(true), true);
+    let site = Site::serve(carol.site_dir()).await;
+    carol.set_site_url(&site.base).unwrap();
+    let published = carol.publish(package()).unwrap();
+    let link = published.link.unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let dist = open(home.path(), Recording::new(true), false);
+    for bytes in [
+        b"{".to_vec(),
+        serde_json::to_vec(
+            &json!({"link":link.to_string(),"release":published.info.reference.to_string()}),
+        )
+        .unwrap(),
+        b"{}".to_vec(),
+        serde_json::to_vec(&json!({"link":link.to_string(), "release":null})).unwrap(),
+        serde_json::to_vec(&json!({"link":null, "release":published.info.reference.to_string()}))
+            .unwrap(),
+        br#"{"link":"bad"}"#.to_vec(),
+        br#"{"release":"bad"}"#.to_vec(),
+        serde_json::to_vec(&json!({"link":carol.own_link(None).unwrap().to_string()})).unwrap(),
+    ] {
+        let (status, _, bytes) = api_request(Some(dist.clone()), "/api/fetch", bytes, None).await;
+        assert_eq!(status, 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+            "bad_request"
+        );
+    }
+    let (status, _, bytes) = fetch(Some(dist.clone()), json!({"link":link.to_string()})).await;
+    assert_eq!(status, 502);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+        "fetch_failed"
+    );
+    assert_eq!(site.hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let (status, _, bytes) = fetch(None, json!({"link":link.to_string()})).await;
+    assert_eq!(status, 503);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+        "unavailable"
+    );
+    let allowed_home = tempfile::tempdir().unwrap();
+    let allowed = open(allowed_home.path(), Recording::new(true), true);
+    allowed.follow(&link).unwrap();
+    carol.withdraw(&published.info.reference, "broken").unwrap();
+    allowed.refresh_channel(&carol.identity()).unwrap();
+    let (status, _, bytes) = fetch(
+        Some(allowed),
+        json!({"release":published.info.reference.to_string()}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+        "fetch_refused"
+    );
+    let host_home = tempfile::tempdir().unwrap();
+    let host = watane_host::Host::open(
+        host_home.path(),
+        watane_host::Mode::Home { app: None },
+        Default::default(),
+    )
+    .unwrap();
+    let served = host
+        .serve(0, watane_app::api::router(Some(dist)))
+        .await
+        .unwrap();
+    let response = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{}/api/fetch", served.port))
+        .header("Origin", "http://example.com")
+        .json(&json!({"link":link.to_string()}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 403);
+    served.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ac4_publish_lists_provider_after_release_and_denial_keeps_release() {
+    let carol_home = tempfile::tempdir().unwrap();
+    let carol = open(carol_home.path(), Recording::new(true), true);
+    let site = Site::serve(carol.site_dir()).await;
+    carol.set_site_url(&site.base).unwrap();
+    let published = carol.publish(package()).unwrap();
+    let link = published.link.unwrap();
+    for approve in [true, false] {
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Recording::new(approve);
+        let dave = open(home.path(), confirm.clone(), true);
+        dave.follow(&link).unwrap();
+        let (status, _, bytes) = api_request(
+            Some(dave.clone()),
+            "/api/publish",
+            api_support::consumer(&carol.identity()),
+            Some(&link.to_string()),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body["providers"],
+            json!([{"provider":format!("{}/reading-list", carol.identity()), "listed":approve}])
+        );
+        let requests = confirm.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .map(|r| r.statement.kind())
+                .collect::<Vec<_>>(),
+            ["release", "list"]
+        );
+        match &requests[1].statement {
+            watane_dist::Statement::List(listing) => {
+                assert_eq!(listing.note, "used by recommendations");
+                assert_eq!(listing.link, link);
+            }
+            other => panic!("{other:?}"),
+        }
+        let own = dave.own().unwrap();
+        assert_eq!(own.releases.len(), 1);
+        assert_eq!(own.releases[0].reference.to_string(), body["release"]);
+        assert_eq!(
+            own.listings
+                .iter()
+                .filter(|l| !l.include && l.unlisted.is_none() && l.listing.link == link)
+                .count(),
+            usize::from(approve)
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ac5_publish_provider_header_validation_and_resolution() {
+    let carol_home = tempfile::tempdir().unwrap();
+    let carol = open(carol_home.path(), Recording::new(true), true);
+    let site = Site::serve(carol.site_dir()).await;
+    carol.set_site_url(&site.base).unwrap();
+    let link = carol.publish(package()).unwrap().link.unwrap();
+    let consumer = api_support::consumer(&carol.identity());
+    for header in [
+        "bad".to_owned(),
+        carol.own_link(None).unwrap().to_string(),
+        vec![link.to_string(); 33].join(" "),
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Recording::new(true);
+        let dave = open(home.path(), confirm.clone(), true);
+        let (status, _, bytes) = api_request(
+            Some(dave.clone()),
+            "/api/publish",
+            consumer.clone(),
+            Some(&header),
+        )
+        .await;
+        assert_eq!(status, 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
+            "bad_request"
+        );
+        assert!(confirm.requests.lock().unwrap().is_empty());
+        assert!(dave.own().unwrap().releases.is_empty());
+    }
+    // Header, followed fallback, existing listing, no base, and an unrelated header.
+    for case in [
+        "header",
+        "followed",
+        "listed",
+        "missing",
+        "unmatched",
+        "listed_record",
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Recording::new(true);
+        let dave = open(home.path(), confirm.clone(), true);
+        if case == "followed" {
+            dave.follow(&link).unwrap();
+        }
+        if case == "listed" {
+            dave.list(&link, "already listed").unwrap();
+        }
+        if case == "listed_record" {
+            let ivy_home = tempfile::tempdir().unwrap();
+            let ivy = open(ivy_home.path(), Recording::new(true), true);
+            let ivy_site = Site::serve(ivy.site_dir()).await;
+            ivy.set_site_url(&ivy_site.base).unwrap();
+            ivy.list(&link, "third party").unwrap();
+            dave.choose_index(&ivy.own_link(None).unwrap()).unwrap();
+            assert!(!dave.channel(&carol.identity()).unwrap().followed);
+        }
+        confirm.requests.lock().unwrap().clear();
+        let unrelated = watane_dist::Link::new(
+            carol.identity(),
+            &site.base,
+            Some(&"other".parse().unwrap()),
+        )
+        .unwrap()
+        .to_string();
+        let header = match case {
+            "header" => Some(vec![link.to_string(); 32].join(" ")),
+            "unmatched" => Some(unrelated),
+            _ => None,
+        };
+        let (status, _, bytes) = api_request(
+            Some(dave.clone()),
+            "/api/publish",
+            consumer.clone(),
+            header.as_deref(),
+        )
+        .await;
+        assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let listed = matches!(case, "header" | "followed" | "listed");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["providers"],
+            json!([{"provider":format!("{}/reading-list", carol.identity()), "listed":listed}])
+        );
+        let requests = confirm.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|r| r.statement.kind() == "list")
+                .count(),
+            usize::from(matches!(case, "header" | "followed"))
+        );
+    }
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dave = open(home.path(), confirm.clone(), true);
+    let (status, _, bytes) = api_request(
+        Some(dave),
+        "/api/publish",
+        package(),
+        Some(&link.to_string()),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["providers"],
+        json!([])
+    );
+    assert_eq!(confirm.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ac5_publish_own_provider_needs_no_listing() {
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dist = open(home.path(), confirm.clone(), true);
+    dist.publish(package()).unwrap();
+    confirm.requests.lock().unwrap().clear();
+    let (status, _, bytes) = api_request(
+        Some(dist.clone()),
+        "/api/publish",
+        api_support::consumer(&dist.identity()),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["providers"],
+        json!([])
+    );
+    assert_eq!(
+        confirm
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.statement.kind())
+            .collect::<Vec<_>>(),
+        ["release"]
+    );
+}

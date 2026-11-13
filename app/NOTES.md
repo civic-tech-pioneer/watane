@@ -154,3 +154,40 @@
   above. No new dependency was added.
 - cargo build --release --features driver fails at the intended
   "the driver feature is only for debug test builds" compile_error.
+## S37-2 — local fetch and publish provider listings
+
+- `POST /api/fetch` delegates to dist's `read_link` or `fetch`, returns the
+  verified bytes and release/package headers, and requests no consent. The
+  route explicitly sets the 64 KiB body limit because host does not apply its
+  built-in-route limit to merged app routes.
+- Publish validates the single optional provider-links header before signing,
+  then lists distinct foreign providers in grant order after signing the release.
+  Existing live listings need no consent. Header links take precedence over
+  followed channel bases; third-party listed records are not listing authority.
+  A listing refusal or failure leaves the release published and reports false.
+- Red/green evidence: link fetch initially returned 404; provider publish initially
+  omitted `providers`; malformed provider headers initially returned 200 and signed
+  the release. Their integration tests pass after the route changes. Tests use
+  committed components, real dist homes, local static sites, and recording consent;
+  no build pipeline or new dependency is needed. Existing journey assertions read
+  publish's release/link fields and remain unchanged.
+- Native driver validation reaches the existing API window test, then fails before
+  app readiness with `com.apple.hiservices-xpcservice` connection invalid (the same
+  sandbox limitation recorded above). The new fetch Origin check uses a real host
+  served port without a window and passes.
+- A final AC3 case exposed that optional fields treated null as absence:
+  a request containing both keys returned 502 rather than 400. The request now
+  decodes as exactly one string field; both keys (including null) are rejected.
+- The stock Linux runner reused driver artifacts from a parallel worktree at
+  the shared `/repo` container path (it ran S37 consent tests absent here). Those
+  results are not validation of this checkout. The retry uses the same runner
+  and dependency cache with a unique `/watane-s37-2` mount/workdir; only a
+  temporary copy of the runner is changed. Docker builder metadata uses `/tmp`
+  because the sandbox cannot write the default `~/.docker/buildx/activity`.
+- Final validation: native build and default tests pass; all eight API integration
+  tests pass after the null-field fix; strict all-targets/driver clippy and fmt
+  pass. The unique-path Linux runner passes all 72 default and 106 driver tests,
+  including the existing consent-window API test and J2/J3/J4 journeys, with the
+  runner's four front-only tests excluded and slow journeys enabled. Native
+  driver execution remains limited by the XPC failure above. Release with driver
+  fails at the intended debug-only compile error. No existing test was weakened.
