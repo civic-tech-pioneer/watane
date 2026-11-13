@@ -71,6 +71,9 @@ fn body(app: &App) -> String {
         .unwrap()
         .to_owned()
 }
+fn title(app: &App) -> Value {
+    app.eval("consent", "document.querySelector('h1').textContent")
+}
 fn contains(text: &str, fields: &[&str]) {
     for field in fields {
         assert!(text.contains(field), "missing {field:?}: {text}");
@@ -98,6 +101,7 @@ fn published(app: &App, folder: &Path, source: bool, fields: &[&str]) -> Value {
     let package = watane_host::watane_pkg::pack(folder, source).unwrap();
     let pending = publish(app, package.as_bytes().to_vec());
     consent(app);
+    assert_eq!(title(app), "Sign a release");
     contains(&body(app), fields);
     approve(app);
     let (status, value) = pending.join().unwrap();
@@ -108,7 +112,11 @@ fn channels(home: &Path) -> Value {
     serde_json::from_slice(&fs::read(home.join("dist/follows.json")).unwrap()).unwrap()
 }
 fn install_result(app: &App, expected_key: &str) {
-    assert!(finish(app).get("error").is_none());
+    let done = finish(app);
+    assert!(done.get("error").is_none(), "{done}");
+    // The hidden main window skips its polling refresh, and `begin` bypasses
+    // the button whose action refreshes; ask the page to refresh as on focus.
+    app.eval("main", "window.dispatchEvent(new Event('focus')); null");
     installed(app, "ratings");
     installed(app, "stats");
     let mods = invoke(app, "mods_list", json!({}));
@@ -251,10 +259,12 @@ fn ac1_journey_j5() {
         )
     });
     consent(&dave);
-    contains(&body(&dave), &["release", "stats"]);
+    assert_eq!(title(&dave), "Sign a release");
+    contains(&body(&dave), &["stats"]);
     approve(&dave);
     consent(&dave);
-    contains(&body(&dave), &["list", &provider, "used by stats"]);
+    assert_eq!(title(&dave), "List in your index");
+    contains(&body(&dave), &[&provider, "used by stats"]);
     approve(&dave);
     let (status, stats_release) = pending.join().unwrap();
     assert_eq!(status, 200, "{stats_release}");
