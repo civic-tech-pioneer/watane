@@ -149,7 +149,8 @@ pub enum Error {
     #[error("exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
     Exposed { path: PathBuf, mode: u32 },
     #[error("{path} is not a regular file or directory (a symbolic link is refused)")]
-    NotPlain { path: PathBuf },
+    NotPlain { path: PathBuf, expected: &'static str }, // expected: "directory" or "regular file"
+    EmptyPath,                                        // Log::open("")
     #[error("corrupt key file {path}: it must hold exactly 32 bytes")]
     CorruptKey { path: PathBuf },
     #[error("channel store: {0}")]
@@ -171,7 +172,7 @@ pub enum Error {
     #[error("the passphrase is empty")]
     EmptyPassphrase,
     #[error("bad backup: {0}")]
-    BadBackup(&'static str),                          // names the field: length, magic, memory, passes, lanes
+    BadBackup { field: &'static str, expected: String, found: String }, // field: length, magic, memory, passes, lanes
     #[error("wrong passphrase or damaged backup")]
     WrongPassphrase,
     #[error("the current identity {0} has signed entries; it cannot be replaced")]
@@ -325,14 +326,14 @@ headless tests. A backup must give out the seed anyway. A keychain is a
 later hardening.
 
 `Log::open(dir)`:
-1. An empty path is `Io` with `InvalidInput`.
+1. An empty path is `EmptyPath` ("the log directory path is empty").
 2. If `dir` is missing, create it and its missing parents with mode 0700
    (`DirBuilder::recursive(true).mode(0o700)`).
-3. `symlink_metadata(dir)`: not a directory is `NotPlain`; `mode & 0o077 != 0`
+3. `symlink_metadata(dir)`: not a directory is `NotPlain { expected: "directory" }`; `mode & 0o077 != 0`
    is `Exposed`.
 4. `symlink_metadata(dir/identity.key)`:
    - missing: create the key (below);
-   - not a regular file (a link included): `NotPlain`;
+   - not a regular file (a link included): `NotPlain { expected: "regular file" }`;
    - `mode & 0o077 != 0`: `Exposed`, and the file is not changed;
    - else read it. A length other than 32 is `CorruptKey`.
 5. Open the store (section 4.8).
@@ -403,7 +404,7 @@ PRAGMA user_version = 1;
   recommendation of RFC 9106.
 - Cipher: XChaCha20-Poly1305 with the 32-byte key and the nonce; the
   associated data is bytes 0 to 59.
-- Restore refuses, before Argon2id runs, with `BadBackup(<field>)`: a length
+- Restore refuses, before Argon2id runs, with `BadBackup { field, expected, found }` ("bad backup: <field>: expected <e>, found <f>", e.g. `expected 108 bytes, found 107 bytes`): a length
   other than 108 (`"length"`), another magic (`"magic"`), memory outside
   8192..=1048576 or below 8 × lanes (`"memory"`), passes outside 1..=10
   (`"passes"`), lanes outside 1..=16 (`"lanes"`). A failed tag is

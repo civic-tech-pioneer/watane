@@ -92,7 +92,7 @@ fn ac6_failures_keep_identity_and_reject_bounds_fast() {
     ] {
         let start = std::time::Instant::now();
         assert!(
-            matches!(l.restore_identity(&raw,"correct horse"),Err(Error::BadBackup(f)) if f==field)
+            matches!(l.restore_identity(&raw,"correct horse"),Err(Error::BadBackup{field:f,..}) if f==field)
         );
         assert!(start.elapsed() < std::time::Duration::from_millis(50));
     }
@@ -110,4 +110,35 @@ fn ac6_failures_keep_identity_and_reject_bounds_fast() {
         std::fs::read(d.path().join("identity.key")).unwrap(),
         before
     );
+}
+
+#[test]
+fn ac4_ac5_bad_backup_messages_say_expected_and_found() {
+    let d = oracle::directory();
+    let l = Log::open(d.path()).unwrap();
+    let backup = oracle::hex(oracle::BACKUP);
+    let msg = |raw: &[u8]| match l.restore_identity(raw, "correct horse") {
+        Err(e @ Error::BadBackup { .. }) => e.to_string(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        msg(&backup[..107]),
+        "bad backup: length: expected 108 bytes, found 107 bytes"
+    );
+    let mut long = backup.clone();
+    long.push(0);
+    assert!(msg(&long).ends_with("found 109 bytes"));
+    let mut b = backup.clone();
+    b[0] ^= 1;
+    let m = msg(&b);
+    assert!(
+        m.contains("expected \"watanek1\"") && m.contains("found"),
+        "{m}"
+    );
+    for (at, v, want) in [(8, 1048577u32, "1048577"), (12, 11, "11"), (16, 17, "17")] {
+        let mut b = backup.clone();
+        b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        let m = msg(&b);
+        assert!(m.contains("expected") && m.contains(want), "{m}");
+    }
 }

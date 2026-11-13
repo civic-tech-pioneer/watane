@@ -26,8 +26,13 @@ pub enum Error {
         "exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)"
     )]
     Exposed { path: PathBuf, mode: u32 },
-    #[error("{path} is not a regular file or directory (a symbolic link is refused)")]
-    NotPlain { path: PathBuf },
+    #[error("{} is not a {expected} (a symbolic link is refused)", path.display())]
+    NotPlain {
+        path: PathBuf,
+        expected: &'static str,
+    },
+    #[error("the log directory path is empty")]
+    EmptyPath,
     #[error("corrupt key file {path}: it must hold exactly 32 bytes")]
     CorruptKey { path: PathBuf },
     #[error("channel store: {0}")]
@@ -58,8 +63,12 @@ pub enum Error {
     },
     #[error("the passphrase is empty")]
     EmptyPassphrase,
-    #[error("bad backup: {0}")]
-    BadBackup(&'static str),
+    #[error("bad backup: {field}: expected {expected}, found {found}")]
+    BadBackup {
+        field: &'static str,
+        expected: String,
+        found: String,
+    },
     #[error("wrong passphrase or damaged backup")]
     WrongPassphrase,
     #[error("the current identity {0} has signed entries; it cannot be replaced")]

@@ -22,6 +22,11 @@ fn check(path: &Path, directory: bool) -> Result<(), Error> {
     }) {
         return Err(Error::NotPlain {
             path: path.to_owned(),
+            expected: if directory {
+                "directory"
+            } else {
+                "regular file"
+            },
         });
     }
     let mode = meta.permissions().mode() & 0o7777;
@@ -56,10 +61,7 @@ fn read(path: &Path) -> Result<SigningKey, Error> {
 }
 pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     if dir.as_os_str().is_empty() {
-        return Err(io_error(
-            dir,
-            io::Error::new(io::ErrorKind::InvalidInput, "empty path"),
-        ));
+        return Err(Error::EmptyPath);
     }
     match fs::symlink_metadata(dir) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => DirBuilder::new()
@@ -150,10 +152,24 @@ fn password(passphrase: &str) -> Result<Zeroizing<String>, Error> {
     }
     Ok(p)
 }
+fn bad(field: &'static str, expected: String, found: String) -> Error {
+    Error::BadBackup {
+        field,
+        expected,
+        found,
+    }
+}
+fn bad_memory(memory: u32, _lanes: u32) -> Error {
+    bad(
+        "memory",
+        "8192 to 1048576 KiB and at least 8 x lanes".into(),
+        format!("{memory} KiB"),
+    )
+}
 fn derive(header: &[u8], password: &str) -> Result<Zeroizing<[u8; 32]>, Error> {
     let n = |i| u32::from_le_bytes(header[i..i + 4].try_into().expect("checked header"));
-    let params = argon2::Params::new(n(8), n(12), n(16), Some(32))
-        .map_err(|_| Error::BadBackup("memory"))?;
+    let params =
+        argon2::Params::new(n(8), n(12), n(16), Some(32)).map_err(|_| bad_memory(n(8), n(16)))?;
     let mut key = Zeroizing::new([0; 32]);
     argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
         .hash_password_into(password.as_bytes(), &header[20..36], &mut *key)
@@ -184,21 +200,29 @@ pub(crate) fn export(seed: &[u8; 32], passphrase: &str) -> Result<Vec<u8>, Error
 }
 pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Error> {
     if backup.len() != crate::BACKUP_LEN {
-        return Err(Error::BadBackup("length"));
+        return Err(bad(
+            "length",
+            format!("{} bytes", crate::BACKUP_LEN),
+            format!("{} bytes", backup.len()),
+        ));
     }
     if &backup[..8] != b"watanek1" {
-        return Err(Error::BadBackup("magic"));
+        return Err(bad(
+            "magic",
+            "\"watanek1\"".into(),
+            format!("{:?}", String::from_utf8_lossy(&backup[..8])),
+        ));
     }
     let n = |i| u32::from_le_bytes(backup[i..i + 4].try_into().expect("checked backup length"));
     let (memory, passes, lanes) = (n(8), n(12), n(16));
     if !(8192..=1048576).contains(&memory) || u64::from(memory) < 8 * u64::from(lanes) {
-        return Err(Error::BadBackup("memory"));
+        return Err(bad_memory(memory, lanes));
     }
     if !(1..=10).contains(&passes) {
-        return Err(Error::BadBackup("passes"));
+        return Err(bad("passes", "1 to 10".into(), passes.to_string()));
     }
     if !(1..=16).contains(&lanes) {
-        return Err(Error::BadBackup("lanes"));
+        return Err(bad("lanes", "1 to 16".into(), lanes.to_string()));
     }
     let password = password(passphrase)?;
     let key = derive(backup, &password)?;

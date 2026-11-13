@@ -40,7 +40,13 @@ fn ac2_refuse_exposed_symlink_and_corrupt_unchanged() {
     fs::set_permissions(temp.path().join("valid"), fs::Permissions::from_mode(0o600)).unwrap();
     symlink(temp.path().join("valid"), &path).unwrap();
     let e = Log::open(temp.path()).unwrap_err();
-    assert!(matches!(e, Error::NotPlain { .. }));
+    assert!(matches!(
+        e,
+        Error::NotPlain {
+            expected: "regular file",
+            ..
+        }
+    ));
     assert!(e.to_string().contains("not a regular file"));
     fs::remove_file(&path).unwrap();
     fs::write(&path, [0; 31]).unwrap();
@@ -74,8 +80,15 @@ fn ac2_directory_refusals() {
     assert!(!temp.path().join("identity.key").exists());
     let link = temp.path().join("link");
     symlink(temp.path(), &link).unwrap();
-    assert!(matches!(Log::open(&link), Err(Error::NotPlain { .. })));
-    assert!(
-        matches!(Log::open(std::path::Path::new("")),Err(Error::Io{source,..}) if source.kind()==std::io::ErrorKind::InvalidInput)
-    );
+    assert!(matches!(
+        Log::open(&link),
+        Err(Error::NotPlain {
+            expected: "directory",
+            ..
+        })
+    ));
+    assert!(matches!(
+        Log::open(std::path::Path::new("")),
+        Err(Error::EmptyPath)
+    ));
 }
