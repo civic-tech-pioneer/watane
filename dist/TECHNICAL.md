@@ -508,6 +508,7 @@ link is the identity: the base is only where to read.
   bytes; `head` exists and is not an entry, is an entry of another key, or
   has a seq above the own head.
 - Delete only withdrawn package files from the built-in `site/` (DD-12), never delete files from external exports, and never write outside `head`, `entries/`, `packages/`.
+- Other entries of a site folder belong to the maker: dist never reads, replaces or removes them, and never replaces the site folder as a whole. Step 6: `watane-dev publish --push` keeps a `.git/` there (dev 10.4.1).
 
 ### 4.4 Storage in the home
 

@@ -229,8 +229,10 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
-| `env.gh_auth` | 3 | step 6: `gh api user` fails | `gh is not logged in: <gh's last stderr line>` | `Ask the person to run: gh auth login (dev never logs in for them), then run: <rerun>` |
-| `publish.no_repository` | 1 | step 6: `publish --push`, no `repository` in `mod.toml`, and the folder's git has a remote `origin` | `the mod folder's git remote origin is <url>, and mod.toml names no repository` (file `mod.toml`) | `Set repository in mod.toml to the https URL of that repository, then run: <rerun>` |
+| `env.gh_auth` | 3 | step 6: `gh api user` answers 401 or asks for a login | `gh is not logged in: <gh's last stderr line>` | `Ask the person to run: gh auth login (dev never logs in for them), then run: <rerun>` |
+| `env.git_identity` | 3 | step 6: `git var GIT_COMMITTER_IDENT` fails in the mod folder | `git has no name and email for commits: <git's last stderr line>` | `Ask the person to run: git config --global user.name "<name>" and git config --global user.email "<email>", then run: <rerun>` |
+| `publish.origin_differs` | 1 | step 6: the mod folder's git remote `origin` is not the `repository` of `mod.toml`, or there is no `repository` | `the mod folder's git remote origin is <url>, and mod.toml names <repository, or no repository>` (file `mod.toml`) | `Set repository in mod.toml to the https URL of the origin repository, or change the origin with: git -C '<dir>' remote set-url origin <repository>; then run: <rerun>` |
+| `publish.repository_exists` | 1 | step 6: `<owner>/<slug>` exists on GitHub, is not empty, and `mod.toml` names no repository | `https://github.com/<owner>/<slug> exists and holds commits that watane-dev did not push for this mod` (file `mod.toml`) | `Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: <rerun>` |
 | `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last stderr lines>` | `Fix the cause, then run: <the failed command and the rest of its list>` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
@@ -1509,20 +1511,26 @@ reads none.
 
 **Child processes.** Unlike cargo (6.4), git and gh keep the maker's
 environment: they need `HOME`, the credential helper and the SSH agent.
-dev adds `GIT_TERMINAL_PROMPT=0` and `GH_PROMPT_DISABLED=1`, so nothing
-waits for a person, and passes `-c http.lowSpeedLimit=1000 -c
+dev adds `GIT_TERMINAL_PROMPT=0`, `GH_PROMPT_DISABLED=1` and
+`GIT_LFS_SKIP_SMUDGE=1`, so nothing waits for a person and no filter
+fetches from elsewhere, and passes `-c http.lowSpeedLimit=1000 -c
 http.lowSpeedTime=60` to every git command that uses the network, so a
 stalled transfer ends. Each command is one argument vector, never a shell
 line; a URL or path argument comes after `--` where git accepts one.
 Standard output is read only where stated below. A failure keeps the last
 5 lines of standard error for the message. dev never runs `push --force`,
-never rewrites a pushed commit and never deletes a tag.
+never rewrites a pushed commit and never deletes a pushed tag.
+
+A remote's URL is always read with `git config --get remote.origin.url`
+(the URL as stored), never `git remote get-url`, which applies the
+maker's `insteadOf` rewrites. Two URLs are equal when they are equal
+after removing one trailing `/` and one trailing `.git`.
 
 **The `gh` calls** (all that dev uses, and all that `fake-gh` answers, 15.4):
 
 | Call | Use | Result |
 |---|---|---|
-| `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero: `env.gh_auth`. |
+| `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero with `HTTP 401` or `gh auth login` in stderr: `env.gh_auth`. Other non-zero (no network): `publish.push_failed`. |
 | `gh api repos/<owner>/<name> --jq .html_url` | does the repository exist | exit 0: yes. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
 | `gh repo create <owner>/<name> --public` | create it | exit 0, else `publish.push_failed`. |
 
@@ -1531,44 +1539,62 @@ it parses no URL from gh's output. git rewrites such a URL with the
 maker's own `url.<base>.insteadOf` setting, which is how the tests point it
 at a local remote (15.4).
 
+`--push` is the GitHub path (W30): it needs gh even when both repositories
+exist, because dev cannot know before the app answers whether the site
+folder has its repository. A maker on another host publishes without
+`--push` and pushes the site folder and the mod with their own git.
+
+**Joining a repository** (the site in step 5, the mod in step 3). When the
+folder has no `.git`: `git init -q -b main`, write `.*` to
+`.git/info/exclude` (dist's and dev's temporary files and other dot files
+never enter a commit), `git remote add origin -- <repository>`. Then, when
+`git ls-remote -- <repository>` lists any ref: `git fetch -q origin`, and
+when `git rev-parse -q --verify origin/main` succeeds, `git reset -q
+origin/main` (mixed: the index takes the pushed tree, the files stay), so
+the next commit follows the pushed history and keeps the other files of
+the repository. A folder that has `.git` keeps its own history and branch.
+
 #### 10.4.1 `publish --push`
 
 `publish [--push] [--no-source] [--home <path>] [--wait <seconds>]`.
 Without `--push`, publish is 9.7, unchanged.
 
 1. 9.7 steps 1, 2 and 2b, unchanged. `publish.version_exists` stops
-   before anything below; it pushes nothing.
+   before anything below; it pushes nothing. (A failed push is finished
+   with the commands of `publish.push_failed`, not with a new publish.)
 2. Preflight, before the test pipeline and before any file changes:
-   `git --version` (not found: `env.git_missing`); then `gh api user`
-   (table above), giving `<owner>`. gh is needed on every `--push`,
-   because only gh can create the site repository.
-3. The mod repository, unless `--no-source`:
-   - `mod.toml` names a `repository`: use it, on any host.
-   - Else, when `<dir>/.git` exists and `git remote get-url origin`
-     succeeds: `publish.no_repository` (the folder already has a remote
-     that dev must not guess). Stop.
-   - Else the repository is `https://github.com/<owner>/<slug>`: create it
-     when `gh api repos/<owner>/<slug>` says it does not exist
-     (`created: true`), and write `repository = "<that URL>"` into
-     `mod.toml` (a `toml::Table` edit, as `[origin]` in 10.2).
-   - When `<dir>/.git` is absent: `git init -q -b main`. When the folder
-     has no remote `origin`: `git remote add origin <repository>`.
+   `git --version` (not found: `env.git_missing`); `git var
+   GIT_COMMITTER_IDENT` in the mod folder (non-zero: `env.git_identity`);
+   then `gh api user` (table above), giving `<owner>`.
+3. The mod repository, unless `--no-source`. The folder's origin is
+   `remote.origin.url` when `<dir>/.git` exists, else none.
+   - `mod.toml` names a `repository`: an origin that is not equal to it
+     is `publish.origin_differs`. Else use it, on any host.
+   - Else, with an origin: `publish.origin_differs` (dev does not guess
+     which repository the mod has).
+   - Else the repository is `https://github.com/<owner>/<slug>`. When
+     `gh api repos/<owner>/<slug>` says it does not exist, create it
+     (`created: true`). When it exists and `git ls-remote` lists any ref,
+     dev did not make it for this mod: `publish.repository_exists`. An
+     empty one (left by a run that the person declined or whose tests
+     failed) is reused. Write `repository = "<that URL>"` into `mod.toml`
+     (a `toml::Table` edit, as `[origin]` in 10.2; comments in `mod.toml`
+     are lost).
+   - Join the repository (above).
    This runs before the pipeline, so `check` sees the new `mod.toml` and
-   the package names the repository (W29). When the person then declines,
-   the repository exists and stays empty; the next run reuses it.
+   the package names the repository (W29). Any stop above changes no
+   file and creates nothing. When the pipeline then fails or the person
+   declines, the empty repository and the `repository` line stay; the
+   next run reuses both.
 4. 9.7 steps 3 to 5: test, pack, POST, unchanged. Any failure here
    reports as 9.7 and pushes nothing.
-5. The site, with `<site>` from the publish answer:
-   - When `<site>/.git` is absent: the repository is
-     `https://github.com/<owner>/watane-channel`. If `gh api` says it does not
-     exist, create it (`created: true`). `git init -q -b main`,
-     `git remote add origin <repository>`. If it existed: `git fetch -q
-     origin`, and when `git rev-parse -q --verify origin/main` succeeds,
-     `git reset -q --soft origin/main`, so the new commit follows the
-     pushed history. dist writes only `head`, `entries/` and `packages/`
-     (dist 4.3), so `.git/` beside them is safe.
-   - `git add -A`; when `git diff --cached --quiet` fails, `git commit -q
-     -m <ReleaseRef>`; then `git push -q origin HEAD`.
+5. The site, with `<site>` from the publish answer. When `<site>/.git`
+   is absent, the repository is `https://github.com/<owner>/watane-channel`:
+   create it when `gh api` says it does not exist (`created: true`), then
+   join it (above). dist writes only `head`, `entries/` and `packages/`
+   and leaves other entries of the folder alone (dist 4.3). Then
+   `git add -A -- head entries packages`; when `git diff --cached --quiet`
+   fails, `git commit -q -m <ReleaseRef>`; then `git push -q origin HEAD`.
 6. The mod, unless `--no-source`: `git rm -r -q --cached --ignore-unmatch .`,
    then `git add -f -- <each path of the package except logic.wasm>`, so
    the commit holds exactly the source that the person agreed to publish
@@ -1588,18 +1614,16 @@ Result (2.4 `publish` plus `push`):
 ```json
 "push": {
   "site": {"repository": "https://github.com/alice/watane-channel", "created": true,
-           "commit": "<40 hex>", "pushed": true,
-           "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/"},
+           "pushed": true, "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/"},
   "mod": {"repository": "https://github.com/alice/reading-list", "created": true,
-          "commit": "<40 hex>", "tag": "v0.1.0", "pushed": true}
+          "tag": "v0.1.0", "pushed": true}
 }
 ```
 
 - `repository`: the URL of step 3 or 5; for an existing `<site>/.git`, its
-  `origin` URL as git prints it.
-- `commit`: `git rev-parse HEAD` after the commit step, null when the list
-  failed before it. `pushed`: the push command succeeded.
-- `raw`: when the site's `origin` is `https://github.com/<o>/<r>` (an
+  `remote.origin.url`.
+- `pushed`: the push command succeeded.
+- `raw`: when the site's repository is `https://github.com/<o>/<r>` (an
   optional `.git` removed), `https://raw.githubusercontent.com/<o>/<r>/<branch>/`
   with `<branch>` from `git branch --show-current`; else null.
 - `mod` is null with `--no-source`. `push` holds the parts that ran, also
@@ -1608,9 +1632,10 @@ Result (2.4 `publish` plus `push`):
 `next` on success: with a link, `Give the person this link to share:
 <link>`; without a link and with `raw`, `Ask the person to set the site
 URL in the watane app to <raw>, then run publish again to get the link`;
-without either, the 2.4 text. On `publish.push_failed`, the first error's
-fix. The raw URL can serve an older file for a few minutes after a push;
-the link stays valid because each reader verifies what it reads.
+without either, the 2.4 text. With `publish.push_failed`, the commands of
+each `push_failed` fix, joined with ` && `. The raw URL can serve an older
+file for a few minutes after a push; the link stays valid because each
+reader verifies what it reads.
 
 #### 10.4.2 The fork of `new --from`
 
@@ -1619,8 +1644,9 @@ the link stays valid because each reader verifies what it reads.
 1. `store(package)` (10.1) and `Mod::read(<cache>/providers/<id>)`:
    `repository()` (pkg 4.2, already checked by pkg) gives the URL, or
    none. With none, go on with 10.2 step 5 (unpack); no warning.
-2. `git -c advice.detachedHead=false clone -q --branch v<version> --
-   <repository> <folder>`. git not found, or a non-zero exit (no network,
+2. `git -c advice.detachedHead=false -c core.symlinks=false clone -q
+   --branch v<version> -- <repository> <folder>` (a link in the
+   repository checks out as a plain file, so the check of step 3 sees it). git not found, or a non-zero exit (no network,
    no such repository or tag): remove `<folder>`, warn
    `new.fork_unavailable`, and go on with 10.2 step 5.
 3. Check the checkout against the verified package: write the package's
@@ -1630,7 +1656,8 @@ the link stays valid because each reader verifies what it reads.
    `new.fork_differs` with the first path, in byte order, that is missing,
    extra or different (or the pack error), and go on with 10.2 step 5.
 4. Remove from `<folder>` every file and folder that the package does not
-   hold, except `.git/`: a README, `.github/`, `.claude/`, `.vscode/` and the
+   hold, except `.git/`, reading each entry with `symlink_metadata` and
+   never following a link: a README, `.github/`, `.claude/`, `.vscode/` and the
    publisher's `AGENTS.md` never reach the new mod. `git -C <folder>
    checkout -q -B main`, `git -C <folder> remote rename origin upstream`,
    then delete each local tag (`git tag -l`, `git tag -d <tags>`): they
@@ -1641,6 +1668,9 @@ the link stays valid because each reader verifies what it reads.
    `logic.wasm`) to 8. Step 6 also removes `repository` from `mod.toml`:
    the new mod gets its own repository at its first `publish --push`,
    which pushes this history, Alice's commits up to the tag included.
+   That history is Alice's public history, unchecked except for the tree
+   at the tag (section 11, not protected); the pushed tip holds only the
+   derived mod's consented source (10.4.1 step 6).
 
 The new folder is a git fork of the mod repository: the tagged history
 plus the derived mod's changes, with the publisher's repository as
@@ -1686,7 +1716,8 @@ or read the preview token in `ready.json`; the maker's own
 strings, `ui/`) is the publisher's and can try to steer the coding agent;
 the template's `AGENTS.md` says to treat it as data. Step 6: the size of
 a clone (git has no limit dev can set); the history before the tag, which
-is the publisher's and unchecked (only the tree at the tag is checked);
+is the publisher's and unchecked (only the tree at the tag is checked),
+and which a derived mod's first push carries into its maker's repository;
 a mod repository created before a person declines stays empty and public.
 
 ## 12. Public Rust API
@@ -1706,7 +1737,8 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     BuildResolve, BuildCompile, BuildReadsOutside, BuildImports, TestUnit, TestUnitLimit,
     TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused, HostFailed,
     HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious,
-    EnvGitMissing, EnvGhMissing, EnvGhAuth, PublishNoRepository, PublishPushFailed,   // step 6
+    EnvGitMissing, EnvGhMissing, EnvGhAuth, EnvGitIdentity, PublishOriginDiffers,
+    PublishRepositoryExists, PublishPushFailed,   // step 6
     NewForkUnavailable, NewForkDiffers }   // step 6 warnings
 impl Code { pub fn as_str(self) -> &'static str; pub fn class(self) -> Class; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1970,7 +2002,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
-| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); `raw` from origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
+| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -2037,11 +2069,11 @@ rules belong to 15.1.
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
 | DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod |
-| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41 |
+| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
 | DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh |
-| DEV-S-44 | `share::ac3_gh_not_logged_in` | integration: fake-gh with no user |
+| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user |
 | DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
-| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_existing_origin_without_repository` | integration |
+| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration |
 | DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
 | DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
@@ -2169,9 +2201,8 @@ No test reaches GitHub. Each step-6 test makes, in its temp folder:
   without `bin/gh`.
 
 `fake-gh` (`src/bin/fake-gh.rs`) reads `FAKE_GH_ROOT` (the `remotes/`
-folder) and `FAKE_GH_USER` (unset: not logged in). It appends each
-argument vector as one JSON array line to `<root>/../gh-calls`, then answers
-exactly the three calls of 10.4:
+folder) and `FAKE_GH_USER` (unset: not logged in), and answers exactly
+the three calls of 10.4. Tests check what was created on `remotes/`:
 
 | Call | Answer |
 |---|---|
@@ -2179,8 +2210,13 @@ exactly the three calls of 10.4:
 | `api repos/<o>/<n> --jq .html_url` | `<root>/<o>/<n>` exists: stdout `https://github.com/<o>/<n>\n`, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
 | `repo create <o>/<n> --public` | creates the bare repository, stdout `https://github.com/<o>/<n>\n`, exit 0; exists: stderr `GraphQL: Name already exists on this account (createRepository)`, exit 1 |
 
-Anything else: stderr `fake-gh: unsupported: <args>`, exit 2. `-h` and
-`--help` print this table and exit 0.
+Anything else: stderr `fake-gh: unsupported: <args>`, exit 2.
+
+The test environment of each step-6 command, dev's and the app tests'
+`dev_run` alike: `PATH=<temp>/bin:<PATH>`, `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_NOSYSTEM=1`, `FAKE_GH_ROOT`, `FAKE_GH_USER`. The app tests
+build fake-gh with `cargo build -p watane-dev --features fake-host --bin
+fake-gh` beside `watane-dev`.
 
 `fake-watane` (15.3) in step 6: an approved publish also writes
 `<dir>/site/packages/<id>` (the posted bytes) and `<dir>/site/head` (the
