@@ -283,6 +283,13 @@ with no `deps.json` member for it is one `provider` violation at file
 package mods:<slug>`; it is reported before WIT resolution, so no
 duplicate-package `wit` error hides it.
 
+A symbolic link anywhere below `ui/` or `wit/`, hidden entries included, is rule `path` at the
+link's own path. Below a WIT directory this section refuses, the reader still descends without
+following links and reports each link instead of the directory rule; with none, the directory
+rule applies. A non-hidden entry below `ui/` that is neither a regular file nor a directory is rule
+`path`, `expected a regular file or a directory`; hidden special files are ignored, as pack ignores
+them (S46).
+
 ### 4.8 `add_provider` (step 2)
 
 `add_provider(dir, provider, publisher)` makes `provider` usable by the mod
@@ -490,6 +497,10 @@ nothing in proportion to a declared size. Refusals are `TooLarge`,
    original unpack error even if cleanup also fails. Successful cleanup
    leaves no destination; a cleanup failure can leave partial output.
 
+Every walk of the mod folder (`Mod::read` and pack) opens directories through the shared no-follow
+walk and lists and stats entries relative to the open directory handle, never by a path string
+below the root (S46).
+
 ### 6.5 Example (golden)
 
 The committed folder `tests/fixtures/hello`, packed without source:
@@ -570,6 +581,9 @@ allows is below 26 KiB, so `new` never exceeds the limit.
 `Release::check(&self, m, package)`: `Release::new(m, package)?` must equal
 `self`; else `Mismatch { field }` with the first differing field in the
 order of 7.1.
+
+A malformed release body is reported as `<field>: expected <what>, found <what was there>`; the
+top-level array has no field prefix, since the error already reads `bad release body:` (S46).
 
 ### 7.3 Example (golden)
 

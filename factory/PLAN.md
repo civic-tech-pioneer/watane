@@ -244,26 +244,28 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   handles (20,000 swaps leaked nothing). Spec lines for pkg TECHNICAL 4.7, 6.4 and 7.x wait for
   S40 to merge (in the S46 commit message). Left for later: a linked `ui` reports two problems;
   `add.rs` (add_provider) keeps the check-then-read gap; mid-swap errors are plain I/O text.
-- [~] **S40 Design: share on GitHub (step 6).** Spec documents only. Turn dev 10.4 and pkg 4.2 into
-  build-plan stages: the exact results, errors (codes, fixes, `next`) and tests of `publish --push`
-  and of the `new --from` fork; what a missing `git`/`gh`, a failed push, a fork that differs from
-  the package and `--no-source` return; a pkg stage for `repository`; how `fake-gh` and a local
-  remote stand in for GitHub in dev's tests and in J3/J5. One independent review, as S26 and S32.
-  Touches: dev/TECHNICAL.md, dev/FUNCTIONAL.md, pkg/TECHNICAL.md, spec/TECHNICAL.md section 9.
-  (branch `slice/s40`; foreman: see `Foremen`)
-- [ ] **S41 Alice's mod names its repository (pkg stage).** `repository` in mod.toml: parsed,
-  validated (pkg 4.2), carried in the package; `watane-dev check` reports a bad one with a fix.
-  Outcomes: a valid URL packs and reads back; http, userinfo, a missing host or 257 bytes are
-  refused with a fix. Touches: pkg, dev check only if S40 says so. After S40.
-- [ ] **S42 Alice publishes to GitHub with one command (dev).** `watane-dev publish --push`: first
-  run creates the site and mod repositories through `gh`, writes `repository`, and its `next` asks
-  for the raw site URL; later runs commit, tag `v<version>` and push. Outcome: J3 passes with the
-  local remote as the host, and Bob installs from the raw-URL link. Touches: dev. After S40, S41.
-- [ ] **S43 Eve forks Dave's repository (dev).** `new --from` forks or clones the named repository,
-  checks out `v<version>`, refuses a fork whose source differs from the verified package and falls
-  back to it. Outcome: J5 passes with the local remote; a tampered remote falls back with a
-  warning. Touches: dev. After S42 (same files).
-
+- [x] **S40 Design: share on GitHub (step 6).** Merged 2026-11-13 (main `6f3a2c9`), spec documents
+  only, after two independent reviews (the second on the human's switch to real GitHub forks).
+  pkg stage 8 (`repository`, pkg 4.2); dev stage 10 (`publish --push`, 10.4.1) and stage 11 (the
+  `new --from` clone, 10.4.2); DEV-F-43 to 47, DEV-S-41 to 51; tests use local bare remotes, git's
+  `insteadOf` and `fake-gh`. Tags are the ReleaseRef `<key>/<slug>@<version>`.
+- [~] **S41 Alice's mod names its repository (pkg stage 8).** (cloud) `repository` in mod.toml:
+  parsed, validated (pkg 4.2), carried in the package; `watane-dev check` maps a pkg `repository`
+  violation to its fix (dev 2.2). Outcomes: a valid URL packs and reads back; http, userinfo, a
+  missing host or 257 bytes are refused with pkg 4.2's exact message. Touches: pkg/src, pkg/tests,
+  dev check (one fix mapping) and its test. (cloud routine: see `Foremen`)
+- [ ] **S42 Alice publishes to GitHub with one command (dev stage 10).** `watane-dev publish --push`
+  (dev 10.4.1): the first run creates the site repository and the mod repository (or, for a mod
+  made from another, forks the upstream through the forks API onto branch `watane`, with
+  `publish.fork_unavailable` as the fallback), writes `repository`, and its `next` asks for the raw
+  site URL; later runs commit, tag the ReleaseRef and push. Outcome: `app/tests/j3.rs::ac2_j3_github`
+  passes with local bare remotes, and Bob installs from the raw-URL link. Touches: dev, fake-gh,
+  `app/tests` (test code only). After S41 and S44 (app/tests). Local: the journey needs the Mac.
+- [ ] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
+  repository at the ReleaseRef tag, checks it against the verified package, falls back to the
+  package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
+  Outcome: `app/tests/j5.rs::ac2_j5_github` passes; a tampered remote falls back with a warning.
+  Touches: dev, `app/tests`. After S42 (same files).
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
@@ -303,9 +305,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 9 binds | 5 | done (S34) |
 | dist | S7 provider bases | 5 | done (S35) |
 | dev | 9 build on | 5 | done (S36) |
-| pkg | `repository` (stage set by S40) | 6 | open (S41) |
-| dev | `publish --push` (stage set by S40) | 6 | open (S42) |
-| dev | `new --from` fork (stage set by S40) | 6 | open (S43) |
+| pkg | 8 repository | 6 | open (S41 in flight) |
+| dev | 10 publish --push | 6 | open (S42) |
+| dev | 11 new --from clone and fork | 6 | open (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
@@ -353,7 +355,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36` (stopped, removed).
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon (stopped, removed).
 - S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39` (stopped, removed).
-- S40: `9b94b54e` (sessionId `9b94b54e-b9a1-4de5-8528-bf6defb724c2`), worktree `.claude/worktrees/s40`.
+- S40: `9b94b54e` (sessionId `9b94b54e-b9a1-4de5-8528-bf6defb724c2`), worktree `.claude/worktrees/s40` (stopped, removed).
 - S44: `cfcd9edf` (sessionId `cfcd9edf-a754-4f25-b613-c0a08e8db786`), worktree `.claude/worktrees/s44`.
 - S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw`.
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
@@ -370,6 +372,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S40: `new --from` runs no gh; the fork uses the forks REST API (`gh repo fork` refuses `--remote`
+  with a repository argument and silently renames an existing fork); an unfinished fork of the
+  right parent is adopted; tags are the ReleaseRef; `--push` always needs gh (W30); a failed push
+  is finished with the commands in `publish.push_failed`, not a rerun.
 - S46: a link anywhere below ui/ or wit/ is rule path at the link's own path; below a refused WIT
   directory the reader still descends without following links; a non-hidden special file below
   ui/ is rule path, hidden ones are ignored; release decode errors read "<field>: expected <what>,
@@ -741,6 +747,8 @@ The human may veto each one.
 - S39: two Sol runs in parallel on one subsystem loaded the machine (both PARTIAL on the 7 s
   timing and nested-sandbox tests); parallel tasks conflicted at the end of tests/envelope.rs.
 - S46: the sketch repeated S22 follow-ups that S22 had partly fixed; the foreman probed first.
+- S40: the product owner rebased slice/s40 locally, so its remote diverged and only a force-push
+  could update it. Rebase a foreman's branch only after it has stopped, or ask the foreman.
 
 ## Digest
 
