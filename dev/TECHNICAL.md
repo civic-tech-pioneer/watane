@@ -1699,7 +1699,8 @@ reader verifies what it reads.
 1. `store(package)` (10.1) and `Mod::read(<cache>/providers/<id>)`:
    `repository()` (pkg 4.2, already checked by pkg) gives the URL, or
    none. With none, go on with 10.2 step 5 (unpack); no warning.
-2. `git -c advice.detachedHead=false -c core.symlinks=false clone -q
+2. `git -c advice.detachedHead=false -c core.symlinks=false -c
+   http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 clone -q
    --branch <ReleaseRef> -- <repository> <folder>` (a link in the
    repository checks out as a plain file, so the check of step 3 sees it). git not found, or a non-zero exit (no network,
    no such repository or tag): remove `<folder>`, warn
@@ -1914,9 +1915,8 @@ pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem>;   // git, iden
 pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<(serde_json::Value, Vec<Problem>), Vec<Problem>>;   // 10.4.1 step 3: result and warnings
 pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, release: &str, prepared: Option<serde_json::Value>)
     -> (serde_json::Value, Vec<Problem>);   // 10.4.1 steps 5, 6: the `push` result and its errors
-// The caller has the ReleaseRef; the package alone contains no publisher key.
-pub fn fork(folder: &Path, repository: &str, package: &watane_pkg::Package)
-    -> Result<(), Problem>;   // 10.4.2 steps 3 to 4; caller clones the ReleaseRef tag (step 2); Err is the warning, with folder removed
+pub fn fork(folder: &Path, repository: &str, release: &watane_pkg::ReleaseRef, package: &watane_pkg::Package)
+    -> Result<(), Problem>;   // 10.4.2 steps 2 to 4 (the tag is the ReleaseRef); Err is the warning, with folder removed
 
 // api.rs
 pub struct Client { /* base URL, ureq::Agent */ }

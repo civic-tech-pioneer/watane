@@ -142,13 +142,16 @@ fn first_difference(
         Some(format!("{path}: {reason}"))
     })
 }
-/// Clone the release tag before checking the checkout with `fork`.
-pub(crate) fn clone_release(
+/// 10.4.2 steps 2 to 4: clone the release tag into `folder` and keep only the
+/// package's files. `Err` is the warning, with `folder` removed.
+pub fn fork(
     folder: &Path,
     repository: &str,
+    release: &watane_pkg::ReleaseRef,
     package: &watane_pkg::Package,
-    release: &str,
 ) -> Result<(), Problem> {
+    let slug = &release.slug;
+    let release = &release.to_string();
     let command = Run {
         program: "git",
         args: [
@@ -156,6 +159,10 @@ pub(crate) fn clone_release(
             "advice.detachedHead=false",
             "-c",
             "core.symlinks=false",
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=60",
             "clone",
             "-q",
             "--branch",
@@ -185,20 +192,14 @@ pub(crate) fn clone_release(
         return Err(Problem::new(Code::NewForkUnavailable, format!("could not clone {repository} at {release} ({}); the mod was made from the verified package, with no git history", reason))
             .fix(format!("To keep the publisher's history, check that git can reach {repository}, delete {}, then run new --from again", folder.display())));
     }
-    fork(folder, repository, package).map_err(|mut e| {
+    keep_package(folder, package).map_err(|mut e| {
         e.message = format!("{repository} at {release} differs from the verified package ({}); the mod was made from the verified package", e.message);
-        let slug = release.split_once('/').map_or(release, |(_, r)| r.split('@').next().unwrap_or(r));
         e.fix = Some(format!("Tell the person: the repository of {slug} does not hold the published source of {release}"));
         e
     })
 }
-/// Check and retain a cloned checkout. On failure remove the checkout.
-/// The caller clones the ReleaseRef tag: packages contain no publisher key.
-pub fn fork(
-    folder: &Path,
-    _repository: &str,
-    package: &watane_pkg::Package,
-) -> Result<(), Problem> {
+/// 10.4.2 steps 3 and 4 on a clone; on failure remove the checkout.
+fn keep_package(folder: &Path, package: &watane_pkg::Package) -> Result<(), Problem> {
     fn prune(dir: &Path, relative: &Path, paths: &[&str]) -> std::io::Result<()> {
         for entry in fs::read_dir(dir.join(relative))? {
             let entry = entry?;
@@ -476,7 +477,7 @@ pub fn prepare_mod(
                     }
                     if derived && !forked {
                         warnings.push(Problem::new(Code::PublishForkUnavailable,
-                            format!("could not fork {} as {name} ({reason}); {repository} was created without GitHub's fork link", upstream_url.as_deref().unwrap_or("no upstream repository"))));
+                            format!("could not fork {} as {name} ({reason}); {repository} was created without GitHub's fork link", upstream.unwrap_or("no upstream repository"))));
                     }
                 }
             }

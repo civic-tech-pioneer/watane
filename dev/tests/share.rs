@@ -537,11 +537,19 @@ fn ac7_tampered_tag_falls_back_to_the_package() {
     let (code, v) = f.derive();
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["warnings"][0]["code"], "new.fork_differs");
-    assert!(
-        v["warnings"][0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("ui/index.html: different")
+    assert_eq!(
+        v["warnings"][0]["message"],
+        format!(
+            "{UPSTREAM} at {} differs from the verified package (ui/index.html: different); the mod was made from the verified package",
+            parent_tag()
+        )
+    );
+    assert_eq!(
+        v["warnings"][0]["fix"],
+        format!(
+            "Tell the person: the repository of reading-list does not hold the published source of {}",
+            parent_tag()
+        )
     );
     assert!(v["result"]["fork"].is_null());
     assert!(!f.root.join("ratings/.git").exists());
@@ -717,11 +725,9 @@ fn ac8_existing_fork_falls_back_to_a_new_repository() {
     let (code, v) = f.carol();
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["warnings"][0]["code"], "publish.fork_unavailable");
-    assert!(
-        v["warnings"][0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("the account already has a fork of it")
+    assert_eq!(
+        v["warnings"][0]["message"],
+        "could not fork alice/reading-list as carol/ratings (the account already has a fork of it); https://github.com/carol/ratings was created without GitHub's fork link"
     );
     assert!(!f.carol_remote().join("fake-gh-parent").exists());
     assert_eq!(
@@ -755,11 +761,9 @@ fn ac8_derived_without_upstream_warns() {
     let (code, v) = f.carol();
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["warnings"][0]["code"], "publish.fork_unavailable");
-    assert!(
-        v["warnings"][0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("no upstream repository")
+    assert_eq!(
+        v["warnings"][0]["message"],
+        "could not fork no upstream repository as carol/ratings (no upstream repository); https://github.com/carol/ratings was created without GitHub's fork link"
     );
     assert_eq!(v["result"]["push"]["mod"]["forked"], false);
 }

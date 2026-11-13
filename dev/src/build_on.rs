@@ -347,7 +347,7 @@ pub fn new_from(
     let mut warnings = Vec::new();
     let mut fork = Value::Null;
     if let Some(repository) = source.repository() {
-        match crate::share::clone_release(dir, repository, &package, &release.to_string()) {
+        match crate::share::fork(dir, repository, &release, &package) {
             Ok(()) => fork = json!({"repository":repository,"tag":release}),
             Err(warning) => warnings.push(warning),
         }
