@@ -165,34 +165,15 @@ fn ac7_journey_j3_identity_publish_install_and_tamper() {
 #[test]
 #[ignore = "slow: journey J3"]
 fn ac2_j3_github() {
-    use std::{fs, process::Command};
-    use support::dev::{dev_command, workspace_dev, workspace_fake_gh};
+    use std::fs;
+    use support::dev::{Github, workspace_dev, workspace_fake_gh};
 
     let dev = workspace_dev();
     let fake_gh = workspace_fake_gh();
     let work = tempfile::tempdir().unwrap();
     let root = work.path().canonicalize().unwrap();
-    fs::create_dir_all(root.join("remotes")).unwrap();
-    fs::create_dir(root.join("bin")).unwrap();
-    std::os::unix::fs::symlink(fake_gh, root.join("bin/gh")).unwrap();
-    fs::write(root.join("gitconfig"), format!(
-        "[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display()
-    )).unwrap();
-    let path = std::env::join_paths(
-        std::iter::once(root.join("bin"))
-            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
-    )
-    .unwrap();
-    let git = |args: &[&str]| {
-        let output = Command::new("git")
-            .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8_lossy(&output.stdout).into_owned()
-    };
+    let github = Github::new(&root, &fake_gh);
+    let git = |args: &[&str]| github.git(args);
     let alice_home = root.join("alice");
     let alice = App::start(&alice_home, &[]);
     begin(&alice, "identity_set_name", json!({"name":"Alice"}));
@@ -201,16 +182,7 @@ fn ac2_j3_github() {
     assert_eq!(finish(&alice), json!({"ok":null}));
     let reading = root.join("reading-list");
     copy_dir(&fixture("reading-list"), &reading);
-    let command = || {
-        let mut command = dev_command(&dev, &alice, &reading, &["publish", "--push"]);
-        command
-            .env("PATH", &path)
-            .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("FAKE_GH_ROOT", root.join("remotes"))
-            .env("FAKE_GH_USER", "alice");
-        command
-    };
+    let command = || github.dev_command(&dev, &alice, &reading, "alice", &["publish", "--push"]);
     // AC1: the real command waits for Alice's signature in her app.
     let mut first = command();
     let pending = std::thread::spawn(move || first.output().unwrap());

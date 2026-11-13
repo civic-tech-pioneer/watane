@@ -332,3 +332,189 @@ fn ac1_journey_j5() {
     assert!(carol.quit().success());
     assert!(alice.quit().success());
 }
+
+#[test]
+#[ignore = "slow: journey J5"]
+fn ac2_j5_github() {
+    use support::dev::{Github, workspace_fake_gh};
+
+    let dev = workspace_dev();
+    let fake_gh = workspace_fake_gh();
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().canonicalize().unwrap();
+    let github = Github::new(&root, &fake_gh);
+    let alice = App::start(&root.join("alice"), &[]);
+    begin(&alice, "identity_set_name", json!({"name":"Alice"}));
+    consent(&alice);
+    approve(&alice);
+    assert_eq!(finish(&alice), json!({"ok":null}));
+    let reading = root.join("reading-list");
+    copy_dir(&fixture("reading-list"), &reading);
+
+    // AC1: publish from Alice's real app, then serve only her pushed bytes.
+    let mut command = github.dev_command(&dev, &alice, &reading, "alice", &["publish", "--push"]);
+    let pending = std::thread::spawn(move || command.output().unwrap());
+    consent(&alice);
+    contains(&body(&alice), &["release", "reading-list"]);
+    approve(&alice);
+    let output = pending.join().unwrap();
+    let published: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("Alice publish: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(0), "{published}; {output:?}");
+    assert_eq!(published["ok"], true, "{published}");
+    let alice_release = published["result"]["release"].as_str().unwrap();
+    let alice_remote = root.join("remotes/alice/reading-list");
+    let site_remote = root.join("remotes/alice/watane-channel");
+    let clone = root.join("served-site");
+    github.git(&[
+        "clone",
+        "-b",
+        "main",
+        site_remote.to_str().unwrap(),
+        clone.to_str().unwrap(),
+    ]);
+    let site = Site::serve(clone);
+    invoke(&alice, "site_set_url", json!({"url":site.base}));
+    let output = github
+        .dev_command(&dev, &alice, &reading, "alice", &["publish", "--push"])
+        .output()
+        .unwrap();
+    let retry: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("Alice publish retry: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(1), "{retry}; {output:?}");
+    assert_eq!(retry["ok"], false, "{retry}");
+    assert_eq!(
+        retry["errors"][0]["code"], "publish.version_exists",
+        "{retry}"
+    );
+    assert_eq!(retry["result"]["release"], alice_release);
+    let link = retry["result"]["link"].as_str().unwrap();
+    assert!(link.contains(&site.base), "{link}");
+
+    // AC2: Carol follows Alice, and new --from retains the tagged git history.
+    let (carol, _carol_site, _) = participant(&root.join("carol"), "Carol");
+    let alice_channel = invoke(&alice, "status", json!({}))["site"]["link"].clone();
+    invoke(&carol, "channel_follow", json!({"link":alice_channel}));
+    let ratings = root.join("ratings");
+    let output = github
+        .dev_command(
+            &dev,
+            &carol,
+            &ratings,
+            "carol",
+            &["new", "ratings", "--from", link],
+        )
+        .output()
+        .unwrap();
+    let created: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("Carol new: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(0), "{created}; {output:?}");
+    assert_eq!(created["ok"], true, "{created}");
+    let repository = "https://github.com/alice/reading-list";
+    assert_eq!(
+        created["result"]["fork"],
+        json!({"repository":repository,"tag":alice_release})
+    );
+    assert!(ratings.join(".git").is_dir());
+    let alice_commit = github.git(&[
+        "-C",
+        alice_remote.to_str().unwrap(),
+        "rev-parse",
+        &format!("{alice_release}^{{commit}}"),
+    ]);
+    assert_eq!(
+        github.git(&["-C", ratings.to_str().unwrap(), "rev-parse", "HEAD"]),
+        alice_commit
+    );
+    assert_eq!(
+        github
+            .git(&[
+                "-C",
+                ratings.to_str().unwrap(),
+                "config",
+                "remote.upstream.url"
+            ])
+            .trim(),
+        repository
+    );
+    let origin_meta = fs::read_to_string(ratings.join("mod.toml")).unwrap();
+    contains(
+        &origin_meta,
+        &["[origin]", &format!("release = \"{alice_release}\"")],
+    );
+    assert!(
+        watane_host::watane_pkg::Mod::read(&ratings)
+            .unwrap()
+            .repository()
+            .is_none(),
+        "{origin_meta}"
+    );
+
+    // AC3: the agent replaces the implementation, keeping origin and .git.
+    copy_dir(&fixture("ratings"), &ratings);
+    fs::write(
+        ratings.join("mod.toml"),
+        format!(
+            "{}\n[origin]{}",
+            fs::read_to_string(fixture("ratings").join("mod.toml")).unwrap(),
+            origin_meta.split_once("[origin]").unwrap().1,
+        ),
+    )
+    .unwrap();
+    assert!(ratings.join(".git").is_dir());
+    let mut command = github.dev_command(&dev, &carol, &ratings, "carol", &["publish", "--push"]);
+    let pending = std::thread::spawn(move || command.output().unwrap());
+    consent(&carol);
+    contains(
+        &body(&carol),
+        &["release", "ratings", "Made from", alice_release, "Alice"],
+    );
+    approve(&carol);
+    let output = pending.join().unwrap();
+    let published: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("Carol publish: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(0), "{published}; {output:?}");
+    assert_eq!(published["ok"], true, "{published}");
+    assert_eq!(published["warnings"], json!([]), "{published}");
+    assert_eq!(
+        published["result"]["push"]["mod"]["forked"], true,
+        "{published}"
+    );
+    let fork = root.join("remotes/carol/ratings");
+    assert_eq!(
+        fs::read_to_string(fork.join("fake-gh-parent"))
+            .unwrap()
+            .trim(),
+        "alice/reading-list"
+    );
+    assert_eq!(
+        github
+            .git(&["-C", fork.to_str().unwrap(), "symbolic-ref", "HEAD"])
+            .trim(),
+        "refs/heads/watane"
+    );
+    github.git(&[
+        "-C",
+        fork.to_str().unwrap(),
+        "merge-base",
+        "--is-ancestor",
+        alice_commit.trim(),
+        "watane",
+    ]);
+    let release = published["result"]["release"].as_str().unwrap();
+    assert_eq!(
+        github.git(&[
+            "-C",
+            fork.to_str().unwrap(),
+            "rev-parse",
+            &format!("{release}^{{commit}}")
+        ]),
+        github.git(&["-C", fork.to_str().unwrap(), "rev-parse", "watane"])
+    );
+    assert_eq!(
+        github.git(&["-C", fork.to_str().unwrap(), "rev-parse", "main"]),
+        github.git(&["-C", alice_remote.to_str().unwrap(), "rev-parse", "main"])
+    );
+    assert!(carol.quit().success());
+    assert!(alice.quit().success());
+}

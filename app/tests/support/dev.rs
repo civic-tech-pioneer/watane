@@ -74,3 +74,60 @@ pub fn dev_run(dev: &Path, app: &App, dir: &Path, args: &[&str]) -> Value {
     assert_eq!(value["ok"], true, "{value}");
     value["result"].clone()
 }
+
+// Local GitHub stand-in shared by the step-6 app journeys. Every child gets
+// its own environment; concurrent participants never change the test process.
+pub struct Github {
+    root: PathBuf,
+    path: std::ffi::OsString,
+}
+impl Github {
+    pub fn new(root: &Path, fake_gh: &Path) -> Self {
+        std::fs::create_dir_all(root.join("remotes")).unwrap();
+        std::fs::create_dir(root.join("bin")).unwrap();
+        std::os::unix::fs::symlink(fake_gh, root.join("bin/gh")).unwrap();
+        std::fs::write(root.join("gitconfig"), format!(
+            "[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display()
+        )).unwrap();
+        let path = std::env::join_paths(
+            std::iter::once(root.join("bin"))
+                .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap();
+        Self {
+            root: root.into(),
+            path,
+        }
+    }
+
+    fn git_env(&self, command: &mut Command) {
+        command
+            .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+    }
+
+    pub fn dev_command(
+        &self,
+        dev: &Path,
+        app: &App,
+        dir: &Path,
+        user: &str,
+        args: &[&str],
+    ) -> Command {
+        let mut command = dev_command(dev, app, dir, args);
+        self.git_env(&mut command);
+        command
+            .env("PATH", &self.path)
+            .env("FAKE_GH_ROOT", self.root.join("remotes"))
+            .env("FAKE_GH_USER", user);
+        command
+    }
+
+    pub fn git(&self, args: &[&str]) -> String {
+        let mut command = Command::new("git");
+        self.git_env(&mut command);
+        let output = command.args(args).output().unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+}
