@@ -205,7 +205,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   working local API; hidden windows poll only on focus; consent requests from clients that stopped
   waiting pile up (S24).
 
-Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`): S47 fixes it.
+Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`) and passes again since S47.
 
 - [x] **S44 Carol reads names, not keys (app cleanup).** Delivered 2026-11-13 (main `95db4b6`). Sol
   runs: S44-1 1 (about 26 min). User-sim accepted on the first run. Publishers show by profile name,
@@ -240,15 +240,19 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   flake is gone. Unfollowing a channel that is not followed says so; a stale first base makes dist
   read the next one; host names publishers by the same 10-character fingerprint as dist and sorts
   candidates naturally. S45's spec debt (dist 3.1, 5.11; host 2.2, 18) is paid.
-- [~] **S47 J5 passes again (dev fix).** S39-2 made `new --from` drop the package's `logic.wasm`;
-  when the origin has no `logic/` source, `watane-dev new ratings --from <link>` now fails with
-  `mod.invalid` "[parts] provide logic.wasm or logic/Cargo.toml", and `app/tests/j5.rs`
-  ac1_journey_j5 fails on main. Outcomes: `new --from` keeps `logic.wasm` when the package has no
-  logic source (and drops it only when the source rebuilds it); J5 passes on the Mac; dev's
-  `envelope::ac5_scenario_map...` passes on main again (S40 mapped DEV-S-41 to 51 to tests that
-  S42 and S43 will write: mark those rows as planned until they exist). Touches: dev/src (new
-  --from), dev/tests, dev TECHNICAL 15.2 rows. Local: J5 needs the Mac. Before S42 (same files).
-  (branch `slice/s47`; foreman: see `Foremen`)
+- [x] **S47 J5 passes again (dev fix).** Delivered 2026-11-13 (main `e2d1f55`); dev's full suite
+  with `--include-ignored` and J5 rerun on the Mac: green, the timing test included. User-sim
+  accepted on the third run. `new --from` keeps the package's `logic.wasm` and drops it only when
+  the package has `logic/Cargo.toml`; a mod with `logic.wasm` and no logic source is *prebuilt*,
+  and `test`, `serve` and `publish` skip the build and unit tests and run the contract tests
+  against the wasm. Under a new slug a prebuilt mod cannot pass `test` (its wasm implements the
+  origin's WIT package), so `new` warns `new.prebuilt_renamed`. DEV-S-41 to 51 are marked
+  "planned: S42/S43"; the scenario map now covers DEV-S-1 to 51. Left for later (user-sim): `next`
+  after `new --from` on a prebuilt package still points at `logic/src/lib.rs` and "then run test",
+  contradicting the warning; publishing a prebuilt mod with no `tests/` gives a release that
+  `new --from` refuses with a misleading `--no-source` message; the app fixture
+  `reading-list/tests/books.json` uses the old contract form; `test` and `serve` refuse `--home`;
+  `build.reads_outside` misleads when the cause is a `wit_bindgen` path left by the rename.
 - [x] **S40 Design: share on GitHub (step 6).** Merged 2026-11-13 (main `6f3a2c9`), spec documents
   only, after two independent reviews (the second on the human's switch to real GitHub forks).
   pkg stage 8 (`repository`, pkg 4.2); dev stage 10 (`publish --push`, 10.4.1) and stage 11 (the
@@ -266,6 +270,8 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   site URL; later runs commit, tag the ReleaseRef and push. Outcome: `app/tests/j3.rs::ac2_j3_github`
   passes with local bare remotes, and Bob installs from the raw-URL link. Touches: dev, fake-gh,
   `app/tests` (test code only). After S41 and S44 (app/tests). Local: the journey needs the Mac.
+  Watch (S47): a prebuilt mod's `logic.wasm` is in the template's `.gitignore` and `publish --push`
+  skips it, so the pushed repository would hold no logic.
 - [ ] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
   package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
@@ -365,7 +371,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw` (done).
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
-- S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47`.
+- S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -567,6 +573,12 @@ The human may veto each one.
   newest live version even when it is a downgrade, quiet when it adds no grant. A compromised
   channel gets no automatic update. Updates run in their own tasks; a refresh never waits on
   consent. New commands `release_install`, `release_withdraw`; `status.identity.releases`.
+- S47: a mod with `logic.wasm` and no `logic/Cargo.toml` is prebuilt (dev TECHNICAL 7.1, 10.2
+  step 5): `test`, `serve` and `publish` skip the build and unit tests, keep the wasm and run the
+  contract tests against it; `result.build` and `result.unit` are null. This reverses S11's
+  stale-wasm rule (`contract::ac5_s11_test_rejects_stale_wasm_without_manifest` became
+  `ac5_s47_test_accepts_prebuilt_wasm_without_manifest`). Deriving under a new slug keeps the wasm
+  and warns `new.prebuilt_renamed` rather than refusing the rename, which would break J5.
 
 ## Friction
 
@@ -771,6 +783,10 @@ The human may veto each one.
   ledger in the cloud.
 - S39/S44: the product owner merged S39 after dev's tests only; J5 broke unseen until S44. A merge
   that touches `new --from`, `add --release` or publish runs J3 and J5 too.
+- S47: S44 changed what the app shows and never ran J5, so the breakage surfaced a slice later.
+  A cloud slice that touches the app gets J5 run on the Mac before merge.
+- S47: the task brief said "Changed tests: none" while the S11 test asserted the very deletion the
+  slice removes; that cost a resume. A brief that reverses a rule names the test that holds it.
 
 ## Digest
 
