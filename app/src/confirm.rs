@@ -26,7 +26,23 @@ fn request_view(
             .entries
             .iter()
             .map(|e| consent::PlanMod {
-                origin: e.origin.as_ref().map(ToString::to_string),
+                origin: e.origin.as_ref().map(|origin| {
+                    let reference = origin.to_string();
+                    host.and_then(|h| {
+                        h.mods()
+                            .into_iter()
+                            .find(|m| m.release.as_ref() == Some(origin))
+                    })
+                    .map(|m| {
+                        let party = words::party(&origin.publisher.to_string(), parties);
+                        let label = party
+                            .name
+                            .map(|n| format!("{n} ({})", party.fingerprint))
+                            .unwrap_or(party.fingerprint);
+                        format!("{reference} — {} {} by {label}", m.name, origin.version)
+                    })
+                    .unwrap_or(reference)
+                }),
                 binds: e
                     .binds
                     .iter()
@@ -352,6 +368,101 @@ mod tests {
         assert!(mods[0].binds.is_empty());
     }
 
+    #[tokio::test]
+    async fn ac8_real_host_omits_existing_binds_and_ac7_names_installed_origin() {
+        use watane_host::{Source, watane_pkg};
+        let home = tempfile::tempdir().unwrap();
+        let host =
+            watane_host::Host::open(home.path(), watane_host::Mode::Preview, Default::default())
+                .unwrap();
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let temp = tempfile::tempdir().unwrap();
+        fn copy(from: &std::path::Path, to: &std::path::Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for entry in std::fs::read_dir(from).unwrap() {
+                let e = entry.unwrap();
+                if e.file_type().unwrap().is_dir() {
+                    copy(&e.path(), &to.join(e.file_name()));
+                } else {
+                    std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+                }
+            }
+        }
+        copy(&fixtures.join("stats"), temp.path());
+        let key = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        std::fs::write(
+            temp.path().join("deps.json"),
+            format!("{{\"mods:ratings\":\"{key}\"}}"),
+        )
+        .unwrap();
+        let provider = watane_pkg::Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: Some(key.parse().unwrap()),
+        };
+        let bind = watane_host::Bind {
+            consumer: "local/stats".into(),
+            provider,
+            to: "local/ratings".into(),
+        };
+        let plan = host
+            .plan_with(
+                vec![
+                    Source::Folder(temp.path().into()),
+                    Source::Folder(fixtures.join("ratings")),
+                ],
+                vec![bind.clone()],
+            )
+            .unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+        let plan = host.plan(vec![Source::Folder(temp.path().into())]).unwrap();
+        assert_eq!(plan.entries()[0].binds, [bind]);
+        let request = InstallRequest {
+            entries: plan.entries().to_vec(),
+            requester: Requester::App,
+        };
+        let consent::Request::Install { mods, .. } =
+            request_view(&request, &Parties::new(), Some(&host))
+        else {
+            panic!()
+        };
+        assert!(mods[0].binds.is_empty());
+        struct Approve;
+        impl watane_dist::Confirm for Approve {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Approve
+            }
+        }
+        let publisher_home = tempfile::tempdir().unwrap();
+        let dist =
+            watane_dist::Dist::open(publisher_home.path(), Arc::new(Approve), Default::default())
+                .unwrap();
+        let published = dist
+            .publish(
+                watane_pkg::pack(&fixtures.join("reading-list"), false)
+                    .unwrap()
+                    .as_bytes()
+                    .to_vec(),
+            )
+            .unwrap();
+        let fetched = dist.fetch(&published.info.reference).unwrap();
+        let plan = host
+            .plan(vec![Source::Release {
+                package: fetched.package,
+                entry: fetched.entry,
+            }])
+            .unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+        let mut request = request;
+        request.entries[0].origin = Some(published.info.reference);
+        let parties = Parties::new();
+        parties.insert(dist.identity().to_string(), "Alice".into());
+        let consent::Request::Install { mods, .. } = request_view(&request, &parties, Some(&host))
+        else {
+            panic!()
+        };
+        let origin = mods[0].origin.as_ref().unwrap();
+        assert!(origin.contains("Reading list 0.1.0 by Alice"), "{origin}");
+    }
     #[test]
     fn ac4_release_ends_with_made_from_named_or_fingerprint_or_none() {
         let key = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";

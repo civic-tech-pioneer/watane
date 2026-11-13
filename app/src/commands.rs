@@ -308,9 +308,14 @@ pub(crate) async fn install_link(
     let core = core(&state)?.clone();
     let planner = core.clone();
     let host = planner.host.clone();
-    let plan = blocking(move || planner.plan_link(&link)).await?;
+    let (plan, fetched) = blocking(move || planner.plan_link(&link)).await?;
     let installed = host.install(plan, watane_host::Requester::App).await?;
     core.installed(&installed);
+    blocking(move || {
+        core.follow_fetched(&fetched);
+        Ok(())
+    })
+    .await?;
     Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
 }
 #[tauri::command]
@@ -638,6 +643,7 @@ mod index_tests {
         for (publisher, interface) in [(Some("bad"), None), (None, Some("bad"))] {
             let query = crate::find::SearchQuery {
                 text: String::new(),
+                origin: None,
                 publisher: publisher.map(Into::into),
                 interface: interface.map(Into::into),
             };
@@ -747,12 +753,14 @@ pub(crate) async fn search(
     text: String,
     publisher: Option<String>,
     interface: Option<String>,
+    origin: Option<String>,
 ) -> Result<Vec<Value>, CmdError> {
     record(&webview, "search");
     let query = crate::find::SearchQuery {
         text,
         publisher,
         interface,
+        origin,
     }
     .parse()?;
     let core = core(&state)?.clone();

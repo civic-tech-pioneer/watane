@@ -1,0 +1,3 @@
+package mods:ratings@0.1.0;
+interface api { score: func() -> u32; }
+world ratings { import watane:host/state@0.1.0; export api; }

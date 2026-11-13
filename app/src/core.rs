@@ -20,6 +20,7 @@ pub(crate) struct ModView {
     pub page: Option<String>,
     pub package: String,
     pub derived_from: Option<String>,
+    pub derived_from_label: Option<String>,
     pub error: Option<String>,
     pub grants: Vec<GrantLine>,
     pub notice: Option<String>,
@@ -129,6 +130,26 @@ fn find_grant(states: &[GrantState], key: &str) -> Result<Grant, CmdError> {
         .map(|s| s.grant.clone())
         .ok_or_else(|| CmdError::new("not_found", "grant not found"))
 }
+fn origin_label(
+    origin: Option<&watane_dist::ReleaseRef>,
+    channel: Option<&watane_dist::ChannelView>,
+    parties: &Parties,
+) -> Option<String> {
+    let origin = origin?;
+    let release = channel.and_then(|c| c.releases.iter().find(|r| &r.reference == origin));
+    let text = match release {
+        Some(r) => {
+            let party = words::party(&origin.publisher.to_string(), parties);
+            let label = party
+                .name
+                .map(|n| format!("{n} ({})", party.fingerprint))
+                .unwrap_or(party.fingerprint);
+            format!("{} {} by {label}", r.release.name, origin.version)
+        }
+        None => origin.to_string(),
+    };
+    Some(format!("Made from {text} (the publisher says so)"))
+}
 impl Core {
     pub fn new(
         app: tauri::AppHandle,
@@ -156,11 +177,24 @@ impl Core {
                 .find(|c| c.channel.to_string() == p.to_string())
         });
         let failures = self.update_failures.lock().unwrap();
-        let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()));
+        let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()))
+            .or_else(|| {
+                m.publisher
+                    .as_ref()
+                    .and_then(|p| self.failures.lock().unwrap().get(&p.to_string()).cloned())
+            });
         let offer = release_offer(m.release.as_ref(), channel);
         let offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
         let offer = offer.map(|r| r.to_string());
+        let origin_channel = m
+            .origin
+            .as_ref()
+            .and_then(|r| r.publisher.to_string().parse().ok())
+            .and_then(|key| self.dist.channel(&key).ok());
+        let derived_from_label =
+            origin_label(m.origin.as_ref(), origin_channel.as_ref(), &self.parties);
         ModView {
+            derived_from_label,
             notice,
             offer,
             offer_grants,
@@ -180,7 +214,9 @@ impl Core {
             grants: m
                 .grants
                 .iter()
-                .map(|g| words::grant_line(&g.grant, &self.parties, g.granted, false))
+                .map(|g| {
+                    words::grant_line_bound(&g.grant, &m.binds, &self.parties, g.granted, false)
+                })
                 .collect(),
         }
     }
@@ -279,25 +315,44 @@ fn keep_outcome(
 }
 fn resolve_plan<S, P>(
     mut sources: Vec<S>,
-    mut plan: impl FnMut(&[S]) -> Result<(P, Vec<Option<watane_dist::ReleaseRef>>), CmdError>,
-    mut fetch: impl FnMut(&watane_dist::ReleaseRef) -> Result<S, CmdError>,
-) -> Result<P, CmdError> {
+    mut plan: impl FnMut(
+        &[S],
+        &[watane_host::Bind],
+    ) -> Result<(P, Vec<Option<watane_dist::ReleaseRef>>), CmdError>,
+    mut fetch: impl FnMut(
+        &P,
+        &watane_dist::ReleaseRef,
+    ) -> Result<(Option<S>, Vec<watane_host::Bind>), CmdError>,
+) -> Result<(P, Vec<S>), CmdError> {
     let mut added = std::collections::BTreeSet::new();
+    let mut binds = Vec::new();
     for _ in 0..32 {
-        let (plan, missing) = plan(&sources)?;
+        let (plan, missing) = plan(&sources, &binds)?;
         if missing.is_empty() {
-            return Ok(plan);
+            return Ok((plan, sources));
         }
-        let before = sources.len();
+        let before = sources.len() + binds.len();
         for release in missing {
             let release = release.ok_or_else(|| {
                 CmdError::new("missing_providers", "a local provider has no release")
             })?;
             if added.insert(release.clone()) {
-                sources.push(fetch(&release)?);
+                let (source, picked) = fetch(&plan, &release)?;
+                sources.extend(source);
+                let replan = !picked.is_empty();
+                for bind in picked {
+                    if !binds.contains(&bind) {
+                        binds.push(bind);
+                    }
+                }
+                // The pick binds every current consumer. Remaining missing
+                // entries in this plan may now be satisfied by that same pick.
+                if replan {
+                    break;
+                }
             }
         }
-        if before == sources.len() {
+        if before == sources.len() + binds.len() {
             return Err(CmdError::new(
                 "missing_providers",
                 "provider resolution added no source",
@@ -361,7 +416,7 @@ impl Core {
         for release in updates {
             let core = self.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = core.install_release(release, None).await;
+                let _ = core.install_resolved(release, None, None).await;
             });
         }
     }
@@ -376,16 +431,34 @@ impl Core {
         release: watane_dist::ReleaseRef,
         link: Option<watane_dist::Link>,
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
+        self.install_resolved(
+            release,
+            link,
+            Some(self.app.state::<crate::AppState>().broker.clone()),
+        )
+        .await
+    }
+    async fn install_resolved(
+        self: &Arc<Self>,
+        release: watane_dist::ReleaseRef,
+        link: Option<watane_dist::Link>,
+        pick: Option<Arc<crate::consent::Broker>>,
+    ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
         let planner = self.clone();
         let target = release.clone();
         let result = async {
-            let plan = tauri::async_runtime::spawn_blocking(move || {
+            let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
                 let fetched = fetch_release(&planner.dist, &target, link.as_ref())?;
-                planner.plan_fetched(fetched)
+                planner.plan_fetched(fetched, pick.as_deref())
             })
             .await
             .map_err(|e| CmdError::new("io", e.to_string()))??;
-            Ok::<_, CmdError>(self.host.install(plan, watane_host::Requester::App).await?)
+            let installed = self.host.install(plan, watane_host::Requester::App).await?;
+            let follower = self.clone();
+            tauri::async_runtime::spawn_blocking(move || follower.follow_fetched(&fetched))
+                .await
+                .map_err(|e| CmdError::new("io", e.to_string()))?;
+            Ok::<_, CmdError>(installed)
         }
         .await;
         match &result {
@@ -417,7 +490,10 @@ impl Core {
             .find(|c| c.channel == link.channel().to_string())
             .ok_or_else(|| CmdError::new("not_found", "followed channel missing"))
     }
-    pub fn plan_link(&self, text: &str) -> Result<watane_host::Plan, CmdError> {
+    pub fn plan_link(
+        &self,
+        text: &str,
+    ) -> Result<(watane_host::Plan, Vec<watane_dist::Fetched>), CmdError> {
         let link: watane_dist::Link = text.parse()?;
         if link.slug().is_none() {
             self.follow(text)?;
@@ -428,13 +504,17 @@ impl Core {
         }
         let first = self.dist.open_link(&link)?;
         self.channels()?;
-        self.plan_fetched(first)
+        self.plan_fetched(first, Some(&self.app.state::<crate::AppState>().broker))
     }
-    fn plan_fetched(&self, first: watane_dist::Fetched) -> Result<watane_host::Plan, CmdError> {
-        let plan = resolve_plan(
+    fn plan_fetched(
+        &self,
+        first: watane_dist::Fetched,
+        pick: Option<&crate::consent::Broker>,
+    ) -> Result<(watane_host::Plan, Vec<watane_dist::Fetched>), CmdError> {
+        let result = resolve_plan(
             vec![first],
-            |fetched| {
-                let plan = self.host.plan(
+            |fetched, binds| {
+                let plan = self.host.plan_with(
                     fetched
                         .iter()
                         .map(|f| watane_host::Source::Release {
@@ -442,19 +522,133 @@ impl Core {
                             entry: f.entry.clone(),
                         })
                         .collect(),
+                    binds.to_vec(),
                 )?;
-                if plan.missing().iter().any(|m| m.release.is_none()) {
-                    return Err(
-                        watane_host::HostError::MissingProviders(plan.missing().to_vec()).into(),
-                    );
-                }
                 let missing = plan.missing().iter().map(|m| m.release.clone()).collect();
                 Ok((plan, missing))
             },
-            |r| Ok(self.dist.fetch(r)?),
+            |plan, r| {
+                let m = plan
+                    .missing()
+                    .iter()
+                    .find(|m| m.release.as_ref() == Some(r))
+                    .expect("missing release belongs to plan");
+                let consumer = plan
+                    .entries()
+                    .iter()
+                    .find(|e| e.identity == m.needed_by)
+                    .expect("missing consumer belongs to plan");
+                let key = consumer
+                    .publisher
+                    .as_ref()
+                    .map(|p| p.to_string().parse::<watane_dist::PublicKey>())
+                    .transpose()
+                    .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
+                match self.dist.fetch_for(r, key.as_ref()) {
+                    Ok(fetched) => Ok((Some(fetched), vec![])),
+                    Err(error) => crate::build_on::fetch_or_pick(
+                        Err(error.into()),
+                        pick.map(|broker| {
+                            |cause: &CmdError| self.pick_provider(plan, m, broker, &cause.message)
+                        }),
+                    ),
+                }
+            },
         )?;
         self.channels()?;
-        Ok(plan)
+        Ok(result)
+    }
+    fn pick_provider(
+        &self,
+        plan: &watane_host::Plan,
+        missing: &watane_host::MissingProvider,
+        broker: &crate::consent::Broker,
+        cause: &str,
+    ) -> Result<(Option<watane_dist::Fetched>, Vec<watane_host::Bind>), CmdError> {
+        use crate::build_on;
+        let provider = &missing.provider;
+        let needed = build_on::needed(plan.entries(), provider);
+        let interface = needed
+            .iter()
+            .find_map(|g| match g {
+                Grant::Call { interface, .. } | Grant::Subscribe { interface, .. } => {
+                    Some(interface.to_string())
+                }
+                _ => None,
+            })
+            .and_then(|i| i.split_once('@').map(|(name, _)| name.to_owned()));
+        let hits = self.dist.search(&watane_dist::Query {
+            interface: interface.map(|i| i.parse()).transpose()?,
+            ..Default::default()
+        })?;
+        self.channels()?;
+        let hits = build_on::candidates(&hits, provider, &needed);
+        let label = words::provider(provider, &self.parties);
+        if hits.is_empty() {
+            return Err(build_on::no_candidates(&label, cause));
+        }
+        let installed = self.host.mods();
+        let candidates = hits
+            .iter()
+            .map(|h| crate::consent::Candidate {
+                choice: h.info.reference.to_string(),
+                name: h.info.release.name.clone(),
+                summary: h.info.release.summary.clone(),
+                version: h.info.reference.version.to_string(),
+                publisher: crate::consent::Party {
+                    name: h.publisher_name.clone(),
+                    fingerprint: h.info.channel.fingerprint(),
+                },
+                origin: h.info.release.origin.as_ref().map(ToString::to_string),
+                installed: installed.iter().any(|m| {
+                    m.publisher.as_ref() == Some(&h.info.reference.publisher)
+                        && m.slug == h.info.reference.slug
+                }),
+                checked_at: h.checked_at,
+            })
+            .collect();
+        let consumer = plan
+            .entries()
+            .iter()
+            .find(|e| e.identity == missing.needed_by)
+            .expect("missing consumer belongs to plan");
+        let choice = build_on::picked(broker.ask_blocking(crate::consent::Request::Pick {
+            consumer: consumer.name.clone(),
+            provider: label,
+            cause: cause.into(),
+            candidates,
+        }))?;
+        let hit = hits
+            .iter()
+            .find(|h| h.info.reference.to_string() == choice)
+            .ok_or_else(|| CmdError::new("refused", "unknown provider choice"))?;
+        let to = format!(
+            "{}/{}",
+            hit.info.reference.publisher, hit.info.reference.slug
+        );
+        let fetched = if installed.iter().any(|m| {
+            m.publisher.as_ref() == Some(&hit.info.reference.publisher)
+                && m.slug == hit.info.reference.slug
+        }) {
+            None
+        } else {
+            Some(self.dist.fetch(&hit.info.reference)?)
+        };
+        Ok((fetched, build_on::bindings(plan.entries(), provider, &to)))
+    }
+    pub fn follow_fetched(&self, fetched: &[watane_dist::Fetched]) {
+        if let Ok(followed) = self.dist.followed() {
+            let links = crate::build_on::follow_links(
+                fetched.iter().filter_map(|f| f.link.clone()),
+                followed.iter().map(|c| c.channel),
+            );
+            crate::build_on::follow_all(
+                links,
+                |link| self.dist.follow(link).map(|_| ()).map_err(CmdError::from),
+                &mut self.failures.lock().unwrap(),
+            );
+        }
+        let _ = self.channels();
     }
 }
 
@@ -539,7 +733,7 @@ mod stage_c_tests {
         let mut fetched = vec![];
         let result = resolve_plan(
             vec![0],
-            |sources| {
+            |sources, _binds| {
                 Ok((
                     sources.len(),
                     if sources.len() == 1 {
@@ -549,37 +743,91 @@ mod stage_c_tests {
                     },
                 ))
             },
-            |r| {
+            |_, r| {
                 fetched.push(r.clone());
-                Ok(1)
+                Ok((Some(1), vec![]))
             },
         )
         .unwrap();
-        assert_eq!(result, 2);
+        assert_eq!(result.0, 2);
         assert_eq!(fetched, vec![reference.clone()]);
-        let e = resolve_plan(vec![0], |_| Ok(((), vec![None])), |_| Ok(1)).unwrap_err();
+        let e = resolve_plan(
+            vec![0],
+            |_, _| Ok(((), vec![None])),
+            |_, _| Ok((Some(1), vec![])),
+        )
+        .unwrap_err();
         assert_eq!(e.code, "missing_providers");
         let e = resolve_plan(
             vec![0],
-            |_| Ok(((), vec![Some(reference.clone())])),
-            |_| Ok(1),
+            |_, _| Ok(((), vec![Some(reference.clone())])),
+            |_, _| Ok((Some(1), vec![])),
         )
         .unwrap_err();
         assert_eq!(e.code, "missing_providers");
         let mut rounds = 0;
         let e = resolve_plan(
             vec![0],
-            |_| {
+            |_, _| {
                 rounds += 1;
                 let mut r = reference.clone();
                 r.version = format!("0.0.{rounds}").parse().unwrap();
                 Ok(((), vec![Some(r)]))
             },
-            |_| Ok(1),
+            |_, _| Ok((Some(1), vec![])),
         )
         .unwrap_err();
         assert_eq!(e.code, "missing_providers");
         assert_eq!(rounds, 32);
+        let bind = watane_host::Bind {
+            consumer: "local/stats".into(),
+            provider: watane_host::watane_pkg::Provider {
+                slug: "reading-list".parse().unwrap(),
+                publisher: Some(reference.publisher.clone()),
+            },
+            to: "local/reading-list".into(),
+        };
+        let result = resolve_plan(
+            vec![0],
+            |_, binds| {
+                Ok((
+                    (),
+                    if binds.is_empty() {
+                        vec![Some(reference.clone())]
+                    } else {
+                        vec![]
+                    },
+                ))
+            },
+            |_, _| Ok((None, vec![bind.clone()])),
+        )
+        .unwrap();
+        assert_eq!(result.1, [0]);
+        let mut newer = reference.clone();
+        newer.version = "0.2.0".parse().unwrap();
+        let mut picks = 0;
+        resolve_plan(
+            vec![0],
+            |_, binds| {
+                Ok((
+                    (),
+                    if binds.is_empty() {
+                        vec![Some(reference.clone()), Some(newer.clone())]
+                    } else {
+                        vec![]
+                    },
+                ))
+            },
+            |_, _| {
+                picks += 1;
+                Ok((None, vec![bind.clone()]))
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            picks, 1,
+            "one pick resolves every consumer, including another pinned version"
+        );
     }
     #[test]
     fn ac4_dist_error_keeps_whole_cause_chain() {
@@ -776,6 +1024,7 @@ mod stage_d_more_tests {
                 page: None,
                 package: "package".into(),
                 derived_from: None,
+                derived_from_label: None,
                 error: None,
                 grants: vec![],
                 notice: notice.map(str::to_string),
@@ -877,6 +1126,10 @@ mod find_tests {
         )
         .unwrap();
         let row = crate::find::hit_view(&hit, &host.mods(), &parties);
+        assert_eq!(row["origin"], serde_json::Value::Null);
+        hit.info.release.origin = Some(stage_d_tests::reference("0.1.0"));
+        let row = crate::find::hit_view(&hit, &host.mods(), &parties);
+        assert_eq!(row["origin"], stage_d_tests::reference("0.1.0").to_string());
         assert_eq!(row["verified"], true);
         assert_eq!(row["installed"], serde_json::Value::Null);
         assert_eq!(row["checkedAt"], 1700000000123u64);
@@ -887,6 +1140,73 @@ mod find_tests {
         let row = crate::find::hit_view(&hit, &[], &parties);
         assert_eq!(row["verified"], false);
         assert_eq!(row["status"], "compromised");
+    }
+    #[test]
+    fn ac7_origin_label_names_stored_release_and_marks_publishers_claim() {
+        let mut channel = stage_d_tests::channel();
+        let origin = stage_d_tests::reference("0.1.0");
+        channel.releases.push(stage_d_tests::release("0.1.0", None));
+        let parties = Parties::new();
+        parties.insert(channel.channel.to_string(), "Alice".into());
+        assert_eq!(
+            origin_label(Some(&origin), Some(&channel), &parties),
+            Some(format!(
+                "Made from Reading list 0.1.0 by Alice ({}) (the publisher says so)",
+                channel.channel.fingerprint()
+            ))
+        );
+        assert_eq!(
+            origin_label(Some(&origin), None, &parties),
+            Some(format!("Made from {origin} (the publisher says so)"))
+        );
+        assert_eq!(origin_label(None, None, &parties), None);
+    }
+    #[test]
+    fn ac1_build_on_candidates_fit_all_interfaces_in_order_and_cap() {
+        use watane_host::watane_pkg::{Grant, Provider};
+        let provider = Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: Some("y".repeat(52).parse().unwrap()),
+        };
+        let call = Grant::Call {
+            provider: provider.clone(),
+            interface: "mods:ratings/api@0.1.0".parse().unwrap(),
+        };
+        let subscribe = Grant::Subscribe {
+            provider: provider.clone(),
+            interface: "mods:ratings/events@0.1.0".parse().unwrap(),
+        };
+        let mut good = Hit {
+            info: stage_d_tests::release("0.1.0", None),
+            publisher_name: None,
+            link: None,
+            status: Status::Ok,
+            checked_at: None,
+            unchecked_since: None,
+            via: vec![],
+        };
+        good.info.reference.slug = "ratings".parse().unwrap();
+        good.info.release.offers = vec!["mods:ratings/api@0.1.1".parse().unwrap()];
+        good.info.release.events = vec!["mods:ratings/events@0.1.0".parse().unwrap()];
+        let mut bad = vec![good.clone(); 5];
+        bad[0].status = Status::Compromised { seq: 1 };
+        bad[1].info.reference.slug = "other".parse().unwrap();
+        bad[2].info.reference.publisher = provider.publisher.clone().unwrap();
+        bad[3].info.release.offers.clear();
+        bad[4].info.release.events.clear();
+        let mut hits = bad;
+        for n in 0..25 {
+            let mut h = good.clone();
+            h.info.release.name = n.to_string();
+            hits.push(h);
+        }
+        let kept = crate::build_on::candidates(&hits, &provider, &[call, subscribe]);
+        assert_eq!(
+            kept.iter()
+                .map(|h| h.info.release.name.as_str())
+                .collect::<Vec<_>>(),
+            (0..20).map(|n| n.to_string()).collect::<Vec<_>>()
+        );
     }
     #[test]
     fn ac3_indexes_put_own_channel_first_and_name_included_parties() {

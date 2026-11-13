@@ -296,7 +296,7 @@ pub struct PlanMod {
     pub replaces: Option<String>,     // the installed version that this replaces
     pub grants: Vec<GrantLine>,
     pub uses: Vec<String>,            // providers, as {provider} of section 4
-    pub origin: Option<String>,       // step 5: ReleaseRef text of mod.toml [origin], the publisher's claim
+    pub origin: Option<String>,       // step 5: origin reference with installed name/party when known, the publisher's claim
     pub binds: Vec<String>,           // step 5: one line per new bind, words.rs: "<to> in place of <provider> (your pick)"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -466,6 +466,7 @@ Status     {home, port, mark, error: null | string,
 ModView    {local, name, slug, version, release: null | string (ReleaseRef),
             publisher: null | Party, enabled, page: null | string (page URL),
             package (package id), derivedFrom: null | string (ReleaseRef),
+            derivedFromLabel: null | string (display text with publisher claim),
             error: null | string, notice: null | string, offer: null | string (ReleaseRef), offerGrants: [GrantLine],
             grants: [GrantLine]} // granted false = withdrawn or withheld
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
@@ -903,7 +904,10 @@ mod's origin. The details show it as `Made from <name or slug> <version> by
 <party> (the publisher says so)`, with the name and party from the
 parties cache and dist's view of the origin's channel when stored, else
 the ReleaseRef text. The install consent and the `release` sign request
-show it too (6.2, 6.3).
+show it too (6.2, 6.3). The confirmation adapter retains the origin
+reference and appends the installed origin's name, version and party when
+the real host has that release; without it, the reference is the fallback.
+`PlanMod.origin` remains nullable text; no consent command or field is added.
 
 **Derived mods** (F-BUILD-4, APP-F-42). For an installed mod with a
 `release`, the details call `search` with `origin` `<publisher>/<slug>`

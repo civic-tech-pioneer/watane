@@ -1,0 +1,3 @@
+package mods:stats@0.1.0;
+interface api { %result: func() -> u32; }
+world stats { import mods:ratings/api@0.1.0; export api; }

@@ -42,7 +42,29 @@ function modsView(mods) {
     const details = element('details', '', entry); details.open = expanded.has(mod.local);
     element('summary', 'Details', details);
     const publisher = mod.publisher ? `${mod.publisher.name || ''} (${mod.publisher.fingerprint}) · signature verified` : 'local';
-    for (const text of [mod.version, publisher, mod.page, mod.package, mod.release, mod.derivedFrom]) if (text) element('p', text, details);
+    for (const text of [mod.version, publisher, mod.page, mod.package, mod.release, mod.derivedFromLabel]) if (text) element('p', text, details);
+    if (mod.release) {
+      const derived = element('div', '', details, 'derived');
+      let loading = false;
+      const showDerived = async () => {
+        if (!details.open || loading) return;
+        loading = true;
+        try {
+          const origin = mod.release.slice(0, mod.release.lastIndexOf('@'));
+          const hits = await call('search', {text: '', publisher: null, interface: null, origin});
+          derived.replaceChildren();
+          element('p', 'Made from this: as far as your indexes list them', derived);
+          for (const hit of hits) {
+            const row = element('p', `${hit.name} ${hit.version} by ${partyLabel(hit.publisher)} `, derived);
+            row.dataset.release = hit.release;
+            if (hit.verified) button(row, 'Install', 'install-release', () => action('install_release', {release: hit.release, link: hit.link}));
+          }
+        } catch (error) { showError(error); }
+        finally { loading = false; }
+      };
+      details.addEventListener('toggle', showDerived);
+      if (details.open) showDerived();
+    }
     for (const grant of mod.grants) {
       const row = element('p', '', details); row.dataset.key = grant.key;
       element('span', `${grant.text} — ${grant.granted ? 'Granted' : 'Not granted'} `, row);

@@ -10,12 +10,23 @@ pub(crate) struct SearchQuery {
     pub text: String,
     pub publisher: Option<String>,
     pub interface: Option<String>,
+    pub origin: Option<String>,
 }
 impl SearchQuery {
     pub fn parse(self) -> Result<Query, CmdError> {
         Ok(Query {
             text: self.text,
-            origin: None,
+            origin: self
+                .origin
+                .map(|text| -> Result<_, CmdError> {
+                    let bad = || CmdError::new("bad_input", "expected origin <key>/<slug>");
+                    let (key, slug) = text.split_once('/').ok_or_else(bad)?;
+                    Ok((
+                        key.parse().map_err(|_| bad())?,
+                        slug.parse().map_err(|_| bad())?,
+                    ))
+                })
+                .transpose()?,
             publisher: self
                 .publisher
                 .map(|p| {
@@ -86,6 +97,10 @@ pub(crate) fn hit_view(
     row.remove("unchecked_since");
     row.insert("checkedAt".into(), json!(hit.checked_at));
     row.insert("uncheckedSince".into(), json!(hit.unchecked_since));
+    row.insert(
+        "origin".into(),
+        json!(hit.info.release.origin.as_ref().map(ToString::to_string)),
+    );
     row.insert("slug".into(), json!(hit.info.reference.slug.to_string()));
     row.insert(
         "version".into(),
@@ -130,4 +145,31 @@ pub(crate) fn hit_view(
         ),
     );
     view
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ac7_search_rejects_bad_origin() {
+        for origin in [
+            "",
+            "bad",
+            "bad/ratings",
+            "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/ratings@0.1.0",
+        ] {
+            let input = serde_json::json!({"text":"", "origin":origin});
+            let query: SearchQuery = serde_json::from_value(input).unwrap();
+            assert_eq!(query.parse().unwrap_err().code, "bad_input", "{origin}");
+        }
+        let key = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        let query: SearchQuery = serde_json::from_value(
+            serde_json::json!({"text":"", "origin":format!("{key}/ratings")}),
+        )
+        .unwrap();
+        assert_eq!(
+            query.parse().unwrap().origin.unwrap().1.to_string(),
+            "ratings"
+        );
+    }
 }

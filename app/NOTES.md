@@ -192,3 +192,41 @@
   driver execution remains limited by the XPC failure above. Release with driver
   fails at the intended debug-only compile error. No existing test was weakened.
 - Validator (S37-2, round 1): natively on macOS, `cargo test --features driver` (front tests not run, being ignored) passes, including `ac6_publish_through_consent_window_and_host_guards`; the XPC failure above was the sandbox only.
+
+## S37-3 — fetch providers, pick substitutes, and show derivation
+
+- Provider resolution calls `fetch_for` with the consumer publisher, plans with
+  binds, and counts a new bind as progress. A pick checks every call and
+  subscription of every affected plan consumer, keeps search order, and binds
+  all consumers pinning that provider. Background updates pass no pick resolver.
+- Every fetched release with a link is considered for follow after installation,
+  once per channel. Failed follows retain their channel cause without undoing
+  the install. No application dependency was added.
+- `derivedFrom` and hit `origin` retain ReleaseRef text. `derivedFromLabel`
+  supplies the named publisher claim for Details. The confirmation adapter
+  keeps the origin reference and appends the installed origin's name and party
+  when the real host has it; the existing nullable `PlanMod.origin` field and
+  consent UI remain in use. A missing installed origin falls back to the reference.
+- `src/confirm.rs` is an unlisted file: it needs the real-host origin display
+  lookup, plus the test proving installed binds are omitted from confirmation.
+  No existing test was weakened; the no-host origin test still expects raw text.
+- S23/S24 window fixtures explicitly choose Carol and Frank as indexes before
+  stopping Carol's site. This permits loopback sites under dist's existing
+  local-address guard, as in `tests/find.rs`; there is no driver exception.
+  Dave also lists Carol, and the resolver passes Dave's publisher to `fetch_for`.
+- New fixture components are built manually from the committed Rust/WIT sources;
+  normal tests only pack and run those prebuilt components. Ratings records a
+  call count, and Stats displays the value returned by that provider call.
+- Native macOS window tests are written for S23/S24/S25 and compile with the
+  driver feature. They are not executed in Sol's sandbox, per the task's
+  macOS-driver limitation; the native validator must run them.
+
+- Red/green evidence includes the missing candidate helper, rejected bad origin,
+  raw-only real-host consent origin, and a regression where two pinned versions
+  asked for the same provider twice. Replanning immediately after a pick makes
+  the latter one request without changing the existing 32-round/stall assertions.
+- Validation: `cargo build` and all 86 default tests pass; the driver-feature
+  unit/static selection passes 64 tests; strict all-targets driver clippy and
+  `cargo fmt --check` pass. `cargo test --features driver --no-run` compiles
+  all window tests. Release with driver fails at the intended debug-only guard
+  (the local rust-objcopy tool also warns about missing libLLVM while stripping).
