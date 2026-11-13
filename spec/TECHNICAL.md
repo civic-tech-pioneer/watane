@@ -236,7 +236,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 3 Publish | `log`; `dist` (own channel, publish folder, follow); the confirmation in `app`; `watane-dev publish` | J3 passes |
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
 | 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
-| 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host |
+| 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -261,10 +261,15 @@ Step 5 is designed (S32, W24 to W28): `new --from` and `add --release` in
 provider listings of a publish and the derived view in `app/TECHNICAL.md`
 6, 8.1, 8.3 and 9.7.
 
-Step 6 is sketched (W29, W30): the `repository` key in `pkg/TECHNICAL.md`
-4.2; `publish --push` and the fork of `new --from` in `dev/TECHNICAL.md`
-10.4. It waits for its slice to design the exact command results, the
-errors and the tests.
+Step 6 is designed (S40, W29, W30): the `repository` key and its grammar
+in `pkg/TECHNICAL.md` 4.2 (pkg stage 8); `publish --push`, the fork of
+`new --from`, their results, errors and warnings in `dev/TECHNICAL.md`
+10.4 (dev stages 10 and 11). No test reaches GitHub: a local bare
+repository per GitHub repository, git's own `insteadOf` rewrite of
+`https://github.com/`, and `fake-gh` on `PATH` stand in (dev 15.4); J3 and
+J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
+`app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
+repository. Nothing waits now.
 
 ## 10. Reference material
 

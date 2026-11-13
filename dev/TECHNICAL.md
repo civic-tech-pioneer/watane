@@ -31,9 +31,11 @@ dev/
   src/json_eq.rs        equality of two JSON values for tests
   src/deps.rs           `add <mod folder>`; .watane-dev.json; local and released providers in order
   src/build_on.rs       step 5: `new --from`, `add --release`, released providers in the cache (10.1)
+  src/share.rs          step 6: git and gh child processes; `publish --push`; the fork of `new --from` (10.4)
   src/api.rs            the local API client; find a running host
   src/preview.rs        `serve`; find the program `watane`
   src/bin/fake-watane.rs  a fake host for tests (feature `fake-host`)
+  src/bin/fake-gh.rs    step 6: a fake `gh` for tests (feature `fake-host`, 15.4)
 template/               the files of a new mod (section 4)
 allowlist/Cargo.toml    the allowlist: direct crates, exact versions
 allowlist/Cargo.lock    the allowlist: the full closure, with checksums
@@ -81,6 +83,11 @@ regex = "1"
 name = "fake-watane"
 path = "src/bin/fake-watane.rs"
 required-features = ["fake-host"]
+
+[[bin]]                                 # step 6
+name = "fake-gh"
+path = "src/bin/fake-gh.rs"
+required-features = ["fake-host"]
 ```
 
 Distribution builds use `cargo build --release --no-default-features` to omit
@@ -114,7 +121,7 @@ watane-dev [--json] [--dir <path>] <command>
   search [<text>...] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
   new [<slug>] --from <link> [--home <path>]                (step 5)
   add --release <link or release> [--home <path>]           (step 5)
-  publish --push [...]                                      (step 6)
+  publish --push [--no-source] [--home <path>] [--wait <seconds>]  (step 6)
 ```
 
 - `--help` describes every command, positional argument and option. `serve --stop`
@@ -220,6 +227,11 @@ The exit status is the class of the first error; 0 when there is none.
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release and link), then run: watane-dev add --release <that link>` |
 | `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source: its publisher published it with --no-source` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
+| `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
+| `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
+| `env.gh_auth` | 3 | step 6: `gh api user` fails | `gh is not logged in: <gh's last stderr line>` | `Ask the person to run: gh auth login (dev never logs in for them), then run: <rerun>` |
+| `publish.no_repository` | 1 | step 6: `publish --push`, no `repository` in `mod.toml`, and the folder's git has a remote `origin` | `the mod folder's git remote origin is <url>, and mod.toml names no repository` (file `mod.toml`) | `Set repository in mod.toml to the https URL of that repository, then run: <rerun>` |
+| `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last stderr lines>` | `Fix the cause, then run: <the failed command and the rest of its list>` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
 | `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run this command again` |
@@ -232,7 +244,14 @@ and fix `Ask the person to restart the watane app, then run this command again`.
 Other app 5xx use `host.failed` as above; fetch 502 `fetch_failed` follows 10.1.
 4xx keeps its existing refusal code and fix.
 
-Warning codes (step 5 first): `publish.provider_unlisted` (the app's
+In step 6, `<rerun>` is the canonical publish rerun of 9.7 with `--push`.
+A `mod.invalid` from a pkg `mod-toml` violation whose message starts with
+`` `repository` `` (pkg 4.2) gets the fix `Set repository in mod.toml to the
+https URL of the mod's git repository (for example
+https://github.com/<owner>/<slug>), or remove the line`.
+
+Warning codes (step 5 first; step 6 adds `new.fork_unavailable` and
+`new.fork_differs`, 10.4.2): `publish.provider_unlisted` (the app's
 publish answer has `listed: false` for a provider; message `<key>/<slug> is
 not listed in your channel, so people who install <slug> need a channel or
 an index that names where it is published`, fix `Ask the person to list
@@ -401,7 +420,7 @@ On a gap, it is `Run each error's fix, then run: watane-dev doctor --json`.
  "providers": ["<key>/tags@0.2.0"],
  "mentions": [{"file": "logic/src/lib.rs", "line": 3}]}
 ```
-`files` as for `new`. `providers` are the released providers fetched into
+`files` as for `new`. Step 6 adds `fork` (10.4.2). `providers` are the released providers fetched into
 the cache (10.1). `mentions` lists each line (at most 200, in path and line
 order) of `wit/*.wit`, `logic/` and `ui/` and `tests/` that still names the
 old slug: `<from_slug>` or its `_` form as a whole word (bounded by no
@@ -467,7 +486,8 @@ answer has none; each `listed: false` adds `publish.provider_unlisted`.
 `home` is the resolved home; `package` is the posted package id and `source`
 is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
-while no site URL is set. With a link, `next` is
+while no site URL is set. Step 6: with `--push`, the result adds `push`
+and its own `next` (10.4.1). With a link, `next` is
 `Put the site folder on your static web host`; without one, it is
 `Set your site's URL in the watane app, then run publish again to get the link`.
 That rerun checks existing releases and reports the release and current link.
@@ -518,6 +538,7 @@ index in the watane app, then run search again`; with none otherwise,
 | `WATANE_DEV_UNIT_SECONDS` | the time limit of one unit test binary | 60 |
 | `WATANE_BIN` | the program `watane` | 9.1 |
 | `WATANE_HOME` | the home of the participant | read through `watane_host::default_home()` |
+| `PATH` | step 6: where dev finds `git` and `gh` | the process `PATH`; git and gh keep the whole environment (10.4) |
 
 Home resolution uses `--home`, else `watane_host::default_home()` (which
 reads `WATANE_HOME`, else `$HOME/.watane`). Resolve symlinks for both
@@ -1354,13 +1375,13 @@ version-bump fix and file as the preflight refusal. Both version-conflict
 paths use `Raise the version in wit/world.wit, then run: <rerun>` for `next`;
 `host.no_answer` uses `Run again with a longer --wait: <rerun>`.
 The rerun is `watane-dev publish --json --dir <canonical mod> --home <canonical home>`,
-with `--no-source` and explicit `--wait <n>` retained, paths shell quoted.
+with `--no-source`, `--push` (step 6) and explicit `--wait <n>` retained, paths shell quoted.
 This includes default homes and timeouts while listing releases, and does
 not change error fix texts.
 Other errors are `host.refused` with `[<code>] <message>` and `next` equal
 to the fix. Success chooses the link-dependent instruction of 2.4.
 
-## 10. Step 4: `search`; step 5: `new --from`, `add --release`
+## 10. Step 4: `search`; step 5: `new --from`, `add --release`; step 6: GitHub
 
 `search` needs no mod folder (`dir` is null). It resolves the home and
 checks the app status as `install` does (9.6, step 1: `env.host_not_running`
@@ -1479,35 +1500,165 @@ Contract tests fake the provider (section 8), so `test` needs no network
 and no app. `serve` installs the cached folders in the preview (9.2, 9.3).
 `install` in a home needs the provider installed from the app (9.6).
 
-### 10.4 Step 6: share on GitHub (sketch, W29, W30)
+### 10.4 Step 6: share on GitHub (W29, W30; designed in S40)
 
 dev itself still opens no connection except HTTP to `localhost`. Step 6
-runs the maker's own `git` and `gh` as child processes, with the maker's
-own login; dev holds no token and reads none. The exact results, errors
-and tests wait for the slice of step 6.
+runs the maker's own `git` and `gh` as child processes (`src/share.rs`),
+found on `PATH`, with the maker's own login. dev holds no token and
+reads none.
 
-**`publish --push`.** After the app confirms and writes the site folder
-(9.7):
-1. The site folder is a clone of the maker's site repository. The first
-   time, `gh repo create <owner>/watane-channel --public` creates it, and
-   dev's `next` asks the participant to set the site URL in the app to
-   its raw URL (`https://raw.githubusercontent.com/<owner>/watane-channel/<branch>/`).
-   No local API route sets the site URL.
-2. Commit and push the site folder.
-3. In the mod folder: the first time, `gh repo create <owner>/<slug>
-   --public` and write `repository` in `mod.toml` (pkg 4.2) before the
-   pack, so the package names it. Then commit, tag `v<version>` and push.
-   With `--no-source`, no mod repository and no `repository`.
+**Child processes.** Unlike cargo (6.4), git and gh keep the maker's
+environment: they need `HOME`, the credential helper and the SSH agent.
+dev adds `GIT_TERMINAL_PROMPT=0` and `GH_PROMPT_DISABLED=1`, so nothing
+waits for a person, and passes `-c http.lowSpeedLimit=1000 -c
+http.lowSpeedTime=60` to every git command that uses the network, so a
+stalled transfer ends. Each command is one argument vector, never a shell
+line; a URL or path argument comes after `--` where git accepts one.
+Standard output is read only where stated below. A failure keeps the last
+5 lines of standard error for the message. dev never runs `push --force`,
+never rewrites a pushed commit and never deletes a tag.
 
-**`new --from <link>`.** When the release's `mod.toml` names a
-`repository`: `gh repo fork <repository> --clone` into the new folder, or
-`git clone` without `gh`; then check out the tag `v<version>`. The
-repository is not verified, so dev compares the checked-out source with
-the source in the verified package; any difference refuses the fork and
-falls back to the package. Then set `[origin]`, remove `repository`, and
-go on as 10.2. Without a
-`repository`, unpack the package as 10.2. The fork is a convenience: the
-signed `[origin]` is the only origin that watane shows (W24).
+**The `gh` calls** (all that dev uses, and all that `fake-gh` answers, 15.4):
+
+| Call | Use | Result |
+|---|---|---|
+| `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero: `env.gh_auth`. |
+| `gh api repos/<owner>/<name> --jq .html_url` | does the repository exist | exit 0: yes. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
+| `gh repo create <owner>/<name> --public` | create it | exit 0, else `publish.push_failed`. |
+
+dev builds a GitHub repository URL itself as `https://github.com/<owner>/<name>`;
+it parses no URL from gh's output. git rewrites such a URL with the
+maker's own `url.<base>.insteadOf` setting, which is how the tests point it
+at a local remote (15.4).
+
+#### 10.4.1 `publish --push`
+
+`publish [--push] [--no-source] [--home <path>] [--wait <seconds>]`.
+Without `--push`, publish is 9.7, unchanged.
+
+1. 9.7 steps 1, 2 and 2b, unchanged. `publish.version_exists` stops
+   before anything below; it pushes nothing.
+2. Preflight, before the test pipeline and before any file changes:
+   `git --version` (not found: `env.git_missing`); then `gh api user`
+   (table above), giving `<owner>`. gh is needed on every `--push`,
+   because only gh can create the site repository.
+3. The mod repository, unless `--no-source`:
+   - `mod.toml` names a `repository`: use it, on any host.
+   - Else, when `<dir>/.git` exists and `git remote get-url origin`
+     succeeds: `publish.no_repository` (the folder already has a remote
+     that dev must not guess). Stop.
+   - Else the repository is `https://github.com/<owner>/<slug>`: create it
+     when `gh api repos/<owner>/<slug>` says it does not exist
+     (`created: true`), and write `repository = "<that URL>"` into
+     `mod.toml` (a `toml::Table` edit, as `[origin]` in 10.2).
+   - When `<dir>/.git` is absent: `git init -q -b main`. When the folder
+     has no remote `origin`: `git remote add origin <repository>`.
+   This runs before the pipeline, so `check` sees the new `mod.toml` and
+   the package names the repository (W29). When the person then declines,
+   the repository exists and stays empty; the next run reuses it.
+4. 9.7 steps 3 to 5: test, pack, POST, unchanged. Any failure here
+   reports as 9.7 and pushes nothing.
+5. The site, with `<site>` from the publish answer:
+   - When `<site>/.git` is absent: the repository is
+     `https://github.com/<owner>/watane-channel`. If `gh api` says it does not
+     exist, create it (`created: true`). `git init -q -b main`,
+     `git remote add origin <repository>`. If it existed: `git fetch -q
+     origin`, and when `git rev-parse -q --verify origin/main` succeeds,
+     `git reset -q --soft origin/main`, so the new commit follows the
+     pushed history. dist writes only `head`, `entries/` and `packages/`
+     (dist 4.3), so `.git/` beside them is safe.
+   - `git add -A`; when `git diff --cached --quiet` fails, `git commit -q
+     -m <ReleaseRef>`; then `git push -q origin HEAD`.
+6. The mod, unless `--no-source`: `git rm -r -q --cached --ignore-unmatch .`,
+   then `git add -f -- <each path of the package except logic.wasm>`, so
+   the commit holds exactly the source that the person agreed to publish
+   (F-PUB-4) and no other file of the folder. When `git diff --cached
+   --quiet` fails, `git commit -q -m "<slug> <version>"`. Then `git tag
+   v<version>` and `git push -q origin HEAD refs/tags/v<version>`.
+   Files that are not committed stay in the folder, untracked.
+
+Steps 5 and 6 run as lists of git commands, all with `-C <folder>`. The
+first command that fails stops its list and gives one
+`publish.push_failed`; the other list still runs. Its fix is the failed
+command and the rest of its list, joined with ` && ` and shell-quoted as in
+2.4, so the agent or the person finishes the push without publishing again.
+
+Result (2.4 `publish` plus `push`):
+
+```json
+"push": {
+  "site": {"repository": "https://github.com/alice/watane-channel", "created": true,
+           "commit": "<40 hex>", "pushed": true,
+           "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/"},
+  "mod": {"repository": "https://github.com/alice/reading-list", "created": true,
+          "commit": "<40 hex>", "tag": "v0.1.0", "pushed": true}
+}
+```
+
+- `repository`: the URL of step 3 or 5; for an existing `<site>/.git`, its
+  `origin` URL as git prints it.
+- `commit`: `git rev-parse HEAD` after the commit step, null when the list
+  failed before it. `pushed`: the push command succeeded.
+- `raw`: when the site's `origin` is `https://github.com/<o>/<r>` (an
+  optional `.git` removed), `https://raw.githubusercontent.com/<o>/<r>/<branch>/`
+  with `<branch>` from `git branch --show-current`; else null.
+- `mod` is null with `--no-source`. `push` holds the parts that ran, also
+  in a failed result; it is absent without `--push`.
+
+`next` on success: with a link, `Give the person this link to share:
+<link>`; without a link and with `raw`, `Ask the person to set the site
+URL in the watane app to <raw>, then run publish again to get the link`;
+without either, the 2.4 text. On `publish.push_failed`, the first error's
+fix. The raw URL can serve an older file for a few minutes after a push;
+the link stays valid because each reader verifies what it reads.
+
+#### 10.4.2 The fork of `new --from`
+
+10.2 steps 1 to 4 are unchanged. Then:
+
+1. `store(package)` (10.1) and `Mod::read(<cache>/providers/<id>)`:
+   `repository()` (pkg 4.2, already checked by pkg) gives the URL, or
+   none. With none, go on with 10.2 step 5 (unpack); no warning.
+2. `git -c advice.detachedHead=false clone -q --branch v<version> --
+   <repository> <folder>`. git not found, or a non-zero exit (no network,
+   no such repository or tag): remove `<folder>`, warn
+   `new.fork_unavailable`, and go on with 10.2 step 5.
+3. Check the checkout against the verified package: write the package's
+   `logic.wasm` into `<folder>` when it has one, then
+   `watane_pkg::pack(<folder>, true)`. Its id must equal the package's id.
+   On a difference, or a pack error, remove `<folder>`, warn
+   `new.fork_differs` with the first path, in byte order, that is missing,
+   extra or different (or the pack error), and go on with 10.2 step 5.
+4. Remove from `<folder>` every file and folder that the package does not
+   hold, except `.git/`: a README, `.github/`, `.claude/`, `.vscode/` and the
+   publisher's `AGENTS.md` never reach the new mod. `git -C <folder>
+   checkout -q -B main`, `git -C <folder> remote rename origin upstream`,
+   then delete each local tag (`git tag -l`, `git tag -d <tags>`): they
+   are the publisher's, and a derived mod keeps the version of its origin
+   (10.2), so its own first `v<version>` tag would collide. The tags stay
+   on `upstream`.
+5. 10.2 steps 5 (without the unpack: guides, `.gitignore`, no
+   `logic.wasm`) to 8. Step 6 also removes `repository` from `mod.toml`:
+   the new mod gets its own repository at its first `publish --push`,
+   which pushes this history, Alice's commits up to the tag included.
+
+The new folder is a git fork of the mod repository: the tagged history
+plus the derived mod's changes, with the publisher's repository as
+`upstream`. dev runs no `gh repo fork`: GitHub allows one fork of a
+repository for each account, its fork starts at the default branch, not
+at the tag, and a fork made before the check would hold unverified source
+under the maker's name. `new --from` needs no gh and no login. The signed
+`[origin]` stays the only origin that watane shows (W24).
+
+`new --from` result (2.4) adds `"fork": {"repository": "<URL>", "tag": "v0.1.0"}`,
+or null when the folder came from the package. `files` leaves out `.git/`.
+
+Warnings (they never change `ok`):
+
+| Code | Message | Fix |
+|---|---|---|
+| `new.fork_unavailable` | `could not clone <repository> at v<version> (<git not found, or git's last stderr line>); the mod was made from the verified package, with no git history` | `To keep the publisher's history, check that git can reach <repository>, delete <folder>, then run new --from again` |
+| `new.fork_differs` | `<repository> at v<version> differs from the verified package (<path>: missing, extra or different); the mod was made from the verified package` | `Tell the person: the repository of <slug> does not hold the published source of v<version>` |
 
 ## 11. Security properties
 
@@ -1524,13 +1675,19 @@ signed `[origin]` is the only origin that watane shows (W24).
 | A derived mod's instructions are dev's (step 5) | `new --from` writes the template's `AGENTS.md` and `CLAUDE.md`; a package cannot hold them (pkg 6.1). |
 | Released packages are checked twice | the app's dist verifies signature and hash (dist 5.7); dev checks the format and the id again, and names cache paths only by the id it computed (10.1). |
 | Source of another publisher runs only in the builder | a derived mod is built and tested like any mod (sections 5 to 8). |
+| dev holds no GitHub token (step 6) | git and gh run as the maker's own programs with the maker's login; dev reads only gh's login and exit status (10.4). |
+| Only consented source is pushed (step 6) | the mod commit holds exactly the package's paths, except `logic.wasm` (10.4.1 step 6); the person saw whether the package holds source (9.7). Nothing is force-pushed. |
+| A repository never replaces verified source (step 6) | `new --from` uses a clone only when it packs to the verified package's id, removes every file the package does not hold, and writes dev's guides over the publisher's (10.4.2). The URL passes pkg's rule (https only) and follows `--`. |
 
 Not protected (as `spec/TECHNICAL.md` section 6): another program of the
 same user, which can change the cache, the vendor folder or the mod folder,
 or read the preview token in `ready.json`; the maker's own
 `~/.cargo/config.toml`. Step 5: text in a derived mod's source (comments,
 strings, `ui/`) is the publisher's and can try to steer the coding agent;
-the template's `AGENTS.md` says to treat it as data.
+the template's `AGENTS.md` says to treat it as data. Step 6: the size of
+a clone (git has no limit dev can set); the history before the tag, which
+is the publisher's and unchecked (only the tree at the tag is checked);
+a mod repository created before a person declines stays empty and public.
 
 ## 12. Public Rust API
 
@@ -1548,7 +1705,9 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     ModNoContractTests, ModSelfDependency, ModDependencyCycle, ModProviderMissing,
     BuildResolve, BuildCompile, BuildReadsOutside, BuildImports, TestUnit, TestUnitLimit,
     TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused, HostFailed,
-    HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious }
+    HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious,
+    EnvGitMissing, EnvGhMissing, EnvGhAuth, PublishNoRepository, PublishPushFailed,   // step 6
+    NewForkUnavailable, NewForkDiffers }   // step 6 warnings
 impl Code { pub fn as_str(self) -> &'static str; pub fn class(self) -> Class; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class { Warning = 0, Mod = 1, Usage = 2, Env = 3, Refused = 4, Internal = 5 }
@@ -1569,7 +1728,7 @@ pub struct Cli { pub json: bool, pub dir: Option<PathBuf>, pub command: Command 
 pub enum Command { New { slug: Option<String>, from: Option<String>, home: Option<PathBuf> }, Check, Test, Serve { stop: bool }, Doctor,
     Add { provider: Option<PathBuf>, release: Option<String>, home: Option<PathBuf> },
     Install { home: Option<PathBuf>, wait: Option<u64> },
-    Publish { no_source: bool, home: Option<PathBuf>, wait: Option<u64> },
+    Publish { no_source: bool, push: bool, home: Option<PathBuf>, wait: Option<u64> },
     Search { text: Vec<String>, publisher: Option<String>, interface: Option<String>, home: Option<PathBuf> } }
 pub fn run(cli: Cli) -> Outcome;
 
@@ -1659,6 +1818,14 @@ pub fn store(package: &watane_pkg::Package, env: &Env) -> Result<PathBuf, Proble
 pub fn fetch_providers(dir: &Path, client: &Client, env: &Env) -> Result<Vec<watane_pkg::ReleaseRef>, Vec<Problem>>;
 pub fn new_from(destination: Option<&Path>, slug: Option<&str>, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
 pub fn add_release(dir: &Path, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
+
+// share.rs (step 6, 10.4)
+pub fn owner() -> Result<String, Problem>;   // git --version, then gh api user
+pub fn prepare_mod(dir: &Path, owner: &str) -> Result<serde_json::Value, Vec<Problem>>;   // 10.4.1 step 3
+pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, push_mod: bool)
+    -> (serde_json::Value, Vec<Problem>);   // 10.4.1 steps 5, 6: the `push` result and its errors
+pub fn fork(folder: &Path, repository: &str, package: &watane_pkg::Package)
+    -> Result<(), Problem>;   // 10.4.2 steps 2 to 4; Err is the warning, with folder removed
 
 // api.rs
 pub struct Client { /* base URL, ureq::Agent */ }
@@ -1759,6 +1926,11 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 
 **host** (step 5): a preview links a provider by slug (W27, host 4.2).
 
+**pkg** (step 6): `mod.toml` `repository` and `Mod::repository() -> Option<&str>` (pkg 4.2, stage 8).
+
+**Programs** (step 6): the maker's `git` (2.28 or newer, for `init -b`) and
+`gh`, on `PATH` (10.4). They are not siblings; tests use real git and `fake-gh`.
+
 **log**, **dist**: nothing directly; through the home host only.
 
 ## 15. Test plan
@@ -1798,6 +1970,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
+| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); `raw` from origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -1863,6 +2036,15 @@ rules belong to 15.1.
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
+| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod |
+| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41 |
+| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh |
+| DEV-S-44 | `share::ac3_gh_not_logged_in` | integration: fake-gh with no user |
+| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
+| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_existing_origin_without_repository` | integration |
+| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
+| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
+| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -1972,6 +2154,50 @@ Status requests are not recorded; POST requests are numbered from 1, with names 
 metadata and package ids and returns the host `InstalledMod` type. It serves no
 page and no MCP. SIGTERM ends it (the default action).
 
+### 15.4 GitHub in tests (step 6)
+
+No test reaches GitHub. Each step-6 test makes, in its temp folder:
+
+- `remotes/`: the bare repositories. fake-gh creates `remotes/<owner>/<name>`
+  (no `.git` suffix) with `git init -q --bare -b main`.
+- `gitconfig`, passed as `GIT_CONFIG_GLOBAL` (and `GIT_CONFIG_NOSYSTEM=1`):
+  `user.name`, `user.email`, and `[url "file://<temp>/remotes/"]
+  insteadOf = https://github.com/`. So dev's `https://github.com/alice/x`
+  reaches `remotes/alice/x` through git's own rewrite: no seam in dev.
+- `bin/gh`: a link to the built `fake-gh`, first on `PATH`. The real `git`
+  stays on `PATH`; DEV-S-43 builds a `PATH` with only `bin/` (no git), or
+  without `bin/gh`.
+
+`fake-gh` (`src/bin/fake-gh.rs`) reads `FAKE_GH_ROOT` (the `remotes/`
+folder) and `FAKE_GH_USER` (unset: not logged in). It appends each
+argument vector as one JSON array line to `<root>/../gh-calls`, then answers
+exactly the three calls of 10.4:
+
+| Call | Answer |
+|---|---|
+| `api user --jq .login` | user set: stdout `<user>\n`, exit 0; unset: stderr `To get started with GitHub CLI, please run:  gh auth login`, exit 4 |
+| `api repos/<o>/<n> --jq .html_url` | `<root>/<o>/<n>` exists: stdout `https://github.com/<o>/<n>\n`, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
+| `repo create <o>/<n> --public` | creates the bare repository, stdout `https://github.com/<o>/<n>\n`, exit 0; exists: stderr `GraphQL: Name already exists on this account (createRepository)`, exit 1 |
+
+Anything else: stderr `fake-gh: unsupported: <args>`, exit 2. `-h` and
+`--help` print this table and exit 0.
+
+`fake-watane` (15.3) in step 6: an approved publish also writes
+`<dir>/site/packages/<id>` (the posted bytes) and `<dir>/site/head` (the
+release text and a newline), so the site folder changes with each publish
+as dist's does.
+
+The journeys (spec/TECHNICAL.md 8, 9): `app/tests/j3.rs::ac2_j3_github`
+and `app/tests/j5.rs::ac2_j5_github` use the same `remotes/`, `gitconfig`
+and `bin/gh`, with the real app. Alice runs `watane-dev publish --push`;
+the test then serves a fresh `git clone` of `remotes/alice/watane-channel`
+(branch `main`) with the static server of J3, sets that server's URL as
+Alice's site URL, and Bob installs from the link. J5: Carol's `new --from`
+clones `remotes/alice/reading-list` at the tag (`result.fork` set), and
+Carol's `publish --push` creates `remotes/carol/ratings` holding Alice's
+commits and Carol's. The raw URL itself appears only as text (`raw`,
+`next`): the local server stands in for raw.githubusercontent.com.
+
 ## 16. Build plan
 
 - S4 (dev): the counter template includes `tests/counter.json`; `test` runs
@@ -1993,6 +2219,8 @@ page and no MCP. SIGTERM ends it (the default action).
 | 7 (step 3) | `publish`: local-provider refusal, app status, tests, pack, consent POST, result | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31 implemented; dev's part of J3 |
 | 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` from `fake.json`, with an empty default | S-33, 34 implemented; dev stage 8 complete |
 | 9 (step 5) | `build_on`: 10.1 to 10.3, `release_providers`, 9.2 released providers, `publish.provider_unlisted`, the `missing_providers` fix of 9.6; template `AGENTS.md` lines for `new --from`, `add --release` and source as data | app: `/api/fetch` (app 8.3); host stage 9 (the preview rule) | `fake-watane` answers `/api/fetch` from packages named in `fake.json` | S-35 to S-40 pass; dev's part of J5 |
+| 10 (step 6) | `share`: 10.4.1 `publish --push`; the codes and result of 2.2, 2.4; `fake-gh`; the fake-watane site files (15.4); template `AGENTS.md` lines for `publish --push` and asking the person for `gh auth login` | pkg stage 8 (`repository`); the maker's git and gh | `fake-gh`, local bare remotes (15.4) | S-41 to S-46 pass; with the app, J3 on a local remote (`ac2_j3_github`) |
+| 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result | stage 10 | as stage 10 | S-47 to S-49 pass; J5 on a local remote (`ac2_j5_github`) |
 
 ## 17. Questions for spec/
 
@@ -2039,3 +2267,10 @@ Each has a proposed answer, which this specification uses.
     Traverse `Deps::read` before validating worlds, and check the proposed
     cycle before reading the provider as a `Mod`. This preserves the fixed
     pkg interface and reports DEV-S-26 without modifying either folder.
+13. **The fork of `new --from`** (S40, step 6): the sketch ran
+    `gh repo fork`. dev clones instead (10.4.2): GitHub allows one fork of
+    a repository for each account, starts it at the default branch rather
+    than the tag (so the derived mod's first push would not fast-forward),
+    and a fork made before the source check would hold unverified source
+    under the maker's name. The clone keeps the history (`upstream`); the
+    maker's repository is made by `publish --push`.

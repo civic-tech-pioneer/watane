@@ -30,6 +30,7 @@ cargo fmt --check                       # the toolchain needs: rustup target add
 - Do not redefine a sibling type (`Mod`, `Grant`, `Package`, `Harness`, `Ready`): use it.
 - Keep it lean: no abstraction with one user, no seam "for later".
 - Step 5 (`new --from`, `add --release`) is designed in TECHNICAL 10 (S32); build it only in its stage (16, stage 9).
+- Step 6 (`publish --push`, the fork of `new --from`) is designed in TECHNICAL 10.4 (S40); build it only in its stages (16, stages 10 and 11). git and gh keep the maker's environment; cargo never does.
 
 ## Reading the specs
 

@@ -10,8 +10,8 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-1** When a command runs with `--json`, dev shall write exactly one JSON object on standard output, which holds the result or the errors of the command. Traces: F-MAKE-5, J1.
 - **DEV-F-2** dev shall give each error a stable code, a message, the file and line where the error has one, and a fix where dev knows one. Traces: F-MAKE-5, F-QUAL-3.
 - **DEV-F-3** When a command fails, dev shall exit with the status of the class of its first error: 1 for the mod, 2 for the use of the command, 3 for the environment, 4 for a refusal by the host or the participant, 5 for an internal error. Traces: F-MAKE-5.
-- **DEV-F-4** dev shall hold no key, need no account, sign nothing and approve nothing. Traces: F-MAKE-6, F-AGENT-4.
-- **DEV-F-5** dev shall open no network connection, except HTTP to `localhost`, on the port that a host of watane names in its own files. Traces: F-QUAL-1, F-MAKE-6.
+- **DEV-F-4** dev shall hold no key, need no account, sign nothing and approve nothing. `publish --push` (step 6) uses the maker's own login of the GitHub CLI; dev holds no token of it. Traces: F-MAKE-6, F-AGENT-4, F-PUB-8.
+- **DEV-F-5** dev shall open no network connection, except HTTP to `localhost`, on the port that a host of watane names in its own files. In step 6, the maker's own `git` and `gh`, which dev runs, connect to the maker's code host. Traces: F-QUAL-1, F-MAKE-6, F-PUB-8.
 
 ## 2. Make (step 1)
 
@@ -79,6 +79,14 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-41** (step 5) When a mod depends on a published provider, `test` shall need no network, and `serve` shall install the kept package of that provider in the preview. Traces: F-BUILD-2, F-MAKE-4, J5.
 - **DEV-F-42** (step 5) When `publish` succeeds and the app could not list a provider of another publisher in the own index, dev shall warn and say why it matters. Traces: F-BUILD-2, W25.
 
+## 5a. Share on GitHub (step 6)
+
+- **DEV-F-43** When the maker runs `publish --push`, dev shall publish as `publish` does, then push the site folder to the maker's site repository and the source of the package to the mod's own repository, tagged `v<version>`, with the maker's own `git` and `gh`. The first time, dev shall create each repository on GitHub and name the mod repository in `mod.toml` before it packs. Traces: F-PUB-4, F-PUB-8, W29, W30, J3.
+- **DEV-F-44** dev shall push to the mod repository only the files of the package that the participant agreed to publish, and shall never force a push. Traces: F-PUB-4, F-PUB-8.
+- **DEV-F-45** If `git`, `gh` or the login of `gh` is missing, then `publish --push` shall fail before it tests, changes or sends anything, and say what to install or what the person must run. Traces: F-MAKE-5, F-PUB-8.
+- **DEV-F-46** If a push fails, then dev shall report the release and the parts that were pushed, and give the commands that finish the push without a new publish. Traces: F-QUAL-3, F-PUB-8.
+- **DEV-F-47** When the release of `new --from` names a repository, dev shall clone it at the tag `v<version>` and use the clone only when its source equals the source of the verified package, keeping no file of it that the package does not hold. Otherwise dev shall make the mod from the package and warn with the cause. Traces: F-BUILD-1, W24, W29, J5.
+
 ## 6. Acceptance scenarios
 
 | Id | Given | When | Then |
@@ -123,3 +131,12 @@ test; `TECHNICAL.md` section 15 names its oracle.
 | DEV-S-38 | a template mod `stats`, a home app whose `/api/fetch` answers Carol's `ratings` | in `stats`: `add --release <link> --json` | exit 0; `deps.json` is `{"mods:ratings": "<Carol key>"}`; `wit/deps/ratings/` equals the package's `wit/` files; `.watane-dev.json` names the package in `release_providers`; `result.imports` holds `import mods:ratings/api@0.1.0;`. |
 | DEV-S-39 | DEV-S-38 with the import line pasted and a contract test that fakes `ratings` | `test --json` with no app running | exit 0. Then `serve --json`: the preview installed `ratings` and `stats`, `ratings` first. |
 | DEV-S-40 | DEV-S-39, an app whose publish answer has `providers: [{"provider": "<Carol key>/ratings", "listed": false}]` | `publish --json` | exit 0; warning `publish.provider_unlisted` names `<Carol key>/ratings`. |
+| DEV-S-41 | (step 6) a page-only mod with no `repository`, `gh` logged in as `alice`, an approving app | `publish --push --json` | exit 0; `alice/watane-channel` and `alice/reading-list` were created; `mod.toml` and the posted package's `mod.toml` hold `repository = "https://github.com/alice/reading-list"`; the remote's `main` of the site repository holds the site folder's files; the tag `v0.1.0` of the mod repository holds exactly the package's files; `result.push.site.raw` is `https://raw.githubusercontent.com/alice/watane-channel/main/`. |
+| DEV-S-42 | DEV-S-41, then the version raised to 0.2.0 | `publish --push --json` | exit 0; no repository was created (`created: false`); both remotes fast-forwarded; the mod repository has the tags `v0.1.0` and `v0.2.0`. |
+| DEV-S-43 | no `git` on `PATH`; or no `gh` | `publish --push --json` | exit 3; `env.git_missing` or `env.gh_missing`; the app received no publish request; `mod.toml` is unchanged. |
+| DEV-S-44 | `gh` not logged in | `publish --push --json` | exit 3; `env.gh_auth`; the fix asks the person to run `gh auth login`. |
+| DEV-S-45 | DEV-S-41 with a mod remote that refuses every push | `publish --push --json` | exit 4; `publish.push_failed` names the push and its fix is `git -C '<folder>' ... push ...`; `result.release` is set; the site was pushed; the remote has no tag. |
+| DEV-S-46 | `publish --push --no-source --json` | — | exit 0; no mod repository was created; `mod.toml` is unchanged; `result.push.mod` is null; the site was pushed. With a folder whose git has an `origin` and no `repository`, plain `--push` exits 1 with `publish.no_repository` before the app is asked. |
+| DEV-S-47 | DEV-S-41's release, and its remote with the tag `v0.1.0` plus a `README.md` | `new ratings --from <link> --json` | exit 0; `result.fork.tag` is `v0.1.0`; `ratings` is a git repository whose `HEAD` is the tag's commit on branch `main`, with remote `upstream` and no tags; no `README.md`; files and `mod.toml` as DEV-S-35, with no `repository`. |
+| DEV-S-48 | DEV-S-47 with the tag moved to a commit that changes `ui/index.html` | `new ratings --from <link> --json` | exit 0; warning `new.fork_differs` names `ui/index.html`; no `.git`; the files equal those of DEV-S-35. |
+| DEV-S-49 | DEV-S-47 with the remote deleted | `new ratings --from <link> --json` | exit 0; warning `new.fork_unavailable`; no `.git`; the files equal those of DEV-S-35. |

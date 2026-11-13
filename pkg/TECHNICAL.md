@@ -135,10 +135,33 @@ release = "<ReleaseRef>"               # the release this mod was made from
 
 `name` and `summary`: no character of Unicode category Cc (this includes
 newlines), no leading or trailing white space, length counted in `char`.
-`repository` (step 6, W29): an absolute `https` URL with a host, no
-userinfo, at most 256 bytes; the git repository with the source of this
-mod. It is the publisher's claim, shown as a link, never fetched by
-`host` or `dist`.
+`repository` (step 6, W29, S40): the git repository with the source of
+this mod. It is the publisher's claim: `host` and `dist` never fetch it;
+dev clones it only to compare it with a verified package (dev 10.4.2).
+A TOML string, checked by this grammar (no URL crate; the release body
+does not change):
+
+```text
+repository = "https://" host [":" port] ["/" path]   ; 1..=256 bytes in all
+host       = label *("." label)
+label      = 1*63(ALPHA / DIGIT / "-")
+port       = 1*5DIGIT
+path       = *(ALPHA / DIGIT / "-" / "." / "_" / "~" / "/" / "%")
+```
+
+So no user name, password, query, fragment, white space or control
+character. A refusal is one violation, rule `mod-toml`, file `mod.toml`;
+the first failing check in this order gives the message exactly:
+
+| Check | Message |
+|---|---|
+| over 256 bytes | `` `repository` is longer than 256 bytes `` |
+| does not start with `https://` | `` `repository` must start with https:// `` |
+| an `@` before the first `/` after `https://` | `` `repository` must not hold a user name or password `` |
+| an empty host | `` `repository` has no host `` |
+| any other break of the grammar | `` `repository` may hold only letters, digits and - . _ ~ / % after the host `` |
+
+`Mod::repository()` returns the text as written.
 The message for an unknown key `slug` or `version` is: "`<key>` is not a
 mod.toml key: the slug and the version come from the package line of
 wit/world.wit".
@@ -614,6 +637,7 @@ impl Mod {
     pub fn summary(&self) -> &str;
     pub fn http_hosts(&self) -> &[HttpHost];       // sorted
     pub fn origin(&self) -> Option<&ReleaseRef>;
+    pub fn repository(&self) -> Option<&str>;        // step 6, 4.2
     pub fn deps(&self) -> &Deps;
     pub fn world(&self) -> &World;
     pub fn page(&self) -> Option<PathBuf>;        // <dir>/ui
@@ -788,6 +812,7 @@ expected value.
 | `zbase32` | key text of 32 × `0x00` is 52 × `y`; of 32 × `0x01` is A25; the RFC 8032 key of log §4.1 | Python of this spec; log §4.1 |
 | `compatible` | the table of 5.2 | the table |
 | `mod_toml`, `deps_json` | schema, limits, unknown keys (A8), canonical write | literal texts |
+| `mod_toml_repository` (step 6) | accepted: `https://github.com/alice/reading-list`, `https://git.example.org:8443/a/b-c.d_e~f%20`, `https://h`, a 256-byte URL; refused, with the exact message of 4.2: `http://github.com/a/b`, `https://user@github.com/a/b`, `https://user:pw@h/x`, `https://`, `https:///a`, a 257-byte URL, `https://h/a b`, `https://h/a?b=c`, `https://h/#x`, a non-string value; `Mod::repository()` gives the text back; a package of a mod with `repository` unpacks and reads it back | literal texts |
 | `grants` | A1, A2, A3; ordering of 5.1; JSON forms of 5.1 | the table of 4.5 and the literals of 5.1 |
 | `rules` | one fixture for each line of 4.7; `rule` and `file` as expected (A4–A7) | the table of 4.7 |
 | `component` | A9, A10, a missing export, an extra export, a core module, `wasi:http/types` without the world import | components made by `wit-component` (`dummy_module`, `embed_component_metadata`, `ComponentEncoder`) from a world written in the test, not from `pkg` |
@@ -836,6 +861,7 @@ fmt --check` green.
 | 5 | `package.rs` (section 6) | `pack_*`, `decode_refusals`, `unpack`, `round_trip` pass | host preview and install (J1, J2) |
 | 6 | `add_provider` (4.8) | `add_provider` passes | dev `add` (J2) |
 | 7 | `release.rs` (section 7) | `release_*` pass | dist publish and fetch, host verify (J3) |
+| 8 (step 6) | `repository` in `meta.rs` (4.2), `Mod::repository` | `mod_toml_repository` passes | dev `publish --push`, `new --from` (step 6) |
 
 `Grant::same_authority` (step 4) is one function; build it with stage 3 or
 when step 4 starts.
