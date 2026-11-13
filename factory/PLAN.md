@@ -235,20 +235,11 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   refusal and nothing below is read; every walk lists and stats through no-follow directory
   handles (20,000 swaps leaked nothing). Its spec lines are in pkg TECHNICAL 4.7, 6.4 and 7.2. Left for later: a linked `ui` reports two problems;
   `add.rs` (add_provider) keeps the check-then-read gap; mid-swap errors are plain I/O text.
-- [~] **S48 Dist and host leftovers (cloud).** Story: Eve follows, unfollows and installs with
-  mirrors and several fitting mods, and every message names people the same way and gives a next
-  step. Outcomes: unfollowing a never-followed channel says it was not followed; a stale first base
-  (a mirror at Current without the release) makes dist read the next base, not answer "unknown
-  release"; host names a provider's publisher by fingerprint, as dist does, and candidates sort
-  naturally (shelf-2 before shelf-10); the host `api::ac5_extra_api...` flake is gone (the guard
-  answers without a broken pipe, or the test sends the guarded requests with a small body); dist
-  TECHNICAL 3.1 and 5.11 step 4 and host TECHNICAL 2.2 show S45's variant shapes. Touches: dist,
-  host (src, tests, TECHNICAL). Not app, dev or pkg. The product owner runs host's IPv6 tests on
-  the Mac. (cloud routine: see `Foremen`)
-
-Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
-is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
-
+- [x] **S48 Dist and host leftovers.** Delivered 2026-11-13 from the cloud (main `1c6f944`);
+  host's full suite and an app build ran on macOS, and `api::ac5_extra` 20 times: 0 failures, the
+  flake is gone. Unfollowing a channel that is not followed says so; a stale first base makes dist
+  read the next one; host names publishers by the same 10-character fingerprint as dist and sorts
+  candidates naturally. S45's spec debt (dist 3.1, 5.11; host 2.2, 18) is paid.
 - [~] **S47 J5 passes again (dev fix).** S39-2 made `new --from` drop the package's `logic.wasm`;
   when the origin has no `logic/` source, `watane-dev new ratings --from <link>` now fails with
   `mod.invalid` "[parts] provide logic.wasm or logic/Cargo.toml", and `app/tests/j5.rs`
@@ -375,7 +366,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47`.
-- S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR`.
+- S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -389,6 +380,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S48: dist `NothingToUnfollow { channel }` (unfollow only); DD-34: a provider base ends the reads
+  only when its stored view then holds the wanted release; host messages show `<fp>/<slug>` (the
+  JSON `missing` keeps the full key); candidates sort by natural order.
 - S44: `consent::Party` gains `you: bool` (app-internal); names come from a parties cache filled by
   local `dist.channel(key)` reads; wrong methods on `/api/*` answer 405 `method_not_allowed`.
 - S45: `HostError::AmbiguousProvider { consumer, provider, candidates }`; `DistError::NotFollowed
