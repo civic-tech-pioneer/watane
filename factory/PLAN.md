@@ -263,15 +263,17 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   failure is S47's). `repository` in mod.toml is parsed, validated with pkg 4.2's messages, carried
   in the package; `watane-dev check` gives dev 2.2's fix. A non-string value gets the "must start
   with https://" message. Left for later: the fix could fill in the known slug.
-- [~] **S42 Alice publishes to GitHub with one command (dev stage 10).** `watane-dev publish --push`
-  (dev 10.4.1): the first run creates the site repository and the mod repository (or, for a mod
-  made from another, forks the upstream through the forks API onto branch `watane`, with
-  `publish.fork_unavailable` as the fallback), writes `repository`, and its `next` asks for the raw
-  site URL; later runs commit, tag the ReleaseRef and push. Outcome: `app/tests/j3.rs::ac2_j3_github`
-  passes with local bare remotes, and Bob installs from the raw-URL link. Touches: dev, fake-gh,
-  `app/tests` (test code only). After S41 and S44 (app/tests). Local: the journey needs the Mac.
-  Watch (S47): a prebuilt mod's `logic.wasm` is in the template's `.gitignore` and `publish --push`
-  skips it, so the pushed repository would hold no logic.
+- [x] **S42 Alice publishes to GitHub with one command (dev stage 10).** Delivered 2026-11-13
+  (main `1aa2763`); dev's full suite with `--include-ignored` and J3 and J5 rerun on the Mac:
+  green. User-sim accepted on the first run. `watane-dev publish --push`: the first run creates
+  `<owner>/watane-channel` and `<owner>/<slug>`, writes `repository`, and its `next` asks for the
+  raw site URL; later runs commit, tag the ReleaseRef and push. `app/tests/j3.rs::ac2_j3_github`
+  passes against local bare remotes and `fake-gh`: Bob installs from a served clone of the pushed
+  site and sees Alice as verified. Left for later (user-sim): `env.git_identity` keeps git's last
+  five stderr lines, which cuts a hint mid-sentence and leaks user@host into the JSON (the last
+  line alone would do); `push_failed` doubles "remote: remote:" and keeps trailing whitespace; its
+  fix and `next` carry the `-c http.lowSpeed*` flags, so they are noisy to run by hand; every
+  `next` appends `--home <abs>` even when the home came from `WATANE_HOME`.
 - [~] **S49 The refusals say what is wrong (pkg, dist, log cleanup).** The leftovers from S11, S19,
   S22, S35 and S46 that are message or behaviour defects in the three subsystems the cloud can
   test. Outcomes. pkg: `mod.dependency_cycle` and `mod.self_dependency` carry a fix instead of
@@ -330,7 +332,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S7 provider bases | 5 | done (S35) |
 | dev | 9 build on | 5 | done (S36) |
 | pkg | 8 repository | 6 | done (S41) |
-| dev | 10 publish --push | 6 | open (S42) |
+| dev | 10 publish --push | 6 | done (S42) |
 | dev | 11 new --from clone and fork | 6 | open (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
@@ -387,7 +389,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6`.
-- S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42`.
+- S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -594,6 +596,13 @@ The human may veto each one.
   stale-wasm rule (`contract::ac5_s11_test_rejects_stale_wasm_without_manifest` became
   `ac5_s47_test_accepts_prebuilt_wasm_without_manifest`). Deriving under a new slug keeps the wasm
   and warns `new.prebuilt_renamed` rather than refusing the rename, which would break J5.
+- S42: the GitHub fork (the forks API, branch `watane`, `publish.fork_unavailable`) stays in dev
+  stage 11 (S43), as the build plan and DEV-S-50/51 have it, against the S42 sketch: its tests need
+  S43's clone folder. In S42 a derived mod gets a plain new repository (`forked: false`, no warning).
+- S42: a prebuilt mod (a `logic.wasm`, no `logic/Cargo.toml`) commits its `logic.wasm`; a built one
+  does not (dev 10.4.1 step 6, section 11). This answers S47's watch item.
+- S42: the `publish.push_failed` fix is the failed command and the rest of its list, with no
+  "Fix the cause" prefix; the message reads `<command> failed: <stderr>` (dev 2.2, 10.4.1).
 
 ## Friction
 
@@ -802,6 +811,12 @@ The human may veto each one.
   A cloud slice that touches the app gets J5 run on the Mac before merge.
 - S47: the task brief said "Changed tests: none" while the S11 test asserted the very deletion the
   slice removes; that cost a resume. A brief that reverses a rule names the test that holds it.
+- S42: Codex's sandbox cannot run the macOS GUI journey (hiservices XPC) or
+  `ac6_build_with_network_denied` (sandbox-exec), so its app task came back PARTIAL and the
+  validator ran both outside Codex.
+- S49: 9 of the 13 outcomes the product owner sketched were already delivered (S23, S45, S46, S48),
+  and the dist task fell away entirely. A sketch built from `Left for later` notes cites the slice
+  that has since fixed each note, so the foreman can check it against main instead of trusting it.
 
 ## Digest
 
