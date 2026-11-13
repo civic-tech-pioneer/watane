@@ -248,6 +248,7 @@ mod tests {
             change: Change::New,
             grants: grants.clone(),
             new_grants: grants,
+            binds: vec![],
             providers: vec![],
         };
         let mut first = entry("reading-list", vec![storage.clone()]);

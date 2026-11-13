@@ -18,7 +18,8 @@ pub use runtime::limits::Limits;
 pub use tools::{FunctionInfo, Handle, Token, TokenId, TokenInfo, ToolsetName};
 
 pub use catalog::{
-    Change, GrantState, InstalledMod, LinkKind, LinkView, MissingProvider, Plan, PlanEntry, Source,
+    Bind, Change, GrantState, InstalledMod, LinkKind, LinkView, MissingProvider, Plan, PlanEntry,
+    Source,
 };
 pub use error::{CallCode, CallError, HostError, Limit, VerifyCheck};
 pub use harness::{EventRecord, Fakes, Harness, Outcome};
@@ -178,12 +179,16 @@ impl Host {
         self.commit_plan(plan, &[], port)
     }
     pub fn plan(&self, sources: Vec<Source>) -> Result<Plan, HostError> {
-        self.catalog.lock().unwrap().plan(
+        self.plan_with(sources, vec![])
+    }
+    pub fn plan_with(&self, sources: Vec<Source>, binds: Vec<Bind>) -> Result<Plan, HostError> {
+        self.catalog.lock().unwrap().plan_with(
             self.home(),
             &sources,
             &self.engine,
             self.is_preview(),
             false,
+            &binds,
         )
     }
     pub async fn install(
@@ -355,13 +360,9 @@ impl Host {
         next.mods.retain(|m| &m.local != local);
         next.components.remove(local);
         for m in &mut next.mods {
-            for link in &mut m.links {
-                if link.provider.as_ref() == Some(local) {
-                    link.provider = None;
-                    link.provider_interface = None;
-                }
-            }
+            m.binds.retain(|b| b.to != identity);
         }
+        next.relink(self.home(), self.is_preview())?;
         next.save(self.home())?;
         *catalog = next;
         std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))?;

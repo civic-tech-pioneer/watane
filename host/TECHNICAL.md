@@ -177,6 +177,7 @@ the home until it ends.
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
+    BadRequest(String),                                    // "bad_request"
     Busy(PathBuf),                                         // "busy"
     ModeMismatch { path: PathBuf, found: &'static str },   // "mode_mismatch"
     BadHome { path: PathBuf, reason: String },             // "bad_home"
@@ -217,7 +218,7 @@ for code `limit`. JSON form of a `HostError`:
 
 | HostError code | HTTP status |
 |---|---|
-| `bad_name`, `not_declared`, `bad_toolset_entry` | 400 |
+| `bad_request`, `bad_name`, `not_declared`, `bad_toolset_entry` | 400 |
 | `refused` | 403 |
 | `no_mod`, `no_toolset` | 404 |
 | `busy`, `mode_mismatch`, `missing_providers`, `cycle`, `ambiguous_provider`, `stale_plan` | 409 |
@@ -272,11 +273,13 @@ pub struct PlanEntry {
     pub origin: Option<ReleaseRef>,                          // mod.toml [origin] release
     pub change: Change, pub grants: Vec<Grant>, pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
+    #[serde(default)]
     pub binds: Vec<Bind>,                                    // step 5: the binds in force for this entry (4.5)
 }
 pub enum Change { New, Update { from_version: Version }, Unchanged }
 // JSON: {"kind":"new"} | {"kind":"update","from_version":"0.1.0"} | {"kind":"unchanged"}
 
+// Clone, Debug, PartialEq, Eq, Serialize, Deserialize; re-exported at the crate root.
 pub struct Bind {                 // step 5 (4.5); also Deserialize
     pub consumer: String,         // identity of the consumer: "<key>/<slug>" or "local/<slug>"
     pub provider: Provider,       // the provider that deps.json names; pkg's serde form {"slug","publisher"}
@@ -295,6 +298,7 @@ pub struct InstalledMod {         // also Deserialize; fields as in PlanEntry
     pub package: PackageId, pub release: Option<ReleaseRef>, pub origin: Option<ReleaseRef>,
     pub enabled: bool, pub has_logic: bool, pub page: Option<String>, // URL once served and has ui/
     pub grants: Vec<GrantState>, pub links: Vec<LinkView>, pub error: Option<String>,
+    #[serde(default)]
     pub binds: Vec<Bind>,         // step 5 (4.5); [] when none
 }
 pub struct GrantState { pub grant: Grant, pub granted: bool }
@@ -1273,6 +1277,7 @@ run on the preview install path.
 | `tests/api.rs` | the four endpoints; `Origin` → 403; S22; S30 | status codes, literal JSON |
 | `tests/program.rs` | S1, S2, S3 through `env!("CARGO_BIN_EXE_watane")`; SIGTERM removes `run.json`; `--bad` exits 2 | the stdout line parsed as plain JSON; exit codes; file presence |
 | `tests/hostile.rs` | `/call` with a subscription function → 404 (`ac12_s11_page_cannot_call_a_subscription_function`); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (`ac8_s12a_storage_after_revoke_cannot_read_old_state`); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
+| `tests/binds.rs` | S33 to S35: signed picks, persistence, bind-only updates, removal, validation, preview matching and local API rejection | literal binds, links, JSON, caller and confirmation count |
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
 | `tests/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 

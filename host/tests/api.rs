@@ -108,7 +108,7 @@ async fn ac3_install_page_folder_and_reject_invalid_inputs() {
         catalog["mods"][0],
         json!({
             "local":"hello","identity":"local/hello","package":HELLO_PACKAGE,
-            "release":null,"enabled":true,"grants":[],"links":[]
+            "release":null,"enabled":true,"grants":[],"links":[],"binds":[]
         })
     );
     let response = preview.install(Path::new("relative")).await;

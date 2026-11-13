@@ -27,6 +27,12 @@ pub enum Change {
     Update { from_version: Version },
     Unchanged,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bind {
+    pub consumer: String,
+    pub provider: Provider,
+    pub to: String,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanEntry {
     pub local: LocalName,
@@ -43,6 +49,8 @@ pub struct PlanEntry {
     pub grants: Vec<Grant>,
     pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
+    #[serde(default)]
+    pub binds: Vec<Bind>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MissingProvider {
@@ -103,6 +111,8 @@ pub struct InstalledMod {
     pub grants: Vec<GrantState>,
     pub links: Vec<LinkView>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub binds: Vec<Bind>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -148,6 +158,8 @@ struct Record {
     enabled: bool,
     grants: Vec<GrantState>,
     links: Vec<LinkView>,
+    #[serde(default)]
+    binds: Vec<Bind>,
 }
 
 impl From<&InstalledMod> for Record {
@@ -160,6 +172,7 @@ impl From<&InstalledMod> for Record {
             enabled: m.enabled,
             grants: m.grants.clone(),
             links: m.links.clone(),
+            binds: m.binds.clone(),
         }
     }
 }
@@ -201,6 +214,7 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
             .collect(),
         links: vec![],
         error: None,
+        binds: vec![],
     }
 }
 
@@ -310,6 +324,7 @@ impl Catalog {
                     page: None,
                     grants: vec![],
                     links: vec![],
+                    binds: vec![],
                     error: Some(match result {
                         Err(e) => e.to_string(),
                         Ok(_) => "installed slug differs from identity".into(),
@@ -322,6 +337,7 @@ impl Catalog {
             installed.enabled = r.enabled;
             installed.grants = r.grants;
             installed.links = r.links;
+            installed.binds = r.binds;
             mods.push(installed);
         }
         // Keep the committed provider-first order.
@@ -339,6 +355,18 @@ impl Catalog {
         engine: &wasmtime::Engine,
         preview: bool,
         harness: bool,
+    ) -> Result<Plan, HostError> {
+        self.plan_with(home, sources, engine, preview, harness, &[])
+    }
+
+    pub fn plan_with(
+        &mut self,
+        home: &Path,
+        sources: &[Source],
+        engine: &wasmtime::Engine,
+        preview: bool,
+        harness: bool,
+        binds: &[Bind],
     ) -> Result<Plan, HostError> {
         let mut entries = Vec::new();
         let mut prepared = Vec::new();
@@ -457,6 +485,7 @@ impl Catalog {
                 grants,
                 new_grants,
                 providers: vec![],
+                binds: vec![],
             });
             prepared.push(Prepared(staging, installed, unchanged, component));
         }
@@ -465,18 +494,82 @@ impl Catalog {
             next.retain(|m| m.identity != installed.identity);
             next.push(installed.clone());
         }
-        let missing = bind(&mut next, &worlds, &seen, harness)?;
+        for pick in binds {
+            let consumer = next.iter().find(|m| m.identity == pick.consumer);
+            let valid = consumer.is_some_and(|m| declares(m, &pick.provider))
+                && parse_identity(&pick.to).is_some_and(|p| p.slug == pick.provider.slug)
+                && pick.to != pick.provider.to_string();
+            if !valid {
+                return Err(HostError::BadRequest(format!(
+                    "invalid bind: {} from {} to {}",
+                    pick.consumer, pick.provider, pick.to
+                )));
+            }
+        }
+        for m in &mut next {
+            let old = self.mods.iter().find(|old| old.identity == m.identity);
+            let mut picks = Vec::new();
+            for pick in binds
+                .iter()
+                .filter(|b| b.consumer == m.identity)
+                .chain(old.into_iter().flat_map(|m| &m.binds))
+            {
+                if declares(m, &pick.provider)
+                    && !picks.iter().any(|b: &Bind| b.provider == pick.provider)
+                {
+                    picks.push(pick.clone());
+                }
+            }
+            m.binds = picks;
+            if let Some(old) = old
+                && m.binds != old.binds
+                && !seen.contains(&m.identity)
+            {
+                seen.insert(m.identity.clone());
+                entries.push(PlanEntry {
+                    local: m.local.clone(),
+                    identity: m.identity.clone(),
+                    slug: m.slug.clone(),
+                    name: m.name.clone(),
+                    summary: m.summary.clone(),
+                    version: m.version.clone(),
+                    publisher: m.publisher.clone(),
+                    package: m.package.clone(),
+                    release: m.release.clone(),
+                    origin: m.origin.clone(),
+                    change: Change::Unchanged,
+                    grants: m.grants.iter().map(|g| g.grant.clone()).collect(),
+                    new_grants: vec![],
+                    providers: vec![],
+                    binds: vec![],
+                });
+                prepared.push(Prepared(
+                    Stage::new(home)?,
+                    m.clone(),
+                    true,
+                    self.components.get(&m.local).cloned(),
+                ));
+            }
+        }
+        let missing = bind(&mut next, &worlds, &seen, harness, preview)?;
         let order = provider_order(&next)?;
         next.sort_by_key(|m| order.iter().position(|n| n == &m.local).unwrap());
         for Prepared(_, installed, _, _) in &mut prepared {
-            installed.links = next
-                .iter()
-                .find(|m| m.local == installed.local)
-                .unwrap()
-                .links
-                .clone();
+            let resolved = next.iter().find(|m| m.local == installed.local).unwrap();
+            installed.links = resolved.links.clone();
+            installed.binds = resolved.binds.clone();
         }
         for e in &mut entries {
+            let resolved = next.iter().find(|m| m.local == e.local).unwrap();
+            e.binds = resolved.binds.clone();
+            if let Some(old) = self.mods.iter().find(|m| m.identity == e.identity)
+                && old.binds != e.binds
+                && matches!(e.change, Change::Unchanged)
+            {
+                e.change = Change::Update {
+                    from_version: old.version.clone(),
+                };
+            }
             e.providers = next
                 .iter()
                 .find(|m| m.local == e.local)
@@ -494,6 +587,10 @@ impl Catalog {
             && entries.iter().any(|e| {
                 matches!(e.change, Change::New)
                     || matches!(e.change, Change::Update { .. }) && !e.new_grants.is_empty()
+                    || self
+                        .mods
+                        .iter()
+                        .any(|m| m.identity == e.identity && m.binds != e.binds)
             });
         Ok(Plan {
             entries,
@@ -550,9 +647,13 @@ impl Catalog {
         let prepared = plan.prepared;
         let next = plan.next;
         let mut moved: Vec<(PathBuf, bool)> = Vec::new();
-        let changed = prepared
-            .iter()
-            .any(|Prepared(_, _, unchanged, _)| !unchanged);
+        let changed = prepared.iter().any(|Prepared(_, m, unchanged, _)| {
+            !unchanged
+                || self
+                    .mods
+                    .iter()
+                    .any(|old| old.identity == m.identity && old.binds != m.binds)
+        });
         let transaction = (|| -> Result<(), HostError> {
             for Prepared(staging, installed, unchanged, _) in &prepared {
                 if *unchanged {
@@ -617,6 +718,20 @@ impl Catalog {
         }
         Ok(prepared.into_iter().map(|Prepared(_, m, _, _)| m).collect())
     }
+    pub fn relink(&mut self, home: &Path, preview: bool) -> Result<(), HostError> {
+        let worlds = self
+            .mods
+            .iter()
+            .filter_map(|m| {
+                Mod::read(&home.join("mods").join(m.local.as_ref()))
+                    .ok()
+                    .map(|v| (m.local.clone(), v.world().clone()))
+            })
+            .collect();
+        bind(&mut self.mods, &worlds, &BTreeSet::new(), false, preview)?;
+        provider_order(&self.mods)?;
+        Ok(())
+    }
     pub fn save(&mut self, home: &Path) -> Result<(), HostError> {
         home::write_json(
             &home.join("installed.json"),
@@ -631,11 +746,53 @@ impl Catalog {
     }
 }
 
+fn declares(m: &InstalledMod, provider: &Provider) -> bool {
+    m.grants.iter().any(|g| {
+        matches!(&g.grant,
+        Grant::Call { provider: p, .. } | Grant::Subscribe { provider: p, .. } if p == provider)
+    })
+}
+
+fn parse_identity(identity: &str) -> Option<Provider> {
+    let (publisher, slug) = identity.split_once('/')?;
+    Some(Provider {
+        slug: slug.parse().ok()?,
+        publisher: if publisher == "local" {
+            None
+        } else {
+            Some(publisher.parse().ok()?)
+        },
+    })
+}
+
+fn fits(
+    consumer: &InstalledMod,
+    provider: &Provider,
+    candidate: &InstalledMod,
+    worlds: &BTreeMap<LocalName, watane_pkg::World>,
+) -> bool {
+    let Some(world) = worlds.get(&candidate.local) else {
+        return false;
+    };
+    consumer.grants.iter().all(|g| match &g.grant {
+        Grant::Call {
+            interface,
+            provider: p,
+        } if p == provider => world.exports.iter().any(|i| interface.satisfied_by(i)),
+        Grant::Subscribe {
+            interface,
+            provider: p,
+        } if p == provider => world.events.iter().any(|i| interface.satisfied_by(i)),
+        _ => true,
+    })
+}
+
 fn bind(
     mods: &mut [InstalledMod],
     worlds: &BTreeMap<LocalName, watane_pkg::World>,
     supplied: &BTreeSet<String>,
     harness: bool,
+    preview: bool,
 ) -> Result<Vec<MissingProvider>, HostError> {
     let providers = mods.to_vec();
     let mut missing = Vec::new();
@@ -655,7 +812,17 @@ fn bind(
             };
             let mut candidates = Vec::new();
             for p in &providers {
-                if p.slug != provider.slug || p.publisher != provider.publisher {
+                let pick = m
+                    .binds
+                    .iter()
+                    .find(|b| b.provider == *provider)
+                    .filter(|b| providers.iter().any(|p| p.identity == b.to));
+                if p.slug != provider.slug
+                    || match pick {
+                        Some(pick) => p.identity != pick.to || !fits(m, provider, p, worlds),
+                        None => !preview && p.publisher != provider.publisher,
+                    }
+                {
                     continue;
                 }
                 let Some(world) = worlds.get(&p.local) else {

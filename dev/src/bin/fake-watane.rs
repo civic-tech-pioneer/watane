@@ -40,6 +40,7 @@ fn installed(folder: &Path, port: u16) -> Result<InstalledMod, Box<dyn std::erro
             .map(|_| format!("http://{local}.localhost:{port}/")),
         local,
         grants: vec![],
+        binds: vec![],
         links: vec![],
         error: None,
     })

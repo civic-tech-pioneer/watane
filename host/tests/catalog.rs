@@ -197,11 +197,34 @@ fn ac1_s11_consumer_can_link_to_an_already_installed_provider() {
         "shelf"
     );
 }
-#[test]
-fn ac2_s11_pinned_publisher_never_links_to_a_local_provider() {
+#[tokio::test]
+async fn ac2_s11_participant_pin_never_links_to_a_local_provider() {
+    struct Approve;
+    impl watane_host::Confirm for Approve {
+        fn install(
+            &self,
+            _: watane_host::InstallRequest,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = watane_host::Answer> + Send>>
+        {
+            Box::pin(async { watane_host::Answer::Approve { withhold: vec![] } })
+        }
+    }
     let home = tempfile::tempdir().unwrap();
-    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
-    host.install_folders(&[fixture("shelf")], 0).unwrap();
+    let host = Host::open(
+        home.path(),
+        watane_host::Mode::Home {
+            app: Some(std::sync::Arc::new(Approve)),
+        },
+        Limits::default(),
+    )
+    .unwrap();
+    host.install(
+        host.plan(vec![watane_host::Source::Folder(fixture("shelf"))])
+            .unwrap(),
+        watane_host::Requester::App,
+    )
+    .await
+    .unwrap();
     let folder = tempfile::tempdir().unwrap();
     let dir = folder.path().join("recs");
     watane_pkg::pack(&fixture("recs"), false)
@@ -213,8 +236,26 @@ fn ac2_s11_pinned_publisher_never_links_to_a_local_provider() {
         r#"{"mods:shelf":"yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo"}"#,
     )
     .unwrap();
+    let plan = host
+        .plan(vec![
+            watane_host::Source::Folder(fixture("counter")),
+            watane_host::Source::Folder(dir),
+        ])
+        .unwrap();
+    assert_eq!(plan.missing().len(), 1);
+    assert_eq!(plan.missing()[0].provider.slug.as_str(), "shelf");
+    assert_eq!(
+        plan.missing()[0]
+            .provider
+            .publisher
+            .as_ref()
+            .unwrap()
+            .to_string(),
+        "yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo"
+    );
     let error = host
-        .install_folders(&[fixture("counter"), dir], 0)
+        .install(plan, watane_host::Requester::App)
+        .await
         .unwrap_err();
     assert_eq!(error.code(), "missing_providers");
     assert_eq!(fs::read_dir(home.path().join("mods")).unwrap().count(), 1);
@@ -331,8 +372,8 @@ mod participant {
     }
     fn expected_plan() -> Value {
         json!({"entries":[
-            {"local":"shelf","identity":"local/shelf","slug":"shelf","name":"shelf","summary":"S11 shelf fixture.","version":"0.1.0","publisher":null,"package":"74e8e328e2b0e5d6090674ce1d2dbb4f1a2db094762fb62bd3089936faed9176","release":null,"origin":null,"change":{"kind":"new"},"grants":[{"kind":"storage"}],"new_grants":[{"kind":"storage"}],"providers":[]},
-            {"local":"recs","identity":"local/recs","slug":"recs","name":"recs","summary":"S11 recs fixture.","version":"0.1.0","publisher":null,"package":"07cb4a2e9c962cd1119c5947521c4f261619d2b5e84f1dcca4bc95713b3fb7b9","release":null,"origin":null,"change":{"kind":"new"},"grants":[{"kind":"storage"},{"kind":"call","interface":"mods:shelf/items@0.1.0","provider":{"slug":"shelf","publisher":null}},{"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":{"slug":"shelf","publisher":null}}],"new_grants":[{"kind":"storage"},{"kind":"call","interface":"mods:shelf/items@0.1.0","provider":{"slug":"shelf","publisher":null}},{"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":{"slug":"shelf","publisher":null}}],"providers":["shelf"]}],"missing":[]})
+            {"local":"shelf","identity":"local/shelf","slug":"shelf","name":"shelf","summary":"S11 shelf fixture.","version":"0.1.0","publisher":null,"package":"74e8e328e2b0e5d6090674ce1d2dbb4f1a2db094762fb62bd3089936faed9176","release":null,"origin":null,"change":{"kind":"new"},"grants":[{"kind":"storage"}],"new_grants":[{"kind":"storage"}],"providers":[],"binds":[]},
+            {"local":"recs","identity":"local/recs","slug":"recs","name":"recs","summary":"S11 recs fixture.","version":"0.1.0","publisher":null,"package":"07cb4a2e9c962cd1119c5947521c4f261619d2b5e84f1dcca4bc95713b3fb7b9","release":null,"origin":null,"change":{"kind":"new"},"grants":[{"kind":"storage"},{"kind":"call","interface":"mods:shelf/items@0.1.0","provider":{"slug":"shelf","publisher":null}},{"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":{"slug":"shelf","publisher":null}}],"new_grants":[{"kind":"storage"},{"kind":"call","interface":"mods:shelf/items@0.1.0","provider":{"slug":"shelf","publisher":null}},{"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":{"slug":"shelf","publisher":null}}],"providers":["shelf"],"binds":[]}],"missing":[]})
     }
     #[tokio::test]
     async fn ac2_s12a_missing_provider_never_asks_or_installs() {

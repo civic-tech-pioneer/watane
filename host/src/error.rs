@@ -12,6 +12,8 @@ pub enum VerifyCheck {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
+    #[error("{0}")]
+    BadRequest(String),
     #[error("home {} is busy", .0.display())]
     Busy(PathBuf),
     #[error("home {} has mode {found}, incompatible with requested mode", path.display())]
@@ -56,6 +58,7 @@ pub enum HostError {
 impl HostError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::BadRequest(_) => "bad_request",
             Self::Verify { .. } => "verify",
             Self::Busy(_) => "busy",
             Self::StalePlan => "stale_plan",
@@ -80,6 +83,7 @@ impl HostError {
     pub fn status(&self) -> u16 {
         match self {
             Self::Refused(_) => 403,
+            Self::BadRequest(_) => 400,
             Self::BadName { .. } | Self::BadToolsetEntry { .. } | Self::NotDeclared { .. } => 400,
             Self::NoSuchMod(_) | Self::NoSuchToolset(_) => 404,
             Self::Busy(_)
