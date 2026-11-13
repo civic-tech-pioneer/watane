@@ -132,13 +132,21 @@ fn ac4_ac5_bad_backup_messages_say_expected_and_found() {
     b[0] ^= 1;
     let m = msg(&b);
     assert!(
-        m.contains("expected \"watanek1\"") && m.contains("found"),
+        m.contains("expected \"watanek1\", found \"vatanek1\""),
         "{m}"
     );
-    for (at, v, want) in [(8, 1048577u32, "1048577"), (12, 11, "11"), (16, 17, "17")] {
+    for (at, v, want) in [
+        (
+            8,
+            1048577u32,
+            "memory: expected 8192 to 1048576 KiB and at least 8 x lanes, found 1048577",
+        ),
+        (12, 11, "passes: expected 1 to 10, found 11"),
+        (16, 17, "lanes: expected 1 to 16, found 17"),
+    ] {
         let mut b = backup.clone();
         b[at..at + 4].copy_from_slice(&v.to_le_bytes());
         let m = msg(&b);
-        assert!(m.contains("expected") && m.contains(want), "{m}");
+        assert!(m.contains(want), "{m}");
     }
 }

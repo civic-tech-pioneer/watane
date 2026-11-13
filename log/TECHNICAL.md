@@ -148,8 +148,9 @@ pub enum Error {
     Io { path: PathBuf, source: std::io::Error },
     #[error("exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
     Exposed { path: PathBuf, mode: u32 },
-    #[error("{path} is not a regular file or directory (a symbolic link is refused)")]
+    #[error("{path} is not a {expected} (a symbolic link is refused)")]
     NotPlain { path: PathBuf, expected: &'static str }, // expected: "directory" or "regular file"
+    #[error("the log directory path is empty")]
     EmptyPath,                                        // Log::open("")
     #[error("corrupt key file {path}: it must hold exactly 32 bytes")]
     CorruptKey { path: PathBuf },
@@ -171,7 +172,7 @@ pub enum Error {
     AuthorMismatch { index: usize, expected: PublicKey, found: PublicKey },
     #[error("the passphrase is empty")]
     EmptyPassphrase,
-    #[error("bad backup: {0}")]
+    #[error("bad backup: {field}: expected {expected}, found {found}")]
     BadBackup { field: &'static str, expected: String, found: String }, // field: length, magic, memory, passes, lanes
     #[error("wrong passphrase or damaged backup")]
     WrongPassphrase,

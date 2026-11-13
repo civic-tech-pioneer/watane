@@ -159,7 +159,7 @@ fn bad(field: &'static str, expected: String, found: String) -> Error {
         found,
     }
 }
-fn bad_memory(memory: u32, _lanes: u32) -> Error {
+fn bad_memory(memory: u32) -> Error {
     bad(
         "memory",
         "8192 to 1048576 KiB and at least 8 x lanes".into(),
@@ -168,8 +168,7 @@ fn bad_memory(memory: u32, _lanes: u32) -> Error {
 }
 fn derive(header: &[u8], password: &str) -> Result<Zeroizing<[u8; 32]>, Error> {
     let n = |i| u32::from_le_bytes(header[i..i + 4].try_into().expect("checked header"));
-    let params =
-        argon2::Params::new(n(8), n(12), n(16), Some(32)).map_err(|_| bad_memory(n(8), n(16)))?;
+    let params = argon2::Params::new(n(8), n(12), n(16), Some(32)).map_err(|_| bad_memory(n(8)))?;
     let mut key = Zeroizing::new([0; 32]);
     argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
         .hash_password_into(password.as_bytes(), &header[20..36], &mut *key)
@@ -216,7 +215,7 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
     let n = |i| u32::from_le_bytes(backup[i..i + 4].try_into().expect("checked backup length"));
     let (memory, passes, lanes) = (n(8), n(12), n(16));
     if !(8192..=1048576).contains(&memory) || u64::from(memory) < 8 * u64::from(lanes) {
-        return Err(bad_memory(memory, lanes));
+        return Err(bad_memory(memory));
     }
     if !(1..=10).contains(&passes) {
         return Err(bad("passes", "1 to 10".into(), passes.to_string()));
