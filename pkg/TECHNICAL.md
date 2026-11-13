@@ -161,6 +161,8 @@ the first failing check in this order gives the message exactly:
 | an empty host | `` `repository` has no host `` |
 | any other break of the grammar | `` `repository` may hold only letters, digits and - . _ ~ / % after the host `` |
 
+A value that is not a TOML string fails the second check (S41).
+
 `Mod::repository()` returns the text as written.
 The message for an unknown key `slug` or `version` is: "`<key>` is not a
 mod.toml key: the slug and the version come from the package line of
