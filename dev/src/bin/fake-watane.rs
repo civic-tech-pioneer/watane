@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         )?;
         let (status, value) = if path == "/api/search" {
             (
-                200,
+                config["search_status"].as_u64().unwrap_or(200) as u16,
                 config
                     .get("search")
                     .cloned()

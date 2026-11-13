@@ -57,6 +57,9 @@ pub enum Command {
         wait: Option<u64>,
     },
     /// Find published mods in the person's chosen indexes
+    // Shadow the inherited global argument so search can hide it without
+    // restructuring every mod command. It is accepted and ignored for search.
+    #[command(arg(clap::Arg::new("dir").long("dir").value_parser(clap::value_parser!(PathBuf)).help("Ignored by search").hide(true)))]
     Search {
         /// Words to search for (joined with one space; empty searches all mods)
         text: Vec<String>,
@@ -106,6 +109,10 @@ pub fn run(cli: Cli) -> Outcome {
         dir
     } else {
         cwd.join(dir)
+    };
+    let dir = match resolved_path(&dir) {
+        Ok(dir) => dir,
+        Err(e) => return Outcome::new(name, Some(dir)).fail(vec![Problem::internal(e)]),
     };
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
@@ -326,7 +333,6 @@ fn search(
     let mut outcome = Outcome::new("search", None);
     let result: Result<serde_json::Value, Vec<Problem>> = (|| {
         let home = app_home(home)?;
-        let home = std::path::absolute(home).map_err(|e| vec![Problem::internal(e)])?;
         let client = crate::api::Client::for_app(&home).map_err(|e| {
             let mut next = String::from("watane-dev search --json");
             for word in words {
@@ -428,12 +434,37 @@ fn quote(path: &Path) -> String {
     }
 }
 
+/// Resolve symlinks in the existing ancestor without creating the missing suffix.
+fn resolved_path(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut ancestor = absolute.as_path();
+    let mut suffix = Vec::new();
+    loop {
+        match ancestor.canonicalize() {
+            Ok(mut resolved) => {
+                for part in suffix.into_iter().rev() {
+                    resolved.push(part);
+                }
+                return Ok(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = ancestor.file_name() else {
+                    return Err(e);
+                };
+                suffix.push(name);
+                ancestor = ancestor.parent().ok_or(e)?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 fn app_home(home: Option<PathBuf>) -> Result<PathBuf, Vec<Problem>> {
     let home = home
         .map(Ok)
         .unwrap_or_else(watane_host::default_home)
         .map_err(|e| vec![Problem::internal(e)])?;
-    Ok(home.canonicalize().unwrap_or(home))
+    resolved_path(&home).map_err(|e| vec![Problem::internal(e)])
 }
 
 fn app_client(
@@ -490,9 +521,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                     let path = path.canonicalize().unwrap_or(path);
                     let mut next = format!("watane-dev publish --json --dir {}", quote(&path));
                     if let Some(home) = &home {
-                        let home = home.canonicalize().unwrap_or_else(|_| {
-                            std::path::absolute(home).unwrap_or_else(|_| home.clone())
-                        });
+                        let home = resolved_path(home).unwrap_or_else(|_| home.clone());
                         next.push_str(&format!(" --home {}", quote(&home)));
                     }
                     next
@@ -600,6 +629,38 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac3_only_search_hides_global_dir() {
+        use clap::CommandFactory;
+        let mut cli = Cli::command();
+        cli.build();
+        for name in [
+            "new", "check", "doctor", "test", "add", "install", "publish", "serve", "search",
+        ] {
+            let help = cli
+                .find_subcommand_mut(name)
+                .unwrap()
+                .render_long_help()
+                .to_string();
+            assert_eq!(help.contains("--dir"), name != "search", "{name}: {help}");
+        }
+        // clap's inherited global flag remains accepted and search ignores it.
+        let parsed = Cli::try_parse_from(["watane-dev", "search", "--dir", "x", "foo"]).unwrap();
+        assert!(matches!(parsed.command, Command::Search { text, .. } if text == ["foo"]));
+    }
+
+    #[test]
+    fn ac1_missing_home_resolves_existing_symlink_ancestor() {
+        let root = tempfile::tempdir().unwrap();
+        let link = root.path().join("alias");
+        std::os::unix::fs::symlink(root.path(), &link).unwrap();
+        assert_eq!(
+            app_home(Some(link.join("new/nested"))).unwrap(),
+            root.path().canonicalize().unwrap().join("new/nested")
+        );
+        assert!(!root.path().join("new").exists());
+    }
 
     #[test]
     fn ac2_serve_next_url_is_last_and_mcp_keys_match_mode() {

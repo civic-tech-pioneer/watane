@@ -183,6 +183,31 @@ mod fake {
         )
     }
     #[test]
+    fn ac1_install_result_home_matches_explicit_and_default_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let alias = root.path().join("alias");
+        fs::create_dir(&home).unwrap();
+        std::os::unix::fs::symlink(&home, &alias).unwrap();
+        let (_host, _) = start(&home, "--home");
+        let dir = page(root.path(), "demo");
+        for explicit in [true, false] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+            command
+                .current_dir(&dir)
+                .args(["install", "--json"])
+                .env("WATANE_HOME", &alias);
+            if explicit {
+                command.arg("--home").arg(&alias);
+            }
+            let output = command.output().unwrap();
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert!(output.status.success(), "{value}");
+            assert_eq!(value["result"]["home"], json!(home.canonicalize().unwrap()));
+        }
+    }
+
+    #[test]
     fn ac2_pipeline_environment_errors_keep_doctor_next() {
         let root = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
@@ -448,7 +473,7 @@ fn ac2_no_host_next_preserves_explicit_wait_and_given_home() {
         assert_eq!(
             value["next"],
             format!(
-                "watane-dev install --json --dir {} --home missing-home --wait {wait}",
+                "watane-dev install --json --dir {0} --home {0}/missing-home --wait {wait}",
                 root.path().canonicalize().unwrap().display()
             )
         );
@@ -471,7 +496,7 @@ fn ac2_no_host_next_quotes_home_for_the_shell() {
     assert_eq!(
         value["next"],
         format!(
-            r#"watane-dev install --json --dir {} --home 'Alice'"'"'s home'"#,
+            r#"watane-dev install --json --dir {0} --home '{0}/Alice'"'"'s home'"#,
             root.path().canonicalize().unwrap().display()
         )
     );
@@ -496,8 +521,44 @@ fn ac1_no_host_next_quotes_dir_for_the_shell() {
     assert_eq!(
         value["next"],
         format!(
-            r#"watane-dev install --json --dir '{}/Alice'"'"'s mod' --home missing-home"#,
+            r#"watane-dev install --json --dir '{0}/Alice'"'"'s mod' --home {0}/missing-home"#,
             root.path().canonicalize().unwrap().display()
         )
     );
+}
+
+#[test]
+fn ac1_install_next_matches_explicit_and_default_missing_symlink_home() {
+    let root = tempfile::tempdir().unwrap();
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(root.path(), &alias).unwrap();
+    for exists in [false, true] {
+        let home = alias.join("home");
+        if exists {
+            std::fs::create_dir(&home).unwrap();
+        }
+        for explicit in [true, false] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+            command
+                .args(["install", "--json", "--dir"])
+                .arg(&alias)
+                .env("WATANE_HOME", &home);
+            if explicit {
+                command.arg("--home").arg(&home);
+            }
+            let output = command.output().unwrap();
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let resolved = root.path().canonicalize().unwrap();
+            assert_eq!(output.status.code(), Some(3), "{value}");
+            assert_eq!(
+                value["next"],
+                format!(
+                    "watane-dev install --json --dir {} --home {}",
+                    resolved.display(),
+                    resolved.join("home").display()
+                )
+            );
+            assert_eq!(value["dir"], serde_json::json!(resolved));
+        }
+    }
 }

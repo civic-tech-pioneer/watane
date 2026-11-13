@@ -9,13 +9,14 @@ use std::{
 };
 
 #[test]
-fn ac1_search_help_describes_every_argument() {
+fn ac3_search_help_describes_arguments_without_dir() {
     let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .args(["search", "--help"])
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     let help = String::from_utf8(output.stdout).unwrap();
+    assert!(!help.contains("--dir"), "{help}");
     for text in [
         "published mods",
         "[TEXT]...",
@@ -287,7 +288,7 @@ fn ac5_search_error_next_is_the_fix() {
     );
     assert_eq!(
         value["next"],
-        "Correct the reported host error and run the command again"
+        "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
 }
@@ -324,4 +325,45 @@ fn ac2_preview_is_refused_before_search() {
         )
     );
     assert!(!home.path().join("requests").exists());
+}
+
+#[test]
+fn ac2_search_app_failure_names_app() {
+    for status in [503, 500] {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(
+            home.path().join("fake.json"),
+            json!({
+                "search_status": status,
+                "search": {"error":{"code":"unavailable","message":"search unavailable"}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let _host = start(home.path());
+        let run: Value =
+            serde_json::from_slice(&fs::read(home.path().join("run.json")).unwrap()).unwrap();
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .proxy(None)
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let response = agent
+            .post(format!("http://127.0.0.1:{}/api/search", run["port"]))
+            .send_json(json!({}))
+            .unwrap();
+        assert_eq!(response.status().as_u16(), status);
+        let (code, value) = search(home.path(), &["books"]);
+        assert_eq!(code, 4, "{value}");
+        assert_eq!(value["errors"][0]["code"], "host.refused");
+        assert_eq!(
+            value["errors"][0]["message"],
+            "[unavailable] search unavailable"
+        );
+        assert_eq!(
+            value["errors"][0]["fix"],
+            "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+        );
+        assert_eq!(value["next"], value["errors"][0]["fix"]);
+    }
 }

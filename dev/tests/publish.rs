@@ -421,3 +421,71 @@ fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
     let _host = start(home.path());
     assert_eq!(releases(home.path()), expected);
 }
+
+#[test]
+fn ac1_publish_paths_match_explicit_and_default_symlink_home() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = page(root.path());
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(root.path(), &alias).unwrap();
+    let home = alias.join("new-home");
+    let resolved = root.path().canonicalize().unwrap().join("new-home");
+    for running in [false, true] {
+        let _host = running.then(|| start(&home));
+        for (attempt, explicit) in [true, false, true, false].into_iter().enumerate() {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+            command
+                .args(["publish", "--json", "--dir"])
+                .arg(alias.join("demo"))
+                .env("WATANE_HOME", &home);
+            if explicit {
+                command.arg("--home").arg(&home);
+            }
+            let output = command.output().unwrap();
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            if running {
+                // First call publishes, all later calls find the same version.
+                assert_eq!(
+                    output.status.code(),
+                    Some(if attempt == 0 { 0 } else { 1 }),
+                    "{value}"
+                );
+                if attempt > 0 {
+                    assert_eq!(value["errors"][0]["code"], "publish.version_exists");
+                }
+                assert_eq!(value["result"]["home"], json!(resolved));
+            } else {
+                assert_eq!(output.status.code(), Some(3), "{value}");
+                assert_eq!(
+                    value["next"],
+                    format!(
+                        "watane-dev publish --json --dir {} --home {}",
+                        dir.display(),
+                        resolved.display()
+                    )
+                );
+            }
+            assert_eq!(value["dir"], json!(dir));
+        }
+    }
+}
+
+#[test]
+fn ac4_accepted_fake_publish_completes_under_five_seconds() {
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    fs::write(home.path().join("fake.json"), r#"{"releases":[]}"#).unwrap();
+    let _host = start(home.path());
+    let dir = page(root.path());
+    for args in [&[][..], &["--wait", "30"][..]] {
+        let start = std::time::Instant::now();
+        let (code, value) = publish(&dir, home.path(), args);
+        let elapsed = start.elapsed();
+        eprintln!("accepted fake publish {args:?}: {elapsed:?}");
+        assert_eq!(code, 0, "{value}");
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "publish took {elapsed:?}: {value}"
+        );
+    }
+}

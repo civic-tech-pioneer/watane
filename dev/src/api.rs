@@ -164,7 +164,7 @@ impl Client {
                     "The person declined in the app. Ask them before you run install again"
                 }
             } else {
-                "Correct the reported host error and run the command again"
+                "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
             }));
         }
         Ok(value)
@@ -273,8 +273,13 @@ mod tests {
     }
 
     #[test]
-    fn ac5_search_errors_preserve_app_messages_and_fixes() {
-        for (status, code) in [(400, "bad_request"), (503, "unavailable"), (403, "refused")] {
+    fn ac2_search_errors_preserve_app_messages_and_name_app() {
+        for (status, code) in [
+            (400, "bad_request"),
+            (503, "unavailable"),
+            (500, "internal"),
+            (403, "refused"),
+        ] {
             let (port, thread) = stub(
                 status,
                 json!({"error":{"code":code,"message":"query rejected"}}),
@@ -289,7 +294,7 @@ mod tests {
                 Some(if status == 400 {
                     "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
                 } else {
-                    "Correct the reported host error and run the command again"
+                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
             );
         }
@@ -378,6 +383,12 @@ mod tests {
             let e = Client { port }.releases().unwrap_err();
             assert_eq!(e.code, Code::HostRefused);
             assert_eq!(e.message, "[refused] unavailable");
+            assert_eq!(
+                e.fix.as_deref(),
+                Some(
+                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                )
+            );
             thread.join().unwrap();
         }
     }
@@ -470,7 +481,7 @@ mod tests {
                 Duration::ZERO,
                 Code::HostRefused,
                 "[conflict] already published",
-                "Correct the reported host error and run the command again",
+                "The watane app could not complete this command; ask the person to check the watane app, then run the command again",
             ),
             (
                 200,
@@ -584,7 +595,9 @@ mod tests {
         assert!(!e.fix.as_deref().unwrap().to_lowercase().contains("correct"));
         assert_ne!(
             e.fix.as_deref(),
-            Some("Correct the reported host error and run the command again"),
+            Some(
+                "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+            ),
             "a declined install has nothing to correct; retrying asks the person again"
         );
     }
@@ -623,7 +636,7 @@ mod tests {
                 Some(if expected == Code::HostDeclined {
                     "Ask the person whether they want the mod installed in their watane app, then run install again with --wait <seconds>"
                 } else {
-                    "Correct the reported host error and run the command again"
+                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
             );
             thread.join().unwrap();
