@@ -185,7 +185,12 @@ pub enum HostError {
     Verify { check: VerifyCheck, reason: String },         // "verify"
     MissingProviders(Vec<MissingProvider>),                // "missing_providers"
     Cycle(Vec<LocalName>),                                 // "cycle"
-    AmbiguousProvider { provider: Provider, a: LocalName, b: LocalName }, // "ambiguous_provider"
+    AmbiguousProvider { consumer: LocalName, provider: Provider, candidates: Vec<LocalName> }, // "ambiguous_provider"
+    // message: "<consumer> needs <provider> and <n> installed or planned mods fit: <c1>, <c2>; pick one to settle it"
+    // candidates are distinct, in natural order (digit runs by number, the rest by bytes).
+    // A message names a provider's publisher by the 10-character fingerprint (`<fp>/<slug>`,
+    // `local/<slug>` for none); MissingProviders reads "<fp>/<slug> at <version> needed by <mod>".
+    // The JSON `missing` array keeps the full provider.
     Refused(String),                                       // "refused"
     StalePlan,                                             // "stale_plan"
     NoSuchMod(String),                                     // "no_mod"
@@ -1593,4 +1598,5 @@ Each answer below is used in this file.
   absent after unpack, so this also matches a release without source.
   Recovery derives the publisher from the saved release and checks that
   its publisher and slug form the saved identity.
-- S45: `HostError::AmbiguousProvider { consumer: LocalName, provider: Provider, candidates: Vec<LocalName> }` (candidates distinct, sorted, from 2 mods up); message `<consumer> needs <provider> and <n> installed or planned mods fit: <a>, <b>; pick one to settle it`. This supersedes the `a`/`b` fields listed in 2.2.
+- S45: `HostError::AmbiguousProvider` has `consumer`, `provider` and `candidates` (distinct, from 2 mods up); 2.2 now shows this shape.
+- S48: messages name a publisher by its 10-character fingerprint, not the full key; `candidates` are in natural order; the `ac5_extra_api...` test sends 403/421/404 with a small body and checks 413 over a raw socket (the guards still do not drain a refused body).

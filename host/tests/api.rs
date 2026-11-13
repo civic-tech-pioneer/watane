@@ -373,10 +373,11 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
     let response = client.post(&url).body(body.clone()).send().await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.bytes().await.unwrap().as_ref(), body);
+    let small = b"{}".to_vec();
     let response = client
         .post(&url)
         .header("Origin", "null")
-        .body(body.clone())
+        .body(small.clone())
         .send()
         .await
         .unwrap();
@@ -384,7 +385,7 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
     let response = client
         .post(&url)
         .header("Host", "evil.example")
-        .body(body.clone())
+        .body(small.clone())
         .send()
         .await
         .unwrap();
@@ -392,18 +393,37 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
     let response = client
         .post(&url)
         .header("Host", format!("missing.localhost:{}", served.port))
-        .body(body.clone())
+        .body(small)
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), 404);
-    let response = client
-        .post(format!("http://127.0.0.1:{}/api/plan", served.port))
-        .header("Content-Type", "application/json")
-        .body(body)
-        .send()
+    // The 413 guard stops reading at the limit, so the peer may reset the connection
+    // while we still write. A raw socket reads the status line whatever happens.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let over = vec![b'x'; 64 * 1024 + 1];
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", served.port))
         .await
         .unwrap();
-    assert_eq!(response.status(), 413);
+    let head = format!(
+        "POST /api/plan HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        served.port,
+        over.len()
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let _ = stream.write_all(&over).await;
+    let mut status = Vec::new();
+    let mut buf = [0u8; 256];
+    while !status.windows(2).any(|w| w == b"\r\n") {
+        match stream.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => status.extend_from_slice(&buf[..n]),
+        }
+    }
+    let line = String::from_utf8_lossy(&status);
+    assert!(
+        line.starts_with("HTTP/1.1 413"),
+        "expected 413, got {line:?}"
+    );
     served.shutdown().await;
 }

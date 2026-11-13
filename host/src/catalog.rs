@@ -892,10 +892,12 @@ fn ambiguous(
     candidates: &[(LocalName, InterfaceName)],
 ) -> HostError {
     let names: BTreeSet<LocalName> = candidates.iter().map(|c| c.0.clone()).collect();
+    let mut candidates: Vec<LocalName> = names.into_iter().collect();
+    candidates.sort_by(|a, b| crate::error::natural_cmp(&a.to_string(), &b.to_string()));
     HostError::AmbiguousProvider {
         consumer: consumer.clone(),
         provider: provider.clone(),
-        candidates: names.into_iter().collect(),
+        candidates,
     }
 }
 
@@ -1036,5 +1038,25 @@ mod ambiguous_tests {
             error.to_string(),
             "recs needs local/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it"
         );
+        let error = ambiguous(
+            &name("recs"),
+            &provider,
+            &[
+                (name("shelf-10"), i("watane:shelf/a@1.0.0")),
+                (name("shelf-2"), i("watane:shelf/a@1.0.0")),
+                (name("shelf"), i("watane:shelf/a@1.0.0")),
+            ],
+        );
+        let HostError::AmbiguousProvider { candidates, .. } = &error else {
+            panic!("not ambiguous")
+        };
+        assert_eq!(
+            candidates
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["shelf", "shelf-2", "shelf-10"]
+        );
+        assert!(error.to_string().contains("fit: shelf, shelf-2, shelf-10;"));
     }
 }
