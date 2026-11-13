@@ -708,7 +708,7 @@ watane.on((message) => {
 The stream also dispatches `changed` when it opens, so no separate first
 read is needed (host 8.4–8.5).
 
-`template/AGENTS.md`: the guide for the coding agent, at most 143 lines,
+`template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
 with these sections in this order (section 10 joins with its slice):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
@@ -1274,8 +1274,7 @@ next command and fixes of `serve`.
    the app asks for the release and then for each listing. The own key is
    inferred from `/api/releases` when it has a release; before the first
    publication, count every published provider as potentially foreign, giving
-   enough time for every listing. `Client::publish` remains the no-links entry
-   point. `dist` signs and writes the site folder. dev reports only
+   enough time for every listing. `dist` signs and writes the site folder. dev reports only
    `home`, the answer's `release`, `site`, `link`, `package` (`Package::id()`)
    and `source` (`Package::has_source()`), as in 2.4, and step 5's `providers`.
 
@@ -1546,7 +1545,6 @@ impl Client {
     pub fn install_wait(&self, folders: &[PathBuf], wait: u64) -> Result<Vec<InstalledMod>, Problem>;   // home: --wait seconds
     pub fn search(&self, text: &str, publisher: Option<&str>, interface: Option<&str>) -> Result<serde_json::Value, Problem>;   // POST /api/search, 30 s
     pub fn releases(&self) -> Result<serde_json::Value, Problem>;   // GET /api/releases, status timeout (2 s)
-    pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<serde_json::Value, Problem>;
     pub fn publish_with_links(&self, package: &watane_pkg::Package, wait: Duration, links: &[String]) -> Result<serde_json::Value, Problem>;
     pub fn fetch(&self, target: &str) -> Result<(watane_pkg::ReleaseRef, watane_pkg::Package), Problem>;
 }

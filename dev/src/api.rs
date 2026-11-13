@@ -318,10 +318,6 @@ impl Client {
         self.request("releases", None, Duration::from_secs(2))
     }
 
-    pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<Value, Problem> {
-        self.publish_with_links(package, wait, &[])
-    }
-
     pub fn publish_with_links(
         &self,
         package: &watane_pkg::Package,
@@ -471,12 +467,8 @@ mod tests {
                     .unwrap();
                 let mut request = vec![0; len];
                 stream.read_exact(&mut request).unwrap();
-                assert!(
-                    serde_json::from_slice::<Value>(&request)
-                        .unwrap()
-                        .get("release")
-                        .is_some()
-                );
+                let request: Value = serde_json::from_slice(&request).unwrap();
+                assert!(request.get("release").is_some() || request.get("link").is_some());
                 let _ = stream.write_all(headers.as_bytes());
                 let _ = stream.write_all(&body);
             });
@@ -523,6 +515,23 @@ mod tests {
             thread.join().unwrap();
             assert_eq!(error.code, expected, "{error:?}");
         }
+        // A link is matched on its key (after `watane:`) and its slug (after `#`) only.
+        for link in [
+            format!("watane:{}@https://p.example/mods/#other", "y".repeat(52)),
+            format!("watane:{}@https://p.example/mods/#demo", "z".repeat(52)),
+        ] {
+            let (port, thread) = binary(200, &asked, &p.id().to_string(), p.as_bytes().to_vec());
+            let error = Client { port }
+                .fetch(&link)
+                .expect_err("reject other release");
+            thread.join().unwrap();
+            assert_eq!(error.code, Code::Internal, "{error:?}");
+        }
+        let link = format!("watane:{}@https://p.example/mods/#demo", "y".repeat(52));
+        let (port, thread) = binary(200, &asked, &p.id().to_string(), p.as_bytes().to_vec());
+        let (release, _) = Client { port }.fetch(&link).unwrap();
+        thread.join().unwrap();
+        assert_eq!(release.to_string(), asked);
         for (status, code) in [
             (400, "bad_request"),
             (409, "fetch_refused"),
@@ -560,6 +569,17 @@ mod tests {
         let key = "y".repeat(52);
         let consumer = root.path().join("consumer");
         for n in 0..33 {
+            if n == 32 {
+                // Exactly 32 cached packages are still allowed.
+                std::fs::write(
+                    consumer.join(".watane-dev.json"),
+                    json!({"release_providers":records}).to_string(),
+                )
+                .unwrap();
+                let order =
+                    crate::build_on::fetch_providers(&consumer, &Client { port: 0 }, &env).unwrap();
+                assert_eq!(order.len(), 32);
+            }
             let slug = format!("p{n}");
             let id = watane_pkg::PackageId::of(slug.as_bytes());
             let folder = env.cache.join("providers").join(id.to_string());
@@ -767,7 +787,7 @@ mod tests {
             Duration::ZERO,
         );
         let e = Client { port }
-            .publish(&publish_package(), Duration::from_secs(2))
+            .publish_with_links(&publish_package(), Duration::from_secs(2), &[])
             .unwrap_err();
         thread.join().unwrap();
         assert_eq!(e.code.as_str(), "publish.version_exists");
@@ -820,7 +840,7 @@ mod tests {
             .unwrap();
         });
         let result = Client { port }
-            .publish(&package, Duration::from_secs(2))
+            .publish_with_links(&package, Duration::from_secs(2), &[])
             .unwrap();
         thread.join().unwrap();
         assert_eq!(
@@ -860,7 +880,7 @@ mod tests {
         ] {
             let (port, thread) = stub(status, value, delay);
             let e = Client { port }
-                .publish(&package, Duration::from_secs(1))
+                .publish_with_links(&package, Duration::from_secs(1), &[])
                 .unwrap_err();
             thread.join().unwrap();
             assert_eq!(e.code, expected);

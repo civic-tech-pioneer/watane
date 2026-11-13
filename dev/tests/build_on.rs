@@ -253,6 +253,10 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
         assert_eq!(v["result"]["path"], Value::Null);
         assert_eq!(v["result"]["link"], expected_link);
         assert_eq!(v["result"]["providers"], json!([release("ratings")]));
+        assert_eq!(
+            v["next"],
+            "Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves. Contract tests use a fake of it (see AGENTS.md)."
+        );
     }
     let (code, v) = f.run(&[
         "add",
@@ -263,6 +267,10 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
     ]);
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["errors"][0]["code"], "usage.args");
+    assert_eq!(
+        v["next"],
+        "Pass a mod link watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>"
+    );
     let own = f.root.path().join("ratings");
     watane_dev::template::new_mod(&own, "ratings").unwrap();
     let (code, v) = f.run(&[
@@ -286,7 +294,7 @@ fn ac9_template_documents_building_on_data() {
     ] {
         assert!(guide.contains(text), "missing {text}");
     }
-    assert!(guide.lines().count() <= 143);
+    assert!(guide.lines().count() <= 150);
 }
 #[test]
 fn ac10_fake_fetch_bytes_headers_recording_and_unknown_key() {

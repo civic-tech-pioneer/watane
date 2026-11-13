@@ -173,8 +173,18 @@ pub fn run(cli: Cli) -> Outcome {
                 let env = Env::from_process().map_err(|e|vec![e])?;
                 crate::build_on::add_release(&dir, &target, &client, &env)
             })();
-            outcome.next = Some("Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves. Contract tests use a fake of it (see AGENTS.md).".into());
-            result
+            // A failed fetch has no lines to copy: its fix is the next step.
+            return match result {
+                Ok(v) => {
+                    outcome.next = Some("Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves. Contract tests use a fake of it (see AGENTS.md).".into());
+                    outcome.result = Some(v);
+                    outcome
+                }
+                Err(e) => {
+                    outcome.next = e.first().and_then(|p| p.fix.clone());
+                    outcome.fail(e)
+                }
+            };
         }
         Command::Add { provider, .. } => deps::add_local(&dir, provider.as_deref().expect("clap requires a provider"))
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
