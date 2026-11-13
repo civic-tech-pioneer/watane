@@ -522,6 +522,9 @@ impl Mod {
     pub fn summary(&self) -> &str {
         &self.meta.summary
     }
+    pub fn repository(&self) -> Option<&str> {
+        self.meta.repository.as_deref()
+    }
     pub fn http_hosts(&self) -> &[HttpHost] {
         &self.meta.http_hosts
     }
