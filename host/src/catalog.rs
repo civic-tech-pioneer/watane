@@ -49,7 +49,6 @@ pub struct PlanEntry {
     pub grants: Vec<Grant>,
     pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
-    #[serde(default)]
     pub binds: Vec<Bind>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]

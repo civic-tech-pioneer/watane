@@ -273,7 +273,6 @@ pub struct PlanEntry {
     pub origin: Option<ReleaseRef>,                          // mod.toml [origin] release
     pub change: Change, pub grants: Vec<Grant>, pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
-    #[serde(default)]
     pub binds: Vec<Bind>,                                    // step 5: the binds in force for this entry (4.5)
 }
 pub enum Change { New, Update { from_version: Version }, Unchanged }
