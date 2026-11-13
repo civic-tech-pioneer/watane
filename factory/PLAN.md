@@ -140,14 +140,14 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   `search --help` lists the global `--dir`, which search ignores; a hand-made `wit/deps/<own slug>/`
   hides the own-provider message behind a WIT duplicate-package error; the default home in `next`
   shows `/tmp` where an explicit `--home` shows `/private/tmp`.
-- [~] **S33 The agent's texts, second pass.** (branch `slice/s33`; foreman: see `Foremen`) Bob's
-  coding agent gets a fitting `next` from each dev command in the S30 and S31 leftovers: `next` and
-  `dir` show the same resolved path for a default and an explicit `--home` (/tmp vs /private/tmp);
-  a 503 or other app error from search gets a fix that names the app, not "Correct the reported host
-  error"; `search --help` does not list `--dir` (or search honours it); a hand-made
-  `wit/deps/<own slug>/` gives the own-provider message, not a WIT duplicate-package error; find
-  why a fake-app publish takes about 30 s (close to `--wait 30`) and fix it if it is dev's.
-  Touches: dev code and tests; pkg only for the own-slug case. Not app, not the spec documents.
+- [x] **S33 The agent's texts, second pass.** Delivered 2026-11-13 (main `8f2ca97`). Sol runs: S33-1 1,
+  S33-2 1, S33-fix1 1. User-sim rejected once (an own-package copy at another version), then
+  accepted. Spec debt: pkg TECHNICAL 4.7 lists two provider messages, pkg has a third; dev
+  TECHNICAL 2.4 and 9.6 say "canonical or given home", the code uses the resolved home. Left for
+  later (user-sim): an own-package copy under another folder name gets "repeated package"; a
+  deps.json-only self entry names a wit/deps folder that does not exist; app 5xx is coded
+  `host.refused`; after a failed test or serve `next` just reruns; `--home x/../h` with a missing x
+  gives an internal error with no path.
 - [x] **S32 Design: build on (step 5).** Merged 2026-11-13 (main `bf5649f`), spec documents only,
   after one independent review (18 findings: 6 security, 10 gaps, 2 simplifications; all fixed). No
   published format changes: `[origin]` and `Release.origin` exist since step 3, provider hints reuse
@@ -155,18 +155,28 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   parent, the publisher's claim (W24); provider bases come from live list/include statements the home
   already reads (W25, closes dist Q2); a fit is the same slug with every used interface satisfied,
   any publisher, bound only after the person picks (W26); derived mods are a search filter (W28).
-- [~] **S34 Eve's host binds a mod that fits (host stage 9).** (branch `slice/s34`; foreman: see `Foremen`) `Bind`, `plan_with`, host TECHNICAL
-  4.5, `binds` in `installed.json`, the preview rule of 4.2 step 7. Done when host S33 to S35 pass
-  (`tests/binds.rs`) on the real host. Touches: host only.
-- [~] **S35 Eve's dist finds Carol's release through Dave's listing (dist S7).** (branch `slice/s35`; foreman: see `Foremen`) dist TECHNICAL 5.11:
-  provider bases, `fetch_for`, `read_link`, `Fetched.link`, `Query.origin`. Done when dist A36 to
-  A41 pass and the step 3 and 4 tests pass unchanged. Touches: dist only.
-- [ ] **S36 The agent builds on a release (dev stage 9).** `new --from`, `add --release`,
+- [x] **S34 Eve's host binds a mod that fits (host stage 9).** Delivered 2026-11-13 (main `69a49ae`).
+  Sol runs: S34-1 1, S34-fix1 1. User-sim rejected once (removing a bound provider in a preview),
+  then accepted. Left for later: in a preview, ambiguous_provider names neither the competing mods
+  nor that a pick settles it (S37).
+- [x] **S35 Eve's dist finds Carol's release through Dave's listing (dist S7).** Delivered 2026-11-13
+  (main `15d5942`). Sol runs: S35-1 1, S35-fix1 1. User-sim rejected once (a cache hit gave a dead
+  base as `Fetched.link`), then accepted. Left for later: NotFollowed for a listing skipped as a
+  local address says "no listing names a base"; the no-hint error gives no fix; every hint base is
+  read even after a trusted one served; on a no-record cache path the link is the first base that
+  served, not the first in trust order.
+- [~] **S36 The agent builds on a release (dev stage 9).** (branch `slice/s36`; foreman: see `Foremen`) `new --from`, `add --release`,
   `release_providers`, `publish.provider_unlisted`, `fake-watane` answers `/api/fetch`; DEV-S-35 to
-  40. Touches: dev, template. After S33 (dev).
-- [ ] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** app 8.1, 8.3 (`/api/fetch`),
-  9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. After S34 and S35; J5 also needs
-  S36.
+  40. Touches: dev, template, pkg (its third message in pkg TECHNICAL 4.7). Also: S33's spec debt, and
+  widen or split dev's `ac10_endless_test` 7 s bound (failed under load in S5, S8, S30, S33).
+- [~] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** (branch `slice/s37`; foreman: see `Foremen`) app 8.1, 8.3 (`/api/fetch`),
+  9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
+  build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
+  `origin` filter. Not dev (S36).
+- [~] **S38 Network tests hold under load.** (branch `slice/s38`; foreman: see `Foremen`) dist's network tests use `fast_options` (300 ms
+  `entry_timeout`) and time out under parallel load (S28, S29 `restore.rs` ac11, S35). Give only the
+  timeout tests a short timeout; the rest use one that holds under load. Done when dist's suite
+  passes 5 times in a row in parallel. Touches: dist tests only.
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -208,10 +218,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
 | app | D find | 4 | done (S25: APP-F-37, 39, 40; S29: APP-F-38, 43 to 46) |
-| app | E build on | 5 | open |
-| host | 9 binds | 5 | open (S34) |
-| dist | S7 provider bases | 5 | open (S35) |
-| dev | 9 build on | 5 | open (S36) |
+| app | E build on | 5 | open (S37 in flight) |
+| host | 9 binds | 5 | done (S34) |
+| dist | S7 provider bases | 5 | done (S35) |
+| dev | 9 build on | 5 | open (S36 in flight) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
@@ -252,10 +262,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S30: `62f3992b` (sessionId `62f3992b-6a28-4c7a-a7bb-9991ab5e6643`), worktree `.claude/worktrees/s30` (stopped, removed).
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29` (stopped, removed).
 - S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
-- S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33`.
+- S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33` (stopped, removed).
 - S32: `56f5b095` (sessionId `56f5b095-5ed1-4f70-a1a6-fa2c02aa85ab`), worktree `.claude/worktrees/s32` (stopped, removed).
-- S34: `cbe37314` (sessionId `cbe37314-fe72-4ca3-a22e-73a0a05538ac`), worktree `.claude/worktrees/s34`.
-- S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35`.
+- S34: `cbe37314` (sessionId `cbe37314-fe72-4ca3-a22e-73a0a05538ac`), worktree `.claude/worktrees/s34` (stopped, removed).
+- S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -268,6 +278,16 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S35: dist 5.7: a listed record whose stored view lacks the release is also read from provider
+  bases; the package comes from the first base in trust order (5.11 step 5); on a cache hit a listed
+  record's link is the first provider base in trust order. `read_link` of a recorded channel reads
+  the record's base.
+- S34: new `HostError::BadRequest` (`bad_request`, 400) for an invalid bind. 4.5: a bind's `to` must
+  be installed or in the same plan; at most one bind per consumer and provider; remove never fails
+  on a link (the provider stays unbound), a plan still refuses ambiguity.
+- S33: the 30 s publish was the cold Rust build and test pipeline, not dev (a warm one takes 4 to 6
+  s). `search` accepts `--dir`, ignores it, and hides it from its help. Generic app-error fix: "The
+  watane app could not complete this command; ask the person to check the watane app".
 - S29: dist `IndexView.skipped` is a list of `{channel, cause}` (own channel, local address, over the
   listing limit); the app shows `IndexRow.skipped: [{party, cause}]`. dist error texts name a channel
   by fingerprint (fields keep the key). `/api/search` answers 400 only for a bad query, else 500
@@ -592,6 +612,11 @@ The human may veto each one.
   mostly slow builder tests.
 - S29: Sol's sandbox cannot start the macOS driver (XPC): app window tests run only in Docker until
   the validator runs them natively. dist `restore.rs` ac11 flakes under parallel load (line 78).
+- S34: adding a field to a pub host struct forces one-line edits in app and dev, which "host only"
+  slices forbid; constructors in tests would avoid it. dev's suite fails in a worktree without
+  `vendor.sh`, which can hide regressions.
+- S35: dist network tests time out under parallel load on `fast_options` (300 ms): also S28, and S29's
+  `restore.rs` ac11. Third time: a slice gives only the timeout tests a short timeout (S38).
 
 ## Digest
 
@@ -671,3 +696,9 @@ The human may veto each one.
 - S29: Carol adds Ivy's index in her app, searches "reading", sees Alice's mod verified and listed by
   Ivy, and installs it; Ivy lists, includes and unlists through consent (step 4 done).
 - S32: step 5 is designed: origin, provider bases from listings, fit and pick, derived-mod search.
+- S33: Bob's agent reads resolved paths in `next`, app errors that name the watane app, and the
+  own-provider message for any copy of its own package.
+- S34: Eve's host binds her picked provider in place of a missing one, kept across restarts and
+  updates; a preview links a provider by slug, whatever its publisher.
+- S35: Eve's dist fetches Carol's release from the bases named by live listings, verified against
+  Carol's key; search filters by origin.
