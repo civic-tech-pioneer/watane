@@ -114,6 +114,7 @@ watane-dev [--json] [--dir <path>] <command>
   search [<text>...] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
   new [<slug>] --from <link> [--home <path>]                (step 5)
   add --release <link or release> [--home <path>]           (step 5)
+  publish --push [...]                                      (step 6)
 ```
 
 - `--help` describes every command, positional argument and option. `serve --stop`
@@ -1383,6 +1384,36 @@ No consent: the app fetches and follows, and installs nothing (app 8.3).
 Contract tests fake the provider (section 8), so `test` needs no network
 and no app. `serve` installs the cached folders in the preview (9.2, 9.3).
 `install` in a home needs the provider installed from the app (9.6).
+
+### 10.4 Step 6: share on GitHub (sketch, W29, W30)
+
+dev itself still opens no connection except HTTP to `localhost`. Step 6
+runs the maker's own `git` and `gh` as child processes, with the maker's
+own login; dev holds no token and reads none. The exact results, errors
+and tests wait for the slice of step 6.
+
+**`publish --push`.** After the app confirms and writes the site folder
+(9.7):
+1. The site folder is a clone of the maker's site repository. The first
+   time, `gh repo create <owner>/watane-channel --public` creates it, and
+   dev's `next` asks the participant to set the site URL in the app to
+   its raw URL (`https://raw.githubusercontent.com/<owner>/watane-channel/<branch>/`).
+   No local API route sets the site URL.
+2. Commit and push the site folder.
+3. In the mod folder: the first time, `gh repo create <owner>/<slug>
+   --public` and write `repository` in `mod.toml` (pkg 4.2) before the
+   pack, so the package names it. Then commit, tag `v<version>` and push.
+   With `--no-source`, no mod repository and no `repository`.
+
+**`new --from <link>`.** When the release's `mod.toml` names a
+`repository`: `gh repo fork <repository> --clone` into the new folder, or
+`git clone` without `gh`; then check out the tag `v<version>`. The
+repository is not verified, so dev compares the checked-out source with
+the source in the verified package; any difference refuses the fork and
+falls back to the package. Then set `[origin]`, remove `repository`, and
+go on as 10.2. Without a
+`repository`, unpack the package as 10.2. The fork is a convenience: the
+signed `[origin]` is the only origin that watane shows (W24).
 
 ## 11. Security properties
 

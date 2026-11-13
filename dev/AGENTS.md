@@ -25,7 +25,7 @@ cargo fmt --check                       # the toolchain needs: rustup target add
 
 - One stdout JSON object per command with `--json`; exit status by class (TECHNICAL 2.2). Every error has a code, a file and line where known, and a fix.
 - No mod code runs natively: no `build.rs` or proc macro in a mod, builds in the cache copy, unit tests in Wasmtime. Keep `env_clear()` on every cargo run.
-- dev opens no connection except HTTP to `localhost`. It holds no key and signs nothing.
+- dev opens no connection except HTTP to `localhost`. It holds no key and signs nothing. Step 6 (TECHNICAL 10.4) runs the maker's own `git` and `gh`; dev holds no token.
 - A test never calls the code under test to get its expectation (TECHNICAL 15).
 - Do not redefine a sibling type (`Mod`, `Grant`, `Package`, `Harness`, `Ready`): use it.
 - Keep it lean: no abstraction with one user, no seam "for later".

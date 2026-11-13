@@ -56,7 +56,7 @@ Rules:
 A mod is a folder. The WIT world is its contract; nothing else repeats it.
 
 ```text
-mod.toml        name, summary, [http] hosts, [origin] release
+mod.toml        name, summary, repository, [http] hosts, [origin] release
 wit/world.wit   package mods:<slug>@<version>; the exports, imports and events
 wit/deps/       the WIT of each provider, and of watane:host
 deps.json       each provider mods:<slug>: its publisher key, or null if local
@@ -224,6 +224,8 @@ Each one closes a gap of the old specification. Veto any of them.
 | W26 | A mod **fits** in place of a named provider when it has the same slug and satisfies every interface that the consumer calls or subscribes to from it (pkg 5.2), whatever its publisher. It binds only after the participant picks it in the consent view; the host keeps the pick as a bind of that consumer, asks for each new bind, and deletes the bind when the picked mod is removed (host 4.5). (step 5, S32) |
 | W27 | A preview matches a provider by slug and interface, not by publisher: it holds no participant data (W5), and dev installs a published provider there from a folder. (step 5, S32) |
 | W28 | The mods that derive from a mod are a search over the channels already read, filtered by origin publisher and slug (dist 5.10); no new statement. (step 5, S32) |
+| W29 | A mod with source has its own git repository; `mod.toml` `repository` names it, so the signed package carries the link. Packages stay in the channel's site folder: `dist`, `log` and the release body do not change. A fork on GitHub is never a trust fact: the origin is still the signed `[origin]` (W24). (step 6) |
+| W30 | GitHub is the default host, not a requirement (V4). `watane-dev publish --push` runs the maker's own `git` and `gh`; watane holds no account and no token (F-MAKE-6). The default base of the link is the raw URL of the site repository (`https://raw.githubusercontent.com/<owner>/<repo>/<branch>/`); GitHub Pages or any other static host also works, because the base is only where to read. Without `--push`, publish writes the folder as before. (step 6) |
 
 ## 8. Build order
 
@@ -234,6 +236,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 3 Publish | `log`; `dist` (own channel, publish folder, follow); the confirmation in `app`; `watane-dev publish` | J3 passes |
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
 | 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
+| 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -256,7 +259,12 @@ Step 5 is designed (S32, W24 to W28): `new --from` and `add --release` in
 4.2 and 4.5; provider bases, `Fetched.link` and the origin filter in
 `dist/TECHNICAL.md` 5.7, 5.10 and 5.11; `/api/fetch`, the pick request, the
 provider listings of a publish and the derived view in `app/TECHNICAL.md`
-6, 8.1, 8.3 and 9.7. Nothing waits now.
+6, 8.1, 8.3 and 9.7.
+
+Step 6 is sketched (W29, W30): the `repository` key in `pkg/TECHNICAL.md`
+4.2; `publish --push` and the fork of `new --from` in `dev/TECHNICAL.md`
+10.4. It waits for its slice to design the exact command results, the
+errors and the tests.
 
 ## 10. Reference material
 

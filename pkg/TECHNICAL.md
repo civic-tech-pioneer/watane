@@ -124,6 +124,7 @@ UTF-8 TOML, at most 16 KiB. Unknown keys and tables are refused.
 ```toml
 name = "Reading list"                  # required; 1..=64 chars
 summary = "Keep a list of books."      # required; 1..=280 chars
+repository = "https://github.com/alice/reading-list"   # optional (step 6)
 
 [http]                                 # optional
 hosts = ["api.openlibrary.org"]        # 1..=16 HttpHost, no duplicates
@@ -134,6 +135,10 @@ release = "<ReleaseRef>"               # the release this mod was made from
 
 `name` and `summary`: no character of Unicode category Cc (this includes
 newlines), no leading or trailing white space, length counted in `char`.
+`repository` (step 6, W29): an absolute `https` URL with a host, no
+userinfo, at most 256 bytes; the git repository with the source of this
+mod. It is the publisher's claim, shown as a link, never fetched by
+`host` or `dist`.
 The message for an unknown key `slug` or `version` is: "`<key>` is not a
 mod.toml key: the slug and the version come from the package line of
 wit/world.wit".

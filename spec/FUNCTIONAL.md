@@ -24,6 +24,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | channel | The public, ordered, append-only record of the signed statements of one participant. |
 | package | One immutable version of a mod, as a file. |
 | release | A statement in a channel that publishes one package. |
+| mod repository | A public git repository with the source of one mod. The mod names it. |
 | index | A channel that lists mods, also of other participants, and that a participant chose to search. |
 
 ## 2. Requirements
@@ -80,10 +81,11 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-PUB-1** Each participant has one channel.
 - **F-PUB-2** When the participant publishes a mod, watane adds a release with the name, the version and the digest of the package. A published version never changes.
 - **F-PUB-3** watane writes the channel and the packages as plain files. The maker puts them on any static web host. That host is not trusted.
-- **F-PUB-4** Where the maker agrees, the package includes the source of the mod.
+- **F-PUB-4** Where the maker agrees, the package includes the source of the mod, and the mod has its own repository with that source, tagged for each release. (repository: step 6)
 - **F-PUB-5** The participant can withdraw a version, with a reason.
 - **F-PUB-6** The participant can follow a channel from a link. watane keeps a followed channel up to date and verifies each statement.
 - **F-PUB-7** If two validly signed statements of one channel cannot both be in it (two at the same position, or two that follow the same statement), watane marks the channel as compromised and stops updates from it.
+- **F-PUB-8** The maker tools push the site to a GitHub repository of the maker and each mod to its own GitHub repository, with the maker's own git login. The link reads the site from the repository's raw URL by default; GitHub Pages or any other static host also works. (step 6)
 
 ### 2.7 Find (step 4)
 
@@ -94,7 +96,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 
 ### 2.8 Build on (step 5)
 
-- **F-BUILD-1** The maker tools make a new mod from the source of a published mod. The new mod records the release it came from, and watane shows this origin.
+- **F-BUILD-1** The maker tools make a new mod from the source of a published mod. Where the mod has a repository, the new mod is a fork of it (step 6). The new mod records the release it came from, and watane shows this origin.
 - **F-BUILD-2** The maker tools add a dependency on an interface of a published mod, and make that interface available to the coding agent.
 - **F-BUILD-3** When no mod of the named provider is available, watane shows other mods whose interface fits, and binds one only after the participant picks it.
 - **F-BUILD-4** watane shows the mods that derive from a mod, as far as the chosen indexes list them.
@@ -131,8 +133,9 @@ recommendations mod reports the missing grant. She removes a mod.
 ### J3: Publish and install from a link
 
 Alice's app holds her identity, which it created with no server. Alice
-publishes the reading list. The app asks, and she confirms. She puts
-the written files on a static web host and shares the link with Bob. Bob
+publishes the reading list. The app asks, and she confirms. watane-dev
+pushes the site to her GitHub repository and the source to the reading
+list's own repository. She shares the link with Bob. Bob
 follows the link. His plan shows Alice as the publisher, with a verified
 signature. He installs the mod and uses it. When a file on the web host is
 changed, Bob's watane refuses it and names the cause.
@@ -148,7 +151,8 @@ second statement at a used position marks Alice's channel as compromised.
 
 ### J5: Build on a mod
 
-Carol's coding agent makes a ratings mod from the source of Alice's mod.
+Carol's coding agent forks the repository of Alice's mod and makes a
+ratings mod from it.
 Carol publishes it, and its origin is visible. Dave's agent adds a
 dependency on the interface of Carol's mod; his contract tests use a fake
 of it. Eve installs Dave's mod, and watane installs Carol's mod first. Where
@@ -164,4 +168,5 @@ These are not in the first version (see `VISION.md`):
   record of tool calls;
 - direct transfer between devices, and helper services;
 - the factory, and statements between participants;
-- recovery of a lost identity without a backup.
+- recovery of a lost identity without a backup;
+- finding mods through the search of a code host, such as a GitHub topic.
