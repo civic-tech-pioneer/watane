@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn ac4_guide_stays_short_with_distinct_sections_and_slug_placeholders() {
         let guide = include_str!("../template/AGENTS.md");
-        // S17-2 starts with a 98-line guide; at most 45 lines may be added.
-        assert!(guide.lines().count() <= 98 + 45);
+        // TECHNICAL 4.1: at most 150 lines.
+        assert!(guide.lines().count() <= 150);
         let sections: Vec<_> = guide
             .lines()
             .filter(|line| line.starts_with("## "))
