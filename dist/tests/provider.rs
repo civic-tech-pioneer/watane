@@ -358,3 +358,51 @@ fn read_link_record_uses_record_base() {
     assert_eq!(got.link, Some(carol.link(Some("ratings"))));
     assert_eq!(other.count(), 0);
 }
+/// S35 acceptance: the second fetch_for of the same release (a cache hit) must keep the
+/// trusted base of the consumer's listing, not the dead base of an index's listed record.
+#[test]
+fn regress_s35_cache_hit_keeps_consumer_base() {
+    let carol = SearchHome::new("Carol");
+    let first = SearchHome::new("First");
+    let second = SearchHome::new("Second");
+    let (dave, zed) = if first.dist.identity() > second.dist.identity() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    carol
+        .dist
+        .publish(named_fixture("ratings", "Ratings"))
+        .unwrap();
+    zed.dist.follow(&carol.link(None)).unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let dead = TestHost::serve(empty.path());
+    zed.dist
+        .list(
+            &Link::new(
+                carol.dist.identity(),
+                &dead.url,
+                Some(&"ratings".parse().unwrap()),
+            )
+            .unwrap(),
+            "dead",
+        )
+        .unwrap();
+    dave.dist
+        .list(&carol.link(Some("ratings")), "real")
+        .unwrap();
+    let eve = SearchHome::new("Eve");
+    eve.dist.follow(&dave.link(None)).unwrap();
+    eve.dist.choose_index(&zed.link(None)).unwrap();
+    let reference = reference(&carol, "ratings");
+    let once = eve
+        .dist
+        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .unwrap();
+    assert_eq!(once.link, Some(carol.link(Some("ratings"))));
+    let twice = eve
+        .dist
+        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .unwrap();
+    assert_eq!(twice.link, Some(carol.link(Some("ratings"))));
+}
