@@ -237,23 +237,13 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   Touches: host/src, host/tests, dist/src, dist/tests, and their TECHNICAL only to append. Not app
   (S44), not dist's doubled `DistError` text (app's tests expect it; S44 may raise it), not pkg or
   dev. (branch `slice/s45`; cloud routine: see `Foremen`)
-- [~] **S46 A hostile mod folder is named, not half-read (pkg cleanup).** (cloud) Story: a maker or
-  a stranger's package with links, FIFOs or broken bytes gets one precise refusal and nothing is
-  read past it. Outcomes (pkg API, tests and user-sim):
-  1. A link inside a hidden folder (`ui/.git/x`, `wit/.hid/k`) is refused as a link, not a
-     `[path]` or WIT folder rule (S15, S22).
-  2. Every path part is opened without following links (not only the last), and `folder.rs` reads
-     through the handle it checked, closing the swap window (S15).
-  3. A FIFO at `ui/extra` is refused by `Mod::read`, as `pack` already does (S22).
-  4. `decode(&[0x8c])` and empty-input errors say what is expected, once (S20, S22); release errors
-     strip "release" at the call site, not in `malformed()`.
-  Touches: pkg/src, pkg/tests. Not pkg/TECHNICAL.md (S40 edits it): a needed spec line goes in the
-  delivery report and the product owner adds it after S40 merges. (branch `slice/s46`; cloud
-  routine: see `Foremen`)
-
-Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
-is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
-
+- [x] **S46 A hostile mod folder is named, not half-read (pkg cleanup).** Delivered 2026-11-13 from
+  the cloud in 13 min (main `fd7fbfb`); pkg, dev and timing tests rerun on macOS: green. A link
+  anywhere below ui/ or wit/ (hidden folders too), a FIFO, or broken release bytes get one precise
+  refusal and nothing below is read; every walk lists and stats through no-follow directory
+  handles (20,000 swaps leaked nothing). Spec lines for pkg TECHNICAL 4.7, 6.4 and 7.x wait for
+  S40 to merge (in the S46 commit message). Left for later: a linked `ui` reports two problems;
+  `add.rs` (add_provider) keeps the check-then-read gap; mid-swap errors are plain I/O text.
 - [~] **S40 Design: share on GitHub (step 6).** Spec documents only. Turn dev 10.4 and pkg 4.2 into
   build-plan stages: the exact results, errors (codes, fixes, `next`) and tests of `publish --push`
   and of the `new --from` fork; what a missing `git`/`gh`, a failed push, a fork that differs from
@@ -366,7 +356,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S40: `9b94b54e` (sessionId `9b94b54e-b9a1-4de5-8528-bf6defb724c2`), worktree `.claude/worktrees/s40`.
 - S44: `cfcd9edf` (sessionId `cfcd9edf-a754-4f25-b613-c0a08e8db786`), worktree `.claude/worktrees/s44`.
 - S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw`.
-- S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm`.
+- S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -380,6 +370,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S46: a link anywhere below ui/ or wit/ is rule path at the link's own path; below a refused WIT
+  directory the reader still descends without following links; a non-hidden special file below
+  ui/ is rule path, hidden ones are ignored; release decode errors read "<field>: expected <what>,
+  found <what>".
 - S40 (the human, 2026-11-13): step 6 uses real GitHub forks. `new --from` clones and verifies
   (no gh); the derived mod's first `publish --push` runs `gh repo fork`, pushes to its own default
   branch; S40's own-repository path stays as the fallback (fork exists, upstream gone, no upstream).
@@ -746,6 +740,7 @@ The human may veto each one.
   ended a turn.
 - S39: two Sol runs in parallel on one subsystem loaded the machine (both PARTIAL on the 7 s
   timing and nested-sandbox tests); parallel tasks conflicted at the end of tests/envelope.rs.
+- S46: the sketch repeated S22 follow-ups that S22 had partly fixed; the foreman probed first.
 
 ## Digest
 
