@@ -1638,7 +1638,9 @@ Without `--push`, publish is 9.7, unchanged.
    `git add -A -- head entries packages`; when `git diff --cached --quiet`
    fails, `git commit -q -m <ReleaseRef>`; then `git push -q origin HEAD`.
 6. The mod, unless `--no-source`: `git rm -r -q --cached --ignore-unmatch .`,
-   then `git add -f -- <each path of the package except logic.wasm>`, so
+   then `git add -f -- <each path of the package except logic.wasm>`
+   (a prebuilt mod, with no `logic/Cargo.toml`, keeps `logic.wasm`: it is
+   that mod's only logic; S42), so
    the commit holds exactly the source that the person agreed to publish
    (F-PUB-4) and no other file of the folder. When `git diff --cached
    --quiet` fails, `git commit -q -m "<slug> <version>"`. Then `git tag
@@ -1761,7 +1763,7 @@ Warnings (they never change `ok`):
 | Released packages are checked twice | the app's dist verifies signature and hash (dist 5.7); dev checks the format and the id again, and names cache paths only by the id it computed (10.1). |
 | Source of another publisher runs only in the builder | a derived mod is built and tested like any mod (sections 5 to 8). |
 | dev holds no GitHub token (step 6) | git and gh run as the maker's own programs with the maker's login; dev reads only gh's login and exit status (10.4). |
-| Only consented source is pushed (step 6) | the mod commit holds exactly the package's paths, except `logic.wasm` (10.4.1 step 6); the person saw whether the package holds source (9.7). Nothing is force-pushed. |
+| Only consented source is pushed (step 6) | the mod commit holds exactly the package's paths, except a built `logic.wasm` (10.4.1 step 6); the person saw whether the package holds source (9.7). Nothing is force-pushed. |
 | A repository never replaces verified source (step 6) | `new --from` uses a clone only when it packs to the verified package's id, removes every file the package does not hold, and writes dev's guides over the publisher's (10.4.2). The URL passes pkg's rule (https only) and follows `--`. |
 
 Not protected (as `spec/TECHNICAL.md` section 6): another program of the
