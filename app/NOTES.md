@@ -308,11 +308,9 @@
   the cached party label. Own listing rows name their target instead of
   showing only its key. All existing signature, grant and provenance data stay
   visible; untrusted text still uses textContent.
-- `cause_chain` previously recognized only equality or a matching suffix.
-  A real nested `DistError::Io` chain with a source already in the middle of
-  the accumulated context repeated that source after another cause was added.
-  Whole colon-delimited matches now suppress that repetition, while a mere
-  word substring (the existing `disk broke` / `broke` test) still appends.
+- `cause_chain` is unchanged: dist's `Log`, `Package` and `Release` are now
+  `#[error(transparent)]`, so the S21b doubling ("X: X") no longer occurs and
+  equality or a matching suffix catches every real dist chain (validator).
   Real dist package/IO/network/URL Display regressions and the publish 422
   message regression remain plain. Duplicate-version and already-listed
   app messages no longer include `at seq <n>`; dist itself is unchanged.

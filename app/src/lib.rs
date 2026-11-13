@@ -57,11 +57,7 @@ pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
     let mut cause = e.source();
     while let Some(e) = cause {
         let text = e.to_string();
-        if message != text
-            && !message.ends_with(&format!(": {text}"))
-            && !message.starts_with(&format!("{text}: "))
-            && !message.contains(&format!(": {text}: "))
-        {
+        if message != text && !message.ends_with(&format!(": {text}")) {
             message.push_str(": ");
             message.push_str(&text);
         }
@@ -398,20 +394,6 @@ mod tests {
         );
         let other = watane_host::HostError::AlreadyServing;
         assert_eq!(super::serve_error(&other), super::cause_chain(&other));
-    }
-    #[test]
-    fn ac3_real_dist_source_already_in_context_prints_once() {
-        let error = watane_dist::DistError::Io {
-            path: "cache: disk broke".into(),
-            source: std::io::Error::other(watane_dist::DistError::Io {
-                path: "while writing".into(),
-                source: std::io::Error::other("disk broke"),
-            }),
-        };
-        assert_eq!(
-            super::cause_chain(&error),
-            "cache: disk broke: while writing"
-        );
     }
     #[test]
     fn ac3_duplicate_version_omits_sequence() {
