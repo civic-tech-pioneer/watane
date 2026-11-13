@@ -2110,7 +2110,7 @@ rules belong to 15.1.
 | DEV-S-33 | `search::s33_results_pass_through` | integration against `fake-watane` |
 | DEV-S-34 | `search::s34_no_index_next` | integration against `fake-watane` |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
-| DEV-S-35 | `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug`; `builder::regress_s47_test_keeps_packaged_logic_without_source` | integration: fake fetch, source package; prebuilt logic bytes preserved, check and contract run, build and unit skipped, exit 0 |
+| DEV-S-35 | `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug`; `builder::regress_s47_test_keeps_packaged_logic_without_source`; `contract::ac5_s47_test_accepts_prebuilt_wasm_without_manifest` | integration: fake fetch, source package; prebuilt logic bytes preserved, check and contract run, build and unit skipped, exit 0, no preview created by test |
 | DEV-S-36 | `build_on::ac2_no_source_writes_nothing` | integration: no-source package |
 | DEV-S-37 | `build_on::ac3_exists_precedes_fetch_and_absent_app_writes_nothing` | integration: no build |
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |

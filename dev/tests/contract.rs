@@ -311,15 +311,18 @@ fn ac2_s11_deliver_rejects_non_subscription() {
 }
 
 #[test]
-fn ac5_s11_test_rejects_stale_wasm_without_manifest() {
+fn ac5_s47_test_accepts_prebuilt_wasm_without_manifest() {
     let f = prebuilt_recommendations();
+    assert!(!f.dir.join("logic/Cargo.toml").exists());
+    let expected = fs::read(f.dir.join("logic.wasm")).unwrap();
     let (code, value) = f.run("test");
-    assert_ne!(code, 0, "test accepted unbuilt logic: {value}");
-    assert!(value["result"]["contract"].is_null(), "{value}");
-    assert!(
-        !f.dir.join("logic.wasm").exists(),
-        "stale wasm survived failed build"
-    );
+    assert_eq!(code, 0, "{value}");
+    assert!(value["result"]["contract"].is_object(), "{value}");
+    assert_eq!(value["result"]["contract"]["passed"], 3, "{value}");
+    assert_eq!(value["result"]["contract"]["failed"], 0, "{value}");
+    assert!(value["result"]["build"].is_null(), "{value}");
+    assert!(value["result"]["unit"].is_null(), "{value}");
+    assert_eq!(fs::read(f.dir.join("logic.wasm")).unwrap(), expected);
     assert!(!f.cache.join("previews").exists());
 }
 
