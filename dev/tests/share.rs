@@ -265,6 +265,16 @@ fn ac4_refused_push_reports_release_and_finishing_commands() {
     let fix = v["next"].as_str().unwrap();
     assert!(fix.contains("push -q origin HEAD"), "{fix}");
     assert!(fix.contains("'\"'\"'"), "{fix}");
+    assert!(fix.starts_with("git -C '"), "{fix}");
+    assert!(
+        fix.ends_with(&format!(
+            " push -q origin HEAD refs/tags/{}/demo@0.1.0",
+            "y".repeat(52)
+        )),
+        "{fix}"
+    );
+    assert!(!fix.contains(" && "), "{fix}");
+    assert_eq!(f.git(&f.remote("demo"), &["tag"]), "");
     fs::remove_file(hook).unwrap();
     let mut c = Command::new("/bin/sh");
     f.env(&mut c);
@@ -282,6 +292,8 @@ fn ac5_no_source_pushes_only_the_site() {
     assert_eq!(code, 0, "{v}");
     assert!(v["result"]["push"]["mod"].is_null());
     assert!(!f.remote("demo").exists());
+    assert_eq!(v["result"]["push"]["site"]["created"], true);
+    assert_eq!(v["result"]["push"]["site"]["pushed"], true);
     assert_eq!(fs::read_to_string(f.dir.join("mod.toml")).unwrap(), old);
 }
 #[test]
@@ -320,6 +332,8 @@ fn ac5_origin_differs_and_foreign_repository_stop_before_anything() {
             }
         );
         f.unchanged(&old);
+        assert!(!f.remote("watane-channel").exists());
+        assert_eq!(f.remote("demo").exists(), case == "nonempty");
     }
 }
 #[test]

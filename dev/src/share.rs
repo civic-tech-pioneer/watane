@@ -540,6 +540,19 @@ mod tests {
     fn ac1_ac6_mod_commands_use_only_package_paths() {
         let paths = ["logic.wasm", "mod.toml", "ui/index.html"];
         assert_eq!(
+            mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0")
+                .iter()
+                .map(Run::text)
+                .collect::<Vec<_>>(),
+            [
+                "git -C mod rm -r -q --cached --ignore-unmatch .",
+                "git -C mod add -f -- mod.toml ui/index.html",
+                "git -C mod commit -q -m 'demo 0.1.0'",
+                "git -C mod tag key/demo@0.1.0",
+                "git -C mod -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD refs/tags/key/demo@0.1.0",
+            ]
+        );
+        assert_eq!(
             mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0")[1].args,
             ["-C", "mod", "add", "-f", "--", "mod.toml", "ui/index.html"]
         );
