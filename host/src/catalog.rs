@@ -893,7 +893,7 @@ fn ambiguous(
 ) -> HostError {
     let names: BTreeSet<LocalName> = candidates.iter().map(|c| c.0.clone()).collect();
     let mut candidates: Vec<LocalName> = names.into_iter().collect();
-    candidates.sort_by(|a, b| crate::error::natural_cmp(&a.to_string(), &b.to_string()));
+    candidates.sort_by(|a, b| crate::error::natural_cmp(a.as_ref(), b.as_ref()));
     HostError::AmbiguousProvider {
         consumer: consumer.clone(),
         provider: provider.clone(),
