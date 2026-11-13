@@ -174,10 +174,17 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   the app"; a Watane-Release mismatch is `internal`; install's missing_providers fix omits the stored
   link; fake-watane exits when a fetch package file is missing; `store` unpacks straight into
   providers/<id>/, so a crash leaves a partial folder that is later reused.
-- [~] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** (branch `slice/s37`; foreman: see `Foremen`) app 8.1, 8.3 (`/api/fetch`),
-  9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
-  build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
-  `origin` filter. Not dev (S36).
+- [x] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** Delivered 2026-11-13 (main
+  `d44c0d5`). Sol runs: S37-1 1, S37-2 1, S37-3 1, S37-4 2 (new, resume). User-sim accepted on the
+  first run. Eve installs Dave's `stats` from his link; the app first installs Carol's `ratings`,
+  found through Dave's listing, and follows Carol; if Carol's mod cannot be fetched, Eve picks one
+  that fits (Frank's) and the install binds it. "Made from" shows in the signature, consent and
+  details; Dave's publish lists Carol's `ratings`. Front tests not run (screen in use). Left for
+  later (user-sim): `/api/fetch` with both or neither field answers serde text; `{"release"}` gives
+  200 from dist's cache in a home with no record once a fetch by link cached it; "Made from this"
+  shows Install for an installed mod; publishers not followed show as fingerprints only (pick, bind,
+  grant, Made from, list consent); GET `/api/fetch` answers 405 with an empty body; host's preview
+  `ambiguous_provider` text (S34 leftover) still open.
 - [~] **S39 Eve's agent recovers from every error alone (dev cleanup).** Story: Eve's coding agent
   hits each error below, follows only the result's `fix` and `next`, and ends with a working mod;
   no step needs the agent to read dev's code or guess. Outcomes (user-sim, real `watane-dev` against
@@ -209,6 +216,8 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   `button()` both call showError); the busy-port window still shows "Install folders" with no
   working local API; hidden windows poll only on focus; consent requests from clients that stopped
   waiting pile up (S24).
+
+Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done.
 
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
@@ -268,7 +277,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | F Linux | 2 | done (S18: arm64 Linux in Docker, `app/scripts/linux-test.sh`; front tests are macOS only) |
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
 | app | D find | 4 | done (S25: APP-F-37, 39, 40; S29: APP-F-38, 43 to 46) |
-| app | E build on | 5 | open (S37 in flight) |
+| app | E build on | 5 | done (S37) |
 | host | 9 binds | 5 | done (S34) |
 | dist | S7 provider bases | 5 | done (S35) |
 | dev | 9 build on | 5 | done (S36) |
@@ -320,7 +329,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S34: `cbe37314` (sessionId `cbe37314-fe72-4ca3-a22e-73a0a05538ac`), worktree `.claude/worktrees/s34` (stopped, removed).
 - S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
 - S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36` (stopped, removed).
-- S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon.
+- S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon (stopped, removed).
 - S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -335,6 +344,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S37: a driver build opens dist with `listed_local` only when `WATANE_DRIVER_LISTED_LOCAL=1`, so J5
+  serves channels on 127.0.0.1; a release build never reads it (app TECHNICAL 10). J5 posts packages
+  straight to `/api/publish`.
 - S36: dev reads only the key and slug of a link text (dev cannot depend on dist's Link); the app
   validates the link (dev 10.1). fake.json `fetch` is keyed by link text or ReleaseRef, values
   {release, package path}; an unknown key gets 409 `fetch_refused`; fake.json `providers` goes into
@@ -686,6 +698,9 @@ The human may veto each one.
   every process it started before it reports (`.claude/agents/user-sim.md` step 5).
 - S36: the validator's guide fix broke a second limit that only the full lib run catches (two
   limits for one fact; now one: TECHNICAL 4.1's 150 lines). The foreman's push failed on DNS.
+- S37: Sol cannot start the macOS driver, so every window and journey test first runs in the
+  validator; all three S37-3 window tests and J5 had test bugs found only then. A transient API 403
+  ended a turn.
 
 ## Digest
 
