@@ -554,7 +554,7 @@ impl Catalog {
                 ));
             }
         }
-        let missing = bind(&mut next, &worlds, &seen, harness, preview)?;
+        let missing = bind(&mut next, &worlds, &seen, harness, preview, true)?;
         let order = provider_order(&next)?;
         next.sort_by_key(|m| order.iter().position(|n| n == &m.local).unwrap());
         for Prepared(_, installed, _, _) in &mut prepared {
@@ -731,7 +731,14 @@ impl Catalog {
                     .map(|v| (m.local.clone(), v.world().clone()))
             })
             .collect();
-        bind(&mut self.mods, &worlds, &BTreeSet::new(), false, preview)?;
+        bind(
+            &mut self.mods,
+            &worlds,
+            &BTreeSet::new(),
+            false,
+            preview,
+            false,
+        )?;
         provider_order(&self.mods)?;
         Ok(())
     }
@@ -796,6 +803,8 @@ fn bind(
     supplied: &BTreeSet<String>,
     harness: bool,
     preview: bool,
+    // A plan refuses two candidates; a relink after remove leaves the link unbound (4.5 rule 4).
+    refuse_ambiguous: bool,
 ) -> Result<Vec<MissingProvider>, HostError> {
     let providers = mods.to_vec();
     let mut missing = Vec::new();
@@ -842,7 +851,7 @@ fn bind(
                 }
             }
             if candidates.len() > 1 {
-                if supplied.contains(&m.identity) {
+                if refuse_ambiguous {
                     return Err(HostError::AmbiguousProvider(interface.to_string()));
                 }
                 candidates.clear();

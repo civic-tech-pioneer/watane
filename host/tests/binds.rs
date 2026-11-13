@@ -505,3 +505,19 @@ fn ac3_duplicate_given_binds_are_bad_request() {
         assert_eq!(error.code(), "bad_request");
     }
 }
+
+#[tokio::test]
+async fn plan_of_second_shelf_for_installed_unbound_recs_is_ambiguous() {
+    let r = Releases::new();
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+    let plan = host
+        .plan(vec![
+            Source::Folder(r.recs.clone()),
+            Source::Folder(fixture("shelf")),
+        ])
+        .unwrap();
+    host.install(plan, Requester::App).await.unwrap();
+    let error = host.plan(vec![r.shelf()]).unwrap_err();
+    assert_eq!(error.code(), "ambiguous_provider");
+}
