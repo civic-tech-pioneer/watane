@@ -407,7 +407,7 @@ the `add` text, plus ` Contract tests use a fake of it (see AGENTS.md).`
 From the host's `InstalledMod` list, in install order, retaining exactly these five fields.
 `next`: `Give the person this page: <url>` for the last entry with a page,
 else null. On `env.host_not_running`, `next` is
-`watane-dev install --json --dir <canonical mod folder> --home <canonical or given home>`,
+`watane-dev install --json --dir <canonical mod folder> --home <resolved home>`,
 including `--dir` when it was omitted from the original command, adding
 ` --wait <n>` only when `--wait` was explicitly passed. Quote each path for the
 shell when it contains characters other than letters, digits or `/._-`.

@@ -249,6 +249,11 @@ mod's own package, the `provider` message is exactly
 For a member equal to the mod's own slug, it is exactly
 `deps.json lists this mod itself as mods:<slug>`. The own-package case emits
 one violation, even when the world exports its own interfaces.
+A copy of the mod's own package under `wit/deps/<segment>/` (any version)
+with no `deps.json` member for it is one `provider` violation at file
+`wit/deps/<segment>`, exactly `wit/deps/<segment> holds this mod's own
+package mods:<slug>`; it is reported before WIT resolution, so no
+duplicate-package `wit` error hides it.
 
 ### 4.8 `add_provider` (step 2)
 
