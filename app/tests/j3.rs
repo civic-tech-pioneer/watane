@@ -161,3 +161,142 @@ fn ac7_journey_j3_identity_publish_install_and_tamper() {
     assert!(bob.quit().success());
     assert!(alice.quit().success());
 }
+
+#[test]
+#[ignore = "slow: journey J3"]
+fn ac2_j3_github() {
+    use std::{fs, process::Command};
+    use support::dev::{dev_command, workspace_dev, workspace_fake_gh};
+
+    let dev = workspace_dev();
+    let fake_gh = workspace_fake_gh();
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join("remotes")).unwrap();
+    fs::create_dir(root.join("bin")).unwrap();
+    std::os::unix::fs::symlink(fake_gh, root.join("bin/gh")).unwrap();
+    fs::write(root.join("gitconfig"), format!(
+        "[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display()
+    )).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(root.join("bin"))
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let alice_home = root.join("alice");
+    let alice = App::start(&alice_home, &[]);
+    begin(&alice, "identity_set_name", json!({"name":"Alice"}));
+    consent(&alice);
+    approve(&alice);
+    assert_eq!(finish(&alice), json!({"ok":null}));
+    let reading = root.join("reading-list");
+    copy_dir(&fixture("reading-list"), &reading);
+    let command = || {
+        let mut command = dev_command(&dev, &alice, &reading, &["publish", "--push"]);
+        command
+            .env("PATH", &path)
+            .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("FAKE_GH_ROOT", root.join("remotes"))
+            .env("FAKE_GH_USER", "alice");
+        command
+    };
+    // AC1: the real command waits for Alice's signature in her app.
+    let mut first = command();
+    let pending = std::thread::spawn(move || first.output().unwrap());
+    consent(&alice);
+    let text = alice.eval("consent", "document.body.textContent");
+    assert!(text.as_str().unwrap().contains("reading-list"), "{text}");
+    approve(&alice);
+    let output = pending.join().unwrap();
+    let published: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("publish: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(0), "{published}; {output:?}");
+    assert_eq!(published["ok"], true, "{published}");
+    let result = &published["result"];
+    let raw = "https://raw.githubusercontent.com/alice/watane-channel/main/";
+    assert_eq!(result["push"]["site"]["raw"], raw);
+    assert!(result["link"].is_null(), "{published}");
+    assert!(
+        published["next"].as_str().unwrap().contains(raw),
+        "{published}"
+    );
+
+    // AC2: inspect the bare remotes, not Alice's working copies.
+    let mod_remote = root.join("remotes/alice/reading-list");
+    let site_remote = root.join("remotes/alice/watane-channel");
+    let release = result["release"].as_str().unwrap();
+    assert_eq!(result["push"]["mod"]["tag"], release);
+    assert_eq!(
+        git(&["-C", mod_remote.to_str().unwrap(), "tag"]).trim(),
+        release
+    );
+    assert!(!git(&["-C", site_remote.to_str().unwrap(), "show", "main:head"]).is_empty());
+    let manifest = fs::read_to_string(reading.join("mod.toml")).unwrap();
+    assert!(
+        manifest.contains("repository = \"https://github.com/alice/reading-list\""),
+        "{manifest}"
+    );
+
+    // AC3: serve only a fresh clone of the pushed site, then ask dev for its link.
+    let clone = root.join("served-site");
+    git(&[
+        "clone",
+        "-b",
+        "main",
+        site_remote.to_str().unwrap(),
+        clone.to_str().unwrap(),
+    ]);
+    let site = Site::serve(clone);
+    invoke(&alice, "site_set_url", json!({"url":site.base}));
+    let output = command().output().unwrap();
+    let retry: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("publish retry: {e}; {output:?}"));
+    assert_eq!(output.status.code(), Some(1), "{retry}; {output:?}");
+    assert_eq!(retry["ok"], false, "{retry}");
+    assert_eq!(
+        retry["errors"][0]["code"], "publish.version_exists",
+        "{retry}"
+    );
+    assert_eq!(retry["result"]["release"], release);
+    let link = retry["result"]["link"].as_str().unwrap();
+
+    // AC4: Bob has a fresh identity and installs the bytes from the clone.
+    let bob_home = root.join("bob");
+    let bob = App::start(&bob_home, &[]);
+    begin(&bob, "install_link", json!({"link":link}));
+    consent(&bob);
+    let text = bob.eval("consent", "document.body.textContent");
+    for field in ["Alice", "signature verified"] {
+        assert!(text.as_str().unwrap().contains(field), "{text}");
+    }
+    approve(&bob);
+    let installed = finish(&bob);
+    assert!(installed.get("error").is_none(), "{installed}");
+    let mods = invoke(&bob, "mods_list", json!({}));
+    assert_eq!(mods.as_array().unwrap().len(), 1, "{mods}");
+    let reading = &mods[0];
+    assert_eq!(reading["publisher"]["name"], "Alice");
+    assert_eq!(reading["release"], release);
+    invoke(&bob, "mod_open", json!({"local":reading["local"]}));
+    let label = format!("mod-{}", reading["local"].as_str().unwrap());
+    assert!(bob.wait(&label, TIMEOUT));
+    assert!(
+        bob.eval(&label, "document.body.textContent")
+            .as_str()
+            .unwrap()
+            .contains("Reading")
+    );
+    assert!(bob.quit().success());
+    assert!(alice.quit().success());
+}

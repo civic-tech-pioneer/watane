@@ -8,3 +8,6 @@ pub mod journey;
 
 #[allow(dead_code)]
 pub mod publish;
+
+#[allow(dead_code)]
+pub mod dev;

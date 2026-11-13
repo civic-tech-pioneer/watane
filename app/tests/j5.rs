@@ -2,68 +2,13 @@
 mod support;
 
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
+use std::{fs, path::Path};
+use support::{
+    dev::{dev_run, workspace_dev},
+    driver::App,
+    journey::*,
+    publish::*,
 };
-use support::{driver::App, journey::*, publish::*};
-
-// Build the maker program, never a mod. Read Cargo's artifact message so a
-// custom target directory still selects this checkout's binary, not PATH.
-fn workspace_dev() -> PathBuf {
-    let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .args([
-            "build",
-            "-p",
-            "watane-dev",
-            "--bin",
-            "watane-dev",
-            "--message-format=json",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "building workspace watane-dev: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .find_map(|v| {
-            (v["reason"] == "compiler-artifact" && v["target"]["name"] == "watane-dev")
-                .then(|| v["executable"].as_str().map(PathBuf::from))
-                .flatten()
-        })
-        .expect("Cargo did not report the workspace watane-dev executable")
-}
-fn dev_run(dev: &Path, app: &App, dir: &Path, args: &[&str]) -> Value {
-    let output = Command::new(dev)
-        .current_dir(dir.parent().unwrap())
-        .args(args)
-        .arg("--json")
-        .arg("--home")
-        .arg(&app.home)
-        .arg("--dir")
-        .arg(dir)
-        .env("WATANE_DEV_CACHE", app.home.join("dev-cache"))
-        .env("NO_PROXY", "*")
-        .env("no_proxy", "*")
-        .output()
-        .unwrap();
-    let value: Value = serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|e| panic!("watane-dev {args:?}: {e}; {output:?}"));
-    assert!(
-        output.status.success(),
-        "watane-dev {args:?}: {value}; {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(value["ok"], true, "{value}");
-    value["result"].clone()
-}
 
 fn body(app: &App) -> String {
     app.eval("consent", "document.body.textContent")

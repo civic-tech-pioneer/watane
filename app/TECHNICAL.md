@@ -1043,7 +1043,7 @@ real approval gate. No production security check changes.
 | `tests/gui_isolation.rs` (A, B) | S6, S7, S8 hidden with fixture `hostile`; S5 focus/stacking in an ignored front test, other S5 checks also hidden | a loopback test listener (no connection); `log` (no command with label `mod-*`); `windows` (no new label, URL unchanged); the file tree of `<home>/mods/` unchanged; the hostile page's own report, read by `eval` |
 | `tests/api.rs` (C) | each row of section 8.1 | the status codes and codes there; the file tree of `<home>/dist/site/`: new files after an approve, byte-equal before and after a deny |
 | `tests/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
-| `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |
+| `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes; `ac2_j3_github` runs `publish --push` against local bare GitHub stand-ins (dev 15.4), serves a fresh clone of the pushed site, and retries publish for the link before Bob installs | a `tower-http` static server over Alice's site folder or the fresh clone; the bare remotes; the consent DOM text; `<home>/mods/` |
 | `tests/j4.rs` (D updates) | after the index install: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
 | `tests/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
 | `tests/build_on.rs` (E) | S23 to S27: pick view and bind, no fit, made from and derived list, publish listing a provider, `/api/fetch` | homes of Carol, Dave and Frank made with `watane_dist`; prebuilt fixture components `ratings` (Carol's and Frank's) and `stats`; consent DOM; `<home>/mods/`; `follows.json` |
@@ -1072,7 +1072,8 @@ are mod folders like those of pkg's acceptance A2 (`recommendations` calls
 and subscribes to `reading-list`). The `recommendations` page shows
 `not granted` when its call fails with that code. Built `logic.wasm` files are
 committed alongside the fixtures. `tests/fixtures/build.sh` builds them manually
-from `tests/fixtures/src/`; no test builds a mod or reads `dev/`.
+from `tests/fixtures/src/`; no test builds a mod. J3 invokes dev's publish pipeline with the
+committed component and no `logic/` source folder.
 
 Never weaken a test. If a fact changes (for example after a Tauri update),
 record it in `NOTES.md` with the old and the new result.
@@ -1240,9 +1241,11 @@ Fetched`; the types `Confirm`, `Decision`, `SignRequest`, `Statement`,
 5.11).
 
 Fixture sources originate in **dev**, copied into `tests/fixtures/`; app tests
-use their committed components and never build a mod. Only `tests/j5.rs`
-invokes the program `watane-dev`, and only its commands that build nothing
-(`new --from`, `add --release`).
+use their committed components and never build a mod. `tests/j3.rs`
+invokes `watane-dev publish --push` with the prebuilt `reading-list` fixture
+and builds `fake-gh` for the local GitHub stand-in (dev 15.4). `tests/j5.rs`
+invokes `watane-dev new --from` and `add --release`. Both use the workspace
+binary helpers in `tests/support/dev.rs`.
 
 ## 16. Questions for spec/
 
