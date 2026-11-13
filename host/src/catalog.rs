@@ -852,7 +852,7 @@ fn bind(
             }
             if candidates.len() > 1 {
                 if refuse_ambiguous {
-                    return Err(HostError::AmbiguousProvider(interface.to_string()));
+                    return Err(ambiguous(&m.local, provider, &candidates));
                 }
                 candidates.clear();
             }
@@ -884,6 +884,19 @@ fn bind(
         }
     }
     Ok(missing)
+}
+
+fn ambiguous(
+    consumer: &LocalName,
+    provider: &Provider,
+    candidates: &[(LocalName, InterfaceName)],
+) -> HostError {
+    let names: BTreeSet<LocalName> = candidates.iter().map(|c| c.0.clone()).collect();
+    HostError::AmbiguousProvider {
+        consumer: consumer.clone(),
+        provider: provider.clone(),
+        candidates: names.into_iter().collect(),
+    }
 }
 
 fn provider_order(mods: &[InstalledMod]) -> Result<Vec<LocalName>, HostError> {
@@ -995,5 +1008,33 @@ impl Stage {
 impl Drop for Stage {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod ambiguous_tests {
+    use super::*;
+
+    #[test]
+    fn ac2_candidate_through_two_interfaces_is_named_once() {
+        let name = |s: &str| LocalName::parse(s).unwrap();
+        let i = |s: &str| s.parse::<InterfaceName>().unwrap();
+        let provider = Provider {
+            slug: "shelf".parse().unwrap(),
+            publisher: None,
+        };
+        let error = ambiguous(
+            &name("recs"),
+            &provider,
+            &[
+                (name("shelf-2"), i("watane:shelf/a@1.0.0")),
+                (name("shelf"), i("watane:shelf/a@1.0.0")),
+                (name("shelf"), i("watane:shelf/b@1.0.0")),
+            ],
+        );
+        assert_eq!(
+            error.to_string(),
+            "recs needs local/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it"
+        );
     }
 }

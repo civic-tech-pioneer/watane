@@ -26,8 +26,16 @@ pub enum HostError {
     MissingProviders(Vec<crate::MissingProvider>),
     #[error("call cycle: {0}")]
     Cycle(String),
-    #[error("ambiguous provider: {0}")]
-    AmbiguousProvider(String),
+    #[error(
+        "{consumer} needs {provider} and {} installed or planned mods fit: {}; pick one to settle it",
+        candidates.len(),
+        join_names(candidates)
+    )]
+    AmbiguousProvider {
+        consumer: crate::LocalName,
+        provider: watane_pkg::Provider,
+        candidates: Vec<crate::LocalName>,
+    },
     #[error("release verification {check:?}: {reason}")]
     Verify { check: VerifyCheck, reason: String },
     #[error("invalid mod {input}: {reason}")]
@@ -66,7 +74,7 @@ impl HostError {
             Self::Refused(_) => "refused",
             Self::MissingProviders(_) => "missing_providers",
             Self::Cycle(_) => "cycle",
-            Self::AmbiguousProvider(_) => "ambiguous_provider",
+            Self::AmbiguousProvider { .. } => "ambiguous_provider",
             Self::ModeMismatch { .. } => "mode_mismatch",
             Self::BadHome { .. } => "bad_home",
             Self::InvalidMod { .. } => "invalid_mod",
@@ -91,7 +99,7 @@ impl HostError {
             | Self::StalePlan
             | Self::MissingProviders(_)
             | Self::Cycle(_)
-            | Self::AmbiguousProvider(_) => 409,
+            | Self::AmbiguousProvider { .. } => 409,
             Self::InvalidMod { .. } | Self::Verify { .. } => 422,
             _ => 500,
         }
@@ -216,4 +224,12 @@ impl serde::Serialize for HostError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.json().serialize(serializer)
     }
+}
+
+fn join_names(names: &[crate::LocalName]) -> String {
+    names
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }

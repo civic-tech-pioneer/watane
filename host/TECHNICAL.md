@@ -1593,3 +1593,4 @@ Each answer below is used in this file.
   absent after unpack, so this also matches a release without source.
   Recovery derives the publisher from the saved release and checks that
   its publisher and slug form the saved identity.
+- S45: `HostError::AmbiguousProvider { consumer: LocalName, provider: Provider, candidates: Vec<LocalName> }` (candidates distinct, sorted, from 2 mods up); message `<consumer> needs <provider> and <n> installed or planned mods fit: <a>, <b>; pick one to settle it`. This supersedes the `a`/`b` fields listed in 2.2.

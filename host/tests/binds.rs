@@ -520,4 +520,14 @@ async fn plan_of_second_shelf_for_installed_unbound_recs_is_ambiguous() {
     host.install(plan, Requester::App).await.unwrap();
     let error = host.plan(vec![r.shelf()]).unwrap_err();
     assert_eq!(error.code(), "ambiguous_provider");
+    assert_eq!(error.status(), 409);
+    let expected = format!(
+        "recs needs {}/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it",
+        r.k1.identity()
+    );
+    assert_eq!(error.to_string(), expected);
+    assert_eq!(
+        serde_json::to_value(&error).unwrap()["message"],
+        expected.as_str()
+    );
 }
