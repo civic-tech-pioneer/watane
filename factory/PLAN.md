@@ -207,23 +207,16 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
 
 Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`): S47 fixes it.
 
-- [~] **S44 Carol reads names, not keys (app cleanup).** Story: Carol and Eve use find, install,
-  pick and publish in the app, and every person shows as a name (or "you"), every error as one plain
-  sentence. Outcomes (user-sim, real app with the driver):
-  1. Publishers show by profile name, own rows as "you", also when not followed (pick, bind, grant,
-     Made from, list consent, own index rows, own-index hits).
-  2. No doubled or Debug text: dist cause text prints once ("X", not "X: X"), the 422 message and
-     URLs show plain; `/api/fetch` with both or neither field says "give link or release"; GET
-     `/api/fetch` answers 405 with a body.
-  3. Find reads right: an empty search shows "No mods found"; AlreadyListed for an include does not
-     say "at seq 1"; index read failures name the index; "listed by Ivy" and "listed by Ivy through
-     Alice" collapse to one line; "Made from this" shows Installed for an installed mod.
-  4. A fast retry clears a stale error.
-  Touches: `app/` only (ui, src, tests). If the doubled text needs a change in dist's error type,
-  the slice escalates it rather than editing dist. Leaves out: the host `ambiguous_provider` text
-  and dist's message debt.
-  (branch `slice/s44`; foreman: see `Foremen`)
-
+- [x] **S44 Carol reads names, not keys (app cleanup).** Delivered 2026-11-13 (main `95db4b6`). Sol
+  runs: S44-1 1 (about 26 min). User-sim accepted on the first run. Publishers show by profile name,
+  own rows as "you" (also unfollowed channels); errors read as one plain sentence; wrong methods on
+  `/api/*` answer 405 JSON; stale errors cleared. Front tests not run. J5 fails on main since S39
+  (S47). Left for later (user-sim): no busy state during a 30 s hanging follow or add-index; list,
+  include, publish and install consents still show the 52-character key before the name; a
+  wrong-channel follow error shows fingerprints only; a mod card's refresh error is raw transport
+  text; a collapsed via line drops the include's note; a non-JSON body gets "give link or
+  release"; an unknown /api route answers 404 `bad_request`; `Core::mods()` walks channel views on
+  every 2 s refresh.
 - [x] **S45 Eve's host and dist say what to do (host, dist cleanup).** Delivered 2026-11-13 from the
   cloud (main `a075851`, rebased by the product owner); the 67 host tests the cloud cannot run (no
   IPv6 loopback) and an app build ran on macOS: green, except a flake that predates S45 (below).
@@ -258,11 +251,11 @@ is done. Journey tests use a local bare git repository and a fake `gh` on PATH i
   pkg stage 8 (`repository`, pkg 4.2); dev stage 10 (`publish --push`, 10.4.1) and stage 11 (the
   `new --from` clone, 10.4.2); DEV-F-43 to 47, DEV-S-41 to 51; tests use local bare remotes, git's
   `insteadOf` and `fake-gh`. Tags are the ReleaseRef `<key>/<slug>@<version>`.
-- [~] **S41 Alice's mod names its repository (pkg stage 8).** (cloud) `repository` in mod.toml:
-  parsed, validated (pkg 4.2), carried in the package; `watane-dev check` maps a pkg `repository`
-  violation to its fix (dev 2.2). Outcomes: a valid URL packs and reads back; http, userinfo, a
-  missing host or 257 bytes are refused with pkg 4.2's exact message. Touches: pkg/src, pkg/tests,
-  dev check (one fix mapping) and its test. (cloud routine: see `Foremen`)
+- [x] **S41 Alice's mod names its repository (pkg stage 8).** Delivered 2026-11-13 from the cloud
+  (main `86478b9`); dev's real-host slow tests and pkg rerun on macOS: green (the scenario-map
+  failure is S47's). `repository` in mod.toml is parsed, validated with pkg 4.2's messages, carried
+  in the package; `watane-dev check` gives dev 2.2's fix. A non-string value gets the "must start
+  with https://" message. Left for later: the fix could fill in the known slug.
 - [ ] **S42 Alice publishes to GitHub with one command (dev stage 10).** `watane-dev publish --push`
   (dev 10.4.1): the first run creates the site repository and the mod repository (or, for a mod
   made from another, forks the upstream through the forks API onto branch `watane`, with
@@ -314,7 +307,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 9 binds | 5 | done (S34) |
 | dist | S7 provider bases | 5 | done (S35) |
 | dev | 9 build on | 5 | done (S36) |
-| pkg | 8 repository | 6 | open (S41 in flight) |
+| pkg | 8 repository | 6 | done (S41) |
 | dev | 10 publish --push | 6 | open (S42) |
 | dev | 11 new --from clone and fork | 6 | open (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
@@ -365,10 +358,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon (stopped, removed).
 - S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39` (stopped, removed).
 - S40: `9b94b54e` (sessionId `9b94b54e-b9a1-4de5-8528-bf6defb724c2`), worktree `.claude/worktrees/s40` (stopped, removed).
-- S44: `cfcd9edf` (sessionId `cfcd9edf-a754-4f25-b613-c0a08e8db786`), worktree `.claude/worktrees/s44`.
+- S44: `cfcd9edf` (sessionId `cfcd9edf-a754-4f25-b613-c0a08e8db786`), worktree `.claude/worktrees/s44` (stopped, removed).
 - S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw` (done).
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
-- S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg`.
+- S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -382,6 +375,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S44: `consent::Party` gains `you: bool` (app-internal); names come from a parties cache filled by
+  local `dist.channel(key)` reads; wrong methods on `/api/*` answer 405 `method_not_allowed`.
 - S45: `HostError::AmbiguousProvider { consumer, provider, candidates }`; `DistError::NotFollowed
   { channel, local_only }`; dist DD-31 to 33 (hint bases in trust order, stop at the first Current
   or Behind; the no-record cache-hit link is the first base in trust order).
@@ -764,6 +759,10 @@ The human may veto each one.
   could update it. Rebase a foreman's branch only after it has stopped, or ask the foreman.
 - S45: the cloud has no IPv6 loopback (67 host tests cannot run) and no GTK (app cannot build), so
   a host or dist slice in the cloud is checked on the Mac at merge.
+- S41: a cloud worktree lacks the gitignored `dev/allowlist/vendor`; copy it with `target`. No Sol
+  ledger in the cloud.
+- S39/S44: the product owner merged S39 after dev's tests only; J5 broke unseen until S44. A merge
+  that touches `new --from`, `add --release` or publish runs J3 and J5 too.
 
 ## Digest
 
