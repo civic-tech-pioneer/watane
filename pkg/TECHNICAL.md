@@ -250,7 +250,7 @@ grant: the table of spec §3 is applied as written.
 
 `read_file` opens once through 6.4, takes file type and size from that
 handle and reads it with a cap. A refused link is rule `path`, with
-`replace the symbolic link with a regular file`; a non-regular file is
+`replace the symbolic link with a regular entry`; a non-regular file is
 `expected a regular file` under the caller's rule. A missing optional
 file remains `Ok(None)`. A part (`mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit`) that is a symbolic link gets exactly one violation, rule `path` with the part's name; no `parts` or other derived violation is added for it.
 
