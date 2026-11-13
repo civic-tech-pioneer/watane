@@ -191,3 +191,4 @@
   runner's four front-only tests excluded and slow journeys enabled. Native
   driver execution remains limited by the XPC failure above. Release with driver
   fails at the intended debug-only compile error. No existing test was weakened.
+- Validator (S37-2, round 1): natively on macOS, `cargo test --features driver` (front tests not run, being ignored) passes, including `ac6_publish_through_consent_window_and_host_guards`; the XPC failure above was the sandbox only.
