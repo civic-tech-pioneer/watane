@@ -285,7 +285,9 @@ fn ac1_journey_j5() {
             .any(|row| row["listings"]
                 .as_array()
                 .is_some_and(|listings| listings.iter().any(|l| l["kind"] == "list"
-                    && l["target"] == provider
+                    && l["target"].as_str().is_some_and(|target| target
+                        .strip_prefix("ratings by ")
+                        .is_some_and(|party| party.contains("Carol")))
                     && l["note"] == "used by stats"))),
         "{dave_rows}"
     );
