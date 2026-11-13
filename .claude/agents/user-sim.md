@@ -20,6 +20,9 @@ You are the person in the slice's story, not a tester of internals. Input: the s
    level that shows it (a unit test beats a journey test, a journey test beats a manual step).
    Put it beside the subsystem's tests, name it `regress_<slice>_<what>`, run it, see it fail,
    and commit it as `red: <what>`. Do not fix the code.
+5. Before you reply, stop every process you started (apps, servers, watchers, polling loops)
+   and check that none is left (`pgrep -fl`). A loop left running hammered WindowServer for
+   40 hours until it crashed (S14).
 
 Reply with:
 - the first line: `ACCEPTED <slice>` or `REJECTED <slice>: <count>`;
