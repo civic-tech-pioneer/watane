@@ -155,10 +155,10 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   parent, the publisher's claim (W24); provider bases come from live list/include statements the home
   already reads (W25, closes dist Q2); a fit is the same slug with every used interface satisfied,
   any publisher, bound only after the person picks (W26); derived mods are a search filter (W28).
-- [~] ** (branch `slice/s34`; foreman: see `Foremen`)S34 Eve's host binds a mod that fits (host stage 9).** `Bind`, `plan_with`, host TECHNICAL
+- [~] **S34 Eve's host binds a mod that fits (host stage 9).** (branch `slice/s34`; foreman: see `Foremen`) `Bind`, `plan_with`, host TECHNICAL
   4.5, `binds` in `installed.json`, the preview rule of 4.2 step 7. Done when host S33 to S35 pass
   (`tests/binds.rs`) on the real host. Touches: host only.
-- [~] ** (branch `slice/s35`; foreman: see `Foremen`)S35 Eve's dist finds Carol's release through Dave's listing (dist S7).** dist TECHNICAL 5.11:
+- [~] **S35 Eve's dist finds Carol's release through Dave's listing (dist S7).** (branch `slice/s35`; foreman: see `Foremen`) dist TECHNICAL 5.11:
   provider bases, `fetch_for`, `read_link`, `Fetched.link`, `Query.origin`. Done when dist A36 to
   A41 pass and the step 3 and 4 tests pass unchanged. Touches: dist only.
 - [ ] **S36 The agent builds on a release (dev stage 9).** `new --from`, `add --release`,
