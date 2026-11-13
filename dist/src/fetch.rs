@@ -68,6 +68,29 @@ impl Dist {
         let stored = view.releases.iter().any(|r| r.reference == *reference);
         let base = if key == self.identity() {
             None
+        } else if record.as_ref().is_none_or(|r| !r.followed && !r.index)
+            && view
+                .releases
+                .iter()
+                .find(|r| r.reference == *reference)
+                .map(|r| {
+                    site::read_plain(&self.cache_path(&r.release.package)).map(|bytes| {
+                        bytes.is_some_and(|bytes| PackageId::of(&bytes) == r.release.package)
+                    })
+                })
+                .transpose()?
+                .unwrap_or(false)
+        {
+            // Cached providers keep the hint trust order, even with a listed record.
+            let base = self
+                .provider_bases(key, consumer)?
+                .into_iter()
+                .next()
+                .or_else(|| record.as_ref().map(|r| r.base.clone()));
+            if let Some(base) = &base {
+                self.check_listed_base(base)?;
+            }
+            base
         } else if record
             .as_ref()
             .is_none_or(|r| !r.followed && !r.index && !stored)
