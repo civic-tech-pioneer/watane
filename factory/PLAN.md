@@ -272,6 +272,19 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   `app/tests` (test code only). After S41 and S44 (app/tests). Local: the journey needs the Mac.
   Watch (S47): a prebuilt mod's `logic.wasm` is in the template's `.gitignore` and `publish --push`
   skips it, so the pushed repository would hold no logic.
+- [~] **S49 The refusals say what is wrong (pkg, dist, log cleanup).** The leftovers from S11, S19,
+  S22, S35 and S46 that are message or behaviour defects in the three subsystems the cloud can
+  test. Outcomes. pkg: `mod.dependency_cycle` and `mod.self_dependency` carry a fix instead of
+  `fix: null`; a FIFO at `ui/extra` is refused by `Mod::read`, not only by `pack`; `wit/.hid/k`
+  names the rule that actually refused it; a linked `ui` reports one problem, not two; truncated
+  bytes read as bytes that ran out mid-value, and release errors strip "release" at the call site
+  rather than in `malformed()`. dist: a listing skipped as a local address says that (DD-26), not
+  "no listing names a base"; the no-hint error carries a fix; hint bases stop being read once a
+  trusted one has served; on a no-record cache path the link is the first base in trust order, not
+  the first that served. log: `Log::open` on a file says "not a directory", `Log::open("")` names
+  the empty path, and "bad backup: length" says how many bytes are expected. Touches: pkg, dist,
+  log (src, tests, TECHNICAL). Cloud: no app, no host, no `sandbox-exec`; shares no file with S42.
+  (branch `slice/s49`; foreman: see `Foremen`)
 - [ ] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
   package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
