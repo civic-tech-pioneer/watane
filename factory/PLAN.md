@@ -210,6 +210,29 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   working local API; hidden windows poll only on focus; consent requests from clients that stopped
   waiting pile up (S24).
 
+Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
+is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
+
+- [ ] **S40 Design: share on GitHub (step 6).** Spec documents only. Turn dev 10.4 and pkg 4.2 into
+  build-plan stages: the exact results, errors (codes, fixes, `next`) and tests of `publish --push`
+  and of the `new --from` fork; what a missing `git`/`gh`, a failed push, a fork that differs from
+  the package and `--no-source` return; a pkg stage for `repository`; how `fake-gh` and a local
+  remote stand in for GitHub in dev's tests and in J3/J5. One independent review, as S26 and S32.
+  Touches: dev/TECHNICAL.md, dev/FUNCTIONAL.md, pkg/TECHNICAL.md, spec/TECHNICAL.md section 9.
+  Hand out after S39 merges (S39 edits dev/TECHNICAL.md).
+- [ ] **S41 Alice's mod names its repository (pkg stage).** `repository` in mod.toml: parsed,
+  validated (pkg 4.2), carried in the package; `watane-dev check` reports a bad one with a fix.
+  Outcomes: a valid URL packs and reads back; http, userinfo, a missing host or 257 bytes are
+  refused with a fix. Touches: pkg, dev check only if S40 says so. After S40.
+- [ ] **S42 Alice publishes to GitHub with one command (dev).** `watane-dev publish --push`: first
+  run creates the site and mod repositories through `gh`, writes `repository`, and its `next` asks
+  for the raw site URL; later runs commit, tag `v<version>` and push. Outcome: J3 passes with the
+  local remote as the host, and Bob installs from the raw-URL link. Touches: dev. After S40, S41.
+- [ ] **S43 Eve forks Dave's repository (dev).** `new --from` forks or clones the named repository,
+  checks out `v<version>`, refuses a fork whose source differs from the verified package and falls
+  back to it. Outcome: J5 passes with the local remote; a tampered remote falls back with a
+  warning. Touches: dev. After S42 (same files).
+
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
@@ -249,6 +272,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 9 binds | 5 | done (S34) |
 | dist | S7 provider bases | 5 | done (S35) |
 | dev | 9 build on | 5 | done (S36) |
+| pkg | `repository` (stage set by S40) | 6 | open (S41) |
+| dev | `publish --push` (stage set by S40) | 6 | open (S42) |
+| dev | `new --from` fork (stage set by S40) | 6 | open (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
