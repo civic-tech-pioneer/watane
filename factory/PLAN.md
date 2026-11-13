@@ -207,6 +207,23 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
 
 Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done.
 
+- [~] **S44 Carol reads names, not keys (app cleanup).** Story: Carol and Eve use find, install,
+  pick and publish in the app, and every person shows as a name (or "you"), every error as one plain
+  sentence. Outcomes (user-sim, real app with the driver):
+  1. Publishers show by profile name, own rows as "you", also when not followed (pick, bind, grant,
+     Made from, list consent, own index rows, own-index hits).
+  2. No doubled or Debug text: dist cause text prints once ("X", not "X: X"), the 422 message and
+     URLs show plain; `/api/fetch` with both or neither field says "give link or release"; GET
+     `/api/fetch` answers 405 with a body.
+  3. Find reads right: an empty search shows "No mods found"; AlreadyListed for an include does not
+     say "at seq 1"; index read failures name the index; "listed by Ivy" and "listed by Ivy through
+     Alice" collapse to one line; "Made from this" shows Installed for an installed mod.
+  4. A fast retry clears a stale error.
+  Touches: `app/` only (ui, src, tests). If the doubled text needs a change in dist's error type,
+  the slice escalates it rather than editing dist. Leaves out: the host `ambiguous_provider` text
+  and dist's message debt.
+  (branch `slice/s44`; foreman: see `Foremen`)
+
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
 
