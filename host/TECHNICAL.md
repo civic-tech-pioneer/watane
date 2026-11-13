@@ -564,8 +564,11 @@ bind field (section 11), so `/api/install` can never pass one.
 
 1. Each bind must name a consumer that is a source of the plan or an
    installed mod, a `provider` that is in that consumer's `deps.json`, and a
-   `to` whose slug is `provider.slug` and whose identity differs from the
-   pinned identity of `provider`; else `bad_request` naming the bind.
+   `to` whose slug is `provider.slug`, whose identity differs from the
+   pinned identity of `provider`, and that is installed or a source of the
+   plan (so a pick always takes effect in the install that confirms it); at
+   most one given bind per consumer and `provider`; else `bad_request`
+   naming the bind.
 2. The binds of an entry are the given binds for its identity, then the
    binds of the installed mod with that identity (an update keeps its
    picks), one per `provider`, given ones first. A bind whose `provider` is
@@ -578,7 +581,9 @@ bind field (section 11), so `/api/install` can never pass one.
 4. `remove(to)` deletes every bind whose `to` it is, in the same catalog
    write; the links recompute (4.3 step 5) with the pinned rule, so the
    named provider binds if it is installed. A later install of `to` brings
-   no bind back: only a new pick does.
+   no bind back: only a new pick does. `remove` never fails on a link: a
+   consumer whose provider now has no candidate or two or more (possible in
+   a preview, W27) keeps that link unbound.
 
 `PlanEntry.binds` and `InstalledMod.binds` list the binds in force, so the
 consent view shows each one (app 6.2). An entry with the installed package
