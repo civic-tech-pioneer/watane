@@ -620,6 +620,11 @@ The human may veto each one.
   `vendor.sh`, which can hide regressions.
 - S35: dist network tests time out under parallel load on `fast_options` (300 ms): also S28, and S29's
   `restore.rs` ac11. Third time: a slice gives only the timeout tests a short timeout (S38).
+- S37: WindowServer crashed 2026-11-13 04:37, after about 40 h of window-polling loops that S14's
+  user-sim had left in `/tmp/s14sim` (Nov 11). The background `claude` daemon (pid 27153) stayed
+  on the dead GUI session, so the foremen's window tests could not launch the app; S37 blamed the
+  sandbox. Fix: restart the daemon after a GUI re-login. Proposal for the human: a user-sim stops
+  every process it started before it reports.
 
 ## Digest
 
