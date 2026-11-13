@@ -395,3 +395,36 @@ async fn ac3_pick_for_installed_consumer_without_source_is_confirmed() {
     );
     who(&host).await;
 }
+
+#[tokio::test]
+async fn regress_s34_preview_remove_of_bound_shelf_with_two_shelves_left() {
+    let r = Releases::new();
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+    let k4 = Log::open(&dir.path().join("k4")).unwrap();
+    let plan = host
+        .plan_with(
+            vec![
+                Source::Folder(r.recs.clone()),
+                Source::Folder(fixture("shelf")),
+                r.shelf(),
+                r.source(&k4, &fixture("shelf")),
+            ],
+            vec![Bind {
+                consumer: "local/recs".into(),
+                ..r.bind()
+            }],
+        )
+        .unwrap();
+    host.install(plan, Requester::App).await.unwrap();
+    let bound = host
+        .mods()
+        .into_iter()
+        .find(|m| m.identity == r.bind().to)
+        .unwrap()
+        .local;
+    // Eve removes the picked shelf; local/shelf and K4's shelf remain.
+    host.remove(&bound, false).unwrap();
+    assert!(host.get(&bound).is_none());
+    assert!(host.get(&local("recs")).unwrap().binds.is_empty());
+}
