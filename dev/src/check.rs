@@ -819,6 +819,7 @@ mod tests {
                 message: message.into(),
             }]));
             assert_eq!(p.len(), 1);
+            assert_eq!(p[0].code, Code::ModInvalid);
             assert_eq!(p[0].file.as_deref(), Some("mod.toml"));
             (p[0].message.clone(), p[0].fix.clone().unwrap())
         };
@@ -828,7 +829,7 @@ mod tests {
             "`repository` is longer than 256 bytes",
             "`repository` must not hold a user name or password",
             "`repository` has no host",
-            "`repository` may hold only letters",
+            "`repository` may hold only letters, digits and - . _ ~ / % after the host",
         ] {
             let (msg, f) = fix(Rule::ModToml, m);
             assert_eq!(msg, format!("[mod-toml] {m}"));
