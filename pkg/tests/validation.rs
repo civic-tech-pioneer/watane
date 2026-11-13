@@ -837,3 +837,30 @@ fn ac2_mod_toml_at_limit_is_read_whole() {
     put(dir.path(), "mod.toml", format!("-{text}"));
     refused(dir.path(), Rule::ModToml, "mod.toml");
 }
+
+#[test]
+fn regress_s33_other_slug_is_not_own_copy() {
+    // Ignoring the version must not let another slug pass as the own copy:
+    // the folder and the package name must both be the mod's own slug.
+    for (file, package) in [
+        ("wit/deps/t/world.wit", "package mods:s@0.1.0; world s {}"),
+        ("wit/deps/s/world.wit", "package mods:t@0.1.0; world t {}"),
+    ] {
+        let dir = temporary("hello");
+        put(
+            dir.path(),
+            "wit/world.wit",
+            "package mods:s@0.2.0; world s {}",
+        );
+        put(dir.path(), file, package);
+        let v = match Mod::read(dir.path()) {
+            Err(ModError::Invalid(v)) => v,
+            other => panic!("{file}: {other:?}"),
+        };
+        assert!(
+            !v.iter()
+                .any(|v| v.message.contains("this mod's own package")),
+            "{file}: {v:?}"
+        );
+    }
+}
