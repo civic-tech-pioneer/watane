@@ -1,1 +1,1 @@
-{"tests":[{"call":"books.list","args":{},"expect":[]}]}
+{"steps":[{"call":"books.all","returns":[]}]}

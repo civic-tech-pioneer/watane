@@ -191,7 +191,7 @@ fn ac2_j3_github() {
             .output()
             .unwrap();
         assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8(output.stdout).unwrap()
+        String::from_utf8_lossy(&output.stdout).into_owned()
     };
     let alice_home = root.join("alice");
     let alice = App::start(&alice_home, &[]);
@@ -270,6 +270,11 @@ fn ac2_j3_github() {
     );
     assert_eq!(retry["result"]["release"], release);
     let link = retry["result"]["link"].as_str().unwrap();
+    assert!(
+        link.contains(&site.base),
+        "{link} does not name {}",
+        site.base
+    );
 
     // AC4: Bob has a fresh identity and installs the bytes from the clone.
     let bob_home = root.join("bob");
