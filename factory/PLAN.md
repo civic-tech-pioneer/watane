@@ -173,10 +173,10 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
   build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
   `origin` filter. Not dev (S36).
-- [~] **S38 Network tests hold under load.** (branch `slice/s38`; foreman: see `Foremen`) dist's network tests use `fast_options` (300 ms
-  `entry_timeout`) and time out under parallel load (S28, S29 `restore.rs` ac11, S35). Give only the
-  timeout tests a short timeout; the rest use one that holds under load. Done when dist's suite
-  passes 5 times in a row in parallel. Touches: dist tests only.
+- [x] **S38 Network tests hold under load.** Delivered 2026-11-13 (main `0c9018a`). Sol runs: S38-1 1.
+  `fast_options()` uses 10 s entry and package timeouts; only `fetch.rs` ac9 keeps a 300 ms package
+  timeout. 5 of 5 parallel runs passed at load average 19 to 38. Left for later: ac9's 300 ms also
+  covers its TooLarge step (a separate short-timeout Dist for the stall step would close it).
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -268,7 +268,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
 - S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36`.
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`.
-- S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38`.
+- S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -705,3 +705,4 @@ The human may veto each one.
   updates; a preview links a provider by slug, whatever its publisher.
 - S35: Eve's dist fetches Carol's release from the bases named by live listings, verified against
   Carol's key; search filters by origin.
+- S38: dist's suite passes in parallel on a busy machine.
