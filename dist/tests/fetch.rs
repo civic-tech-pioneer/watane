@@ -27,6 +27,17 @@ fn ac9_fetch_limits_and_timeout() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     let alice = open(a.path());
+    let bob = open(b.path());
+    let p = alice.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+        .unwrap();
+    let expected = format!("{}packages/{}", host.url, p.info.release.package);
+    *host.mode.lock().unwrap() = Mode::Oversize(p.info.release.size as usize + 1);
+    assert!(
+        matches!(bob.fetch(&p.info.reference), Err(DistError::TooLarge {url,..}) if url == expected)
+    );
+    drop(bob);
     // Only this fetch proves a timeout; ordinary requests use the shared limits.
     let bob = Dist::open(
         b.path(),
@@ -37,15 +48,6 @@ fn ac9_fetch_limits_and_timeout() {
         },
     )
     .unwrap();
-    let p = alice.publish(fixture("1.0.0", false)).unwrap();
-    let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
-        .unwrap();
-    let expected = format!("{}packages/{}", host.url, p.info.release.package);
-    *host.mode.lock().unwrap() = Mode::Oversize(p.info.release.size as usize + 1);
-    assert!(
-        matches!(bob.fetch(&p.info.reference), Err(DistError::TooLarge {url,..}) if url == expected)
-    );
     *host.mode.lock().unwrap() = Mode::Stall(std::time::Duration::from_secs(3));
     assert!(
         matches!(bob.fetch(&p.info.reference), Err(DistError::Timeout {url}) if url == expected)

@@ -53,8 +53,19 @@ pub enum DistError {
     OwnChannel,
     #[error("this link is not your channel: found {}", found.fingerprint())]
     NotOwnLink { found: PublicKey },
-    #[error("channel {} is not followed; no followed channel, chosen index or listing names a base for it", channel.fingerprint())]
-    NotFollowed { channel: PublicKey },
+    #[error(
+        "channel {} is not followed; {}; follow the publisher's link to settle it",
+        channel.fingerprint(),
+        if *local_only {
+            "the listings that name a base for it point at a local address"
+        } else {
+            "no followed channel, chosen index or listing names a base for it"
+        }
+    )]
+    NotFollowed {
+        channel: PublicKey,
+        local_only: bool,
+    },
     #[error("channel {} compromised at seq {seq}", channel.fingerprint())]
     Compromised { channel: PublicKey, seq: u64 },
     #[error("invalid publisher key {key}: {cause}")]
@@ -145,7 +156,14 @@ mod tests {
                 found: other,
             },
             DistError::NotOwnLink { found: key },
-            DistError::NotFollowed { channel: key },
+            DistError::NotFollowed {
+                channel: key,
+                local_only: false,
+            },
+            DistError::NotFollowed {
+                channel: key,
+                local_only: true,
+            },
             DistError::Compromised {
                 channel: key,
                 seq: 1,

@@ -107,13 +107,11 @@ fn ac3_provider_no_hint() {
     eve.dist.follow(&dave.link(None)).unwrap();
     let error = eve.dist.fetch(&reference(&carol, "ratings")).unwrap_err();
     assert!(
-        matches!(error, DistError::NotFollowed { channel } if channel == carol.dist.identity())
+        matches!(error, DistError::NotFollowed { channel, local_only: false } if channel == carol.dist.identity())
     );
-    assert!(
-        error
-            .to_string()
-            .contains("no followed channel, chosen index or listing names a base")
-    );
+    let text = error.to_string();
+    assert!(text.contains("no followed channel, chosen index or listing names a base"));
+    assert!(text.contains("follow the publisher's link"));
     assert_eq!(carol.host.as_ref().unwrap().count(), 0);
     carol
         .dist
@@ -126,9 +124,14 @@ fn ac3_provider_no_hint() {
     let restricted = open(dir.path());
     restricted.follow(&dave.link(None)).unwrap();
     let before = carol.host.as_ref().unwrap().count();
+    let error = restricted.fetch(&reference(&carol, "ratings")).unwrap_err();
     assert!(
-        matches!(restricted.fetch(&reference(&carol, "ratings")), Err(DistError::NotFollowed { channel }) if channel == carol.dist.identity())
+        matches!(error, DistError::NotFollowed { channel, local_only: true } if channel == carol.dist.identity())
     );
+    let text = error.to_string();
+    assert!(text.contains("local address"));
+    assert!(!text.contains("no followed channel, chosen index or listing names a base"));
+    assert!(text.contains("follow the publisher's link"));
     assert_eq!(carol.host.as_ref().unwrap().count(), before);
 }
 #[test]
@@ -207,7 +210,8 @@ fn ac4_provider_trust_order() {
         dead.iter()
             .filter(|h| !h.request_times.lock().unwrap().is_empty())
             .count(),
-        3
+        // 5.11 step 3 amendment (DD-32): the first base serves, so no dead base is read.
+        0
     );
     let after = records(&eve)["channels"][carol.dist.identity().to_string()].clone();
     assert_eq!(before, after);
@@ -405,4 +409,59 @@ fn regress_s35_cache_hit_keeps_consumer_base() {
         .fetch_for(&reference, Some(&dave.dist.identity()))
         .unwrap();
     assert_eq!(twice.link, Some(carol.link(Some("ratings"))));
+}
+/// 5.11 step 3 (DD-32): the first base that serves ends the reads.
+#[test]
+fn ac3_provider_stops_at_first_serving_base() {
+    let carol = SearchHome::new("Carol");
+    let dave = SearchHome::new("Dave");
+    let eve = SearchHome::new("Eve");
+    carol
+        .dist
+        .publish(named_fixture("ratings", "Ratings"))
+        .unwrap();
+    let second = TestHost::serve(&carol.dist.site_dir());
+    let slug = "ratings".parse().unwrap();
+    eve.dist.list(&carol.link(Some("ratings")), "own").unwrap();
+    dave.dist
+        .list(
+            &Link::new(carol.dist.identity(), &second.url, Some(&slug)).unwrap(),
+            "followed",
+        )
+        .unwrap();
+    eve.dist.follow(&dave.link(None)).unwrap();
+    // The follow reads the listed channel; only the fetch must not touch the second base.
+    let before = second.count();
+    let got = eve
+        .dist
+        .fetch_for(&reference(&carol, "ratings"), None)
+        .unwrap();
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert_eq!(second.count(), before);
+}
+/// 5.7 step 8 as amended in S35: a cache hit with no record links the first base in trust order.
+#[test]
+fn ac4_cache_hit_no_record_links_first_base() {
+    let (carol, dave, eve, _id) = setup();
+    let reference = reference(&carol, "ratings");
+    eve.dist.fetch(&reference).unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let dead = TestHost::serve(empty.path());
+    let dead_link = Link::new(
+        carol.dist.identity(),
+        &dead.url,
+        Some(&"ratings".parse().unwrap()),
+    )
+    .unwrap();
+    eve.dist
+        .list(&dead_link, "own, first in trust order")
+        .unwrap();
+    let count = carol.host.as_ref().unwrap().count();
+    let got = eve
+        .dist
+        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .unwrap();
+    assert_eq!(got.link, Some(dead_link));
+    assert_eq!(carol.host.as_ref().unwrap().count(), count);
+    assert_eq!(dead.count(), 0);
 }

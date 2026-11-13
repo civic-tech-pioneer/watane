@@ -375,7 +375,10 @@ impl Dist {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&key)
             .cloned()
-            .ok_or(DistError::NotFollowed { channel: key })?;
+            .ok_or(DistError::NotFollowed {
+                channel: key,
+                local_only: false,
+            })?;
         let bases = if record.followed || record.index {
             vec![record.base]
         } else {

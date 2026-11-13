@@ -84,6 +84,7 @@ impl Dist {
             // Cached providers keep the hint trust order, even with a listed record.
             let base = self
                 .provider_bases(key, consumer)?
+                .0
                 .into_iter()
                 .next()
                 .or_else(|| record.as_ref().map(|r| r.base.clone()));
@@ -95,9 +96,12 @@ impl Dist {
             .as_ref()
             .is_none_or(|r| !r.followed && !r.index && !stored)
         {
-            let bases = self.provider_bases(key, consumer)?;
+            let (bases, local_only) = self.provider_bases(key, consumer)?;
             if bases.is_empty() && !stored {
-                return Err(DistError::NotFollowed { channel: key });
+                return Err(DistError::NotFollowed {
+                    channel: key,
+                    local_only,
+                });
             }
             let mut served = None;
             let mut failure = None;
@@ -119,9 +123,9 @@ impl Dist {
                         }
                     }
                     Ok(_) => {
-                        if served.is_none() {
-                            served = Some(base.clone());
-                        }
+                        // 5.11 step 3 (DD-32): the first base that serves ends the reads.
+                        served = Some(base.clone());
+                        break;
                     }
                 }
             }
@@ -164,7 +168,7 @@ impl Dist {
         &self,
         wanted: PublicKey,
         consumer: Option<&PublicKey>,
-    ) -> Result<Vec<String>, DistError> {
+    ) -> Result<(Vec<String>, bool), DistError> {
         let records = self
             .follows
             .lock()
@@ -186,6 +190,7 @@ impl Dist {
         }
         let mut seen = std::collections::BTreeSet::new();
         let mut bases = Vec::new();
+        let mut skipped_local = false;
         for key in channels {
             if !seen.insert(key)
                 || matches!(self.log.status(&key)?, watane_log::Status::Compromised(_))
@@ -199,15 +204,18 @@ impl Dist {
                 .filter(|l| l.unlisted.is_none() && l.listing.link.channel() == wanted)
             {
                 let base = listing.listing.link.base();
-                if self.check_listed_base(base).is_ok() && !bases.iter().any(|b| b == base) {
+                if self.check_listed_base(base).is_err() {
+                    skipped_local = true;
+                } else if !bases.iter().any(|b| b == base) {
                     bases.push(base.to_owned());
                     if bases.len() == 4 {
-                        return Ok(bases);
+                        return Ok((bases, false));
                     }
                 }
             }
         }
-        Ok(bases)
+        let local_only = bases.is_empty() && skipped_local;
+        Ok((bases, local_only))
     }
 
     fn fetched(&self, reference: &ReleaseRef, base: Option<&str>) -> Result<Fetched, DistError> {
@@ -270,6 +278,7 @@ impl Dist {
                 if base.is_none() {
                     return Err(DistError::NotFollowed {
                         channel: info.channel,
+                        local_only: false,
                     });
                 }
                 self.get(
