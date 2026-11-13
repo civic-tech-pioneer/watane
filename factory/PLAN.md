@@ -224,6 +224,33 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   and dist's message debt.
   (branch `slice/s44`; foreman: see `Foremen`)
 
+- [~] **S45 Eve's host and dist say what to do (host, dist cleanup).** (cloud) Story: when an
+  install by link meets a missing or ambiguous provider, every message names the mods involved and
+  the step that settles it. Outcomes (dist and host APIs, as their tests and the user-sim call them):
+  1. host preview `ambiguous_provider` names the competing mods and says a pick settles it (S34).
+  2. dist: NotFollowed for a listing skipped as a local address says so (not "no listing names a
+     base"); the no-hint error carries a fix; hint bases stop being read once a trusted one served;
+     on a no-record cache path the link is the first base in trust order, not the first that
+     served (S35).
+  3. dist `fetch.rs` ac9: the TooLarge step runs with a normal timeout; only the stall step keeps
+     300 ms (S38).
+  Touches: host/src, host/tests, dist/src, dist/tests, and their TECHNICAL only to append. Not app
+  (S44), not dist's doubled `DistError` text (app's tests expect it; S44 may raise it), not pkg or
+  dev. (branch `slice/s45`; cloud routine: see `Foremen`)
+- [~] **S46 A hostile mod folder is named, not half-read (pkg cleanup).** (cloud) Story: a maker or
+  a stranger's package with links, FIFOs or broken bytes gets one precise refusal and nothing is
+  read past it. Outcomes (pkg API, tests and user-sim):
+  1. A link inside a hidden folder (`ui/.git/x`, `wit/.hid/k`) is refused as a link, not a
+     `[path]` or WIT folder rule (S15, S22).
+  2. Every path part is opened without following links (not only the last), and `folder.rs` reads
+     through the handle it checked, closing the swap window (S15).
+  3. A FIFO at `ui/extra` is refused by `Mod::read`, as `pack` already does (S22).
+  4. `decode(&[0x8c])` and empty-input errors say what is expected, once (S20, S22); release errors
+     strip "release" at the call site, not in `malformed()`.
+  Touches: pkg/src, pkg/tests. Not pkg/TECHNICAL.md (S40 edits it): a needed spec line goes in the
+  delivery report and the product owner adds it after S40 merges. (branch `slice/s46`; cloud
+  routine: see `Foremen`)
+
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
 
