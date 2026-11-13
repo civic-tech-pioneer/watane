@@ -73,7 +73,7 @@ impl Dist {
             .is_none_or(|r| !r.followed && !r.index && !stored)
         {
             let bases = self.provider_bases(key, consumer)?;
-            if bases.is_empty() {
+            if bases.is_empty() && !stored {
                 return Err(DistError::NotFollowed { channel: key });
             }
             let mut served = None;
@@ -105,7 +105,8 @@ impl Dist {
             if served.is_none() && !stored {
                 return Err(failure.expect("every provider base failed"));
             }
-            Some(served.unwrap_or_else(|| bases[0].clone()))
+            // 5.7 step 8: a stored release with no base left is served from the cache only.
+            served.or_else(|| bases.first().cloned())
         } else {
             let record = record.expect("record selected");
             if !record.followed && !record.index {
@@ -294,11 +295,18 @@ impl Dist {
             .follows
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains_key(&key);
+            .get(&key)
+            .cloned();
+        let mut base = (key != self.identity()).then(|| link.base().to_owned());
         if key != self.identity() {
-            if record {
+            if let Some(record) = record {
                 // Like open_link, a failed refresh can still use a verified stored release.
                 self.read_record(key)?;
+                // As open_link: the package comes from the record's base, never the link's.
+                if !record.followed && !record.index {
+                    self.check_listed_base(&record.base)?;
+                }
+                base = Some(record.base);
             } else {
                 self.check_listed_base(link.base())?;
                 match self.read_channel_entries(key, link.base(), true)?.outcome {
@@ -316,10 +324,7 @@ impl Dist {
                 channel: key,
                 slug: slug.clone(),
             })?;
-        self.fetched(
-            &info.reference,
-            (key != self.identity()).then_some(link.base()),
-        )
+        self.fetched(&info.reference, base.as_deref())
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
         let slug = link.slug().ok_or(DistError::BadLink {

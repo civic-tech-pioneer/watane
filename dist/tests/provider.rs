@@ -324,3 +324,37 @@ fn ac9_fetch_compatibility() {
     assert_eq!(fetched.link, Some(carol.link(Some("ratings"))));
     assert!(carol.dist.fetch(&reference).unwrap().link.is_none());
 }
+#[test]
+fn provider_cached_without_hint() {
+    let (carol, dave, eve, id) = setup();
+    let reference = reference(&carol, "ratings");
+    eve.dist.fetch(&reference).unwrap();
+    eve.dist.unfollow(&dave.dist.identity()).unwrap();
+    let count = carol.host.as_ref().unwrap().count();
+    let got = eve.dist.fetch(&reference).unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, None);
+    assert_eq!(carol.host.as_ref().unwrap().count(), count);
+}
+#[test]
+fn read_link_record_uses_record_base() {
+    let carol = SearchHome::new("Carol");
+    let bytes = named_fixture("ratings", "Ratings");
+    let id = PackageId::of(&bytes);
+    carol.dist.publish(bytes).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let restricted = open(dir.path());
+    restricted.follow(&carol.link(None)).unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let other = TestHost::serve(empty.path());
+    let link = Link::new(
+        carol.dist.identity(),
+        &other.url,
+        Some(&"ratings".parse().unwrap()),
+    )
+    .unwrap();
+    let got = restricted.read_link(&link).unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert_eq!(other.count(), 0);
+}
