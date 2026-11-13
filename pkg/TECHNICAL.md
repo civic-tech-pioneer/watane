@@ -252,7 +252,7 @@ grant: the table of spec §3 is applied as written.
 handle and reads it with a cap. A refused link is rule `path`, with
 `replace the symbolic link with a regular file`; a non-regular file is
 `expected a regular file` under the caller's rule. A missing optional
-file remains `Ok(None)`.
+file remains `Ok(None)`. A part (`mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit`) that is a symbolic link gets exactly one violation, rule `path` with the part's name; no `parts` or other derived violation is added for it.
 
 `Mod::read` collects every violation that it can find and returns them all
 in `ModError::Invalid`. If `mod.toml`, `deps.json` or the WIT does not
@@ -585,7 +585,7 @@ allows is below 26 KiB, so `new` never exceeds the limit.
 order of 7.1.
 
 A malformed release body is reported as `<field>: expected <what>, found <what was there>`; the
-top-level array has no field prefix, since the error already reads `bad release body:` (S46).
+top-level array has no field prefix, since the error already reads `bad release body:` (S46). When the bytes end inside a value whose type was already read, `found` says so (`a text string cut short by the end of input`); when nothing was there it stays `end of input`.
 
 ### 7.3 Example (golden)
 

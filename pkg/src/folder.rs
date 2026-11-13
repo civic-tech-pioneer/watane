@@ -346,8 +346,11 @@ impl Mod {
             world::read(dir, &files, &mut violations)?
         };
         use crate::open::Kind;
-        let page = lstat(dir, "ui")?.is_some();
+        let ui = lstat(dir, "ui")?;
+        let page = ui.is_some();
+        // A linked `ui` already has its `path` violation; the parts rule adds nothing for it.
         if page
+            && !ui.is_some_and(|m| m.kind == Kind::Link)
             && (!lstat(dir, "ui")?.is_some_and(|m| m.kind == Kind::Dir)
                 || !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File))
         {

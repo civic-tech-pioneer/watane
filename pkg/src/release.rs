@@ -332,6 +332,9 @@ impl<'a> Reader<'a> {
         let seen = self.0.datatype();
         f(&mut self.0).map_err(|e| {
             let found = match seen {
+                Ok(t) if e.is_end_of_input() => {
+                    format!("{} cut short by the end of input", describe(t))
+                }
                 _ if e.is_end_of_input() => "end of input".into(),
                 Ok(t) if e.is_type_mismatch() => describe(t),
                 _ => e.to_string(),
