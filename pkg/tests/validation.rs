@@ -271,7 +271,11 @@ fn regress_s33_own_copy_other_version() {
     // is still the mod's own package; it must not fall through to the WIT
     // "repeated package" error (which dev answers with the `add` fix).
     let dir = temporary("hello");
-    put(dir.path(), "wit/world.wit", "package mods:s@0.2.0; world s {}");
+    put(
+        dir.path(),
+        "wit/world.wit",
+        "package mods:s@0.2.0; world s {}",
+    );
     put(
         dir.path(),
         "wit/deps/s/world.wit",
