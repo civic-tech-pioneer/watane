@@ -741,3 +741,37 @@ fn ac4_fake_fetch_bad_package_file_refuses_and_keeps_serving() {
         );
     }
 }
+
+#[test]
+fn regress_s47_renamed_prebuilt_mod_passes_test() {
+    // Bob derives a mod under a new slug from a package with logic.wasm and no
+    // logic source; the folder must pass `test` as delivered (no source to fix).
+    let f = Fixture::new();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
+    let source = f.root.path().join("source");
+    watane_pkg::pack(&fixture, false)
+        .unwrap()
+        .unpack(&source)
+        .unwrap();
+    fs::create_dir(source.join("tests")).unwrap();
+    fs::write(
+        source.join("tests/ratings.json"),
+        r#"{"steps":[{"call":"api.get","returns":0}]}"#,
+    )
+    .unwrap();
+    let package = watane_pkg::pack(&source, true).unwrap();
+    f.config("ratings", &package);
+    let _host = start(&f.home);
+    let (code, v) = f.run(&["new", "my-ratings", "--from", &link("ratings")]);
+    assert_eq!(code, 0, "{v}");
+    let dir = f.root.path().join("my-ratings");
+    assert!(dir.join("logic.wasm").is_file());
+    let (code, v) = run_mod(
+        &f,
+        &dir,
+        "test",
+        &[],
+        Path::new(env!("CARGO_BIN_EXE_fake-watane")),
+    );
+    assert_eq!(code, 0, "{v}");
+}
