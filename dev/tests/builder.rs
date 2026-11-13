@@ -387,3 +387,45 @@ fn ac8_test_and_serve_env_gaps_point_to_doctor() {
         assert_eq!(value["next"], "watane-dev doctor --json");
     }
 }
+
+// S47 user-sim: `new --from` keeps logic.wasm when the package has no logic
+// source, and its `next` says `watane-dev test --json`. That run must neither
+// delete the only logic the mod has nor fail with an opaque internal error.
+#[test]
+fn regress_s47_test_keeps_packaged_logic_without_source() {
+    let f = Fixture::new();
+    let dir = f.temp.path().join("ratings");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
+    fs::create_dir_all(&dir).unwrap();
+    let status = Command::new("cp")
+        .arg("-R")
+        .arg(format!("{}/.", fixture.display()))
+        .arg(&dir)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert!(!dir.join("logic").exists());
+    // As in a derived source package: contract tests, no logic crate.
+    fs::create_dir(dir.join("tests")).unwrap();
+    fs::write(
+        dir.join("tests/ratings.json"),
+        r#"{"steps":[{"call":"api.get","returns":0}]}"#,
+    )
+    .unwrap();
+    let expected = fs::read(dir.join("logic.wasm")).unwrap();
+    let (_, v) = output(
+        Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .args(["test", "--json", "--dir"])
+            .arg(&dir)
+            .env("WATANE_DEV_CACHE", f.temp.path().join("cache"))
+            .env("WATANE_BIN", f.temp.path().join("missing-host"))
+            .env("WATANE_DEV_TOOLCHAIN", f.fake_toolchain(true)),
+    );
+    assert!(
+        fs::read(dir.join("logic.wasm")).is_ok_and(|bytes| bytes == expected),
+        "test deleted or changed the packaged logic.wasm: {v}"
+    );
+    for e in v["errors"].as_array().into_iter().flatten() {
+        assert_ne!(e["code"], "internal", "{v}");
+    }
+}
