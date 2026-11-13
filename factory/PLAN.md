@@ -185,28 +185,16 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   shows Install for an installed mod; publishers not followed show as fingerprints only (pick, bind,
   grant, Made from, list consent); GET `/api/fetch` answers 405 with an empty body; host's preview
   `ambiguous_provider` text (S34 leftover) still open.
-- [~] **S39 Eve's agent recovers from every error alone (dev cleanup).** Story: Eve's coding agent
-  hits each error below, follows only the result's `fix` and `next`, and ends with a working mod;
-  no step needs the agent to read dev's code or guess. Outcomes (user-sim, real `watane-dev` against
-  `fake-watane` and a real `watane --home`):
-  1. `store` is crash-safe: a provider folder is unpacked to a temp name and renamed, so a killed
-     `add --release` leaves no half folder that a rerun reuses.
-  2. Each fix names the real next action: an unknown link says to check the link (not "the app"); a
-     Watane-Release mismatch is not `internal`; install's missing_providers fix carries the stored
-     link; app 5xx and 503 are not `host.refused` with a generic fix; after a failed test or serve,
-     `next` names the failing test, not a plain rerun; the self-dependency fix stops offering
-     "Import the provider's interface".
-  3. Paths read the same everywhere: `dir` and `next` both canonical (`/private/tmp`), also for
-     the default home and the `version_exists` rerun; `--home x/../h` with a missing x names the path.
-  4. `new --from` writes the new mod's own `name` and copies no built `logic.wasm`; an own-package
-     copy under another folder name and a deps.json-only self entry get the own-package message.
-  5. `fake-watane --help` prints help; a missing fetch package file is a 409, not an exit; text mode
-     prints an argument error with its message, not `: failed`.
-  Touches: `dev/` only (src, bin/fake-watane, tests, TECHNICAL; template only if a fix text lives
-  there). Not app, dist, host or pkg (S37 holds app and dist). Fakes: `fake-watane` as now. Leaves
-  out: the app's raw keys and doubled texts (an app slice after S37), dist and host message debt.
-  Cut into 2 tasks: (1) store, fix and next texts; (2) paths, `new --from`, fake-watane, text mode.
-  (branch `slice/s39`; foreman: see `Foremen`)
+- [x] **S39 Eve's agent recovers from every error alone (dev cleanup).** Delivered 2026-11-13 (main
+  `3458939`). Sol runs: S39-1 1 (64 min), S39-2 1 (48 min). User-sim accepted on the first run;
+  the product owner rebased it over the step-6 spec commit. Crash-safe provider cache (unpack to a
+  temp folder, rename), fixes that name the real action, canonical paths, `new --from` makes the mod
+  its own, fake-watane and text mode hardened. Left for later (user-sim): text mode doubles
+  "error" and prints all help on no args; after a failed serve the error's fix says `test --json`
+  while `next` says `serve --json`; `add --release <own release>` fix says "Pass the folder of
+  another mod"; `--home x/../h` fix still says "Start the watane app"; some `next`s are prose, not
+  a rerun; a deps.json-only self entry's fix names a wit/deps folder that does not exist; killed
+  runs' `<id>.<pid>.tmp` folders are never cleaned.
 - [x] **S38 Network tests hold under load.** Delivered 2026-11-13 (main `0c9018a`). Sol runs: S38-1 1.
   `fast_options()` uses 10 s entry and package timeouts; only `fetch.rs` ac9 keeps a 300 ms package
   timeout. 5 of 5 parallel runs passed at load average 19 to 38. Left for later: ac9's 300 ms also
@@ -222,13 +210,13 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
 
-- [ ] **S40 Design: share on GitHub (step 6).** Spec documents only. Turn dev 10.4 and pkg 4.2 into
+- [~] **S40 Design: share on GitHub (step 6).** Spec documents only. Turn dev 10.4 and pkg 4.2 into
   build-plan stages: the exact results, errors (codes, fixes, `next`) and tests of `publish --push`
   and of the `new --from` fork; what a missing `git`/`gh`, a failed push, a fork that differs from
   the package and `--no-source` return; a pkg stage for `repository`; how `fake-gh` and a local
   remote stand in for GitHub in dev's tests and in J3/J5. One independent review, as S26 and S32.
   Touches: dev/TECHNICAL.md, dev/FUNCTIONAL.md, pkg/TECHNICAL.md, spec/TECHNICAL.md section 9.
-  Hand out after S39 merges (S39 edits dev/TECHNICAL.md).
+  (branch `slice/s40`; foreman: see `Foremen`)
 - [ ] **S41 Alice's mod names its repository (pkg stage).** `repository` in mod.toml: parsed,
   validated (pkg 4.2), carried in the package; `watane-dev check` reports a bad one with a fix.
   Outcomes: a valid URL packs and reads back; http, userinfo, a missing host or 257 bytes are
@@ -330,7 +318,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
 - S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36` (stopped, removed).
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon (stopped, removed).
-- S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39`.
+- S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
@@ -344,6 +332,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S39: app 503 `unavailable` -> `env.host_not_running` (exit 3); other app 5xx -> new `host.failed`
+  (Refused, exit 4); 4xx stays `host.refused`. Every 10.1 answer check -> `host.refused [bad_answer]`
+  with an "update the watane app" fix. dev maps pkg's "defined in two locations" for its own
+  package to the own-package violation (no pkg change). All in dev TECHNICAL.
 - S37: a driver build opens dist with `listed_local` only when `WATANE_DRIVER_LISTED_LOCAL=1`, so J5
   serves channels on 127.0.0.1; a release build never reads it (app TECHNICAL 10). J5 posts packages
   straight to `/api/publish`.
@@ -701,6 +693,8 @@ The human may veto each one.
 - S37: Sol cannot start the macOS driver, so every window and journey test first runs in the
   validator; all three S37-3 window tests and J5 had test bugs found only then. A transient API 403
   ended a turn.
+- S39: two Sol runs in parallel on one subsystem loaded the machine (both PARTIAL on the 7 s
+  timing and nested-sandbox tests); parallel tasks conflicted at the end of tests/envelope.rs.
 
 ## Digest
 
