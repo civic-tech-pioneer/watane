@@ -1,8 +1,7 @@
 # app: technical specification
 
-How the app does what `FUNCTIONAL.md` says. Steps 2 and 3 are complete.
-Stage D updates and withdrawals are built; index search and step 5 remain
-**(sketch)**.
+How the app does what `FUNCTIONAL.md` says. Steps 2 to 4 are built.
+Step 5 (stage E) is designed (S32) and not built.
 
 ## 1. Crate and layout
 
@@ -228,13 +227,15 @@ pub struct Broker { /* Mutex<VecDeque<(AskId, Request, oneshot::Sender<Answer>)>
 pub struct AskId(String);             // 32 lowercase hex characters from 16 random bytes
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "answer", rename_all = "snake_case")]
-pub enum Answer { Approve { withheld: Vec<Withheld> }, Deny }
+pub enum Answer { Approve { withheld: Vec<Withheld> }, Pick { choice: String }, Deny }   // Pick: step 5
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Withheld { pub local: String, pub key: String }  // PlanMod.local; GrantLine.key
 #[derive(Debug, thiserror::Error)]
 pub enum ConsentError {
     #[error("this request is no longer open")] Stale,
     #[error("a withheld grant is not in the request: {0}")] UnknownGrant(String),
+    #[error("this answer does not fit the request")] WrongAnswer,          // step 5
+    #[error("the choice is not in the request: {0}")] UnknownChoice(String), // step 5
 }
 
 impl Broker {
@@ -254,7 +255,10 @@ impl Broker {
 
 Rules: first in, first out (APP-F-17). `answer` accepts only the id of the
 head. `withheld` must be empty for a `Sign` request, and each entry must
-name a grant line of that request, else `UnknownGrant`. `deny_all` answers
+name a grant line of that request, else `UnknownGrant`. Step 5: a `Pick`
+request takes only `Pick` or `Deny`, and `choice` must equal the `choice`
+of one of its candidates (`UnknownChoice`); an `Install` or `Sign` request
+takes only `Approve` or `Deny` (`WrongAnswer`). `deny_all` answers
 `Deny` to every open request. A request with no answer 600 s after it was
 queued is answered `Deny` and removed (W19; host refuses at the same time,
 host 12.1).
@@ -267,6 +271,17 @@ host 12.1).
 pub enum Request {
     Install { mods: Vec<PlanMod>, by_program: bool },              // install order; Requester::LocalApi
     Sign { statement: Statement, signer: Party, details: Vec<Detail> },
+    /// Step 5 (9.7): the named provider of `consumer` is not available; pick one that fits.
+    Pick { consumer: String, provider: String, cause: String, candidates: Vec<Candidate> },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Candidate {
+    pub choice: String,               // ReleaseRef text; the answer names it
+    pub name: String, pub summary: String, pub version: String,
+    pub publisher: Party,             // verified (status ok); a compromised channel is never a candidate
+    pub origin: Option<String>,       // ReleaseRef text of its origin, the publisher's claim (W24)
+    pub installed: bool,              // already installed in this home
+    pub checked_at: Option<u64>,      // ms since the Unix epoch; the hit's mark (5.10 of dist)
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanMod {
@@ -276,6 +291,8 @@ pub struct PlanMod {
     pub replaces: Option<String>,     // the installed version that this replaces
     pub grants: Vec<GrantLine>,
     pub uses: Vec<String>,            // providers, as {provider} of section 4
+    pub origin: Option<String>,       // step 5: ReleaseRef text of mod.toml [origin], the publisher's claim
+    pub binds: Vec<String>,           // step 5: one line per bind in force, words.rs: "<to> in place of <provider> (your pick)"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party { pub name: Option<String>, pub fingerprint: String }
@@ -307,7 +324,7 @@ Sign details, in this order. A release is named by its ReleaseRef text
 
 | Statement | Details (label: value) |
 |---|---|
-| `release` | `Release`: ReleaseRef; `Package`: package id (64 hex); `Size`: bytes; `Source included`: `yes` or `no`; `Summary` |
+| `release` | `Release`: ReleaseRef; `Package`: package id (64 hex); `Size`: bytes; `Source included`: `yes` or `no`; `Summary`; `Made from` (step 5): the origin ReleaseRef with its publisher's name and fingerprint when known, or `none` |
 | `withdraw` | `Release`: ReleaseRef of the withdrawn release; `Reason` |
 | `profile` | `Name` |
 | `list` (step 4) | `Mod`: `<key>/<slug>` with the publisher's name and fingerprint when known; `Location`: the link's base; `Note` (or `none`) |
@@ -331,7 +348,15 @@ Sign details, in this order. A release is named by its ReleaseRef text
   with `by <party> · signature verified`, or `local`; `replaces <version>`
   if set; then each
   grant line with a checkbox `Allow`, checked at load; a new grant carries
-  the label `new`. Then `uses <provider>` lines.
+  the label `new`. Then `uses <provider>` lines; step 5: `made from
+  <origin> (the publisher says so)` when set, and each `binds` line.
+- A pick (step 5) has the title `Choose a mod for <consumer>`, the text
+  `<provider> is not available: <cause>`, and one radio button per
+  candidate: name, version, summary, `by <party> · signature verified`,
+  `made from <origin>` when set, `installed` when set, and the check age.
+  None is selected at load. The approve button reads `Use this mod`; it
+  is also disabled while no candidate is selected. A click sends
+  `consent_answer({id, approve: true, withheld: [], choice})`.
 - Buttons: `Deny` and `Approve`. `Deny` has the focus at load. The page has
   no form and no default button; Enter and Space act only on the focused
   control.
@@ -406,7 +431,8 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
 | `consent_get` | consent | — | `ConsentView \| null` | A |
-| `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]` | `null` | A |
+| `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]`, `choice: string \| null` (step 5: a pick) | `null` | A |
+| `mod_derived` | main | `local` | `[HitView]` | E |
 
 View types:
 
@@ -434,7 +460,8 @@ HitView    {release (ReleaseRef), slug, name, summary, version, link (link text)
             via: [{kind: "own" | "followed" | "index", index: null | Party,
                    through: null | Party, note: string}],
             offers: [string], events: [string], uses: [string],     // interface names
-            installed: null | string}                                // local name when installed
+            installed: null | string,                                // local name when installed
+            origin: null | string}                                   // step 5: ReleaseRef text, the publisher's claim
 ```
 
 Behaviour:
@@ -509,7 +536,7 @@ and writes the site folder.
 
 | Result | Status | Body or code |
 |---|---|---|
-| published | 200 | `{"release": "<ReleaseRef>", "site": "<site dir>", "link": "<link text>" \| null}` |
+| published | 200 | `{"release": "<ReleaseRef>", "site": "<site dir>", "link": "<link text>" \| null, "providers": [{"provider": "<key>/<slug>", "listed": bool}]}` (`providers`: step 5, below) |
 | wrong content type, empty body | 400 | `bad_request` |
 | body over the limit | 413 | `too_large` |
 | `DistError::Refused` | 403 | `refused` |
@@ -523,6 +550,21 @@ and writes the site folder.
 set (`NoSiteUrl`). The route never answers a confirmation: only
 `consent_answer` and the `Destroyed` handler call `Broker::answer`
 (APP-F-13).
+
+**Providers of another publisher (step 5, W25).** After the release is
+signed, for each distinct `(key, slug)` of a `Call` or `Subscribe` grant of
+the release whose key is not the own key, in grant order:
+
+1. The own channel has a live `list` of it: `listed: true`.
+2. Else, when `dist.channel(key)` has a record with a base:
+   `dist.list(&Link::new(key, base, Some(slug)), "used by <slug of the
+   release>")`. The participant sees the `list` request (6.2). `Ok` gives
+   `listed: true`; `Refused` or any other error gives `listed: false`.
+3. Else `listed: false`.
+
+A `false` never fails the publish: the release is signed. It means that a
+person who installs it needs a followed channel or an index that names the
+provider's base (dist 5.11). dev warns about it (dev 9.7).
 
 For `ModError::Invalid`, the 422 message drops a violation text's leading
 file name, which the location already gives, so the file is named once:
@@ -564,7 +606,8 @@ Result {release (ReleaseRef), name, summary, link (link text) | null,
         publisher: {key, name: null | string, fingerprint},
         status: "ok" | "compromised", checked_at: null | number, unchecked_since: null | number,
         via: [{kind: "own" | "followed" | "index", index: null | key, through: null | key, note}],
-        offers: [string], events: [string], uses: [string]}
+        offers: [string], events: [string], uses: [string],
+        origin: null | string}                     // step 5: ReleaseRef text
 ```
 
 Derived from `dist::Hit` as `HitView` (section 7) is, in snake case, with
@@ -574,12 +617,33 @@ or `installed` (the `release` text holds slug and version). `uses` holds
 the interfaces of the call and subscribe grants. The route exists for
 `watane-dev search` (dev 10).
 
-### 8.3 `POST /api/fetch` (step 5, sketch)
+### 8.3 `POST /api/fetch` (step 5)
 
-Request `{"link": "<link text>"}`. `dist.open_link`; the app writes the
-package to `<home>/app/fetched/<package id>` and answers
-`{"package": "<path>", "release": "<ReleaseRef>"}`. No consent: a fetch gives no
-authority. `watane-dev new --from` and `add <release>` use it.
+Request: `Content-Type: application/json`, either `{"link": "<link
+text>"}`, a link **with** a slug, or `{"release": "<ReleaseRef>"}`; not
+both. In `spawn_blocking`: for a link, `Link::from_str`, then
+`dist.open_link(&link)` (dist 5.7: it follows the channel when it is not
+followed, refreshes it, and fetches the newest live release of the slug).
+For a release, `ReleaseRef::from_str`, then `dist.fetch(&release)` (dist
+5.7 and 5.11: a channel with a record, or one that a stored listing names;
+no follow). dev uses the second form for the providers of a provider.
+The answer is the package itself, so no file is written and none is left
+behind:
+
+| Result | Status | Body or code |
+|---|---|---|
+| fetched | 200 | `Content-Type: application/octet-stream`; the package bytes; headers `Watane-Release: <ReleaseRef>` and `Watane-Package: <package id>` |
+| bad JSON, both or neither field, a link or release that does not parse, a link with no slug | 400 | `bad_request` |
+| `NoRelease`, `Withdrawn`, `Compromised` | 409 | `fetch_refused` with dist's cause |
+| `NotFollowed` (no base known for a release) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
+| dist did not open (APP-F-2) | 503 | `unavailable` |
+
+No consent: a fetch installs nothing, grants nothing and signs nothing.
+Its one lasting effect is the follow, as when the participant opens a link
+(9.4): the channel shows in the channels view, and the participant can
+unfollow it. The request body uses host's 64 KiB limit; the answer is at
+most dist's package limit. `watane-dev new --from` and `add --release`
+use it (dev 10). The route never answers a confirmation.
 
 ## 9. Identity, publish and follow (step 3)
 
@@ -642,14 +706,21 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
 2. `dist.open_link(&link)` gives `Fetched { package, entry, .. }`, as
    `Source::Release { package, entry }` (host 2.4: the typed values, both
    already checked by their decoders).
-3. Loop: `host.plan(sources)`. For each `MissingProvider` of
-   `plan.missing()` with `release: Some(r)`: `dist.fetch(&r)`, and add it
-   to `sources` as in step 2. One
-   without a `release` (a local provider): `missing_providers`. Stop when
-   nothing is missing. If a round adds no source, or after 32 rounds:
+3. Loop: `host.plan_with(sources, binds)` (`binds` starts empty). For
+   each `MissingProvider` of `plan.missing()` with `release: Some(r)`:
+   `dist.fetch(&r)`, and add it to `sources` as in step 2. Step 5: when
+   that fetch fails, run the pick of 9.7 with its cause; it adds a source
+   or a bind, or ends the install. One without a `release` (a local
+   provider): `missing_providers`. Stop when nothing is missing. If a
+   round adds no source and no bind, or after 32 rounds:
    `missing_providers`.
 4. `host.install(plan, Requester::App).await` (the consent view through
    HostConfirm).
+5. Step 5: for each `Fetched` of this install whose `link` is set and whose
+   channel is not followed, `dist.follow(&link)` (dist 5.11, DD-29), so
+   that a provider's updates and withdrawals keep coming. A failed follow
+   does not undo the install; it shows as that channel's failure
+   (APP-F-37).
 
 dist and host verify. The app passes their cause through (APP-F-37).
 
@@ -761,6 +832,51 @@ sign-title wording functions, shared by the pages and their wording tests.
 Each new command goes into `build.rs`, the `main` capability and the
 literal lists of `tests/static_config.rs`.
 
+### 9.7 Build on (step 5)
+
+**Pick** (F-BUILD-3, APP-F-41). For a `MissingProvider` `m` whose fetch
+failed with cause `c`, needed by the plan entry `e`:
+
+1. Needed interfaces: each `Call` or `Subscribe` grant of `e.grants` whose
+   provider is `m.provider`.
+2. Candidates: `dist.search(&Query { interface: Some(<first needed
+   interface>), .. })`, keeping each hit with status `Ok`, the slug of
+   `m.provider`, a publisher other than `m.provider`'s, and, for every
+   needed interface `n`, an interface `i` with `n.satisfied_by(i)` in
+   `release.offers` (for a call) or `release.events` (for a subscription).
+   Hits of installed released mods come through the same search (their
+   channels are followed). Local mods are no candidates. At most 20, in
+   search order. This is a pre-filter; host checks the fit again (host 4.5).
+3. No candidate: `missing_providers` with the message `<provider> is not
+   available (<c>), and no mod in your indexes fits in its place`.
+4. Else `broker.ask(Request::Pick { consumer: e.name, provider: <{provider}
+   of section 4>, cause: c, candidates })`. `Deny` or no answer:
+   `refused`. `Pick { choice }`: the candidate's hit. If it is not
+   installed, `dist.fetch(&hit.info.reference)` (its channel has a record)
+   and add it to `sources`. Add `Bind { consumer: e.identity, provider:
+   m.provider, to: "<choice key>/<slug>" }` to `binds`.
+5. The plan that follows shows each bind in the install consent
+   (`PlanMod.binds`), so the participant confirms the pick with the grants.
+
+The pick and the install are two consent views in a row: the pick says
+which mod, the install says what it may do. A background update (9.5)
+never opens a pick: the installed binds carry over (host 4.5), and a
+provider that is still missing is that update's error.
+
+**Origin** (F-BUILD-1, APP-F-42). `ModView.derivedFrom` is the installed
+mod's origin. The details show it as `Made from <name or slug> <version> by
+<party> (the publisher says so)`, with the name and party from the
+parties cache and dist's view of the origin's channel when stored, else
+the ReleaseRef text. The install consent and the `release` sign request
+show it too (6.2, 6.3).
+
+**Derived mods** (F-BUILD-4, APP-F-42). `mod_derived(local)`: an installed
+mod with a `release` gives `dist.search(&Query { origin: Some((publisher,
+slug)), .. })` mapped to `HitView`; a local mod gives `[]`. The details
+list them as `Made from this: <name> <version> by <party>`, each with the
+install button of a hit (`install_release`). The page says `as far as your
+indexes list them` above the list.
+
 ## 10. Test driver (feature `driver`)
 
 Only for tests. It adds nothing to any webview: it uses the native
@@ -861,6 +977,8 @@ real approval gate. No production security check changes.
 | `tests/j3.rs` (C) | J3: S12 to S15, two apps on two homes | a `tower-http` static server over Alice's site folder; the consent DOM text; `<home>/mods/` |
 | `tests/j4.rs` (D updates) | after the index install: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
 | `tests/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
+| `tests/build_on.rs` (E) | S23 to S27: pick view and bind, no fit, made from and derived list, publish listing a provider, `/api/fetch` | homes of Carol, Dave and Frank made with `watane_dist`; prebuilt fixture components `ratings` (Carol's and Frank's) and `stats`; consent DOM; `<home>/mods/`; `follows.json` |
+| `tests/j5.rs` (E) | J5 on the real programs: Carol's agent runs `watane-dev new ratings --from <Alice link>` against Carol's app; the test then puts the committed `ratings` fixture files over that folder (keeping its `mod.toml` origin) and posts its package to `/api/publish` (consent shows `Made from`); Dave's agent runs `watane-dev add --release <Carol link>` in a copy of the `stats` fixture, and the test posts `stats` to `/api/publish` (release, then the listing of Carol's `ratings`); dev's own `test` with a fake of `ratings` is DEV-S-39, not part of this run; Eve's app installs `stats` from Dave's link and gets Carol's `ratings` first through Dave's listing; with Carol's site stopped and Frank's `ratings` in Eve's index, a fresh home of Eve gets the pick view and binds Frank's | each person's own record of what they published; `wit/world.wit`, `mod.toml` and `deps.json` text; consent DOM; `<home>/mods/` |
 | `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
@@ -898,7 +1016,7 @@ record it in `NOTES.md` with the old and the new result.
 | B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
 | D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
-| E Build on (sketch) | 8.3, APP-F-41, APP-F-42; a request kind `pick` | host step 5 | — | J5 passes |
+| E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; `mod_derived`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass; `static_config` lists `mod_derived` |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page
@@ -992,7 +1110,7 @@ still needs the participant in the consent view.
 | Item | To | Form |
 |---|---|---|
 | The program `watane-app [--home <dir>] [--port <n>]` | participants, journey tests | section 1 |
-| `POST /api/publish`, `GET /api/releases` (step 3); `/api/search` (step 4); `/api/fetch` (step 5, sketch) | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
+| `POST /api/publish`, `GET /api/releases` (step 3); `/api/search` (step 4); `/api/fetch` (step 5) | `dev` (`watane-dev publish`, `search`, `new --from`, `add <release>`) | section 8 |
 | The answers to the confirmations of `host` (install, new grant) and `dist` (signature), in process | `host`, `dist` | section 9.2 |
 | The grant words | the consent view; `dev` may print the same words | section 4 |
 | The driver protocol | the journey tests J2 to J4 | section 10 |
@@ -1011,6 +1129,8 @@ From **host** (`../host/TECHNICAL.md` sections 2, 3, 8, 10 to 12):
   Requester }) -> Answer`, with `Requester { App, LocalApi }` and `Answer {
   Approve { withhold: Vec<(LocalName, Grant)> }, Deny }`. No answer in 600 s
   is `refused`.
+- Step 5: `plan_with(Vec<Source>, Vec<Bind>) -> Plan`; `Bind { consumer,
+  provider, to }`; `PlanEntry.binds`, `InstalledMod.binds` (host 2.4, 4.5).
 - `plan(Vec<Source>) -> Plan` with `Source { Folder(PathBuf), Release {
   package: Package, entry: Entry } }`; `Plan::entries`, `missing`;
   `install(plan, requester) -> Vec<InstalledMod>`; `mods`, `get`, `enable`,
@@ -1042,10 +1162,14 @@ Fetched`; the types `Confirm`, `Decision`, `SignRequest`, `Statement`,
 `Link`, `ChannelView`, `Status`, `Outcome`, `Change`, `Fetched`,
 `Published`, `DistError`; the re-exports `PublicKey` (`fingerprint()`),
 `EntryId`, `Entry` (`bytes()`), `Package` (`as_bytes()`), `Release`.
-**Asked of dist**: the re-export of `watane_pkg::ReleaseRef`.
+**Asked of dist**: the re-export of `watane_pkg::ReleaseRef`. Step 5:
+`Fetched.link`, `Query.origin`, and `fetch` through provider bases (dist 3,
+5.11).
 
 Fixture sources originate in **dev**, copied into `tests/fixtures/`; app tests
-use their committed components and never invoke dev or build a mod.
+use their committed components and never build a mod. Only `tests/j5.rs`
+invokes the program `watane-dev`, and only its commands that build nothing
+(`new --from`, `add --release`).
 
 ## 16. Questions for spec/
 
@@ -1054,8 +1178,8 @@ Each answer is the one this spec uses.
 1. **Grant words** (spec/TECHNICAL.md section 9, step 2) are not designed.
    Answer: section 4 of this file. Point section 9 here.
 2. **F-APP-5 "origin"** can mean the page origin or the release a mod
-   derives from. Answer: the details show both; "derived from" from step 5
-   (F-BUILD-1).
+   derives from. Answer: the details show both; the release as "Made from"
+   (step 5, 9.7, W24).
 3. **Owner of the dist routes of the local API.** Section 5 says
    `watane-dev` asks the home host to publish, search and fetch, but `host`
    cannot depend on `dist`. Answer: the app owns these routes (section 8)

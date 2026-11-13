@@ -140,6 +140,13 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
 - **DIST-F-49** dist shall read a listed channel from every base that listings give on each refresh, within the base and channel limits, and shall not read a listed base on the participant's own device or local network.
   Traces: F-FIND-4, V5.
 
+### 2.9 Build on (step 5)
+
+- **DIST-F-50** When the caller fetches a release of a channel that has no record, dist shall read that channel from the bases that live `list` and `include` statements of the own, followed, chosen and listed channels name for its key, with the limits and the local-address rule of a listed channel, and verify it against that key.
+- **DIST-F-51** If no such base gives the channel, then dist shall refuse the fetch and say that nothing names where that key publishes.
+- **DIST-F-52** dist shall give, with each fetched release, the link of its publisher's channel that it was read from.
+- **DIST-F-53** When the caller searches by origin, dist shall give the mods whose newest live release names a release of that publisher and slug as its origin.
+
 ## 3. Acceptance scenarios
 
 Each scenario is one test. "Alice" and "Bob" are two homes on one device.
@@ -284,3 +291,21 @@ its own local host.
 - **A35 No local reads.** Given Ivy lists a mod at `http://127.0.0.1:<p>/`
   and `listed_local` is false, when Carol chooses Ivy, then that server
   gets no request and `skipped` is 1. (DIST-F-49)
+
+### Step 5
+
+- **A36 Provider from a listing.** Given Dave lists Carol's `ratings` in
+  his channel, and Eve follows Dave only, when Eve fetches
+  `<Carol>/ratings@0.1.0`, then dist reads Carol's channel from the listed
+  base, gives the verified package and `link` with that base, and
+  `follows.json` has no record for Carol. When the listed base serves a
+  channel of another key, the fetch fails with `WrongChannel` and no
+  package is kept. (DIST-F-50, DIST-F-52)
+- **A37 No hint.** Given Eve follows no channel that names Carol, when she
+  fetches that release, then the fetch fails with `NotFollowed` and makes
+  no request. A listed base on `127.0.0.1` with `listed_local` false gets
+  no request either. (DIST-F-51)
+- **A38 Derived.** Given Carol's `ratings` names
+  `<Alice>/reading-list@0.1.0` as its origin, and Alice's own channel
+  holds `reading-list` 0.2.0, when Eve searches with `origin` (Alice,
+  `reading-list`), then the one hit is Carol's `ratings`. (DIST-F-53)

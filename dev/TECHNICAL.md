@@ -30,6 +30,7 @@ dev/
   src/contract.rs       the contract test file; run it on the host Harness
   src/json_eq.rs        equality of two JSON values for tests
   src/deps.rs           `add <mod folder>`; .watane-dev.json; local providers in order
+  src/build_on.rs       step 5: `new --from`, `add --release`, released providers in the cache (10.1)
   src/api.rs            the local API client; find a running host
   src/preview.rs        `serve`; find the program `watane`
   src/bin/fake-watane.rs  a fake host for tests (feature `fake-host`)
@@ -111,8 +112,8 @@ watane-dev [--json] [--dir <path>] <command>
   install [--home <path>] [--wait <seconds>]                (step 2)
   publish [--no-source] [--home <path>] [--wait <seconds>]  (step 3)
   search [<text>...] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
-  new <slug> --from <link>                                  (step 5, outline)
-  add --release <link>                                      (step 5, outline)
+  new [<slug>] --from <link> [--home <path>]                (step 5)
+  add --release <link or release> [--home <path>]           (step 5)
 ```
 
 - `--help` describes every command, positional argument and option. `serve --stop`
@@ -149,7 +150,7 @@ Every command, also a failed one, prints this object:
 | Field | Type | Meaning |
 |---|---|---|
 | `schema` | integer | 1. Raised on an incompatible change. |
-| `command` | string | `new`, `check`, `test`, `serve`, `doctor`, `add`, `install`, `publish`, `search`. |
+| `command` | string | `new`, `check`, `test`, `serve`, `doctor`, `add`, `install`, `publish`, `search`. `new --from` is `new`; `add --release` is `add`. |
 | `ok` | bool | `errors` is empty. |
 | `dir` | string or null | The mod folder; null when the command has none (`doctor`, `search`). |
 | `result` | object or null | 2.4. Present also on a failure, where a part ran. |
@@ -210,13 +211,19 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release and link), then run: watane-dev add --release <that link>` |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source: its publisher published it with --no-source` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
+| `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait`. If the person approved meanwhile, publish reports the release and its link on retry |
 | `internal` | 5 | anything else | the error chain | — |
 
-Warning codes: `ui.external` (a file of `ui/` names an `http://` or
+Warning codes (step 5 first): `publish.provider_unlisted` (the app's
+publish answer has `listed: false` for a provider; message `<key>/<slug> is
+not listed in your channel, so people who install <slug> need a channel or
+an index that names where it is published`, fix `Ask the person to list
+<key>/<slug> in their own index in the watane app`), `ui.external` (a file of `ui/` names an `http://` or
 `https://` URL in `src`, `href`, `import` or `fetch(`; the content policy of
 the host blocks it), `ui.inline_script` (`ui/*.html` holds a `<script>`
 without `src`; the content policy blocks it), `test.uncovered` (an
@@ -353,6 +360,35 @@ On success, `next` is `watane-dev serve --json` when the current folder
 (or `--dir`) contains `mod.toml`, otherwise `watane-dev new <slug> --json`.
 On a gap, it is `Run each error's fix, then run: watane-dev doctor --json`.
 
+**new --from** (step 5)
+```json
+{"slug": "ratings", "dir": "/abs/ratings", "files": ["AGENTS.md", "..."],
+ "origin": "<Alice key>/reading-list@0.1.0", "from_slug": "reading-list",
+ "providers": ["<key>/tags@0.2.0"],
+ "mentions": [{"file": "logic/src/lib.rs", "line": 3, "text": "use exports::mods::reading_list::books::Guest;"}]}
+```
+`files` as for `new`. `providers` are the released providers fetched into
+the cache (10.1). `mentions` lists each line (at most 200, in path and line
+order) of `wit/*.wit`, `logic/` and `ui/` and `tests/` that still names the
+old slug: `<from_slug>` or its `_` form as a whole word (bounded by no
+`[a-z0-9_-]`). It is empty when the slug is unchanged. `next`: with
+mentions, `Replace <from_slug> with <slug> (and <from_snake> with
+<snake>) at each result.mentions entry, then run: watane-dev test --json`;
+without, `Edit wit/world.wit, logic/src/lib.rs and ui/, then run:
+watane-dev test --json`.
+
+**add --release** (step 5)
+```json
+{"slug": "ratings", "version": "0.1.0", "path": null, "wit_dir": "wit/deps/ratings",
+ "publisher": "<Carol key>", "release": "<Carol key>/ratings@0.1.0",
+ "link": "watane:<Carol key>@https://carol.example.org/mods/#ratings",
+ "providers": ["<Carol key>/ratings@0.1.0"],
+ "imports": ["import mods:ratings/api@0.1.0;"], "subscriptions": []}
+```
+`link` is the given link, or null when a ReleaseRef was given. `providers`
+are all released packages fetched into the cache, this one first. `next`:
+the `add` text, plus ` Contract tests use a fake of it (see AGENTS.md).`
+
 **add** (step 2)
 ```json
 {"slug": "a", "version": "0.1.0", "path": "../a", "wit_dir": "wit/deps/a",
@@ -387,8 +423,11 @@ fix, or `watane-dev test --json` if no fix is known.
 ```json
 {"home": "/abs/.watane",
  "release": "<publisher key>/reading-list@0.1.0",
- "package": "<64 hex>", "source": true, "site": "/abs/site folder", "link": "watane:...#reading-list"}
+ "package": "<64 hex>", "source": true, "site": "/abs/site folder", "link": "watane:...#reading-list",
+ "providers": [{"provider": "<key>/tags", "listed": true}]}
 ```
+`providers` (step 5) is the app's answer as it is (app 8.1), `[]` when the
+answer has none; each `listed: false` adds `publish.provider_unlisted`.
 `home` is the resolved home; `package` is the posted package id and `source`
 is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
@@ -452,6 +491,8 @@ The cache folder (dev creates and canonicalizes it):
   build/<slug>/          the copy of the mod sources for one build
   build/<slug>.lock      a file lock for the duration of a build of that slug
   target/                the shared cargo target folder of all mods
+  packages/<id>          step 5: verified released packages; <id> = PackageId::of(bytes), computed by dev
+  providers/<id>/        step 5: Package::unpack of packages/<id>, for previews
   previews/<slug>-<h8>/  h8: the first 8 hex characters of BLAKE3(canonical mod path)
     home/                the preview home
     ready.json           the ready line of the preview host (mode 0600)
@@ -466,11 +507,17 @@ The cache folder (dev creates and canonicalizes it):
 {
   "local_providers": {
     "reading-list": "../reading-list"
+  },
+  "release_providers": {
+    "tags": {"release": "<key>/tags@0.2.0", "package": "<64 hex>"}
   }
 }
 ```
 
-Keys are slugs; values are paths relative to the mod folder, with `/`.
+Keys are slugs; `local_providers` values are paths relative to the mod
+folder, with `/`. `release_providers` (step 5, default `{}`) names the
+released providers of this mod and of its providers, with the package id
+of each in the cache (10.1); `add --release` and `new --from` write it.
 dev writes it with sorted keys, two-space indent and a final newline.
 
 ## 4. The template
@@ -1070,7 +1117,12 @@ prevent the remaining files from running.
 publisher, through the folder that `.watane-dev.json` names for its slug
 (`mod.provider_missing` when there is none or it has no `mod.toml`), depth
 first, and returns the folders with providers before their users and `dir`
-last. A folder seen twice on one path is `mod.dependency_cycle`. Each
+last. A folder seen twice on one path is `mod.dependency_cycle`. Step 5:
+a provider with a publisher is the folder `<cache>/providers/<id>/` of its
+`release_providers` entry, whose ReleaseRef must equal
+`<publisher>/<slug>@<version in wit/deps/<slug>/>`; else
+`mod.release_provider_missing`. Its own providers follow the same rule,
+and it runs no test pipeline (it is a built package). Each
 folder runs the `test` pipeline (sections 5 to 8). Traversal reads dependency
 metadata without validating the world, so a pending edit after `add` does
 not hide a cycle or a provider's test failure. The first folder that
@@ -1110,6 +1162,8 @@ and the command's `next` are
    the pipe is safe.
 4. `POST <api>install` with `{"folders": [<absolute folders of 9.2>]}`.
    The preview grants what each mod declares and asks nothing (W5). A
+   released provider installs from its cache folder as a local mod; the
+   preview links it by slug (W27). A
    folder with the slug of an installed local mod updates it; its state
    stays, because the host keys state by identity (`local/<slug>`).
 5. Report `pages` from the `installed` answer (`slug`, `local`, `page`),
@@ -1178,7 +1232,10 @@ slug (or its mod folder) in their watane app. The fix asks the person
 whether they want it installed, then says to run install again with
 `--wait <seconds>` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
 proves the message and fix; the fix must not say "correct". Other errors are `host.refused`
-with `[<code>] <message>`. dev reports the `installed` answer.
+with `[<code>] <message>`; step 5: a `missing_providers` answer that names
+a provider with a publisher gets the fix `Install <ReleaseRef> in the
+watane app (from its link), then run install again`, because a home
+installs a release only through the app. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
 next command and fixes of `serve`.
 
@@ -1208,7 +1265,7 @@ next command and fixes of `serve`.
    whether source is included; consent is the agreement to include it
    (F-PUB-4). `dist` signs and writes the site folder. dev reports only
    `home`, the answer's `release`, `site`, `link`, `package` (`Package::id()`)
-   and `source` (`Package::has_source()`), as in 2.4.
+   and `source` (`Package::has_source()`), as in 2.4, and step 5's `providers`.
 
 A `refused` answer is `host.declined`: `The person declined publishing
 <slug> from their watane app`, with fix `Ask the person whether they want
@@ -1221,7 +1278,7 @@ version-bump fix, file and `next` as the preflight refusal. Other errors are
 `host.refused` with `[<code>] <message>`. For these host failures, `next` is
 the fix. Success chooses the link-dependent instruction of 2.4.
 
-## 10. Step 4: `search`; step 5 (outline; not designed)
+## 10. Step 4: `search`; step 5: `new --from`, `add --release`
 
 `search` needs no mod folder (`dir` is null). It resolves the home and
 checks the app status as `install` does (9.6, step 1: `env.host_not_running`
@@ -1240,14 +1297,75 @@ answers are `host.refused` with `[<code>] <message>`, including `refused`.
 For every search request error, `next` is the error's fix. dev never
 installs a result: the person does that in the app (F-AGENT-4).
 
-Step 5, only enough to keep the design open. `new --from <link>` and
-`add --release <link>` send `POST /api/fetch {"link"}` and read the package file that the answer
-names (app `TECHNICAL.md` 8.2, 8.3). `new --from` unpacks it with
-`Package::unpack`, sets the new slug in the package line and the origin
-in `mod.toml`. `add --release` copies the provider's WIT as 9.5 does and
-writes the publisher instead of a `.watane-dev.json` path. Nothing in
-sections 2 to 9 blocks this: the envelope, the client, `deps.json` with its
-publisher, and the provider order already carry these cases.
+### 10.1 Released packages (step 5)
+
+`Client::fetch(target)` sends `POST /api/fetch` with `{"link": <text>}` or
+`{"release": <ReleaseRef text>}` (app 8.3) over the proxy-free localhost
+transport, with a 330 s timeout (dist's package timeout plus 30 s). It
+reads at most `MAX_PACKAGE_BYTES` + 1 bytes (more is `host.refused`
+`[too_large]`). `Package::from_bytes` must accept the body and
+`PackageId::of(body)` must equal the `Watane-Package` header; else
+`internal`. The `Watane-Release` header parses as a `ReleaseRef`. dev trusts
+the app of its own home for the signature check (dist 5.7); it checks the
+bytes again because they cross a socket. Error answers are `host.refused`
+`[<code>] <message>`; a 400 gets the fix `Pass a mod link
+watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>`.
+
+`store(package)`: write `<cache>/packages/<id>` (temp file, rename) and,
+when absent, `Package::unpack(<cache>/providers/<id>/)`. The path comes
+only from the id dev computed.
+
+`fetch_providers(dir)`: for each provider of `Deps::read(dir)` with a
+publisher, the ReleaseRef `<publisher>/<slug>@<version of
+wit/deps/<slug>/>`. If `release_providers.<slug>` names it and its cache
+folder exists, use it; else `Client::fetch({"release"})` and `store`. Then
+the same for the providers of that cached folder. At most 32 packages per
+command; more is `host.refused` with `too many released providers`.
+Record each one in `release_providers` (sorted keys). Return the list.
+
+### 10.2 `new [<slug>] --from <link>` (step 5)
+
+1. `<slug>`, when given, must parse (`usage.slug`). With `--dir` that path
+   is the folder, else `./<slug>`; it must not exist (`usage.exists`).
+2. Resolve the home and check the app status as `install` (9.6 step 1).
+3. `Client::fetch({"link"})`. `!package.has_source()`: `usage.no_source`,
+   and nothing is written.
+4. With no `<slug>`, the slug is the release's, and the folder check of
+   step 1 runs now.
+5. `package.unpack(folder)` (pkg 6.4: a new folder only; it refuses an
+   existing one). Write dev's own `AGENTS.md`, `CLAUDE.md` and
+   `.gitignore` of the template (section 4): a package never holds them
+   (pkg 6.1), so the instructions that the agent reads come only from
+   `watane-dev`, never from the publisher.
+6. Set `[origin] release = "<ReleaseRef>"` in `mod.toml` (a `toml::Table`
+   edit that replaces an existing `[origin]`; W24: the direct parent).
+7. When the slug differs, replace the slug in the package line of
+   `wit/world.wit` and keep the version, so a same-slug derivative can fit
+   in place of its origin (W26). Collect `mentions` (2.4). dev changes no
+   other file: the coding agent edits the code.
+8. `fetch_providers(folder)`, then `Mod::read(folder)`: a failure here is
+   reported (`mod.invalid`) with the folder kept, because the agent fixes
+   it from `mentions`. Any failure before step 5 writes nothing; a failure
+   in steps 5 to 7 removes the folder.
+
+### 10.3 `add --release <link or release>` (step 5)
+
+1. Resolve the home and check the app status as `install` (9.6 step 1).
+2. `Client::fetch`: a text that starts with `watane:` is a link, else a
+   ReleaseRef (`usage.args` when it parses as neither). `store` it.
+3. The provider is the cached folder's `Mod`. Its slug equal to this
+   mod's: `mod.self_dependency`.
+4. `watane_pkg::add_provider(dir, &provider, Some(publisher))` (pkg 4.8):
+   its WIT and its own `wit/deps/` entries; `deps.json` gets the key.
+   Remove `local_providers.<slug>` from `.watane-dev.json`; set
+   `release_providers.<slug>`.
+5. `fetch_providers(dir)` for the providers of the provider.
+6. Report as `add` (9.5 step 4), with the fields of 2.4.
+
+No consent: the app fetches and follows, and installs nothing (app 8.3).
+Contract tests fake the provider (section 8), so `test` needs no network
+and no app. `serve` installs the cached folders in the preview (9.2, 9.3).
+`install` in a home needs the provider installed from the app (9.6).
 
 ## 11. Security properties
 
@@ -1261,11 +1379,16 @@ publisher, and the provider order already carry these cases.
 | Unit tests are sandboxed | No folder, environment or network; fixed args; time, memory and output limits (7.1). |
 | dev has no authority | No key; requests go only to `localhost`, with no proxy; each install and publish in the home waits for the participant in the app (F-AGENT-4); the home host refuses without the app. |
 | The preview has no participant data | Its own home under the cache, in preview mode (W5). |
+| A derived mod's instructions are dev's (step 5) | `new --from` writes the template's `AGENTS.md` and `CLAUDE.md`; a package cannot hold them (pkg 6.1). |
+| Released packages are checked twice | the app's dist verifies signature and hash (dist 5.7); dev checks the format and the id again, and names cache paths only by the id it computed (10.1). |
+| Source of another publisher runs only in the builder | a derived mod is built and tested like any mod (sections 5 to 8). |
 
 Not protected (as `spec/TECHNICAL.md` section 6): another program of the
 same user, which can change the cache, the vendor folder or the mod folder,
 or read the preview token in `ready.json`; the maker's own
-`~/.cargo/config.toml`.
+`~/.cargo/config.toml`. Step 5: text in a derived mod's source (comments,
+strings, `ui/`) is the publisher's and can try to steer the coding agent;
+the template's `AGENTS.md` says to treat it as data.
 
 ## 12. Public Rust API
 
@@ -1472,7 +1595,15 @@ shows whether the package holds source.
 `POST /api/search` takes `{"text":string,"publisher":string|null,"interface":string|null}`
 and returns `{"indexes":number,"results":[...]}` (app 8.2); 400 is
 `bad_request`, 503 is `unavailable`. Stage 8 uses fake-watane while S29 builds
-the real route. Step 5: `/api/fetch`.
+the real route. Step 5: `POST /api/fetch` with `{"link"}` or `{"release"}`
+answers the package bytes with `Watane-Release` and `Watane-Package`
+headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
+
+**pkg** (step 5): `Package::unpack`, `PackageId::of`, `MAX_PACKAGE_BYTES`,
+`ReleaseRef: FromStr`, `add_provider(dir, &provider, Some(key))`, and
+`Mod::origin`; `mod.toml` `[origin]` (pkg 4.2).
+
+**host** (step 5): a preview links a provider by slug (W27, host 4.2).
 
 **log**, **dist**: nothing directly; through the home host only.
 
@@ -1660,8 +1791,7 @@ page and no MCP. SIGTERM ends it (the default action).
 | 6 (step 2) | `deps`, `add`, provider traversal in `serve`; `install` checks app status first, tests providers and requests home install | pkg stage 6: `add_provider`; app running for J2 | `fake-watane` | S-25 to 29 |
 | 7 (step 3) | `publish`: local-provider refusal, app status, tests, pack, consent POST, result | pkg stage 5: `pack`; app: `/api/publish` | `fake-watane` | S-30, 31 implemented; dev's part of J3 |
 | 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` from `fake.json`, with an empty default | S-33, 34 implemented; dev stage 8 complete |
-
-Step 5 is not designed (section 10).
+| 9 (step 5) | `build_on`: 10.1 to 10.3, `release_providers`, 9.2 released providers, `publish.provider_unlisted`, the `missing_providers` fix of 9.6; template `AGENTS.md` lines for `new --from`, `add --release` and source as data | app: `/api/fetch` (app 8.3); host stage 9 (the preview rule) | `fake-watane` answers `/api/fetch` from packages named in `fake.json` | S-35 to S-40 pass; dev's part of J5 |
 
 ## 17. Questions for spec/
 

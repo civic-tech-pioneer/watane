@@ -72,10 +72,13 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-39** When a refresh reports a new version that asks for no new grant, the app shall ask the host to update with no consent view. When a version asks for a new grant, the app shall show the plan in the consent view. A declined update reads `You declined the update to <version>.`; other failures read `Update to <version> failed: <cause>`. Compromise and withdrawal notices take priority. The offer names new grants as `Install <version> — asks for: <text>, <text>` even after a restart; an offer without new grants reads `Install <version>`. Traces: F-INST-7, J4.
 - **APP-F-40** When a refresh reports a withdrawn installed version, the app shall tell the participant and offer the newest version that is not withdrawn. Own withdrawn releases read `Withdrawn: <reason>`; another publisher's release reads `Withdrawn by the publisher: <reason>`. Invalid withdrawal reasons use dist's cause: `invalid character count` reads `Give a reason of 1 to 280 characters.`; others read `This reason cannot be used: <cause>.` Traces: F-INST-8, J4.
 
-## Step 5: Build on (sketch)
+## Step 5: Build on
 
-- **APP-F-41** When the host asks the participant to pick a provider, the consent view shall list the mods whose interface fits, and answer with the one the participant picks. Traces: F-BUILD-3, J5.
-- **APP-F-42** The app shall show the release a mod derives from, and the mods that derive from a mod. Traces: F-BUILD-1, F-BUILD-4.
+- **APP-F-41** When a provider of a mod to install cannot be fetched, the app shall show the cause and the released mods of the chosen indexes and followed channels that fit in its place, verified and not compromised, and bind the one the participant picks only after the install consent shows that bind. With no fitting mod, or no pick, nothing is installed. Traces: F-BUILD-3, W26, J5.
+- **APP-F-42** The app shall show the release a mod was made from as the publisher's claim, in the details, the install consent and the release signature, and list the mods made from an installed release as far as the chosen indexes list them. Traces: F-BUILD-1, F-BUILD-4, W24.
+- **APP-F-47** When the participant publishes a release that depends on a mod of another publisher, the app shall offer to list that mod in the own index, each listing with its own signature, and report which providers are listed. Traces: F-BUILD-2, W25, J5.
+- **APP-F-48** When a local program asks for a release by its link, the app shall fetch and verify it, follow its channel, and answer with the package, and shall install, grant and sign nothing. Traces: F-BUILD-1, F-BUILD-2, F-AGENT-4.
+- **APP-F-49** After it installs a release of a publisher that it does not follow, the app shall follow that publisher's channel. Traces: F-INST-7, F-INST-8, J5.
 
 ## Acceptance scenarios
 
@@ -197,3 +200,35 @@ entry; after a later "unlist", another entry.
 
 **S22 No index at first** (APP-F-38, W23). Given a new home, the find view
 lists no index and says to add one from a link.
+
+**S23 Pick a provider** (APP-F-41, J5). Given Eve follows Dave, whose
+`stats` needs Carol's `ratings`, Carol's site is down, and Eve's index
+lists Frank's `ratings` (same WIT), when Eve installs `stats`, then a pick
+view names Carol's `ratings`, the cause, and one candidate, Frank's; after
+she picks it, the install consent shows `stats` with the line
+`Frank's ratings in place of Carol's ratings (your pick)`; after approve,
+`stats` calls Frank's mod and Frank is a followed channel. A `Deny` in the
+pick view installs nothing.
+
+**S24 No fit** (APP-F-41). Given S23 with Frank's `ratings` lacking an
+interface that `stats` calls, when Eve installs `stats`, then no pick view
+opens and the error names Carol's `ratings` and says that no mod fits.
+
+**S25 Made from** (APP-F-42). Given Carol's `ratings` names Alice's
+`reading-list@0.1.0` as its origin, when Eve installs it, then the consent
+view and the details show `made from` Alice's mod with Alice's name and
+`(the publisher says so)`; Alice's `reading-list` details list `ratings`
+under the mods made from it.
+
+**S26 Publish lists the provider** (APP-F-47). Given Dave follows Carol,
+when he publishes `stats`, then the consent view asks to sign the release,
+then to list `<Carol>/ratings` with the note `used by stats`; after both
+approves the answer has `providers: [{provider: "<Carol>/ratings", listed:
+true}]`. A `Deny` of the listing keeps the release and gives `listed:
+false`.
+
+**S27 Fetch route** (APP-F-48). Given Carol's site, when `POST /api/fetch`
+names her `ratings` link, then the answer is the package bytes with the
+headers of `Watane-Release` and `Watane-Package`, no consent view opened,
+and Carol is a followed channel. A link with no slug is 400; with an
+`Origin` header, 403.

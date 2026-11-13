@@ -29,7 +29,7 @@ cargo fmt --check                       # the toolchain needs: rustup target add
 - A test never calls the code under test to get its expectation (TECHNICAL 15).
 - Do not redefine a sibling type (`Mod`, `Grant`, `Package`, `Harness`, `Ready`): use it.
 - Keep it lean: no abstraction with one user, no seam "for later".
-- Step 5 (`new --from`, `add --release`) is not designed: do not build it.
+- Step 5 (`new --from`, `add --release`) is designed in TECHNICAL 10 (S32); build it only in its stage (16, stage 9).
 
 ## Reading the specs
 

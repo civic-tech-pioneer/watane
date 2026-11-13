@@ -70,11 +70,14 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-35** When the maker runs `publish`, dev shall test the mod, pack it with its source unless the maker gives `--no-source`, send it to the running home host, and report the release or the refusal. Traces: F-PUB-2, F-PUB-4, F-AGENT-4, J3.
 - **DEV-F-36** If the mod depends on a provider with no release, then `publish` shall fail before it sends anything, and name the provider. Traces: F-PUB-2.
 
-## 5. Find and build on (step 4; step 5 outline only)
+## 5. Find and build on (steps 4 and 5)
 
 - **DEV-F-37** (step 4) When the maker runs `search` with words, a publisher or an interface, dev shall ask the running app of the home and report its verified results, with the indexes that list each one and its freshness marks. dev shall never install a result. Traces: F-FIND-3, F-FIND-4, F-AGENT-4.
-- **DEV-F-38** (step 5) When the maker runs `new <slug> --from <link>`, dev shall make a mod folder from the source of that release and record the release as its origin. Traces: F-BUILD-1, J5.
-- **DEV-F-39** (step 5) When the maker runs `add --release <link>`, dev shall add a dependency on the interface of that published provider, as for a local provider, with its publisher and release. Traces: F-BUILD-2, J5.
+- **DEV-F-38** (step 5) When the maker runs `new [<slug>] --from <link>`, dev shall get the release through the running app, make a mod folder from its source with dev's own agent instructions, record the release as its origin, set the slug in the package line, and report each line that still names the old slug. Traces: F-BUILD-1, J5.
+- **DEV-F-39** (step 5) When the maker runs `add --release <link>`, dev shall get the release through the running app, add a dependency on its interface as for a local provider, with its publisher, and keep the packages of it and its released providers for previews. Traces: F-BUILD-2, J5.
+- **DEV-F-40** (step 5) If the release of `new --from` holds no source, then dev shall refuse it and write nothing. Traces: F-BUILD-1, F-PUB-4.
+- **DEV-F-41** (step 5) When a mod depends on a published provider, `test` shall need no network, and `serve` shall install the kept package of that provider in the preview. Traces: F-BUILD-2, F-MAKE-4, J5.
+- **DEV-F-42** (step 5) When `publish` succeeds and the app could not list a provider of another publisher in the own index, dev shall warn and say why it matters. Traces: F-BUILD-2, W25.
 
 ## 6. Acceptance scenarios
 
@@ -114,3 +117,9 @@ test; `TECHNICAL.md` section 15 names its oracle.
 | DEV-S-32 | any command | `--json` | standard output parses as one JSON object with the fields of the envelope. |
 | DEV-S-33 | a home app whose search answers one result | `search reading --json` | exit 0; `result.results` equals the app's results; the app received `{"text":"reading","publisher":null,"interface":null}`; `next` is null. |
 | DEV-S-34 | a home app with no chosen index | `search reading --json` | exit 0; `result.results` is empty; `next` says to ask the person to add an index in the app. |
+| DEV-S-35 | a home app whose `/api/fetch` answers a package of `reading-list` with source | `new ratings --from <link> --json` | exit 0; the folder holds the package files plus dev's `AGENTS.md`, `CLAUDE.md`, `.gitignore`; `mod.toml` has `[origin] release` = the release; `wit/world.wit` starts with `package mods:ratings@<the release's version>;`; `result.mentions` names the line of `logic/src/lib.rs` with `reading_list`. |
+| DEV-S-36 | the same with a package with no source | `new ratings --from <link> --json` | exit 2; error `usage.no_source`; no folder. |
+| DEV-S-37 | a folder `ratings` exists | `new ratings --from <link> --json` | exit 2; error `usage.exists`; the app received no fetch request. |
+| DEV-S-38 | a template mod `stats`, a home app whose `/api/fetch` answers Carol's `ratings` | in `stats`: `add --release <link> --json` | exit 0; `deps.json` is `{"mods:ratings": "<Carol key>"}`; `wit/deps/ratings/` equals the package's `wit/` files; `.watane-dev.json` names the package in `release_providers`; `result.imports` holds `import mods:ratings/api@0.1.0;`. |
+| DEV-S-39 | DEV-S-38 with the import line pasted and a contract test that fakes `ratings` | `test --json` with no app running | exit 0. Then `serve --json`: the preview installed `ratings` and `stats`, `ratings` first. |
+| DEV-S-40 | DEV-S-39, an app whose publish answer has `providers: [{"provider": "<Carol key>/ratings", "listed": false}]` | `publish --json` | exit 0; warning `publish.provider_unlisted` names `<Carol key>/ratings`. |

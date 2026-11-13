@@ -98,7 +98,9 @@ only inside its own channel.
 **Identity of a mod.** A mod is `<publisher key>/<slug>`, and a local mod is
 `local/<slug>`. `deps.json` pins the publisher of each provider, so a WIT
 package name alone never binds a provider. A local mod can depend on local
-mods; a publish refuses a dependency with no release.
+mods; a publish refuses a dependency with no release. The one exception to
+the pin is a provider that the participant picks in the consent view
+(F-BUILD-3, W26).
 
 **Installed mod.** One model: the verified package, unpacked into
 `<home>/mods/<local name>/`, with a record of its package id, its release,
@@ -145,7 +147,7 @@ interface caller {            // "page", "agent:<handle>" or "mod:<local name>"
 | mod | mod | WIT imports that the host links and grants; events |
 | agent | host | MCP at `/mcp/<toolset>`, with a token |
 | `watane-dev` | a preview host | it starts the program `watane` on a preview home, then uses the local API |
-| `watane-dev` | the home host | the local API of the running app: `host` answers status, list, plan and install; `app` adds publish, search (step 4) and later fetch on the same port |
+| `watane-dev` | the home host | the local API of the running app: `host` answers status, list, plan and install; `app` adds publish, search (step 4) and fetch (step 5) on the same port |
 | app | `host`, `dist` | library calls in one process |
 | `dist` | a static web host | HTTP GET to read; a folder of plain files to publish |
 
@@ -177,7 +179,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Local API | The participant from web pages and local programs | no request with an `Origin` header; no request has authority without the confirmation floor |
 | Builder | The maker's device from mod source | offline build, locked dependencies from a reviewed allowlist, no build script or procedural macro in the mod; unit tests run as Wasm with no capabilities |
 | Verification | The participant from web hosts and other people | signatures, a hash chain, package hashes; fork detection |
-| Confirmation floor | The participant from agents and tools | each install, grant and signature needs a confirmation in the app (F-AGENT-4) |
+| Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
 
 Not protected in the first version:
 - another program of the same user. It can read the files of the home, and
@@ -217,6 +219,11 @@ Each one closes a gap of the old specification. Veto any of them.
 | W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads a bounded number of channels because of listings (dist 5.9), and never a listed address on its own device or network. (step 4, S26 draft) |
 | W22 | Search is local: a filter over the channels already read and verified, by words in the text, by publisher key and by interface (offered, sent as events, or used). No network, no global ranking; the order uses only the participant's own choices. (step 4, S26 draft) |
 | W23 | watane ships with no index and no default channel. The participant adds the first index from a link that a person gave them. (step 4, S26 draft) |
+| W24 | A derived mod names the release it was made from in `mod.toml` `[origin]`; the release body carries it (pkg 7, since step 3). It is the publisher's claim: watane shows it as such and never checks it against the origin's channel. The origin is the direct parent, not the first ancestor. (step 5, S32) |
+| W25 | A provider's channel that this home has no record of is read from the bases of the live `list` and `include` statements that name its key in the channels the home already reads (dist 5.11). When a release depends on a provider of another publisher, the publish asks the participant to `list` that provider in the own channel, so the consumer's channel says where its providers live. No new format. (step 5, S32) |
+| W26 | A mod **fits** in place of a named provider when it has the same slug and satisfies every interface that the consumer calls or subscribes to from it (pkg 5.2), whatever its publisher. It binds only after the participant picks it in the consent view; the host keeps the pick as a bind of that consumer, which lapses when the picked mod is removed (host 4.5). (step 5, S32) |
+| W27 | A preview matches a provider by slug and interface, not by publisher: it holds no participant data (W5), and dev installs a published provider there from a folder. (step 5, S32) |
+| W28 | The mods that derive from a mod are a search over the channels already read, filtered by origin publisher and slug (dist 5.10); no new statement. (step 5, S32) |
 
 ## 8. Build order
 
@@ -226,11 +233,11 @@ Each one closes a gap of the old specification. Veto any of them.
 | 2 Run together | `host` (plan, install, links, grants, events, removal); `app` | J2 passes |
 | 3 Publish | `log`; `dist` (own channel, publish folder, follow); the confirmation in `app`; `watane-dev publish` | J3 passes |
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
-| 5 Build on | `dev` (derive, depend on a release); `host` (pick a provider) | J5 passes |
+| 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
-`app/tests/`, because they drive the app.
+`app/tests/`, because they drive the app. J5 lives in `app/tests/` too.
 
 ## 9. Not designed yet
 
@@ -242,10 +249,14 @@ bodies in `dist`, the backup format in `log`. These wait for their step:
 Step 4 is designed (S26 draft, W20 to W23): the statements of an index,
 the read set and the search in `dist/TECHNICAL.md` 4.1, 5.9 and 5.10; the
 find view and `/api/search` in `app/TECHNICAL.md` 7, 8.2 and 9.6;
-`watane-dev search` in `dev/TECHNICAL.md` 10. These wait for their step:
+`watane-dev search` in `dev/TECHNICAL.md` 10.
 
-- Step 5: when the interface of another provider "fits"; where to read the
-  channel of a provider that is not followed (a link in `deps.json`).
+Step 5 is designed (S32, W24 to W28): `new --from` and `add --release` in
+`dev/TECHNICAL.md` 10; binds and the preview rule in `host/TECHNICAL.md`
+4.2 and 4.5; provider bases, `Fetched.link` and the origin filter in
+`dist/TECHNICAL.md` 5.7, 5.10 and 5.11; `/api/fetch`, the pick request, the
+provider listings of a publish and the derived view in `app/TECHNICAL.md`
+6, 8.1, 8.3 and 9.7. Nothing waits now.
 
 ## 10. Reference material
 

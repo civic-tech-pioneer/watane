@@ -282,6 +282,7 @@ pub struct Query {
     pub text: String,                        // at most 256 bytes; words separated by whitespace
     pub publisher: Option<PublicKey>,
     pub interface: Option<InterfaceQuery>,
+    pub origin: Option<(PublicKey, Slug)>,   // step 5: the release names a release of this mod as its origin (5.10)
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InterfaceQuery { /* ns:pkg/iface, version: Option<Version> */ }
@@ -312,6 +313,9 @@ pub struct Fetched {
     pub info: ReleaseInfo,
     pub publisher_name: Option<String>,
     pub checked_at: Option<u64>,             // last_success of the channel; None for the own channel
+    /// Step 5: the publisher's channel, the base the release was read from, and the slug;
+    /// None for the own channel. The caller follows it after an install (5.11).
+    pub link: Option<Link>,
 }
 ```
 
@@ -717,20 +721,28 @@ small, and one derivation keeps one rule.
 
 1. `channel = PublicKey::from_bytes(reference.publisher.as_bytes())`
    (`BadKey`). `log.status(&channel)` compromised: `Compromised`.
+   Step 5: a channel that is not the own one and has no record is read
+   first from its provider bases (5.11), so that step 2 sees its entries.
 2. Derive the view. The release statement with this slug and version (rule
    4 of 4.1: at most one): none gives `UnknownRelease`; withdrawn gives
    `Withdrawn { reason }`.
 3. Cache: if `packages/<id>` exists and its `PackageId::of` equals
    `release.package`, use it (no request). If it differs, delete the file.
 4. Else the channel must have a record in `follows.json` (followed, a
-   chosen index, or listed; `NotFollowed`). GET the package with
-   its limit (`release.size`, at most `max_package`) and timeout.
+   chosen index, or listed), or a provider base (5.11; step 5); else
+   `NotFollowed`. GET the package from the record's `base`, or from the
+   provider base that served the highest head, with its limit
+   (`release.size`, at most `max_package`) and timeout.
 5. `PackageId::of(&bytes) != release.package`: `HashMismatch`.
 6. `Package::from_bytes`, then `unpacked` (`BadPackage`).
 7. `release.check(&m, &package)`: pkg confirms that the release body and
    the package agree, or names the first field that differs (PKG-F-23):
    `PackageMismatch { cause }`.
 8. Write the cache file. Return `Fetched` with the stored release entry.
+   `Fetched.link` is `Link::new(channel, base, Some(slug))` with the base
+   of step 4 (the record's `base` on a cache hit; for a cache hit of a
+   channel with no record, the first provider base, or `None` when there
+   is none); `None` for the own channel.
 
 Nothing reaches the caller before step 7. `host` checks the signature of
 the entry and the package id again (its own SPEC); that is a second check,
@@ -894,6 +906,8 @@ so it works offline (F-QUAL-1). It derives each view once.
    makes a hit).
 3. **Filters**, all that are set must hold:
    - `publisher`: the publisher key equals it.
+   - `origin` (step 5): `release.origin` is set, its publisher equals the
+     key and its slug equals the slug (any version).
    - `interface`: one of `offers`, `events`, or the interface of a call or
      subscribe grant of the release equals it; with no version in the
      query, the interface name without its `@<version>` equals it.
@@ -923,6 +937,41 @@ the publisher's channel, the front base of its record, and the mod; it is
 drops the mod) and then fetches `hit.info.reference` (5.7). A search never
 installs and never follows.
 
+### 5.11 Provider bases (step 5)
+
+A consumer pins each provider's key in `deps.json` (W14), but no file says
+where that key's channel is read. A home finds it in the statements it
+already holds (W25, DD-28):
+
+1. **Hint channels**: the own channel, then each channel with a record in
+   `follows.json` (followed, chosen, listed), in key order, skipping
+   compromised ones.
+2. **Bases**: in that order, the base of each live `list` or `include`
+   (4.1) of a hint channel whose link key is the wanted key, in seq order;
+   distinct, at most 4. A base on a local address (5.9) is skipped unless
+   `listed_local` is set, also when the own channel gives it (one rule).
+3. **Read**: `read_channel` from each base, in order, exactly as a listed
+   channel is read (5.9: every base, the best outcome, at most
+   `max_listed_entries` entry files per base, the limits of 4.5). dist
+   creates **no record**: the entries stay in `<home>/log/`, as for the
+   check before a `list` (5.9), and a search gives no hit for them. A fork
+   gives `Compromised`.
+4. No base: `NotFollowed` with the key; its message says that no followed
+   channel, chosen index or listing names a base for it. Every base
+   failed: the cause of the first base's failure (for example
+   `WrongChannel`). Either way the app then offers a pick (app 9.7).
+
+**Publish side.** So that a consumer's own channel names the base of its
+providers, the app asks the publisher to `list` each provider of another
+publisher after the release (app 8.1, W25). That is an ordinary `list`
+(5.9), with its own confirmation. A home that installs the consumer from
+its link follows the consumer's channel first (5.7 `open_link`), so its
+listings are hints for the providers.
+
+**After an install** the caller follows `Fetched.link` of each installed
+release whose channel is not followed (DD-29; app 9.4), so that updates and
+withdrawals of a provider keep coming, as for a hit (5.10).
+
 ## 6. Security properties
 
 | Property | Enforcement | Test |
@@ -947,6 +996,9 @@ installs and never follows.
 | The own channel is never read from a listing | the own key is skipped in every read set | `index_own_skipped` |
 | A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
+| A provider hint cannot swap a provider (step 5) | the key comes from the consumer's signed `deps.json` grants; every entry read from a hinted base is verified against that key; a hint only says where to read | A36 |
+| A provider hint cannot reach the local network or read without bound | the local-address rule and the limits of a listed read (5.9) hold for hint bases; at most 4 bases per fetch | A37 |
+| An origin is only a claim (W24) | `Release.origin` is shown as the publisher's claim; dist never treats it as a statement of the origin's publisher | review |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
 resolves to a local address (step 4; only IP literals and `localhost` are
@@ -1024,6 +1076,7 @@ stub in another subsystem's folder.
 | S3 | `publish`, `unpacked`, package cache, `export`, `site_dir`, `set_site_url`, `own_link` | `pkg`: section 10 (pkg stages 1, 5, 7) | none: `pkg` needs no sibling, so wait for it | `own_request_*`, `site_*` pass |
 | S4 | `http`, `read_channel`, `follow`, `unfollow`, `refresh` | `log`: `ingest`, `status` (L3) | none new | `follow_*`, `refresh_*` pass |
 | S5 | `fetch`, `open_link`, `backup`, `restore`, `confirm_own` | `log`: backup and own-head confirmation (L4) | none new | `fetch_*`, `restore_*`, `j3_dist` pass with the real `../log` and `../pkg` |
+| S7 (step 5) | 5.11 provider bases in `fetch`; `Fetched.link`; `Query.origin` | nothing new | none | A36 to A38 pass; the step 3 and 4 tests still pass unchanged |
 | S6 (step 4) | `list`, `include`, `unlist` bodies and rules 9 to 14; `Statement` and `Change` additions; `follows.json` fields; the read set, `choose_index`, `drop_index`, `indexes`, three-pass `refresh`; `search`, `Query`, `Hit` and the marks | nothing new: `log` and `pkg` as for S5 | none | `body_vectors` and `derive_rules` with the step 4 rows, `index_*`, `search_*` and `j4_dist` pass; the step 3 tests still pass unchanged |
 
 J3 itself passes only with `host`, `app` and `dev` (spec/TECHNICAL.md
@@ -1115,24 +1168,19 @@ installs again") sees the cause only for a release not fetched before.
 
 **`dev`**: nothing directly.
 
-## 11. Step 5: only what must not be blocked
+## 11. Step 5
 
-Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
-
-- **Step 5**: installing a provider of another publisher needs that
-  provider's base URL (question Q2). From step 4, a listing in a chosen
-  index is one place to find it: `fetch` works for any channel with a
-  record, listed ones too.
-- **F-BUILD-4** (the mods that derive from a mod, as far as the chosen
-  indexes list them): `search` already walks the read set; a filter on
-  `Release.origin` is the step 5 addition.
+Designed in this file (S32): provider bases in 5.7 and 5.11,
+`Fetched.link`, and the `origin` filter of 5.10 (F-BUILD-4). No format
+changes: the origin is already in the release body (pkg 7), and the hints
+are `list` and `include` statements of 4.1.
 
 ## 12. Questions for spec/
 
 | # | Where | Finding | Proposal (used here) |
 |---|---|---|---|
 | Q1 | TECHNICAL §9, step 3 | The published folder, the link and the bodies are listed as not designed. | Designed in this file (4.1–4.3). Move them out of §9 and point to `dist/TECHNICAL.md`. |
-| Q2 | TECHNICAL §3, W14; F-INST-4, J5 | Where to read the channel of a provider's publisher. A provider from a channel that is not followed cannot be fetched. | **Partly decided.** D-A1 names the release (`ReleaseRef`); D-A2 fixes `deps.json` as `mods:<slug>` to a key or null, so the earlier proposal (a link in `deps.json`) is dropped. Open for step 5: where the base URL comes from. Until then, `fetch` needs a followed channel. |
+| Q2 | TECHNICAL §3, W14; F-INST-4, J5 | Where to read the channel of a provider's publisher. A provider from a channel that is not followed cannot be fetched. | **Decided (S32, W25, DD-28).** D-A1 names the release (`ReleaseRef`); D-A2 fixes `deps.json` as `mods:<slug>` to a key or null. The base comes from live `list` and `include` statements in the channels the home already reads (5.11); a publish lists its foreign providers in the own channel. |
 | Q3 | F-APP-6, F-PUB-7, J3 | A restore of an identity with no copy of its channel starts again at seq 0, and the next publish forks the own channel. | As `log` proposes: no statement until the own head is confirmed. `confirm_own(link)` reads the own channel from its link; `confirm_own(None)` only after the participant states it never published. F-APP-6 should name this step. |
 | Q4 | F-PUB-6 | "keeps a followed channel up to date" has no trigger: static files cannot push. | `dist` has no timer. The app calls `refresh` at start, every 10 minutes, and on request (APP-F-36). |
 | Q5 | F-PUB-2, F-PUB-5 | Whether the bytes of a withdrawn version stay published. | The statement stays forever, the built-in `site/` removes withdrawn package files (DD-12), and external exports retain them for the maker to remove from the host if needed. |
@@ -1175,3 +1223,6 @@ Step 4 is designed in this file (4.1, 4.4, 5.9, 5.10; S26). Step 5 is not:
 | DD-25 | A listed channel reads every listed base in order (at most 4 per refresh), ingesting each against the head stored so far. The best outcome wins (`Current` > `Behind` > `Failed`); any `Current` sets `last_success`. The base serving the highest head moves first. Channel caps and per-base entry limits still apply. | A mirror serving exactly the stored head can hide a later withdrawal, including after an outage promoted it; stopping at `Current` is insufficient. Undo: cheap, reader-only. |
 | DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
+| DD-28 | A provider's base comes from live `list` and `include` statements in the channels already read, not from a link in `deps.json` or the release body. | No new format in published bytes; the consumer's publisher states it with a statement it can end (`unlist`) or repeat with a new base. Undo: cheap, reader-only; a field in a later body version (a new kind) can add a base hint later. |
+| DD-29 | A channel read through a provider base gets no record; the caller follows `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
+| DD-30 | The derived mods of F-BUILD-4 are a search filter on `Release.origin` (publisher and slug, any version) over the channels already read. | Offline and bounded like search (DD-23); "as far as the chosen indexes list them". Undo: cheap, reader-only. |

@@ -26,7 +26,7 @@
 6. Do not redefine a type of `log` or `pkg`. Change a format of section 4
    only by changing section 4 first.
 7. No async runtime, no thread, no timer, no listening socket. Step 5
-   is not built now; section 11 says what to keep open.
+   is designed (section 11, stage S7); build it only in that stage.
 
 ## Reading the specs
 

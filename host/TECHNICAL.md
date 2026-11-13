@@ -110,7 +110,9 @@ impl Host {
     pub fn is_preview(&self) -> bool;
 
     // catalog (section 4)
-    pub fn plan(&self, sources: Vec<Source>) -> Result<Plan, HostError>;
+    pub fn plan(&self, sources: Vec<Source>) -> Result<Plan, HostError>;      // plan_with(sources, vec![])
+    /// Step 5: a plan in which each bind replaces the pinned provider of one consumer (4.5).
+    pub fn plan_with(&self, sources: Vec<Source>, binds: Vec<Bind>) -> Result<Plan, HostError>;
     pub async fn install(&self, plan: Plan, requester: Requester) -> Result<Vec<InstalledMod>, HostError>;
     pub fn mods(&self) -> Vec<InstalledMod>;                       // sorted by local name
     pub fn get(&self, local: &LocalName) -> Option<InstalledMod>;
@@ -270,9 +272,16 @@ pub struct PlanEntry {
     pub origin: Option<ReleaseRef>,                          // mod.toml [origin] release
     pub change: Change, pub grants: Vec<Grant>, pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
+    pub binds: Vec<Bind>,                                    // step 5: the binds in force for this entry (4.5)
 }
 pub enum Change { New, Update { from_version: Version }, Unchanged }
 // JSON: {"kind":"new"} | {"kind":"update","from_version":"0.1.0"} | {"kind":"unchanged"}
+
+pub struct Bind {                 // step 5 (4.5); also Deserialize
+    pub consumer: String,         // identity of the consumer: "<key>/<slug>" or "local/<slug>"
+    pub provider: Provider,       // the provider that deps.json names (its slug is the slug of `to`)
+    pub to: String,               // identity of the picked mod, same slug
+}
 
 pub struct MissingProvider {      // also Deserialize
     pub provider: Provider, pub version: Version,   // what a Call or Subscribe grant needs
@@ -286,6 +295,7 @@ pub struct InstalledMod {         // also Deserialize; fields as in PlanEntry
     pub package: PackageId, pub release: Option<ReleaseRef>, pub origin: Option<ReleaseRef>,
     pub enabled: bool, pub has_logic: bool, pub page: Option<String>, // URL once served and has ui/
     pub grants: Vec<GrantState>, pub links: Vec<LinkView>, pub error: Option<String>,
+    pub binds: Vec<Bind>,         // step 5 (4.5); [] when none
 }
 pub struct GrantState { pub grant: Grant, pub granted: bool }
 pub struct LinkView {
@@ -427,14 +437,17 @@ An update keeps the local name of the installed mod.
       "enabled": true,
       "grants": [{"grant": <Grant>, "granted": true}],
       "links": [{"kind": "call", "interface": "mods:shelf/items@0.1.0",
-                 "provider": "shelf", "provider_interface": "mods:shelf/items@0.1.0"}]
+                 "provider": "shelf", "provider_interface": "mods:shelf/items@0.1.0"}],
+      "binds": {}
     }
   ]
 }
 ```
 
 `release` is the `ReleaseRef` text, or `null` for a local mod; the
-publisher is the release's. Recovery checks that its publisher and slug
+publisher is the release's. `binds` (step 5, serde default `{}`, so a step 4
+file reads unchanged and `watane_installed` stays 1) maps the text of each
+bound `Provider` to the identity it is bound to (4.5). Recovery checks that its publisher and slug
 form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. Slug, version, name, summary and origin are
@@ -476,7 +489,11 @@ identity: the second is an update of the first.
    candidates are the mods with slug `provider.slug` and publisher
    `provider.publisher` that have an interface `I` with
    `interface.satisfied_by(I)`: `I` in `world().exports` for `Call`, in
-   `world().events` (an outlet) for `Subscribe`.
+   `world().events` (an outlet) for `Subscribe`. Step 5: when a bind of
+   this consumer names `provider` and its `to` is installed or in the plan,
+   the candidates are only the mod with identity `to` (4.5). In a preview
+   the publisher is not compared: every mod with that slug and interface
+   is a candidate (W27).
    - No candidate: add a `MissingProvider` (one per provider and version;
      `release` = `<publisher>/<slug>@<version of interface>` when the
      publisher is set). Two or more: `ambiguous_provider`. One: a link.
@@ -531,6 +548,38 @@ Install checks the generation again before committing (Q24).
 - `grant` and `revoke`: only for a grant in `mod.grants()`, else
   `not_declared`; they set `granted`. The app calls them in process after
   the participant acted, so the host asks nothing.
+
+### 4.5 Binds (step 5)
+
+A bind is the participant's pick of a provider (F-BUILD-3, W26). Only the
+app makes one: it calls `plan_with` in process after the participant
+answered a pick request in the consent view (app 9.7). The local API has no
+bind field (section 11), so `/api/install` can never pass one.
+
+`plan_with(sources, binds)` runs 4.2 with these rules:
+
+1. Each bind must name a consumer that is a source of the plan or an
+   installed mod, a `provider` that is in that consumer's `deps.json`, and a
+   `to` whose slug is `provider.slug` and whose identity differs from the
+   pinned identity of `provider`; else `bad_request` naming the bind.
+2. The binds of an entry are the given binds for its identity, then the
+   binds of the installed mod with that identity (an update keeps its
+   picks), one per `provider`, given ones first. A bind whose `provider` is
+   no longer in `deps.json` is dropped.
+3. Step 7 of 4.2 uses the bind while `to` is installed or in the plan.
+   The usual check holds: `to` must offer each interface that the consumer
+   needs (`satisfied_by`), or the provider stays missing. A bind never
+   widens a grant: the consumer's grant keeps the pinned `Provider` as its
+   key, and `revoke` and `grant` act on it as before.
+4. When `to` is removed, the bind lapses: the links recompute (4.3 step 5)
+   with the pinned rule, so the named provider binds again if it is
+   installed. The record keeps the bind; it is in force again if `to` is
+   installed again, until the consumer's next update drops it by rule 2.
+
+`PlanEntry.binds` and `InstalledMod.binds` list the binds in force, so the
+consent view shows each one (app 6.2). An entry whose binds differ from the
+installed ones is `Update` or `New`, never `Unchanged`, and so asks the
+participant (12.1): a plan with a new bind and no other change asks too.
 
 ## 5. Verification
 
@@ -1238,7 +1287,7 @@ run on the preview install path.
 | An agent reaches only its toolset | 256-bit tokens, stored as hashes, bound to toolset and handle; `Origin` refused (10.2, 10.3) | S15 |
 | A tool name names its mod | local-name prefix; `_` in no local name and no WIT id (3.2) | S14 |
 | A release is what its publisher signed | `Entry` and `Package` exist only after their checked decoders; the checks of 5.2 | S31, S32 |
-| A provider is the pinned one | publisher equality in linking (4.2 step 7) | catalog |
+| A provider is the pinned one | publisher equality in linking (4.2 step 7); the one exception is a bind, which only the app passes after the participant picked it, and which the consent view shows (4.5); a preview compares no publisher (W27) | catalog, `tests/binds.rs` |
 | State is private | one table per identity; host functions touch only the calling mod's table (7) | runtime |
 | A network grant is narrow | HTTPS only, exact host list (6.8) | S27 |
 | A preview never holds participant data | mode fixed in `home.json`; one host per home (3.1) | S2, S3 |
@@ -1392,6 +1441,7 @@ is added.
 | 6 Program | `watane` binary, ready line, `run.json`, signals | stage 5 | none | S1 to S3 pass; `dev`'s `serve` drives a preview (J1 with `dev`) |
 | 7 Network grant | wasi:http hooks; fixture `net` | stage 5 | none | `tests/net.rs` passes |
 | 8 Releases | `Source::Release`, section 5.2 | `log`: `Entry`, `Log` (tests); `pkg`: `Release` | none; the stage waits | S31, S32 pass; J3 with `dist` and `app` |
+| 9 Binds (step 5) | `Bind`, `plan_with`, 4.5, `binds` in `installed.json`; the preview rule of 4.2 step 7 | stage 8 | none | S33 to S35 pass (`tests/binds.rs`); J5 with `dev`, `dist` and `app` |
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.

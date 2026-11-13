@@ -73,7 +73,12 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 ### 2.4 Steps 4 and 5 (only what must not be blocked)
 
 - **HOST-F-42** (step 4) The host shall keep the release of each installed mod, so that `dist` and the app can compare it with updates and withdrawals. Traces: F-INST-7, F-INST-8.
-- **HOST-F-43** (step 5) A link shall name its provider by local name, so that a later step can bind a provider that the participant picks. Traces: F-BUILD-3.
+- **HOST-F-43** (step 5) A link shall name its provider by local name, so that a provider that the participant picks can be bound. Traces: F-BUILD-3.
+
+### 2.5 Step 5: Build on
+
+- **HOST-F-44** When the app plans with a bind, the host shall link that consumer to the picked mod in place of the provider that `deps.json` names, only if the picked mod has the same slug and offers every interface that the consumer needs, and shall keep the bind across updates of the consumer until the picked mod is removed. Traces: F-BUILD-3, J5.
+- **HOST-F-45** In a preview, the host shall link a provider by slug and interface, whatever its publisher. Traces: F-BUILD-2, W27.
 
 ## 3. Acceptance scenarios
 
@@ -197,3 +202,22 @@ API, the HTTP server or the program `watane`.
   `Entry::decode` refuses it, so it cannot reach the host. When a release
   signed by K names the hash of this package but another summary, then the
   check is `mismatch` and the message names `summary`.
+
+### 3.4 Step 5
+
+- **S33 Bind a picked provider** (HOST-F-44). Given `recs` released by K2,
+  whose `deps.json` pins `shelf` to K1, and `shelf` released by K3 (same
+  WIT). When `plan` gets both, then `missing` names `K1/shelf`. When
+  `plan_with` gets them with the bind `{consumer: "K2/recs", provider:
+  "K1/shelf", to: "K3/shelf"}`, then nothing is missing, the `recs` entry
+  lists that bind, and after install `recs`'s `api.who-of-shelf` returns
+  `mod:recs` through K3's `shelf`. After a restart the bind and the link are
+  still there.
+- **S34 A bind that does not fit** (HOST-F-44). Given the same, with K3's
+  `shelf` lacking the interface that `recs` calls. When `plan_with` gets the
+  bind, then `missing` still names `K1/shelf`. A bind with `to` of another
+  slug is `bad_request`.
+- **S35 Preview by slug** (HOST-F-45). Given a preview and the folders of
+  `shelf` (local) and `recs` whose `deps.json` pins `shelf` to K1. When
+  both are installed, then `recs` links to `shelf`. In a participant home
+  the same plan names `K1/shelf` as missing.
