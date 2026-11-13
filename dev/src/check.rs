@@ -134,6 +134,10 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                         .and_then(|s| s.strip_suffix(" but wit/world.wit imports none of its interfaces"))
                 {
                     format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
+                } else if let Some(slug) = file.strip_prefix("wit/deps/")
+                    && v.message == format!("{file} holds this mod's own package mods:{slug}")
+                {
+                    format!("Ask before deleting wit/deps/{slug}/: a mod cannot depend on itself")
                 } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
                     || Path::new(&file).starts_with("wit/deps")
                 {

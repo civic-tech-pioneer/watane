@@ -131,3 +131,32 @@ fn ac4_own_provider_message_does_not_claim_own_events_are_unused() {
         "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself"
     );
 }
+
+#[test]
+fn ac6_own_package_copy_in_wit_deps_gets_its_own_fix() {
+    let t = tempfile::tempdir().unwrap();
+    assert_eq!(run(t.path(), &["new", "consumer", "--json"]).0, 0);
+    let dir = t.path().join("consumer");
+    fs::create_dir(dir.join("wit/deps/consumer")).unwrap();
+    fs::copy(
+        dir.join("wit/world.wit"),
+        dir.join("wit/deps/consumer/world.wit"),
+    )
+    .unwrap();
+    let (code, value) = run(&dir, &["check", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    let error = value["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|error| error["file"] == "wit/deps/consumer")
+        .unwrap_or_else(|| panic!("{value}"));
+    assert_eq!(
+        error["message"],
+        "[provider] wit/deps/consumer holds this mod's own package mods:consumer"
+    );
+    assert_eq!(
+        error["fix"],
+        "Ask before deleting wit/deps/consumer/: a mod cannot depend on itself"
+    );
+}
