@@ -493,10 +493,14 @@ impl Catalog {
             next.retain(|m| m.identity != installed.identity);
             next.push(installed.clone());
         }
-        for pick in binds {
+        for (index, pick) in binds.iter().enumerate() {
             let consumer = next.iter().find(|m| m.identity == pick.consumer);
             let valid = consumer.is_some_and(|m| declares(m, &pick.provider))
                 && parse_identity(&pick.to).is_some_and(|p| p.slug == pick.provider.slug)
+                && next.iter().any(|m| m.identity == pick.to)
+                && !binds[..index]
+                    .iter()
+                    .any(|b| b.consumer == pick.consumer && b.provider == pick.provider)
                 && pick.to != pick.provider.to_string();
             if !valid {
                 return Err(HostError::BadRequest(format!(
@@ -838,7 +842,10 @@ fn bind(
                 }
             }
             if candidates.len() > 1 {
-                return Err(HostError::AmbiguousProvider(interface.to_string()));
+                if supplied.contains(&m.identity) {
+                    return Err(HostError::AmbiguousProvider(interface.to_string()));
+                }
+                candidates.clear();
             }
             let candidate = candidates.pop();
             if candidate.is_none()

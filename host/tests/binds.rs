@@ -428,3 +428,80 @@ async fn regress_s34_preview_remove_of_bound_shelf_with_two_shelves_left() {
     assert!(host.get(&bound).is_none());
     assert!(host.get(&local("recs")).unwrap().binds.is_empty());
 }
+
+#[test]
+fn ac2_pending_bind_target_is_bad_request_naming_bind() {
+    let r = Releases::new();
+    let dir = tempfile::tempdir().unwrap();
+    let host = home(dir.path(), Arc::default());
+    let pick = r.bind();
+    let error = host
+        .plan_with(vec![r.recs()], vec![pick.clone()])
+        .unwrap_err();
+    assert_eq!(error.code(), "bad_request");
+    let message = error.to_string();
+    assert!(message.contains(&pick.consumer), "{message}");
+    assert!(message.contains(&pick.provider.to_string()), "{message}");
+    assert!(message.contains(&pick.to), "{message}");
+}
+
+#[tokio::test]
+async fn ac1_removed_bound_shelf_leaves_links_unbound() {
+    let r = Releases::new();
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+    let k4 = Log::open(&dir.path().join("k4")).unwrap();
+    let plan = host
+        .plan_with(
+            vec![
+                Source::Folder(r.recs.clone()),
+                Source::Folder(fixture("shelf")),
+                r.shelf(),
+                r.source(&k4, &fixture("shelf")),
+            ],
+            vec![Bind {
+                consumer: "local/recs".into(),
+                ..r.bind()
+            }],
+        )
+        .unwrap();
+    host.install(plan, Requester::App).await.unwrap();
+    let bound = host
+        .mods()
+        .into_iter()
+        .find(|m| m.identity == r.bind().to)
+        .unwrap()
+        .local;
+    // Eve removes the picked shelf; local/shelf and K4's shelf remain.
+    host.remove(&bound, false).unwrap();
+    assert!(host.get(&bound).is_none());
+    let recs = host.get(&local("recs")).unwrap();
+    assert!(recs.binds.is_empty());
+    assert_eq!(recs.links.len(), 2);
+    for link in recs.links {
+        assert_eq!(link.provider, None);
+        assert_eq!(link.provider_interface, None);
+    }
+}
+
+#[test]
+fn ac3_duplicate_given_binds_are_bad_request() {
+    let r = Releases::new();
+    let dir = tempfile::tempdir().unwrap();
+    let host = home(dir.path(), Arc::default());
+    for second in [
+        r.bind(),
+        Bind {
+            to: "local/shelf".into(),
+            ..r.bind()
+        },
+    ] {
+        let error = host
+            .plan_with(
+                vec![r.recs(), r.shelf(), Source::Folder(fixture("shelf"))],
+                vec![r.bind(), second],
+            )
+            .unwrap_err();
+        assert_eq!(error.code(), "bad_request");
+    }
+}
