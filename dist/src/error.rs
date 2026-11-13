@@ -66,6 +66,8 @@ pub enum DistError {
         channel: PublicKey,
         local_only: bool,
     },
+    #[error("channel {} is not followed, so there is nothing to unfollow", channel.fingerprint())]
+    NothingToUnfollow { channel: PublicKey },
     #[error("channel {} compromised at seq {seq}", channel.fingerprint())]
     Compromised { channel: PublicKey, seq: u64 },
     #[error("invalid publisher key {key}: {cause}")]
@@ -164,6 +166,7 @@ mod tests {
                 channel: key,
                 local_only: true,
             },
+            DistError::NothingToUnfollow { channel: key },
             DistError::Compromised {
                 channel: key,
                 seq: 1,
@@ -187,6 +190,18 @@ mod tests {
                 assert!(!text.contains(&found.to_string()), "{text}");
             }
         }
+    }
+
+    #[test]
+    fn ac1_nothing_to_unfollow_text() {
+        let key = PublicKey::from_bytes(&[1; 32]).unwrap();
+        assert_eq!(
+            DistError::NothingToUnfollow { channel: key }.to_string(),
+            format!(
+                "channel {} is not followed, so there is nothing to unfollow",
+                key.fingerprint()
+            )
+        );
     }
 
     fn chain(error: &dyn std::error::Error) -> String {

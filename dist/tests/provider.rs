@@ -465,3 +465,81 @@ fn ac4_cache_hit_no_record_links_first_base() {
     assert_eq!(carol.host.as_ref().unwrap().count(), count);
     assert_eq!(dead.count(), 0);
 }
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+fn stale_setup() -> (
+    SearchHome,
+    SearchHome,
+    SearchHome,
+    TestHost,
+    tempfile::TempDir,
+) {
+    let carol = SearchHome::new("Carol");
+    let dave = SearchHome::new("Dave");
+    let eve = SearchHome::new("Eve");
+    carol.dist.publish(named_fixture("one", "One")).unwrap();
+    let old = tempfile::tempdir().unwrap();
+    copy_dir(&carol.dist.site_dir(), old.path());
+    let mirror = TestHost::serve(old.path());
+    carol
+        .dist
+        .publish(named_fixture("ratings", "Ratings"))
+        .unwrap();
+    let stale = Link::new(
+        carol.dist.identity(),
+        &mirror.url,
+        Some(&"one".parse().unwrap()),
+    )
+    .unwrap();
+    eve.dist.list(&stale, "stale mirror").unwrap();
+    (carol, dave, eve, mirror, old)
+}
+#[test]
+fn ac3_stale_first_base_falls_through() {
+    let (carol, dave, eve, mirror, _old) = stale_setup();
+    dave.dist
+        .list(&carol.link(Some("ratings")), "provider")
+        .unwrap();
+    eve.dist.follow(&dave.link(None)).unwrap();
+    let reference = reference(&carol, "ratings");
+    let got = eve
+        .dist
+        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .unwrap();
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    let id = got.package.id();
+    assert!(
+        carol
+            .host
+            .as_ref()
+            .unwrap()
+            .requests
+            .lock()
+            .unwrap()
+            .contains(&format!("/packages/{id}"))
+    );
+    assert!(
+        !mirror
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p.starts_with("/packages/"))
+    );
+}
+#[test]
+fn ac3_all_bases_stale_is_unknown_release() {
+    let (carol, _dave, eve, _mirror, _old) = stale_setup();
+    let error = eve.dist.fetch(&reference(&carol, "ratings")).unwrap_err();
+    assert!(matches!(error, DistError::UnknownRelease { .. }), "{error}");
+}

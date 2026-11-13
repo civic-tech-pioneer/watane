@@ -105,6 +105,7 @@ impl Dist {
             }
             let mut served = None;
             let mut failure = None;
+            let mut stale = None;
             for base in &bases {
                 match self.read_channel_entries(key, base, true) {
                     Ok(RefreshReport {
@@ -123,12 +124,25 @@ impl Dist {
                         }
                     }
                     Ok(_) => {
-                        // 5.11 step 3 (DD-32): the first base that serves ends the reads.
-                        served = Some(base.clone());
-                        break;
+                        // 5.11 step 3 (DD-32, DD-34): a base ends the reads only when the
+                        // stored view then holds the release; a stale mirror does not.
+                        if stale.is_none() {
+                            stale = Some(base.clone());
+                        }
+                        if self
+                            .channel(&key)?
+                            .releases
+                            .iter()
+                            .any(|r| r.reference == *reference)
+                        {
+                            served = Some(base.clone());
+                            break;
+                        }
                     }
                 }
             }
+            // Every base that served was stale: the first one answers `UnknownRelease`.
+            let served = served.or(stale);
             if served.is_none() && !stored {
                 return Err(failure.expect("every provider base failed"));
             }

@@ -780,8 +780,19 @@ fn ac13_step3_records_and_unfollow() {
     assert_eq!(records["channels"][&key]["followed"], false);
     assert!(matches!(
         dist.unfollow(&alice.dist.identity()),
-        Err(DistError::NotFollowed { .. })
+        Err(DistError::NothingToUnfollow { channel }) if channel == alice.dist.identity()
     ));
+    let stranger = PublicKey::from_bytes(&[9; 32]).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        dist.unfollow(&stranger),
+        Err(DistError::NothingToUnfollow { channel }) if channel == stranger
+    ));
+    assert!(matches!(
+        dist.unfollow(&alice.dist.identity()),
+        Err(DistError::NothingToUnfollow { .. })
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
     assert_eq!(dist.refresh().len(), 2);
 }
 

@@ -364,7 +364,8 @@ pub enum DistError {
     BadUrl { url: String, cause: &'static str },
     OwnChannel,
     NotOwnLink { found: PublicKey },   // confirm_own: "this link is not your channel" (DD-16)
-    NotFollowed { channel: PublicKey },
+    NotFollowed { channel: PublicKey, local_only: bool },  // DD-31
+    NothingToUnfollow { channel: PublicKey },  // unfollow of a channel with no followed record (DD-34)
     Compromised { channel: PublicKey, seq: u64 },
     BadKey { key: PublisherKey, cause: KeyTextError },  // the bytes are no valid log key
     NoRelease { channel: PublicKey, slug: Slug },
@@ -870,7 +871,8 @@ the link's base (as `follow` does: the base of the newest link wins), keep
 of a chosen index reads it again.
 
 **`unfollow(channel)`** from step 4: no record with `followed: true` is
-`NotFollowed`. Set `followed: false`; remove the record when it is no
+`NothingToUnfollow { channel }` ("channel K is not followed, so there is
+nothing to unfollow"; nothing changes on disk). Set `followed: false`; remove the record when it is no
 chosen index and no read set holds it.
 
 **`drop_index(channel)`**: not a chosen index: `NotIndex`. Set `index:
@@ -965,19 +967,25 @@ already holds (W25, DD-28):
    `listed_local` is set, also when the own channel gives it (one rule).
 3. **Read**: `read_channel` from each base, in order, exactly as a listed
    channel is read (5.9: every base, the best outcome, at most
-   `max_listed_entries` entry files per base, the limits of 4.5). dist
+   `max_listed_entries` entry files per base, the limits of 4.5). Reads
+   stop at the first base after whose read (`Current` or `Behind`) the
+   stored view holds the wanted release; a base that serves without it
+   (a stale mirror) does not stop them (DD-32, DD-34). dist
    creates **no record**: the entries stay in `<home>/log/`, as for the
    check before a `list` (5.9), and a search gives no hit for them. A fork
    gives `Compromised`.
-4. No base: `NotFollowed` with the key; its message says that no followed
-   channel, chosen index or listing names a base for it. Every base
+4. No base: `NotFollowed { channel, local_only }` (DD-31); its message says
+   that no followed channel, chosen index or listing names a base for it,
+   or, when every named base was skipped as local, that those listings
+   point at a local address. Every base
    failed: the cause of the first base's failure (for example
    `WrongChannel`); but when the stored view already holds the release
    (an earlier read), a failed read is no error, as for `open_link`, and
    the fetch goes on (offline with a cached package). Otherwise the app
    then offers a pick (app 9.7).
 5. **The base of `Fetched.link`** is the first base, in the order of step
-   2 (trust), whose read gave `Current` or `Behind`; the package is read
+   2 (trust), whose read gave `Current` or `Behind` and after which the
+   stored view holds the wanted release (DD-34); the package is read
    from it too. So a consumer's own listing wins over a third party's.
 
 **`read_link(link)`** (for `/api/fetch`, app 8.3): a link with no slug is
@@ -1260,3 +1268,4 @@ are `list` and `include` statements of 4.1.
 | DD-31 | `NotFollowed { channel, local_only }`: `local_only` is true only in 5.11 step 4 when a live listing named a base for the channel and every such base was skipped as a local address (5.9); every other construction sets it false. The text is "channel K is not followed; no followed channel, chosen index or listing names a base for it; follow the publisher's link to settle it", or, when `local_only`, "...; the listings that name a base for it point at a local address; follow the publisher's link to settle it". | Eve must learn which mods are involved and which step settles it; "no listing" was false when listings were skipped. Undo: cheap (one field, one message). |
 | DD-32 | Provider hint bases (5.11 step 3, "from each base") are read in trust order until the first gives `Current` or `Behind`; later bases get no request. A failing base still falls through. | A fetch stops contacting further hosts once one serves. Undo: cheap. |
 | DD-33 | With no record and the package cached, `Fetched.link` is the first provider base in trust order, as on every other cache hit (5.7 step 8, S35); no base is read and no package is requested. | One rule for every cache hit. Undo: cheap. |
+| DD-34 | A provider base ends the reads (5.11 step 3, DD-32) only when, after its read (`Current` or `Behind`), the stored view holds the wanted release; a base that serves without it is a stale mirror and the next base is read. When no base has it, the answer is `UnknownRelease`. `unfollow` of a channel with no `followed: true` record is the new `NothingToUnfollow { channel }`, not `NotFollowed`. | A stale mirror ahead in trust order hid a good base behind it; "follow the publisher's link" was no help for a channel Eve never followed. Undo: cheap. |

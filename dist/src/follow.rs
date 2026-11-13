@@ -80,13 +80,10 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut next = records.clone();
-        let record =
-            next.get_mut(channel)
-                .filter(|r| r.followed)
-                .ok_or(DistError::NotFollowed {
-                    channel: *channel,
-                    local_only: false,
-                })?;
+        let record = next
+            .get_mut(channel)
+            .filter(|r| r.followed)
+            .ok_or(DistError::NothingToUnfollow { channel: *channel })?;
         record.followed = false;
         self.save_follows(&next)?;
         *records = next;
