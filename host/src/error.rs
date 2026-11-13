@@ -27,7 +27,8 @@ pub enum HostError {
     #[error("call cycle: {0}")]
     Cycle(String),
     #[error(
-        "{consumer} needs {provider} and {} installed or planned mods fit: {}; pick one to settle it",
+        "{consumer} needs {} and {} installed or planned mods fit: {}; pick one to settle it",
+        provider_name(provider),
         candidates.len(),
         join_names(candidates)
     )]
@@ -215,7 +216,14 @@ impl serde::Serialize for CallError {
 fn missing_message(missing: &[crate::MissingProvider]) -> String {
     missing
         .iter()
-        .map(|m| format!("{} at {} needed by {}", m.provider, m.version, m.needed_by))
+        .map(|m| {
+            format!(
+                "{} at {} needed by {}",
+                provider_name(&m.provider),
+                m.version,
+                m.needed_by
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -232,4 +240,108 @@ fn join_names(names: &[crate::LocalName]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn provider_name(provider: &watane_pkg::Provider) -> String {
+    match &provider.publisher {
+        Some(key) => format!("{}/{}", &key.to_string()[..10], provider.slug),
+        None => provider.to_string(),
+    }
+}
+
+/// Natural order: digit runs compare by number, other runs by bytes. Equal numbers
+/// with different leading zeros fall back to the plain byte order of the whole text.
+pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    fn runs(text: &str) -> Vec<&str> {
+        let mut out = Vec::new();
+        let mut start = 0;
+        let mut digit = None;
+        for (i, c) in text.char_indices() {
+            let now = c.is_ascii_digit();
+            if digit.is_some_and(|d| d != now) {
+                out.push(&text[start..i]);
+                start = i;
+            }
+            digit = Some(now);
+        }
+        if start < text.len() {
+            out.push(&text[start..]);
+        }
+        out
+    }
+    for (x, y) in runs(a).into_iter().zip(runs(b)) {
+        let both_digits = x.starts_with(|c: char| c.is_ascii_digit())
+            && y.starts_with(|c: char| c.is_ascii_digit());
+        let order = if both_digits {
+            let (x, y) = (x.trim_start_matches('0'), y.trim_start_matches('0'));
+            x.len().cmp(&y.len()).then_with(|| x.cmp(y))
+        } else {
+            x.cmp(y)
+        };
+        if order.is_ne() {
+            return order;
+        }
+    }
+    a.cmp(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY: &str = "yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo";
+
+    fn provider(key: Option<&str>) -> watane_pkg::Provider {
+        watane_pkg::Provider {
+            slug: "shelf".parse().unwrap(),
+            publisher: key.map(|k| k.parse().unwrap()),
+        }
+    }
+
+    fn name(s: &str) -> crate::LocalName {
+        crate::LocalName::parse(s).unwrap()
+    }
+
+    #[test]
+    fn ac1_ambiguous_provider_names_publisher_by_fingerprint() {
+        let make = |key| HostError::AmbiguousProvider {
+            consumer: name("recs"),
+            provider: provider(key),
+            candidates: vec![name("shelf"), name("shelf-2")],
+        };
+        assert_eq!(
+            make(Some(KEY)).to_string(),
+            "recs needs yryonyebyr/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it"
+        );
+        assert_eq!(
+            make(None).to_string(),
+            "recs needs local/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it"
+        );
+    }
+
+    #[test]
+    fn ac2_missing_providers_names_publisher_by_fingerprint_and_json_keeps_full_key() {
+        let error = HostError::MissingProviders(vec![crate::MissingProvider {
+            provider: provider(Some(KEY)),
+            version: "1.2.0".parse().unwrap(),
+            release: None,
+            needed_by: "recs".into(),
+        }]);
+        assert_eq!(
+            error.to_string(),
+            "missing providers: yryonyebyr/shelf at 1.2.0 needed by recs"
+        );
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["missing"][0]["provider"]["publisher"],
+            KEY
+        );
+    }
+
+    #[test]
+    fn ac3_natural_order_of_candidates() {
+        let names = ["shelf-10", "shelf-2", "shelf", "shelf-02"];
+        let mut sorted: Vec<&str> = names.to_vec();
+        sorted.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(sorted, ["shelf", "shelf-02", "shelf-2", "shelf-10"]);
+    }
 }
