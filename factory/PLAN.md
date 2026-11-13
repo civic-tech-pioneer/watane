@@ -148,11 +148,25 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   `wit/deps/<own slug>/` gives the own-provider message, not a WIT duplicate-package error; find
   why a fake-app publish takes about 30 s (close to `--wait 30`) and fix it if it is dev's.
   Touches: dev code and tests; pkg only for the own-slug case. Not app, not the spec documents.
-- [~] **S32 Design: build on (step 5).** (branch `slice/s32`; foreman: see `Foremen`) like S26, spec documents only, then one independent
-  review. Turns the step-5 outlines into designs: F-BUILD-1 to 4 and J5 across dev (`new --from`,
-  `add --release`, DEV-F-39), pkg (origin in `mod.toml`), host, dist (derivatives), app (stage E,
-  8.3, APP-F-41, 42, the `pick` request). Hand out after S29: it shares app and dist TECHNICAL.
-  Escalate only formats that are hard to revert once published (change, alternatives, consequences).
+- [x] **S32 Design: build on (step 5).** Merged 2026-11-13 (main `bf5649f`), spec documents only,
+  after one independent review (18 findings: 6 security, 10 gaps, 2 simplifications; all fixed). No
+  published format changes: `[origin]` and `Release.origin` exist since step 3, provider hints reuse
+  `list` and `include`, binds live in `installed.json` with a serde default. Origin is the direct
+  parent, the publisher's claim (W24); provider bases come from live list/include statements the home
+  already reads (W25, closes dist Q2); a fit is the same slug with every used interface satisfied,
+  any publisher, bound only after the person picks (W26); derived mods are a search filter (W28).
+- [~] ** (branch `slice/s34`; foreman: see `Foremen`)S34 Eve's host binds a mod that fits (host stage 9).** `Bind`, `plan_with`, host TECHNICAL
+  4.5, `binds` in `installed.json`, the preview rule of 4.2 step 7. Done when host S33 to S35 pass
+  (`tests/binds.rs`) on the real host. Touches: host only.
+- [~] ** (branch `slice/s35`; foreman: see `Foremen`)S35 Eve's dist finds Carol's release through Dave's listing (dist S7).** dist TECHNICAL 5.11:
+  provider bases, `fetch_for`, `read_link`, `Fetched.link`, `Query.origin`. Done when dist A36 to
+  A41 pass and the step 3 and 4 tests pass unchanged. Touches: dist only.
+- [ ] **S36 The agent builds on a release (dev stage 9).** `new --from`, `add --release`,
+  `release_providers`, `publish.provider_unlisted`, `fake-watane` answers `/api/fetch`; DEV-S-35 to
+  40. Touches: dev, template. After S33 (dev).
+- [ ] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** app 8.1, 8.3 (`/api/fetch`),
+  9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. After S34 and S35; J5 also needs
+  S36.
 - [x] **S27 The app says what happened.** Delivered 2026-11-12 (main `292cd7f`). Sol runs: S27-1 2 (new,
   resume). Left for later (user-sim): a fast retry can leave a stale error (`action()` and
   `button()` both call showError); the busy-port window still shows "Install folders" with no
@@ -195,6 +209,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | C dist | 3 | done (S21b: publish, follow, `DistConfirm`) |
 | app | D find | 4 | done (S25: APP-F-37, 39, 40; S29: APP-F-38, 43 to 46) |
 | app | E build on | 5 | open |
+| host | 9 binds | 5 | open (S34) |
+| dist | S7 provider bases | 5 | open (S35) |
+| dev | 9 build on | 5 | open (S36) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
@@ -236,7 +253,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S29: `4825c26d` (sessionId `4825c26d-3ec3-4617-8564-af8f2286a844`), worktree `.claude/worktrees/s29` (stopped, removed).
 - S31: `a3423763` (sessionId `a3423763-65b9-4e29-b8f9-9662be460fb7`), worktree `.claude/worktrees/s31` (stopped, removed).
 - S33: `b1cca282` (sessionId `b1cca282-654f-4013-b04d-90c75b3c4635`), worktree `.claude/worktrees/s33`.
-- S32: `56f5b095` (sessionId `56f5b095-5ed1-4f70-a1a6-fa2c02aa85ab`), worktree `.claude/worktrees/s32`.
+- S32: `56f5b095` (sessionId `56f5b095-5ed1-4f70-a1a6-fa2c02aa85ab`), worktree `.claude/worktrees/s32` (stopped, removed).
+- S34: `cbe37314` (sessionId `cbe37314-fe72-4ca3-a22e-73a0a05538ac`), worktree `.claude/worktrees/s34`.
+- S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35`.
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
@@ -651,3 +670,4 @@ The human may veto each one.
   provider.
 - S29: Carol adds Ivy's index in her app, searches "reading", sees Alice's mod verified and listed by
   Ivy, and installs it; Ivy lists, includes and unlists through consent (step 4 done).
+- S32: step 5 is designed: origin, provider bases from listings, fit and pick, derived-mod search.
