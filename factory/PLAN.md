@@ -165,10 +165,15 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   local address says "no listing names a base"; the no-hint error gives no fix; every hint base is
   read even after a trusted one served; on a no-record cache path the link is the first base that
   served, not the first in trust order.
-- [~] **S36 The agent builds on a release (dev stage 9).** (branch `slice/s36`; foreman: see `Foremen`) `new --from`, `add --release`,
-  `release_providers`, `publish.provider_unlisted`, `fake-watane` answers `/api/fetch`; DEV-S-35 to
-  40. Touches: dev, template, pkg (its third message in pkg TECHNICAL 4.7). Also: S33's spec debt, and
-  widen or split dev's `ac10_endless_test` 7 s bound (failed under load in S5, S8, S30, S33).
+- [x] **S36 The agent builds on a release (dev stage 9).** Delivered 2026-11-13 (main `aec72d4`). Sol runs:
+  S36-1 1 (about 67 min). User-sim accepted on the first run. A maker's agent runs `watane-dev new
+  [<slug>] --from <link>` and `add --release <link|ReleaseRef>` through the app's `/api/fetch`; it
+  tests offline, serves with the released provider installed first, and publish warns
+  `publish.provider_unlisted`. Left for later (user-sim, validator): `new --from` keeps the origin's
+  `name` in mod.toml; it copies the publisher's built logic.wasm; an unknown link's fix says "check
+  the app"; a Watane-Release mismatch is `internal`; install's missing_providers fix omits the stored
+  link; fake-watane exits when a fetch package file is missing; `store` unpacks straight into
+  providers/<id>/, so a crash leaves a partial folder that is later reused.
 - [~] **S37 Eve installs Dave's mod; Carol's comes first (app E, J5).** (branch `slice/s37`; foreman: see `Foremen`) app 8.1, 8.3 (`/api/fetch`),
   9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
   build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
@@ -221,7 +226,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | E build on | 5 | open (S37 in flight) |
 | host | 9 binds | 5 | done (S34) |
 | dist | S7 provider bases | 5 | done (S35) |
-| dev | 9 build on | 5 | open (S36 in flight) |
+| dev | 9 build on | 5 | done (S36) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
@@ -266,7 +271,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S32: `56f5b095` (sessionId `56f5b095-5ed1-4f70-a1a6-fa2c02aa85ab`), worktree `.claude/worktrees/s32` (stopped, removed).
 - S34: `cbe37314` (sessionId `cbe37314-fe72-4ca3-a22e-73a0a05538ac`), worktree `.claude/worktrees/s34` (stopped, removed).
 - S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
-- S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36`.
+- S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36` (stopped, removed).
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -281,6 +286,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S36: dev reads only the key and slug of a link text (dev cannot depend on dist's Link); the app
+  validates the link (dev 10.1). fake.json `fetch` is keyed by link text or ReleaseRef, values
+  {release, package path}; an unknown key gets 409 `fetch_refused`; fake.json `providers` goes into
+  the publish answer (dev 15.3). `ac10_endless_test` split: the default suite asserts code and
+  message with a 60 s guard, the timing test keeps 7 s. S33's spec debt fixed (pkg 4.7, dev 2.4).
 - S35: dist 5.7: a listed record whose stored view lacks the release is also read from provider
   bases; the package comes from the first base in trust order (5.11 step 5); on a cache hit a listed
   record's link is the first provider base in trust order. `read_link` of a recorded channel reads
@@ -625,6 +635,8 @@ The human may veto each one.
   on the dead GUI session, so the foremen's window tests could not launch the app; S37 blamed the
   sandbox. Fix: restart the daemon after a GUI re-login. The human approved a rule: a user-sim stops
   every process it started before it reports (`.claude/agents/user-sim.md` step 5).
+- S36: the validator's guide fix broke a second limit that only the full lib run catches (two
+  limits for one fact; now one: TECHNICAL 4.1's 150 lines). The foreman's push failed on DNS.
 
 ## Digest
 
