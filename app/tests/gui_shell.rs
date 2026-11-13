@@ -756,6 +756,14 @@ fn ac5_s37_pick_shows_candidates_requires_selection_and_answers_pick_or_deny() {
         ask.wait(TIMEOUT),
         Some(json!({"answer":"pick","choice":"grace/ratings@2.0.0"}))
     );
+    // The answered window closes asynchronously; wait so the next eval reaches the new one.
+    let deadline = Instant::now() + TIMEOUT;
+    while app.windows().iter().any(|w| w["label"] == "consent") {
+        assert!(
+            Instant::now() < deadline,
+            "answered consent window stayed open"
+        );
+    }
     let ask = app.ask(request);
     consent(&app);
     app.eval("consent", "document.querySelector('#deny').click(); null");
