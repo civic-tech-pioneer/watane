@@ -205,7 +205,8 @@ pub(crate) fn read(
             // with a duplicate-package error. Its checked bytes were parsed above.
             if own_name.namespace == "mods"
                 && parent == dir.join("wit/deps").join(&own_name.name)
-                && group.main.name == own_name
+                && group.main.name.namespace == own_name.namespace
+                && group.main.name.name == own_name.name
             {
                 own_package_copy = true;
                 continue;
