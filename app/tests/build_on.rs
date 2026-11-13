@@ -150,7 +150,7 @@ mod windows {
             }
         }
         fn eve(&self) -> tempfile::TempDir {
-            let home = tempfile::tempdir().unwrap();
+            let home = app_home();
             let eve = dist(home.path());
             // Explicit choices permit loopback sites without a driver exception.
             eve.choose_index(&self.carol.link()).unwrap();
@@ -158,6 +158,19 @@ mod windows {
             eve.follow(&self.dave.link()).unwrap();
             home
         }
+    }
+    /// An empty app home with its marker, so the test can seed Eve's dist before the app starts.
+    fn app_home() -> tempfile::TempDir {
+        let home = tempfile::tempdir().unwrap();
+        drop(
+            watane_host::Host::open(
+                home.path(),
+                watane_host::Mode::Home { app: None },
+                Default::default(),
+            )
+            .unwrap(),
+        );
+        home
     }
     fn start(home: &std::path::Path) -> App {
         let app = App::start(home, &[]);
@@ -188,9 +201,14 @@ mod windows {
             &format!("document.querySelector('[data-local={local}] details').open = true; null"),
         );
     }
+    /// The hidden window does not poll, and `begin` bypasses the page's refresh.
+    fn shown(app: &App, local: &str) {
+        app.eval("main", "window.dispatchEvent(new Event('focus')); null");
+        installed(app, local);
+    }
     fn runs(app: &App) {
-        installed(app, "ratings");
-        installed(app, "stats");
+        shown(app, "ratings");
+        shown(app, "stats");
         open(app, "stats");
         until(
             app,
@@ -303,7 +321,7 @@ mod windows {
             None,
             Some(&reading.info.reference.to_string()),
         );
-        let home = tempfile::tempdir().unwrap();
+        let home = app_home();
         {
             let eve = dist(home.path());
             eve.follow(&alice.link()).unwrap();
@@ -314,7 +332,7 @@ mod windows {
         consent(&app);
         approve(&app);
         finish(&app);
-        installed(&app, "reading-list");
+        shown(&app, "reading-list");
         begin_link(&app, ratings.link.as_ref().unwrap());
         consent(&app);
         let text = body(&app, "consent");
@@ -327,7 +345,7 @@ mod windows {
         );
         approve(&app);
         finish(&app);
-        installed(&app, "ratings");
+        shown(&app, "ratings");
         details(&app, "ratings");
         details(&app, "reading-list");
         until(
