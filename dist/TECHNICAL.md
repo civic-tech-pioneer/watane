@@ -746,9 +746,12 @@ small, and one derivation keeps one rule.
    `PackageMismatch { cause }`.
 8. Write the cache file. Return `Fetched` with the stored release entry.
    `Fetched.link` is `Link::new(channel, base, Some(slug))` with the base
-   of step 4 (the record's `base` on a cache hit; for a cache hit of a
-   channel with no record, the first provider base, or `None` when there
-   is none); `None` for the own channel.
+   of step 4. On a cache hit: a followed or chosen channel gives its
+   record's `base`; any other channel (a listed record or none) gives the
+   first provider base in the trust order of 5.11 step 2, else its listed
+   record's front base, else `None`. So a listed record that an index
+   created never outranks the consumer's own listing (5.11 step 5).
+   `None` for the own channel.
 
 Nothing reaches the caller before step 7. `host` checks the signature of
 the entry and the package id again (its own SPEC); that is a second check,
