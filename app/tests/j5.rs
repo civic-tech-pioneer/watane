@@ -87,10 +87,7 @@ fn participant(home: &Path, name: &str) -> (App, Site, String) {
     approve(&app);
     assert_eq!(finish(&app), json!({"ok":null}));
     let site = Site::serve(home.join("dist/site"));
-    // DD-26 permits DNS names, but rejects literal loopback addresses in
-    // third-party listings. Eve must learn Carol's base only from Dave.
-    let base = site.base.replace("127.0.0.1", "127.0.0.1.nip.io");
-    invoke(&app, "site_set_url", json!({"url":base}));
+    invoke(&app, "site_set_url", json!({"url":site.base}));
     let link = invoke(&app, "status", json!({}))["site"]["link"]
         .as_str()
         .unwrap()

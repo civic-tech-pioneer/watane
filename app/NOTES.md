@@ -246,11 +246,6 @@
   then Frank's candidate, confirmed bind, installed release and grant line.
   Both installed Stats pages call their real Ratings component.
 - The first Eve follows only Dave and has no Carol record before installing.
-  Literal loopback listing bases are refused by dist DD-26, so app sites are
-  advertised as `127.0.0.1.nip.io` while serving only on loopback. This uses
-  the existing permitted DNS-name path, with no driver exception or product
-  security change. The journey requires DNS for that name (locally checked
-  to resolve to 127.0.0.1); no package or channel is hosted externally.
   Fresh Eve chooses Dave's index while Carol is still online to retain only
   channel metadata, and chooses Frank's index; Carol's server is then stopped
   before the first install in that home, so no cached Carol package can mask
@@ -265,3 +260,24 @@
   Strict all-targets/driver clippy, fmt --check and diff --check pass.
   cargo build --release --features driver fails at the intended debug-only
   driver compile_error. Native J5 has not been executed in this sandbox.
+
+### Validator return 1
+
+- Kept validator commit 2811b2f's consent heading and hidden-main focus
+  refresh fixes. J5 now advertises each static server's literal loopback URL;
+  it needs no public DNS.
+- Authorized product exception: `src/lib.rs` now supplies dist options with
+  `listed_local` enabled exactly when the `driver` feature is enabled, as
+  TECHNICAL 10 specifies. The existing release/driver compile guard remains.
+  The pure driver-options unit test failed with the original default options;
+  the default-options unit test passed. Both pass with the feature gate.
+- Conflict left unchanged as requested: `tests/find.rs:227`,
+  `ac2_find_skipped_channel_and_cause`, expects the app to report `local address`
+  for an unchosen loopback listing. A driver app now permits that listing, so
+  this existing native driver test contradicts the specified configuration.
+  `build_on.rs`, `j3.rs` and `j4.rs` contain no app local-address-refusal oracle.
+- Return validation: both options unit tests pass under their respective cfgs;
+  cargo build and the default suite pass (87 tests, 29.69 s test time).
+  cargo test --features driver --no-run, strict all-targets/driver clippy,
+  fmt --check and diff --check pass. Release with driver fails at the intended
+  compile_error. No native window test was started in this sandbox.

@@ -141,6 +141,13 @@ pub(crate) struct AppState {
     #[cfg(feature = "driver")]
     screen: driver::Screen,
 }
+fn dist_options() -> watane_dist::Options {
+    watane_dist::Options {
+        listed_local: cfg!(feature = "driver"),
+        ..Default::default()
+    }
+}
+
 pub fn run(config: Config) -> Result<(), AppError> {
     let broker = Broker::new();
     let parties = Arc::new(words::Parties::new());
@@ -171,7 +178,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         });
         tauri::async_runtime::block_on(async move {
             tauri::async_runtime::spawn_blocking(move || {
-                watane_dist::Dist::open(&home, confirm, Default::default()).map(Arc::new)
+                watane_dist::Dist::open(&home, confirm, dist_options()).map(Arc::new)
             })
             .await
         })
@@ -333,6 +340,18 @@ pub fn run(config: Config) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(feature = "driver")]
+    fn ac1_driver_dist_allows_listed_local() {
+        assert!(super::dist_options().listed_local);
+    }
+
+    #[test]
+    #[cfg(not(feature = "driver"))]
+    fn ac1_default_dist_refuses_listed_local() {
+        assert!(!super::dist_options().listed_local);
+    }
+
     #[derive(Debug, thiserror::Error)]
     #[error("a: b")]
     struct Outer(#[source] std::io::Error);
