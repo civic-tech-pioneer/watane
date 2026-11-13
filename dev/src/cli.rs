@@ -59,6 +59,11 @@ pub enum Command {
     },
     /// Test and package the mod, then ask the person to sign a release in their app
     Publish {
+        #[arg(
+            long,
+            help = "Push the site and consented source with your own git and gh"
+        )]
+        push: bool,
         #[arg(long, help = "Exclude the source from the package")]
         no_source: bool,
         #[arg(long, help = "Home of the running watane app")]
@@ -143,7 +148,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Search { .. } => unreachable!("search needs no mod folder"),
         Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
-        Command::Publish { no_source, home, wait } => return publish(&dir, no_source, home, wait),
+        Command::Publish { no_source, push, home, wait } => return publish(&dir, no_source, push, home, wait),
         Command::New { slug, .. } => template::new_mod(&dir, slug.as_deref().expect("clap requires a slug"))
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
@@ -675,7 +680,13 @@ fn app_client(
     Ok((home, client))
 }
 
-fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
+fn publish(
+    dir: &Path,
+    no_source: bool,
+    push: bool,
+    home: Option<PathBuf>,
+    wait: Option<u64>,
+) -> Outcome {
     use crate::outcome::{Class, Code};
     let mut outcome = Outcome::new("publish", Some(dir.to_path_buf()));
     let result = (|| {
@@ -710,12 +721,24 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 });
             return Err(errors);
         }
-        let (home, client) = app_client(&mut outcome, home, wait)?;
+        let (home, client) = app_client(&mut outcome, home, wait).inspect_err(|_| {
+            if let Some(next) = &mut outcome.next {
+                if push {
+                    next.push_str(" --push");
+                }
+                if push && no_source {
+                    next.push_str(" --no-source");
+                }
+            }
+        })?;
         let mut rerun = format!(
             "watane-dev publish --json --dir {} --home {}",
             quote(dir),
             quote(&home)
         );
+        if push {
+            rerun.push_str(" --push");
+        }
         if no_source {
             rerun.push_str(" --no-source");
         }
@@ -763,6 +786,18 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"),
             ]);
         }
+        let owner = if push {
+            Some(crate::share::owner(dir, &rerun).map_err(|e| vec![e])?)
+        } else {
+            None
+        };
+        let prepared = if let Some(owner) = &owner
+            && !no_source
+        {
+            Some(crate::share::prepare_mod(dir, owner, &rerun)?)
+        } else {
+            None
+        };
         let tested = test(dir);
         outcome.dir = tested.dir;
         if !tested.ok {
@@ -817,9 +852,37 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
             }
             .into(),
         );
-        Ok(
-            serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source(), "providers": listed}),
-        )
+        let mut value = serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source(), "providers": listed});
+        if let Some(owner) = owner {
+            let (pushed, errors) = crate::share::push(
+                dir,
+                Path::new(answer["site"].as_str().unwrap_or_default()),
+                &package,
+                &owner,
+                answer["release"].as_str().unwrap_or_default(),
+                prepared,
+            );
+            value["push"] = pushed;
+            if !errors.is_empty() {
+                outcome.next = Some(
+                    errors
+                        .iter()
+                        .filter_map(|e| e.fix.as_deref())
+                        .collect::<Vec<_>>()
+                        .join(" && "),
+                );
+                outcome.result = Some(value);
+                return Err(errors);
+            }
+            if let Some(link) = answer["link"].as_str() {
+                outcome.next = Some(format!("Give the person this link to share: {link}"));
+            } else if let Some(raw) = value["push"]["site"]["raw"].as_str() {
+                outcome.next = Some(format!(
+                    "Ask the person to set the site URL in the watane app to {raw}, then run publish again to get the link"
+                ));
+            }
+        }
+        Ok(value)
     })();
     match result {
         Ok(value) => {
@@ -827,10 +890,17 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
             outcome
         }
         Err(errors) => {
-            if errors
-                .first()
-                .is_some_and(|e| e.code.class() == Class::Env && e.code != Code::EnvHostNotRunning)
-            {
+            if errors.first().is_some_and(|e| {
+                e.code.class() == Class::Env
+                    && e.code != Code::EnvHostNotRunning
+                    && !matches!(
+                        e.code,
+                        Code::EnvGitMissing
+                            | Code::EnvGhMissing
+                            | Code::EnvGhAuth
+                            | Code::EnvGitIdentity
+                    )
+            }) {
                 outcome.next = Some("watane-dev doctor --json".into());
             }
             if outcome.next.is_none() {
@@ -1116,6 +1186,19 @@ mod tests {
         assert!(help.contains("--home"));
         assert!(help.contains("--wait"));
     }
+    #[test]
+    fn ac1_template_explains_publish_push_and_person_login() {
+        let guide = include_str!("../template/AGENTS.md");
+        for text in [
+            "watane-dev publish --push --json",
+            "env.gh_auth",
+            "ask the person to run `gh auth login`",
+            "finish a failed push",
+        ] {
+            assert!(guide.contains(text), "missing {text}");
+        }
+    }
+
     #[test]
     fn ac8_template_explains_home_install() {
         let guide = include_str!("../template/AGENTS.md");

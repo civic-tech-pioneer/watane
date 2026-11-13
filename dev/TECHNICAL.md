@@ -233,7 +233,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.git_identity` | 3 | step 6: `git var GIT_COMMITTER_IDENT` fails in the mod folder | `git has no name and email for commits: <git's last stderr line>` | `Ask the person to run: git config --global user.name "<name>" and git config --global user.email "<email>", then run: <rerun>` |
 | `publish.origin_differs` | 1 | step 6: the mod folder's git remote `origin` is not the `repository` of `mod.toml`, or there is no `repository` | `the mod folder's git remote origin is <url>, and mod.toml names <repository, or no repository>` (file `mod.toml`) | `Set repository in mod.toml to the https URL of the origin repository, or change the origin with: git -C '<dir>' remote set-url origin <repository>; then run: <rerun>` |
 | `publish.repository_exists` | 1 | step 6: `<owner>/<slug>` exists on GitHub, is not empty, and `mod.toml` names no repository | `https://github.com/<owner>/<slug> exists and holds commits that watane-dev did not push for this mod` (file `mod.toml`) | `Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: <rerun>` |
-| `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last stderr lines>` | `Fix the cause, then run: <the failed command and the rest of its list>` |
+| `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last stderr lines>` | `<the failed command and the rest of its list>` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
 | `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run this command again` |
@@ -1635,7 +1635,7 @@ Without `--push`, publish is 9.7, unchanged.
    create it when `gh api` says it does not exist (`created: true`), then
    join it (above). dist writes only `head`, `entries/` and `packages/`
    and leaves other entries of the folder alone (dist 4.3). Then
-   `git add -A -- head entries packages`; when `git diff --cached --quiet`
+   `git add -A -- head entries packages` (omit paths that neither exist nor are tracked); when `git diff --cached --quiet`
    fails, `git commit -q -m <ReleaseRef>`; then `git push -q origin HEAD`.
 6. The mod, unless `--no-source`: `git rm -r -q --cached --ignore-unmatch .`,
    then `git add -f -- <each path of the package except logic.wasm>`
@@ -1910,9 +1910,9 @@ pub fn new_from(destination: Option<&Path>, slug: Option<&str>, target: &str, cl
 pub fn add_release(dir: &Path, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
 
 // share.rs (step 6, 10.4)
-pub fn owner() -> Result<String, Problem>;   // git --version, then gh api user
-pub fn prepare_mod(dir: &Path, owner: &str) -> Result<serde_json::Value, Vec<Problem>>;   // 10.4.1 step 3
-pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, push_mod: bool)
+pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem>;   // git, identity, then gh api user
+pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<serde_json::Value, Vec<Problem>>;   // 10.4.1 step 3
+pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, release: &str, prepared: Option<serde_json::Value>)
     -> (serde_json::Value, Vec<Problem>);   // 10.4.1 steps 5, 6: the `push` result and its errors
 pub fn fork(folder: &Path, repository: &str, package: &watane_pkg::Package)
     -> Result<(), Problem>;   // 10.4.2 steps 2 to 4; Err is the warning, with folder removed
@@ -2060,7 +2060,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
-| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
+| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11 adds the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -2126,12 +2126,12 @@ rules belong to 15.1.
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
-| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod; planned: S42 |
-| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read; planned: S42 |
-| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh; planned: S42 |
-| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user; planned: S42 |
-| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook; planned: S42 |
-| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration; planned: S42 |
+| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod |
+| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
+| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh |
+| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user |
+| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
+| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration |
 | DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches; planned: S43 |
 | DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote; planned: S43 |
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration; planned: S43 |
@@ -2262,6 +2262,9 @@ No test reaches GitHub. Each step-6 test makes, in its temp folder:
 - `bin/gh`: a link to the built `fake-gh`, first on `PATH`. The real `git`
   stays on `PATH`; DEV-S-43 builds a `PATH` with only `bin/` (no git), or
   without `bin/gh`.
+
+Stage 10 implements the user, repository lookup and create calls below;
+stage 11 adds fork and edit.
 
 `fake-gh` (`src/bin/fake-gh.rs`) reads `FAKE_GH_ROOT` (the `remotes/`
 folder) and `FAKE_GH_USER` (unset: not logged in), and answers exactly

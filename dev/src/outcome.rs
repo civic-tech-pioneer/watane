@@ -42,6 +42,13 @@ pub enum Code {
     BuildReadsOutside,
     BuildImports,
     PreviewPrevious,
+    EnvGitMissing,
+    EnvGhMissing,
+    EnvGhAuth,
+    EnvGitIdentity,
+    PublishOriginDiffers,
+    PublishRepositoryExists,
+    PublishPushFailed,
     Internal,
 }
 impl Code {
@@ -86,6 +93,13 @@ impl Code {
             Self::BuildReadsOutside => "build.reads_outside",
             Self::BuildImports => "build.imports",
             Self::PreviewPrevious => "preview.previous",
+            Self::EnvGitMissing => "env.git_missing",
+            Self::EnvGhMissing => "env.gh_missing",
+            Self::EnvGhAuth => "env.gh_auth",
+            Self::EnvGitIdentity => "env.git_identity",
+            Self::PublishOriginDiffers => "publish.origin_differs",
+            Self::PublishRepositoryExists => "publish.repository_exists",
+            Self::PublishPushFailed => "publish.push_failed",
             Self::Internal => "internal",
         }
     }
@@ -129,6 +143,11 @@ impl Code {
             Self::HostDeclined | Self::HostRefused | Self::HostFailed | Self::HostNoAnswer => {
                 Class::Refused
             }
+            Self::EnvGitMissing | Self::EnvGhMissing | Self::EnvGhAuth | Self::EnvGitIdentity => {
+                Class::Env
+            }
+            Self::PublishOriginDiffers | Self::PublishRepositoryExists => Class::Mod,
+            Self::PublishPushFailed => Class::Refused,
             Self::Internal => Class::Internal,
         }
     }

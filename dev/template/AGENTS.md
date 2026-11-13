@@ -106,8 +106,7 @@ If it asks before each call, the person allows the server's tools.
 
 ## Tests
 
-Unit tests run as WebAssembly with no files, no environment and no host
-imports: test pure functions there. A panic ends the whole unit test run;
+Unit tests run as WebAssembly with no files, no environment and no host imports: test pure functions there. A panic ends the whole unit test run;
 tests after it are counted in not_run. Fix the failure and run test again.
 Keep at least one tests/*.json file for a logic part. Each contract file
 starts with fresh state. Steps call an exported function and assert its
@@ -134,14 +133,15 @@ Serve runs all tests before starting or updating the preview.
 
 ## Results
 
-With --json every command prints one envelope: schema (1), command, ok,
-dir, result, errors, warnings and next. Read errors[].fix; for
+With --json every command prints one envelope: schema (1), command, ok, dir, result, errors, warnings and next. Read errors[].fix; for
 build.compile read file and line. Unknown locations are null.
-Exit statuses: 0 success, 1 mod, 2 usage, 3 environment, 4 refusal,
-5 internal error. Warnings do not change the exit status.
+Exit statuses: 0 success, 1 mod, 2 usage, 3 environment, 4 refusal, 5 internal error. Warnings do not change the exit status.
 
 ## Rules
 
 Work autonomously; do not ask questions. Finish with a passing `watane-dev test --json`, then `watane-dev serve --json`.
 
 When the person wants the mod in their own app, run `watane-dev install --json`. The person approves in the app. `env.host_not_running` means ask them to start the app, then run the command again.
+
+When the person wants to publish and share on GitHub, run `watane-dev publish --push --json`.
+The person approves in the app. For `env.gh_auth`, ask the person to run `gh auth login`, then retry. Read `next`: it gives the site URL to set in the app, the link to share, or commands to finish a failed push.

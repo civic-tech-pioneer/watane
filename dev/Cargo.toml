@@ -30,3 +30,8 @@ tempfile = "3"
 name = "fake-watane"
 path = "src/bin/fake-watane.rs"
 required-features = ["fake-host"]
+
+[[bin]]
+name = "fake-gh"
+path = "src/bin/fake-gh.rs"
+required-features = ["fake-host"]

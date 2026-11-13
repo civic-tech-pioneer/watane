@@ -11,6 +11,7 @@ pub mod env;
 pub mod json_eq;
 pub mod outcome;
 pub mod preview;
+pub mod share;
 pub mod template;
 pub mod toolchain;
 pub mod unit;

@@ -216,6 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
         } else if path == "/api/publish" {
             let unpacked = home.join(format!("publish-{count}"));
+            let site_package = body.clone();
             let result =
                 watane_pkg::Package::from_bytes(body).and_then(|package| package.unpack(&unpacked));
             let answer = match result {
@@ -233,6 +234,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .unwrap_or_else(|| json!(format!("https://fake.invalid/#{}", m.slug())));
                     releases.push(json!({"slug":m.slug(), "version":m.version(), "release":release, "seq":seq, "link":link}));
                     fs::write(home.join("releases.json"), serde_json::to_vec(&releases)?)?;
+                    let package = watane_pkg::Package::from_bytes(site_package)?;
+                    fs::create_dir_all(home.join("site/packages"))?;
+                    fs::write(
+                        home.join("site/packages").join(package.id().to_string()),
+                        package.as_bytes(),
+                    )?;
+                    fs::write(home.join("site/head"), format!("{release}\n"))?;
                     (
                         200,
                         json!({"release":release, "seq":seq, "site":home.join("site"), "link":link, "providers":config.get("providers").cloned().unwrap_or_else(|| json!([]))}),
