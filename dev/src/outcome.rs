@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(into = "&'static str")]
 pub enum Code {
+    NewPrebuiltRenamed,
     UsageNoSource,
     ModReleaseProviderMissing,
     PublishProviderUnlisted,
@@ -46,6 +47,7 @@ pub enum Code {
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::NewPrebuiltRenamed => "new.prebuilt_renamed",
             Self::UsageNoSource => "usage.no_source",
             Self::ModReleaseProviderMissing => "mod.release_provider_missing",
             Self::PublishProviderUnlisted => "publish.provider_unlisted",
@@ -89,7 +91,9 @@ impl Code {
     }
     pub fn class(self) -> Class {
         match self {
-            Self::PreviewPrevious | Self::PublishProviderUnlisted => Class::Warning,
+            Self::NewPrebuiltRenamed | Self::PreviewPrevious | Self::PublishProviderUnlisted => {
+                Class::Warning
+            }
             Self::UsageNoSource
             | Self::UsageArgs
             | Self::UsageNotAMod

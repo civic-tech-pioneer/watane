@@ -287,6 +287,18 @@ fn derive(
             let from = value["from_slug"].as_str().expect("from slug");
             let slug = value["slug"].as_str().expect("slug");
             outcome.dir = value["dir"].as_str().map(PathBuf::from);
+            if from != slug
+                && value["files"].as_array().is_some_and(|files| {
+                    files.contains(&serde_json::json!("logic.wasm"))
+                        && !files.contains(&serde_json::json!("logic/Cargo.toml"))
+                })
+            {
+                outcome.warnings.push(Problem::new(
+                    crate::outcome::Code::NewPrebuiltRenamed,
+                    format!("logic.wasm was built for {from}, not {slug}: it will fail the contract tests until the mod has logic source"),
+                ).fix(format!("Write the logic source under logic/ (logic/Cargo.toml and logic/src) for {slug}, or run new --from again with the slug {from}")));
+            }
+
             outcome.next = Some(
                 if value["mentions"].as_array().is_some_and(|v| !v.is_empty()) {
                     format!(

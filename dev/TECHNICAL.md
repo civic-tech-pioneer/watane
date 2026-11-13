@@ -253,7 +253,9 @@ https URL of the mod's git repository (for example
 https://github.com/<owner>/<slug>), or remove the line`.
 
 Warning codes (step 5 first; step 6 adds `new.fork_unavailable` and
-`new.fork_differs`, 10.4.2): `publish.provider_unlisted` (the app's
+`new.fork_differs`, 10.4.2): `new.prebuilt_renamed` (a renamed derivative
+keeps prebuilt logic without `logic/Cargo.toml`; message and fix in 10.2),
+`publish.provider_unlisted` (the app's
 publish answer has `listed: false` for a provider; message `<key>/<slug> is
 not listed in your channel, so people who install <slug> need a channel or
 an index that names where it is published`, fix `Ask the person to list
@@ -1487,6 +1489,11 @@ Record each one in `release_providers` (sorted keys). Return the list.
    `wit/world.wit` and keep the version, so a same-slug derivative can fit
    in place of its origin (W26). Collect `mentions` (2.4). dev changes no
    other source file: the coding agent edits the code.
+   After this rename, if `logic.wasm` is kept and there is no
+   `logic/Cargo.toml`, add warning `new.prebuilt_renamed`: message
+   `logic.wasm was built for <origin slug>, not <new slug>: it will fail the contract tests until the mod has logic source`,
+   fix `Write the logic source under logic/ (logic/Cargo.toml and logic/src) for <new slug>, or run new --from again with the slug <origin slug>`.
+   Same-slug derivatives and packages with `logic/Cargo.toml` get no such warning.
 8. `fetch_providers(folder)`, then `Mod::read(folder)`: a failure here is
    reported (`mod.invalid`) with the folder kept, because the agent fixes
    it from `mentions`. Any failure before step 5 writes nothing; a failure
@@ -1787,6 +1794,7 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious,
     EnvGitMissing, EnvGhMissing, EnvGhAuth, EnvGitIdentity, PublishOriginDiffers,
     PublishRepositoryExists, PublishPushFailed,   // step 6
+    NewPrebuiltRenamed, // renamed prebuilt logic warning
     NewForkUnavailable, NewForkDiffers }   // step 6 warnings
 impl Code { pub fn as_str(self) -> &'static str; pub fn class(self) -> Class; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

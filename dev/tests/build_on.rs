@@ -626,12 +626,19 @@ fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
     let _host = start(&f.home);
     for (slug, mut args) in [
         ("my-ratings", vec!["new", "my-ratings", "--from"]),
-        ("ratings", vec!["new", "--from"]),
+        ("ratings", vec!["new", "ratings", "--from"]),
+        (
+            "default-ratings",
+            vec!["new", "--dir", "default-ratings", "--from"],
+        ),
     ] {
         let target = link("ratings");
         args.push(&target);
         let (code, v) = f.run(&args);
         assert_eq!(code, 0, "{v}");
+        if slug != "my-ratings" {
+            assert_eq!(v["warnings"], json!([]));
+        }
         let dir = f.root.path().join(slug);
         assert_eq!(fs::read(dir.join("logic.wasm")).unwrap(), expected);
         assert!(
@@ -686,6 +693,7 @@ summary = "Example"
         args.push(&target);
         let (code, v) = f.run(&args);
         assert_eq!(code, 0, "{v}");
+        assert_eq!(v["warnings"], json!([]));
         let dir = f.root.path().join(slug);
         let meta: toml::Table =
             toml::from_str(&fs::read_to_string(dir.join("mod.toml")).unwrap()).unwrap();
@@ -743,9 +751,9 @@ fn ac4_fake_fetch_bad_package_file_refuses_and_keeps_serving() {
 }
 
 #[test]
-fn regress_s47_renamed_prebuilt_mod_passes_test() {
+fn regress_s47_renamed_prebuilt_mod_warns() {
     // Bob derives a mod under a new slug from a package with logic.wasm and no
-    // logic source; the folder must pass `test` as delivered (no source to fix).
+    // logic source; warn before Bob tries the incompatible contract tests.
     let f = Fixture::new();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
     let source = f.root.path().join("source");
@@ -766,12 +774,18 @@ fn regress_s47_renamed_prebuilt_mod_passes_test() {
     assert_eq!(code, 0, "{v}");
     let dir = f.root.path().join("my-ratings");
     assert!(dir.join("logic.wasm").is_file());
-    let (code, v) = run_mod(
-        &f,
-        &dir,
-        "test",
-        &[],
-        Path::new(env!("CARGO_BIN_EXE_fake-watane")),
+    assert_eq!(v["warnings"].as_array().unwrap().len(), 1);
+    assert_eq!(v["warnings"][0]["code"], "new.prebuilt_renamed");
+    assert_eq!(
+        v["warnings"][0]["message"],
+        "logic.wasm was built for ratings, not my-ratings: it will fail the contract tests until the mod has logic source"
     );
-    assert_eq!(code, 0, "{v}");
+    assert_eq!(
+        v["warnings"][0]["fix"],
+        "Write the logic source under logic/ (logic/Cargo.toml and logic/src) for my-ratings, or run new --from again with the slug ratings"
+    );
+    assert_eq!(
+        fs::read(dir.join("logic.wasm")).unwrap(),
+        fs::read(fixture.join("logic.wasm")).unwrap()
+    );
 }
