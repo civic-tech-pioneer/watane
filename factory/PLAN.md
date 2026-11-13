@@ -178,7 +178,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
   build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
   `origin` filter. Not dev (S36).
-- [ ] **S39 Eve's agent recovers from every error alone (dev cleanup).** Story: Eve's coding agent
+- [~] **S39 Eve's agent recovers from every error alone (dev cleanup).** Story: Eve's coding agent
   hits each error below, follows only the result's `fix` and `next`, and ends with a working mod;
   no step needs the agent to read dev's code or guess. Outcomes (user-sim, real `watane-dev` against
   `fake-watane` and a real `watane --home`):
@@ -199,6 +199,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   there). Not app, dist, host or pkg (S37 holds app and dist). Fakes: `fake-watane` as now. Leaves
   out: the app's raw keys and doubled texts (an app slice after S37), dist and host message debt.
   Cut into 2 tasks: (1) store, fix and next texts; (2) paths, `new --from`, fake-watane, text mode.
+  (branch `slice/s39`; foreman: see `Foremen`)
 - [x] **S38 Network tests hold under load.** Delivered 2026-11-13 (main `0c9018a`). Sol runs: S38-1 1.
   `fast_options()` uses 10 s entry and package timeouts; only `fetch.rs` ac9 keeps a 300 ms package
   timeout. 5 of 5 parallel runs passed at load average 19 to 38. Left for later: ac9's 300 ms also
@@ -294,6 +295,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S35: `09a8efd4` (sessionId `09a8efd4-e0b5-4c6e-87c6-1c00df8e386f`), worktree `.claude/worktrees/s35` (stopped, removed).
 - S36: `99f33ecc` (sessionId `99f33ecc-0bec-4a2d-bd29-fdf579515e2e`), worktree `.claude/worktrees/s36` (stopped, removed).
 - S37: `7070e66c` (sessionId `7070e66c-5e79-4363-84cd-8a544cb03e1f`), worktree `.claude/worktrees/s37`; stopped 2026-11-13 after the WindowServer crash, resumed as `1484fbc7` (sessionId `1484fbc7-6e7e-41d4-8d3e-91870fc01fec`) under a fresh daemon.
+- S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
