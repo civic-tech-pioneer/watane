@@ -509,7 +509,7 @@ fn ac1_default_home_and_publish_retry_paths_are_canonical() {
     let home = alias.join(".watane");
     let _host = start(&home);
     let resolved = home.canonicalize().unwrap();
-    for command in ["install", "publish", "publish"] {
+    for (i, command) in ["install", "publish", "publish"].into_iter().enumerate() {
         let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .env("HOME", &alias)
             .env_remove("WATANE_HOME")
@@ -520,6 +520,8 @@ fn ac1_default_home_and_publish_retry_paths_are_canonical() {
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["dir"], json!(dir));
         assert_eq!(value["result"]["home"], json!(resolved));
+        // The second publish of the same version must reach the version conflict.
+        assert_eq!(output.status.success(), i < 2, "{command}: {value}");
         if !output.status.success() {
             assert_eq!(value["errors"][0]["code"], "publish.version_exists");
             assert_eq!(
