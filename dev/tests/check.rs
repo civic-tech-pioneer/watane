@@ -188,7 +188,6 @@ fn ac7_deps_only_own_slug_never_suggests_importing_itself() {
 }
 
 #[test]
-#[ignore = "needs watane-pkg; red: own-package violation must name a copied package under a different folder"]
 fn ac7_own_package_in_different_folder_names_actual_folder() {
     let t = tempfile::tempdir().unwrap();
     let dir = t.path().join("consumer");

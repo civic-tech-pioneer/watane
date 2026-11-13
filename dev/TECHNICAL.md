@@ -257,6 +257,12 @@ the mod's own WIT declaration and uses the self-dependency fix, never the
 import advice. For `wit/deps/<folder> holds this mod's own package mods:<slug>`,
 use `Ask before deleting wit/deps/<folder>/: a mod cannot depend on itself`:
 the folder comes from the violation's file, even when it differs from the slug.
+pkg flags only `wit/deps/<own slug>`; a copy under another folder reaches dev
+as the `[wit]` error ``package `mods:<own slug>@<version>` is defined in two
+different locations`` (file `wit/world.wit`). dev then finds the
+`wit/deps/<folder>` whose WIT declares `package mods:<own slug>` and reports
+it as the violation above: file `wit/deps/<folder>`, message `[provider]
+wit/deps/<folder> holds this mod's own package mods:<own slug>`.
 There is no dependency-removal command today. Other managed dependency
 violations point to `watane-dev add <provider folder>` to refresh the files.
 
@@ -1661,11 +1667,6 @@ it and change this list.
 **pkg** (`watane_pkg`):
 - `Slug: FromStr + Display`, with the grammar of pkg section 3.
 - `Mod::read(dir) -> Result<Mod, ModError>`; `ModError::Invalid(Vec<Violation { rule, file, message }>)`, `ModError::Io`.
-- S39 needs own-package violations to name the actual `wit/deps/<folder>`,
-  even when the folder differs from the mod slug. Current pkg only recognizes
-  the matching-folder copy and reports other copies as a duplicate WIT package.
-  Dev's mapper uses a literal violation until pkg supplies this diagnostic;
-  the corresponding command test is `needs watane-pkg` (17.13).
 - On `Mod`: `slug()`, `version()`, `name()`, `world()` (`exports`,
   `events`, `calls`, `subscriptions` as `InterfaceName`), `page()`,
   `logic()`, `grants()`, `deps()`, `check_component()`.
@@ -1876,7 +1877,7 @@ S39 recovery proofs (default suite unless marked):
 | AC4 | `api::tests::ac4_app_5xx_names_data_failure_or_app_log_for_every_request`, `outcome::tests::ac3_exit_classes_and_problem_envelope`, `search::ac2_search_app_failure_names_app`: all five routes, exact home/message/fix, code/class/exit |
 | AC5 | `api::tests::ac5_missing_released_provider_includes_stored_link`; `ac7_missing_released_provider_names_app_install_fix` retains no-link text |
 | AC6 | `cli::tests::ac6_failed_test_and_serve_name_first_failure_and_fallback`, `unit::tests::ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `contract::ac6_contract_recovery_names_file_step_and_call`; existing cli provider tests retain --dir |
-| AC7 | `check::tests::ac7_own_provider_diagnostics_use_identity_and_actual_folder`, `check::ac7_deps_only_own_slug_never_suggests_importing_itself`; `check::ac7_own_package_in_different_folder_names_actual_folder` needs pkg's folder-specific own-package diagnostic |
+| AC7 | `check::tests::ac7_own_provider_diagnostics_use_identity_and_actual_folder`, `check::ac7_deps_only_own_slug_never_suggests_importing_itself`; `check::ac7_own_package_in_different_folder_names_actual_folder` (pkg's duplicate-package error mapped to the actual folder) |
 | AC8 | `envelope::ac8_s39_recovery_contract_is_documented` checks 2.2, 9.6, 10.1 and this section; scenario behavior is unchanged, so FUNCTIONAL.md is unchanged |
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
@@ -1989,12 +1990,3 @@ Each has a proposed answer, which this specification uses.
     Traverse `Deps::read` before validating worlds, and check the proposed
     cycle before reading the provider as a `Mod`. This preserves the fixed
     pkg interface and reports DEV-S-26 without modifying either folder.
-
-
-13. **Own package copied under a different folder (S39).** pkg currently only
-    emits the own-package provider violation for `wit/deps/<own slug>`.
-    Required owner behavior: report `file = wit/deps/<actual folder>` and
-    `wit/deps/<actual folder> holds this mod's own package mods:<own slug>`
-    for any copied own-package folder. Dev maps this shape now and fakes it
-    in a unit test; the integration proof waits for pkg. S39's scope forbids
-    changes outside dev, so this owner requirement is recorded here.

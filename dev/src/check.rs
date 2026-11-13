@@ -201,13 +201,52 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
         return Err(errors);
     }
     let m = Mod::read(dir).map_err(|error| {
-        let own_slug = fs::read_to_string(dir.join("wit/world.wit"))
-            .ok()
-            .and_then(|text| {
+        let slug_of = |path: &Path| {
+            fs::read_to_string(path).ok().and_then(|text| {
                 crate::build_on::declaration(&text)
                     .ok()
                     .map(|(_, slug, _)| slug)
-            });
+            })
+        };
+        let own_slug = slug_of(&dir.join("wit/world.wit"));
+        let error = match (error, &own_slug) {
+            // pkg flags only wit/deps/<own slug>; a copy under another folder is a
+            // duplicate package for wit-parser. Name that folder as the own-package copy.
+            (ModError::Invalid(violations), Some(own)) => ModError::Invalid(
+                violations
+                    .into_iter()
+                    .map(|v| {
+                        let duplicate = v.message.contains(&format!("package `mods:{own}@"))
+                            && v.message.contains("is defined in two different locations");
+                        let folder =
+                            duplicate
+                                .then(|| fs::read_dir(dir.join("wit/deps")).ok())
+                                .flatten()
+                                .into_iter()
+                                .flatten()
+                                .flatten()
+                                .map(|entry| entry.path())
+                                .filter(|path| path.is_dir())
+                                .find(|path| {
+                                    fs::read_dir(path).into_iter().flatten().flatten().any(|f| {
+                                        slug_of(&f.path()).is_some_and(|slug| slug == *own)
+                                    })
+                                });
+                        match folder.and_then(|f| f.file_name()?.to_str().map(String::from)) {
+                            Some(folder) => watane_pkg::Violation {
+                                rule: watane_pkg::Rule::Provider,
+                                file: format!("wit/deps/{folder}"),
+                                message: format!(
+                                    "wit/deps/{folder} holds this mod's own package mods:{own}"
+                                ),
+                            },
+                            None => v,
+                        }
+                    })
+                    .collect(),
+            ),
+            (error, _) => error,
+        };
         mod_problems_for_slug(error, own_slug.as_ref())
     })?;
     if dir.join("logic").exists() {
