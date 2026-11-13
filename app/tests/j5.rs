@@ -451,6 +451,18 @@ fn ac2_j5_github() {
     );
 
     // AC3: the agent replaces the implementation, keeping origin and .git.
+    // Alice's files (her tests/books.json, ui/app.js) are not the ratings mod.
+    for entry in fs::read_dir(&ratings).unwrap() {
+        let path = entry.unwrap().path();
+        if path.file_name() == Some(".git".as_ref()) {
+            continue;
+        }
+        if path.is_dir() {
+            fs::remove_dir_all(&path).unwrap();
+        } else {
+            fs::remove_file(&path).unwrap();
+        }
+    }
     copy_dir(&fixture("ratings"), &ratings);
     fs::write(
         ratings.join("mod.toml"),
@@ -459,6 +471,13 @@ fn ac2_j5_github() {
             fs::read_to_string(fixture("ratings").join("mod.toml")).unwrap(),
             origin_meta.split_once("[origin]").unwrap().1,
         ),
+    )
+    .unwrap();
+    // dev publish runs the contract tests that the agent writes with its logic.
+    fs::create_dir(ratings.join("tests")).unwrap();
+    fs::write(
+        ratings.join("tests/score.json"),
+        r#"{"steps":[{"call":"api.score","returns":1}]}"#,
     )
     .unwrap();
     assert!(ratings.join(".git").is_dir());
