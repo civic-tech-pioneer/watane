@@ -115,6 +115,9 @@ fn files(dir: &Path) -> Result<Vec<PathBuf>, Problem> {
             let entry = entry?;
             let path = relative.join(entry.file_name());
             let ty = entry.file_type()?;
+            if path == Path::new(".git") {
+                continue;
+            }
             if ty.is_dir() {
                 walk(root, &path, out)?;
             } else if ty.is_file() {
@@ -281,7 +284,7 @@ pub fn new_from(
     target: &str,
     client: &Client,
     env: &Env,
-) -> Result<Value, Vec<Problem>> {
+) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     let (release, package) = client.fetch(target).map_err(|e| vec![e])?;
     if !package.has_source() {
         return Err(vec![Problem::new(Code::UsageNoSource, format!("the release {release} holds no source: its publisher published it with --no-source"))
@@ -309,6 +312,7 @@ pub fn new_from(
         let mut meta: toml::Table =
             toml::from_str(&fs::read_to_string(dir.join("mod.toml")).map_err(Problem::internal)?)
                 .map_err(Problem::internal)?;
+        meta.remove("repository");
         meta.insert(
             "name".into(),
             toml::Value::String(template::render("{{title}}", &slug)),
@@ -338,12 +342,24 @@ pub fn new_from(
     if dir.symlink_metadata().is_ok() {
         return Err(vec![exists(dir)]);
     }
-    package.unpack(dir).map_err(|e| {
-        vec![match e {
-            watane_pkg::PackageError::DestExists { .. } => exists(dir),
-            e => Problem::internal(e),
-        }]
-    })?;
+    let cached = store(&package, env).map_err(|e| vec![e])?;
+    let source = Mod::read(&cached).map_err(check::mod_problems)?;
+    let mut warnings = Vec::new();
+    let mut fork = Value::Null;
+    if let Some(repository) = source.repository() {
+        match crate::share::clone_release(dir, repository, &package, &release.to_string()) {
+            Ok(()) => fork = json!({"repository":repository,"tag":release}),
+            Err(warning) => warnings.push(warning),
+        }
+    }
+    if fork.is_null() {
+        package.unpack(dir).map_err(|e| {
+            vec![match e {
+                watane_pkg::PackageError::DestExists { .. } => exists(dir),
+                e => Problem::internal(e),
+            }]
+        })?;
+    }
     if let Err(e) = setup() {
         let _ = fs::remove_dir_all(dir);
         return Err(vec![e]);
@@ -384,9 +400,10 @@ pub fn new_from(
             }
         }
     }
-    Ok(
-        json!({"slug":slug,"dir":dir,"files":files(dir).map_err(|e|vec![e])?,"origin":release,"from_slug":old,"providers":providers,"mentions":mentions}),
-    )
+    Ok((
+        json!({"slug":slug,"dir":dir,"files":files(dir).map_err(|e|vec![e])?,"origin":release,"from_slug":old,"providers":providers,"mentions":mentions,"fork":fork}),
+        warnings,
+    ))
 }
 
 pub(crate) fn exists(dir: &Path) -> Problem {

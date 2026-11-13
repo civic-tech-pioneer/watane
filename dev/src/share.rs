@@ -122,6 +122,130 @@ fn normalize(url: &str) -> &str {
 fn same_url(a: &str, b: &str) -> bool {
     normalize(a) == normalize(b)
 }
+fn github_name(url: &str) -> Option<&str> {
+    let name = normalize(url).strip_prefix("https://github.com/")?;
+    let (owner, repo) = name.split_once('/')?;
+    (!owner.is_empty() && !repo.is_empty() && !repo.contains('/')).then_some(name)
+}
+fn first_difference(
+    expected: &watane_pkg::Package,
+    actual: &watane_pkg::Package,
+) -> Option<String> {
+    let paths: std::collections::BTreeSet<_> = expected.paths().chain(actual.paths()).collect();
+    paths.into_iter().find_map(|path| {
+        let reason = match (expected.file(path), actual.file(path)) {
+            (Some(_), None) => "missing",
+            (None, Some(_)) => "extra",
+            (Some(a), Some(b)) if a != b => "different",
+            _ => return None,
+        };
+        Some(format!("{path}: {reason}"))
+    })
+}
+/// Clone the release tag before checking the checkout with `fork`.
+pub(crate) fn clone_release(
+    folder: &Path,
+    repository: &str,
+    package: &watane_pkg::Package,
+    release: &str,
+) -> Result<(), Problem> {
+    let command = Run {
+        program: "git",
+        args: [
+            "-c",
+            "advice.detachedHead=false",
+            "-c",
+            "core.symlinks=false",
+            "clone",
+            "-q",
+            "--branch",
+            release,
+            "--",
+            repository,
+        ]
+        .map(String::from)
+        .into_iter()
+        .chain([folder.to_string_lossy().into_owned()])
+        .collect(),
+    };
+    let failure = match command.output() {
+        Ok(output) if output.status.success() => None,
+        Ok(output) => Some(
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .last()
+                .unwrap_or("clone failed")
+                .to_string(),
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some("git not found".into()),
+        Err(e) => Some(e.to_string()),
+    };
+    if let Some(reason) = failure {
+        let _ = fs::remove_dir_all(folder);
+        return Err(Problem::new(Code::NewForkUnavailable, format!("could not clone {repository} at {release} ({}); the mod was made from the verified package, with no git history", reason))
+            .fix(format!("To keep the publisher's history, check that git can reach {repository}, delete {}, then run new --from again", folder.display())));
+    }
+    fork(folder, repository, package).map_err(|mut e| {
+        e.message = format!("{repository} at {release} differs from the verified package ({}); the mod was made from the verified package", e.message);
+        let slug = release.split_once('/').map_or(release, |(_, r)| r.split('@').next().unwrap_or(r));
+        e.fix = Some(format!("Tell the person: the repository of {slug} does not hold the published source of {release}"));
+        e
+    })
+}
+/// Check and retain a cloned checkout. On failure remove the checkout.
+/// The caller clones the ReleaseRef tag: packages contain no publisher key.
+pub fn fork(
+    folder: &Path,
+    _repository: &str,
+    package: &watane_pkg::Package,
+) -> Result<(), Problem> {
+    fn prune(dir: &Path, relative: &Path, paths: &[&str]) -> std::io::Result<()> {
+        for entry in fs::read_dir(dir.join(relative))? {
+            let entry = entry?;
+            let path = relative.join(entry.file_name());
+            if path == Path::new(".git") {
+                continue;
+            }
+            let text = path.to_string_lossy();
+            let ty = fs::symlink_metadata(entry.path())?.file_type();
+            if ty.is_dir() && paths.iter().any(|p| p.starts_with(&format!("{text}/"))) {
+                prune(dir, &path, paths)?;
+            } else if !paths.contains(&text.as_ref()) || !ty.is_file() {
+                if ty.is_dir() {
+                    fs::remove_dir_all(entry.path())?;
+                } else {
+                    fs::remove_file(entry.path())?;
+                }
+            }
+        }
+        Ok(())
+    }
+    let result = (|| {
+        if let Some(bytes) = package.file("logic.wasm") {
+            // Never follow a repository's link when supplying the built component.
+            let path = folder.join("logic.wasm");
+            if path.symlink_metadata().is_ok() {
+                fs::remove_file(&path).map_err(Problem::internal)?;
+            }
+            fs::write(path, bytes).map_err(Problem::internal)?;
+        }
+        let actual = watane_pkg::pack(folder, true)
+            .map_err(|e| Problem::new(Code::NewForkDiffers, e.to_string()))?;
+        if let Some(path) = first_difference(package, &actual) {
+            return Err(Problem::new(Code::NewForkDiffers, path));
+        }
+        prune(folder, Path::new(""), &package.paths().collect::<Vec<_>>())
+            .map_err(Problem::internal)?;
+        checked(&git(folder, &["checkout", "-q", "-B", "main"]))?;
+        checked(&git(folder, &["remote", "rename", "origin", "upstream"]))?;
+        Ok(())
+    })();
+    result.map_err(|mut e: Problem| {
+        let _ = fs::remove_dir_all(folder);
+        e.code = Code::NewForkDiffers;
+        e
+    })
+}
 fn raw(repository: &str, branch: &str) -> Option<String> {
     let name = normalize(repository).strip_prefix("https://github.com/")?;
     Some(format!(
@@ -173,19 +297,22 @@ pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem> {
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().into())
 }
-fn exists(name: &str) -> Result<bool, Problem> {
+fn parent(name: &str) -> Result<Option<String>, Problem> {
     let command = gh(&["api", &format!("repos/{name}"), "--jq", ".parent.full_name"]);
     let output = command.output().map_err(Problem::internal)?;
     if output.status.success() {
-        Ok(true)
+        Ok(Some(String::from_utf8_lossy(&output.stdout).trim().into()))
     } else if gh_code(&String::from_utf8_lossy(&output.stderr)).is_none() {
-        Ok(false)
+        Ok(None)
     } else {
         Err(command.failure(
             &String::from_utf8_lossy(&output.stderr),
             std::slice::from_ref(&command),
         ))
     }
+}
+fn exists(name: &str) -> Result<bool, Problem> {
+    Ok(parent(name)?.is_some())
 }
 fn origin(dir: &Path) -> Result<Option<String>, Problem> {
     if dir.join(".git").exists() {
@@ -240,7 +367,11 @@ fn site_commands(dir: &Path, paths: &[&str], release: &str) -> Vec<Run> {
         git(dir, &["push", "-q", "origin", "HEAD"]),
     ]
 }
-pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<Value, Vec<Problem>> {
+pub fn prepare_mod(
+    dir: &Path,
+    owner: &str,
+    rerun: &str,
+) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     (|| {
         let m = watane_pkg::Mod::read(dir).map_err(crate::check::mod_problems)?;
         let stored = origin(dir).map_err(|e| vec![e])?;
@@ -257,26 +388,103 @@ pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<Value, Vec<Pr
             .fix(format!("Set repository in mod.toml to the https URL of the origin repository, or change the origin with: {change_origin}; then run: {rerun}"))]);
         }
         let mut created = false;
+        let mut forked = false;
+        let mut warnings = Vec::new();
         let repository = if let Some(repository) = m.repository() {
             repository.to_string()
         } else {
             let name = format!("{owner}/{}", m.slug());
             let repository = format!("https://github.com/{name}");
-            if exists(&name).map_err(|e| vec![e])? {
-                if !checked(&git(dir, &["ls-remote", "--", &repository]))
+            let derived = m.origin().is_some();
+            let upstream_url = if dir.join(".git").exists() {
+                read_git(dir, &["config", "--get", "remote.upstream.url"]).map_err(|e| vec![e])?
+            } else {
+                None
+            };
+            let upstream = upstream_url.as_deref().and_then(github_name);
+            let existing = parent(&name).map_err(|e| vec![e])?;
+            if let Some(p) = existing {
+                if derived && upstream.is_some_and(|u| p == u) {
+                    forked = true;
+                } else if !checked(&git(dir, &["ls-remote", "--", &repository]))
                     .map_err(|e| vec![e])?
                     .is_empty()
                 {
-                    return Err(vec![Problem::new(
-                        Code::PublishRepositoryExists,
-                        format!("{repository} exists and holds commits that watane-dev did not push for this mod"),
-                    )
-                    .at("mod.toml", None, None)
-                    .fix(format!("Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: {rerun}"))]);
+                    return Err(vec![Problem::new(Code::PublishRepositoryExists,
+                        format!("{repository} exists and holds commits that watane-dev did not push for this mod"))
+                        .at("mod.toml", None, None)
+                        .fix(format!("Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: {rerun}"))]);
                 }
             } else {
-                checked(&gh(&["repo", "create", &name, "--public"])).map_err(|e| vec![e])?;
-                created = true;
+                let mut reason = "no upstream repository".to_string();
+                if derived && let Some(upstream) = upstream {
+                    let request = gh(&[
+                        "api",
+                        "-X",
+                        "POST",
+                        &format!("repos/{upstream}/forks"),
+                        "-f",
+                        &format!("name={}", m.slug()),
+                        "-F",
+                        "default_branch_only=true",
+                        "--jq",
+                        ".full_name",
+                    ]);
+                    match request.output() {
+                        Ok(out)
+                            if out.status.success()
+                                && String::from_utf8_lossy(&out.stdout).trim() == name =>
+                        {
+                            forked = true;
+                            created = true;
+                            // GitHub creates forks asynchronously. Wait only for this repository.
+                            for attempt in 0..=10 {
+                                if parent(&name).map_err(|e| vec![e])?.is_some() {
+                                    break;
+                                }
+                                if attempt < 10 {
+                                    std::thread::sleep(std::time::Duration::from_secs(1));
+                                }
+                            }
+                        }
+                        Ok(out) if out.status.success() => {
+                            reason = "the account already has a fork of it".into()
+                        }
+                        Ok(out) => {
+                            reason = String::from_utf8_lossy(&out.stderr)
+                                .lines()
+                                .last()
+                                .unwrap_or("fork failed")
+                                .into()
+                        }
+                        Err(e) => reason = e.to_string(),
+                    }
+                }
+                if !forked {
+                    if let Err(e) = checked(&gh(&["repo", "create", &name, "--public"])) {
+                        // A late fork may have won the race with repo create.
+                        if derived
+                            && upstream.is_some()
+                            && parent(&name).map_err(|e| vec![e])?.as_deref() == upstream
+                        {
+                            forked = true;
+                        } else {
+                            return Err(vec![e]);
+                        }
+                    } else {
+                        created = true;
+                    }
+                    if derived && !forked {
+                        warnings.push(Problem::new(Code::PublishForkUnavailable,
+                            format!("could not fork {} as {name} ({reason}); {repository} was created without GitHub's fork link", upstream_url.as_deref().unwrap_or("no upstream repository"))));
+                    }
+                }
+            }
+            if forked
+                && checked(&git(dir, &["branch", "--show-current"])).map_err(|e| vec![e])?
+                    != "watane"
+            {
+                checked(&git(dir, &["branch", "-m", "watane"])).map_err(|e| vec![e])?;
             }
             let path = dir.join("mod.toml");
             let mut table = fs::read_to_string(&path)
@@ -292,10 +500,19 @@ pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<Value, Vec<Pr
             repository
         };
         join(dir, &repository).map_err(|e| vec![e])?;
-        Ok(json!({"repository":repository,"created":created,"forked":false,"pushed":false}))
+        Ok((
+            json!({"repository":repository,"created":created,"forked":forked,"pushed":false}),
+            warnings,
+        ))
     })()
 }
-fn mod_commands(dir: &Path, paths: &[&str], built: bool, release: &str) -> Vec<Run> {
+fn mod_commands(
+    dir: &Path,
+    paths: &[&str],
+    built: bool,
+    release: &str,
+    fork_repository: Option<&str>,
+) -> Vec<Run> {
     let mut add = vec!["add", "-f", "--"];
     add.extend(
         paths
@@ -307,7 +524,7 @@ fn mod_commands(dir: &Path, paths: &[&str], built: bool, release: &str) -> Vec<R
         .split_once('/')
         .map_or(release, |(_, r)| r)
         .replace('@', " ");
-    vec![
+    let mut commands = vec![
         git(
             dir,
             &["rm", "-r", "-q", "--cached", "--ignore-unmatch", "."],
@@ -325,7 +542,17 @@ fn mod_commands(dir: &Path, paths: &[&str], built: bool, release: &str) -> Vec<R
                 &format!("refs/tags/{release}"),
             ],
         ),
-    ]
+    ];
+    if let Some(repository) = fork_repository {
+        commands.push(gh(&[
+            "repo",
+            "edit",
+            repository,
+            "--default-branch",
+            "watane",
+        ]));
+    }
+    commands
 }
 fn execute(dir: &Path, commands: &[Run]) -> Result<(), Problem> {
     for (index, command) in commands.iter().enumerate() {
@@ -428,10 +655,32 @@ pub fn push(
     if !mod_result.is_null() {
         mod_result["tag"] = json!(release);
         let paths = package.paths().collect::<Vec<_>>();
-        match execute(
+        let name = format!(
+            "{owner}/{}",
+            release
+                .split_once('/')
+                .map_or(release, |(_, r)| r)
+                .split('@')
+                .next()
+                .unwrap_or_default()
+        );
+        let branch = checked(&git(dir, &["branch", "--show-current"]));
+        let fork_repository = match &branch {
+            Ok(branch) if branch == "watane" => Some(name.as_str()),
+            Err(e) => {
+                errors.push(e.clone());
+                None
+            }
+            _ => None,
+        };
+        let commands = mod_commands(
             dir,
-            &mod_commands(dir, &paths, dir.join("logic/Cargo.toml").exists(), release),
-        ) {
+            &paths,
+            dir.join("logic/Cargo.toml").exists(),
+            release,
+            fork_repository,
+        );
+        match execute(dir, &commands) {
             Ok(()) => mod_result["pushed"] = json!(true),
             Err(e) => errors.push(e),
         }
@@ -442,6 +691,80 @@ pub fn push(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac7_watane_branch_finishes_with_default_branch_edit() {
+        let commands = mod_commands(
+            Path::new("mod"),
+            &["mod.toml"],
+            false,
+            "key/ratings@0.1.0",
+            Some("carol/ratings"),
+        );
+        assert_eq!(
+            commands.iter().map(Run::text).collect::<Vec<_>>(),
+            [
+                "git -C mod rm -r -q --cached --ignore-unmatch .",
+                "git -C mod add -f -- mod.toml",
+                "git -C mod commit -q -m 'ratings 0.1.0'",
+                "git -C mod tag key/ratings@0.1.0",
+                "git -C mod -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD refs/tags/key/ratings@0.1.0",
+                "gh repo edit carol/ratings --default-branch watane",
+            ]
+        );
+        assert_eq!(
+            finishing(&commands[5..]),
+            "gh repo edit carol/ratings --default-branch watane"
+        );
+    }
+    #[test]
+    fn ac7_first_package_difference_is_in_byte_order() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("a");
+        let b = root.path().join("b");
+        for dir in [&a, &b] {
+            fs::create_dir_all(dir.join("wit")).unwrap();
+            fs::create_dir_all(dir.join("ui/a")).unwrap();
+            fs::write(
+                dir.join("mod.toml"),
+                "name = \"Demo\"\nsummary = \"page\"\n",
+            )
+            .unwrap();
+            fs::write(
+                dir.join("wit/world.wit"),
+                "package mods:demo@0.1.0; world demo {}",
+            )
+            .unwrap();
+            fs::write(dir.join("ui/index.html"), "same").unwrap();
+        }
+        let pack = |dir: &Path| watane_pkg::pack(dir, true).unwrap();
+        assert_eq!(first_difference(&pack(&a), &pack(&b)), None);
+        fs::write(a.join("ui/a-b"), "left").unwrap();
+        fs::write(a.join("ui/a/file"), "left").unwrap();
+        assert_eq!(
+            first_difference(&pack(&a), &pack(&b)),
+            Some("ui/a-b: missing".into())
+        );
+        assert_eq!(
+            first_difference(&pack(&b), &pack(&a)),
+            Some("ui/a-b: extra".into())
+        );
+        fs::write(b.join("ui/a-b"), "right").unwrap();
+        assert_eq!(
+            first_difference(&pack(&a), &pack(&b)),
+            Some("ui/a-b: different".into())
+        );
+    }
+    #[test]
+    fn ac7_upstream_github_name() {
+        for url in [
+            "https://github.com/o/r",
+            "https://github.com/o/r.git",
+            "https://github.com/o/r/",
+        ] {
+            assert_eq!(github_name(url), Some("o/r"));
+        }
+        assert_eq!(github_name("https://other.test/o/r"), None);
+    }
     #[test]
     fn ac1_site_lists_for_new_and_existing_repository() {
         let dir = Path::new("site");
@@ -540,7 +863,7 @@ mod tests {
     fn ac1_ac6_mod_commands_use_only_package_paths() {
         let paths = ["logic.wasm", "mod.toml", "ui/index.html"];
         assert_eq!(
-            mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0")
+            mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0", None)
                 .iter()
                 .map(Run::text)
                 .collect::<Vec<_>>(),
@@ -553,11 +876,11 @@ mod tests {
             ]
         );
         assert_eq!(
-            mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0")[1].args,
+            mod_commands(Path::new("mod"), &paths, true, "key/demo@0.1.0", None)[1].args,
             ["-C", "mod", "add", "-f", "--", "mod.toml", "ui/index.html"]
         );
         assert_eq!(
-            mod_commands(Path::new("mod"), &paths, false, "key/demo@0.1.0")[1].args,
+            mod_commands(Path::new("mod"), &paths, false, "key/demo@0.1.0", None)[1].args,
             [
                 "-C",
                 "mod",

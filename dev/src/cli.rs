@@ -288,7 +288,8 @@ fn derive(
         crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env)
     })();
     match result {
-        Ok(value) => {
+        Ok((value, warnings)) => {
+            outcome.warnings.extend(warnings);
             let from = value["from_slug"].as_str().expect("from slug");
             let slug = value["slug"].as_str().expect("slug");
             outcome.dir = value["dir"].as_str().map(PathBuf::from);
@@ -794,7 +795,9 @@ fn publish(
         let prepared = if let Some(owner) = &owner
             && !no_source
         {
-            Some(crate::share::prepare_mod(dir, owner, &rerun)?)
+            let (prepared, warnings) = crate::share::prepare_mod(dir, owner, &rerun)?;
+            outcome.warnings.extend(warnings);
+            Some(prepared)
         } else {
             None
         };

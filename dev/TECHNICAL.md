@@ -252,8 +252,8 @@ A `mod.invalid` from a pkg `mod-toml` violation whose message starts with
 https URL of the mod's git repository (for example
 https://github.com/<owner>/<slug>), or remove the line`.
 
-Warning codes (step 5 first; step 6 adds `new.fork_unavailable` and
-`new.fork_differs`, 10.4.2): `new.prebuilt_renamed` (a renamed derivative
+Warning codes (step 5 first; step 6 adds `new.fork_unavailable`,
+`new.fork_differs` and `publish.fork_unavailable`, 10.4.2): `new.prebuilt_renamed` (a renamed derivative
 keeps prebuilt logic without `logic/Cargo.toml`; message and fix in 10.2),
 `publish.provider_unlisted` (the app's
 publish answer has `listed: false` for a provider; message `<key>/<slug> is
@@ -1906,16 +1906,17 @@ pub struct ReleaseProvider { pub release: watane_pkg::ReleaseRef, pub package: w
 pub fn provider_release(dir: &Path, slug: &watane_pkg::Slug, publisher: &watane_pkg::PublisherKey) -> Result<watane_pkg::ReleaseRef, Problem>;
 pub fn store(package: &watane_pkg::Package, env: &Env) -> Result<PathBuf, Problem>;
 pub fn fetch_providers(dir: &Path, client: &Client, env: &Env) -> Result<Vec<watane_pkg::ReleaseRef>, Vec<Problem>>;
-pub fn new_from(destination: Option<&Path>, slug: Option<&str>, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
+pub fn new_from(destination: Option<&Path>, slug: Option<&str>, target: &str, client: &Client, env: &Env) -> Result<(serde_json::Value, Vec<Problem>), Vec<Problem>>; // result and warnings
 pub fn add_release(dir: &Path, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
 
 // share.rs (step 6, 10.4)
 pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem>;   // git, identity, then gh api user
-pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<serde_json::Value, Vec<Problem>>;   // 10.4.1 step 3
+pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<(serde_json::Value, Vec<Problem>), Vec<Problem>>;   // 10.4.1 step 3: result and warnings
 pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, release: &str, prepared: Option<serde_json::Value>)
     -> (serde_json::Value, Vec<Problem>);   // 10.4.1 steps 5, 6: the `push` result and its errors
+// The caller has the ReleaseRef; the package alone contains no publisher key.
 pub fn fork(folder: &Path, repository: &str, package: &watane_pkg::Package)
-    -> Result<(), Problem>;   // 10.4.2 steps 2 to 4; Err is the warning, with folder removed
+    -> Result<(), Problem>;   // 10.4.2 steps 3 to 4; caller clones the ReleaseRef tag (step 2); Err is the warning, with folder removed
 
 // api.rs
 pub struct Client { /* base URL, ureq::Agent */ }
@@ -2060,7 +2061,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
-| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11 adds the first differing path of two packages (missing, extra, different) | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
+| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11: first differing path of two packages (missing, extra, different, byte order), GitHub upstream parsing, and the watane branch list ending in repo edit | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -2132,11 +2133,11 @@ rules belong to 15.1.
 | DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user |
 | DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
 | DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration |
-| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches; planned: S43 |
-| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote; planned: S43 |
-| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration; planned: S43 |
-| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol`; planned: S43 |
-| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod; planned: S43 |
+| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
+| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
+| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
+| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2264,7 +2265,7 @@ No test reaches GitHub. Each step-6 test makes, in its temp folder:
   without `bin/gh`.
 
 Stage 10 implements the user, repository lookup and create calls below;
-stage 11 adds fork and edit.
+stage 11 implements fork and edit.
 
 `fake-gh` (`src/bin/fake-gh.rs`) reads `FAKE_GH_ROOT` (the `remotes/`
 folder) and `FAKE_GH_USER` (unset: not logged in), and answers exactly

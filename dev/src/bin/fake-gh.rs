@@ -32,6 +32,86 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             );
             Ok(())
         }
+        [
+            "api",
+            "-X",
+            "POST",
+            endpoint,
+            "-f",
+            name,
+            "-F",
+            "default_branch_only=true",
+            "--jq",
+            ".full_name",
+        ] if endpoint.starts_with("repos/")
+            && endpoint.ends_with("/forks")
+            && name.starts_with("name=") =>
+        {
+            let upstream = &endpoint[6..endpoint.len() - 6];
+            let source = root.join(upstream);
+            if !source.is_dir() {
+                return Err((1, "gh: Not Found (HTTP 404)".into()));
+            }
+            let user = env::var("FAKE_GH_USER").map_err(|e| (4, e.to_string()))?;
+            let owner = root.join(&user);
+            fs::create_dir_all(&owner).map_err(|e| (1, e.to_string()))?;
+            for entry in fs::read_dir(&owner).map_err(|e| (1, e.to_string()))? {
+                let entry = entry.map_err(|e| (1, e.to_string()))?;
+                if fs::read_to_string(entry.path().join("fake-gh-parent"))
+                    .is_ok_and(|p| p.trim() == upstream)
+                {
+                    println!("{user}/{}", entry.file_name().to_string_lossy());
+                    return Ok(());
+                }
+            }
+            let path = owner.join(&name[5..]);
+            git_output(&["clone", "-q", "--bare"], &[&source, &path])?;
+            let branch = git_output(&["-C", path.to_str().unwrap(), "symbolic-ref", "HEAD"], &[])?;
+            let branches = git_output(
+                &[
+                    "-C",
+                    path.to_str().unwrap(),
+                    "for-each-ref",
+                    "--format=%(refname)",
+                    "refs/heads",
+                ],
+                &[],
+            )?;
+            for other in branches.lines().filter(|b| *b != branch.trim()) {
+                git_output(
+                    &["-C", path.to_str().unwrap(), "update-ref", "-d", other],
+                    &[],
+                )?;
+            }
+            fs::write(path.join("fake-gh-parent"), upstream).map_err(|e| (1, e.to_string()))?;
+            println!("{user}/{}", &name[5..]);
+            Ok(())
+        }
+        ["repo", "edit", name, "--default-branch", branch] => {
+            let path = root.join(name);
+            let reference = format!("refs/heads/{branch}");
+            git_output(
+                &[
+                    "-C",
+                    path.to_str().unwrap(),
+                    "show-ref",
+                    "--verify",
+                    &reference,
+                ],
+                &[],
+            )?;
+            git_output(
+                &[
+                    "-C",
+                    path.to_str().unwrap(),
+                    "symbolic-ref",
+                    "HEAD",
+                    &reference,
+                ],
+                &[],
+            )?;
+            Ok(())
+        }
         ["repo", "create", name, "--public"] => {
             let path = root.join(name);
             if path.exists() {
@@ -54,6 +134,17 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
         }
         _ => Err((2, format!("fake-gh: unsupported: {}", args.join(" ")))),
     }
+}
+fn git_output(args: &[&str], paths: &[&std::path::Path]) -> Result<String, (u8, String)> {
+    let out = Command::new("git")
+        .args(args)
+        .args(paths)
+        .output()
+        .map_err(|e| (1, e.to_string()))?;
+    if !out.status.success() {
+        return Err((1, String::from_utf8_lossy(&out.stderr).into()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().into())
 }
 fn main() -> ExitCode {
     match run(&env::args().skip(1).collect::<Vec<_>>()) {

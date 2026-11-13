@@ -4,6 +4,9 @@ use std::path::PathBuf;
 #[serde(into = "&'static str")]
 pub enum Code {
     NewPrebuiltRenamed,
+    NewForkUnavailable,
+    NewForkDiffers,
+    PublishForkUnavailable,
     UsageNoSource,
     ModReleaseProviderMissing,
     PublishProviderUnlisted,
@@ -54,6 +57,9 @@ pub enum Code {
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::NewForkUnavailable => "new.fork_unavailable",
+            Self::NewForkDiffers => "new.fork_differs",
+            Self::PublishForkUnavailable => "publish.fork_unavailable",
             Self::NewPrebuiltRenamed => "new.prebuilt_renamed",
             Self::UsageNoSource => "usage.no_source",
             Self::ModReleaseProviderMissing => "mod.release_provider_missing",
@@ -105,9 +111,12 @@ impl Code {
     }
     pub fn class(self) -> Class {
         match self {
-            Self::NewPrebuiltRenamed | Self::PreviewPrevious | Self::PublishProviderUnlisted => {
-                Class::Warning
-            }
+            Self::NewPrebuiltRenamed
+            | Self::PreviewPrevious
+            | Self::PublishProviderUnlisted
+            | Self::NewForkUnavailable
+            | Self::NewForkDiffers
+            | Self::PublishForkUnavailable => Class::Warning,
             Self::UsageNoSource
             | Self::UsageArgs
             | Self::UsageNotAMod
@@ -313,6 +322,21 @@ fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn ac7_fork_warning_codes_do_not_fail_the_command() {
+        for (code, text) in [
+            (Code::NewForkUnavailable, "new.fork_unavailable"),
+            (Code::NewForkDiffers, "new.fork_differs"),
+            (Code::PublishForkUnavailable, "publish.fork_unavailable"),
+        ] {
+            assert_eq!(code.class(), Class::Warning);
+            assert_eq!(serde_json::to_value(code).unwrap(), text);
+            let mut out = Outcome::new("new", None);
+            out.warnings.push(Problem::new(code, "warning"));
+            assert_eq!(out.exit_code(), 0);
+            assert!(out.ok);
+        }
+    }
     #[test]
     fn ac1_publish_null_link_is_none_yet_only_in_text() {
         let mut out = Outcome::new("publish", None);

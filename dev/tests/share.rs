@@ -382,3 +382,423 @@ fn ac3_missing_app_retry_keeps_push_and_package_options() {
     assert!(next.contains("--wait 7"), "{next}");
     assert!(!f.home.join("requests").exists());
 }
+
+const UPSTREAM: &str = "https://github.com/alice/reading-list";
+fn parent_tag() -> String {
+    format!("{}/reading-list@0.1.0", "y".repeat(52))
+}
+impl Fixture {
+    fn released(&self) -> String {
+        fs::write(
+            self.dir.join("mod.toml"),
+            format!("name = \"Reading List\"\nsummary = \"page\"\nrepository = \"{UPSTREAM}\"\n"),
+        )
+        .unwrap();
+        fs::write(
+            self.dir.join("wit/world.wit"),
+            "package mods:reading-list@0.1.0; world reading-list {}",
+        )
+        .unwrap();
+        fs::create_dir_all(self.dir.join("logic/src")).unwrap();
+        fs::write(self.dir.join("logic/src/lib.rs"), "// source data").unwrap();
+        let package = watane_pkg::pack(&self.dir, true).unwrap();
+        let path = self.root.join("source.pkg");
+        fs::write(&path, package.as_bytes()).unwrap();
+        fs::write(
+            self.home.join("fake.json"),
+            json!({"fetch":{parent_tag():{"release":parent_tag(),"package":path}}}).to_string(),
+        )
+        .unwrap();
+        self.git(&self.dir, &["init", "-q", "-b", "main"]);
+        fs::write(self.dir.join("README.md"), "publisher readme").unwrap();
+        fs::create_dir(self.dir.join(".github")).unwrap();
+        fs::write(self.dir.join(".github/x.yml"), "publisher workflow").unwrap();
+        self.git(&self.dir, &["add", "."]);
+        self.git(&self.dir, &["commit", "-qm", "parent"]);
+        self.git(&self.dir, &["tag", &parent_tag()]);
+        fs::create_dir_all(self.remote("reading-list")).unwrap();
+        self.git(
+            &self.remote("reading-list"),
+            &["init", "-q", "--bare", "-b", "main"],
+        );
+        self.git(&self.dir, &["push", UPSTREAM, "main", "--tags"]);
+        self.git(&self.dir, &["rev-parse", "HEAD"])
+    }
+    fn derive(&self) -> (i32, Value) {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        self.env(&mut c);
+        let o = c
+            .args(["new", "ratings", "--from", &parent_tag(), "--json", "--dir"])
+            .arg(self.root.join("ratings"))
+            .arg("--home")
+            .arg(&self.home)
+            .env("WATANE_DEV_CACHE", self.home.join("cache"))
+            .output()
+            .unwrap();
+        (
+            o.status.code().unwrap(),
+            serde_json::from_slice(&o.stdout).unwrap_or_else(|_| panic!("{o:?}")),
+        )
+    }
+    fn assert_derived_files(&self, v: &Value) {
+        assert_eq!(
+            v["result"]["files"],
+            json!([
+                ".gitignore",
+                "AGENTS.md",
+                "CLAUDE.md",
+                "logic/src/lib.rs",
+                "mod.toml",
+                "ui/index.html",
+                "wit/world.wit"
+            ])
+        );
+        let dir = self.root.join("ratings");
+        assert_eq!(
+            fs::read_to_string(dir.join("ui/index.html")).unwrap(),
+            "<title>Demo</title>"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("logic/src/lib.rs")).unwrap(),
+            "// source data"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("wit/world.wit")).unwrap(),
+            "package mods:ratings@0.1.0; world reading-list {}"
+        );
+        assert!(!dir.join("README.md").exists());
+        assert!(!dir.join(".github").exists());
+        let meta: toml::Table = fs::read_to_string(dir.join("mod.toml"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            meta["origin"]["release"].as_str(),
+            Some(parent_tag().as_str())
+        );
+        assert!(!meta.contains_key("repository"));
+        for name in ["AGENTS.md", "CLAUDE.md", ".gitignore"] {
+            let expected = fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("template")
+                    .join(name),
+            )
+            .unwrap()
+            .replace("{{slug}}", "ratings")
+            .replace("{{crate}}", "ratings")
+            .replace("{{title}}", "Ratings")
+            .replace(
+                "{{crates}}",
+                "- serde 1.0.229\n- serde_json 1.0.154\n- wit-bindgen 0.63.0",
+            );
+            assert_eq!(fs::read_to_string(dir.join(name)).unwrap(), expected);
+        }
+    }
+}
+#[test]
+fn ac6_new_from_clones_the_tag_and_keeps_only_package_files() {
+    let f = Fixture::new();
+    let commit = f.released();
+    let (code, v) = f.derive();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(
+        v["result"]["fork"],
+        json!({"repository":UPSTREAM,"tag":parent_tag()})
+    );
+    let dir = f.root.join("ratings");
+    assert!(dir.join(".git").is_dir());
+    assert_eq!(f.git(&dir, &["rev-parse", "HEAD"]), commit);
+    assert_eq!(f.git(&dir, &["branch", "--show-current"]), "main");
+    assert_eq!(f.git(&dir, &["remote"]), "upstream");
+    assert_eq!(
+        f.git(&dir, &["config", "--get", "remote.upstream.url"]),
+        UPSTREAM
+    );
+    f.assert_derived_files(&v);
+}
+
+#[test]
+fn ac7_tampered_tag_falls_back_to_the_package() {
+    let f = Fixture::new();
+    f.released();
+    fs::write(f.dir.join("ui/index.html"), "tampered").unwrap();
+    f.git(&f.dir, &["add", "ui/index.html"]);
+    f.git(&f.dir, &["commit", "-qm", "tampered"]);
+    f.git(&f.dir, &["tag", "-f", &parent_tag()]);
+    f.git(
+        &f.dir,
+        &[
+            "push",
+            "-f",
+            UPSTREAM,
+            &format!("refs/tags/{}", parent_tag()),
+        ],
+    );
+    let (code, v) = f.derive();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"][0]["code"], "new.fork_differs");
+    assert!(
+        v["warnings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("ui/index.html: different")
+    );
+    assert!(v["result"]["fork"].is_null());
+    assert!(!f.root.join("ratings/.git").exists());
+    f.assert_derived_files(&v);
+}
+#[test]
+fn ac7_unreachable_repository_falls_back_to_the_package() {
+    let f = Fixture::new();
+    f.released();
+    fs::remove_dir_all(f.remote("reading-list")).unwrap();
+    let (code, v) = f.derive();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"][0]["code"], "new.fork_unavailable");
+    let message = v["warnings"][0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with(&format!("could not clone {UPSTREAM} at {} (", parent_tag())),
+        "{message}"
+    );
+    assert!(message.ends_with("the mod was made from the verified package, with no git history"));
+    assert_eq!(
+        v["warnings"][0]["fix"],
+        format!(
+            "To keep the publisher's history, check that git can reach {UPSTREAM}, delete {}, then run new --from again",
+            f.root.join("ratings").display()
+        )
+    );
+    assert!(v["result"]["fork"].is_null());
+    assert!(!f.root.join("ratings/.git").exists());
+    f.assert_derived_files(&v);
+}
+
+impl Fixture {
+    fn ratings(&mut self) -> String {
+        let commit = self.released();
+        let (code, v) = self.derive();
+        assert_eq!(code, 0, "{v}");
+        self.dir = self.root.join("ratings");
+        self.git(
+            &self.dir,
+            &["remote", "set-url", "upstream", &format!("{UPSTREAM}.git")],
+        );
+        fs::remove_dir_all(self.dir.join("logic")).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
+        fs::copy(fixture.join("logic.wasm"), self.dir.join("logic.wasm")).unwrap();
+        fs::copy(
+            fixture.join("wit/world.wit"),
+            self.dir.join("wit/world.wit"),
+        )
+        .unwrap();
+        fs::create_dir_all(self.dir.join("wit/deps/watane-host")).unwrap();
+        fs::copy(
+            fixture.join("wit/deps/watane-host/host.wit"),
+            self.dir.join("wit/deps/watane-host/host.wit"),
+        )
+        .unwrap();
+        fs::create_dir(self.dir.join("tests")).unwrap();
+        fs::write(
+            self.dir.join("tests/test.json"),
+            r#"{"steps":[{"call":"api.get","returns":0}]}"#,
+        )
+        .unwrap();
+        commit
+    }
+    fn carol(&self) -> (i32, Value) {
+        let o = self
+            .command()
+            .env("FAKE_GH_USER", "carol")
+            .output()
+            .unwrap();
+        (
+            o.status.code().unwrap(),
+            serde_json::from_slice(&o.stdout).unwrap_or_else(|_| panic!("{o:?}")),
+        )
+    }
+    fn carol_remote(&self) -> PathBuf {
+        self.root.join("remotes/carol/ratings")
+    }
+    fn assert_fork_push(&self, commit: &str, v: &Value) {
+        let remote = self.carol_remote();
+        assert_eq!(
+            fs::read_to_string(remote.join("fake-gh-parent"))
+                .unwrap()
+                .trim(),
+            "alice/reading-list"
+        );
+        assert_eq!(
+            self.git(&remote, &["symbolic-ref", "HEAD"]),
+            "refs/heads/watane"
+        );
+        assert_eq!(self.git(&remote, &["merge-base", "watane", commit]), commit);
+        assert_eq!(
+            self.git(&remote, &["rev-parse", "main"]),
+            self.git(&self.remote("reading-list"), &["rev-parse", "main"])
+        );
+        assert_eq!(
+            self.git(
+                &remote,
+                &["rev-parse", &format!("{}/ratings@0.1.0", "y".repeat(52))]
+            ),
+            self.git(&remote, &["rev-parse", "watane"])
+        );
+        assert_eq!(v["warnings"], json!([]));
+        assert!(
+            fs::read_to_string(self.dir.join("mod.toml"))
+                .unwrap()
+                .contains("https://github.com/carol/ratings")
+        );
+    }
+}
+#[test]
+fn ac8_derived_mod_forks_on_first_push() {
+    let mut f = Fixture::new();
+    let commit = f.ratings();
+    let (code, v) = f.carol();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["push"]["mod"]["forked"], true);
+    assert_eq!(v["result"]["push"]["mod"]["created"], true);
+    f.assert_fork_push(&commit, &v);
+}
+#[test]
+fn ac8_rerun_after_decline_reuses_fork_and_sets_default_branch() {
+    let mut f = Fixture::new();
+    let commit = f.ratings();
+    fs::write(f.home.join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
+    let (code, v) = f.carol();
+    assert_eq!(code, 4, "{v}");
+    assert_eq!(
+        f.git(&f.carol_remote(), &["symbolic-ref", "HEAD"]),
+        "refs/heads/main"
+    );
+    assert_eq!(
+        fs::read_to_string(f.carol_remote().join("fake-gh-parent"))
+            .unwrap()
+            .trim(),
+        "alice/reading-list"
+    );
+    assert!(
+        fs::read_to_string(f.dir.join("mod.toml"))
+            .unwrap()
+            .contains("https://github.com/carol/ratings")
+    );
+    fs::write(f.home.join("fake.json"), "{}").unwrap();
+    let (code, v) = f.carol();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["push"]["mod"]["created"], false);
+    assert_eq!(v["result"]["push"]["mod"]["forked"], false);
+    f.assert_fork_push(&commit, &v);
+    let mut names = fs::read_dir(f.root.join("remotes/carol"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    names.sort();
+    assert_eq!(names, ["ratings", "watane-channel"]);
+}
+#[test]
+fn ac8_existing_fork_falls_back_to_a_new_repository() {
+    let mut f = Fixture::new();
+    let commit = f.ratings();
+    let other = f.root.join("remotes/carol/other");
+    fs::create_dir_all(other.parent().unwrap()).unwrap();
+    let mut cmd = Command::new(&f.git);
+    f.env(&mut cmd);
+    assert!(
+        cmd.args(["clone", "-q", "--bare"])
+            .arg(f.remote("reading-list"))
+            .arg(&other)
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(other.join("fake-gh-parent"), "alice/reading-list").unwrap();
+    let before = f.git(&other, &["show-ref"]);
+    let (code, v) = f.carol();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"][0]["code"], "publish.fork_unavailable");
+    assert!(
+        v["warnings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("the account already has a fork of it")
+    );
+    assert!(!f.carol_remote().join("fake-gh-parent").exists());
+    assert_eq!(
+        f.git(
+            &f.carol_remote(),
+            &["rev-parse", &format!("{}/ratings@0.1.0", "y".repeat(52))]
+        ),
+        f.git(&f.carol_remote(), &["rev-parse", "main"])
+    );
+    assert_eq!(f.git(&other, &["show-ref"]), before);
+    assert_eq!(
+        f.git(&f.carol_remote(), &["merge-base", "main", &commit]),
+        commit
+    );
+    assert_eq!(
+        f.git(&f.carol_remote(), &["symbolic-ref", "HEAD"]),
+        "refs/heads/main"
+    );
+    assert_eq!(v["result"]["push"]["mod"]["forked"], false);
+}
+#[test]
+fn ac8_derived_without_upstream_warns() {
+    let mut f = Fixture::new();
+    f.released();
+    fs::remove_dir_all(f.remote("reading-list")).unwrap();
+    let (code, derived) = f.derive();
+    assert_eq!(code, 0, "{derived}");
+    assert!(derived["result"]["fork"].is_null());
+    f.dir = f.root.join("ratings");
+    fs::remove_dir_all(f.dir.join("logic")).unwrap();
+    let (code, v) = f.carol();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"][0]["code"], "publish.fork_unavailable");
+    assert!(
+        v["warnings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no upstream repository")
+    );
+    assert_eq!(v["result"]["push"]["mod"]["forked"], false);
+}
+
+#[test]
+fn ac3_package_without_repository_has_no_fork_warning() {
+    let f = Fixture::new();
+    f.released();
+    fs::write(
+        f.dir.join("mod.toml"),
+        "name = \"Reading List\"\nsummary = \"page\"\n",
+    )
+    .unwrap();
+    let package = watane_pkg::pack(&f.dir, true).unwrap();
+    fs::write(f.root.join("source.pkg"), package.as_bytes()).unwrap();
+    let (code, v) = f.derive();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"], json!([]));
+    assert!(v["result"]["fork"].is_null());
+    assert!(!f.root.join("ratings/.git").exists());
+    f.assert_derived_files(&v);
+}
+
+#[test]
+fn ac3_missing_git_falls_back_with_actionable_warning() {
+    let f = Fixture::new();
+    f.released();
+    fs::remove_file(f.root.join("bin/git")).unwrap();
+    let (code, v) = f.derive();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["warnings"][0]["code"], "new.fork_unavailable");
+    assert_eq!(
+        v["warnings"][0]["message"],
+        format!(
+            "could not clone {UPSTREAM} at {} (git not found); the mod was made from the verified package, with no git history",
+            parent_tag()
+        )
+    );
+    assert!(v["result"]["fork"].is_null());
+    assert!(!f.root.join("ratings/.git").exists());
+    f.assert_derived_files(&v);
+}
