@@ -1466,9 +1466,10 @@ Record each one in `release_providers` (sorted keys). Return the list.
    existing one). Write dev's own `AGENTS.md`, `CLAUDE.md` and
    `.gitignore` of the template (section 4): a package never holds them
    (pkg 6.1), so the instructions that the agent reads come only from
-   `watane-dev`, never from the publisher. Remove `logic.wasm` if present:
-   the publisher's build is not the new mod's build and is absent from
-   `result.files`.
+   `watane-dev`, never from the publisher. Remove `logic.wasm` if present
+   when the package has `logic/Cargo.toml`: the source rebuilds it, and it
+   is absent from `result.files`. A package without logic source keeps its
+   built `logic.wasm`, the only logic the new mod has.
 6. Set `[origin] release = "<ReleaseRef>"` in `mod.toml` (a `toml::Table`
    edit that replaces an existing `[origin]`; W24: the direct parent).
    Set `name` to the template title for the new slug, exactly as `new <slug>`
@@ -2107,19 +2108,22 @@ rules belong to 15.1.
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
-| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod |
-| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
-| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh |
-| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user |
-| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
-| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration |
-| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
-| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
-| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
-| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
-| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
+| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod; planned: S42 |
+| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read; planned: S42 |
+| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh; planned: S42 |
+| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user; planned: S42 |
+| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook; planned: S42 |
+| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration; planned: S42 |
+| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches; planned: S43 |
+| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote; planned: S43 |
+| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration; planned: S43 |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol`; planned: S43 |
+| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod; planned: S43 |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
+
+A row marked `planned: <slice>` names future proofs; the map test checks its
+scenario coverage but skips proof-function existence until that slice removes the mark.
 
 S17-1 moves `ac3_literal_fresh_counter_failure_and_fresh_state_per_file` unchanged
 to the slow set: it drives the full check/build/unit/contract pipeline;

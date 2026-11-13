@@ -299,10 +299,12 @@ pub fn new_from(
     let dir = dir.as_path();
     let setup = || -> Result<(), Problem> {
         template::write_guides(dir, &slug)?;
-        match fs::remove_file(dir.join("logic.wasm")) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(Problem::internal(e)),
+        if dir.join("logic/Cargo.toml").is_file() {
+            match fs::remove_file(dir.join("logic.wasm")) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(Problem::internal(e)),
+            }
         }
         let mut meta: toml::Table =
             toml::from_str(&fs::read_to_string(dir.join("mod.toml")).map_err(Problem::internal)?)

@@ -225,7 +225,7 @@ fn ac5_scenario_map_covers_every_scenario_and_names_existing_tests() {
         .split("Removed command assertions")
         .next()
         .unwrap();
-    for scenario in (1..=32)
+    for scenario in (1..=51)
         .map(|n| format!("DEV-S-{n}"))
         .chain(["J1".into(), "S11".into()])
     {
@@ -241,18 +241,62 @@ fn ac5_scenario_map_covers_every_scenario_and_names_existing_tests() {
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .map(|path| fs::read_to_string(path).unwrap())
         .collect();
+    assert_eq!(scenario_proofs(map, &sources), Ok(()));
+}
+
+fn scenario_proofs(map: &str, sources: &str) -> Result<(), String> {
     for reference in map
-        .split('`')
-        .skip(1)
-        .step_by(2)
-        .filter(|name| name.contains("::ac"))
+        .lines()
+        .filter(|line| {
+            !line.starts_with('|')
+                || !line
+                    .split('|')
+                    .nth(3)
+                    .is_some_and(|notes| notes.contains("planned: "))
+        })
+        .flat_map(|line| {
+            line.split('`')
+                .skip(1)
+                .step_by(2)
+                .filter(|name| name.contains("::ac"))
+        })
     {
         let name = reference.rsplit("::").next().unwrap();
-        assert!(
-            sources.contains(&format!("fn {name}(")),
-            "unknown proof {reference}"
-        );
+        if !sources.contains(&format!("fn {name}(")) {
+            return Err(format!("unknown proof {reference}"));
+        }
     }
+    Ok(())
+}
+
+#[test]
+fn ac3_scenario_map_checks_unplanned_proofs_and_skips_planned_rows() {
+    let unknown = "| DEV-S-41 | `share::ac1_missing` | integration |";
+    assert_eq!(
+        scenario_proofs(unknown, "fn ac1_existing() {}"),
+        Err("unknown proof share::ac1_missing".into())
+    );
+    assert_eq!(
+        scenario_proofs(
+            &format!("{unknown}\n| DEV-S-42 | `share::ac2_future` | planned: S42 |"),
+            ""
+        ),
+        Err("unknown proof share::ac1_missing".into())
+    );
+    assert_eq!(
+        scenario_proofs(
+            "| DEV-S-41 | `share::ac1_missing` | integration; planned: S42 |",
+            ""
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        scenario_proofs(
+            "| DEV-S-1 | `envelope::ac1_existing` | integration |",
+            "fn ac1_existing() {}"
+        ),
+        Ok(())
+    );
 }
 
 #[test]

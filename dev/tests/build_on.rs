@@ -603,6 +603,47 @@ fn ac12_stage9_scenarios_layout_and_public_interface_are_documented() {
 }
 
 #[test]
+fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
+    let f = Fixture::new();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
+    let expected = fs::read(fixture.join("logic.wasm")).unwrap();
+    let source = f.root.path().join("source");
+    watane_pkg::pack(&fixture, false)
+        .unwrap()
+        .unpack(&source)
+        .unwrap();
+    // Contract source makes this a source package without a rebuildable logic crate.
+    fs::create_dir(source.join("tests")).unwrap();
+    fs::write(
+        source.join("tests/ratings.json"),
+        r#"{"steps":[{"call":"api.get","returns":0}]}"#,
+    )
+    .unwrap();
+    let package = watane_pkg::pack(&source, true).unwrap();
+    assert!(package.has_source());
+    assert!(!package.paths().any(|p| p == "logic/Cargo.toml"));
+    f.config("ratings", &package);
+    let _host = start(&f.home);
+    for (slug, mut args) in [
+        ("my-ratings", vec!["new", "my-ratings", "--from"]),
+        ("ratings", vec!["new", "--from"]),
+    ] {
+        let target = link("ratings");
+        args.push(&target);
+        let (code, v) = f.run(&args);
+        assert_eq!(code, 0, "{v}");
+        let dir = f.root.path().join(slug);
+        assert_eq!(fs::read(dir.join("logic.wasm")).unwrap(), expected);
+        assert!(
+            v["result"]["files"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("logic.wasm"))
+        );
+    }
+}
+
+#[test]
 fn ac3_derive_discards_publisher_wasm_with_explicit_and_default_slug() {
     let f = Fixture::new();
     let source = f.root.path().join("source");
