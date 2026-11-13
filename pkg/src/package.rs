@@ -288,19 +288,39 @@ fn finish_unpack(dest: &Path, result: Result<Mod, PackageError>) -> Result<Mod, 
     result
 }
 
+fn pack_error(root: &Path, part: String, e: std::io::Error) -> PackageError {
+    if crate::open::is_link(&e) {
+        PackageError::Symlink { path: part }
+    } else if matches!(
+        e.kind(),
+        std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
+    ) {
+        path_error(&part, "expected a regular file or a content directory")
+    } else {
+        io(&root.join(part), e)
+    }
+}
 fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
-    crate::open::file(root, relative).map_err(|(part, e)| {
-        if crate::open::is_link(&e) {
-            PackageError::Symlink { path: part }
-        } else if matches!(
-            e.kind(),
-            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
-        ) {
-            path_error(&part, "expected a regular file or a content directory")
-        } else {
-            io(&root.join(part), e)
+    crate::open::file(root, relative).map_err(|(part, e)| pack_error(root, part, e))
+}
+fn open_pack_dir(root: &Path, relative: &str) -> Result<crate::open::Dir, PackageError> {
+    crate::open::dir(root, relative).map_err(|(part, e)| pack_error(root, part, e))
+}
+// None when the entry is absent; a link or special part on the way is refused.
+fn lstat(root: &Path, relative: &str) -> Result<Option<crate::open::Stat>, PackageError> {
+    let (parent, name) = relative.rsplit_once('/').unwrap_or(("", relative));
+    let dir = match crate::open::dir(root, parent) {
+        Ok(dir) => dir,
+        Err((_, e)) if e.kind() == std::io::ErrorKind::NotFound && !crate::open::is_link(&e) => {
+            return Ok(None);
         }
-    })
+        Err((part, e)) => return Err(pack_error(root, part, e)),
+    };
+    match crate::open::stat(&dir, name) {
+        Ok(m) => Ok(Some(m)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(io(&root.join(relative), e)),
+    }
 }
 
 fn create_dir(path: &Path) -> std::io::Result<()> {
@@ -327,23 +347,16 @@ fn permissions(path: &Path, mode: u32) -> Result<(), PackageError> {
 
 // Hidden content is omitted, but every descendant must still be link-free.
 fn hidden_links(root: &Path, relative: &str) -> Result<(), PackageError> {
-    let mut stack = vec![root.join(relative)];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).map_err(|e| io(&dir, e))? {
-            let entry = entry.map_err(|e| io(&dir, e))?;
-            let path = entry.path();
-            let kind = entry.file_type().map_err(|e| io(&path, e))?;
-            if kind.is_symlink() {
-                return Err(PackageError::Symlink {
-                    path: path
-                        .strip_prefix(root)
-                        .unwrap_or(&path)
-                        .to_string_lossy()
-                        .into_owned(),
-                });
-            }
-            if kind.is_dir() {
-                stack.push(path);
+    use crate::open::Kind;
+    let mut stack = vec![relative.to_string()];
+    while let Some(relative) = stack.pop() {
+        let dir = open_pack_dir(root, &relative)?;
+        for (name, m) in crate::open::entries(&dir).map_err(|e| io(&root.join(&relative), e))? {
+            let path = format!("{relative}/{}", name.to_string_lossy());
+            match m.kind {
+                Kind::Link => return Err(PackageError::Symlink { path }),
+                Kind::Dir => stack.push(path),
+                _ => {}
             }
         }
     }
@@ -355,37 +368,34 @@ struct Input {
     size: u64,
 }
 impl Input {
-    fn walk(&mut self, root: &Path, relative: &str) -> Result<(), PackageError> {
-        // Filter before stat: build output and unrelated files are never followed.
+    fn walk(
+        &mut self,
+        root: &Path,
+        relative: &str,
+        m: crate::open::Stat,
+    ) -> Result<(), PackageError> {
+        use crate::open::Kind;
+        // Filter before descending: build output and unrelated files are never entered.
         if !directory(relative) && class(relative).is_none() {
             return Ok(());
         }
-        let path = root.join(relative);
-        let m = match fs::symlink_metadata(&path) {
-            Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(io(&path, e)),
-        };
-        if m.file_type().is_symlink() {
+        if m.kind == Kind::Link {
             return Err(PackageError::Symlink {
                 path: relative.into(),
             });
         }
         grammar(relative)?;
-        if m.is_dir() && directory(relative) {
-            for entry in fs::read_dir(&path).map_err(|e| io(&path, e))? {
-                let entry = entry.map_err(|e| io(&path, e))?;
-                let name = entry.file_name();
+        if m.kind == Kind::Dir && directory(relative) {
+            let dir = open_pack_dir(root, relative)?;
+            for (name, child) in
+                crate::open::entries(&dir).map_err(|e| io(&root.join(relative), e))?
+            {
                 if name.to_string_lossy().starts_with('.') {
-                    let metadata =
-                        fs::symlink_metadata(entry.path()).map_err(|e| io(&entry.path(), e))?;
-                    if metadata.file_type().is_symlink() {
-                        return Err(PackageError::Symlink {
-                            path: format!("{relative}/{}", name.to_string_lossy()),
-                        });
-                    }
-                    if metadata.is_dir() {
-                        hidden_links(root, &format!("{relative}/{}", name.to_string_lossy()))?;
+                    let path = format!("{relative}/{}", name.to_string_lossy());
+                    match child.kind {
+                        Kind::Link => return Err(PackageError::Symlink { path }),
+                        Kind::Dir => hidden_links(root, &path)?,
+                        _ => {}
                     }
                     continue;
                 }
@@ -395,19 +405,19 @@ impl Input {
                         "path must be ASCII",
                     )
                 })?;
-                self.walk(root, &format!("{relative}/{name}"))?;
+                self.walk(root, &format!("{relative}/{name}"), child)?;
             }
-        } else if m.is_file() && class(relative).is_none() {
+        } else if m.kind == Kind::File && class(relative).is_none() {
             // A regular file beside the content, such as wit/deps/README.md, is not
             // package content (section 6.1) and Mod::read ignores it (section 4.7).
-        } else if m.is_file() && class(relative).is_some() {
+        } else if m.kind == Kind::File && class(relative).is_some() {
             if self.files.len() == MAX_FILES {
                 return Err(PackageError::TooManyFiles);
             }
             self.size = self
                 .size
                 .saturating_add(6 + relative.len() as u64)
-                .saturating_add(m.len());
+                .saturating_add(m.size);
             check_size(self.size)?;
             self.files.insert(relative.into());
         } else {
@@ -427,11 +437,15 @@ pub fn pack(dir: &Path, include_source: bool) -> Result<Package, PackageError> {
         size: 13,
     };
     for path in ["mod.toml", "deps.json", "logic.wasm", "wit", "ui"] {
-        input.walk(dir, path)?;
+        if let Some(m) = lstat(dir, path)? {
+            input.walk(dir, path, m)?;
+        }
     }
     if include_source {
         for path in ["logic", "tests"] {
-            input.walk(dir, path)?;
+            if let Some(m) = lstat(dir, path)? {
+                input.walk(dir, path, m)?;
+            }
         }
     }
     let mut paths = Paths::default();

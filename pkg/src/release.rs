@@ -144,9 +144,10 @@ impl Release {
             return Err(ReleaseError::TooLarge { size: bytes.len() });
         }
         let mut r = Reader(Decoder::new(bytes));
-        r.exact_array(12, "release")?;
-        if r.0.u64().map_err(|e| malformed(format!("format: {e}")))? != 1 {
-            return Err(malformed("format must be 1"));
+        r.exact_array(12, "")?;
+        let format = r.read("format", "an unsigned integer", |d| d.u64())?;
+        if format != 1 {
+            return Err(expected("format", "1", format.to_string()));
         }
         let slug: Slug = r.name("slug")?;
         let version: Version = r.name("version")?;
@@ -158,25 +159,27 @@ impl Release {
             }
         }
         let package = PackageId::from_bytes(r.key("package id")?);
-        let size = r.0.u64().map_err(|e| malformed(format!("size: {e}")))?;
-        let source = r.0.bool().map_err(|e| malformed(format!("source: {e}")))?;
+        let size = r.read("size", "an unsigned integer", |d| d.u64())?;
+        let source = r.read("source", "a boolean", |d| d.bool())?;
         let offers = r.interfaces("offers", "offer", &slug, &version)?;
         let events = r.interfaces("events", "event", &slug, &version)?;
         let count = r.array(81, "grants")?;
         let mut grants = Vec::new();
         for _ in 0..count {
             let len = r.array(3, "grant")?;
-            let tag =
-                r.0.u64()
-                    .map_err(|e| malformed(format!("grant kind: {e}")))?;
-            let expected = match tag {
+            let tag = r.read("grant kind", "an unsigned integer", |d| d.u64())?;
+            let want = match tag {
                 0 => 1,
                 1 => 2,
                 2 | 3 => 3,
-                _ => return Err(malformed("unknown grant kind")),
+                _ => return Err(expected("grant kind", "0, 1, 2 or 3", tag.to_string())),
             };
-            if len != expected {
-                return Err(malformed("grant array has wrong length"));
+            if len != want {
+                return Err(expected(
+                    "grant",
+                    &format!("an array of {want} items"),
+                    format!("an array of {len} items"),
+                ));
             }
             let grant = match tag {
                 0 => Grant::Storage,
@@ -192,7 +195,7 @@ impl Release {
                         .package()
                         .parse()
                         .map_err(|e: NameError| malformed(e.to_string()))?;
-                    if r.is_null()? {
+                    if r.is_null("grant publisher", "a 32-byte key")? {
                         return Err(ReleaseError::LocalProvider {
                             slug: provider_slug,
                         });
@@ -217,8 +220,8 @@ impl Release {
             grants.push(grant);
         }
         ascending(&grants, "grants")?;
-        let origin = if r.is_null()? {
-            r.0.null().map_err(|e| malformed(format!("origin: {e}")))?;
+        let origin = if r.is_null("origin", "an array of 3 items or null")? {
+            r.read("origin", "null", |d| d.null())?;
             None
         } else {
             r.exact_array(3, "origin")?;
@@ -260,14 +263,28 @@ impl Release {
 }
 
 fn malformed(message: impl Into<String>) -> ReleaseError {
-    let message = message.into();
-    ReleaseError::Malformed(
-        message
-            .strip_prefix("release: ")
-            .or_else(|| message.strip_prefix("release "))
-            .unwrap_or(&message)
-            .to_owned(),
-    )
+    ReleaseError::Malformed(message.into())
+}
+// `field` is empty for the top-level array: Display already says "bad release body".
+fn expected(field: &str, what: &str, found: String) -> ReleaseError {
+    malformed(if field.is_empty() {
+        format!("expected {what}, found {found}")
+    } else {
+        format!("{field}: expected {what}, found {found}")
+    })
+}
+fn describe(t: Type) -> String {
+    match t {
+        Type::U8 | Type::U16 | Type::U32 | Type::U64 => "an unsigned integer".into(),
+        Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => "a negative integer".into(),
+        Type::Bool => "a boolean".into(),
+        Type::Null => "null".into(),
+        Type::Bytes | Type::BytesIndef => "a byte string".into(),
+        Type::String | Type::StringIndef => "a text string".into(),
+        Type::Array | Type::ArrayIndef => "an array".into(),
+        Type::Map | Type::MapIndef => "a map".into(),
+        other => other.to_string(),
+    }
 }
 
 fn ascending<T: Ord>(values: &[T], field: &str) -> Result<(), ReleaseError> {
@@ -305,38 +322,57 @@ impl<'a> Reader<'a> {
         Ok(list)
     }
 
+    // Run one decoder read; a failure says what was expected and what was there.
+    fn read<T>(
+        &mut self,
+        field: &str,
+        what: &str,
+        f: impl FnOnce(&mut Decoder<'a>) -> Result<T, minicbor::decode::Error>,
+    ) -> Result<T, ReleaseError> {
+        let seen = self.0.datatype();
+        f(&mut self.0).map_err(|e| {
+            let found = match seen {
+                _ if e.is_end_of_input() => "end of input".into(),
+                Ok(t) if e.is_type_mismatch() => describe(t),
+                _ => e.to_string(),
+            };
+            expected(field, what, found)
+        })
+    }
+    fn peek(&self, field: &str, what: &str) -> Result<Type, ReleaseError> {
+        self.0
+            .datatype()
+            .map_err(|_| expected(field, what, "end of input".into()))
+    }
+    fn array_len(&mut self, field: &str, what: &str) -> Result<u64, ReleaseError> {
+        self.read(field, what, |d| d.array())?
+            .ok_or(ReleaseError::NotCanonical)
+    }
     fn array(&mut self, max: u64, field: &str) -> Result<u64, ReleaseError> {
-        let len = self
-            .0
-            .array()
-            .map_err(|e| malformed(format!("{field}: {e}")))?
-            .ok_or(ReleaseError::NotCanonical)?;
+        let what = format!("an array of at most {max} items");
+        let len = self.array_len(field, &what)?;
         if len > max {
-            return Err(malformed(format!("{field} array exceeds {max} items")));
+            return Err(expected(field, &what, format!("an array of {len} items")));
         }
         Ok(len)
     }
     fn exact_array(&mut self, count: u64, field: &str) -> Result<(), ReleaseError> {
-        if self.array(count, field)? != count {
-            return Err(malformed(format!(
-                "{field} must be an array of {count} items"
-            )));
+        let what = format!("an array of {count} items");
+        let len = self.array_len(field, &what)?;
+        if len != count {
+            return Err(expected(field, &what, format!("an array of {len} items")));
         }
         Ok(())
     }
-    fn definite(&self, field: &str) -> Result<(), ReleaseError> {
-        match self
-            .0
-            .datatype()
-            .map_err(|e| malformed(format!("{field}: {e}")))?
-        {
+    fn definite(&self, field: &str, what: &str) -> Result<(), ReleaseError> {
+        match self.peek(field, what)? {
             Type::StringIndef | Type::BytesIndef => Err(ReleaseError::NotCanonical),
             _ => Ok(()),
         }
     }
     fn text(&mut self, field: &str) -> Result<&'a str, ReleaseError> {
-        self.definite(field)?;
-        self.0.str().map_err(|e| malformed(format!("{field}: {e}")))
+        self.definite(field, "text")?;
+        self.read(field, "text", |d| d.str())
     }
     fn name<T: std::str::FromStr<Err = NameError>>(
         &mut self,
@@ -352,14 +388,13 @@ impl<'a> Reader<'a> {
         })
     }
     fn key(&mut self, field: &str) -> Result<[u8; 32], ReleaseError> {
-        self.definite(field)?;
-        self.0
-            .bytes()
-            .map_err(|e| malformed(format!("{field}: {e}")))?
+        self.definite(field, "a 32-byte key")?;
+        let bytes = self.read(field, "a 32-byte key", |d| d.bytes())?;
+        bytes
             .try_into()
-            .map_err(|_| malformed(format!("{field} must be 32 bytes")))
+            .map_err(|_| expected(field, "a 32-byte key", format!("{} bytes", bytes.len())))
     }
-    fn is_null(&self) -> Result<bool, ReleaseError> {
-        Ok(self.0.datatype().map_err(|e| malformed(e.to_string()))? == Type::Null)
+    fn is_null(&self, field: &str, what: &str) -> Result<bool, ReleaseError> {
+        Ok(self.peek(field, what)? == Type::Null)
     }
 }

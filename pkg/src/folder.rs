@@ -1,6 +1,5 @@
 use serde::Serialize;
 use std::{
-    fs,
     io::Read,
     path::{Path, PathBuf},
 };
@@ -160,13 +159,62 @@ fn add(violations: &mut Vec<Violation>, rule: Rule, file: &str, message: impl In
         message: message.into(),
     });
 }
-fn metadata(path: &Path) -> Result<Option<fs::Metadata>, ModError> {
-    match fs::symlink_metadata(path) {
+// Stat below the mod root through no-follow directory handles; a missing or
+// link/non-directory parent means the entry is not there.
+fn lstat(root: &Path, relative: &str) -> Result<Option<crate::open::Stat>, ModError> {
+    let (parent, name) = relative.rsplit_once('/').unwrap_or(("", relative));
+    let dir = match crate::open::dir(root, parent) {
+        Ok(dir) => dir,
+        Err((_, e)) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err((part, e))
+            if !part.is_empty()
+                && (crate::open::is_link(&e) || e.kind() == std::io::ErrorKind::NotADirectory) =>
+        {
+            return Ok(None);
+        }
+        Err((part, e)) => return Err(io(&root.join(part), e)),
+    };
+    match crate::open::stat(&dir, name) {
         Ok(m) => Ok(Some(m)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(io(path, e)),
+        Err(e) => Err(io(&root.join(relative), e)),
     }
 }
+// The links below a directory the WIT rule refuses, hidden ones included.
+fn links_below(
+    root: &Path,
+    relative: &str,
+    violations: &mut Vec<Violation>,
+) -> Result<bool, ModError> {
+    use crate::open::Kind;
+    let mut found = false;
+    let mut stack = vec![relative.to_string()];
+    while let Some(relative) = stack.pop() {
+        let handle = match crate::open::dir(root, &relative) {
+            Ok(handle) => handle,
+            Err((part, e)) if crate::open::is_link(&e) => {
+                found = true;
+                add(violations, Rule::Path, &part, LINK);
+                continue;
+            }
+            Err((part, e)) => return Err(io(&root.join(part), e)),
+        };
+        let list = crate::open::entries(&handle).map_err(|e| io(&root.join(&relative), e))?;
+        for (name, m) in list.into_iter().rev() {
+            let path = format!("{relative}/{}", name.to_string_lossy());
+            match m.kind {
+                Kind::Link => {
+                    found = true;
+                    add(violations, Rule::Path, &path, LINK);
+                }
+                Kind::Dir => stack.push(path),
+                _ => {}
+            }
+        }
+    }
+    Ok(found)
+}
+const LINK: &str = "replace the symbolic link with a regular entry";
 fn segment(s: &str) -> bool {
     let first = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
     !s.is_empty()
@@ -176,9 +224,10 @@ fn segment(s: &str) -> bool {
 }
 // Never recurse through links; use an explicit stack for hostile directory depths.
 fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, ModError> {
+    use crate::open::Kind;
     let mut files = Vec::new();
     for file in ["mod.toml", "deps.json", "logic.wasm"] {
-        if metadata(&dir.join(file))?.is_some_and(|m| m.file_type().is_symlink()) {
+        if lstat(dir, file)?.is_some_and(|m| m.kind == Kind::Link) {
             add(
                 violations,
                 Rule::Path,
@@ -187,23 +236,19 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
             );
         }
     }
-    let mut stack = vec!["wit".to_string(), "ui".to_string()];
-    while let Some(relative) = stack.pop() {
-        let path = dir.join(&relative);
-        let Some(m) = metadata(&path)? else {
-            continue;
-        };
-        if m.file_type().is_symlink() {
-            add(
-                violations,
-                Rule::Path,
-                &relative,
-                "replace the symbolic link with a regular entry",
-            );
+    let mut stack = Vec::new();
+    for top in ["ui", "wit"] {
+        if let Some(m) = lstat(dir, top)? {
+            stack.push((top.to_string(), m));
+        }
+    }
+    while let Some((relative, m)) = stack.pop() {
+        if m.kind == Kind::Link {
+            add(violations, Rule::Path, &relative, LINK);
             continue;
         }
         let wit = relative == "wit" || relative.starts_with("wit/");
-        if m.is_dir() {
+        if m.kind == Kind::Dir {
             if wit
                 && relative != "wit"
                 && relative != "wit/deps"
@@ -211,39 +256,48 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                     && relative.split('/').count() == 3
                     && relative.rsplit('/').next().is_some_and(segment))
             {
-                add(
-                    violations,
-                    Rule::Path,
-                    &relative,
-                    "WIT directories must be wit/deps/<segment>",
-                );
-                continue;
-            }
-            let mut entries = fs::read_dir(&path)
-                .map_err(|e| io(&path, e))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| io(&path, e))?;
-            entries.sort_by_key(|e| e.file_name());
-            for entry in entries.into_iter().rev() {
-                let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                if !links_below(dir, &relative, violations)? {
                     add(
                         violations,
                         Rule::Path,
-                        &format!("{relative}/{}", entry.file_name().to_string_lossy()),
+                        &relative,
+                        "WIT directories must be wit/deps/<segment>",
+                    );
+                }
+                continue;
+            }
+            let handle = match crate::open::dir(dir, &relative) {
+                Ok(handle) => handle,
+                Err((part, e)) if crate::open::is_link(&e) => {
+                    add(violations, Rule::Path, &part, LINK);
+                    continue;
+                }
+                Err((part, e)) => return Err(io(&dir.join(part), e)),
+            };
+            let list = crate::open::entries(&handle).map_err(|e| io(&dir.join(&relative), e))?;
+            for (name, child) in list.into_iter().rev() {
+                let Some(name) = name.to_str() else {
+                    add(
+                        violations,
+                        Rule::Path,
+                        &format!("{relative}/{}", name.to_string_lossy()),
                         "use UTF-8 path names",
                     );
                     continue;
                 };
-                stack.push(format!("{relative}/{name}"));
+                let path = format!("{relative}/{name}");
+                // Hidden content is not part of a package: only its links matter.
+                let hidden = !wit && path.split('/').any(|s| s.starts_with('.'));
+                if hidden && !matches!(child.kind, Kind::Link | Kind::Dir) {
+                    continue;
+                }
+                stack.push((path, child));
             }
         } else if wit {
             if relative == "wit" || relative == "wit/deps" {
                 add(violations, Rule::Wit, &relative, "expected a WIT directory");
             }
-            let name = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default();
+            let name = relative.rsplit('/').next().unwrap_or_default();
             if relative.starts_with("wit/deps/")
                 && (name.ends_with(".wasm") || name.ends_with(".wat"))
             {
@@ -254,7 +308,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                     "WIT dependencies must be text .wit files",
                 );
             } else if name.ends_with(".wit") {
-                if !segment(name) || !m.is_file() {
+                if !segment(name) || m.kind != Kind::File {
                     add(
                         violations,
                         Rule::Path,
@@ -265,6 +319,13 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                     files.push(relative);
                 }
             }
+        } else if m.kind == Kind::Other {
+            add(
+                violations,
+                Rule::Path,
+                &relative,
+                "expected a regular file or a directory",
+            );
         }
     }
     files.sort();
@@ -284,10 +345,11 @@ impl Mod {
         } else {
             world::read(dir, &files, &mut violations)?
         };
-        let page = metadata(&dir.join("ui"))?.is_some();
+        use crate::open::Kind;
+        let page = lstat(dir, "ui")?.is_some();
         if page
-            && (!metadata(&dir.join("ui"))?.is_some_and(|m| m.is_dir())
-                || !metadata(&dir.join("ui/index.html"))?.is_some_and(|m| m.is_file()))
+            && (!lstat(dir, "ui")?.is_some_and(|m| m.kind == Kind::Dir)
+                || !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File))
         {
             add(
                 &mut violations,
@@ -296,10 +358,10 @@ impl Mod {
                 "ui/ must be a directory containing a regular ui/index.html",
             );
         }
-        let source = metadata(&dir.join("logic/Cargo.toml"))?.is_some_and(|m| m.is_file());
-        let built = metadata(&dir.join("logic.wasm"))?.is_some_and(|m| m.is_file());
-        let any_logic_file = metadata(&dir.join("logic/Cargo.toml"))?.is_some()
-            || metadata(&dir.join("logic.wasm"))?.is_some();
+        let source = lstat(dir, "logic/Cargo.toml")?.is_some_and(|m| m.kind == Kind::File);
+        let built = lstat(dir, "logic.wasm")?.is_some_and(|m| m.kind == Kind::File);
+        let any_logic_file =
+            lstat(dir, "logic/Cargo.toml")?.is_some() || lstat(dir, "logic.wasm")?.is_some();
         let mut logic = false;
         if let Some(c) = &contract {
             if c.own_package_copy
@@ -551,6 +613,7 @@ impl Mod {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[test]
     fn ac3_s22_missing_optional_file() {
         let dir = tempfile::tempdir().unwrap();
