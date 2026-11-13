@@ -565,3 +565,22 @@ fn ac1_install_next_matches_explicit_and_default_missing_symlink_home() {
         }
     }
 }
+
+#[test]
+fn ac2_missing_home_component_before_parent_is_environment_error() {
+    let root = tempfile::tempdir().unwrap();
+    for command in ["install", "publish", "search"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(root.path())
+            .args([command, "--json", "--home", "x/../h"])
+            .output()
+            .unwrap();
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output.status.code(), Some(3), "{value}");
+        assert_eq!(value["errors"][0]["code"], "env.host_not_running");
+        assert_eq!(
+            value["errors"][0]["message"],
+            "no watane app runs for the home x/../h (x does not exist)"
+        );
+    }
+}

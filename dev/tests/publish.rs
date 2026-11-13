@@ -274,7 +274,14 @@ fn ac2_existing_version_reports_release_and_link_without_post() {
             value["errors"][0]["fix"],
             "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"
         );
-        assert_eq!(value["next"], value["errors"][0]["fix"]);
+        assert_eq!(
+            value["next"],
+            format!(
+                "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
+                dir.display(),
+                home.path().canonicalize().unwrap().display()
+            )
+        );
         assert_eq!(
             value["result"],
             json!({"home": home.path().canonicalize().unwrap(), "release": "key/demo@0.2.3", "link": link})
@@ -489,6 +496,117 @@ fn ac4_accepted_fake_publish_completes_under_five_seconds() {
         assert!(
             elapsed < std::time::Duration::from_secs(5),
             "publish took {elapsed:?}: {value}"
+        );
+    }
+}
+
+#[test]
+fn ac1_default_home_and_publish_retry_paths_are_canonical() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = page(root.path());
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(root.path(), &alias).unwrap();
+    let home = alias.join(".watane");
+    let _host = start(&home);
+    let resolved = home.canonicalize().unwrap();
+    for command in ["install", "publish", "publish"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .env("HOME", &alias)
+            .env_remove("WATANE_HOME")
+            .args([command, "--json", "--dir"])
+            .arg(alias.join("demo"))
+            .output()
+            .unwrap();
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["dir"], json!(dir));
+        assert_eq!(value["result"]["home"], json!(resolved));
+        if !output.status.success() {
+            assert_eq!(value["errors"][0]["code"], "publish.version_exists");
+            assert_eq!(
+                value["next"],
+                format!(
+                    "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
+                    dir.display(),
+                    resolved.display()
+                )
+            );
+        }
+    }
+}
+
+#[test]
+fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
+    for scenario in ["race", "publish_timeout", "releases_timeout"] {
+        let timeout = scenario != "race";
+        let root = tempfile::tempdir().unwrap();
+        let dir = page(root.path());
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(root.path(), &alias).unwrap();
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let home = root.path().canonicalize().unwrap();
+        fs::write(
+            home.join("run.json"),
+            json!({"watane":1,"pid":std::process::id(),"port":port,"mode":"home"}).to_string(),
+        )
+        .unwrap();
+        let worker = std::thread::spawn(move || {
+            for path in ["/api/status", "/api/releases", "/api/publish"] {
+                let request = server
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(request.url(), path);
+                let (status, body) = match path {
+                    "/api/status" => (
+                        200,
+                        json!({"watane":1,"mode":"home","app":true,"home":home,"port":port}),
+                    ),
+                    "/api/releases" if scenario == "releases_timeout" => {
+                        std::thread::sleep(std::time::Duration::from_millis(2200));
+                        return;
+                    }
+                    "/api/releases" => (200, json!({"releases":[]})),
+                    _ if timeout => {
+                        std::thread::sleep(std::time::Duration::from_millis(1200));
+                        return;
+                    }
+                    _ => (
+                        409,
+                        json!({"error":{"code":"version_exists","message":"already published"}}),
+                    ),
+                };
+                request
+                    .respond(
+                        tiny_http::Response::from_string(body.to_string()).with_status_code(status),
+                    )
+                    .unwrap();
+            }
+        });
+        let (code, value) = publish(&alias.join("demo"), &alias, &["--no-source", "--wait", "1"]);
+        worker.join().unwrap();
+        assert_eq!(code, if timeout { 4 } else { 1 }, "{value}");
+        assert_eq!(value["dir"], json!(dir));
+        assert_eq!(
+            value["errors"][0]["code"],
+            if timeout {
+                "host.no_answer"
+            } else {
+                "publish.version_exists"
+            }
+        );
+        let prefix = if timeout {
+            "Run again with a longer --wait: "
+        } else {
+            "Raise the version in wit/world.wit, then run: "
+        };
+        assert_eq!(
+            value["next"],
+            format!(
+                "{prefix}watane-dev publish --json --dir {} --home {} --no-source --wait 1",
+                dir.display(),
+                root.path().canonicalize().unwrap().display()
+            )
         );
     }
 }

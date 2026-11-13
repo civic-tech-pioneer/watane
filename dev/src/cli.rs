@@ -604,7 +604,32 @@ fn app_home(home: Option<PathBuf>) -> Result<PathBuf, Vec<Problem>> {
         .map(Ok)
         .unwrap_or_else(watane_host::default_home)
         .map_err(|e| vec![Problem::internal(e)])?;
-    resolved_path(&home).map_err(|e| vec![Problem::internal(e)])
+    resolved_path(&home).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            let missing = home.ancestors().find(|p| {
+                p.file_name().is_some()
+                    && !p.exists()
+                    && p.parent()
+                        .is_some_and(|p| p.as_os_str().is_empty() || p.exists())
+            });
+            let detail = missing.map_or_else(
+                || e.to_string(),
+                |p| format!("{} does not exist", p.display()),
+            );
+            vec![
+                Problem::new(
+                    crate::outcome::Code::EnvHostNotRunning,
+                    format!(
+                        "no watane app runs for the home {} ({detail})",
+                        home.display()
+                    ),
+                )
+                .fix("Start the watane app, then run this command again"),
+            ]
+        } else {
+            vec![Problem::internal(e)]
+        }
+    })
 }
 
 fn app_client(
@@ -669,7 +694,28 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
             return Err(errors);
         }
         let (home, client) = app_client(&mut outcome, home, wait)?;
-        let releases = client.releases().map_err(|e| vec![e])?;
+        let mut rerun = format!(
+            "watane-dev publish --json --dir {} --home {}",
+            quote(dir),
+            quote(&home)
+        );
+        if no_source {
+            rerun.push_str(" --no-source");
+        }
+        if let Some(wait) = wait {
+            rerun.push_str(&format!(" --wait {wait}"));
+        }
+        let retry_next = |code| match code {
+            Code::PublishVersionExists => Some(format!(
+                "Raise the version in wit/world.wit, then run: {rerun}"
+            )),
+            Code::HostNoAnswer => Some(format!("Run again with a longer --wait: {rerun}")),
+            _ => None,
+        };
+        let releases = client.releases().map_err(|e| {
+            outcome.next = retry_next(e.code);
+            vec![e]
+        })?;
         // Mod owns WIT identity parsing. Invalid mods retain the pipeline's diagnostics.
         if let Ok(m) = watane_pkg::Mod::read(dir)
             && let Some(release) = releases["releases"].as_array().and_then(|entries| {
@@ -685,6 +731,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 || "it has no link yet: set your site's URL in the watane app".into(),
                 |link| format!("its link is {link}"),
             );
+            outcome.next = retry_next(Code::PublishVersionExists);
             return Err(vec![
                 Problem::new(
                     Code::PublishVersionExists,
@@ -730,7 +777,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                     e.message = format!("The person declined publishing {slug} from their watane app");
                     e.fix = Some(format!("Ask the person whether they want {slug} published, then run publish again with --wait <seconds>"));
                 }
-                outcome.next = e.fix.clone();
+                outcome.next = retry_next(e.code).or_else(|| e.fix.clone());
                 vec![e]
             })?;
         let listed = answer

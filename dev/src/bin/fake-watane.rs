@@ -144,7 +144,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .or_else(|| asked["release"].as_str())
                 .unwrap_or_default();
             if let Some(entry) = config["fetch"].get(key) {
-                let bytes = fs::read(entry["package"].as_str().ok_or("missing package path")?)?;
+                let file = entry["package"]
+                    .as_str()
+                    .unwrap_or("<missing package path>");
+                let bytes = match fs::read(file) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        request.respond(Response::from_string(
+                            json!({"error":{"code":"fetch_refused","message":format!("cannot read {file}: {e}")}}).to_string()
+                        ).with_status_code(409))?;
+                        continue;
+                    }
+                };
                 let id = watane_pkg::PackageId::of(&bytes);
                 request.respond(
                     Response::from_data(bytes)

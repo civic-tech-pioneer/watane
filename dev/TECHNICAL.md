@@ -166,6 +166,11 @@ A Problem:
  "file": "logic/src/lib.rs", "line": 12, "column": 5, "fix": null}
 ```
 
+`dir` and absolute paths in `next` use the same canonical spelling for every
+command (on macOS `/tmp/x` becomes `/private/tmp/x`). For a path that does
+not exist yet, resolve its existing ancestor and retain the missing suffix.
+This applies equally to explicit paths and defaults.
+
 `file` is relative to the mod folder when it is inside it, else absolute.
 `file`, `line`, `column` and `fix` are null when unknown.
 
@@ -280,6 +285,9 @@ join with `, `; an empty list prints `none` (for example,
 `calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
 are added to these values.
+Argument errors print `error[usage.args]: <clap text>` and
+`  fix: watane-dev --help`, then the failure line. Unknown subcommands,
+missing arguments and no arguments all follow this rule.
 Argument errors use the first known subcommand name found in the arguments
 for `<command>`, or `watane-dev` if none is found; JSON uses the same name.
 They end with `<command>: failed`, never a blank command name.
@@ -470,7 +478,9 @@ keeps null. The general null-to-`missing` rule of 2.3 is unchanged.
 
 Every publish refusal has a `next`:
 
-- `publish.version_exists`: the version-bump fix of 2.2.
+- `publish.version_exists`: `Raise the version in wit/world.wit, then run: <rerun>`.
+- `host.no_answer`: `Run again with a longer --wait: <rerun>`.
+  Both use the complete canonical publish rerun of 9.7; error fixes stay as in 2.2.
 - `publish.local_dependency`: `watane-dev publish --json --dir <absolute provider folder>`
   for the first local provider whose folder `.watane-dev.json` knows; quote the
   paths for the shell as above. If `--home <h>` was passed, append
@@ -508,6 +518,15 @@ index in the watane app, then run search again`; with none otherwise,
 | `WATANE_DEV_UNIT_SECONDS` | the time limit of one unit test binary | 60 |
 | `WATANE_BIN` | the program `watane` | 9.1 |
 | `WATANE_HOME` | the home of the participant | read through `watane_host::default_home()` |
+
+Home resolution uses `--home`, else `watane_host::default_home()` (which
+reads `WATANE_HOME`, else `$HOME/.watane`). Resolve symlinks for both
+explicit and default homes, including their existing ancestor when the
+home does not exist. Do not create the home. A missing component before
+`..` cannot be resolved: `--home x/../h` with absent `x` returns
+`env.host_not_running`, exit 3, with
+`no watane app runs for the home x/../h (x does not exist)`.
+The message preserves the path as given; it is never an internal I/O error.
 
 The cache folder (dev creates and canonicalizes it):
 
@@ -1258,7 +1277,9 @@ Run elsewhere (the consumer's parent, a subfolder of the provider), `.` is
 ### 9.6 `install` (step 2)
 
 Before any mod traversal or test pipeline, resolve home: `--home`, else
-`watane_host::default_home()`; canonicalize when it exists. Read its `RunInfo`.
+`watane_host::default_home()`; use the canonical existing ancestor plus any
+missing suffix (section 3). Read its `RunInfo`. Missing-app retry paths
+in `next` use this resolved home and the canonical mod folder.
 `GET /api/status` must match the home, port and protocol version and
 say `mode: "home"` and `app: true`; else `env.host_not_running` with the
 cause ("the host of <home> is a preview" / "the host of <home> runs
@@ -1300,9 +1321,9 @@ next command and fixes of `serve`.
    `Mod` identity. Invalid mods retain the test pipeline's diagnostics. On a
    match, return one `publish.version_exists` (2.2), with the existing release
    and its current link (or the missing-site-URL message), file `wit/world.wit`,
-   `result` containing `home`, `release` and `link`, and `next` equal to the
-   fix. Run no test pipeline, pack or POST. Another
-   slug or version does not block publishing. Error answers are `host.refused`.
+   `result` containing `home`, `release` and `link`, and `next` naming the
+   version change followed by the complete canonical rerun below. Run no
+   test pipeline, pack or POST. Another slug or version does not block publishing. Error answers are `host.refused`.
 3. Test the mod (sections 5 to 8). Failures send no publish request and
    retain the test pipeline's errors and `next`, as `install` does.
 4. `watane_pkg::pack(dir, !no_source)`: include source unless `--no-source`.
@@ -1329,9 +1350,15 @@ The CLI supplies the slug; the fixed `Client::publish` interface carries
 only a package and duration. A timeout uses the message and fix of 9.6;
 a 409 `version_exists` answer (a race after step 2b) is
 `publish.version_exists`, with the app's message unchanged and the same
-version-bump fix, file and `next` as the preflight refusal. Other errors are
-`host.refused` with `[<code>] <message>`. For these host failures, `next` is
-the fix. Success chooses the link-dependent instruction of 2.4.
+version-bump fix and file as the preflight refusal. Both version-conflict
+paths use `Raise the version in wit/world.wit, then run: <rerun>` for `next`;
+`host.no_answer` uses `Run again with a longer --wait: <rerun>`.
+The rerun is `watane-dev publish --json --dir <canonical mod> --home <canonical home>`,
+with `--no-source` and explicit `--wait <n>` retained, paths shell quoted.
+This includes default homes and timeouts while listing releases, and does
+not change error fix texts.
+Other errors are `host.refused` with `[<code>] <message>` and `next` equal
+to the fix. Success chooses the link-dependent instruction of 2.4.
 
 ## 10. Step 4: `search`; step 5: `new --from`, `add --release`
 
@@ -1416,13 +1443,18 @@ Record each one in `release_providers` (sorted keys). Return the list.
    existing one). Write dev's own `AGENTS.md`, `CLAUDE.md` and
    `.gitignore` of the template (section 4): a package never holds them
    (pkg 6.1), so the instructions that the agent reads come only from
-   `watane-dev`, never from the publisher.
+   `watane-dev`, never from the publisher. Remove `logic.wasm` if present:
+   the publisher's build is not the new mod's build and is absent from
+   `result.files`.
 6. Set `[origin] release = "<ReleaseRef>"` in `mod.toml` (a `toml::Table`
    edit that replaces an existing `[origin]`; W24: the direct parent).
+   Set `name` to the template title for the new slug, exactly as `new <slug>`
+   does (section 4). With no explicit slug, use the release's slug for this
+   title as well. Keep the publisher's summary and other metadata.
 7. When the slug differs, replace the slug in the package line of
    `wit/world.wit` and keep the version, so a same-slug derivative can fit
    in place of its origin (W26). Collect `mentions` (2.4). dev changes no
-   other file: the coding agent edits the code.
+   other source file: the coding agent edits the code.
 8. `fetch_providers(folder)`, then `Mod::read(folder)`: a failure here is
    reported (`mod.invalid`) with the folder kept, because the agent fixes
    it from `mentions`. Any failure before step 5 writes nothing; a failure
@@ -1769,6 +1801,21 @@ stop before compilation need no warmed cache. No product code changes.
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
+S39 cleanup proofs: `publish::ac1_default_home_and_publish_retry_paths_are_canonical`
+sets HOME through a symlink and clears WATANE_HOME, checking install, publish
+and version-conflict paths. `publish::ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths`
+covers POST races and timeouts; existing install/publish symlink tests cover
+explicit and WATANE_HOME paths, including absent homes.
+`install::ac2_missing_home_component_before_parent_is_environment_error`
+checks the written path and exit class. `build_on::ac3_derive_discards_publisher_wasm_with_explicit_and_default_slug`
+uses the prebuilt ratings component; `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug`
+also pins the new title. `build_on::ac4_fake_fetch_bad_package_file_refuses_and_keeps_serving`
+checks missing files and unreadable directories; `install::fake::ac2_fake_help_and_wrong_arguments`
+pins both help flags. `envelope::ac5_argument_errors_name_every_command_in_text_and_json`
+checks unknown subcommands, missing arguments and no arguments, the error,
+fix and nonempty failure line. `envelope::ac6_s39_specs_cover_paths_derivation_fake_and_argument_errors`
+pins these owning sections.
+
 Names below identify current proofs, including the slow set. Planned scenarios
 without an implementation had no test before S13; this table does not imply
 they pass. Command tests keep exit status, envelope and code wiring; detailed
@@ -1900,7 +1947,9 @@ consent and records its JSON body as `<dir>/requests/<n>-fetch`. `fake.json`
 `{"release":"<ReleaseRef>","package":"<path of a package file>"}`. A known key
 answers 200 with those bytes, `Content-Type: application/octet-stream`,
 `Watane-Release` from the entry and `Watane-Package` computed from the bytes.
-An unknown key answers 409 `fetch_refused`. `fake.json` `"providers"`
+An unknown key answers 409 `fetch_refused`. A missing or unreadable
+`package` file also answers 409 `fetch_refused`, with a message naming the
+file, and the fake keeps serving subsequent requests. `fake.json` `"providers"`
 (default `[]`) is copied into the publish answer unchanged. For publish header
 assertions, the fake records `Watane-Provider-Links` in `<n>-provider-links`.
 It stores each request body as

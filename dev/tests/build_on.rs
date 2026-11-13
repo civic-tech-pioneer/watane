@@ -118,6 +118,9 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
     let (code, v) = f.run(&["new", "ratings", "--from", &link("reading-list")]);
     assert_eq!(code, 0, "{v}");
     let dir = f.root.path().join("ratings");
+    let meta: toml::Table =
+        toml::from_str(&fs::read_to_string(dir.join("mod.toml")).unwrap()).unwrap();
+    assert_eq!(meta["name"].as_str(), Some("Ratings"));
     assert!(
         fs::read_to_string(dir.join("mod.toml"))
             .unwrap()
@@ -596,5 +599,104 @@ fn ac12_stage9_scenarios_layout_and_public_interface_are_documented() {
         "| 9 (step 5) |",
     ] {
         assert!(spec.contains(text), "missing {text}");
+    }
+}
+
+#[test]
+fn ac3_derive_discards_publisher_wasm_with_explicit_and_default_slug() {
+    let f = Fixture::new();
+    let source = f.root.path().join("source");
+    fs::create_dir(&source).unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ratings");
+    // Unpack the committed component, then add source data without a cold build.
+    watane_pkg::pack(&fixture, false)
+        .unwrap()
+        .unpack(&source.join("mod"))
+        .unwrap();
+    let source = source.join("mod");
+    fs::create_dir_all(source.join("logic/src")).unwrap();
+    fs::write(source.join("logic/src/lib.rs"), "// source data").unwrap();
+    fs::write(
+        source.join("logic/Cargo.toml"),
+        "[package]\nname = \"ratings\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        source.join("mod.toml"),
+        r#"name = "Publisher title"
+summary = "Example"
+"#,
+    )
+    .unwrap();
+    let package = watane_pkg::pack(&source, true).unwrap();
+    assert!(package.paths().any(|p| p == "logic.wasm"));
+    f.config("ratings", &package);
+    let _host = start(&f.home);
+    for (slug, title, args) in [
+        (
+            "my-ratings",
+            "My ratings",
+            vec!["new", "my-ratings", "--from"],
+        ),
+        ("ratings", "Ratings", vec!["new", "--from"]),
+    ] {
+        let mut args = args;
+        let target = link("ratings");
+        args.push(&target);
+        let (code, v) = f.run(&args);
+        assert_eq!(code, 0, "{v}");
+        let dir = f.root.path().join(slug);
+        let meta: toml::Table =
+            toml::from_str(&fs::read_to_string(dir.join("mod.toml")).unwrap()).unwrap();
+        assert_eq!(meta["name"].as_str(), Some(title));
+        assert!(!dir.join("logic.wasm").exists());
+        assert!(
+            !v["result"]["files"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("logic.wasm"))
+        );
+    }
+}
+
+#[test]
+fn ac4_fake_fetch_bad_package_file_refuses_and_keeps_serving() {
+    let f = Fixture::new();
+    let _host = start(&f.home);
+    let run: Value = serde_json::from_slice(&fs::read(f.home.join("run.json")).unwrap()).unwrap();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .proxy(None)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    // A directory is deterministically unreadable as bytes, even for privileged users.
+    for path in [f.root.path().join("missing.pkg"), f.home.clone()] {
+        fs::write(
+            f.home.join("fake.json"),
+            json!({"fetch":{"bad":{"release":release("ratings"),"package":path}}}).to_string(),
+        )
+        .unwrap();
+        let mut response = agent
+            .post(format!("http://127.0.0.1:{}/api/fetch", run["port"]))
+            .send_json(json!({"link":"bad"}))
+            .expect("fake must answer the bad fixture");
+        assert_eq!(response.status().as_u16(), 409);
+        let body: Value = response.body_mut().read_json().unwrap();
+        assert_eq!(body["error"]["code"], "fetch_refused");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(path.to_str().unwrap())
+        );
+        assert_eq!(
+            agent
+                .get(format!("http://127.0.0.1:{}/api/status", run["port"]))
+                .call()
+                .unwrap()
+                .status()
+                .as_u16(),
+            200
+        );
     }
 }

@@ -267,6 +267,7 @@ fn ac9_s17_builder_commands_document_bootstrap_and_slow_set() {
 fn ac5_argument_errors_name_every_command_in_text_and_json() {
     for (args, expected) in [
         (vec!["new", "--bogus"], "new"),
+        (vec!["new"], "new"),
         (vec!["check", "--bogus"], "check"),
         (vec!["serve", "--bogus"], "serve"),
         (vec!["doctor", "--bogus"], "doctor"),
@@ -291,6 +292,9 @@ fn ac5_argument_errors_name_every_command_in_text_and_json() {
                 assert_eq!(value["errors"][0]["code"], "usage.args");
             } else {
                 let text = String::from_utf8(output.stdout).unwrap();
+                assert!(text.starts_with("error[usage.args]: "), "{text}");
+                assert!(text.contains("  fix: watane-dev --help\n"), "{text}");
+                assert!(!text.lines().any(|line| line == ": failed"), "{text}");
                 assert!(
                     text.ends_with(&format!("{expected}: failed\n")),
                     "{args:?}: {text}"
@@ -346,5 +350,32 @@ fn ac8_s39_recovery_contract_is_documented() {
         for phrase in phrases {
             assert!(contents.contains(phrase), "{section} lacks {phrase}");
         }
+    }
+}
+
+#[test]
+fn ac6_s39_specs_cover_paths_derivation_fake_and_argument_errors() {
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
+    for (section, marker) in [
+        ("### 2.3", "error[usage.args]: <clap text>"),
+        ("## 3.", "x/../h (x does not exist)"),
+        ("### 9.6", "canonical existing ancestor"),
+        ("### 9.7", "--dir <canonical mod> --home <canonical home>"),
+        ("### 10.2", "Remove `logic.wasm`"),
+        (
+            "### 15.2",
+            "ac1_default_home_and_publish_retry_paths_are_canonical",
+        ),
+        ("### 15.3", "missing or unreadable"),
+    ] {
+        let body = spec
+            .split(section)
+            .nth(1)
+            .unwrap()
+            .split("\n##")
+            .next()
+            .unwrap();
+        assert!(body.contains(marker), "{section} missing {marker}");
     }
 }
