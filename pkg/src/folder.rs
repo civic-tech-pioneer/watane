@@ -346,13 +346,12 @@ impl Mod {
             world::read(dir, &files, &mut violations)?
         };
         use crate::open::Kind;
+        // A linked part already has its `path` violation; the parts rules add nothing for it.
         let ui = lstat(dir, "ui")?;
         let page = ui.is_some();
-        // A linked `ui` already has its `path` violation; the parts rule adds nothing for it.
-        if page
-            && !ui.is_some_and(|m| m.kind == Kind::Link)
-            && (!lstat(dir, "ui")?.is_some_and(|m| m.kind == Kind::Dir)
-                || !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File))
+        if ui.is_some_and(|m| m.kind != Kind::Link && m.kind != Kind::Dir)
+            || ui.is_some_and(|m| m.kind == Kind::Dir)
+                && !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File)
         {
             add(
                 &mut violations,
@@ -362,9 +361,11 @@ impl Mod {
             );
         }
         let source = lstat(dir, "logic/Cargo.toml")?.is_some_and(|m| m.kind == Kind::File);
-        let built = lstat(dir, "logic.wasm")?.is_some_and(|m| m.kind == Kind::File);
+        let wasm = lstat(dir, "logic.wasm")?;
+        let wasm_link = wasm.is_some_and(|m| m.kind == Kind::Link);
+        let built = wasm.is_some_and(|m| m.kind == Kind::File);
         let any_logic_file =
-            lstat(dir, "logic/Cargo.toml")?.is_some() || lstat(dir, "logic.wasm")?.is_some();
+            lstat(dir, "logic/Cargo.toml")?.is_some() || wasm.is_some() && !wasm_link;
         let mut logic = false;
         if let Some(c) = &contract {
             if c.own_package_copy
@@ -381,7 +382,7 @@ impl Mod {
                 );
             }
             logic = !c.world.exports.is_empty() || !c.world.subscriptions.is_empty();
-            if logic && !source && !built {
+            if logic && !source && !built && !wasm_link {
                 add(
                     &mut violations,
                     Rule::Parts,

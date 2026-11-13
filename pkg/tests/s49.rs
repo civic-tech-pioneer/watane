@@ -76,11 +76,9 @@ fn ac3_s49_cut_short_values() {
         "bad release body: slug: expected text, found a text string cut short by the end of input"
     );
     let id = 1 + 1 + 1 + 5 + 1 + 5 + 1 + 5 + 1 + 1 + 1 + 11;
-    let m = message(&g[..id + 3]);
-    assert!(
-        m.starts_with("bad release body: package id: ")
-            && m.ends_with("found a byte string cut short by the end of input"),
-        "{m}"
+    assert_eq!(
+        message(&g[..id + 3]),
+        "bad release body: package id: expected a 32-byte key, found a byte string cut short by the end of input"
     );
     assert_eq!(
         message(&[0x8c, 0x19]),
@@ -92,5 +90,30 @@ fn ac3_s49_cut_short_values() {
 fn ac4_s49_nothing_there_stays_end_of_input() {
     for b in [&[][..], &[0x8c][..]] {
         assert!(message(b).ends_with("found end of input"), "{}", message(b));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ac1_s49_linked_logic_wasm_one_violation() {
+    // A mod without logic exports, and one with exports but no logic/ source.
+    for (fixture, drop) in [("http-valid", Some("logic")), ("hello", None)] {
+        let dir = support::built_fixture(fixture);
+        if let Some(d) = drop {
+            fs::remove_dir_all(dir.path().join(d)).unwrap();
+        }
+        std::os::unix::fs::symlink("missing", dir.path().join("logic.wasm")).unwrap();
+        match Mod::read(dir.path()) {
+            Err(ModError::Invalid(v)) => assert_eq!(
+                v,
+                [Violation {
+                    rule: Rule::Path,
+                    file: "logic.wasm".into(),
+                    message: "replace the symbolic link with a regular file".into()
+                }],
+                "{fixture}"
+            ),
+            other => panic!("expected invalid, got {other:?}"),
+        }
     }
 }
