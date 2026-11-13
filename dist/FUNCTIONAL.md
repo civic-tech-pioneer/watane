@@ -142,9 +142,10 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
 
 ### 2.9 Build on (step 5)
 
-- **DIST-F-50** When the caller fetches a release of a channel that has no record, dist shall read that channel from the bases that live `list` and `include` statements of the own, followed, chosen and listed channels name for its key, with the limits and the local-address rule of a listed channel, and verify it against that key.
+- **DIST-F-50** When the caller fetches a release of a channel that has no record, dist shall read that channel from the bases that live `list` and `include` statements name for its key, in the own channel, the channel of the release that needs it, and the followed, chosen and listed channels, in that order, with the limits and the local-address rule of a listed channel, and verify it against that key. When the stored channel already holds the release, a failed read shall not stop the fetch.
 - **DIST-F-51** If no such base gives the channel, then dist shall refuse the fetch and say that nothing names where that key publishes.
 - **DIST-F-52** dist shall give, with each fetched release, the link of its publisher's channel that it was read from.
+- **DIST-F-54** When a local program asks for a release by its link, dist shall read the channel without following it or keeping a record. Traces: F-AGENT-4.
 - **DIST-F-53** When the caller searches by origin, dist shall give the mods whose newest live release names a release of that publisher and slug as its origin.
 
 ## 3. Acceptance scenarios
@@ -309,3 +310,16 @@ its own local host.
   `<Alice>/reading-list@0.1.0` as its origin, and Alice's own channel
   holds `reading-list` 0.2.0, when Eve searches with `origin` (Alice,
   `reading-list`), then the one hit is Carol's `ratings`. (DIST-F-53)
+- **A39 Trust order and two levels.** Given Eve follows Dave and chooses
+  an index of Zed, whose key sorts first, and Zed lists Carol with four
+  dead bases, and Dave lists Carol, and Carol lists her provider Gil's
+  `tags`, when Eve calls `fetch_for(<Carol>/ratings, Some(Dave))` and then
+  `fetch_for(<Gil>/tags, Some(Carol))`, then both succeed, `Fetched.link`
+  of `ratings` has Dave's base for Carol, and no dead base is read before
+  it. (DIST-F-50)
+- **A40 Read a link.** When Eve calls `read_link` on Carol's link, then
+  she gets the verified package and `follows.json` is unchanged. A link on
+  `127.0.0.1` with `listed_local` false is `BadUrl`, with no request.
+  (DIST-F-54)
+- **A41 Offline provider.** Given A36 done once, when every host stops,
+  then the same `fetch_for` gives the cached package. (DIST-F-50)

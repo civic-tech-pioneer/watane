@@ -129,6 +129,10 @@ impl Dist {
     // Packages (section 5.7).
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError>;
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError>;  // the link must have a slug
+    /// Step 5 (5.11): `fetch` of a provider; `consumer` is the publisher of the release that needs it.
+    pub fn fetch_for(&self, release: &ReleaseRef, consumer: Option<&PublicKey>) -> Result<Fetched, DistError>; // fetch(r) = fetch_for(r, None)
+    /// Step 5 (5.11): `open_link` with no follow and no record; the local-address rule of 5.9 holds.
+    pub fn read_link(&self, link: &Link) -> Result<Fetched, DistError>;
 
     // Indexes (step 4, section 5.9).
     /// Marks the channel of `link` (no slug) as a chosen index, reads it and
@@ -943,9 +947,12 @@ A consumer pins each provider's key in `deps.json` (W14), but no file says
 where that key's channel is read. A home finds it in the statements it
 already holds (W25, DD-28):
 
-1. **Hint channels**: the own channel, then each channel with a record in
-   `follows.json` (followed, chosen, listed), in key order, skipping
-   compromised ones.
+1. **Hint channels**, by trust: the own channel; then the `consumer`
+   channel of `fetch_for` (its stored entries, with a record or not, so a
+   provider of a provider finds its base in its consumer's channel read
+   just before); then the followed channels; then the chosen indexes;
+   then the listed channels. Key order within each class; compromised
+   channels are skipped.
 2. **Bases**: in that order, the base of each live `list` or `include`
    (4.1) of a hint channel whose link key is the wanted key, in seq order;
    distinct, at most 4. A base on a local address (5.9) is skipped unless
@@ -959,7 +966,21 @@ already holds (W25, DD-28):
 4. No base: `NotFollowed` with the key; its message says that no followed
    channel, chosen index or listing names a base for it. Every base
    failed: the cause of the first base's failure (for example
-   `WrongChannel`). Either way the app then offers a pick (app 9.7).
+   `WrongChannel`); but when the stored view already holds the release
+   (an earlier read), a failed read is no error, as for `open_link`, and
+   the fetch goes on (offline with a cached package). Otherwise the app
+   then offers a pick (app 9.7).
+5. **The base of `Fetched.link`** is the first base, in the order of step
+   2 (trust), whose read gave `Current` or `Behind`; the package is read
+   from it too. So a consumer's own listing wins over a third party's.
+
+**`read_link(link)`** (for `/api/fetch`, app 8.3): a link with no slug is
+`BadLink`. The own key: cache only, as `open_link`. A channel with a
+record: as `open_link`, but never `follow`. Else: one `read_channel` from
+the link's base with no record (as 5.9 before a `list`), skipped like a
+listed base when its host is a local address (`BadUrl` with cause `local
+address`, unless `listed_local`); then `latest(slug)` (`NoRelease`) and the
+package from that base as 5.7 steps 3 to 8. `Fetched.link` is the link.
 
 **Publish side.** So that a consumer's own channel names the base of its
 providers, the app asks the publisher to `list` each provider of another
@@ -970,7 +991,9 @@ listings are hints for the providers.
 
 **After an install** the caller follows `Fetched.link` of each installed
 release whose channel is not followed (DD-29; app 9.4), so that updates and
-withdrawals of a provider keep coming, as for a hit (5.10).
+withdrawals of a provider keep coming, as for a hit (5.10). That base is
+the most trusted one that served the channel (step 5); like every follow
+it is read alone afterwards (5.9), and the participant can unfollow it.
 
 ## 6. Security properties
 
@@ -997,7 +1020,9 @@ withdrawals of a provider keep coming, as for a hit (5.10).
 | A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
 | A provider hint cannot swap a provider (step 5) | the key comes from the consumer's signed `deps.json` grants; every entry read from a hinted base is verified against that key; a hint only says where to read | A36 |
-| A provider hint cannot reach the local network or read without bound | the local-address rule and the limits of a listed read (5.9) hold for hint bases; at most 4 bases per fetch | A37 |
+| A provider hint cannot reach the local network or read without bound | the local-address rule and the limits of a listed read (5.9) hold for hint bases and for `read_link`; at most 4 bases per fetch | A37 |
+| A third party cannot crowd out the consumer's hint | hint channels by trust: own, the consumer, followed, chosen, listed; the follow after an install uses the most trusted base that served | A39 |
+| A local program cannot add a follow | `read_link` creates no record; only the participant's own acts follow (open a link, install) | A40 |
 | An origin is only a claim (W24) | `Release.origin` is shown as the publisher's claim; dist never treats it as a statement of the origin's publisher | review |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
@@ -1076,7 +1101,7 @@ stub in another subsystem's folder.
 | S3 | `publish`, `unpacked`, package cache, `export`, `site_dir`, `set_site_url`, `own_link` | `pkg`: section 10 (pkg stages 1, 5, 7) | none: `pkg` needs no sibling, so wait for it | `own_request_*`, `site_*` pass |
 | S4 | `http`, `read_channel`, `follow`, `unfollow`, `refresh` | `log`: `ingest`, `status` (L3) | none new | `follow_*`, `refresh_*` pass |
 | S5 | `fetch`, `open_link`, `backup`, `restore`, `confirm_own` | `log`: backup and own-head confirmation (L4) | none new | `fetch_*`, `restore_*`, `j3_dist` pass with the real `../log` and `../pkg` |
-| S7 (step 5) | 5.11 provider bases in `fetch`; `Fetched.link`; `Query.origin` | nothing new | none | A36 to A38 pass; the step 3 and 4 tests still pass unchanged |
+| S7 (step 5) | 5.11: provider bases, `fetch_for`, `read_link`; `Fetched.link`; `Query.origin` | nothing new | none | A36 to A41 pass; the step 3 and 4 tests still pass unchanged |
 | S6 (step 4) | `list`, `include`, `unlist` bodies and rules 9 to 14; `Statement` and `Change` additions; `follows.json` fields; the read set, `choose_index`, `drop_index`, `indexes`, three-pass `refresh`; `search`, `Query`, `Hit` and the marks | nothing new: `log` and `pkg` as for S5 | none | `body_vectors` and `derive_rules` with the step 4 rows, `index_*`, `search_*` and `j4_dist` pass; the step 3 tests still pass unchanged |
 
 J3 itself passes only with `host`, `app` and `dev` (spec/TECHNICAL.md
@@ -1224,5 +1249,5 @@ are `list` and `include` statements of 4.1.
 | DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
 | DD-28 | A provider's base comes from live `list` and `include` statements in the channels already read, not from a link in `deps.json` or the release body. | No new format in published bytes; the consumer's publisher states it with a statement it can end (`unlist`) or repeat with a new base. Undo: cheap, reader-only; a field in a later body version (a new kind) can add a base hint later. |
-| DD-29 | A channel read through a provider base gets no record; the caller follows `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
+| DD-29 | A channel read through a provider base or `read_link` gets no record; the caller follows `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
 | DD-30 | The derived mods of F-BUILD-4 are a search filter on `Release.origin` (publisher and slug, any version) over the channels already read. | Offline and bounded like search (DD-23); "as far as the chosen indexes list them". Undo: cheap, reader-only. |

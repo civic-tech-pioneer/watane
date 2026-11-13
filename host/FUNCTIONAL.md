@@ -77,7 +77,7 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 
 ### 2.5 Step 5: Build on
 
-- **HOST-F-44** When the app plans with a bind, the host shall link that consumer to the picked mod in place of the provider that `deps.json` names, only if the picked mod has the same slug and offers every interface that the consumer needs, and shall keep the bind across updates of the consumer until the picked mod is removed. Traces: F-BUILD-3, J5.
+- **HOST-F-44** When the app plans with a bind, the host shall link that consumer to the picked mod in place of the provider that `deps.json` names, only if the picked mod has the same slug and offers every interface that the consumer needs, shall ask the participant for every new bind, and shall keep the bind across updates of the consumer until the picked mod is removed, which deletes the bind. Traces: F-BUILD-3, J5.
 - **HOST-F-45** In a preview, the host shall link a provider by slug and interface, whatever its publisher. Traces: F-BUILD-2, W27.
 
 ## 3. Acceptance scenarios
@@ -212,7 +212,9 @@ API, the HTTP server or the program `watane`.
   "K1/shelf", to: "K3/shelf"}`, then nothing is missing, the `recs` entry
   lists that bind, and after install `recs`'s `api.who-of-shelf` returns
   `mod:recs` through K3's `shelf`. After a restart the bind and the link are
-  still there.
+  still there. A plan of the installed `recs` with a new bind and no other
+  change needs confirmation. After `remove` of K3's `shelf`, `recs` has no
+  bind; installing K3's `shelf` again does not bind it.
 - **S34 A bind that does not fit** (HOST-F-44). Given the same, with K3's
   `shelf` lacking the interface that `recs` calls. When `plan_with` gets the
   bind, then `missing` still names `K1/shelf`. A bind with `to` of another

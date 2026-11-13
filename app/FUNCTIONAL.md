@@ -77,7 +77,7 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-41** When a provider of a mod to install cannot be fetched, the app shall show the cause and the released mods of the chosen indexes and followed channels that fit in its place, verified and not compromised, and bind the one the participant picks only after the install consent shows that bind. With no fitting mod, or no pick, nothing is installed. Traces: F-BUILD-3, W26, J5.
 - **APP-F-42** The app shall show the release a mod was made from as the publisher's claim, in the details, the install consent and the release signature, and list the mods made from an installed release as far as the chosen indexes list them. Traces: F-BUILD-1, F-BUILD-4, W24.
 - **APP-F-47** When the participant publishes a release that depends on a mod of another publisher, the app shall offer to list that mod in the own index, each listing with its own signature, and report which providers are listed. Traces: F-BUILD-2, W25, J5.
-- **APP-F-48** When a local program asks for a release by its link, the app shall fetch and verify it, follow its channel, and answer with the package, and shall install, grant and sign nothing. Traces: F-BUILD-1, F-BUILD-2, F-AGENT-4.
+- **APP-F-48** When a local program asks for a release by its link, the app shall fetch and verify it and answer with the package, and shall install, grant, sign and follow nothing. Traces: F-BUILD-1, F-BUILD-2, F-AGENT-4.
 - **APP-F-49** After it installs a release of a publisher that it does not follow, the app shall follow that publisher's channel. Traces: F-INST-7, F-INST-8, J5.
 
 ## Acceptance scenarios
@@ -207,7 +207,8 @@ lists Frank's `ratings` (same WIT), when Eve installs `stats`, then a pick
 view names Carol's `ratings`, the cause, and one candidate, Frank's; after
 she picks it, the install consent shows `stats` with the line
 `Frank's ratings in place of Carol's ratings (your pick)`; after approve,
-`stats` calls Frank's mod and Frank is a followed channel. A `Deny` in the
+`stats` calls Frank's mod, its grant line reads `Call ... of ratings by
+Frank (in place of ratings by Carol)`, and Frank is a followed channel. A `Deny` in the
 pick view installs nothing.
 
 **S24 No fit** (APP-F-41). Given S23 with Frank's `ratings` lacking an
@@ -220,8 +221,9 @@ view and the details show `made from` Alice's mod with Alice's name and
 `(the publisher says so)`; Alice's `reading-list` details list `ratings`
 under the mods made from it.
 
-**S26 Publish lists the provider** (APP-F-47). Given Dave follows Carol,
-when he publishes `stats`, then the consent view asks to sign the release,
+**S26 Publish lists the provider** (APP-F-47). Given `stats` depends on
+Carol's `ratings`, when Dave publishes `stats` with Carol's link in
+`Watane-Provider-Links`, then the consent view asks to sign the release,
 then to list `<Carol>/ratings` with the note `used by stats`; after both
 approves the answer has `providers: [{provider: "<Carol>/ratings", listed:
 true}]`. A `Deny` of the listing keeps the release and gives `listed:
@@ -230,5 +232,5 @@ false`.
 **S27 Fetch route** (APP-F-48). Given Carol's site, when `POST /api/fetch`
 names her `ratings` link, then the answer is the package bytes with the
 headers of `Watane-Release` and `Watane-Package`, no consent view opened,
-and Carol is a followed channel. A link with no slug is 400; with an
+and Carol is not a followed channel. A link with no slug is 400; with an
 `Origin` header, 403.

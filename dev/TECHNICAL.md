@@ -365,13 +365,15 @@ On a gap, it is `Run each error's fix, then run: watane-dev doctor --json`.
 {"slug": "ratings", "dir": "/abs/ratings", "files": ["AGENTS.md", "..."],
  "origin": "<Alice key>/reading-list@0.1.0", "from_slug": "reading-list",
  "providers": ["<key>/tags@0.2.0"],
- "mentions": [{"file": "logic/src/lib.rs", "line": 3, "text": "use exports::mods::reading_list::books::Guest;"}]}
+ "mentions": [{"file": "logic/src/lib.rs", "line": 3}]}
 ```
 `files` as for `new`. `providers` are the released providers fetched into
 the cache (10.1). `mentions` lists each line (at most 200, in path and line
 order) of `wit/*.wit`, `logic/` and `ui/` and `tests/` that still names the
 old slug: `<from_slug>` or its `_` form as a whole word (bounded by no
-`[a-z0-9_-]`). It is empty when the slug is unchanged. `next`: with
+`[a-z0-9_-]`). It is empty when the slug is unchanged. It gives only file
+and line, never the text: the source is the publisher's, and the agent
+reads it in the file as data (section 11). `next`: with
 mentions, `Replace <from_slug> with <slug> (and <from_snake> with
 <snake>) at each result.mentions entry, then run: watane-dev test --json`;
 without, `Edit wit/world.wit, logic/src/lib.rs and ui/, then run:
@@ -509,7 +511,7 @@ The cache folder (dev creates and canonicalizes it):
     "reading-list": "../reading-list"
   },
   "release_providers": {
-    "tags": {"release": "<key>/tags@0.2.0", "package": "<64 hex>"}
+    "tags": {"release": "<key>/tags@0.2.0", "package": "<64 hex>", "link": null}
   }
 }
 ```
@@ -517,7 +519,9 @@ The cache folder (dev creates and canonicalizes it):
 Keys are slugs; `local_providers` values are paths relative to the mod
 folder, with `/`. `release_providers` (step 5, default `{}`) names the
 released providers of this mod and of its providers, with the package id
-of each in the cache (10.1); `add --release` and `new --from` write it.
+of each in the cache (10.1), and the link that `add --release` was given
+(null for a ReleaseRef or a provider of a provider); `add --release` and
+`new --from` write it.
 dev writes it with sorted keys, two-space indent and a final newline.
 
 ## 4. The template
@@ -1263,7 +1267,11 @@ next command and fixes of `serve`.
    the body, using the proxy-free localhost transport of `install`.
    `--wait` defaults to 600 seconds. The app asks the participant, who sees
    whether source is included; consent is the agreement to include it
-   (F-PUB-4). `dist` signs and writes the site folder. dev reports only
+   (F-PUB-4). Step 5: the header `Watane-Provider-Links` carries the
+   non-null `link` of each `release_providers` entry whose slug is a
+   provider in `deps.json` (app 8.1), and the request timeout is `--wait`
+   times (1 + the number of providers with another publisher's key), since
+   the app asks for the release and then for each listing. `dist` signs and writes the site folder. dev reports only
    `home`, the answer's `release`, `site`, `link`, `package` (`Package::id()`)
    and `source` (`Package::has_source()`), as in 2.4, and step 5's `providers`.
 
@@ -1305,7 +1313,9 @@ transport, with a 330 s timeout (dist's package timeout plus 30 s). It
 reads at most `MAX_PACKAGE_BYTES` + 1 bytes (more is `host.refused`
 `[too_large]`). `Package::from_bytes` must accept the body and
 `PackageId::of(body)` must equal the `Watane-Package` header; else
-`internal`. The `Watane-Release` header parses as a `ReleaseRef`. dev trusts
+`internal`. The `Watane-Release` header parses as a `ReleaseRef` and must
+match the request: equal to the asked ReleaseRef, or with the key and
+slug of the asked link; else `internal`, and nothing is stored. dev trusts
 the app of its own home for the signature check (dist 5.7); it checks the
 bytes again because they cross a socket. Error answers are `host.refused`
 `[<code>] <message>`; a 400 gets the fix `Pass a mod link
@@ -1358,7 +1368,7 @@ Record each one in `release_providers` (sorted keys). Return the list.
 4. `watane_pkg::add_provider(dir, &provider, Some(publisher))` (pkg 4.8):
    its WIT and its own `wit/deps/` entries; `deps.json` gets the key.
    Remove `local_providers.<slug>` from `.watane-dev.json`; set
-   `release_providers.<slug>`.
+   `release_providers.<slug>` with the link when one was given.
 5. `fetch_providers(dir)` for the providers of the provider.
 6. Report as `add` (9.5 step 4), with the fields of 2.4.
 

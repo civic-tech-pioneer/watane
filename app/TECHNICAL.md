@@ -153,11 +153,16 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
   knows a name, else `<fingerprint>`. The fingerprint is
   `PublicKey::fingerprint` (log, through dist); before stage C it is the
   first 10 characters of the key text.
+- Step 5: when a bind of the mod names the grant's provider (host 4.5),
+  `{provider}` is the bound mod, followed by ` (in place of <the pinned
+  provider>)`; the same holds for the `uses` lines. So the words name the
+  mod that the call reaches.
 - `GrantLine.key` is pkg's stable text form of the grant (PKG-F-19), for
   example `call mods:reading-list/books@0.1.0 from local/reading-list`.
 
 ```rust
 pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) -> GrantLine;
+// step 5: grant_line_bound(grant, binds: &[Bind], parties, granted, new); grant_line is it with no binds
 pub fn party(publisher: &str, parties: &Parties) -> Party;
 ```
 
@@ -292,7 +297,7 @@ pub struct PlanMod {
     pub grants: Vec<GrantLine>,
     pub uses: Vec<String>,            // providers, as {provider} of section 4
     pub origin: Option<String>,       // step 5: ReleaseRef text of mod.toml [origin], the publisher's claim
-    pub binds: Vec<String>,           // step 5: one line per bind in force, words.rs: "<to> in place of <provider> (your pick)"
+    pub binds: Vec<String>,           // step 5: one line per new bind, words.rs: "<to> in place of <provider> (your pick)"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party { pub name: Option<String>, pub fingerprint: String }
@@ -362,8 +367,20 @@ Sign details, in this order. A release is named by its ReleaseRef text
   control.
 - `Approve` is `disabled` at load, on each window `blur`, and for 800 ms
   after each window `focus` (APP-F-16).
-- A click sends `consent_answer({id, approve, withheld})`; `withheld` lists
-  each unchecked grant as `{local, key}`. The Rust side answers the broker
+- A click sends `consent_answer({id, approve, withheld, choice})`; `withheld` lists
+  each unchecked grant as `{local, key}`; `choice` is null except for a pick.
+  `consent_answer` maps the arguments to `Answer` (step 5):
+
+  | Request | `approve` | `choice` | Answer |
+  |---|---|---|---|
+  | any | false | any | `Deny` |
+  | `install`, `sign` | true | null | `Approve { withheld }` |
+  | `install`, `sign` | true | a text | `WrongAnswer` |
+  | `pick` | true | a text | `Pick { choice }` (then `UnknownChoice` if no candidate has it) |
+  | `pick` | true | null, or `withheld` not empty | `WrongAnswer` |
+
+  The driver's `ask` returns the `Answer` JSON as before, with the new
+  variant `{"answer":"pick","choice":"..."}`. No `Answer` is persisted. The Rust side answers the broker
   and closes the window; the listener opens the next one.
 
 ### 6.4 The consent mark
@@ -425,14 +442,13 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `indexes_list` | main | — | `[IndexRow]` | D |
 | `index_choose` | main | `link` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
-| `search` | main | `text`, `publisher: string \| null`, `interface: string \| null` | `[HitView]` | D |
+| `search` | main | `text`, `publisher: string \| null`, `interface: string \| null`, `origin: string \| null` (step 5: `<key>/<slug>`, for the derived list of 9.7) | `[HitView]` | D |
 | `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local]}` | D |
 | `index_list` | main | `link` (with a slug), `note` | `null` | D |
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
 | `consent_get` | consent | — | `ConsentView \| null` | A |
 | `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]`, `choice: string \| null` (step 5: a pick) | `null` | A |
-| `mod_derived` | main | `local` | `[HitView]` | E |
 
 View types:
 
@@ -551,16 +567,24 @@ set (`NoSiteUrl`). The route never answers a confirmation: only
 `consent_answer` and the `Destroyed` handler call `Broker::answer`
 (APP-F-13).
 
-**Providers of another publisher (step 5, W25).** After the release is
+**Providers of another publisher (step 5, W25).** The request may carry
+one header `Watane-Provider-Links`: link texts with a slug, separated by
+one space, at most 32 (dev sends the links it fetched with, dev 9.7). A
+link that does not parse is 400 `bad_request`. After the release is
 signed, for each distinct `(key, slug)` of a `Call` or `Subscribe` grant of
 the release whose key is not the own key, in grant order:
 
 1. The own channel has a live `list` of it: `listed: true`.
-2. Else, when `dist.channel(key)` has a record with a base:
+2. Else the base comes from the header's link with that key and slug, or
+   else from a **followed** channel record of that key (never from a
+   listed record: its base came from a third party). With a base:
    `dist.list(&Link::new(key, base, Some(slug)), "used by <slug of the
-   release>")`. The participant sees the `list` request (6.2). `Ok` gives
-   `listed: true`; `Refused` or any other error gives `listed: false`.
+   release>")`. The participant sees the `list` request with its location
+   (6.2). `Ok` gives `listed: true`; `Refused` or any other error gives
+   `listed: false`.
 3. Else `listed: false`.
+
+A header link whose key and slug match no such provider is ignored.
 
 A `false` never fails the publish: the release is signed. It means that a
 person who installs it needs a followed channel or an index that names the
@@ -622,11 +646,11 @@ the interfaces of the call and subscribe grants. The route exists for
 Request: `Content-Type: application/json`, either `{"link": "<link
 text>"}`, a link **with** a slug, or `{"release": "<ReleaseRef>"}`; not
 both. In `spawn_blocking`: for a link, `Link::from_str`, then
-`dist.open_link(&link)` (dist 5.7: it follows the channel when it is not
-followed, refreshes it, and fetches the newest live release of the slug).
-For a release, `ReleaseRef::from_str`, then `dist.fetch(&release)` (dist
-5.7 and 5.11: a channel with a record, or one that a stored listing names;
-no follow). dev uses the second form for the providers of a provider.
+`dist.read_link(&link)` (dist 5.11: no follow, no record; a link on a local
+address is refused as a listed base is). For a release,
+`ReleaseRef::from_str`, then `dist.fetch(&release)` (dist 5.7 and 5.11: a
+channel with a record, or one that a stored listing names; no follow). dev
+uses the second form for the providers of a provider.
 The answer is the package itself, so no file is written and none is left
 behind:
 
@@ -635,13 +659,12 @@ behind:
 | fetched | 200 | `Content-Type: application/octet-stream`; the package bytes; headers `Watane-Release: <ReleaseRef>` and `Watane-Package: <package id>` |
 | bad JSON, both or neither field, a link or release that does not parse, a link with no slug | 400 | `bad_request` |
 | `NoRelease`, `Withdrawn`, `Compromised` | 409 | `fetch_refused` with dist's cause |
-| `NotFollowed` (no base known for a release) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
+| `NotFollowed` (no base known for a release), `BadUrl` (a local address) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
 
-No consent: a fetch installs nothing, grants nothing and signs nothing.
-Its one lasting effect is the follow, as when the participant opens a link
-(9.4): the channel shows in the channels view, and the participant can
-unfollow it. The request body uses host's 64 KiB limit; the answer is at
+No consent: a fetch installs nothing, grants nothing, signs nothing and
+follows nothing; its only lasting effect is a verified package in dist's
+cache and the read entries in `<home>/log/` (dist DD-29). The request body uses host's 64 KiB limit; the answer is at
 most dist's package limit. `watane-dev new --from` and `add --release`
 use it (dev 10). The route never answers a confirmation.
 
@@ -708,15 +731,16 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
    already checked by their decoders).
 3. Loop: `host.plan_with(sources, binds)` (`binds` starts empty). For
    each `MissingProvider` of `plan.missing()` with `release: Some(r)`:
-   `dist.fetch(&r)`, and add it to `sources` as in step 2. Step 5: when
-   that fetch fails, run the pick of 9.7 with its cause; it adds a source
-   or a bind, or ends the install. One without a `release` (a local
+   `dist.fetch_for(&r, <key of m.needed_by, None when local>)` (dist
+   5.11), and add it to `sources` as in step 2. Step 5: when that fetch
+   fails, run the pick of 9.7 with its cause; it adds a source and binds,
+   or ends the install. One without a `release` (a local
    provider): `missing_providers`. Stop when nothing is missing. If a
    round adds no source and no bind, or after 32 rounds:
    `missing_providers`.
 4. `host.install(plan, Requester::App).await` (the consent view through
    HostConfirm).
-5. Step 5: for each `Fetched` of this install whose `link` is set and whose
+5. Step 5: for each `Fetched` of this install (the hit of a pick too) whose `link` is set and whose
    channel is not followed, `dist.follow(&link)` (dist 5.11, DD-29), so
    that a provider's updates and withdrawals keep coming. A failed follow
    does not undo the install; it shows as that channel's failure
@@ -737,7 +761,8 @@ Compromised channels produce no automatic updates.
 
 Both callers spawn one independent task per update and return without
 waiting for installs or consent. Each task fetches the release in
-`spawn_blocking`, shares `install_link`'s provider resolution, and calls
+`spawn_blocking`, shares `install_link`'s provider resolution without the
+pick of 9.7 (a failed provider fetch is that update's error), and calls
 `host.install(plan, Requester::App)`. Host decides whether confirmation is
 needed. Errors, including refusal, are retained by local name with the
 target version until a successful app install of that mod clears them.
@@ -840,7 +865,7 @@ failed with cause `c`, needed by the plan entry `e`:
 1. Needed interfaces: each `Call` or `Subscribe` grant of `e.grants` whose
    provider is `m.provider`.
 2. Candidates: `dist.search(&Query { interface: Some(<first needed
-   interface>), .. })`, keeping each hit with status `Ok`, the slug of
+   interface without its @version>), .. })`, keeping each hit with status `Ok`, the slug of
    `m.provider`, a publisher other than `m.provider`'s, and, for every
    needed interface `n`, an interface `i` with `n.satisfied_by(i)` in
    `release.offers` (for a call) or `release.events` (for a subscription).
@@ -853,8 +878,10 @@ failed with cause `c`, needed by the plan entry `e`:
    of section 4>, cause: c, candidates })`. `Deny` or no answer:
    `refused`. `Pick { choice }`: the candidate's hit. If it is not
    installed, `dist.fetch(&hit.info.reference)` (its channel has a record)
-   and add it to `sources`. Add `Bind { consumer: e.identity, provider:
-   m.provider, to: "<choice key>/<slug>" }` to `binds`.
+   and add it to `sources`. Add `Bind { consumer, provider: m.provider,
+   to: "<choice key>/<slug>" }` to `binds` for **every** plan entry whose
+   `deps.json` pins `m.provider`, so one pick serves all its consumers;
+   each one shows in the install consent.
 5. The plan that follows shows each bind in the install consent
    (`PlanMod.binds`), so the participant confirms the pick with the grants.
 
@@ -870,9 +897,10 @@ parties cache and dist's view of the origin's channel when stored, else
 the ReleaseRef text. The install consent and the `release` sign request
 show it too (6.2, 6.3).
 
-**Derived mods** (F-BUILD-4, APP-F-42). `mod_derived(local)`: an installed
-mod with a `release` gives `dist.search(&Query { origin: Some((publisher,
-slug)), .. })` mapped to `HitView`; a local mod gives `[]`. The details
+**Derived mods** (F-BUILD-4, APP-F-42). For an installed mod with a
+`release`, the details call `search` with `origin` `<publisher>/<slug>`
+(`dist.search(&Query { origin: Some((publisher, slug)), .. })`); a local
+mod makes no call. A bad `origin` text is `bad_input`. The details
 list them as `Made from this: <name> <version> by <party>`, each with the
 install button of a hit (`install_release`). The page says `as far as your
 indexes list them` above the list.
@@ -923,6 +951,10 @@ setup and the first page load of `main`, the app prints
 | `quit` | — | the app exits 0 |
 
 `wait` uses `on_page_load` (`PageLoadEvent::Finished`), never a fixed sleep.
+
+Step 5: a driver build opens dist with `Options::listed_local` true, so the
+journey tests can serve channels on `127.0.0.1` for provider bases and
+`read_link` (dist 5.11). A release build never sets it.
 
 ## 11. Test plan
 
@@ -1016,7 +1048,7 @@ record it in `NOTES.md` with the old and the new result.
 | B Host | `core.rs` on host, `HostConfirm`, `words.rs`, the stage B commands, `j2.rs`; delete `fake.rs` | host stages 1 to 6 (section 15); dev step 1 to build the fixtures | committed fixture components, rebuilt manually with `tests/fixtures/build.sh` | J2 passes; S6 to S8 pass against the real host |
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
 | D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
-| E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; `mod_derived`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass; `static_config` lists `mod_derived` |
+| E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; the `origin` argument of `search`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page

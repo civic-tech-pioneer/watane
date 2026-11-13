@@ -279,7 +279,7 @@ pub enum Change { New, Update { from_version: Version }, Unchanged }
 
 pub struct Bind {                 // step 5 (4.5); also Deserialize
     pub consumer: String,         // identity of the consumer: "<key>/<slug>" or "local/<slug>"
-    pub provider: Provider,       // the provider that deps.json names (its slug is the slug of `to`)
+    pub provider: Provider,       // the provider that deps.json names; pkg's serde form {"slug","publisher"}
     pub to: String,               // identity of the picked mod, same slug
 }
 
@@ -438,16 +438,17 @@ An update keeps the local name of the installed mod.
       "grants": [{"grant": <Grant>, "granted": true}],
       "links": [{"kind": "call", "interface": "mods:shelf/items@0.1.0",
                  "provider": "shelf", "provider_interface": "mods:shelf/items@0.1.0"}],
-      "binds": {}
+      "binds": [{"consumer": "local/recs", "provider": {"slug": "shelf", "publisher": "<key>"},
+                 "to": "<other key>/shelf"}]
     }
   ]
 }
 ```
 
 `release` is the `ReleaseRef` text, or `null` for a local mod; the
-publisher is the release's. `binds` (step 5, serde default `{}`, so a step 4
-file reads unchanged and `watane_installed` stays 1) maps the text of each
-bound `Provider` to the identity it is bound to (4.5). Recovery checks that its publisher and slug
+publisher is the release's. `binds` (step 5, serde default `[]`, so a step 4
+file reads unchanged and `watane_installed` stays 1) lists the mod's binds
+in the JSON form of `Bind` (2.4), the same in `/api/plan` and `/api/mods`. Recovery checks that its publisher and slug
 form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. Slug, version, name, summary and origin are
@@ -518,7 +519,7 @@ A plan with `missing` entries is valid. `install` refuses it.
 3. Granted set of each entry: `New`: `grants` minus withheld. `Update`:
    each grant of `grants` whose same-authority grant was granted, plus
    `new_grants` minus withheld; so a withdrawn grant stays withdrawn.
-4. For each entry in order, skipping `Unchanged`: rename the staging dir
+4. For each entry in order, skipping `Unchanged` and bind-only entries (4.5): rename the staging dir
    to `mods/<local>.new`; for an update rename `mods/<local>` to
    `mods/<local>.old`; rename `.new` to `mods/<local>`.
 5. Recompute the links of every installed mod (step 7 of 4.2). A link of
@@ -571,15 +572,18 @@ bind field (section 11), so `/api/install` can never pass one.
    needs (`satisfied_by`), or the provider stays missing. A bind never
    widens a grant: the consumer's grant keeps the pinned `Provider` as its
    key, and `revoke` and `grant` act on it as before.
-4. When `to` is removed, the bind lapses: the links recompute (4.3 step 5)
-   with the pinned rule, so the named provider binds again if it is
-   installed. The record keeps the bind; it is in force again if `to` is
-   installed again, until the consumer's next update drops it by rule 2.
+4. `remove(to)` deletes every bind whose `to` it is, in the same catalog
+   write; the links recompute (4.3 step 5) with the pinned rule, so the
+   named provider binds if it is installed. A later install of `to` brings
+   no bind back: only a new pick does.
 
 `PlanEntry.binds` and `InstalledMod.binds` list the binds in force, so the
-consent view shows each one (app 6.2). An entry whose binds differ from the
-installed ones is `Update` or `New`, never `Unchanged`, and so asks the
-participant (12.1): a plan with a new bind and no other change asks too.
+consent view shows each one (app 6.2). An entry with the installed package
+whose binds differ from the installed ones is `Update { from_version }`
+with `from_version` equal to its version (a **bind-only** change), not
+`Unchanged`: install step 4 renames nothing for it, and step 6 writes its
+new binds. `needs_confirmation` (12.1) is also true for an entry whose
+binds differ from the installed ones, so every new bind is confirmed.
 
 ## 5. Verification
 
@@ -1177,7 +1181,8 @@ pub enum Answer {
 ```
 
 `Plan::needs_confirmation()` is true in a participant home when an entry
-is `New`, or is an `Update` with a non-empty `new_grants`. Then:
+is `New`, or is an `Update` with a non-empty `new_grants`, or (step 5) has
+binds that differ from the installed ones (4.5). Then:
 
 | Home | Behaviour |
 |---|---|
