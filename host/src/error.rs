@@ -249,8 +249,9 @@ fn provider_name(provider: &watane_pkg::Provider) -> String {
     }
 }
 
-/// Natural order: digit runs compare by number, other runs by bytes. Equal numbers
-/// with different leading zeros fall back to the plain byte order of the whole text.
+/// Natural order: digit runs compare by number, other runs by bytes, then fewer runs
+/// first. Equal numbers with different leading zeros fall back to the plain byte order
+/// of the whole text.
 pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     fn runs(text: &str) -> Vec<&str> {
         let mut out = Vec::new();
@@ -269,7 +270,8 @@ pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
         }
         out
     }
-    for (x, y) in runs(a).into_iter().zip(runs(b)) {
+    let (ra, rb) = (runs(a), runs(b));
+    for (x, y) in ra.iter().zip(&rb) {
         let both_digits = x.starts_with(|c: char| c.is_ascii_digit())
             && y.starts_with(|c: char| c.is_ascii_digit());
         let order = if both_digits {
@@ -282,7 +284,7 @@ pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
             return order;
         }
     }
-    a.cmp(b)
+    ra.len().cmp(&rb.len()).then_with(|| a.cmp(b))
 }
 
 #[cfg(test)]
@@ -343,5 +345,10 @@ mod tests {
         let mut sorted: Vec<&str> = names.to_vec();
         sorted.sort_by(|a, b| natural_cmp(a, b));
         assert_eq!(sorted, ["shelf", "shelf-02", "shelf-2", "shelf-10"]);
+        // A total order: a shorter run list sorts first, so no cycle a01c < a1 < a1b < a01c.
+        let mut sorted = vec!["a1b", "a01c", "a1"];
+        sorted.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(sorted, ["a1", "a1b", "a01c"]);
+        assert!(natural_cmp("a1", "a01c").is_lt());
     }
 }
