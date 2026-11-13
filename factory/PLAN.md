@@ -224,19 +224,18 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   and dist's message debt.
   (branch `slice/s44`; foreman: see `Foremen`)
 
-- [~] **S45 Eve's host and dist say what to do (host, dist cleanup).** (cloud) Story: when an
-  install by link meets a missing or ambiguous provider, every message names the mods involved and
-  the step that settles it. Outcomes (dist and host APIs, as their tests and the user-sim call them):
-  1. host preview `ambiguous_provider` names the competing mods and says a pick settles it (S34).
-  2. dist: NotFollowed for a listing skipped as a local address says so (not "no listing names a
-     base"); the no-hint error carries a fix; hint bases stop being read once a trusted one served;
-     on a no-record cache path the link is the first base in trust order, not the first that
-     served (S35).
-  3. dist `fetch.rs` ac9: the TooLarge step runs with a normal timeout; only the stall step keeps
-     300 ms (S38).
-  Touches: host/src, host/tests, dist/src, dist/tests, and their TECHNICAL only to append. Not app
-  (S44), not dist's doubled `DistError` text (app's tests expect it; S44 may raise it), not pkg or
-  dev. (branch `slice/s45`; cloud routine: see `Foremen`)
+- [x] **S45 Eve's host and dist say what to do (host, dist cleanup).** Delivered 2026-11-13 from the
+  cloud (main `a075851`, rebased by the product owner); the 67 host tests the cloud cannot run (no
+  IPv6 loopback) and an app build ran on macOS: green, except a flake that predates S45 (below).
+  Ambiguous and unreachable providers name the mods and what settles it (a pick; following the
+  publisher's link); dist reads hint bases in trust order and stops at the first that serves.
+  Spec debt: dist TECHNICAL 3.1 and 5.11 step 4, host 2.2 show the old variant shapes. Left for
+  later: unfollowing a never-followed channel says "follow the publisher's link"; a stale first
+  base gives "unknown release" with no step; host shows full keys where dist shows fingerprints;
+  candidates sort as plain strings (shelf-10 before shelf-2).
+  Flake found at the merge: host `api::ac5_extra_api_receives_one_mib...` (in the `preview` target)
+  fails about 1 in 3 at a `send().unwrap()`: the guard answers 403/421/404/413 without reading the
+  1 MiB body and closes the connection, so the client sees a broken pipe.
 - [x] **S46 A hostile mod folder is named, not half-read (pkg cleanup).** Delivered 2026-11-13 from
   the cloud in 13 min (main `fd7fbfb`); pkg, dev and timing tests rerun on macOS: green. A link
   anywhere below ui/ or wit/ (hidden folders too), a FIFO, or broken release bytes get one precise
@@ -356,7 +355,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S39: `bc6fb2c6` (sessionId `bc6fb2c6-9f91-4126-be2c-db0871ed1f61`), worktree `.claude/worktrees/s39` (stopped, removed).
 - S40: `9b94b54e` (sessionId `9b94b54e-b9a1-4de5-8528-bf6defb724c2`), worktree `.claude/worktrees/s40` (stopped, removed).
 - S44: `cfcd9edf` (sessionId `cfcd9edf-a754-4f25-b613-c0a08e8db786`), worktree `.claude/worktrees/s44`.
-- S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw`.
+- S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw` (done).
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -372,6 +371,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S45: `HostError::AmbiguousProvider { consumer, provider, candidates }`; `DistError::NotFollowed
+  { channel, local_only }`; dist DD-31 to 33 (hint bases in trust order, stop at the first Current
+  or Behind; the no-record cache-hit link is the first base in trust order).
 - S40: `new --from` runs no gh; the fork uses the forks REST API (`gh repo fork` refuses `--remote`
   with a repository argument and silently renames an existing fork); an unfinished fork of the
   right parent is adopted; tags are the ReleaseRef; `--push` always needs gh (W30); a failed push
@@ -749,6 +751,8 @@ The human may veto each one.
 - S46: the sketch repeated S22 follow-ups that S22 had partly fixed; the foreman probed first.
 - S40: the product owner rebased slice/s40 locally, so its remote diverged and only a force-push
   could update it. Rebase a foreman's branch only after it has stopped, or ask the foreman.
+- S45: the cloud has no IPv6 loopback (67 host tests cannot run) and no GTK (app cannot build), so
+  a host or dist slice in the cloud is checked on the Mac at merge.
 
 ## Digest
 
