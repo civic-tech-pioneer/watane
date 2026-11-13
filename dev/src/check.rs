@@ -151,6 +151,10 @@ fn mod_problems_for_slug(e: ModError, own_slug: Option<&watane_pkg::Slug>) -> Ve
                     || Path::new(&file).starts_with("wit/deps")
                 {
                     "Run: watane-dev add <provider folder> to refresh the dependency files, then check imports in wit/world.wit".into()
+                } else if v.rule == watane_pkg::Rule::ModToml
+                    && v.message.starts_with("`repository`")
+                {
+                    "Set repository in mod.toml to the https URL of the mod's git repository (for example https://github.com/<owner>/<slug>), or remove the line".into()
                 } else {
                     format!("Correct {} according to the reported rule", v.file)
                 };
@@ -804,6 +808,43 @@ crate-type = ["cdylib"]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac1_ac2_repository_violation_gets_its_own_fix() {
+        use watane_pkg::{Rule, Violation};
+        let fix = |rule, message: &str| {
+            let p = mod_problems(ModError::Invalid(vec![Violation {
+                rule,
+                file: "mod.toml".into(),
+                message: message.into(),
+            }]));
+            assert_eq!(p.len(), 1);
+            assert_eq!(p[0].file.as_deref(), Some("mod.toml"));
+            (p[0].message.clone(), p[0].fix.clone().unwrap())
+        };
+        let want = "Set repository in mod.toml to the https URL of the mod's git repository (for example https://github.com/<owner>/<slug>), or remove the line";
+        for m in [
+            "`repository` must start with https://",
+            "`repository` is longer than 256 bytes",
+            "`repository` must not hold a user name or password",
+            "`repository` has no host",
+            "`repository` may hold only letters",
+        ] {
+            let (msg, f) = fix(Rule::ModToml, m);
+            assert_eq!(msg, format!("[mod-toml] {m}"));
+            assert_eq!(f, want);
+        }
+        let generic = "Correct mod.toml according to the reported rule";
+        assert_eq!(
+            fix(
+                Rule::ModToml,
+                "name must have 1..=64 characters, no control characters or surrounding whitespace"
+            )
+            .1,
+            generic
+        );
+        assert_eq!(fix(Rule::Path, "`repository` odd").1, generic);
+    }
 
     #[test]
     fn ac7_own_provider_diagnostics_use_identity_and_actual_folder() {
