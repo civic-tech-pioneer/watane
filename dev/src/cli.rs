@@ -413,21 +413,26 @@ pub fn test(dir: &Path) -> Outcome {
         if m.logic().is_none() {
             return Ok(vec![]);
         }
-        let env = Env::from_process().map_err(|e| vec![e])?;
-        let toolchain = toolchain::find(&env).map_err(|e| vec![e])?;
-        let vendor = allowlist::vendor_dir().map_err(|e| vec![e])?;
-        let allow = Allowlist::embedded();
-        let ctx = BuildCtx {
-            env: &env,
-            toolchain: &toolchain,
-            vendor: &vendor,
-            allow: &allow,
-        };
-        let built = builder::build(&dir, m.slug(), &ctx)?;
-        result["build"] = serde_json::to_value(built).map_err(|e| vec![Problem::internal(e)])?;
-        let report = unit::unit_tests(&dir, m.slug(), &ctx)?;
-        let mut errors = report.problems();
-        result["unit"] = serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])?;
+        let mut errors = Vec::new();
+        if dir.join("logic/Cargo.toml").is_file() {
+            let env = Env::from_process().map_err(|e| vec![e])?;
+            let toolchain = toolchain::find(&env).map_err(|e| vec![e])?;
+            let vendor = allowlist::vendor_dir().map_err(|e| vec![e])?;
+            let allow = Allowlist::embedded();
+            let ctx = BuildCtx {
+                env: &env,
+                toolchain: &toolchain,
+                vendor: &vendor,
+                allow: &allow,
+            };
+            let built = builder::build(&dir, m.slug(), &ctx)?;
+            result["build"] =
+                serde_json::to_value(built).map_err(|e| vec![Problem::internal(e)])?;
+            let report = unit::unit_tests(&dir, m.slug(), &ctx)?;
+            errors.extend(report.problems());
+            result["unit"] =
+                serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])?;
+        }
         let (report, problems) = match contract::contract_tests(&dir, m.slug()) {
             Ok(result) => result,
             Err(problems) => {

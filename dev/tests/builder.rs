@@ -413,7 +413,7 @@ fn regress_s47_test_keeps_packaged_logic_without_source() {
     )
     .unwrap();
     let expected = fs::read(dir.join("logic.wasm")).unwrap();
-    let (_, v) = output(
+    let (status, v) = output(
         Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .args(["test", "--json", "--dir"])
             .arg(&dir)
@@ -428,4 +428,10 @@ fn regress_s47_test_keeps_packaged_logic_without_source() {
     for e in v["errors"].as_array().into_iter().flatten() {
         assert_ne!(e["code"], "internal", "{v}");
     }
+    // AC2: the kept component runs contracts without a build or unit run.
+    assert_eq!(status, 0, "{v}");
+    assert!(v["result"]["check"].is_object(), "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], 1, "{v}");
+    assert!(v["result"]["build"].is_null(), "{v}");
+    assert!(v["result"]["unit"].is_null(), "{v}");
 }

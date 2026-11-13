@@ -350,8 +350,9 @@ retain `watane-dev doctor --json`.
 ```
 S4 runs unit tests and then contracts, retaining unit failures while running
 contracts so both failures reach the agent.
-A part that did not run is null. `build`, `unit` and `contract` are null
-for a mod with no logic part. `not_run` counts the tests after a test that
+A part that did not run is null. For a prebuilt mod (7.1), `build` and
+`unit` are null; `check` and `contract` run as usual. `build`, `unit` and
+`contract` are null for a mod with no logic part. `not_run` counts the tests after a test that
 aborted the run (7.2). In a failure, `expected` and `got` are JSON values
 or null. `next` on success: `watane-dev serve --json`. On failure,
 the first error determines `next`: `test.unit` or `test.unit_limit` uses
@@ -895,6 +896,8 @@ read). Every other file is `mod.logic_file`, with a reason for these:
 
 ## 6. The builder
 
+The shared pipeline order and prebuilt exception are in 7.1.
+
 ### 6.1 Toolchain
 
 1. If `WATANE_DEV_TOOLCHAIN` is set, `cargo` and `rustc` are
@@ -1047,6 +1050,11 @@ cache; it is the maker's own choice and can change the output.
 ## 7. Unit tests
 
 ### 7.1 Build and run
+
+The shared pipeline checks the mod, builds it (6), runs unit tests (7),
+then runs contract tests (8). A mod with `logic.wasm` and no
+`logic/Cargo.toml` is prebuilt: dev skips 6 and 7 and never removes its
+`logic.wasm`. It still runs contract tests against that component.
 
 1. Under the same per-slug build lock, dev prepares a fresh checked cache
    copy and verified lock as in 6.3–6.4, then runs `cargo test <common> --locked --no-run --target wasm32-wasip2 --message-format json`
@@ -2102,7 +2110,7 @@ rules belong to 15.1.
 | DEV-S-33 | `search::s33_results_pass_through` | integration against `fake-watane` |
 | DEV-S-34 | `search::s34_no_index_next` | integration against `fake-watane` |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
-| DEV-S-35 | `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug` | integration: fake fetch, source package |
+| DEV-S-35 | `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug`; `builder::regress_s47_test_keeps_packaged_logic_without_source` | integration: fake fetch, source package; prebuilt logic bytes preserved, check and contract run, build and unit skipped, exit 0 |
 | DEV-S-36 | `build_on::ac2_no_source_writes_nothing` | integration: no-source package |
 | DEV-S-37 | `build_on::ac3_exists_precedes_fetch_and_absent_app_writes_nothing` | integration: no build |
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
