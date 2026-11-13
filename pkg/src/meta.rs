@@ -48,8 +48,8 @@ pub(crate) fn text_violation(field: &str, value: &str, max: usize) -> Option<Str
     }
 }
 
-fn repository_violation(value: Option<&toml::Value>) -> Option<&'static str> {
-    let Some(url) = value.and_then(toml::Value::as_str) else {
+fn repository_violation(value: &toml::Value) -> Option<&'static str> {
+    let Some(url) = value.as_str() else {
         return Some("`repository` must start with https://");
     };
     if url.len() > 256 {
@@ -104,14 +104,11 @@ pub(crate) fn read(dir: &Path) -> Result<Meta, ModError> {
             return Err(bad(message));
         }
     }
-    if meta.repository_raw.is_some() {
-        if let Some(message) = repository_violation(meta.repository_raw.as_ref()) {
+    if let Some(value) = meta.repository_raw.take() {
+        if let Some(message) = repository_violation(&value) {
             return Err(bad(message.into()));
         }
-        meta.repository = meta
-            .repository_raw
-            .take()
-            .and_then(|v| v.try_into::<String>().ok());
+        meta.repository = value.as_str().map(String::from);
     }
     if let Some(http) = meta.http.take() {
         let hosts: BTreeSet<_> = http.hosts.iter().cloned().collect();
@@ -188,6 +185,10 @@ mod tests {
             ),
             (
                 "https://h:123456",
+                "`repository` may hold only letters, digits and - . _ ~ / % after the host",
+            ),
+            (
+                "https://h/x@y",
                 "`repository` may hold only letters, digits and - . _ ~ / % after the host",
             ),
             (

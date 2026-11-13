@@ -3,7 +3,7 @@
 mod support;
 
 use std::fs;
-use watane_pkg::{Mod, Package, pack};
+use watane_pkg::{Mod, ModError, Package, Rule, pack};
 
 const URL: &str = "https://github.com/alice/hello";
 
@@ -32,5 +32,13 @@ fn ac1_ac2_ac3_mod_read_and_package_round_trip() {
     );
 
     fs::write(&toml, format!("{text}repository = \"http://x/y\"\n")).unwrap();
-    assert!(Mod::read(dir.path()).is_err());
+    match Mod::read(dir.path()) {
+        Err(ModError::Invalid(v)) => {
+            assert_eq!(v.len(), 1);
+            assert_eq!(v[0].rule, Rule::ModToml);
+            assert_eq!(v[0].file, "mod.toml");
+            assert_eq!(v[0].message, "`repository` must start with https://");
+        }
+        other => panic!("{other:?}"),
+    }
 }
