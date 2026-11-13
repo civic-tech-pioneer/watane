@@ -230,3 +230,38 @@
   `cargo fmt --check` pass. `cargo test --features driver --no-run` compiles
   all window tests. Release with driver fails at the intended debug-only guard
   (the local rust-objcopy tool also warns about missing libLLVM while stripping).
+
+## S37-4 — journey J5 on the real programs
+
+- Added the single driver-feature `tests/j5.rs::ac1_journey_j5`, ignored as
+  `slow: journey J5`. Alice, Carol, Dave and both independent Eve homes run
+  the real app and their own static site servers; Frank uses a real dist home.
+  The test builds this workspace's `watane-dev` executable (Cargo's artifact
+  path, never PATH), then runs only `new --from` and `add --release` as child
+  processes with explicit homes, isolated caches and parsed JSON results.
+  Mod components come from the committed fixtures; no mod is compiled.
+- Oracles cover the derived TOML/WIT, Alice's origin in Carol's release
+  consent, Dave's dependency files and ordered release/list consents, the
+  listing result and Dave's own index, Carol-first installation and follow,
+  then Frank's candidate, confirmed bind, installed release and grant line.
+  Both installed Stats pages call their real Ratings component.
+- The first Eve follows only Dave and has no Carol record before installing.
+  Literal loopback listing bases are refused by dist DD-26, so app sites are
+  advertised as `127.0.0.1.nip.io` while serving only on loopback. This uses
+  the existing permitted DNS-name path, with no driver exception or product
+  security change. The journey requires DNS for that name (locally checked
+  to resolve to 127.0.0.1); no package or channel is hosted externally.
+  Fresh Eve chooses Dave's index while Carol is still online to retain only
+  channel metadata, and chooses Frank's index; Carol's server is then stopped
+  before the first install in that home, so no cached Carol package can mask
+  the failure.
+- Test-first evidence: the initial J5 compile failed on the absent workspace
+  CLI helpers; adding those helpers made the test compile. Runtime red/green
+  for the native journey is reserved for the macOS validator: this sandbox
+  cannot start the driver, as specified by AC3. No existing test was changed
+  and no dependency, product code or spec was changed.
+- Validation: cargo build and cargo test pass (86 tests, 24.12 s reported for
+  tests); cargo test --features driver --no-run compiles the complete suite.
+  Strict all-targets/driver clippy, fmt --check and diff --check pass.
+  cargo build --release --features driver fails at the intended debug-only
+  driver compile_error. Native J5 has not been executed in this sandbox.
