@@ -524,6 +524,11 @@ impl Core {
                         .collect(),
                     binds.to_vec(),
                 )?;
+                if plan.missing().iter().any(|m| m.release.is_none()) {
+                    return Err(
+                        watane_host::HostError::MissingProviders(plan.missing().to_vec()).into(),
+                    );
+                }
                 let missing = plan.missing().iter().map(|m| m.release.clone()).collect();
                 Ok((plan, missing))
             },
