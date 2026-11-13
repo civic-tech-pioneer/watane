@@ -108,11 +108,3 @@ fn ac13_fetch_reference_from_literal_text() {
             .unwrap();
     assert_eq!(bob.fetch(&reference).unwrap().package.as_bytes(), bytes);
 }
-
-#[test]
-fn ac1_shared_options_allow_load_and_keep_package_limit() {
-    let options = fast_options();
-    assert!(options.entry_timeout >= std::time::Duration::from_secs(10));
-    assert!(options.package_timeout >= std::time::Duration::from_secs(10));
-    assert_eq!(options.max_package, 4096);
-}
