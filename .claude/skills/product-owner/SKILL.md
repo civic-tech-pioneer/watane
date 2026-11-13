@@ -16,7 +16,8 @@ done when its journey (J1 to J5) passes on the real programs and every stage of 
 
 ## 1. The loop
 
-1. Keep up to 4 slices in flight, at most 3 of them local, and one sketched ahead (section 2).
+1. Keep as many slices in flight as can run without sharing a file: at most 3 local, any number
+   in the cloud, and one sketched ahead (section 2).
 2. Hand out a sketched slice when it shares no file with a slice in flight, local or cloud
    (section 3). Slices
    may share a subsystem; they may not share a file, except one that only gains lines at its
@@ -68,10 +69,10 @@ foreman's process exits or waits on a permission prompt, so a dead or stuck fore
 you. An `idle` foreman that sent no report for hours: read its transcript.
 The human follows a foreman with `claude logs <id>` or `claude attach <id>`.
 
-**Cloud.** Local, with Sol, is the default. A slice may go to an Anthropic cloud foreman instead
-when its `Touches` has no `app/` (the cloud is Linux: no front tests, no `sandbox-exec`) and 3
-local slices are already in flight, or the human asks. There Sonnet implements and Opus validates.
-Mark the slice `in flight (cloud)`, commit, push main, then start it as a one-off routine
+**Cloud.** The cloud is the default wherever it can run the slice: it costs the Mac nothing and
+has no limit on how many run at once. A slice stays local only when it needs the Mac: its `Touches`
+has `app/` (the cloud is Linux: no front or window tests), or its outcomes depend on tests the cloud
+cannot run (`sandbox-exec`). There Sonnet implements and Opus validates. Mark the slice `in flight (cloud)`, commit, push main, then start it as a one-off routine
 (`RemoteTrigger`, action `create`; `claude --cloud` needs a TTY and a full login, so it fails here):
 
 ```json
