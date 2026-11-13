@@ -141,11 +141,22 @@ pub(crate) struct AppState {
     #[cfg(feature = "driver")]
     screen: driver::Screen,
 }
-fn dist_options() -> watane_dist::Options {
+/// TECHNICAL 10, Step 5: only a driver build started with
+/// `WATANE_DRIVER_LISTED_LOCAL=1` lets dist list loopback bases.
+fn dist_options(listed_local: Option<&str>) -> watane_dist::Options {
     watane_dist::Options {
-        listed_local: cfg!(feature = "driver"),
+        listed_local: cfg!(feature = "driver") && listed_local == Some("1"),
         ..Default::default()
     }
+}
+
+#[cfg(feature = "driver")]
+fn listed_local_env() -> Option<String> {
+    std::env::var("WATANE_DRIVER_LISTED_LOCAL").ok()
+}
+#[cfg(not(feature = "driver"))]
+fn listed_local_env() -> Option<String> {
+    None
 }
 
 pub fn run(config: Config) -> Result<(), AppError> {
@@ -172,13 +183,14 @@ pub fn run(config: Config) -> Result<(), AppError> {
     };
     let dist = if mark.is_ok() {
         let home = config.home.clone();
+        let options = dist_options(listed_local_env().as_deref());
         let confirm = Arc::new(confirm::DistConfirm {
             broker: broker.clone(),
             parties: parties.clone(),
         });
         tauri::async_runtime::block_on(async move {
             tauri::async_runtime::spawn_blocking(move || {
-                watane_dist::Dist::open(&home, confirm, dist_options()).map(Arc::new)
+                watane_dist::Dist::open(&home, confirm, options).map(Arc::new)
             })
             .await
         })
@@ -342,14 +354,19 @@ pub fn run(config: Config) -> Result<(), AppError> {
 mod tests {
     #[test]
     #[cfg(feature = "driver")]
-    fn ac1_driver_dist_allows_listed_local() {
-        assert!(super::dist_options().listed_local);
+    fn ac1_driver_dist_listed_local_only_with_env() {
+        assert!(super::dist_options(Some("1")).listed_local);
+        assert!(!super::dist_options(None).listed_local);
+        assert!(!super::dist_options(Some("0")).listed_local);
+        assert!(!super::dist_options(Some("")).listed_local);
     }
 
     #[test]
     #[cfg(not(feature = "driver"))]
     fn ac1_default_dist_refuses_listed_local() {
-        assert!(!super::dist_options().listed_local);
+        assert!(!super::dist_options(Some("1")).listed_local);
+        assert!(!super::dist_options(None).listed_local);
+        assert!(super::listed_local_env().is_none());
     }
 
     #[derive(Debug, thiserror::Error)]

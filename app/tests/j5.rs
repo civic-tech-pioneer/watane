@@ -80,7 +80,14 @@ fn contains(text: &str, fields: &[&str]) {
     }
 }
 fn participant(home: &Path, name: &str) -> (App, Site, String) {
-    let app = App::start(home, &[("NO_PROXY", "*"), ("no_proxy", "*")]);
+    let app = App::start(
+        home,
+        &[
+            ("NO_PROXY", "*"),
+            ("no_proxy", "*"),
+            ("WATANE_DRIVER_LISTED_LOCAL", "1"),
+        ],
+    );
     until(&app, "main", "document.body.dataset.ready === 'true'");
     begin(&app, "identity_set_name", json!({"name":name}));
     consent(&app);

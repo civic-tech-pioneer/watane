@@ -964,9 +964,12 @@ setup and the first page load of `main`, the app prints
 
 `wait` uses `on_page_load` (`PageLoadEvent::Finished`), never a fixed sleep.
 
-Step 5: a driver build opens dist with `Options::listed_local` true, so the
-journey tests can serve channels on `127.0.0.1` for provider bases and
-`read_link` (dist 5.11). A release build never sets it.
+Step 5: a driver build started with `WATANE_DRIVER_LISTED_LOCAL=1` opens
+dist with `Options::listed_local` true, so the journey tests (J5) can serve
+channels on `127.0.0.1` for provider bases and `read_link` (dist 5.11).
+Without that variable, or in any build without `driver`, it is false, so
+window tests such as `tests/find.rs` keep checking the local-address refusal.
+A release build never reads the variable.
 
 ## 11. Test plan
 

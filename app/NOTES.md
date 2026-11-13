@@ -281,3 +281,12 @@
   cargo test --features driver --no-run, strict all-targets/driver clippy,
   fmt --check and diff --check pass. Release with driver fails at the intended
   compile_error. No native window test was started in this sandbox.
+
+### Validator round 2 (foreman decision)
+
+- An always-on driver flag broke `tests/find.rs`
+  `ac2_find_skipped_channel_and_cause` (refusal of a loopback listing). The
+  foreman decided: a driver build sets `listed_local` only when
+  `WATANE_DRIVER_LISTED_LOCAL=1` is in its environment; without it, or without
+  `driver`, it is false. J5 starts each app with that variable; `find.rs` is
+  unchanged and keeps its refusal check. Recorded in TECHNICAL 10 "Step 5".
