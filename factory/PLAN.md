@@ -205,7 +205,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   working local API; hidden windows poll only on focus; consent requests from clients that stopped
   waiting pile up (S24).
 
-Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done.
+Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`): S47 fixes it.
 
 - [~] **S44 Carol reads names, not keys (app cleanup).** Story: Carol and Eve use find, install,
   pick and publish in the app, and every person shows as a name (or "you"), every error as one plain
@@ -242,6 +242,17 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   refusal and nothing below is read; every walk lists and stats through no-follow directory
   handles (20,000 swaps leaked nothing). Its spec lines are in pkg TECHNICAL 4.7, 6.4 and 7.2. Left for later: a linked `ui` reports two problems;
   `add.rs` (add_provider) keeps the check-then-read gap; mid-swap errors are plain I/O text.
+Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
+is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
+
+- [ ] **S47 J5 passes again (dev fix).** S39-2 made `new --from` drop the package's `logic.wasm`;
+  when the origin has no `logic/` source, `watane-dev new ratings --from <link>` now fails with
+  `mod.invalid` "[parts] provide logic.wasm or logic/Cargo.toml", and `app/tests/j5.rs`
+  ac1_journey_j5 fails on main. Outcomes: `new --from` keeps `logic.wasm` when the package has no
+  logic source (and drops it only when the source rebuilds it); J5 passes on the Mac; dev's
+  `envelope::ac5_scenario_map...` passes on main again (S40 mapped DEV-S-41 to 51 to tests that
+  S42 and S43 will write: mark those rows as planned until they exist). Touches: dev/src (new
+  --from), dev/tests, dev TECHNICAL 15.2 rows. Local: J5 needs the Mac. Before S42 (same files).
 - [x] **S40 Design: share on GitHub (step 6).** Merged 2026-11-13 (main `6f3a2c9`), spec documents
   only, after two independent reviews (the second on the human's switch to real GitHub forks).
   pkg stage 8 (`repository`, pkg 4.2); dev stage 10 (`publish --push`, 10.4.1) and stage 11 (the
