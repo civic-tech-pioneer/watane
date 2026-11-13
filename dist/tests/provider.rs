@@ -512,6 +512,7 @@ fn ac3_stale_first_base_falls_through() {
         .unwrap();
     eve.dist.follow(&dave.link(None)).unwrap();
     let reference = reference(&carol, "ratings");
+    let before = mirror.count();
     let got = eve
         .dist
         .fetch_for(&reference, Some(&dave.dist.identity()))
@@ -528,6 +529,8 @@ fn ac3_stale_first_base_falls_through() {
             .unwrap()
             .contains(&format!("/packages/{id}"))
     );
+    // The stale mirror is first in trust order (Eve's own listing) and was read.
+    assert!(mirror.count() > before);
     assert!(
         !mirror
             .requests
@@ -539,7 +542,27 @@ fn ac3_stale_first_base_falls_through() {
 }
 #[test]
 fn ac3_all_bases_stale_is_unknown_release() {
-    let (carol, _dave, eve, _mirror, _old) = stale_setup();
-    let error = eve.dist.fetch(&reference(&carol, "ratings")).unwrap_err();
+    let (carol, dave, eve, mirror, old) = stale_setup();
+    // A second stale mirror of the same old head, named by Dave's listing.
+    let second = TestHost::serve(old.path());
+    let link = Link::new(
+        carol.dist.identity(),
+        &second.url,
+        Some(&"one".parse().unwrap()),
+    )
+    .unwrap();
+    dave.dist.list(&link, "second stale mirror").unwrap();
+    eve.dist.follow(&dave.link(None)).unwrap();
+    let before = [mirror.count(), second.count()];
+    let error = eve
+        .dist
+        .fetch_for(&reference(&carol, "ratings"), Some(&dave.dist.identity()))
+        .unwrap_err();
     assert!(matches!(error, DistError::UnknownRelease { .. }), "{error}");
+    // DD-34: both stale bases were read, neither got a package request.
+    for (host, before) in [&mirror, &second].into_iter().zip(before) {
+        assert!(host.count() > before);
+        let paths = host.requests.lock().unwrap();
+        assert!(!paths.iter().any(|p| p.starts_with("/packages/")));
+    }
 }
