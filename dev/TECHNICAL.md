@@ -1531,10 +1531,10 @@ after removing one trailing `/` and one trailing `.git`.
 | Call | Use | Result |
 |---|---|---|
 | `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero with `HTTP 401` or `gh auth login` in stderr: `env.gh_auth`. Other non-zero (no network): `publish.push_failed`. |
-| `gh api repos/<owner>/<name> --jq .fork` | does the repository exist, and is it a fork | exit 0: yes; stdout `true` or `false`. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
+| `gh api repos/<owner>/<name> --jq .parent.full_name` | does the repository exist, and what is it a fork of | exit 0: yes; stdout (trimmed) the parent's `<o>/<n>`, or empty or `null` when it is no fork. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
 | `gh repo create <owner>/<name> --public` | create it | exit 0, else `publish.push_failed`. |
-| `gh repo fork <upstream> --clone=false --remote=false --default-branch-only --fork-name <slug>` | fork the origin's repository (10.4.1 step 3) | any result is then checked with the `.fork` call; a failure is `publish.fork_unavailable`, a warning |
-| `gh repo edit <owner>/<slug> --default-branch watane` | make the derived mod's branch the fork's default | exit 0, else `publish.push_failed` |
+| `gh api -X POST repos/<uo>/<un>/forks -f name=<slug> -F default_branch_only=true --jq .full_name` | fork the origin's repository `<uo>/<un>` (10.4.1 step 3) | accepted only with exit 0 and stdout `<owner>/<slug>`. GitHub answers an account's existing fork of that repository with that fork's name and renames nothing, so another name means "already forked". Anything else is `publish.fork_unavailable`, a warning. Not `gh repo fork`: it refuses `--remote` with a repository argument and renames an existing fork to `--fork-name`. |
+| `gh repo edit <owner>/<slug> --default-branch watane` | make the derived mod's branch the fork's default (idempotent) | exit 0, else `publish.push_failed` |
 
 dev builds a GitHub repository URL itself as `https://github.com/<owner>/<name>`;
 it parses no URL from gh's output. git rewrites such a URL with the
@@ -1576,27 +1576,34 @@ Without `--push`, publish is 9.7, unchanged.
      is `publish.origin_differs`. Else use it, on any host.
    - Else, with an origin: `publish.origin_differs` (dev does not guess
      which repository the mod has).
-   - Else the repository is `https://github.com/<owner>/<slug>`. When
-     `gh api repos/<owner>/<slug>` says it does not exist and the mod is
-     derived (`mod.toml` has `[origin]` and the folder has a remote
-     `upstream`, 10.4.2), fork it: `gh repo fork <remote.upstream.url>`
-     (table above), then the `.fork` call on `<owner>/<slug>`, retried once
-     a second for up to 10 s (GitHub makes a fork asynchronously), must
-     print `true` (`created: true`, `forked: true`). Then `git branch -m
-     watane`: the derived mod's commits go to a branch of their own, so its
-     first push never meets the fork's `main`, and after that push dev runs
-     `gh repo edit --default-branch watane` (step 6). When the fork fails
-     or `<owner>/<slug>` is not then a fork (the account already has a
-     fork of that upstream under another name; the upstream is gone,
-     private or not on GitHub): warn `publish.fork_unavailable` and go on
-     as for a mod that is not derived. A derived mod without `upstream`
-     (made from the package) also warns. When the repository does not
-     exist otherwise, create it (`created: true`, `forked: false`); a
-     derived mod's history then joins `upstream`'s as before, without
-     GitHub's fork link. When it exists and `git ls-remote` lists any ref,
-     dev did not make it for this mod: `publish.repository_exists`. An
-     empty one (left by a run that the person declined or whose tests
-     failed) is reused. Write `repository = "<that URL>"` into `mod.toml`
+   - Else the repository is `https://github.com/<owner>/<slug>`. The mod
+     is derived when `mod.toml` has `[origin]`; its upstream is
+     `<uo>/<un>` when `remote.upstream.url` (10.4.2), with one trailing
+     `/` and one `.git` removed, is `https://github.com/<uo>/<un>`.
+     Then the `.parent.full_name` call on `<owner>/<slug>`:
+     - It exists and its parent is the upstream: a fork made by an earlier
+       run that did not finish (or whose fork appeared late). Use it
+       (`created: false`, `forked: true`).
+     - It exists otherwise: when `git ls-remote` lists any ref, dev did not
+       make it for this mod: `publish.repository_exists`. An empty one
+       (left by a run that the person declined or whose tests failed) is
+       reused.
+     - It does not exist, and the mod is derived with an upstream: fork it
+       (the POST of the table). Accepted: `created: true`, `forked: true`;
+       then repeat the `.parent.full_name` call once a second for up to
+       10 s, until it answers (GitHub makes a fork asynchronously). Not
+       accepted (the account already has a fork of it, the upstream is gone
+       or private): warn `publish.fork_unavailable` and create, as below.
+     - It does not exist otherwise: create it (`created: true`, `forked:
+       false`). A derived mod without an upstream on GitHub (made from the
+       package, or from a repository on another host) also warns
+       `publish.fork_unavailable`. A derived mod's history then joins
+       `upstream`'s as before, without GitHub's fork link. If the create
+       fails because the name exists (a late fork), repeat the
+       `.parent.full_name` call once and use the fork as above.
+     - With a fork (`forked: true`), when the current branch is not
+       `watane`: `git branch -m watane`. The derived mod's commits go to a
+       branch of their own, so no push meets the fork's `main`. Write `repository = "<that URL>"` into `mod.toml`
      (a `toml::Table` edit, as `[origin]` in 10.2; comments in `mod.toml`
      are lost).
    - Join the repository (above).
@@ -1620,9 +1627,10 @@ Without `--push`, publish is 9.7, unchanged.
    (F-PUB-4) and no other file of the folder. When `git diff --cached
    --quiet` fails, `git commit -q -m "<slug> <version>"`. Then `git tag
    <ReleaseRef>` (the answer's release, `<key>/<slug>@<version>`, a valid
-   tag name) and `git push -q origin HEAD refs/tags/<ReleaseRef>`. On the
-   run that forked, `gh repo edit <owner>/<slug> --default-branch watane`
-   ends the list. Files that are not committed stay in the folder,
+   tag name) and `git push -q origin HEAD refs/tags/<ReleaseRef>`. When
+   the current branch is `watane`, `gh repo edit <owner>/<slug>
+   --default-branch watane` ends the list on every run (it is idempotent,
+   so a fork whose first run stopped early still gets it). Files that are not committed stay in the folder,
    untracked.
 
    The tag is the ReleaseRef, not `v<version>`: a fork shares the tags of
@@ -1630,7 +1638,8 @@ Without `--push`, publish is 9.7, unchanged.
    same-slug derivative would collide on `v<version>`. A ReleaseRef is
    unique for each release of each publisher.
 
-Steps 5 and 6 run as lists of git commands, all with `-C <folder>`. The
+Steps 5 and 6 run as lists of commands: git with `-C <folder>`, and the
+gh call of step 6 as written. The
 first command that fails stops its list and gives one
 `publish.push_failed`; the other list still runs. Its fix is the failed
 command and the rest of its list, joined with ` && ` and shell-quoted as in
@@ -2107,8 +2116,8 @@ rules belong to 15.1.
 | DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
 | DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
-| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push` | integration: DEV-S-47's folder, fake-gh as `carol` |
-| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository` | integration: fake-gh already holds a fork of the upstream for `carol` |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
+| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2239,8 +2248,8 @@ the five calls of 10.4. Tests check what was created on `remotes/`:
 | Call | Answer |
 |---|---|
 | `api user --jq .login` | user set: stdout `<user>\n`, exit 0; unset: stderr `To get started with GitHub CLI, please run:  gh auth login`, exit 4 |
-| `api repos/<o>/<n> --jq .fork` | `<root>/<o>/<n>` exists: stdout `true\n` when it holds the file `fake-gh-parent`, else `false\n`, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
-| `repo fork <url> --clone=false --remote=false --default-branch-only --fork-name <n>` | `<url>` must be `https://github.com/<uo>/<un>` with `<root>/<uo>/<un>` present, else stderr `HTTP 404`, exit 1. When a repository under `<root>/<user>/` already holds `fake-gh-parent` with `<uo>/<un>`: stderr `<user>/<that name> already exists`, exit 0, nothing made (GitHub's one fork per account). Else `git clone -q --bare` it to `<root>/<user>/<n>` (all tags, as a GitHub fork shares them), keep only its default branch, write `<uo>/<un>` to `fake-gh-parent`, exit 0 |
+| `api repos/<o>/<n> --jq .parent.full_name` | `<root>/<o>/<n>` exists: stdout the content of its file `fake-gh-parent` and a newline, or `null\n` without that file, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
+| `api -X POST repos/<uo>/<un>/forks -f name=<n> -F default_branch_only=true --jq .full_name` | `<root>/<uo>/<un>` missing: stderr `gh: Not Found (HTTP 404)`, exit 1. A repository under `<root>/<user>/` whose `fake-gh-parent` is `<uo>/<un>` exists already: stdout `<user>/<its name>`, exit 0, nothing made or renamed (GitHub's one fork per account). Else `git clone -q --bare` it to `<root>/<user>/<n>` (all tags, as a GitHub fork shares them), delete every branch except its default, write `<uo>/<un>` to `fake-gh-parent`, stdout `<user>/<n>`, exit 0 |
 | `repo edit <o>/<n> --default-branch <b>` | `git symbolic-ref HEAD refs/heads/<b>` in `<root>/<o>/<n>`, exit 0; no such branch: exit 1 |
 | `repo create <o>/<n> --public` | creates the bare repository, stdout `https://github.com/<o>/<n>\n`, exit 0; exists: stderr `GraphQL: Name already exists on this account (createRepository)`, exit 1 |
 
@@ -2341,7 +2350,8 @@ Each has a proposed answer, which this specification uses.
 13. **The fork of `new --from`** (S40, step 6): the sketch ran
     `gh repo fork` in `new --from`. Resolved with the human: `new --from`
     only clones and checks (10.4.2), so nothing unverified reaches GitHub;
-    the GitHub fork is made at the derived mod's first `publish --push`,
+    the GitHub fork is made at the derived mod's first `publish --push`
+    (the forks API, not `gh repo fork`, which renames an existing fork),
     on a branch `watane` that becomes the fork's default (no push meets
     the fork's `main`), with a new repository and joined history as the
     fallback (one fork per account, an upstream gone or not on GitHub).
