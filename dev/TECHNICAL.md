@@ -1531,8 +1531,10 @@ after removing one trailing `/` and one trailing `.git`.
 | Call | Use | Result |
 |---|---|---|
 | `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero with `HTTP 401` or `gh auth login` in stderr: `env.gh_auth`. Other non-zero (no network): `publish.push_failed`. |
-| `gh api repos/<owner>/<name> --jq .html_url` | does the repository exist | exit 0: yes. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
+| `gh api repos/<owner>/<name> --jq .fork` | does the repository exist, and is it a fork | exit 0: yes; stdout `true` or `false`. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
 | `gh repo create <owner>/<name> --public` | create it | exit 0, else `publish.push_failed`. |
+| `gh repo fork <upstream> --clone=false --remote=false --default-branch-only --fork-name <slug>` | fork the origin's repository (10.4.1 step 3) | any result is then checked with the `.fork` call; a failure is `publish.fork_unavailable`, a warning |
+| `gh repo edit <owner>/<slug> --default-branch watane` | make the derived mod's branch the fork's default | exit 0, else `publish.push_failed` |
 
 dev builds a GitHub repository URL itself as `https://github.com/<owner>/<name>`;
 it parses no URL from gh's output. git rewrites such a URL with the
@@ -1545,14 +1547,16 @@ folder has its repository. A maker on another host publishes without
 `--push` and pushes the site folder and the mod with their own git.
 
 **Joining a repository** (the site in step 5, the mod in step 3). When the
-folder has no `.git`: `git init -q -b main`, write `.*` to
+folder has no `.git`: `git init -q -b main` and write `.*` to
 `.git/info/exclude` (dist's and dev's temporary files and other dot files
-never enter a commit), `git remote add origin -- <repository>`. Then, when
-`git ls-remote -- <repository>` lists any ref: `git fetch -q origin`, and
-when `git rev-parse -q --verify origin/main` succeeds, `git reset -q
+never enter a commit). When it has no remote `origin`: `git remote add
+origin -- <repository>`. Only when `.git` was just made, and `git
+ls-remote -- <repository>` lists any ref: `git fetch -q origin`, and when
+`git rev-parse -q --verify origin/main` succeeds, `git reset -q
 origin/main` (mixed: the index takes the pushed tree, the files stay), so
 the next commit follows the pushed history and keeps the other files of
-the repository. A folder that has `.git` keeps its own history and branch.
+the repository. A folder that had `.git` (also a derived mod's clone)
+keeps its own history and branch.
 
 #### 10.4.1 `publish --push`
 
@@ -1573,8 +1577,23 @@ Without `--push`, publish is 9.7, unchanged.
    - Else, with an origin: `publish.origin_differs` (dev does not guess
      which repository the mod has).
    - Else the repository is `https://github.com/<owner>/<slug>`. When
-     `gh api repos/<owner>/<slug>` says it does not exist, create it
-     (`created: true`). When it exists and `git ls-remote` lists any ref,
+     `gh api repos/<owner>/<slug>` says it does not exist and the mod is
+     derived (`mod.toml` has `[origin]` and the folder has a remote
+     `upstream`, 10.4.2), fork it: `gh repo fork <remote.upstream.url>`
+     (table above), then the `.fork` call on `<owner>/<slug>`, retried once
+     a second for up to 10 s (GitHub makes a fork asynchronously), must
+     print `true` (`created: true`, `forked: true`). Then `git branch -m
+     watane`: the derived mod's commits go to a branch of their own, so its
+     first push never meets the fork's `main`, and after that push dev runs
+     `gh repo edit --default-branch watane` (step 6). When the fork fails
+     or `<owner>/<slug>` is not then a fork (the account already has a
+     fork of that upstream under another name; the upstream is gone,
+     private or not on GitHub): warn `publish.fork_unavailable` and go on
+     as for a mod that is not derived. A derived mod without `upstream`
+     (made from the package) also warns. When the repository does not
+     exist otherwise, create it (`created: true`, `forked: false`); a
+     derived mod's history then joins `upstream`'s as before, without
+     GitHub's fork link. When it exists and `git ls-remote` lists any ref,
      dev did not make it for this mod: `publish.repository_exists`. An
      empty one (left by a run that the person declined or whose tests
      failed) is reused. Write `repository = "<that URL>"` into `mod.toml`
@@ -1600,8 +1619,16 @@ Without `--push`, publish is 9.7, unchanged.
    the commit holds exactly the source that the person agreed to publish
    (F-PUB-4) and no other file of the folder. When `git diff --cached
    --quiet` fails, `git commit -q -m "<slug> <version>"`. Then `git tag
-   v<version>` and `git push -q origin HEAD refs/tags/v<version>`.
-   Files that are not committed stay in the folder, untracked.
+   <ReleaseRef>` (the answer's release, `<key>/<slug>@<version>`, a valid
+   tag name) and `git push -q origin HEAD refs/tags/<ReleaseRef>`. On the
+   run that forked, `gh repo edit <owner>/<slug> --default-branch watane`
+   ends the list. Files that are not committed stay in the folder,
+   untracked.
+
+   The tag is the ReleaseRef, not `v<version>`: a fork shares the tags of
+   its upstream, and a derived mod keeps its origin's version (10.2), so a
+   same-slug derivative would collide on `v<version>`. A ReleaseRef is
+   unique for each release of each publisher.
 
 Steps 5 and 6 run as lists of git commands, all with `-C <folder>`. The
 first command that fails stops its list and gives one
@@ -1616,12 +1643,13 @@ Result (2.4 `publish` plus `push`):
   "site": {"repository": "https://github.com/alice/watane-channel", "created": true,
            "pushed": true, "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/"},
   "mod": {"repository": "https://github.com/alice/reading-list", "created": true,
-          "tag": "v0.1.0", "pushed": true}
+          "forked": false, "tag": "<Alice key>/reading-list@0.1.0", "pushed": true}
 }
 ```
 
 - `repository`: the URL of step 3 or 5; for an existing `<site>/.git`, its
   `remote.origin.url`.
+- `forked`: this run made the repository as a GitHub fork of `upstream`.
 - `pushed`: the push command succeeded.
 - `raw`: when the site's repository is `https://github.com/<o>/<r>` (an
   optional `.git` removed), `https://raw.githubusercontent.com/<o>/<r>/<branch>/`
@@ -1645,7 +1673,7 @@ reader verifies what it reads.
    `repository()` (pkg 4.2, already checked by pkg) gives the URL, or
    none. With none, go on with 10.2 step 5 (unpack); no warning.
 2. `git -c advice.detachedHead=false -c core.symlinks=false clone -q
-   --branch v<version> -- <repository> <folder>` (a link in the
+   --branch <ReleaseRef> -- <repository> <folder>` (a link in the
    repository checks out as a plain file, so the check of step 3 sees it). git not found, or a non-zero exit (no network,
    no such repository or tag): remove `<folder>`, warn
    `new.fork_unavailable`, and go on with 10.2 step 5.
@@ -1659,36 +1687,38 @@ reader verifies what it reads.
    hold, except `.git/`, reading each entry with `symlink_metadata` and
    never following a link: a README, `.github/`, `.claude/`, `.vscode/` and the
    publisher's `AGENTS.md` never reach the new mod. `git -C <folder>
-   checkout -q -B main`, `git -C <folder> remote rename origin upstream`,
-   then delete each local tag (`git tag -l`, `git tag -d <tags>`): they
-   are the publisher's, and a derived mod keeps the version of its origin
-   (10.2), so its own first `v<version>` tag would collide. The tags stay
-   on `upstream`.
+   checkout -q -B main`, `git -C <folder> remote rename origin upstream`.
 5. 10.2 steps 5 (without the unpack: guides, `.gitignore`, no
    `logic.wasm`) to 8. Step 6 also removes `repository` from `mod.toml`:
-   the new mod gets its own repository at its first `publish --push`,
-   which pushes this history, Alice's commits up to the tag included.
+   the new mod gets its own repository at its first `publish --push`:
+   a GitHub fork of `upstream` where it can (10.4.1 step 3), and it pushes
+   this history, Alice's commits up to the tag included.
    That history is Alice's public history, unchecked except for the tree
    at the tag (section 11, not protected); the pushed tip holds only the
    derived mod's consented source (10.4.1 step 6).
 
 The new folder is a git fork of the mod repository: the tagged history
 plus the derived mod's changes, with the publisher's repository as
-`upstream`. dev runs no `gh repo fork`: GitHub allows one fork of a
-repository for each account, its fork starts at the default branch, not
-at the tag, and a fork made before the check would hold unverified source
-under the maker's name. `new --from` needs no gh and no login. The signed
+`upstream`. `new --from` runs no gh and needs no login, so nothing
+unverified is ever created on GitHub; the GitHub fork waits for the first
+`publish --push`, after the person agreed to publish. The signed
 `[origin]` stays the only origin that watane shows (W24).
 
-`new --from` result (2.4) adds `"fork": {"repository": "<URL>", "tag": "v0.1.0"}`,
+`new --from` result (2.4) adds `"fork": {"repository": "<URL>", "tag": "<ReleaseRef>"}`,
 or null when the folder came from the package. `files` leaves out `.git/`.
 
 Warnings (they never change `ok`):
 
 | Code | Message | Fix |
 |---|---|---|
-| `new.fork_unavailable` | `could not clone <repository> at v<version> (<git not found, or git's last stderr line>); the mod was made from the verified package, with no git history` | `To keep the publisher's history, check that git can reach <repository>, delete <folder>, then run new --from again` |
-| `new.fork_differs` | `<repository> at v<version> differs from the verified package (<path>: missing, extra or different); the mod was made from the verified package` | `Tell the person: the repository of <slug> does not hold the published source of v<version>` |
+| `new.fork_unavailable` | `could not clone <repository> at <ReleaseRef> (<git not found, or git's last stderr line>); the mod was made from the verified package, with no git history` | `To keep the publisher's history, check that git can reach <repository>, delete <folder>, then run new --from again` |
+| `new.fork_differs` | `<repository> at <ReleaseRef> differs from the verified package (<path>: missing, extra or different); the mod was made from the verified package` | `Tell the person: the repository of <slug> does not hold the published source of <ReleaseRef>` |
+
+`publish --push` warning (10.4.1 step 3):
+
+| Code | Message | Fix |
+|---|---|---|
+| `publish.fork_unavailable` | `could not fork <upstream, or "no upstream repository"> as <owner>/<slug> (<gh's last stderr line, or "the account already has a fork of it">); https://github.com/<owner>/<slug> was created without GitHub's fork link` | — (the release and the push are complete; the signed `[origin]` still names the origin) |
 
 ## 11. Security properties
 
@@ -2077,6 +2107,8 @@ rules belong to 15.1.
 | DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
 | DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push` | integration: DEV-S-47's folder, fake-gh as `carol` |
+| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository` | integration: fake-gh already holds a fork of the upstream for `carol` |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2202,12 +2234,14 @@ No test reaches GitHub. Each step-6 test makes, in its temp folder:
 
 `fake-gh` (`src/bin/fake-gh.rs`) reads `FAKE_GH_ROOT` (the `remotes/`
 folder) and `FAKE_GH_USER` (unset: not logged in), and answers exactly
-the three calls of 10.4. Tests check what was created on `remotes/`:
+the five calls of 10.4. Tests check what was created on `remotes/`:
 
 | Call | Answer |
 |---|---|
 | `api user --jq .login` | user set: stdout `<user>\n`, exit 0; unset: stderr `To get started with GitHub CLI, please run:  gh auth login`, exit 4 |
-| `api repos/<o>/<n> --jq .html_url` | `<root>/<o>/<n>` exists: stdout `https://github.com/<o>/<n>\n`, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
+| `api repos/<o>/<n> --jq .fork` | `<root>/<o>/<n>` exists: stdout `true\n` when it holds the file `fake-gh-parent`, else `false\n`, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
+| `repo fork <url> --clone=false --remote=false --default-branch-only --fork-name <n>` | `<url>` must be `https://github.com/<uo>/<un>` with `<root>/<uo>/<un>` present, else stderr `HTTP 404`, exit 1. When a repository under `<root>/<user>/` already holds `fake-gh-parent` with `<uo>/<un>`: stderr `<user>/<that name> already exists`, exit 0, nothing made (GitHub's one fork per account). Else `git clone -q --bare` it to `<root>/<user>/<n>` (all tags, as a GitHub fork shares them), keep only its default branch, write `<uo>/<un>` to `fake-gh-parent`, exit 0 |
+| `repo edit <o>/<n> --default-branch <b>` | `git symbolic-ref HEAD refs/heads/<b>` in `<root>/<o>/<n>`, exit 0; no such branch: exit 1 |
 | `repo create <o>/<n> --public` | creates the bare repository, stdout `https://github.com/<o>/<n>\n`, exit 0; exists: stderr `GraphQL: Name already exists on this account (createRepository)`, exit 1 |
 
 Anything else: stderr `fake-gh: unsupported: <args>`, exit 2.
@@ -2230,8 +2264,9 @@ the test then serves a fresh `git clone` of `remotes/alice/watane-channel`
 (branch `main`) with the static server of J3, sets that server's URL as
 Alice's site URL, and Bob installs from the link. J5: Carol's `new --from`
 clones `remotes/alice/reading-list` at the tag (`result.fork` set), and
-Carol's `publish --push` creates `remotes/carol/ratings` holding Alice's
-commits and Carol's. The raw URL itself appears only as text (`raw`,
+Carol's `publish --push` forks it as `remotes/carol/ratings`
+(`forked: true`), whose default branch `watane` holds Alice's commits and
+Carol's. The raw URL itself appears only as text (`raw`,
 `next`): the local server stands in for raw.githubusercontent.com.
 
 ## 16. Build plan
@@ -2256,7 +2291,7 @@ commits and Carol's. The raw URL itself appears only as text (`raw`,
 | 8 (step 4) | `search`: app status, POST, result, `next` (section 10) | app: `/api/search` (app 8.2) | `fake-watane` answers `/api/search` from `fake.json`, with an empty default | S-33, 34 implemented; dev stage 8 complete |
 | 9 (step 5) | `build_on`: 10.1 to 10.3, `release_providers`, 9.2 released providers, `publish.provider_unlisted`, the `missing_providers` fix of 9.6; template `AGENTS.md` lines for `new --from`, `add --release` and source as data | app: `/api/fetch` (app 8.3); host stage 9 (the preview rule) | `fake-watane` answers `/api/fetch` from packages named in `fake.json` | S-35 to S-40 pass; dev's part of J5 |
 | 10 (step 6) | `share`: 10.4.1 `publish --push`; the codes and result of 2.2, 2.4; `fake-gh`; the fake-watane site files (15.4); template `AGENTS.md` lines for `publish --push` and asking the person for `gh auth login` | pkg stage 8 (`repository`); the maker's git and gh | `fake-gh`, local bare remotes (15.4) | S-41 to S-46 pass; with the app, J3 on a local remote (`ac2_j3_github`) |
-| 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result | stage 10 | as stage 10 | S-47 to S-49 pass; J5 on a local remote (`ac2_j5_github`) |
+| 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result; the GitHub fork of 10.4.1 step 3 and `publish.fork_unavailable` | stage 10 | as stage 10 | S-47 to S-51 pass; J5 on a local remote (`ac2_j5_github`) |
 
 ## 17. Questions for spec/
 
@@ -2304,9 +2339,10 @@ Each has a proposed answer, which this specification uses.
     cycle before reading the provider as a `Mod`. This preserves the fixed
     pkg interface and reports DEV-S-26 without modifying either folder.
 13. **The fork of `new --from`** (S40, step 6): the sketch ran
-    `gh repo fork`. dev clones instead (10.4.2): GitHub allows one fork of
-    a repository for each account, starts it at the default branch rather
-    than the tag (so the derived mod's first push would not fast-forward),
-    and a fork made before the source check would hold unverified source
-    under the maker's name. The clone keeps the history (`upstream`); the
-    maker's repository is made by `publish --push`.
+    `gh repo fork` in `new --from`. Resolved with the human: `new --from`
+    only clones and checks (10.4.2), so nothing unverified reaches GitHub;
+    the GitHub fork is made at the derived mod's first `publish --push`,
+    on a branch `watane` that becomes the fork's default (no push meets
+    the fork's `main`), with a new repository and joined history as the
+    fallback (one fork per account, an upstream gone or not on GitHub).
+    Tags are ReleaseRefs, because a fork shares its upstream's tags.
