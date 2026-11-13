@@ -238,7 +238,7 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
 
-- [ ] **S47 J5 passes again (dev fix).** S39-2 made `new --from` drop the package's `logic.wasm`;
+- [~] **S47 J5 passes again (dev fix).** S39-2 made `new --from` drop the package's `logic.wasm`;
   when the origin has no `logic/` source, `watane-dev new ratings --from <link>` now fails with
   `mod.invalid` "[parts] provide logic.wasm or logic/Cargo.toml", and `app/tests/j5.rs`
   ac1_journey_j5 fails on main. Outcomes: `new --from` keeps `logic.wasm` when the package has no
@@ -246,6 +246,7 @@ is done. Journey tests use a local bare git repository and a fake `gh` on PATH i
   `envelope::ac5_scenario_map...` passes on main again (S40 mapped DEV-S-41 to 51 to tests that
   S42 and S43 will write: mark those rows as planned until they exist). Touches: dev/src (new
   --from), dev/tests, dev TECHNICAL 15.2 rows. Local: J5 needs the Mac. Before S42 (same files).
+  (branch `slice/s47`; foreman: see `Foremen`)
 - [x] **S40 Design: share on GitHub (step 6).** Merged 2026-11-13 (main `6f3a2c9`), spec documents
   only, after two independent reviews (the second on the human's switch to real GitHub forks).
   pkg stage 8 (`repository`, pkg 4.2); dev stage 10 (`publish --push`, 10.4.1) and stage 11 (the
@@ -362,6 +363,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S45: cloud routine `trig_01FJ4xoUaWLQp17xmy4hvZaw` (done).
 - S46: cloud routine `trig_013UXYFnD27HE48e8EW957Vm` (done).
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
+- S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47`.
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
