@@ -236,6 +236,15 @@ mod windows {
         let picked = f.eve();
         let denied = f.eve();
         drop(f.carol.site.take());
+        let stored = dist(picked.path());
+        assert!(
+            stored
+                .followed()
+                .unwrap()
+                .iter()
+                .all(|v| v.channel != f.frank.dist.identity())
+        );
+        drop(stored);
         let app = start(picked.path());
         begin_link(&app, &f.stats);
         consent(&app);
@@ -243,7 +252,7 @@ mod windows {
         for value in [
             "ratings by Carol",
             "is not available",
-            "Frank",
+            &format!("by Frank ({})", f.frank.dist.fingerprint()),
             f.carol.link().base(),
         ] {
             assert!(text.contains(value), "{text}");
@@ -362,7 +371,8 @@ mod windows {
         assert!(
             text.contains("as far as your indexes list them") && text.contains("Made from this:")
         );
-        assert_eq!(app.eval("main", "document.querySelectorAll('[data-local=reading-list] .derived .install-release').length"), 1);
+        assert_eq!(app.eval("main", "document.querySelectorAll('[data-local=reading-list] .derived .install-release').length"), 0);
+        assert!(text.contains("Installed"));
         assert!(app.quit().success());
     }
 }

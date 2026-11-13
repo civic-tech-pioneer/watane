@@ -140,13 +140,10 @@ fn origin_label(
     let text = match release {
         Some(r) => {
             let party = words::party(&origin.publisher.to_string(), parties);
-            let label = party
-                .name
-                .map(|n| format!("{n} ({})", party.fingerprint))
-                .unwrap_or(party.fingerprint);
+            let label = words::party_label(&party);
             format!("{} {} by {label}", r.release.name, origin.version)
         }
-        None => origin.to_string(),
+        None => words::release_label(origin, parties),
     };
     Some(format!("Made from {text} (the publisher says so)"))
 }
@@ -166,6 +163,62 @@ impl Core {
             parties,
             update_failures: Mutex::new(Default::default()),
         }
+    }
+    fn cache_installed_parties(&self) -> Result<(), CmdError> {
+        let mods = self.host.mods();
+        let keys = mods
+            .iter()
+            .flat_map(|m| {
+                m.publisher
+                    .iter()
+                    .map(ToString::to_string)
+                    .chain(m.origin.iter().map(|r| r.publisher.to_string()))
+                    .chain(m.grants.iter().filter_map(|g| match &g.grant {
+                        Grant::Call { provider, .. } | Grant::Subscribe { provider, .. } => {
+                            provider.publisher.as_ref().map(ToString::to_string)
+                        }
+                        _ => None,
+                    }))
+                    .chain(
+                        m.binds
+                            .iter()
+                            .filter_map(|b| b.provider.publisher.as_ref().map(ToString::to_string)),
+                    )
+                    .chain(
+                        m.binds
+                            .iter()
+                            .filter_map(|b| b.to.split_once('/').map(|(k, _)| k.to_string())),
+                    )
+            })
+            .filter_map(|k| k.parse().ok());
+        Ok(cache_channels(&self.dist, &self.parties, keys)?)
+    }
+    pub(crate) fn cache_plan_parties(&self, plan: &watane_host::Plan) -> Result<(), CmdError> {
+        let keys = plan
+            .entries()
+            .iter()
+            .flat_map(|e| {
+                e.publisher
+                    .iter()
+                    .map(ToString::to_string)
+                    .chain(e.origin.iter().map(|r| r.publisher.to_string()))
+                    .chain(e.binds.iter().flat_map(|b| {
+                        [
+                            b.provider.publisher.as_ref().map(ToString::to_string),
+                            b.to.split_once('/').map(|(k, _)| k.to_string()),
+                        ]
+                        .into_iter()
+                        .flatten()
+                    }))
+                    .chain(e.grants.iter().filter_map(|g| match g {
+                        Grant::Call { provider, .. } | Grant::Subscribe { provider, .. } => {
+                            provider.publisher.as_ref().map(ToString::to_string)
+                        }
+                        _ => None,
+                    }))
+            })
+            .filter_map(|k| k.parse().ok());
+        Ok(cache_channels(&self.dist, &self.parties, keys)?)
     }
     pub fn port(&self) -> u16 {
         self.served.lock().unwrap().as_ref().map_or(0, |s| s.port)
@@ -221,6 +274,7 @@ impl Core {
         }
     }
     pub fn mods(&self) -> Result<Vec<ModView>, CmdError> {
+        self.cache_installed_parties()?;
         let followed = self.dist.followed()?;
         Ok(self
             .host
@@ -230,6 +284,7 @@ impl Core {
             .collect())
     }
     pub fn get(&self, local: &str) -> Result<Option<ModView>, CmdError> {
+        self.cache_installed_parties()?;
         let name = LocalName::parse(local)?;
         let followed = self.dist.followed()?;
         Ok(self.host.get(&name).map(|m| self.view(m, &followed)))
@@ -380,7 +435,8 @@ impl Core {
     }
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
         let followed = self.dist.followed()?;
-        self.parties.replace(&party_views(&self.dist)?);
+        self.parties.remember(&party_views(&self.dist)?);
+        self.parties.set_own(self.dist.identity().to_string());
         let failures = self.failures.lock().unwrap();
         Ok(followed
             .iter()
@@ -529,6 +585,7 @@ impl Core {
                         watane_host::HostError::MissingProviders(plan.missing().to_vec()).into(),
                     );
                 }
+                self.cache_plan_parties(&plan)?;
                 let missing = plan.missing().iter().map(|m| m.release.clone()).collect();
                 Ok((plan, missing))
             },
@@ -587,6 +644,11 @@ impl Core {
             ..Default::default()
         })?;
         self.channels()?;
+        cache_channels(
+            &self.dist,
+            &self.parties,
+            hits.iter().map(|h| h.info.channel),
+        )?;
         let hits = build_on::candidates(&hits, provider, &needed);
         let label = words::provider(provider, &self.parties);
         if hits.is_empty() {
@@ -600,11 +662,13 @@ impl Core {
                 name: h.info.release.name.clone(),
                 summary: h.info.release.summary.clone(),
                 version: h.info.reference.version.to_string(),
-                publisher: crate::consent::Party {
-                    name: h.publisher_name.clone(),
-                    fingerprint: h.info.channel.fingerprint(),
-                },
-                origin: h.info.release.origin.as_ref().map(ToString::to_string),
+                publisher: words::party(&h.info.channel.to_string(), &self.parties),
+                origin: h
+                    .info
+                    .release
+                    .origin
+                    .as_ref()
+                    .map(|r| words::release_label(r, &self.parties)),
                 installed: installed.iter().any(|m| {
                     m.publisher.as_ref() == Some(&h.info.reference.publisher)
                         && m.slug == h.info.reference.slug
@@ -1084,6 +1148,47 @@ mod find_tests {
     use super::*;
     use watane_dist::*;
     #[test]
+    fn ac2_own_index_rows_and_hits_mark_you() {
+        let own = stage_d_tests::channel();
+        let parties = Parties::new();
+        parties.set_own(own.channel.to_string());
+        let hit = Hit {
+            info: stage_d_tests::release("0.1.0", None),
+            publisher_name: Some("Carol".into()),
+            link: None,
+            status: Status::Ok,
+            checked_at: None,
+            unchecked_since: None,
+            via: vec![Via::Index {
+                index: own.channel,
+                through: None,
+                note: String::new(),
+            }],
+        };
+        let view = crate::find::hit_view(&hit, &[], &parties);
+        assert_eq!(view["publisher"]["you"], true);
+        assert_eq!(view["via"][0]["index"]["you"], true);
+        assert_eq!(
+            index_rows(&own, vec![], &Default::default(), &parties)[0]["you"],
+            true
+        );
+    }
+    #[test]
+    fn ac5_index_row_failure_names_the_index() {
+        let mut view = stage_d_tests::channel();
+        view.name = Some("Ivy".into());
+        let row = index_row(
+            &view,
+            false,
+            0,
+            &[],
+            vec![],
+            Some(&"offline".into()),
+            &Parties::new(),
+        );
+        assert_eq!(row["cause"], "Could not read Ivy: offline");
+    }
+    #[test]
     fn ac1_own_index_counts_only_live_list_listings() {
         let mut own = stage_d_tests::channel();
         own.releases = vec![stage_d_tests::release("0.1.0", None)];
@@ -1162,7 +1267,10 @@ mod find_tests {
         );
         assert_eq!(
             origin_label(Some(&origin), None, &parties),
-            Some(format!("Made from {origin} (the publisher says so)"))
+            Some(format!(
+                "Made from {origin} by Alice ({}) (the publisher says so)",
+                channel.channel.fingerprint()
+            ))
         );
         assert_eq!(origin_label(None, None, &parties), None);
     }
@@ -1224,6 +1332,7 @@ mod find_tests {
         chosen.name = Some("Ivy".into());
         let parties = Parties::new();
         parties.insert(own.channel.to_string(), "Included".into());
+        parties.set_own(own.channel.to_string());
         let rows = index_rows(
             &own,
             vec![IndexView {
@@ -1239,6 +1348,7 @@ mod find_tests {
             &parties,
         );
         assert_eq!(rows[0]["own"], true);
+        assert_eq!(rows[0]["you"], true);
         assert_eq!(rows[0]["mods"], 0);
         assert_eq!(rows[1]["own"], false);
         assert_eq!(rows[1]["name"], "Ivy");
@@ -1246,7 +1356,7 @@ mod find_tests {
         assert_eq!(rows[1]["included"][0]["name"], "Included");
         assert_eq!(
             rows[1]["skipped"],
-            serde_json::json!([{"party":{"name":"Included","fingerprint":own.channel.fingerprint()},"cause":"own channel"}])
+            serde_json::json!([{"party":{"name":"Included","fingerprint":own.channel.fingerprint(),"you":true},"cause":"own channel"}])
         );
     }
     #[test]
@@ -1300,13 +1410,16 @@ mod find_tests {
         assert_eq!(row["own"], true);
         assert_eq!(row["mods"], 3);
         assert_eq!(row["status"], "failed");
-        assert_eq!(row["cause"], "offline");
+        assert_eq!(
+            row["cause"],
+            format!("Could not read {}: offline", key.fingerprint())
+        );
         assert_eq!(row["skipped"], serde_json::json!([]));
         assert_eq!(
             row["listings"],
             serde_json::json!([
-                {"entry":EntryId::from_bytes([0;32]).to_string(),"kind":"list","target":format!("{key}/reading-list"),"note":"Books"},
-                {"entry":EntryId::from_bytes([1;32]).to_string(),"kind":"include","target":key.to_string(),"note":"Index"}
+                {"entry":EntryId::from_bytes([0;32]).to_string(),"kind":"list","target":format!("reading-list by {}",key.fingerprint()),"note":"Books"},
+                {"entry":EntryId::from_bytes([1;32]).to_string(),"kind":"include","target":key.fingerprint(),"note":"Index"}
             ])
         );
         own.status = Status::Compromised { seq: 1 };
@@ -1343,6 +1456,19 @@ fn index_row(
 ) -> serde_json::Value {
     let mut row = serde_json::to_value(channel_row(view, failure)).unwrap();
     let object = row.as_object_mut().unwrap();
+    object.insert("you".into(), serde_json::json!(own));
+    if let Some(cause) = failure {
+        object.insert(
+            "cause".into(),
+            serde_json::json!(words::index_read(
+                &view
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| view.channel.fingerprint()),
+                cause
+            )),
+        );
+    }
     object.insert("own".into(), serde_json::json!(own));
     object.insert("mods".into(), serde_json::json!(mods));
     object.insert(
@@ -1357,9 +1483,49 @@ fn index_row(
     object.insert("skipped".into(), serde_json::json!(skipped));
     object.insert("listings".into(), serde_json::json!(view.listings.iter().filter(|l| own && l.unlisted.is_none()).map(|l| {
         let link = &l.listing.link;
-        serde_json::json!({"entry":l.entry.to_string(), "kind":if l.include {"include"} else {"list"}, "target":link.slug().map(|slug|format!("{}/{slug}",link.channel())).unwrap_or_else(||link.channel().to_string()), "note":l.listing.note})
+        serde_json::json!({"entry":l.entry.to_string(), "kind":if l.include {"include"} else {"list"}, "target":link.slug().map(|slug|format!("{slug} by {}", words::party_label(&words::party(&link.channel().to_string(), parties)))).unwrap_or_else(||words::party_label(&words::party(&link.channel().to_string(), parties))), "note":l.listing.note})
     }).collect::<Vec<_>>()));
     row
+}
+pub(crate) fn cache_channels(
+    dist: &watane_dist::Dist,
+    parties: &Parties,
+    keys: impl IntoIterator<Item = watane_dist::PublicKey>,
+) -> Result<(), watane_dist::DistError> {
+    parties.set_own(dist.identity().to_string());
+    let mut pending: Vec<_> = keys.into_iter().collect();
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(key) = pending.pop() {
+        if !seen.insert(key) {
+            continue;
+        }
+        let view = dist.channel(&key)?;
+        pending.extend(
+            view.listings
+                .iter()
+                .filter(|l| l.unlisted.is_none())
+                .map(|l| l.listing.link.channel()),
+        );
+        for release in &view.releases {
+            if let Some(origin) = &release.release.origin
+                && let Ok(key) = origin.publisher.to_string().parse()
+            {
+                pending.push(key);
+            }
+            for grant in &release.release.grants {
+                if let Grant::Call { provider, .. } | Grant::Subscribe { provider, .. } = grant
+                    && let Some(key) = provider
+                        .publisher
+                        .as_ref()
+                        .and_then(|p| p.to_string().parse().ok())
+                {
+                    pending.push(key);
+                }
+            }
+        }
+        parties.remember(&[view]);
+    }
+    Ok(())
 }
 fn party_views(dist: &watane_dist::Dist) -> Result<Vec<watane_dist::ChannelView>, CmdError> {
     let mut views = dist.followed()?;
@@ -1393,7 +1559,14 @@ pub(crate) fn choose_index(
     if link.channel() == dist.identity() {
         return Err(CmdError::new("bad_input", words::OWN_INDEX));
     }
-    Ok(dist.choose_index(&link)?)
+    dist.choose_index(&link).map_err(|e| {
+        let name = dist
+            .channel(&link.channel())
+            .ok()
+            .and_then(|v| v.name)
+            .unwrap_or_else(|| link.channel().fingerprint());
+        CmdError::new("dist", words::index_read(&name, &crate::cause_chain(&e)))
+    })
 }
 pub(crate) fn fetch_release(
     dist: &watane_dist::Dist,
@@ -1438,7 +1611,8 @@ fn index_rows(
 }
 impl Core {
     pub fn indexes(&self) -> Result<Vec<serde_json::Value>, CmdError> {
-        self.parties.replace(&party_views(&self.dist)?);
+        self.parties.remember(&party_views(&self.dist)?);
+        self.parties.set_own(self.dist.identity().to_string());
         let own = self.dist.own()?;
         let failures = self.failures.lock().unwrap();
         Ok(index_rows(
@@ -1459,11 +1633,16 @@ impl Core {
         self.indexes()
     }
     pub fn search(&self, query: &watane_dist::Query) -> Result<Vec<serde_json::Value>, CmdError> {
-        self.parties.replace(&party_views(&self.dist)?);
+        self.parties.remember(&party_views(&self.dist)?);
+        self.parties.set_own(self.dist.identity().to_string());
         let installed = self.host.mods();
-        Ok(self
-            .dist
-            .search(query)?
+        let hits = self.dist.search(query)?;
+        cache_channels(
+            &self.dist,
+            &self.parties,
+            hits.iter().map(|h| h.info.channel),
+        )?;
+        Ok(hits
             .iter()
             .map(|h| crate::find::hit_view(h, &installed, &self.parties))
             .collect())
@@ -1541,6 +1720,64 @@ mod find_integration_tests {
         .into_bytes()
     }
     #[test]
+    fn ac5_failed_index_choose_uses_profile_or_link_fingerprint() {
+        let publisher_home = tempfile::tempdir().unwrap();
+        let publisher = open(&publisher_home);
+        publisher.set_name("Ivy").unwrap();
+        let site = Site::serve(publisher.site_dir());
+        publisher.set_site_url(&site.base).unwrap();
+        let published = publisher.publish(package()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let reader = open(&home);
+        reader.read_link(published.link.as_ref().unwrap()).unwrap();
+        let unknown_home = tempfile::tempdir().unwrap();
+        let unknown = open(&unknown_home);
+        let link = publisher.own_link(None).unwrap().to_string();
+        drop(site);
+        let error = choose_index(&reader, &link).unwrap_err();
+        assert!(
+            error.message.starts_with("Could not read Ivy: "),
+            "{}",
+            error.message
+        );
+        let error = choose_index(&unknown, &link).unwrap_err();
+        assert!(
+            error
+                .message
+                .starts_with(&format!("Could not read {}: ", publisher.fingerprint())),
+            "{}",
+            error.message
+        );
+    }
+    #[test]
+    fn ac1_fetched_unfollowed_channel_and_origin_fill_parties() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        alice.set_name("Alice").unwrap();
+        let site = Site::serve(alice.site_dir());
+        alice.set_site_url(&site.base).unwrap();
+        let published = alice.publish(package()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let reader = open(&home);
+        reader.read_link(published.link.as_ref().unwrap()).unwrap();
+        assert!(reader.followed().unwrap().is_empty());
+        let parties = Parties::new();
+        cache_channels(&reader, &parties, [alice.identity()]).unwrap();
+        assert_eq!(
+            words::party(&alice.identity().to_string(), &parties)
+                .name
+                .as_deref(),
+            Some("Alice")
+        );
+        parties.remember(&party_views(&reader).unwrap());
+        assert_eq!(
+            words::party(&alice.identity().to_string(), &parties)
+                .name
+                .as_deref(),
+            Some("Alice")
+        );
+    }
+    #[test]
     fn ac5_install_hit_follows_before_fetch_and_keeps_dist_cause() {
         let alice_home = tempfile::tempdir().unwrap();
         let alice = open(&alice_home);
@@ -1614,7 +1851,7 @@ mod find_integration_tests {
         choose_index(&carol, &ivy.own_link(None).unwrap().to_string()).unwrap();
         assert!(carol.followed().unwrap().is_empty());
         let parties = Parties::new();
-        parties.replace(&party_views(&carol).unwrap());
+        parties.remember(&party_views(&carol).unwrap());
         assert_eq!(
             words::party(&ivy.identity().to_string(), &parties)
                 .name
@@ -1672,6 +1909,7 @@ mod find_integration_tests {
             &Parties::new(),
         );
         assert_eq!(rows[0]["own"], true);
+        assert_eq!(rows[0]["you"], true);
         assert_eq!(rows[0]["listings"].as_array().unwrap().len(), 1);
         assert_eq!(rows[0]["mods"], 1, "{}", rows[0]);
     }

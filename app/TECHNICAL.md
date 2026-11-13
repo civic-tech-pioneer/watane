@@ -149,7 +149,7 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
 - `{provider}` is `<slug> (local)` for a local provider and
   `<slug> by <party>` for a published one (pkg names a provider by slug and
   publisher, PKG-F-7).
-- `<party>` is `<profile name> (<fingerprint>)` when the parties cache
+- `<party>` is `you` for the own key; otherwise `<profile name> (<fingerprint>)` when the parties cache
   knows a name, else `<fingerprint>`. The fingerprint is
   `PublicKey::fingerprint` (log, through dist); before stage C it is the
   first 10 characters of the key text.
@@ -300,7 +300,7 @@ pub struct PlanMod {
     pub binds: Vec<String>,           // step 5: one line per new bind, words.rs: "<to> in place of <provider> (your pick)"
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Party { pub name: Option<String>, pub fingerprint: String }
+pub struct Party { pub name: Option<String>, pub fingerprint: String, #[serde(default)] pub you: bool }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GrantLine { pub key: String, pub kind: GrantKind, pub text: String, pub granted: bool, pub new: bool }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,7 +342,9 @@ that local name, so this list shows only new picks; stage A has no installed
 mod and shows every supplied bind. Missing `origin` and `binds` in driver
 fixtures mean `None` and an empty list.
 
-`signer` is the own identity: profile name and fingerprint.
+`you` defaults to false when deserializing old fixtures. Every party label renders
+`you: true` as `you`; otherwise it renders the profile name and fingerprint,
+or the fingerprint when no profile is stored. `signer` is the own identity.
 
 ### 6.3 The consent page
 
@@ -473,10 +475,9 @@ ChannelRow {channel (key text), fingerprint, name: null | string, base: null | s
             status: "ok" | "compromised" | "failed", cause: null | string}
 IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string,
-            own: bool, mods: number, included: [Party],
+            you: bool, own: bool, mods: number, included: [Party],
             skipped: [{party: Party, cause: string}],   // dist's IndexView.skipped (S29)
-            listings: [{entry, kind: "list" | "include", target (ReleaseRef without
-                        version, or key text), note}]}            // own index only: its live listings
+            listings: [{entry, kind: "list" | "include", target (slug with party label, or index party label), note}]}            // own index only: its live listings
 HitView    {release (ReleaseRef), slug, name, summary, version, link (link text) | null,
             publisher: null | Party, verified: bool, status: "ok" | "compromised",
             checkedAt: null | number, uncheckedSince: null | number,   // ms since the Unix epoch
@@ -565,7 +566,7 @@ and writes the site folder.
 | `DistError::Refused` | 403 | `refused` |
 | `DistError::Package` | 422 | `invalid_package` |
 | `DistError::SiteNotWritten` | 500 | `site_not_written`; the release is signed and stored; the message says so |
-| `DistError::VersionExists` | 409 | `version_exists`; `release <ref> already exists at seq <n>` (dist's text) |
+| `DistError::VersionExists` | 409 | `version_exists`; `release <ref> already exists` (no sequence number) |
 | any other `DistError` (an unreleased provider, an unconfirmed own head, ...) | 409 | `publish_refused` |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
 
@@ -614,7 +615,7 @@ publish before building or after its publish wait expired.
 
 No dist handle gives 503 `unavailable`, with message `dist did not open`.
 Other read failures give 500 `unavailable` with the cause. Other methods
-return 405, `Allow: GET`, and `bad_request` with message `use GET`, as host's
+return 405, `Allow: GET`, and `method_not_allowed` with message `use GET`, in the common
 built-in API routes do (HEAD has no response body).
 
 ### 8.2 `POST /api/search` (step 4)
@@ -665,10 +666,15 @@ behind:
 | Result | Status | Body or code |
 |---|---|---|
 | fetched | 200 | `Content-Type: application/octet-stream`; the package bytes; headers `Watane-Release: <ReleaseRef>` and `Watane-Package: <package id>` |
-| bad JSON, both or neither field, a link or release that does not parse, a link with no slug | 400 | `bad_request` |
+| bad JSON, both or neither field (including both null), a link or release that does not parse, a link with no slug | 400 | `bad_request`; invalid JSON/request shape reads `give link or release`, never serde text |
 | `NoRelease`, `Withdrawn`, `Compromised` | 409 | `fetch_refused` with dist's cause |
 | `NotFollowed` (no base known for a release), `BadUrl` (a local address) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
+
+A wrong method on any app `/api/*` route answers 405 with
+`{"error":{"code":"method_not_allowed","message":"use POST"}}`
+(`use GET` for releases), and an `Allow` header. HEAD has no response body,
+as HTTP requires.
 
 No consent: a fetch installs nothing, grants nothing, signs nothing and
 follows nothing; its only lasting effect is a verified package in dist's
@@ -698,15 +704,23 @@ use it (dev 10). The route never answers a confirmation.
 ### 9.2 HostConfirm, DistConfirm and the parties cache
 
 ```rust
-pub(crate) struct Parties(std::sync::RwLock<BTreeMap<String, String>>); // key text -> profile name; fingerprint from PublicKey
+pub(crate) struct Parties { names: RwLock<BTreeMap<String, String>>, own: RwLock<Option<String>> }
 pub(crate) struct HostConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties>, pub host: OnceLock<Weak<Host>> } // impl watane_host::Confirm
-pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties> }                                      // impl watane_dist::Confirm
+pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Parties>, pub dist: OnceLock<Weak<Dist>> } // impl watane_dist::Confirm
 ```
 
-- The parties cache maps a publisher key to its profile name and
-  fingerprint. Core fills it from `dist.own()` and `dist.followed()` at
-  start and after each follow, refresh and set_name. It never blocks on
-  dist, so HostConfirm can read it while dist waits for a signature.
+- The parties cache remembers profile names and the own key (`you`). Core fills
+  it at startup and after changes, and before rendering every channel it shows:
+  followed/chosen/listed/included/skipped channels, search and pick publishers,
+  fetched releases, installed and planned publishers, origins, grant providers
+  and bind targets. The API fetch route uses the same cache, so a later
+  HostConfirm can name fetched channels without any dist call. `dist.channel(key)` reads the local log only, including for
+  channels that are not followed. New reads augment the cache rather than
+  dropping an unfollowed fetched channel. HostConfirm only reads this cache;
+  it never calls or waits on dist. DistConfirm holds a weak dist reference and
+  fills the parties named by its sign request from local channel views before
+  asking the broker; no network read or reference cycle is introduced. A
+  failed profile read is shown in the sign details with its full cause.
 - HostConfirm receives a weak host reference immediately after `Host::open`,
   avoiding a host/confirmation reference cycle while resolving installed providers.
 - `HostConfirm::install(InstallRequest { entries, requester })` (also an
@@ -829,11 +843,13 @@ sign-title wording functions, shared by the pages and their wording tests.
 - `indexes_list`: `dist.indexes()` mapped to `IndexRow`, the own channel
   first (`own: true`, with its live listings); the own row's `mods` counts
   its live `list` listings. `status` and `cause` as for
-  `ChannelRow` (9.3).
+  `ChannelRow` (9.3), except an index failure reads `Could not read <index>: <cause>`
+  with its profile name, else its key fingerprint. The own row has `you: true`.
 - `index_choose(link)`: `Link::from_str`, `dist.choose_index(&link)` in
   `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
   cache; answer `indexes_list`. A failed first read is a command error with
-  dist's cause (APP-F-37).
+  `Could not read <index>: <cause>` with its stored name, else the link's
+  fingerprint (APP-F-37).
   Choosing the own link is `bad_input` "Your own channel is always your
   index." (`words.rs`), not dist's follow text.
 - `index_drop(channel)`: `dist.drop_index`.
@@ -841,6 +857,10 @@ sign-title wording functions, shared by the pages and their wording tests.
   and `IndexRow.included`/`skipped` take name and fingerprint from the
   parties cache, which Core also fills from `dist.indexes()` and the
   `channel(key)` of each listed channel (S29).
+- A search with no hits reads `No mods found`. When the same index lists a hit
+  directly and through an include, show the combined provenance once:
+  `listed by Ivy through Alice` (with fingerprints beside names); own-index
+  provenance reads `listed by you`.
 - `search`: as 8.2, mapped to `HitView`. `verified` is `status == ok`
   (every hit comes from a verified channel; a compromised one is not
   shown as verified); `installed` from `host.list()` by `ReleaseRef`
@@ -859,7 +879,8 @@ sign-title wording functions, shared by the pages and their wording tests.
   errors with dist's cause. `BadNote { cause }` reads as
   `words::bad_note(cause)`: `invalid character count` gives `Give a note of
   at most 280 characters.`; every other cause gives `This note cannot be
-  used: <cause>.` (as `bad_reason`, 9.5).
+  used: <cause>.` (as `bad_reason`, 9.5). `AlreadyListed` reads `already listed`
+  for list and `This channel is already in the index.` for include, without a seq.
 - The refresh loop (9.5) needs no change: `dist.refresh()` reads the
   read sets too.
 
@@ -906,7 +927,7 @@ parties cache and dist's view of the origin's channel when stored, else
 the ReleaseRef text. The install consent and the `release` sign request
 show it too (6.2, 6.3). The confirmation adapter retains the origin
 reference and appends the installed origin's name, version and party when
-the real host has that release; without it, the reference is the fallback.
+the real host has that release; without it, the reference with its cached party label is the fallback.
 `PlanMod.origin` remains nullable text; no consent command or field is added.
 
 **Derived mods** (F-BUILD-4, APP-F-42). For an installed mod with a
@@ -914,7 +935,8 @@ the real host has that release; without it, the reference is the fallback.
 (`dist.search(&Query { origin: Some((publisher, slug)), .. })`); a local
 mod makes no call. A bad `origin` text is `bad_input`. The details
 list them as `Made from this: <name> <version> by <party>`, each with the
-install button of a hit (`install_release`). The page says `as far as your
+install button of a hit (`install_release`), or `Installed` with no install
+button when already installed. The page says `as far as your
 indexes list them` above the list.
 
 ## 10. Test driver (feature `driver`)
@@ -1093,9 +1115,13 @@ pub struct CmdError { pub code: &'static str, pub message: String }
 `missing_providers`, `unavailable`, `host`, `dist`, `io`. The host's own
 code replaces `host` when it has one (HOST-F-20). `message` is the whole
 cause chain: start with `{e}` and append each `source()` with `: ` unless
-the text so far equals that cause's text or ends with `: ` and that text,
+that cause is already present as a whole `: `-delimited part of the text
+(including its beginning or end),
 so no cause is hidden or printed twice (F-QUAL-3). dist already escapes untrusted
-text in its `Display`.
+text in its `Display`. Display is used for package errors and URLs; no Debug
+or serde diagnostic reaches the error line. Each main-window action has an
+increasing id; starting it clears the line. Its asynchronous errors (including
+refreshes) may update the line only while that id is still the latest.
 
 Busy-port startup uses `words::port_in_use(P)`:
 `Port P is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port.`

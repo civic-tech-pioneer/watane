@@ -672,3 +672,45 @@ async fn ac5_publish_own_provider_needs_no_listing() {
         ["release"]
     );
 }
+
+#[tokio::test]
+async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
+    let home = tempfile::tempdir().unwrap();
+    let dist = Arc::new(
+        watane_dist::Dist::open(home.path(), Arc::new(Answer(true)), Default::default()).unwrap(),
+    );
+    for body in [
+        json!({}),
+        json!({"link":null,"release":null}),
+        json!({"link":"bad","release":"bad"}),
+    ] {
+        let (status, _, bytes) = fetch(Some(dist.clone()), body).await;
+        assert_eq!(status, 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["error"],
+            json!({"code":"bad_request","message":"give link or release"})
+        );
+    }
+    for (path, method) in [
+        ("/api/fetch", "GET"),
+        ("/api/publish", "GET"),
+        ("/api/search", "GET"),
+        ("/api/releases", "POST"),
+    ] {
+        let response = watane_app::api::router(Some(dist.clone()))
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 405);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).expect("JSON method error");
+        assert_eq!(body["error"]["code"], "method_not_allowed");
+        assert!(!body["error"]["message"].as_str().unwrap().is_empty());
+    }
+}

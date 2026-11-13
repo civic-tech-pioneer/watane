@@ -35,13 +35,10 @@ fn request_view(
                     })
                     .map(|m| {
                         let party = words::party(&origin.publisher.to_string(), parties);
-                        let label = party
-                            .name
-                            .map(|n| format!("{n} ({})", party.fingerprint))
-                            .unwrap_or(party.fingerprint);
+                        let label = words::party_label(&party);
                         format!("{reference} — {} {} by {label}", m.name, origin.version)
                     })
-                    .unwrap_or(reference)
+                    .unwrap_or_else(|| words::release_label(origin, parties))
                 }),
                 binds: e
                     .binds
@@ -164,10 +161,42 @@ impl Confirm for HostConfirm {
 pub(crate) struct DistConfirm {
     pub broker: Arc<consent::Broker>,
     pub parties: Arc<Parties>,
+    pub dist: OnceLock<Weak<watane_dist::Dist>>,
 }
 impl watane_dist::Confirm for DistConfirm {
     fn confirm(&self, request: &watane_dist::SignRequest) -> watane_dist::Decision {
-        match self.broker.ask_blocking(sign_view(request, &self.parties)) {
+        let mut profile_error = None;
+        if let Some(dist) = self.dist.get().and_then(Weak::upgrade) {
+            let mut keys = vec![request.channel];
+            match &request.statement {
+                watane_dist::Statement::Release { release, .. } => {
+                    if let Some(key) = release
+                        .origin
+                        .as_ref()
+                        .and_then(|r| r.publisher.to_string().parse().ok())
+                    {
+                        keys.push(key);
+                    }
+                }
+                watane_dist::Statement::List(l)
+                | watane_dist::Statement::Include(l)
+                | watane_dist::Statement::Unlist { listing: l, .. } => keys.push(l.link.channel()),
+                _ => {}
+            }
+            if let Err(error) = crate::core::cache_channels(&dist, &self.parties, keys) {
+                profile_error = Some(crate::cause_chain(&error));
+            }
+        }
+        let mut view = sign_view(request, &self.parties);
+        if let Some(cause) = profile_error
+            && let consent::Request::Sign { details, .. } = &mut view
+        {
+            details.push(consent::Detail {
+                label: "Could not read profile".into(),
+                value: cause,
+            });
+        }
+        match self.broker.ask_blocking(view) {
             consent::Answer::Approve { .. } => watane_dist::Decision::Approve,
             consent::Answer::Deny | consent::Answer::Pick { .. } => watane_dist::Decision::Refuse,
         }
@@ -177,10 +206,7 @@ impl watane_dist::Confirm for DistConfirm {
 fn listing_target(link: &watane_dist::Link, parties: &Parties) -> String {
     let key = link.channel().to_string();
     let party = words::party(&key, parties);
-    let label = party
-        .name
-        .map(|name| format!("{name} ({})", party.fingerprint))
-        .unwrap_or(party.fingerprint);
+    let label = words::party_label(&party);
     let target = link
         .slug()
         .map(|slug| format!("{key}/{slug}"))
@@ -209,10 +235,7 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
                         .as_ref()
                         .map(|origin| {
                             let p = words::party(&origin.publisher.to_string(), parties);
-                            let label = p
-                                .name
-                                .map(|n| format!("{n} ({})", p.fingerprint))
-                                .unwrap_or(p.fingerprint);
+                            let label = words::party_label(&p);
                             format!("{origin} by {label}")
                         })
                         .unwrap_or_else(|| "none".into()),
@@ -354,7 +377,10 @@ mod tests {
         let consent::Request::Install { mods, .. } = request_view(&request, &parties, None) else {
             panic!()
         };
-        assert_eq!(mods[1].origin.as_deref(), Some(origin.as_str()));
+        assert_eq!(
+            mods[1].origin.as_deref(),
+            Some(format!("{origin} by Carol (47pjoycnsr)").as_str())
+        );
         assert_eq!(mods[1].binds, [words::bind_line(&bind, &parties)]);
         assert_eq!(
             mods[1].uses,

@@ -73,6 +73,8 @@ pub struct PlanMod {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party {
+    #[serde(default)]
+    pub you: bool,
     pub name: Option<String>,
     pub fingerprint: String,
 }
@@ -540,6 +542,7 @@ mod tests {
             Request::Sign {
                 statement: Statement::Profile,
                 signer: Party {
+                    you: false,
                     name: None,
                     fingerprint: "fingerprint".into(),
                 },
@@ -673,7 +676,7 @@ mod tests {
             "release":null,"publisher":null,"replaces":null,"grants":[{"key":"storage","kind":"storage",
             "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[],"origin":null,"binds":[]}]});
         assert_eq!(serde_json::to_value(install()).unwrap(), value);
-        let sign = json!({"kind":"sign","statement":"release","signer":{"name":"Alice","fingerprint":"abc"},
+        let sign = json!({"kind":"sign","statement":"release","signer":{"name":"Alice","fingerprint":"abc","you":false},
             "details":[{"label":"Package","value":"123"}]});
         assert_eq!(
             serde_json::to_value(serde_json::from_value::<Request>(sign.clone()).unwrap()).unwrap(),
@@ -793,6 +796,7 @@ mod stage_c_tests {
                 let parties = std::sync::Arc::new(crate::words::Parties::new());
                 parties.insert(channel.to_string(), "Alice".into());
                 let adapter = crate::confirm::DistConfirm {
+                    dist: std::sync::OnceLock::new(),
                     broker: broker.clone(),
                     parties,
                 };

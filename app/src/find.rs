@@ -109,6 +109,7 @@ pub(crate) fn hit_view(
     row.insert(
         "publisher".into(),
         json!(crate::consent::Party {
+            you: words::party(&hit.info.channel.to_string(), parties).you,
             name: hit.publisher_name.clone(),
             fingerprint: hit.info.channel.fingerprint()
         }),

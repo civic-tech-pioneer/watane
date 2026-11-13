@@ -33,7 +33,7 @@ async function load(request) {
   globalThis.clearTimeout = id => timers.delete(id);
   globalThis.__call = async (command, args) => command === 'consent_get' ? {id:'request-id', mark:'cedar otter', request} : calls.push({command, args});
   globalThis.__words = words;
-  await import(`data:text/javascript,${encodeURIComponent('const call = globalThis.__call; const {signTitle, checkedLabel} = globalThis.__words;\n' + source)}#${Math.random()}`);
+  await import(`data:text/javascript,${encodeURIComponent('const call = globalThis.__call; const {signTitle, checkedLabel, partyLabel} = globalThis.__words;\n' + source)}#${Math.random()}`);
   assert.equal(document.body.dataset.ready, 'true');
 }
 function expire() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } }
@@ -69,4 +69,6 @@ if (process.argv[2] === 'pick') {
     details:[{label:'Made from',value:'alice/books@1.0.0 by Alice (alice-key)'}]});
   assert.ok(main.textContent.includes('Made from: alice/books@1.0.0 by Alice (alice-key)'));
   expire(); await nodes['#approve'].click(); assert.equal(calls[0].args.choice, null);
+  await load({kind:'sign',statement:'profile',signer:{name:'Carol',fingerprint:'carol-key',you:true},details:[]});
+  assert.equal(main.textContent, 'you');
 }

@@ -2,38 +2,70 @@ use crate::consent::{GrantKind, GrantLine, Party};
 use std::collections::BTreeMap;
 use watane_host::watane_pkg::{Grant, Provider};
 #[derive(Default)]
-pub struct Parties(std::sync::RwLock<BTreeMap<String, String>>);
+pub struct Parties {
+    names: std::sync::RwLock<BTreeMap<String, String>>,
+    own: std::sync::RwLock<Option<String>>,
+}
 impl Parties {
     pub fn new() -> Self {
         Self::default()
     }
+    pub fn set_own(&self, key: String) {
+        *self.own.write().unwrap() = Some(key);
+    }
     #[cfg(test)]
     pub fn insert(&self, key: String, name: String) {
-        self.0.write().unwrap().insert(key, name);
+        self.names.write().unwrap().insert(key, name);
     }
-    pub fn replace(&self, views: &[watane_dist::ChannelView]) {
-        *self.0.write().unwrap() = views
-            .iter()
-            .filter_map(|v| v.name.clone().map(|n| (v.channel.to_string(), n)))
-            .collect();
+    pub fn remember(&self, views: &[watane_dist::ChannelView]) {
+        self.names.write().unwrap().extend(
+            views
+                .iter()
+                .filter_map(|v| v.name.clone().map(|n| (v.channel.to_string(), n)))
+                .collect::<BTreeMap<_, _>>(),
+        );
     }
 }
 
 pub fn party(publisher: &str, parties: &Parties) -> Party {
     Party {
-        name: parties.0.read().unwrap().get(publisher).cloned(),
+        name: parties.names.read().unwrap().get(publisher).cloned(),
+        you: parties.own.read().unwrap().as_deref() == Some(publisher),
         fingerprint: publisher.chars().take(10).collect(), // PublicKey::fingerprint
     }
+}
+pub(crate) fn party_label(p: &Party) -> String {
+    if p.you {
+        "you".into()
+    } else {
+        p.name
+            .as_ref()
+            .map(|n| format!("{n} ({})", p.fingerprint))
+            .unwrap_or_else(|| p.fingerprint.clone())
+    }
+}
+pub(crate) fn release_label(r: &watane_dist::ReleaseRef, parties: &Parties) -> String {
+    format!(
+        "{r} by {}",
+        party_label(&party(&r.publisher.to_string(), parties))
+    )
+}
+pub(crate) fn already_listed(include: bool) -> &'static str {
+    if include {
+        "This channel is already in the index."
+    } else {
+        "already listed"
+    }
+}
+pub(crate) fn index_read(index: &str, cause: &str) -> String {
+    format!("Could not read {index}: {cause}")
 }
 pub(crate) fn provider(provider: &Provider, parties: &Parties) -> String {
     match &provider.publisher {
         None => format!("{} (local)", provider.slug),
         Some(key) => {
             let p = party(&key.to_string(), parties);
-            let label = p
-                .name
-                .map(|n| format!("{n} ({})", p.fingerprint))
-                .unwrap_or(p.fingerprint);
+            let label = party_label(&p);
             format!("{} by {label}", provider.slug)
         }
     }
@@ -46,10 +78,7 @@ fn bound_target(bind: &watane_host::Bind, parties: &Parties) -> String {
         return format!("{slug} (local)");
     }
     let p = party(publisher, parties);
-    let label = p
-        .name
-        .map(|n| format!("{n} ({})", p.fingerprint))
-        .unwrap_or(p.fingerprint);
+    let label = party_label(&p);
     format!("{slug} by {label}")
 }
 pub(crate) fn bind_line(bind: &watane_host::Bind, parties: &Parties) -> String {
@@ -152,6 +181,67 @@ pub(crate) fn bad_note(cause: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_party_cache_names_an_unfollowed_channel_view() {
+        struct Approve;
+        impl watane_dist::Confirm for Approve {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Approve
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist = watane_dist::Dist::open(
+            home.path(),
+            std::sync::Arc::new(Approve),
+            Default::default(),
+        )
+        .unwrap();
+        dist.set_name("Frank").unwrap();
+        let view = dist.channel(&dist.identity()).unwrap();
+        assert!(!view.followed);
+        let parties = Parties::new();
+        parties.remember(&[view]);
+        let label = party_label(&party(&dist.identity().to_string(), &parties));
+        assert_eq!(label, format!("Frank ({})", dist.fingerprint()));
+    }
+    #[test]
+    fn ac5_index_errors_are_plain_and_name_the_index() {
+        assert_eq!(
+            index_read("Ivy", "request timed out"),
+            "Could not read Ivy: request timed out"
+        );
+        assert_eq!(
+            index_read("abcd", "offline"),
+            "Could not read abcd: offline"
+        );
+        assert_eq!(already_listed(false), "already listed");
+        assert_eq!(
+            already_listed(true),
+            "This channel is already in the index."
+        );
+    }
+    #[test]
+    fn ac2_own_party_provider_and_bind_say_you() {
+        let key = "y".repeat(52);
+        let parties = Parties::new();
+        parties.set_own(key.clone());
+        parties.insert(key.clone(), "Carol".into());
+        assert!(party(&key, &parties).you);
+        let p = Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: Some(key.parse().unwrap()),
+        };
+        assert_eq!(provider(&p, &parties), "ratings by you");
+        let bind = watane_host::Bind {
+            consumer: "local/stats".into(),
+            provider: p,
+            to: format!("{key}/ratings"),
+        };
+        assert_eq!(
+            bind_line(&bind, &parties),
+            "ratings by you in place of ratings by you (your pick)"
+        );
+    }
     #[test]
     fn ac3_bound_grants_and_bind_lines_name_both_parties() {
         let carol = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
@@ -289,6 +379,7 @@ mod tests {
         assert_eq!(
             party(&key, &parties),
             Party {
+                you: false,
                 name: None,
                 fingerprint: "yyyyyyyyyy".into()
             }

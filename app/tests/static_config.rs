@@ -183,3 +183,22 @@ fn ac1_home_and_port_default_and_port_is_validated() {
         std::env::remove_var("WATANE_HOME");
     }
 }
+
+#[test]
+fn ac7_specs_and_notes_record_s44_behavior() {
+    let technical = include_str!("../TECHNICAL.md");
+    let functional = include_str!("../FUNCTIONAL.md");
+    for text in [
+        "you",
+        "No mods found",
+        "Could not read <index>: <cause>",
+        "give link or release",
+        "method_not_allowed",
+        "listed by you",
+        "Installed",
+    ] {
+        assert!(technical.contains(text), "TECHNICAL missing {text}");
+        assert!(functional.contains(text), "FUNCTIONAL missing {text}");
+    }
+    assert!(include_str!("../NOTES.md").contains("S44"));
+}

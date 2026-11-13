@@ -57,7 +57,11 @@ pub(crate) fn cause_chain(e: &dyn std::error::Error) -> String {
     let mut cause = e.source();
     while let Some(e) = cause {
         let text = e.to_string();
-        if message != text && !message.ends_with(&format!(": {text}")) {
+        if message != text
+            && !message.ends_with(&format!(": {text}"))
+            && !message.starts_with(&format!("{text}: "))
+            && !message.contains(&format!(": {text}: "))
+        {
             message.push_str(": ");
             message.push_str(&text);
         }
@@ -75,7 +79,13 @@ fn serve_error(error: &watane_host::HostError) -> String {
 
 impl From<watane_dist::DistError> for CmdError {
     fn from(e: watane_dist::DistError) -> Self {
-        Self::new("dist", cause_chain(&e))
+        let message = match &e {
+            watane_dist::DistError::VersionExists { release, .. } => {
+                format!("release {release} already exists")
+            }
+            _ => cause_chain(&e),
+        };
+        Self::new("dist", message)
     }
 }
 impl From<std::io::Error> for CmdError {
@@ -187,10 +197,13 @@ pub fn run(config: Config) -> Result<(), AppError> {
         let confirm = Arc::new(confirm::DistConfirm {
             broker: broker.clone(),
             parties: parties.clone(),
+            dist: OnceLock::new(),
         });
         tauri::async_runtime::block_on(async move {
             tauri::async_runtime::spawn_blocking(move || {
-                watane_dist::Dist::open(&home, confirm, options).map(Arc::new)
+                let dist = Arc::new(watane_dist::Dist::open(&home, confirm.clone(), options)?);
+                let _ = confirm.dist.set(Arc::downgrade(&dist));
+                Ok::<_, watane_dist::DistError>(dist)
             })
             .await
         })
@@ -277,7 +290,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                     h.clone(),
                     host.clone(),
                     dist.clone(),
-                    parties,
+                    parties.clone(),
                 ));
                 let initial = core.clone();
                 let result = tauri::async_runtime::block_on(async move {
@@ -285,7 +298,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                 });
                 match result {
                     Ok(Ok(_)) => match tauri::async_runtime::block_on(
-                        host.serve(config.port, api::router(Some(dist))),
+                        host.serve(config.port, api::router_with_parties(Some(dist), parties)),
                     ) {
                         Ok(served) => {
                             *core.served.lock().unwrap() = Some(served);
@@ -385,6 +398,60 @@ mod tests {
         );
         let other = watane_host::HostError::AlreadyServing;
         assert_eq!(super::serve_error(&other), super::cause_chain(&other));
+    }
+    #[test]
+    fn ac3_real_dist_source_already_in_context_prints_once() {
+        let error = watane_dist::DistError::Io {
+            path: "cache: disk broke".into(),
+            source: std::io::Error::other(watane_dist::DistError::Io {
+                path: "while writing".into(),
+                source: std::io::Error::other("disk broke"),
+            }),
+        };
+        assert_eq!(
+            super::cause_chain(&error),
+            "cache: disk broke: while writing"
+        );
+    }
+    #[test]
+    fn ac3_duplicate_version_omits_sequence() {
+        let release = format!("{}/ratings@1.0.0", "y".repeat(52)).parse().unwrap();
+        assert_eq!(
+            super::CmdError::from(watane_dist::DistError::VersionExists { release, seq: 0 })
+                .message,
+            format!("release {}/ratings@1.0.0 already exists", "y".repeat(52))
+        );
+    }
+    #[test]
+    fn ac3_real_dist_causes_print_once_and_urls_are_plain() {
+        use watane_dist::DistError;
+        let repeated = DistError::Io {
+            path: "/site".into(),
+            source: std::io::Error::other(DistError::Package(
+                watane_host::watane_pkg::PackageError::Io {
+                    path: "/cache".into(),
+                    source: std::io::Error::other("disk broke"),
+                },
+            )),
+        };
+        assert_eq!(super::cause_chain(&repeated), "/site: /cache: disk broke");
+        for error in [
+            DistError::Package(watane_host::watane_pkg::PackageError::Io {
+                path: "/file".into(),
+                source: std::io::Error::other("disk broke"),
+            }),
+            DistError::Network {
+                url: "https://example.org/head".into(),
+                cause: "connection refused".into(),
+            },
+            DistError::NotFound {
+                url: "https://example.org/head".into(),
+            },
+        ] {
+            let text = super::cause_chain(&error);
+            assert_eq!(text, error.to_string());
+            assert!(!text.contains(['"', '{', '}']), "{text}");
+        }
     }
     #[test]
     fn ac1_cause_chain_appends_only_missing_suffix() {

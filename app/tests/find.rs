@@ -118,9 +118,12 @@ fn ac1_find_add_index() {
 #[test]
 fn ac1_find_search_install() {
     let f = Fixture::new();
+    f.ivy.include(&f.alice_link, "Alice's releases").unwrap();
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     f.add(&app);
+    app.eval("main", "document.querySelector('#search-text').value = 'no-such-mod'; document.querySelector('#search').click(); null");
+    contains(&app, "#results", "No mods found");
     search_reading(&app);
     for value in [
         "reading-list",
@@ -139,6 +142,12 @@ fn ac1_find_search_install() {
     assert_eq!(
         app.eval("main", "document.querySelectorAll('#find img').length"),
         0
+    );
+    let lines = app.eval("main", "Array.from(document.querySelectorAll('#results article:first-child p'), p => p.textContent).filter(t => t.startsWith('listed by Ivy'))");
+    assert_eq!(lines.as_array().unwrap().len(), 1, "{lines}");
+    assert!(
+        lines[0].as_str().unwrap().contains("through Alice"),
+        "{lines}"
     );
     let follows: Value =
         serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
@@ -360,6 +369,20 @@ fn ac1_find_wording_and_freshness() {
         import assert from 'node:assert/strict';
         assert.equal(modCount(1), '1 mod'); assert.equal(modCount(2), '2 mods');
         const alice = {{name:'Alice', fingerprint:'abcd'}};
+        const you = {{name:'Carol', fingerprint:'own', you:true}};
+        assert.equal(partyLabel(you), 'you');
+        assert.equal(viaLabel({{kind:'index',index:you}}), 'listed by you');
+        assert.equal(emptySearch(), 'No mods found');
+        assert.equal(derivedAction({{installed:'ratings',verified:true}}), 'Installed');
+        assert.deepEqual(viaLabels([
+          {{kind:'index',index:alice,through:null}},
+          {{kind:'index',index:alice,through:you}}
+        ]), ['listed by Alice (abcd) through you']);
+        assert.deepEqual(viaLabels([
+          {{kind:'index',index:alice,through:null,note:'direct'}},
+          {{kind:'index',index:alice,through:you,note:'included'}}
+        ]), ['listed by Alice (abcd) through you · included · direct']);
+
         assert.equal(partyLabel(alice), 'Alice (abcd)');
         assert.equal(partyLabel({{name:null, fingerprint:'abcd'}}), 'abcd');
         assert.equal(checkedLabel({{checkedAt:60000, uncheckedSince:null}}, 360000), 'checked 5 min ago');
@@ -393,4 +416,32 @@ fn ac1_find_no_index() {
     );
     assert!(!app.windows().iter().any(|w| w["label"] == "consent"));
     assert!(app.quit().success());
+}
+
+#[test]
+fn ac6_latest_action_owns_the_error_line() {
+    let script = format!(
+        r#"{}
+      import assert from 'node:assert/strict';
+      let line = '';
+      const errors = actionErrors(text => line = text);
+      const first = errors.begin();
+      const second = errors.begin();
+      errors.show(null, second);
+      errors.show({{message:'old failure'}}, first);
+      assert.equal(line, '');
+      const third = errors.begin();
+      errors.show({{message:'new failure'}}, third);
+      errors.show({{message:'old failure'}}, first);
+      assert.equal(line, 'new failure');
+    "#,
+        include_str!("../ui/words.js")
+    );
+    assert!(
+        std::process::Command::new("node")
+            .args(["--input-type=module", "-e", &script])
+            .status()
+            .unwrap()
+            .success()
+    );
 }

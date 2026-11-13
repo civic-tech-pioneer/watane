@@ -1,5 +1,5 @@
 import { call } from './ipc.js';
-import { signTitle, checkedLabel } from './words.js';
+import { signTitle, checkedLabel, partyLabel } from './words.js';
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
@@ -37,7 +37,7 @@ function text(parent, tag, value) {
   return node;
 }
 function party(p) {
-  return p.name ? `${p.name} (${p.fingerprint})` : p.fingerprint;
+  return partyLabel(p);
 }
 async function answer(allow) {
   if (!view || submitting || (allow && approve.disabled)) return;

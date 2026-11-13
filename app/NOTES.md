@@ -290,3 +290,54 @@
   `WATANE_DRIVER_LISTED_LOCAL=1` is in its environment; without it, or without
   `driver`, it is false. J5 starts each app with that variable; `find.rs` is
   unchanged and keeps its refusal check. Recorded in TECHNICAL 10 "Step 5".
+
+
+## S44 — names, own identity and plain errors
+
+- Party now carries serde `you` (default false). Own parties read `you` in
+  providers, binds, grants, origins, consent, index rows and own-index hits.
+  Old fixture JSON still deserializes; serialized parties now include `you`.
+- The shared parties cache remembers local channel profiles rather than
+  replacing them with only the current followed/index views. Core prepares
+  every displayed publisher, origin, provider and bind target using
+  `dist.channel(key)`, including unfollowed channels. API fetches fill the same
+  cache. DistConfirm reads its request's parties locally through a weak dist
+  reference; a failed profile read is visible in its details. HostConfirm
+  still never calls or waits for dist.
+- Origin consent fallbacks previously showed only a ReleaseRef; they now add
+  the cached party label. Own listing rows name their target instead of
+  showing only its key. All existing signature, grant and provenance data stay
+  visible; untrusted text still uses textContent.
+- `cause_chain` previously recognized only equality or a matching suffix.
+  A real nested `DistError::Io` chain with a source already in the middle of
+  the accumulated context repeated that source after another cause was added.
+  Whole colon-delimited matches now suppress that repetition, while a mere
+  word substring (the existing `disk broke` / `broke` test) still appends.
+  Real dist package/IO/network/URL Display regressions and the publish 422
+  message regression remain plain. Duplicate-version and already-listed
+  app messages no longer include `at seq <n>`; dist itself is unchanged.
+- Fetch request shape errors now read `give link or release` (400
+  `bad_request`), including both/neither fields and both null. Wrong methods
+  on each app API route return the JSON `method_not_allowed` envelope (405)
+  and Allow; HEAD has no body under HTTP semantics.
+- Find's old `No results` text is now `No mods found`. Index read failures
+  name the index (`Could not read <name or fingerprint>: <cause>`).
+  Already-included channels read `This channel is already in the index.`;
+  list retains `already listed`, without a sequence. Direct and included
+  provenance for the same index collapse into one through line, keeping both
+  notes. An installed derived mod now reads `Installed`, with zero install
+  buttons (previously one in build_on's derived-list assertion).
+- Main-window action ids own the error line. Starting a newer action clears
+  it; an older failure, including a delayed refresh error, cannot set it.
+  Pure Node tests cover a late first failure after a newer success, and a
+  late first failure after a newer failure.
+- No dependencies added. Only app files changed.
+- Validation: default build/test, pure Node wording/action and consent DOM
+  checks, clippy with driver, and fmt pass. Release with driver fails at the
+  intended compile_error. Driver tests compile, but native window runs in
+  this session time out before app readiness with macOS
+  `Connection Invalid error for service com.apple.hiservices-xpcservice`
+  and `_LSModifyNotification ... error -50`. The targeted find/build_on runs
+  and the full driver suite encounter this same environment failure. The
+  full run was interrupted after repeated readiness failures (exit 130);
+  window assertions remain enabled and need a working macOS GUI session.

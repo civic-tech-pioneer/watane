@@ -13,6 +13,7 @@ export function signTitle(statement) {
 }
 
 export function partyLabel(party) {
+  if (party.you) return 'you';
   return party.name ? `${party.name} (${party.fingerprint})` : party.fingerprint;
 }
 
@@ -31,4 +32,25 @@ export function viaLabel(via) {
   if (via.kind === 'own') return 'Your release';
   if (via.kind === 'followed') return 'Followed channel';
   return `listed by ${partyLabel(via.index)}${via.through ? ` through ${partyLabel(via.through)}` : ''}${via.note ? ` · ${via.note}` : ''}`;
+}
+
+export function emptySearch() { return 'No mods found'; }
+export function derivedAction(hit) { return hit.installed ? 'Installed' : hit.verified ? 'Install' : ''; }
+export function viaLabels(vias) {
+  const sameIndex = (a, b) => a.kind === 'index' && b.kind === 'index' && JSON.stringify(a.index) === JSON.stringify(b.index);
+  return vias.filter(via => via.through || !vias.some(other => other.through && sameIndex(via, other)))
+    .map(via => {
+      const notes = [via.note, ...vias.filter(other => via.through && !other.through && sameIndex(via, other)).map(other => other.note)];
+      return viaLabel({...via, note: [...new Set(notes.filter(Boolean))].join(' · ')});
+    });
+}
+export function actionErrors(render) {
+  let latest = 0;
+  return {
+    begin() { render(''); return ++latest; },
+    current() { return latest; },
+    show(error, id = latest) {
+      if (id === latest) render(error ? error.message || String(error) : '');
+    }
+  };
 }

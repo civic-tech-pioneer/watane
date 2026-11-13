@@ -1,5 +1,5 @@
 import { call } from './ipc.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabel } from './words.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -8,11 +8,26 @@ function element(tag, text, parent, className) {
   if (className) node.className = className;
   if (parent) parent.append(node); return node;
 }
-function showError(e) { error.textContent = e.message || String(e); }
-async function action(cmd, args = {}) {
-  try { error.textContent = ''; return await call(cmd, args); }
-  catch (e) { showError(e); throw e; }
-  finally { await refresh(); }
+const errors = actionErrors(text => error.textContent = text);
+function showError(e) { errors.show(e, e.actionId); }
+function taggedError(e, actionId) { return {message: e.message || String(e), actionId}; }
+function readRefresh() {
+  const id = errors.current();
+  return refresh().catch(e => { throw taggedError(e, id); });
+}
+async function action(cmd, args = {}) { return runAction(() => call(cmd, args)); }
+async function runAction(work) {
+  const id = errors.begin();
+  try {
+    const result = await work();
+    await refresh();
+    return result;
+  } catch (e) {
+    const error = taggedError(e, id);
+    showError(error);
+    try { await refresh(); } catch (_) { /* Keep the action's cause. */ }
+    throw error;
+  }
 }
 function button(parent, text, className, callback) {
   const b = element('button', text, parent, className);
@@ -41,7 +56,7 @@ function modsView(mods) {
     button(entry, 'Remove', 'remove', () => remove(mod));
     const details = element('details', '', entry); details.open = expanded.has(mod.local);
     element('summary', 'Details', details);
-    const publisher = mod.publisher ? `${mod.publisher.name || ''} (${mod.publisher.fingerprint}) · signature verified` : 'local';
+    const publisher = mod.publisher ? `${partyLabel(mod.publisher)} · signature verified` : 'local';
     for (const text of [mod.version, publisher, mod.page, mod.package, mod.release, mod.derivedFromLabel]) if (text) element('p', text, details);
     if (mod.release) {
       const derived = element('div', '', details, 'derived');
@@ -49,6 +64,7 @@ function modsView(mods) {
       const showDerived = async () => {
         if (!details.open || loading) return;
         loading = true;
+        const actionId = errors.current();
         try {
           const origin = mod.release.slice(0, mod.release.lastIndexOf('@'));
           const hits = await call('search', {text: '', publisher: null, interface: null, origin});
@@ -57,9 +73,10 @@ function modsView(mods) {
           for (const hit of hits) {
             const row = element('p', `${hit.name} ${hit.version} by ${partyLabel(hit.publisher)} `, derived);
             row.dataset.release = hit.release;
-            if (hit.verified) button(row, 'Install', 'install-release', () => action('install_release', {release: hit.release, link: hit.link}));
+            if (derivedAction(hit) === 'Installed') element('span', 'Installed', row);
+            else if (derivedAction(hit) === 'Install') button(row, 'Install', 'install-release', () => action('install_release', {release: hit.release, link: hit.link}));
           }
-        } catch (error) { showError(error); }
+        } catch (error) { showError(taggedError(error, actionId)); }
         finally { loading = false; }
       };
       details.addEventListener('toggle', showDerived);
@@ -120,7 +137,7 @@ $('#issue-token').onclick = async () => {
     $('#token-secret').textContent = issued.token; $('#mcp-url').textContent = issued.mcpUrl; $('#token-dialog').showModal();
   } catch (e) { showError(e); }
 };
-$('#copy-token').onclick = () => navigator.clipboard.writeText($('#token-secret').textContent).catch(showError);
+$('#copy-token').onclick = () => runAction(() => navigator.clipboard.writeText($('#token-secret').textContent)).catch(showError);
 $('#close-token').onclick = () => $('#token-dialog').close();
 $('#token-dialog').addEventListener('close', () => { $('#token-secret').textContent = ''; $('#mcp-url').textContent = ''; });
 // A refresh asked for during another may follow a change that one already
@@ -142,10 +159,10 @@ function refresh() {
   })().finally(() => { refreshing = null; });
   return refreshing;
 }
-window.addEventListener('focus', () => refresh().catch(showError));
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(showError); });
-setInterval(() => { if (!document.hidden) refresh().catch(showError); }, 2000);
-refresh().catch(showError);
+window.addEventListener('focus', () => readRefresh().catch(showError));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) readRefresh().catch(showError); });
+setInterval(() => { if (!document.hidden) readRefresh().catch(showError); }, 2000);
+readRefresh().catch(showError);
 
 let lastReleases = '';
 function identityView(status) {
@@ -226,14 +243,14 @@ async function findView() {
   const hitSignature = JSON.stringify(rendered);
   if (hitSignature === lastHits) return;
   lastHits = hitSignature; $('#results').replaceChildren();
-  if (!hits.length) element('p', 'No results', $('#results'));
+  if (!hits.length) element('p', emptySearch(), $('#results'));
   for (const hit of rendered) {
     const row = element('article', '', $('#results')); row.dataset.release = hit.release;
     element('h3', `${hit.name} (${hit.slug}) ${hit.version}`, row);
     element('p', hit.summary, row);
     if (hit.publisher) element('p', partyLabel(hit.publisher), row);
     element('p', hit.status === 'compromised' ? 'compromised' : (hit.verified ? 'signature verified' : hit.status), row);
-    for (const via of hit.via) element('p', viaLabel(via), row);
+    for (const via of viaLabels(hit.via)) element('p', via, row);
     if (hit.checked) element('p', hit.checked, row, 'checked');
     for (const [label, values] of [['Offers', hit.offers], ['Events', hit.events], ['Uses', hit.uses]]) {
       if (values.length) element('p', `${label}: ${values.join(', ')}`, row);
@@ -244,17 +261,19 @@ async function findView() {
 }
 $('#add-index').onclick = () => action('index_choose', {link: $('#index-link').value}).catch(showError);
 $('#search').onclick = () => {
+  errors.begin();
   query = {text: $('#search-text').value, publisher: $('#search-publisher').value.trim() || null, interface: $('#search-interface').value.trim() || null};
-  refresh().catch(showError);
+  readRefresh().catch(showError);
 };
 $('#refresh-find').onclick = () => action('channels_refresh').catch(showError);
 $('#install-from-link').onclick = () => action('install_link', {link: $('#install-link').value}).catch(showError);
 $('#set-name').onclick = () => action('identity_set_name', {name: $('#profile-name').value}).catch(showError);
 $('#set-site').onclick = () => action('site_set_url', {url: $('#site-url').value}).catch(showError);
-$('#copy-link').onclick = () => navigator.clipboard.writeText($('#own-link').textContent).catch(showError);
+$('#copy-link').onclick = () => runAction(() => navigator.clipboard.writeText($('#own-link').textContent)).catch(showError);
 $('#follow-channel').onclick = () => action('channel_follow', {link: $('#follow-link').value}).catch(showError);
 $('#refresh-channels').onclick = () => action('channels_refresh').catch(showError);
 $('#identity-backup').onclick = async () => {
+  errors.begin();
   const passphrase = $('#passphrase').value;
   if (Array.from(passphrase).length < 12 || passphrase !== $('#passphrase-repeat').value) { showError({message:'Use matching passphrases of at least 12 characters'}); return; }
   try { await action('identity_backup', {passphrase}); } catch (e) { showError(e); }
@@ -265,6 +284,7 @@ $('#identity-restore').onclick = async () => {
   finally { $('#passphrase').value = ''; $('#passphrase-repeat').value = ''; }
 };
 $('#confirm-identity').onclick = () => {
+  errors.begin();
   if (!$('#never-published').checked && !$('#own-channel').value) {showError({message:'Enter your channel link or state that this identity never published'});return;}
   action('identity_confirm_own', {link: $('#never-published').checked ? null : $('#own-channel').value}).catch(showError);
 };

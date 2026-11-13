@@ -1,11 +1,11 @@
 use crate::CmdError;
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, State, rejection::BytesRejection},
-    http::{HeaderMap, Method, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{any, post},
+    routing::{get, post},
 };
 use std::sync::Arc;
 use watane_dist::{Dist, DistError};
@@ -17,27 +17,51 @@ fn error(status: StatusCode, code: &'static str, message: impl Into<String>) -> 
         .into_response()
 }
 pub fn router(dist: Option<Arc<Dist>>) -> Router {
+    router_with_parties(dist, Arc::new(crate::words::Parties::new()))
+}
+pub(crate) fn router_with_parties(
+    dist: Option<Arc<Dist>>,
+    parties: Arc<crate::words::Parties>,
+) -> Router {
     Router::new()
         .route(
             "/api/publish",
-            post(publish).layer(DefaultBodyLimit::max(67_108_864)),
+            post(publish)
+                .fallback(method_post)
+                .layer(DefaultBodyLimit::max(67_108_864)),
         )
-        .route("/api/releases", any(releases))
-        .route("/api/search", post(search))
+        .route(
+            "/api/releases",
+            get(releases).head(method_get).fallback(method_get),
+        )
+        .route("/api/search", post(search).fallback(method_post))
         .route(
             "/api/fetch",
-            post(fetch).layer(DefaultBodyLimit::max(65_536)),
+            post(fetch)
+                .fallback(method_post)
+                .layer(DefaultBodyLimit::max(65_536)),
         )
+        .layer(Extension(parties))
         .with_state(dist)
 }
-async fn releases(State(dist): State<Option<Arc<Dist>>>, method: Method) -> Response {
-    if method != Method::GET {
-        let mut response = error(StatusCode::METHOD_NOT_ALLOWED, "bad_request", "use GET");
-        response
-            .headers_mut()
-            .insert("allow", "GET".parse().expect("static method"));
-        return response;
-    }
+async fn method_post() -> Response {
+    wrong_method("POST")
+}
+async fn method_get() -> Response {
+    wrong_method("GET")
+}
+fn wrong_method(method: &'static str) -> Response {
+    let mut response = error(
+        StatusCode::METHOD_NOT_ALLOWED,
+        "method_not_allowed",
+        format!("use {method}"),
+    );
+    response
+        .headers_mut()
+        .insert("allow", method.parse().expect("static method"));
+    response
+}
+async fn releases(State(dist): State<Option<Arc<Dist>>>) -> Response {
     let Some(dist) = dist else {
         return error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -259,6 +283,7 @@ enum FetchTarget {
 }
 async fn fetch(
     State(dist): State<Option<Arc<Dist>>>,
+    Extension(parties): Extension<Arc<crate::words::Parties>>,
     query: Result<Json<FetchQuery>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Some(dist) = dist else {
@@ -269,7 +294,7 @@ async fn fetch(
         );
     };
     let target = (|| -> Result<_, String> {
-        let Json(query) = query.map_err(|e| e.to_string())?;
+        let Json(query) = query.map_err(|_| "give link or release".to_string())?;
         match query {
             FetchQuery::Link { link } => {
                 let link: watane_dist::Link = link.parse().map_err(|e: DistError| e.to_string())?;
@@ -290,9 +315,13 @@ async fn fetch(
         Ok(target) => target,
         Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
     };
-    match tauri::async_runtime::spawn_blocking(move || match target {
-        FetchTarget::Link(link) => dist.read_link(&link),
-        FetchTarget::Release(release) => dist.fetch(&release),
+    match tauri::async_runtime::spawn_blocking(move || {
+        let fetched = match target {
+            FetchTarget::Link(link) => dist.read_link(&link),
+            FetchTarget::Release(release) => dist.fetch(&release),
+        }?;
+        crate::core::cache_channels(&dist, &parties, [fetched.info.channel])?;
+        Ok::<_, DistError>(fetched)
     })
     .await
     {
@@ -412,6 +441,29 @@ mod tests {
         (status, headers, body)
     }
     #[tokio::test]
+    async fn ac1_fetch_fills_the_shared_parties_cache() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = open(&home);
+        dist.set_name("Carol").unwrap();
+        let published = dist.publish(package()).unwrap();
+        let parties = Arc::new(crate::words::Parties::new());
+        let response = router_with_parties(Some(dist.clone()), parties.clone())
+            .oneshot(
+                Request::post("/api/fetch")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"release":published.info.reference.to_string()}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let party = crate::words::party(&dist.identity().to_string(), &parties);
+        assert_eq!(party.name.as_deref(), Some("Carol"));
+        assert!(party.you);
+    }
+    #[tokio::test]
     async fn ac1_releases_empty_unavailable_and_wrong_methods() {
         let home = tempfile::tempdir().unwrap();
         let app = router(Some(open(&home)));
@@ -439,7 +491,7 @@ mod tests {
             if method != Method::HEAD {
                 assert_eq!(
                     body,
-                    json!({"error":{"code":"bad_request","message":"use GET"}})
+                    json!({"error":{"code":"method_not_allowed","message":"use GET"}})
                 );
             }
         }
@@ -494,7 +546,7 @@ mod tests {
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(
             body,
-            json!({"error":{"code":"version_exists","message":format!("release {} already exists at seq 0", first["release"].as_str().unwrap())}})
+            json!({"error":{"code":"version_exists","message":format!("release {} already exists", first["release"].as_str().unwrap())}})
         );
 
         // A distinct dist refusal still uses the generic publish code.

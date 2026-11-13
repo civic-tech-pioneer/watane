@@ -72,7 +72,7 @@ pub(crate) async fn mod_open(
         .ok_or_else(|| CmdError::new("not_found", "mod has no page"))?;
     let party = m
         .publisher
-        .map(|p| p.name.unwrap_or(p.fingerprint))
+        .map(|p| crate::words::party_label(&p))
         .unwrap_or_else(|| "local".into());
     views::open_mod(
         webview.app_handle(),
@@ -199,9 +199,13 @@ pub(crate) async fn install_folders(
     if paths.is_empty() {
         return Ok(json!({"installed":[]}));
     }
-    let planner = host.clone();
+    let planner = core.clone();
     let plan = tauri::async_runtime::spawn_blocking(move || {
-        planner.plan(paths.into_iter().map(watane_host::Source::Folder).collect())
+        let plan = planner
+            .host
+            .plan(paths.into_iter().map(watane_host::Source::Folder).collect())?;
+        planner.cache_plan_parties(&plan)?;
+        Ok::<_, CmdError>(plan)
     })
     .await
     .map_err(|e| CmdError::new("io", e.to_string()))??;
@@ -672,7 +676,11 @@ mod index_tests {
             },
             DistError::NotIndex { channel },
         ] {
-            let expected = error.to_string();
+            let expected = if matches!(error, DistError::AlreadyListed { .. }) {
+                "already listed".into()
+            } else {
+                error.to_string()
+            };
             let error = index_error(error);
             assert_eq!(error.message, expected);
         }
@@ -705,6 +713,9 @@ fn index_error(error: watane_dist::DistError) -> CmdError {
     match error {
         watane_dist::DistError::BadNote { cause } => {
             CmdError::new("bad_input", crate::words::bad_note(cause))
+        }
+        watane_dist::DistError::AlreadyListed { .. } => {
+            CmdError::new("dist", crate::words::already_listed(false))
         }
         other => other.into(),
     }
@@ -807,7 +818,12 @@ pub(crate) async fn index_include(
     let link = parse_link(&link)?;
     let core = core(&state)?.clone();
     blocking(move || {
-        core.dist.include(&link, &note).map_err(index_error)?;
+        core.dist.include(&link, &note).map_err(|e| match e {
+            watane_dist::DistError::AlreadyListed { .. } => {
+                CmdError::new("dist", crate::words::already_listed(true))
+            }
+            other => index_error(other),
+        })?;
         core.channels()?;
         Ok(())
     })
