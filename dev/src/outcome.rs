@@ -23,6 +23,7 @@ pub enum Code {
     ModSymlink,
     HostDeclined,
     HostRefused,
+    HostFailed,
     HostNoAnswer,
     EnvToolchain,
     EnvNoWasmTarget,
@@ -65,6 +66,7 @@ impl Code {
             Self::ModSymlink => "mod.symlink",
             Self::HostDeclined => "host.declined",
             Self::HostRefused => "host.refused",
+            Self::HostFailed => "host.failed",
             Self::HostNoAnswer => "host.no_answer",
             Self::EnvToolchain => "env.toolchain",
             Self::EnvNoWasmTarget => "env.no_wasm_target",
@@ -120,7 +122,9 @@ impl Code {
             | Self::BuildCompile
             | Self::BuildReadsOutside
             | Self::BuildImports => Class::Mod,
-            Self::HostDeclined | Self::HostRefused | Self::HostNoAnswer => Class::Refused,
+            Self::HostDeclined | Self::HostRefused | Self::HostFailed | Self::HostNoAnswer => {
+                Class::Refused
+            }
             Self::Internal => Class::Internal,
         }
     }
@@ -367,6 +371,7 @@ mod tests {
             (Code::UsageArgs, Class::Usage, 2, "usage.args"),
             (Code::EnvWataneMissing, Class::Env, 3, "env.watane_missing"),
             (Code::HostRefused, Class::Refused, 4, "host.refused"),
+            (Code::HostFailed, Class::Refused, 4, "host.failed"),
             (Code::Internal, Class::Internal, 5, "internal"),
         ] {
             assert_eq!(code.class(), class);

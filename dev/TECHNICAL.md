@@ -178,7 +178,7 @@ The exit status is the class of the first error; 0 when there is none.
 | Mod | 1 | The mod must change. The agent fixes its files. |
 | Usage | 2 | The command was used wrongly. |
 | Env | 3 | The device lacks something. A person or a command fixes it. |
-| Refused | 4 | The host or the participant said no, or did not answer. |
+| Refused | 4 | The host or the participant said no, failed, or did not answer. |
 | Internal | 5 | A fault of dev, or an I/O error. |
 
 | Code | Class | When | Message (template) | Fix |
@@ -216,9 +216,16 @@ The exit status is the class of the first error; 0 when there is none.
 | `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source: its publisher published it with --no-source` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
-| `host.refused` | 4 | any other error answer of the host or the app | `[<code>] <message>` | — |
+| `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
+| `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run this command again` |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait`. If the person approved meanwhile, publish reports the release and its link on retry |
 | `internal` | 5 | anything else | the error chain | — |
+
+App 503 `unavailable` is `env.host_not_running` with message
+`the watane app of <home> runs but could not open its data: <app message>`
+and fix `Ask the person to restart the watane app, then run this command again`.
+Other app 5xx use `host.failed` as above; fetch 502 `fetch_failed` follows 10.1.
+4xx keeps its existing refusal code and fix.
 
 Warning codes (step 5 first): `publish.provider_unlisted` (the app's
 publish answer has `listed: false` for a provider; message `<key>/<slug> is
@@ -244,7 +251,12 @@ import its interface in `wit/world.wit`, or
 ask before deleting `wit/deps/<slug>/` and `mods:<slug>` from `deps.json`.
 For an own provider the fix is `Ask before deleting wit/deps/<slug>/ and
 mods:<slug> from deps.json: a mod cannot depend on itself`. dev passes both
-messages through from pkg and does not read `wit/world.wit` to distinguish them.
+messages through from pkg. If pkg instead reports the own slug as unused
+(including a deps.json-only entry with no copied WIT), dev compares it with
+the mod's own WIT declaration and uses the self-dependency fix, never the
+import advice. For `wit/deps/<folder> holds this mod's own package mods:<slug>`,
+use `Ask before deleting wit/deps/<folder>/: a mod cannot depend on itself`:
+the folder comes from the violation's file, even when it differs from the slug.
 There is no dependency-removal command today. Other managed dependency
 violations point to `watane-dev add <provider folder>` to refresh the files.
 
@@ -306,10 +318,14 @@ contracts so both failures reach the agent.
 A part that did not run is null. `build`, `unit` and `contract` are null
 for a mod with no logic part. `not_run` counts the tests after a test that
 aborted the run (7.2). In a failure, `expected` and `got` are JSON values
-or null. `next` on success: `watane-dev serve --json`; on failure:
-`watane-dev test --json`. For every command whose first error is `env.*`,
-`next` is `watane-dev doctor --json` (doctor itself uses the fix instruction
-below). `check` currently performs no environment discovery.
+or null. `next` on success: `watane-dev serve --json`. On failure,
+the first error determines `next`: `test.unit` or `test.unit_limit` uses
+`Fix the unit test <test name>, then run: watane-dev test --json`;
+`test.contract` step failures use `Fix <file> step <n> (<call>), then run:
+watane-dev test --json`. Otherwise use its fix when known, or
+`watane-dev test --json`. Environment discovery failures retain
+`watane-dev doctor --json`; doctor itself uses the fix instruction below.
+`check` currently performs no environment discovery.
 Contract step failures report the 1-based line where the step object starts;
 `step` remains its 1-based index. Host-open failures have no step location.
 Pkg currently omits parser locations for malformed WIT worlds; those errors
@@ -337,9 +353,12 @@ Set or update your agent's MCP config with result.mcp.url and result.mcp.token
 is also
 returned when the mod has no page. With `reused: true`, the page instruction
 is unchanged, or null when the mod has no page. On failure with an
-`env.*` first error, `next` is `watane-dev doctor --json`; other test
-pipeline failures use `watane-dev test --json`, adding
-`--dir <absolute provider folder>` (single-quoted for the shell when it has other characters than letters, digits, `/._-`) when the first failing folder is a provider. **serve --stop**:
+`env.*` first error, `next` is `watane-dev doctor --json`. A consumer's
+unit/limit or contract step failure uses the test recovery text above with
+`watane-dev serve --json`; otherwise its first fix, or the plain serve
+rerun. A local provider failure retains `watane-dev test --json
+--dir <absolute provider folder>` (single-quoted for the shell when it has
+other characters than letters, digits, `/._-`). **serve --stop**:
 `{"stopped": true, "home": "..."}`; `stopped` is false when none ran, and
 that is not an error. When `stopped` is true, `next` is
 `The preview and its data are gone. To start a new one, run: watane-dev serve --json`.
@@ -1029,6 +1048,11 @@ and the message. dev reports:
   test even on a limit. Failure classification is private to `UnitFailure`
   and is not serialized.
 
+Unit failure fixes name the actual failed test, including a limit:
+`Fix the unit test <test name>, then run: watane-dev test --json`.
+The test/serve pipeline uses this action for its own consumer's `next`,
+with the command being run (2.4); local providers retain 9.2's --dir rerun.
+
 ## 8. Contract tests
 
 ### 8.1 The file
@@ -1096,6 +1120,11 @@ An open failure is one file-level
 A malformed file reports `test.contract_file` with its file
 and, for invalid JSON syntax, its line and column. File errors do not
 prevent the remaining files from running.
+
+Contract step failure fixes are `Fix <file> step <n> (<call>), then run:
+watane-dev test --json`. A consumer's serve failure uses the same action
+with `watane-dev serve --json` for `next`; 9.2's local provider rerun
+takes precedence.
 
 ## 9. Preview and the home host
 
@@ -1236,11 +1265,19 @@ fix `Run the command again with a longer --wait`. A `refused` answer is
 slug (or its mod folder) in their watane app. The fix asks the person
 whether they want it installed, then says to run install again with
 `--wait <seconds>` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
-proves the message and fix; the fix must not say "correct". Other errors are `host.refused`
-with `[<code>] <message>`; step 5: a `missing_providers` answer that names
+proves the message and fix; the fix must not say "correct". App 5xx errors
+follow 2.2: 503 `unavailable` is `env.host_not_running`, message
+`the watane app of <home> runs but could not open its data: <app message>`,
+fix `Ask the person to restart the watane app, then run this command again`.
+Other 5xx answers from install, publish, search and releases are `host.failed`
+with `[<code>] <message>` and the app-log fix of 2.2. 4xx keeps
+`host.refused` and its current fixes (or `host.declined` for consent).
+Step 5: a `missing_providers` answer that names
 a provider with a publisher gets the fix `Install <ReleaseRef> in the
-watane app (from its link), then run install again`, because a home
-installs a release only through the app. dev reports the `installed` answer.
+watane app (from its link), then run install again`. When
+`.watane-dev.json` `release_providers.<slug>.link` is present, use
+`Install <ReleaseRef> in the watane app from its link <link>, then run install again`.
+A home installs a release only through the app. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
 next command and fixes of `serve`.
 
@@ -1317,10 +1354,16 @@ transport, with a 330 s timeout (dist's package timeout plus 30 s). It
 reads at most `MAX_PACKAGE_BYTES` + 1 bytes (more is `host.refused`
 `[too_large]`). `Package::from_bytes` must accept the body and
 `PackageId::of(body)` must equal the `Watane-Package` header; else
-`internal`. The package's WIT slug and version must also match `Watane-Release`.
+`host.refused` `[bad_answer] <detail>`. The package's WIT slug and version
+must also match `Watane-Release`.
 The `Watane-Release` header parses as a `ReleaseRef` and must
 match the request: equal to the asked ReleaseRef, or with the key and
-slug of the asked link; else `internal`, and nothing is stored. `Link` belongs to dist, which dev does
+slug of the asked link. Missing or unparseable `Watane-Release` or
+`Watane-Package`, a non-package body, a mismatched package id, or a WIT
+slug/version mismatch are all `host.refused` `[bad_answer] <detail>`;
+nothing is stored. Each uses the fix `The watane app answered with a package
+that does not match the request; ask the person to update the watane app,
+then run this command again`. `Link` belongs to dist, which dev does
 not depend on: dev reads only the key between `watane:` and the first `@`,
 and the slug after the last `#`, to match `Watane-Release`; the app validates
 the link and answers 400 when it is invalid. dev trusts
@@ -1328,15 +1371,28 @@ the app of its own home for the signature check (dist 5.7); it checks the
 bytes again because they cross a socket. Error answers are `host.refused`
 `[<code>] <message>`; a 400 gets the fix `Pass a mod link
 watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>`.
+409 `fetch_refused` keeps `host.refused` `[fetch_refused] <message>`,
+fix `Check the link or release with the person who shared it: the watane
+app found no release to fetch for it`. 502 `fetch_failed` also stays
+`host.refused`, fix `Check the link and that its publisher's site is
+reachable, then run this command again`. Other 5xx follow 9.6
+(503 `unavailable` → `env.host_not_running`; others → `host.failed`).
+No fetch refusal fix asks the agent to check the app.
 
 `store(package)`: write `<cache>/packages/<id>` (temp file, rename) and,
-when absent, `Package::unpack(<cache>/providers/<id>/)`. The path comes
-only from the id dev computed.
+remove any `<cache>/providers/<id>.<pid>.tmp` left by this process id.
+When `<cache>/providers/<id>` is absent, unpack into that temporary folder
+and rename it to `<cache>/providers/<id>`.
+When the destination already exists, keep it and remove the temporary folder;
+a concurrent store winning the rename is handled the same way. A killed
+run's `<id>.<other>.tmp` is never read and never blocks a store.
+The paths come only from the id dev computed.
 
 `fetch_providers(dir)`: for each provider of `Deps::read(dir)` with a
 publisher, the ReleaseRef `<publisher>/<slug>@<version of
 wit/deps/<slug>/>`. If `release_providers.<slug>` names it and its cache
-folder exists, use it; else `Client::fetch({"release"})` and `store`. Then
+folder `<cache>/providers/<id>` exists, use it (never a `.tmp` folder);
+else `Client::fetch({"release"})` and `store`. Then
 the same for the providers of that cached folder. At most 32 packages per
 command; more is `host.refused` with `too many released providers`.
 Record each one in `release_providers` (sorted keys). Return the list.
@@ -1453,7 +1509,7 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     EnvHostNotRunning, ModInvalid, ModCargoKey, ModDependency, ModLogicFile, ModSymlink,
     ModNoContractTests, ModSelfDependency, ModDependencyCycle, ModProviderMissing,
     BuildResolve, BuildCompile, BuildReadsOutside, BuildImports, TestUnit, TestUnitLimit,
-    TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused,
+    TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused, HostFailed,
     HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious }
 impl Code { pub fn as_str(self) -> &'static str; pub fn class(self) -> Class; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1605,6 +1661,11 @@ it and change this list.
 **pkg** (`watane_pkg`):
 - `Slug: FromStr + Display`, with the grammar of pkg section 3.
 - `Mod::read(dir) -> Result<Mod, ModError>`; `ModError::Invalid(Vec<Violation { rule, file, message }>)`, `ModError::Io`.
+- S39 needs own-package violations to name the actual `wit/deps/<folder>`,
+  even when the folder differs from the mod slug. Current pkg only recognizes
+  the matching-folder copy and reports other copies as a duplicate WIT package.
+  Dev's mapper uses a literal violation until pkg supplies this diagnostic;
+  the corresponding command test is `needs watane-pkg` (17.13).
 - On `Mod`: `slug()`, `version()`, `name()`, `world()` (`exports`,
   `events`, `calls`, `subscriptions` as `InterfaceName`), `page()`,
   `logic()`, `grants()`, `deps()`, `check_component()`.
@@ -1700,7 +1761,7 @@ stop before compilation need no warmed cache. No product code changes.
 | contract | existing parse/run_steps tests, `ac3_single_event_equality_and_failure_payloads` | unit: literal returns, failures, events, short/full names, order, numeric equality, delivery and fakes |
 | preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac7_previous_warning_requires_answering_preview_and_names_page` | unit: literal Ready/JSON, loopback server; no real host |
 | cli | existing provider-failure and next-page tests; `ac4_install_next_uses_last_available_page`, `ac7_install_help_and_default_wait`, `ac8_template_explains_home_install` | unit: absolute next/fixes, first failing provider, consumer page, install follow-up/help/guide |
-| api | `ac2_wrong_host_status`, `ac5_install_timeout_and_host_errors`, `ac5_install_timeout_in_response_body`, `ac7_missing_released_provider_names_app_install_fix`, `ac8_fetch_refuses_corrupt_headers_bytes_and_app_errors` | loopback unit: literal status and error answers, delayed headers and body |
+| api | `ac2_wrong_host_status`, `ac5_install_timeout_and_host_errors`, `ac5_install_timeout_in_response_body`, `ac7_missing_released_provider_names_app_install_fix`, `ac3_fetch_refuses_corrupt_headers_bytes_and_app_errors` | loopback unit: literal status and error answers, delayed headers and body |
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
@@ -1804,6 +1865,19 @@ proof of the 30 s bound. `search::ac8_search_text_flattens_results` proves text 
 `publish::ac3_logic_source_selection` is slow because it builds and tests
 Rust; the default publish proofs use page-only mods with a test source file,
 adding no cold Rust fixture build to the 120-second budget.
+
+S39 recovery proofs (default suite unless marked):
+
+| Acceptance | Proof |
+|---|---|
+| AC1 | `build_on::tests::ac1_store_recovers_partial_temps_and_keeps_existing_provider`: partial current/killed temps, complete unpack, existing-folder preservation and no current temp |
+| AC2 | `api::tests::ac2_fetch_errors_name_link_and_publisher_recovery`: exact 409/502 fix and message over loopback |
+| AC3 | `api::tests::ac3_fetch_refuses_corrupt_headers_bytes_and_app_errors`: missing/malformed headers, mismatched release/id/body/WIT, invalid bytes, no store in fetch |
+| AC4 | `api::tests::ac4_app_5xx_names_data_failure_or_app_log_for_every_request`, `outcome::tests::ac3_exit_classes_and_problem_envelope`, `search::ac2_search_app_failure_names_app`: all five routes, exact home/message/fix, code/class/exit |
+| AC5 | `api::tests::ac5_missing_released_provider_includes_stored_link`; `ac7_missing_released_provider_names_app_install_fix` retains no-link text |
+| AC6 | `cli::tests::ac6_failed_test_and_serve_name_first_failure_and_fallback`, `unit::tests::ac3_panic_classification_counts_location_and_fix`, `ac3_wasm_exit_trap_and_limit_classifications`, `contract::ac6_contract_recovery_names_file_step_and_call`; existing cli provider tests retain --dir |
+| AC7 | `check::tests::ac7_own_provider_diagnostics_use_identity_and_actual_folder`, `check::ac7_deps_only_own_slug_never_suggests_importing_itself`; `check::ac7_own_package_in_different_folder_names_actual_folder` needs pkg's folder-specific own-package diagnostic |
+| AC8 | `envelope::ac8_s39_recovery_contract_is_documented` checks 2.2, 9.6, 10.1 and this section; scenario behavior is unchanged, so FUNCTIONAL.md is unchanged |
 
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
@@ -1915,3 +1989,12 @@ Each has a proposed answer, which this specification uses.
     Traverse `Deps::read` before validating worlds, and check the proposed
     cycle before reading the provider as a `Mod`. This preserves the fixed
     pkg interface and reports DEV-S-26 without modifying either folder.
+
+
+13. **Own package copied under a different folder (S39).** pkg currently only
+    emits the own-package provider violation for `wit/deps/<own slug>`.
+    Required owner behavior: report `file = wit/deps/<actual folder>` and
+    `wit/deps/<actual folder> holds this mod's own package mods:<own slug>`
+    for any copied own-package folder. Dev maps this shape now and fakes it
+    in a unit test; the integration proof waits for pkg. S39's scope forbids
+    changes outside dev, so this owner requirement is recorded here.

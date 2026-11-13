@@ -178,7 +178,10 @@ fn ac5_failed_pipeline_sends_nothing() {
     let (code, value) = publish(&dir, home.path(), &[]);
     assert_eq!(code, 1, "{value}");
     assert_eq!(value["errors"][0]["code"], "mod.invalid");
-    assert_eq!(value["next"], "watane-dev test --json");
+    assert_eq!(
+        value["next"],
+        "Correct mod.toml according to the reported rule"
+    );
     assert!(!home.path().join("requests").exists());
 }
 #[test]

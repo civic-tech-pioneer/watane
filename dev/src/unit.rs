@@ -41,8 +41,10 @@ impl UnitReport {
                 } else {
                     format!("{}: {}", f.test, f.message)
                 };
-                let mut problem = Problem::new(f.code, message)
-                    .fix("Correct the unit test or its logic, then run: watane-dev test --json");
+                let mut problem = Problem::new(f.code, message).fix(format!(
+                    "Fix the unit test {}, then run: watane-dev test --json",
+                    f.test
+                ));
                 problem.file = f.file.clone();
                 problem.line = f.line;
                 problem
@@ -425,7 +427,7 @@ mod tests {
             serde_json::json!([{
                 "code":"test.unit", "message":"fails_on_purpose: assertion `left == right` failed\n  left: 1\n right: 2",
                 "file":"logic/src/lib.rs", "line":71, "column":null,
-                "fix":"Correct the unit test or its logic, then run: watane-dev test --json"
+                "fix":"Fix the unit test fails_on_purpose, then run: watane-dev test --json"
             }])
         );
     }
@@ -487,6 +489,10 @@ mod tests {
                 problems[0].message
             );
             assert_eq!(report.failures[0].test, "<unit binary>");
+            assert_eq!(
+                problems[0].fix.as_deref(),
+                Some("Fix the unit test <unit binary>, then run: watane-dev test --json")
+            );
         }
     }
 

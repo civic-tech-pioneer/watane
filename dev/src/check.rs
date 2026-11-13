@@ -102,6 +102,10 @@ fn wit_location(message: &str) -> Option<(String, u32, u32)> {
 }
 /// Map pkg violations, preserving locations supplied in parser diagnostics.
 pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
+    mod_problems_for_slug(e, None)
+}
+
+fn mod_problems_for_slug(e: ModError, own_slug: Option<&watane_pkg::Slug>) -> Vec<Problem> {
     match e {
         ModError::Invalid(v) => v
             .into_iter()
@@ -133,11 +137,16 @@ pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
                     && let Some(slug) = v.message.strip_prefix("deps.json lists mods:")
                         .and_then(|s| s.strip_suffix(" but wit/world.wit imports none of its interfaces"))
                 {
-                    format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
-                } else if let Some(slug) = file.strip_prefix("wit/deps/")
-                    && v.message == format!("{file} holds this mod's own package mods:{slug}")
+                    if own_slug.is_some_and(|own| own.as_str() == slug) {
+                        format!("Ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json: a mod cannot depend on itself")
+                    } else {
+                        format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
+                    }
+                } else if let Some(folder) = file.strip_prefix("wit/deps/")
+                    && v.message.strip_prefix(&format!("{file} holds this mod's own package mods:"))
+                        .is_some_and(|slug| slug.parse::<watane_pkg::Slug>().is_ok())
                 {
-                    format!("Ask before deleting wit/deps/{slug}/: a mod cannot depend on itself")
+                    format!("Ask before deleting wit/deps/{folder}/: a mod cannot depend on itself")
                 } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
                     || Path::new(&file).starts_with("wit/deps")
                 {
@@ -191,7 +200,16 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     if !errors.is_empty() {
         return Err(errors);
     }
-    let m = Mod::read(dir).map_err(mod_problems)?;
+    let m = Mod::read(dir).map_err(|error| {
+        let own_slug = fs::read_to_string(dir.join("wit/world.wit"))
+            .ok()
+            .and_then(|text| {
+                crate::build_on::declaration(&text)
+                    .ok()
+                    .map(|(_, slug, _)| slug)
+            });
+        mod_problems_for_slug(error, own_slug.as_ref())
+    })?;
     if dir.join("logic").exists() {
         let path = dir.join("logic/Cargo.toml");
         let text = fs::read_to_string(&path)
@@ -747,6 +765,35 @@ crate-type = ["cdylib"]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac7_own_provider_diagnostics_use_identity_and_actual_folder() {
+        use watane_pkg::{Rule, Violation};
+        let own = "consumer".parse().unwrap();
+        for (file, message, expected) in [
+            (
+                "deps.json",
+                "deps.json lists mods:consumer but wit/world.wit imports none of its interfaces",
+                "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself",
+            ),
+            (
+                "wit/deps/renamed",
+                "wit/deps/renamed holds this mod's own package mods:consumer",
+                "Ask before deleting wit/deps/renamed/: a mod cannot depend on itself",
+            ),
+        ] {
+            let errors = mod_problems_for_slug(
+                ModError::Invalid(vec![Violation {
+                    rule: Rule::Provider,
+                    file: file.into(),
+                    message: message.into(),
+                }]),
+                Some(&own),
+            );
+            assert_eq!(errors[0].fix.as_deref(), Some(expected));
+            assert_eq!(errors[0].file.as_deref(), Some(file));
+        }
+    }
 
     #[test]
     fn ac3_check_reports_recorded_provider_path() {

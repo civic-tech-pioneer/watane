@@ -8,8 +8,13 @@ use std::{
 use watane_host::{InstalledMod, RunInfo};
 const FETCH_FIX: &str =
     "Pass a mod link watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>";
+fn bad_fetch_answer(detail: impl std::fmt::Display) -> Problem {
+    Problem::new(Code::HostRefused, format!("[bad_answer] {detail}"))
+        .fix("The watane app answered with a package that does not match the request; ask the person to update the watane app, then run this command again")
+}
 pub struct Client {
     port: u16,
+    home: PathBuf,
 }
 impl Client {
     pub fn for_app(home: &Path) -> Result<Self, Problem> {
@@ -24,7 +29,10 @@ impl Client {
             ))
         };
         let run = RunInfo::read(home).ok().flatten().ok_or_else(absent)?;
-        let client = Self { port: run.port };
+        let client = Self {
+            port: run.port,
+            home: home.to_path_buf(),
+        };
         let status = client
             .request("status", None, Duration::from_secs(2))
             .map_err(|_| absent())?;
@@ -56,9 +64,12 @@ impl Client {
     /// Read status for either a home or a preview, without requiring an app.
     pub fn home_status(home: &Path) -> Option<Value> {
         let run = RunInfo::read(home).ok().flatten()?;
-        let status = Self { port: run.port }
-            .request("status", None, Duration::from_secs(2))
-            .ok()?;
+        let status = Self {
+            port: run.port,
+            home: home.to_path_buf(),
+        }
+        .request("status", None, Duration::from_secs(2))
+        .ok()?;
         (status["watane"] == 1).then_some(status)
     }
 
@@ -70,7 +81,10 @@ impl Client {
         if run.watane != 1 || run.mode != "preview" {
             return Ok(None);
         }
-        let client = Self { port: run.port };
+        let client = Self {
+            port: run.port,
+            home: home.to_path_buf(),
+        };
         let status = match client.request("status", None, Duration::from_secs(2)) {
             Ok(v) => v,
             Err(_) => return Ok(None),
@@ -85,6 +99,29 @@ impl Client {
             Ok(None)
         }
     }
+    fn app_failure(&self, status: u16, value: &Value) -> Option<Problem> {
+        if !(500..600).contains(&status) {
+            return None;
+        }
+        let code = value["error"]["code"].as_str().unwrap_or("unknown");
+        let message = value["error"]["message"]
+            .as_str()
+            .unwrap_or("unknown host error");
+        Some(if status == 503 && code == "unavailable" {
+            Problem::new(
+                Code::EnvHostNotRunning,
+                format!(
+                    "the watane app of {} runs but could not open its data: {message}",
+                    self.home.display()
+                ),
+            )
+            .fix("Ask the person to restart the watane app, then run this command again")
+        } else {
+            Problem::new(Code::HostFailed, format!("[{code}] {message}"))
+                .fix("The watane app failed on this request; ask the person to read the watane app's log, then run this command again")
+        })
+    }
+
     fn request(
         &self,
         path: &str,
@@ -130,6 +167,9 @@ impl Client {
                 Problem::internal(e)
             }
         })?;
+        if let Some(error) = self.app_failure(status.as_u16(), &value) {
+            return Err(error);
+        }
         if !status.is_success() || value.get("error").is_some() {
             if path == "publish"
                 && status.as_u16() == 409
@@ -210,12 +250,16 @@ impl Client {
             .post(format!("http://localhost:{}/api/fetch", self.port))
             .send_json(body)
             .map_err(|e| {
-                Problem::new(Code::HostNoAnswer, e.to_string())
-                    .fix("Check the watane app, then run this command again")
+                Problem::new(Code::HostNoAnswer, e.to_string()).fix("Run this command again")
             })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let value: Value = response.body_mut().read_json().map_err(Problem::internal)?;
+            if !(status == 502 && value["error"]["code"] == "fetch_failed")
+                && let Some(error) = self.app_failure(status, &value)
+            {
+                return Err(error);
+            }
             let e = Problem::new(
                 Code::HostRefused,
                 format!(
@@ -228,24 +272,28 @@ impl Client {
             );
             return Err(e.fix(if status == 400 {
                 FETCH_FIX
+            } else if status == 409 && value["error"]["code"] == "fetch_refused" {
+                "Check the link or release with the person who shared it: the watane app found no release to fetch for it"
+            } else if status == 502 && value["error"]["code"] == "fetch_failed" {
+                "Check the link and that its publisher's site is reachable, then run this command again"
             } else {
-                "Check the watane app, then run this command again"
+                FETCH_FIX
             }));
         }
         let release: ReleaseRef = response
             .headers()
             .get("Watane-Release")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| Problem::internal("missing Watane-Release"))?
+            .ok_or_else(|| bad_fetch_answer("missing Watane-Release"))?
             .parse()
-            .map_err(Problem::internal)?;
+            .map_err(bad_fetch_answer)?;
         let id: PackageId = response
             .headers()
             .get("Watane-Package")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| Problem::internal("missing Watane-Package"))?
+            .ok_or_else(|| bad_fetch_answer("missing Watane-Package"))?
             .parse()
-            .map_err(Problem::internal)?;
+            .map_err(bad_fetch_answer)?;
         let matches = if let Some(asked) = asked {
             release == asked
         } else {
@@ -258,7 +306,7 @@ impl Client {
                 && target.rsplit_once('#').map(|(_, slug)| slug) == Some(release.slug.as_str())
         };
         if !matches {
-            return Err(Problem::internal(
+            return Err(bad_fetch_answer(
                 "Watane-Release does not match the requested release",
             ));
         }
@@ -276,20 +324,20 @@ impl Client {
                 "[too_large] package exceeds MAX_PACKAGE_BYTES",
             ));
         }
-        let package = Package::from_bytes(bytes).map_err(Problem::internal)?;
+        let package = Package::from_bytes(bytes).map_err(bad_fetch_answer)?;
         if package.id() != id {
-            return Err(Problem::internal(
+            return Err(bad_fetch_answer(
                 "Watane-Package does not match the package body",
             ));
         }
         let world = package
             .file("wit/world.wit")
-            .ok_or_else(|| Problem::internal("package has no wit/world.wit"))?;
+            .ok_or_else(|| bad_fetch_answer("package has no wit/world.wit"))?;
         let (_, slug, version) =
-            crate::build_on::declaration(std::str::from_utf8(world).map_err(Problem::internal)?)
-                .map_err(|e| Problem::internal(e.message))?;
+            crate::build_on::declaration(std::str::from_utf8(world).map_err(bad_fetch_answer)?)
+                .map_err(|e| bad_fetch_answer(e.message))?;
         if slug != release.slug || version != release.version {
-            return Err(Problem::internal(
+            return Err(bad_fetch_answer(
                 "Watane-Release does not match the package body",
             ));
         }
@@ -364,7 +412,12 @@ impl Client {
                                     let provider = format!("{publisher}/{slug}");
                                     if e.message.contains(&provider)
                                         && let Ok(release) = crate::build_on::provider_release(dir, slug, publisher) {
-                                        e.fix = Some(format!("Install {release} in the watane app (from its link), then run install again"));
+                                        let link = crate::deps::read_config(dir).ok()
+                                            .and_then(|config| config.release_providers.get(slug.as_str()).and_then(|record| record.link.clone()));
+                                        e.fix = Some(match link {
+                                            Some(link) => format!("Install {release} in the watane app from its link {link}, then run install again"),
+                                            None => format!("Install {release} in the watane app (from its link), then run install again"),
+                                        });
                                         return e;
                                     }
                                 }
@@ -399,6 +452,134 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
+    fn client(port: u16) -> Client {
+        Client {
+            port,
+            home: PathBuf::from("/home/test"),
+        }
+    }
+
+    #[test]
+    fn ac4_app_5xx_names_data_failure_or_app_log_for_every_request() {
+        let package = publish_package();
+        for path in ["install", "publish", "search", "releases", "fetch"] {
+            for (status, app_code, code, message, fix, exit) in [
+                (
+                    503,
+                    "unavailable",
+                    "env.host_not_running",
+                    "the watane app of /home/test runs but could not open its data: broken data",
+                    "Ask the person to restart the watane app, then run this command again",
+                    3,
+                ),
+                (
+                    500,
+                    "internal",
+                    "host.failed",
+                    "[internal] broken data",
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again",
+                    4,
+                ),
+                (
+                    503,
+                    "other",
+                    "host.failed",
+                    "[other] broken data",
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again",
+                    4,
+                ),
+            ] {
+                let (port, thread) = stub(
+                    status,
+                    json!({"error":{"code":app_code,"message":"broken data"}}),
+                    Duration::ZERO,
+                );
+                let client = client(port);
+                let error = match path {
+                    "fetch" => client
+                        .fetch(&format!("{}/demo@0.2.3", "y".repeat(52)))
+                        .unwrap_err(),
+                    "install" => client.install_wait(&[], 1).unwrap_err(),
+                    "publish" => client
+                        .publish_with_links(&package, Duration::from_secs(1), &[])
+                        .unwrap_err(),
+                    "search" => client.search("", None, None).unwrap_err(),
+                    _ => client.releases().unwrap_err(),
+                };
+                thread.join().unwrap();
+                assert_eq!(error.code.as_str(), code, "{path}");
+                assert_eq!(error.code.class() as u8, exit);
+                assert_eq!(error.message, message, "{path}");
+                assert_eq!(error.fix.as_deref(), Some(fix), "{path}");
+            }
+        }
+    }
+
+    #[test]
+    fn ac2_fetch_errors_name_link_and_publisher_recovery() {
+        let asked = format!("{}/demo@0.2.3", "y".repeat(52));
+        for (status, code, fix) in [
+            (
+                409,
+                "fetch_refused",
+                "Check the link or release with the person who shared it: the watane app found no release to fetch for it",
+            ),
+            (
+                502,
+                "fetch_failed",
+                "Check the link and that its publisher's site is reachable, then run this command again",
+            ),
+        ] {
+            let (port, thread) = stub(
+                status,
+                json!({"error":{"code":code,"message":"cannot fetch"}}),
+                Duration::ZERO,
+            );
+            let error = client(port).fetch(&asked).unwrap_err();
+            thread.join().unwrap();
+            assert_eq!(error.code, Code::HostRefused);
+            assert_eq!(error.message, format!("[{code}] cannot fetch"));
+            assert_eq!(error.fix.as_deref(), Some(fix));
+        }
+    }
+
+    #[test]
+    fn ac5_missing_released_provider_includes_stored_link() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("stats");
+        crate::template::new_mod(&dir, "stats").unwrap();
+        let key = "y".repeat(52);
+        std::fs::write(
+            dir.join("deps.json"),
+            json!({"mods:ratings":key}).to_string(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("wit/deps/ratings")).unwrap();
+        std::fs::write(
+            dir.join("wit/deps/ratings/world.wit"),
+            "package mods:ratings@0.1.0; interface api { get: func() -> u32; }",
+        )
+        .unwrap();
+        std::fs::write(dir.join(".watane-dev.json"), json!({"release_providers":{"ratings":{
+            "release":format!("{key}/ratings@0.1.0"), "package":watane_pkg::PackageId::of(b"ratings"),
+            "link":"watane:ratings-link"
+        }}}).to_string()).unwrap();
+        let (port, thread) = stub(
+            409,
+            json!({"error":{"code":"missing_providers","message":format!("{key}/ratings is not installed")}}),
+            Duration::ZERO,
+        );
+        let error = client(port).install_wait(&[dir], 1).unwrap_err();
+        thread.join().unwrap();
+        assert_eq!(error.code, Code::HostRefused);
+        assert_eq!(
+            error.fix,
+            Some(format!(
+                "Install {key}/ratings@0.1.0 in the watane app from its link watane:ratings-link, then run install again"
+            ))
+        );
+    }
+
     #[test]
     fn ac7_missing_released_provider_names_app_install_fix() {
         let root = tempfile::tempdir().unwrap();
@@ -421,7 +602,7 @@ mod tests {
             json!({"error":{"code":"missing_providers","message":format!("{key}/ratings is not installed")}}),
             Duration::ZERO,
         );
-        let error = Client { port }.install_wait(&[dir], 1).unwrap_err();
+        let error = client(port).install_wait(&[dir], 1).unwrap_err();
         thread.join().unwrap();
         assert_eq!(error.code, Code::HostRefused);
         assert_eq!(
@@ -433,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn ac8_fetch_refuses_corrupt_headers_bytes_and_app_errors() {
+    fn ac3_fetch_refuses_corrupt_headers_bytes_and_app_errors() {
         fn binary(
             status: u16,
             release: &str,
@@ -442,8 +623,18 @@ mod tests {
         ) -> (u16, std::thread::JoinHandle<()>) {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
+            let release_header = if release.is_empty() {
+                String::new()
+            } else {
+                format!("Watane-Release: {release}\r\n")
+            };
+            let id_header = if id.is_empty() {
+                String::new()
+            } else {
+                format!("Watane-Package: {id}\r\n")
+            };
             let headers = format!(
-                "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nWatane-Release: {release}\r\nWatane-Package: {id}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\n{release_header}{id_header}Connection: close\r\n\r\n",
                 body.len()
             );
             let thread = std::thread::spawn(move || {
@@ -481,25 +672,25 @@ mod tests {
                 asked.clone(),
                 "0".repeat(64),
                 p.as_bytes().to_vec(),
-                Code::Internal,
+                Code::HostRefused,
             ),
             (
                 "nonsense".into(),
                 p.id().to_string(),
                 p.as_bytes().to_vec(),
-                Code::Internal,
+                Code::HostRefused,
             ),
             (
                 format!("{}/other@0.2.3", "y".repeat(52)),
                 p.id().to_string(),
                 p.as_bytes().to_vec(),
-                Code::Internal,
+                Code::HostRefused,
             ),
             (
                 asked.clone(),
                 p.id().to_string(),
                 b"not a package".to_vec(),
-                Code::Internal,
+                Code::HostRefused,
             ),
             (
                 asked.clone(),
@@ -507,13 +698,57 @@ mod tests {
                 vec![0; watane_pkg::MAX_PACKAGE_BYTES as usize + 1],
                 Code::HostRefused,
             ),
+            (
+                "".into(),
+                p.id().to_string(),
+                p.as_bytes().to_vec(),
+                Code::HostRefused,
+            ),
+            (
+                asked.clone(),
+                "".into(),
+                p.as_bytes().to_vec(),
+                Code::HostRefused,
+            ),
+            (
+                asked.clone(),
+                "nonsense".into(),
+                p.as_bytes().to_vec(),
+                Code::HostRefused,
+            ),
+            (
+                format!("{}/demo@0.2.4", "y".repeat(52)),
+                p.id().to_string(),
+                p.as_bytes().to_vec(),
+                Code::HostRefused,
+            ),
+            (
+                format!("{}/demo@9.0.0", "y".repeat(52)),
+                p.id().to_string(),
+                p.as_bytes().to_vec(),
+                Code::HostRefused,
+            ),
         ] {
+            let target = if release.ends_with("@9.0.0") || release.contains("/other@") {
+                release.as_str()
+            } else {
+                &asked
+            };
             let (port, thread) = binary(200, &release, &id, bytes);
-            let error = Client { port }
-                .fetch(&asked)
+            let error = client(port)
+                .fetch(target)
                 .expect_err("reject corrupt response");
             thread.join().unwrap();
             assert_eq!(error.code, expected, "{error:?}");
+            if !error.message.starts_with("[too_large]") {
+                assert!(error.message.starts_with("[bad_answer] "), "{error:?}");
+                assert_eq!(
+                    error.fix.as_deref(),
+                    Some(
+                        "The watane app answered with a package that does not match the request; ask the person to update the watane app, then run this command again"
+                    )
+                );
+            }
         }
         // A link is matched on its key (after `watane:`) and its slug (after `#`) only.
         for link in [
@@ -521,15 +756,13 @@ mod tests {
             format!("watane:{}@https://p.example/mods/#demo", "z".repeat(52)),
         ] {
             let (port, thread) = binary(200, &asked, &p.id().to_string(), p.as_bytes().to_vec());
-            let error = Client { port }
-                .fetch(&link)
-                .expect_err("reject other release");
+            let error = client(port).fetch(&link).expect_err("reject other release");
             thread.join().unwrap();
-            assert_eq!(error.code, Code::Internal, "{error:?}");
+            assert_eq!(error.code, Code::HostRefused, "{error:?}");
         }
         let link = format!("watane:{}@https://p.example/mods/#demo", "y".repeat(52));
         let (port, thread) = binary(200, &asked, &p.id().to_string(), p.as_bytes().to_vec());
-        let (release, _) = Client { port }.fetch(&link).unwrap();
+        let (release, _) = client(port).fetch(&link).unwrap();
         thread.join().unwrap();
         assert_eq!(release.to_string(), asked);
         for (status, code) in [
@@ -543,10 +776,25 @@ mod tests {
                 json!({"error":{"code":code,"message":"cannot fetch"}}),
                 Duration::ZERO,
             );
-            let error = Client { port }.fetch(&asked).err().unwrap();
+            let error = client(port).fetch(&asked).err().unwrap();
             thread.join().unwrap();
-            assert_eq!(error.code, Code::HostRefused);
-            assert_eq!(error.message, format!("[{code}] cannot fetch"));
+            assert_eq!(
+                error.code,
+                if status == 503 {
+                    Code::EnvHostNotRunning
+                } else {
+                    Code::HostRefused
+                }
+            );
+            assert_eq!(
+                error.message,
+                if status == 503 {
+                    "the watane app of /home/test runs but could not open its data: cannot fetch"
+                        .into()
+                } else {
+                    format!("[{code}] cannot fetch")
+                }
+            );
             if status == 400 {
                 assert_eq!(
                     error.fix.as_deref(),
@@ -576,8 +824,7 @@ mod tests {
                     json!({"release_providers":records}).to_string(),
                 )
                 .unwrap();
-                let order =
-                    crate::build_on::fetch_providers(&consumer, &Client { port: 0 }, &env).unwrap();
+                let order = crate::build_on::fetch_providers(&consumer, &client(0), &env).unwrap();
                 assert_eq!(order.len(), 32);
             }
             let slug = format!("p{n}");
@@ -612,8 +859,7 @@ mod tests {
             json!({"release_providers":records}).to_string(),
         )
         .unwrap();
-        let errors =
-            crate::build_on::fetch_providers(&consumer, &Client { port: 0 }, &env).unwrap_err();
+        let errors = crate::build_on::fetch_providers(&consumer, &client(0), &env).unwrap_err();
         assert_eq!(errors[0].code, Code::HostRefused);
         assert_eq!(errors[0].message, "too many released providers");
     }
@@ -628,7 +874,7 @@ mod tests {
         let errors = crate::build_on::add_release(
             root.path(),
             &format!("{}/ratings@0.1.0", "y".repeat(52)),
-            &Client { port: 0 },
+            &client(0),
             &env,
         )
         .unwrap_err();
@@ -671,14 +917,33 @@ mod tests {
                 json!({"error":{"code":code,"message":"query rejected"}}),
                 Duration::ZERO,
             );
-            let error = Client { port }.search("reading", None, None).unwrap_err();
+            let error = client(port).search("reading", None, None).unwrap_err();
             thread.join().unwrap();
-            assert_eq!(error.code, Code::HostRefused);
-            assert_eq!(error.message, format!("[{code}] query rejected"));
+            assert_eq!(
+                error.code,
+                match status {
+                    503 => Code::EnvHostNotRunning,
+                    500 => Code::HostFailed,
+                    _ => Code::HostRefused,
+                }
+            );
+            assert_eq!(
+                error.message,
+                if status == 503 {
+                    "the watane app of /home/test runs but could not open its data: query rejected"
+                        .into()
+                } else {
+                    format!("[{code}] query rejected")
+                }
+            );
             assert_eq!(
                 error.fix.as_deref(),
                 Some(if status == 400 {
                     "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
+                } else if status == 503 {
+                    "Ask the person to restart the watane app, then run this command again"
+                } else if status == 500 {
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
                 } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
@@ -695,7 +960,7 @@ mod tests {
             Duration::from_millis(30_500),
         );
         let start = std::time::Instant::now();
-        let error = Client { port }.search("", None, None).unwrap_err();
+        let error = client(port).search("", None, None).unwrap_err();
         let elapsed = start.elapsed();
         thread.join().unwrap();
         assert_eq!(error.code, Code::HostNoAnswer);
@@ -748,7 +1013,15 @@ mod tests {
             )
             .unwrap();
         });
-        assert_eq!(Client { port }.releases().unwrap(), json!({"releases":[]}));
+        assert_eq!(
+            Client {
+                port,
+                home: PathBuf::from("/home/test")
+            }
+            .releases()
+            .unwrap(),
+            json!({"releases":[]})
+        );
         thread.join().unwrap();
     }
 
@@ -756,7 +1029,13 @@ mod tests {
     fn ac1_releases_status_timeout_and_refused_errors() {
         let (port, thread) = stub(200, json!({"releases":[]}), Duration::from_millis(2200));
         assert_eq!(
-            Client { port }.releases().unwrap_err().code,
+            Client {
+                port,
+                home: PathBuf::from("/home/test")
+            }
+            .releases()
+            .unwrap_err()
+            .code,
             Code::HostNoAnswer
         );
         thread.join().unwrap();
@@ -766,14 +1045,23 @@ mod tests {
                 json!({"error":{"code":"refused","message":"unavailable"}}),
                 Duration::ZERO,
             );
-            let e = Client { port }.releases().unwrap_err();
-            assert_eq!(e.code, Code::HostRefused);
+            let e = client(port).releases().unwrap_err();
+            assert_eq!(
+                e.code,
+                if status == 500 {
+                    Code::HostFailed
+                } else {
+                    Code::HostRefused
+                }
+            );
             assert_eq!(e.message, "[refused] unavailable");
             assert_eq!(
                 e.fix.as_deref(),
-                Some(
+                Some(if status == 500 {
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+                } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
-                )
+                })
             );
             thread.join().unwrap();
         }
@@ -786,7 +1074,7 @@ mod tests {
             json!({"error":{"code":"version_exists","message":"release key/demo@0.2.3 already exists at seq 7"}}),
             Duration::ZERO,
         );
-        let e = Client { port }
+        let e = client(port)
             .publish_with_links(&publish_package(), Duration::from_secs(2), &[])
             .unwrap_err();
         thread.join().unwrap();
@@ -839,7 +1127,7 @@ mod tests {
             )
             .unwrap();
         });
-        let result = Client { port }
+        let result = client(port)
             .publish_with_links(&package, Duration::from_secs(2), &[])
             .unwrap();
         thread.join().unwrap();
@@ -879,7 +1167,7 @@ mod tests {
             ),
         ] {
             let (port, thread) = stub(status, value, delay);
-            let e = Client { port }
+            let e = client(port)
                 .publish_with_links(&package, Duration::from_secs(1), &[])
                 .unwrap_err();
             thread.join().unwrap();
@@ -948,7 +1236,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1200));
             let _ = stream.write_all(br#"{"installed":[]}"#);
         });
-        let e = Client { port }.install_wait(&[], 1).unwrap_err();
+        let e = client(port).install_wait(&[], 1).unwrap_err();
         thread.join().unwrap();
         assert_eq!(e.code, Code::HostNoAnswer);
         assert_eq!(e.message, "no answer from the home host in 1 s");
@@ -963,7 +1251,7 @@ mod tests {
             json!({"error":{"code":"refused","message":"declined"}}),
             Duration::ZERO,
         );
-        let e = Client { port }
+        let e = client(port)
             .install_wait(&["/mods/counter".into()], 2)
             .unwrap_err();
         thread.join().unwrap();
@@ -991,7 +1279,7 @@ mod tests {
     #[test]
     fn ac5_install_timeout_and_host_errors() {
         let (port, thread) = stub(200, json!({"installed":[]}), Duration::from_millis(1200));
-        let e = Client { port }.install_wait(&[], 1).unwrap_err();
+        let e = client(port).install_wait(&[], 1).unwrap_err();
         assert_eq!(e.code, Code::HostNoAnswer);
         assert_eq!(e.message, "no answer from the home host in 1 s");
         assert_eq!(
@@ -1006,7 +1294,7 @@ mod tests {
                 Code::HostDeclined,
                 "The person declined installing the mod in their watane app",
             ),
-            (500, "broken", Code::HostRefused, "[broken] broken host"),
+            (500, "broken", Code::HostFailed, "[broken] broken host"),
             (200, "broken", Code::HostRefused, "[broken] broken host"),
         ] {
             let (port, thread) = stub(
@@ -1014,13 +1302,15 @@ mod tests {
                 json!({"error":{"code":code,"message":if code=="refused" {"declined"} else {"broken host"}}}),
                 Duration::ZERO,
             );
-            let e = Client { port }.install_wait(&[], 2).unwrap_err();
+            let e = client(port).install_wait(&[], 2).unwrap_err();
             assert_eq!(e.code, expected);
             assert_eq!(e.message, message);
             assert_eq!(
                 e.fix.as_deref(),
                 Some(if expected == Code::HostDeclined {
                     "Ask the person whether they want the mod installed in their watane app, then run install again with --wait <seconds>"
+                } else if expected == Code::HostFailed {
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
                 } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })

@@ -333,9 +333,10 @@ pub fn contract_tests(
             errors.push(
                 Problem::new(Code::TestContract, &failure.message)
                     .at(&file, lines.get(failure.step as usize - 1).copied(), None)
-                    .fix(
-                        "Correct the contract test or its logic, then run: watane-dev test --json",
-                    ),
+                    .fix(format!(
+                        "Fix {file} step {} ({}), then run: watane-dev test --json",
+                        failure.step, failure.call
+                    )),
             );
             report.failed += 1;
             report.failures.push(failure);

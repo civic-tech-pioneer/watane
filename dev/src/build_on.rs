@@ -137,8 +137,18 @@ pub fn store(package: &Package, env: &Env) -> Result<PathBuf, Problem> {
     fs::create_dir_all(&packages).map_err(Problem::internal)?;
     fs::create_dir_all(&providers).map_err(Problem::internal)?;
     let folder = providers.join(id.to_string());
-    if !folder.exists() {
-        package.unpack(&folder).map_err(Problem::internal)?;
+    let provider_temp = providers.join(format!("{id}.{}.tmp", std::process::id()));
+    if provider_temp.exists() {
+        fs::remove_dir_all(&provider_temp).map_err(Problem::internal)?;
+    }
+    if !folder.is_dir() {
+        package.unpack(&provider_temp).map_err(Problem::internal)?;
+        if let Err(error) = fs::rename(&provider_temp, &folder) {
+            fs::remove_dir_all(&provider_temp).map_err(Problem::internal)?;
+            if !folder.is_dir() {
+                return Err(Problem::internal(error));
+            }
+        }
     }
     let temp = packages.join(format!("{id}.{}.tmp", std::process::id()));
     fs::write(&temp, package.as_bytes()).map_err(Problem::internal)?;
@@ -376,6 +386,51 @@ pub(crate) fn exists(dir: &Path) -> Problem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_store_recovers_partial_temps_and_keeps_existing_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        fs::create_dir_all(source.join("wit")).unwrap();
+        fs::create_dir_all(source.join("ui")).unwrap();
+        fs::write(
+            source.join("mod.toml"),
+            "name = \"Demo\"\nsummary = \"page\"",
+        )
+        .unwrap();
+        fs::write(
+            source.join("wit/world.wit"),
+            "package mods:demo@0.1.0; world demo {}",
+        )
+        .unwrap();
+        fs::write(source.join("ui/index.html"), "complete").unwrap();
+        let package = watane_pkg::pack(&source, false).unwrap();
+        let env = Env {
+            cache: root.path().join("cache"),
+            unit_seconds: 60,
+        };
+        let providers = env.cache.join("providers");
+        let temp = providers.join(format!("{}.{}.tmp", package.id(), std::process::id()));
+        let killed = providers.join(format!("{}.{}.tmp", package.id(), std::process::id() + 1));
+        for folder in [&temp, &killed] {
+            fs::create_dir_all(folder).unwrap();
+            fs::write(folder.join("partial"), "partial").unwrap();
+        }
+        let folder = store(&package, &env).unwrap();
+        assert_eq!(
+            fs::read_to_string(folder.join("ui/index.html")).unwrap(),
+            "complete"
+        );
+        assert!(!folder.join("partial").exists());
+        assert!(!temp.exists());
+        assert!(killed.exists());
+        fs::write(folder.join("keep"), "existing").unwrap();
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("partial"), "partial").unwrap();
+        assert_eq!(store(&package, &env).unwrap(), folder);
+        assert_eq!(fs::read_to_string(folder.join("keep")).unwrap(), "existing");
+        assert!(!temp.exists());
+    }
+
     #[test]
     fn ac1_files_are_sorted_by_relative_path_text() {
         let root = tempfile::tempdir().unwrap();

@@ -473,7 +473,10 @@ fn ac3_failed_contract_reports_test_next() {
     let (code, v) = m.run(&["serve", "--json"]);
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "test.contract");
-    assert_eq!(v["next"], "watane-dev test --json");
+    assert_eq!(
+        v["next"],
+        "Fix tests/counter.json step 1 (api.add), then run: watane-dev serve --json"
+    );
 }
 
 fn mcp_request(v: &Value, method: &str, params: Value) -> Value {
@@ -564,7 +567,10 @@ fn ac3_refused_serve_warns_about_previous_preview() {
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["ok"], false);
     assert_eq!(v["errors"][0]["code"], "test.contract");
-    assert_eq!(v["next"], "watane-dev test --json");
+    assert_eq!(
+        v["next"],
+        "Fix tests/counter.json step 1 (api.add), then run: watane-dev serve --json"
+    );
     assert_eq!(
         v["warnings"],
         serde_json::json!([{

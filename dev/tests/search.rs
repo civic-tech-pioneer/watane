@@ -354,15 +354,33 @@ fn ac2_search_app_failure_names_app() {
             .unwrap();
         assert_eq!(response.status().as_u16(), status);
         let (code, value) = search(home.path(), &["books"]);
-        assert_eq!(code, 4, "{value}");
-        assert_eq!(value["errors"][0]["code"], "host.refused");
+        assert_eq!(code, if status == 503 { 3 } else { 4 }, "{value}");
+        assert_eq!(
+            value["errors"][0]["code"],
+            if status == 503 {
+                "env.host_not_running"
+            } else {
+                "host.failed"
+            }
+        );
         assert_eq!(
             value["errors"][0]["message"],
-            "[unavailable] search unavailable"
+            if status == 503 {
+                format!(
+                    "the watane app of {} runs but could not open its data: search unavailable",
+                    home.path().canonicalize().unwrap().display()
+                )
+            } else {
+                "[unavailable] search unavailable".into()
+            }
         );
         assert_eq!(
             value["errors"][0]["fix"],
-            "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+            if status == 503 {
+                "Ask the person to restart the watane app, then run this command again"
+            } else {
+                "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+            }
         );
         assert_eq!(value["next"], value["errors"][0]["fix"]);
     }

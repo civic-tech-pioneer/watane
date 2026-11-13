@@ -299,3 +299,52 @@ fn ac5_argument_errors_name_every_command_in_text_and_json() {
         }
     }
 }
+
+#[test]
+fn ac8_s39_recovery_contract_is_documented() {
+    let spec =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
+    for (section, phrases) in [
+        (
+            "### 2.2",
+            vec![
+                "host.failed",
+                "could not open its data",
+                "folder comes from the violation's file",
+            ],
+        ),
+        (
+            "### 9.6",
+            vec![
+                "release_providers.<slug>.link",
+                "from its link <link>",
+                "host.failed",
+            ],
+        ),
+        (
+            "### 10.1",
+            vec![
+                "[bad_answer]",
+                "<id>.<pid>.tmp",
+                "<id>.<other>.tmp",
+                "fetch_refused",
+                "fetch_failed",
+            ],
+        ),
+        (
+            "### 15.2",
+            vec!["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8"],
+        ),
+    ] {
+        let contents = spec
+            .split(section)
+            .nth(1)
+            .unwrap()
+            .split("\n### ")
+            .next()
+            .unwrap();
+        for phrase in phrases {
+            assert!(contents.contains(phrase), "{section} lacks {phrase}");
+        }
+    }
+}

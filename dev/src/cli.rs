@@ -207,7 +207,11 @@ pub fn run(cli: Cli) -> Outcome {
                 } else {
                     let tested = test_local(&dir);
                     if !tested.ok {
-                        outcome.next = tested.next;
+                        outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {
+                            Some(failed_test_next(&tested.errors, "serve"))
+                        } else {
+                            tested.next
+                        };
                         if let Some(warning) = preview::previous_warning(&dir, &env) {
                             outcome.warnings.push(warning);
                         }
@@ -367,6 +371,28 @@ fn test_local(dir: &Path) -> Outcome {
     Outcome::new("test", Some(dir.to_path_buf()))
 }
 
+fn failed_test_next(errors: &[Problem], command: &str) -> String {
+    use crate::outcome::Code;
+    errors
+        .first()
+        .and_then(|error| {
+            error.fix.as_ref().map(|fix| {
+                if matches!(
+                    error.code,
+                    Code::TestUnit | Code::TestUnitLimit | Code::TestContract
+                ) {
+                    fix.strip_suffix("watane-dev test --json").map_or_else(
+                        || fix.clone(),
+                        |prefix| format!("{prefix}watane-dev {command} --json"),
+                    )
+                } else {
+                    fix.clone()
+                }
+            })
+        })
+        .unwrap_or_else(|| format!("watane-dev {command} --json"))
+}
+
 /// Check, build and run unit and contract tests, retaining completed parts on failure.
 pub fn test(dir: &Path) -> Outcome {
     let mut outcome = Outcome::new("test", Some(dir.to_path_buf()));
@@ -427,6 +453,8 @@ pub fn test(dir: &Path) -> Outcome {
             .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
         {
             outcome.next = Some("watane-dev doctor --json".into());
+        } else {
+            outcome.next = Some(failed_test_next(&errors, "test"));
         }
         outcome.fail(errors)
     }
@@ -784,6 +812,64 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn ac6_serve_recovery_preserves_command_text_inside_contract_filename() {
+        let error = Problem::new(crate::outcome::Code::TestContract, "mismatch")
+            .fix("Fix tests/watane-dev test --json.json step 1 (api.get), then run: watane-dev test --json");
+        assert_eq!(
+            failed_test_next(&[error], "serve"),
+            "Fix tests/watane-dev test --json.json step 1 (api.get), then run: watane-dev serve --json"
+        );
+    }
+
+    #[test]
+    fn ac6_failed_test_and_serve_name_first_failure_and_fallback() {
+        use crate::outcome::Code;
+        let unit = crate::unit::parse_libtest(
+            "running 1 test\ntest tests::fails ... FAILED\n",
+            "",
+            "demo",
+        )
+        .problems();
+        let limit =
+            crate::unit::parse_libtest("running 1 test\ntest tests::endless ... ", "", "demo");
+        // A limit has the same recovery action, regardless of its diagnostic message.
+        let mut limit_errors = limit.problems();
+        limit_errors[0].code = Code::TestUnitLimit;
+        let contract = Problem::new(
+            Code::TestContract,
+            "tests/counter.json step 2 (api.get): expected 2, got 1",
+        )
+        .fix("Fix tests/counter.json step 2 (api.get), then run: watane-dev test --json");
+        for command in ["test", "serve"] {
+            assert_eq!(
+                failed_test_next(&unit, command),
+                format!("Fix the unit test tests::fails, then run: watane-dev {command} --json")
+            );
+            assert_eq!(
+                failed_test_next(&limit_errors, command),
+                format!("Fix the unit test tests::endless, then run: watane-dev {command} --json")
+            );
+            assert_eq!(
+                failed_test_next(std::slice::from_ref(&contract), command),
+                format!(
+                    "Fix tests/counter.json step 2 (api.get), then run: watane-dev {command} --json"
+                )
+            );
+            assert_eq!(
+                failed_test_next(
+                    &[Problem::new(Code::ModInvalid, "bad").fix("Correct the mod")],
+                    command
+                ),
+                "Correct the mod"
+            );
+            assert_eq!(
+                failed_test_next(&[Problem::new(Code::BuildCompile, "bad")], command),
+                format!("watane-dev {command} --json")
+            );
+        }
+    }
+
+    #[test]
     fn ac6_publish_timeout_allows_each_foreign_provider_listing() {
         let mut providers = watane_pkg::Deps::default();
         let own: watane_pkg::PublisherKey = "y".repeat(52).parse().unwrap();
@@ -1064,7 +1150,7 @@ mod tests {
         std::fs::write(consumer.join("logic/build.rs"), "fn main() {}").unwrap();
         let tested = test_local(&consumer.canonicalize().unwrap());
         assert!(!tested.ok);
-        assert_eq!(tested.next.as_deref(), Some("watane-dev test --json"));
+        assert_eq!(tested.next.as_deref(), Some("Remove logic/build.rs"));
     }
 
     #[test]

@@ -150,7 +150,10 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
     assert_eq!(v["result"]["unit"]["failed"], 1);
     assert_eq!(v["result"]["unit"]["passed"], 0);
     assert_eq!(v["result"]["unit"]["not_run"], 3);
-    assert_eq!(v["next"], "watane-dev test --json");
+    assert_eq!(
+        v["next"],
+        "Fix the unit test fails_on_purpose, then run: watane-dev test --json"
+    );
 }
 
 #[test]
@@ -198,6 +201,10 @@ fn endless_limit(deadline: Duration) {
     assert_eq!(
         v["errors"][0]["message"],
         "unit tests stopped at endless after 2 s"
+    );
+    assert_eq!(
+        v["next"],
+        "Fix the unit test endless, then run: watane-dev test --json"
     );
 }
 

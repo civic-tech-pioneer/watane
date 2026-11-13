@@ -160,3 +160,59 @@ fn ac6_own_package_copy_in_wit_deps_gets_its_own_fix() {
         "Ask before deleting wit/deps/consumer/: a mod cannot depend on itself"
     );
 }
+
+#[test]
+fn ac7_deps_only_own_slug_never_suggests_importing_itself() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("consumer");
+    watane_dev::template::new_mod(&dir, "consumer").unwrap();
+    fs::remove_dir_all(dir.join("logic")).unwrap();
+    fs::write(
+        dir.join("wit/world.wit"),
+        "package mods:consumer@0.1.0; world consumer {}",
+    )
+    .unwrap();
+    fs::write(dir.join("deps.json"), r#"{"mods:consumer":null}"#).unwrap();
+    let (code, value) = run(&dir, &["check", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    let error = value["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["file"] == "deps.json")
+        .unwrap();
+    assert_eq!(
+        error["fix"],
+        "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself"
+    );
+}
+
+#[test]
+#[ignore = "needs watane-pkg; red: own-package violation must name a copied package under a different folder"]
+fn ac7_own_package_in_different_folder_names_actual_folder() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("consumer");
+    watane_dev::template::new_mod(&dir, "consumer").unwrap();
+    fs::create_dir_all(dir.join("wit/deps/renamed")).unwrap();
+    fs::copy(
+        dir.join("wit/world.wit"),
+        dir.join("wit/deps/renamed/world.wit"),
+    )
+    .unwrap();
+    let (code, value) = run(&dir, &["check", "--json"]);
+    assert_eq!(code, 1, "{value}");
+    let error = value["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["file"] == "wit/deps/renamed")
+        .unwrap_or_else(|| panic!("{value}"));
+    assert_eq!(
+        error["message"],
+        "[provider] wit/deps/renamed holds this mod's own package mods:consumer"
+    );
+    assert_eq!(
+        error["fix"],
+        "Ask before deleting wit/deps/renamed/: a mod cannot depend on itself"
+    );
+}

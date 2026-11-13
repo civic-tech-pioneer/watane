@@ -124,7 +124,10 @@ fn ac2_broken_add_reports_step_and_can_be_fixed() {
     ] {
         assert_eq!(failure[key], expected, "{v}");
     }
-    assert_eq!(v["next"], "watane-dev test --json");
+    assert_eq!(
+        v["next"],
+        "Fix the unit test tests::counts_up_and_stays_at_the_maximum, then run: watane-dev test --json"
+    );
     fs::write(path, original).unwrap();
     assert_eq!(f.run("test").0, 0);
 }
@@ -216,6 +219,22 @@ fn ac1_s11_fake_answers_provider_call() {
     assert_eq!(report.passed, 1);
     assert_eq!(report.failed, 0);
     assert!(report.failures.is_empty());
+}
+
+#[test]
+fn ac6_contract_recovery_names_file_step_and_call() {
+    let f = prebuilt_recommendations();
+    fs::write(
+        f.dir.join("tests/books.json"),
+        r#"{"steps":[{"call":"api.all","returns":["Dune"]}]}"#,
+    )
+    .unwrap();
+    let (_, errors) =
+        watane_dev::contract::contract_tests(&f.dir, &"recommendations".parse().unwrap()).unwrap();
+    assert_eq!(
+        errors[0].fix.as_deref(),
+        Some("Fix tests/books.json step 1 (api.all), then run: watane-dev test --json")
+    );
 }
 
 #[test]
