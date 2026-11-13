@@ -274,19 +274,18 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   line alone would do); `push_failed` doubles "remote: remote:" and keeps trailing whitespace; its
   fix and `next` carry the `-c http.lowSpeed*` flags, so they are noisy to run by hand; every
   `next` appends `--home <abs>` even when the home came from `WATANE_HOME`.
-- [~] **S49 The refusals say what is wrong (pkg, dist, log cleanup).** The leftovers from S11, S19,
-  S22, S35 and S46 that are message or behaviour defects in the three subsystems the cloud can
-  test. Outcomes. pkg: `mod.dependency_cycle` and `mod.self_dependency` carry a fix instead of
-  `fix: null`; a FIFO at `ui/extra` is refused by `Mod::read`, not only by `pack`; `wit/.hid/k`
-  names the rule that actually refused it; a linked `ui` reports one problem, not two; truncated
-  bytes read as bytes that ran out mid-value, and release errors strip "release" at the call site
-  rather than in `malformed()`. dist: a listing skipped as a local address says that (DD-26), not
-  "no listing names a base"; the no-hint error carries a fix; hint bases stop being read once a
-  trusted one has served; on a no-record cache path the link is the first base in trust order, not
-  the first that served. log: `Log::open` on a file says "not a directory", `Log::open("")` names
-  the empty path, and "bad backup: length" says how many bytes are expected. Touches: pkg, dist,
-  log (src, tests, TECHNICAL). Cloud: no app, no host, no `sandbox-exec`; shares no file with S42.
-  (branch `slice/s49`; foreman: see `Foremen`)
+- [x] **S49 The refusals say what is wrong (pkg, log cleanup).** Delivered 2026-11-13 from the
+  cloud (main `aa7b66b`, rebased by the product owner after S42); pkg, log and dist with
+  `--include-ignored` rerun on the Mac: green. User-sim accepted on the first run. A mod part that
+  is a symbolic link (`mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit`) gets exactly one
+  violation, rule `path`, and no second parts violation; release bytes that stop inside a value
+  read "found <type> cut short by the end of input"; the log says "not a directory", names an
+  empty path, and says a backup must be 108 bytes and how many came. Nine of the thirteen sketched
+  outcomes were already delivered (S23, S45, S46, S48), so the dist task fell away: see `Friction`.
+  Left for later (user-sim): `NotPlain` still adds "(a symbolic link is refused)" for a plain file;
+  a bad backup magic shows U+FFFD; `Mod::read` and `pack` word a FIFO or link differently; dist
+  does not try the next base when a mirror answers 404 for the package; by DD-33 the cache-path
+  link can still point at a dead base.
 - [ ] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
   package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
@@ -388,7 +387,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S41: cloud routine `trig_01U3nwcKTu8tAJq5owM9wKqg` (done).
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
-- S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6`.
+- S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -817,6 +816,10 @@ The human may veto each one.
 - S49: 9 of the 13 outcomes the product owner sketched were already delivered (S23, S45, S46, S48),
   and the dist task fell away entirely. A sketch built from `Left for later` notes cites the slice
   that has since fixed each note, so the foreman can check it against main instead of trusting it.
+- S49 (merge): `cargo test -p watane-pkg -- --include-ignored` fails about as often as it passes.
+  `support/release.rs` carries an `#[ignore]` test that rewrites the committed fixtures in place, and
+  it is compiled into six test binaries, so it races the tests reading those fixtures. Run pkg's
+  ignored tests with `--test-threads=1`, or move the regenerator out of the test binaries.
 
 ## Digest
 
