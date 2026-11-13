@@ -15,6 +15,7 @@ impl SearchQuery {
     pub fn parse(self) -> Result<Query, CmdError> {
         Ok(Query {
             text: self.text,
+            origin: None,
             publisher: self
                 .publisher
                 .map(|p| {

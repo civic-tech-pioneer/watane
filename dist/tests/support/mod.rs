@@ -89,6 +89,7 @@ pub struct TestHost {
     pub url: String,
     pub mode: std::sync::Arc<Mutex<Mode>>,
     pub requests: std::sync::Arc<Mutex<Vec<String>>>,
+    pub request_times: std::sync::Arc<Mutex<Vec<std::time::Instant>>>,
     server: std::sync::Arc<tiny_http::Server>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
@@ -100,6 +101,8 @@ impl TestHost {
         let url = format!("http://{}/", server.server_addr());
         let mode = std::sync::Arc::new(Mutex::new(Mode::Files));
         let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let request_times = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let times = request_times.clone();
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (s, m, r, quit) = (server.clone(), mode.clone(), requests.clone(), stop.clone());
         let dir = dir.to_owned();
@@ -109,6 +112,7 @@ impl TestHost {
                     continue;
                 };
                 r.lock().unwrap().push(req.url().into());
+                times.lock().unwrap().push(std::time::Instant::now());
                 let mode = m.lock().unwrap().clone();
                 match mode {
                     Mode::Files => {
@@ -138,6 +142,7 @@ impl TestHost {
             url,
             mode,
             requests,
+            request_times,
             server,
             stop,
             worker: Some(worker),
@@ -256,5 +261,26 @@ pub fn interface_fixture(kind: &str, publisher: watane_dist::PublicKey) -> Vec<u
         tmp.path().join("logic.wasm"),
     )
     .unwrap();
+    watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
+}
+
+#[allow(dead_code)]
+pub fn origin_fixture(
+    slug: &str,
+    version: &str,
+    origin: Option<&watane_dist::ReleaseRef>,
+) -> Vec<u8> {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_fixture("reading-list", tmp.path());
+    std::fs::write(
+        tmp.path().join("wit/world.wit"),
+        format!("package mods:{slug}@{version}; world app {{}}"),
+    )
+    .unwrap();
+    let mut meta = format!("name = {slug:?}\nsummary = \"Derived mod.\"\n");
+    if let Some(origin) = origin {
+        meta.push_str(&format!("[origin]\nrelease = \"{origin}\"\n"));
+    }
+    std::fs::write(tmp.path().join("mod.toml"), meta).unwrap();
     watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
 }

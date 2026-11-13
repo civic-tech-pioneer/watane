@@ -53,7 +53,7 @@ pub enum DistError {
     OwnChannel,
     #[error("this link is not your channel: found {}", found.fingerprint())]
     NotOwnLink { found: PublicKey },
-    #[error("channel {} is not followed", channel.fingerprint())]
+    #[error("channel {} is not followed; no followed channel, chosen index or listing names a base for it", channel.fingerprint())]
     NotFollowed { channel: PublicKey },
     #[error("channel {} compromised at seq {seq}", channel.fingerprint())]
     Compromised { channel: PublicKey, seq: u64 },

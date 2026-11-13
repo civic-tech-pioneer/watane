@@ -9,6 +9,7 @@ use watane_pkg::{Grant, InterfaceName};
 pub struct Query {
     pub text: String,
     pub publisher: Option<PublicKey>,
+    pub origin: Option<(PublicKey, Slug)>,
     pub interface: Option<InterfaceQuery>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,6 +163,13 @@ impl Dist {
             else {
                 continue;
             };
+            if query.origin.as_ref().is_some_and(|(publisher, slug)| {
+                info.release.origin.as_ref().is_none_or(|origin| {
+                    origin.publisher.as_bytes() != publisher.as_bytes() || origin.slug != *slug
+                })
+            }) {
+                continue;
+            }
             let interfaces = interfaces(&info.release);
             if query
                 .interface

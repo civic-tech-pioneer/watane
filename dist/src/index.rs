@@ -531,7 +531,7 @@ impl Walk {
     }
 }
 
-fn local_base(base: &str) -> bool {
+pub(crate) fn local_base(base: &str) -> bool {
     fn local_v4(ip: std::net::Ipv4Addr) -> bool {
         ip.is_loopback() || ip.is_unspecified() || ip.is_private() || ip.is_link_local()
     }

@@ -364,6 +364,7 @@ pub enum Change {
 }
 #[derive(Debug)]
 pub struct Fetched {
+    pub link: Option<Link>,
     pub package: Package,
     pub entry: Entry,
     pub info: ReleaseInfo,

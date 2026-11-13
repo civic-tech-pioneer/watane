@@ -190,7 +190,7 @@ impl Dist {
         }
         result
     }
-    fn read_channel_entries(
+    pub(crate) fn read_channel_entries(
         &self,
         key: PublicKey,
         base: &str,

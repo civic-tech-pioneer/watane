@@ -40,6 +40,153 @@ impl Dist {
 
 impl Dist {
     pub fn fetch(&self, reference: &ReleaseRef) -> Result<Fetched, DistError> {
+        self.fetch_for(reference, None)
+    }
+    pub fn fetch_for(
+        &self,
+        reference: &ReleaseRef,
+        consumer: Option<&PublicKey>,
+    ) -> Result<Fetched, DistError> {
+        let key = PublicKey::from_bytes(reference.publisher.as_bytes()).map_err(|cause| {
+            DistError::BadKey {
+                key: reference.publisher.clone(),
+                cause,
+            }
+        })?;
+        let _guard = self
+            .read_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let view = self.channel(&key)?;
+        Self::check_channel(&view)?;
+        let record = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+            .cloned();
+        let stored = view.releases.iter().any(|r| r.reference == *reference);
+        let base = if key == self.identity() {
+            None
+        } else if record
+            .as_ref()
+            .is_none_or(|r| !r.followed && !r.index && !stored)
+        {
+            let bases = self.provider_bases(key, consumer)?;
+            if bases.is_empty() {
+                return Err(DistError::NotFollowed { channel: key });
+            }
+            let mut served = None;
+            let mut failure = None;
+            for base in &bases {
+                match self.read_channel_entries(key, base, true) {
+                    Ok(RefreshReport {
+                        outcome: Outcome::Compromised { seq },
+                        ..
+                    }) => {
+                        return Err(DistError::Compromised { channel: key, seq });
+                    }
+                    Ok(RefreshReport {
+                        outcome: Outcome::Failed { cause },
+                        ..
+                    })
+                    | Err(cause) => {
+                        if failure.is_none() {
+                            failure = Some(cause);
+                        }
+                    }
+                    Ok(_) => {
+                        if served.is_none() {
+                            served = Some(base.clone());
+                        }
+                    }
+                }
+            }
+            if served.is_none() && !stored {
+                return Err(failure.expect("every provider base failed"));
+            }
+            Some(served.unwrap_or_else(|| bases[0].clone()))
+        } else {
+            let record = record.expect("record selected");
+            if !record.followed && !record.index {
+                self.check_listed_base(&record.base)?;
+            }
+            Some(record.base)
+        };
+        self.fetched(reference, base.as_deref())
+    }
+
+    fn check_channel(view: &ChannelView) -> Result<(), DistError> {
+        if let Status::Compromised { seq } = view.status {
+            return Err(DistError::Compromised {
+                channel: view.channel,
+                seq,
+            });
+        }
+        Ok(())
+    }
+
+    fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
+        if !self.options.listed_local && index::local_base(base) {
+            return Err(DistError::BadUrl {
+                url: base.into(),
+                cause: "local address",
+            });
+        }
+        Ok(())
+    }
+
+    fn provider_bases(
+        &self,
+        wanted: PublicKey,
+        consumer: Option<&PublicKey>,
+    ) -> Result<Vec<String>, DistError> {
+        let records = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let mut channels = vec![self.identity()];
+        channels.extend(consumer.copied());
+        for class in 0..3 {
+            channels.extend(
+                records
+                    .iter()
+                    .filter(|(_, r)| match class {
+                        0 => r.followed,
+                        1 => r.index,
+                        _ => !r.followed && !r.index,
+                    })
+                    .map(|(key, _)| *key),
+            );
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut bases = Vec::new();
+        for key in channels {
+            if !seen.insert(key)
+                || matches!(self.log.status(&key)?, watane_log::Status::Compromised(_))
+            {
+                continue;
+            }
+            let view = view::derive(key, &self.log.entries(&key, 0, usize::MAX)?);
+            for listing in view
+                .listings
+                .iter()
+                .filter(|l| l.unlisted.is_none() && l.listing.link.channel() == wanted)
+            {
+                let base = listing.listing.link.base();
+                if self.check_listed_base(base).is_ok() && !bases.iter().any(|b| b == base) {
+                    bases.push(base.to_owned());
+                    if bases.len() == 4 {
+                        return Ok(bases);
+                    }
+                }
+            }
+        }
+        Ok(bases)
+    }
+
+    fn fetched(&self, reference: &ReleaseRef, base: Option<&str>) -> Result<Fetched, DistError> {
         let key = PublicKey::from_bytes(reference.publisher.as_bytes()).map_err(|cause| {
             DistError::BadKey {
                 key: reference.publisher.clone(),
@@ -47,9 +194,7 @@ impl Dist {
             }
         })?;
         let view = self.channel(&key)?;
-        if let Status::Compromised { seq } = view.status {
-            return Err(DistError::Compromised { channel: key, seq });
-        }
+        Self::check_channel(&view)?;
         let info = view
             .releases
             .into_iter()
@@ -63,9 +208,12 @@ impl Dist {
                 reason: withdrawn.reason.clone(),
             });
         }
-        let package = self.fetch_package(&info, view.base.as_deref().filter(|_| view.followed))?;
+        let package = self.fetch_package(&info, base)?;
         let entry = self.log.entries(&key, info.seq, 1)?.remove(0);
         Ok(Fetched {
+            link: base
+                .map(|b| Link::new(key, b, Some(&reference.slug)))
+                .transpose()?,
             package,
             entry,
             info,
@@ -131,6 +279,47 @@ impl Dist {
             .map_err(|cause| DistError::PackageMismatch { url, cause })?;
         self.cache_write(&package)?;
         Ok(package)
+    }
+    pub fn read_link(&self, link: &Link) -> Result<Fetched, DistError> {
+        let slug = link.slug().ok_or(DistError::BadLink {
+            cause: "a release link needs a slug",
+        })?;
+        let key = link.channel();
+        let _guard = self
+            .read_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self::check_channel(&self.channel(&key)?)?;
+        let record = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(&key);
+        if key != self.identity() {
+            if record {
+                // Like open_link, a failed refresh can still use a verified stored release.
+                self.read_record(key)?;
+            } else {
+                self.check_listed_base(link.base())?;
+                match self.read_channel_entries(key, link.base(), true)?.outcome {
+                    Outcome::Failed { cause } => return Err(cause),
+                    Outcome::Compromised { seq } => {
+                        return Err(DistError::Compromised { channel: key, seq });
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let info = self
+            .latest(&key, slug)?
+            .ok_or_else(|| DistError::NoRelease {
+                channel: key,
+                slug: slug.clone(),
+            })?;
+        self.fetched(
+            &info.reference,
+            (key != self.identity()).then_some(link.base()),
+        )
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
         let slug = link.slug().ok_or(DistError::BadLink {

@@ -427,3 +427,40 @@ fn ac6_search_distinct_indexes_and_included_provenance() {
         ]
     );
 }
+
+#[test]
+fn ac8_search_origin() {
+    let alice = SearchHome::new("Alice");
+    let carol = SearchHome::new("Carol");
+    let eve = SearchHome::new("Eve");
+    for version in ["0.1.0", "0.2.0"] {
+        alice
+            .dist
+            .publish(origin_fixture("reading-list", version, None))
+            .unwrap();
+    }
+    let origin = reference(&alice, "reading-list", "0.1.0").parse().unwrap();
+    carol
+        .dist
+        .publish(origin_fixture("ratings", "0.1.0", Some(&origin)))
+        .unwrap();
+    eve.dist.follow(&alice.link(None)).unwrap();
+    eve.dist.follow(&carol.link(None)).unwrap();
+    let query = Query {
+        origin: Some((alice.dist.identity(), "reading-list".parse().unwrap())),
+        ..Default::default()
+    };
+    assert_eq!(
+        refs(&eve.dist.search(&query).unwrap()),
+        [reference(&carol, "ratings", "0.1.0")]
+    );
+    assert!(
+        eve.dist
+            .search(&Query {
+                origin: Some((alice.dist.identity(), "other".parse().unwrap())),
+                ..query
+            })
+            .unwrap()
+            .is_empty()
+    );
+}
