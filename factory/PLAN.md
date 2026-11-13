@@ -235,6 +235,17 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   refusal and nothing below is read; every walk lists and stats through no-follow directory
   handles (20,000 swaps leaked nothing). Its spec lines are in pkg TECHNICAL 4.7, 6.4 and 7.2. Left for later: a linked `ui` reports two problems;
   `add.rs` (add_provider) keeps the check-then-read gap; mid-swap errors are plain I/O text.
+- [~] **S48 Dist and host leftovers (cloud).** Story: Eve follows, unfollows and installs with
+  mirrors and several fitting mods, and every message names people the same way and gives a next
+  step. Outcomes: unfollowing a never-followed channel says it was not followed; a stale first base
+  (a mirror at Current without the release) makes dist read the next base, not answer "unknown
+  release"; host names a provider's publisher by fingerprint, as dist does, and candidates sort
+  naturally (shelf-2 before shelf-10); the host `api::ac5_extra_api...` flake is gone (the guard
+  answers without a broken pipe, or the test sends the guarded requests with a small body); dist
+  TECHNICAL 3.1 and 5.11 step 4 and host TECHNICAL 2.2 show S45's variant shapes. Touches: dist,
+  host (src, tests, TECHNICAL). Not app, dev or pkg. The product owner runs host's IPv6 tests on
+  the Mac. (cloud routine: see `Foremen`)
+
 Step 6 (Share on GitHub; asked for by the human, spec main `9473180`, W29, W30). Starts after step 5
 is done. Journey tests use a local bare git repository and a fake `gh` on PATH in place of GitHub.
 
