@@ -380,6 +380,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S40 (the human, 2026-11-13): step 6 uses real GitHub forks. `new --from` clones and verifies
+  (no gh); the derived mod's first `publish --push` runs `gh repo fork`, pushes to its own default
+  branch; S40's own-repository path stays as the fallback (fork exists, upstream gone, no upstream).
 - S39: app 503 `unavailable` -> `env.host_not_running` (exit 3); other app 5xx -> new `host.failed`
   (Refused, exit 4); 4xx stays `host.refused`. Every 10.1 answer check -> `host.refused [bad_answer]`
   with an "update the watane app" fix. dev maps pkg's "defined in two locations" for its own
