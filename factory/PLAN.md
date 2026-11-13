@@ -286,7 +286,7 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   a bad backup magic shows U+FFFD; `Mod::read` and `pack` word a FIFO or link differently; dist
   does not try the next base when a mirror answers 404 for the package; by DD-33 the cache-path
   link can still point at a dead base.
-- [ ] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
+- [~] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
   package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
   Outcome: `app/tests/j5.rs::ac2_j5_github` passes; a tampered remote falls back with a warning.
@@ -388,6 +388,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
+- S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43`.
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
