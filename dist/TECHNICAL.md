@@ -725,8 +725,10 @@ small, and one derivation keeps one rule.
 
 1. `channel = PublicKey::from_bytes(reference.publisher.as_bytes())`
    (`BadKey`). `log.status(&channel)` compromised: `Compromised`.
-   Step 5: a channel that is not the own one and has no record is read
+   Step 5: a channel that is not the own one, and that has no record or
+   only a listed record whose stored view lacks this release, is read
    first from its provider bases (5.11), so that step 2 sees its entries.
+   That read changes no record (a listed record keeps its bases and times).
 2. Derive the view. The release statement with this slug and version (rule
    4 of 4.1: at most one): none gives `UnknownRelease`; withdrawn gives
    `Withdrawn { reason }`.
@@ -734,8 +736,8 @@ small, and one derivation keeps one rule.
    `release.package`, use it (no request). If it differs, delete the file.
 4. Else the channel must have a record in `follows.json` (followed, a
    chosen index, or listed), or a provider base (5.11; step 5); else
-   `NotFollowed`. GET the package from the record's `base`, or from the
-   provider base that served the highest head, with its limit
+   `NotFollowed`. GET the package from the base of 5.11 step 5 when step 1
+   read provider bases and one served, else from the record's `base`, with its limit
    (`release.size`, at most `max_package`) and timeout.
 5. `PackageId::of(&bytes) != release.package`: `HashMismatch`.
 6. `Package::from_bytes`, then `unpacked` (`BadPackage`).
