@@ -178,6 +178,27 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   9.4, 9.7, the pick request; `tests/build_on.rs`, `tests/j5.rs`. J5 calls dev commands from S36:
   build `tests/j5.rs` last, and rebase on main once S36 has merged. Touches: app; dist only for the app's
   `origin` filter. Not dev (S36).
+- [ ] **S39 Eve's agent recovers from every error alone (dev cleanup).** Story: Eve's coding agent
+  hits each error below, follows only the result's `fix` and `next`, and ends with a working mod;
+  no step needs the agent to read dev's code or guess. Outcomes (user-sim, real `watane-dev` against
+  `fake-watane` and a real `watane --home`):
+  1. `store` is crash-safe: a provider folder is unpacked to a temp name and renamed, so a killed
+     `add --release` leaves no half folder that a rerun reuses.
+  2. Each fix names the real next action: an unknown link says to check the link (not "the app"); a
+     Watane-Release mismatch is not `internal`; install's missing_providers fix carries the stored
+     link; app 5xx and 503 are not `host.refused` with a generic fix; after a failed test or serve,
+     `next` names the failing test, not a plain rerun; the self-dependency fix stops offering
+     "Import the provider's interface".
+  3. Paths read the same everywhere: `dir` and `next` both canonical (`/private/tmp`), also for
+     the default home and the `version_exists` rerun; `--home x/../h` with a missing x names the path.
+  4. `new --from` writes the new mod's own `name` and copies no built `logic.wasm`; an own-package
+     copy under another folder name and a deps.json-only self entry get the own-package message.
+  5. `fake-watane --help` prints help; a missing fetch package file is a 409, not an exit; text mode
+     prints an argument error with its message, not `: failed`.
+  Touches: `dev/` only (src, bin/fake-watane, tests, TECHNICAL; template only if a fix text lives
+  there). Not app, dist, host or pkg (S37 holds app and dist). Fakes: `fake-watane` as now. Leaves
+  out: the app's raw keys and doubled texts (an app slice after S37), dist and host message debt.
+  Cut into 2 tasks: (1) store, fix and next texts; (2) paths, `new --from`, fake-watane, text mode.
 - [x] **S38 Network tests hold under load.** Delivered 2026-11-13 (main `0c9018a`). Sol runs: S38-1 1.
   `fast_options()` uses 10 s entry and package timeouts; only `fetch.rs` ac9 keeps a 300 ms package
   timeout. 5 of 5 parallel runs passed at load average 19 to 38. Left for later: ac9's 300 ms also
