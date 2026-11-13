@@ -16,13 +16,7 @@ const USAGE: &str = "Usage: fake-watane --preview <dir> | --home <dir>
 
 fn installed(folder: &Path, port: u16) -> Result<InstalledMod, Box<dyn std::error::Error>> {
     let m = Mod::read(folder)?;
-    let local = LocalName::parse(
-        folder
-            .file_name()
-            .ok_or("folder has no name")?
-            .to_str()
-            .ok_or("non-UTF8 folder")?,
-    )?;
+    let local = LocalName::parse(m.slug().as_str())?;
     Ok(InstalledMod {
         identity: format!("local/{}", m.slug()),
         slug: m.slug().clone(),
@@ -128,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if request.method() != &tiny_http::Method::Post
             || !matches!(
                 path.as_str(),
-                "/api/install" | "/api/publish" | "/api/search"
+                "/api/install" | "/api/publish" | "/api/search" | "/api/fetch"
             )
         {
             request.respond(Response::from_string("{}").with_status_code(404))?;
@@ -143,6 +137,59 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .join(format!("{count}-{}", path.trim_start_matches("/api/"))),
             &body,
         )?;
+        if path == "/api/fetch" {
+            let asked: Value = serde_json::from_slice(&body)?;
+            let key = asked["link"]
+                .as_str()
+                .or_else(|| asked["release"].as_str())
+                .unwrap_or_default();
+            if let Some(entry) = config["fetch"].get(key) {
+                let bytes = fs::read(entry["package"].as_str().ok_or("missing package path")?)?;
+                let id = watane_pkg::PackageId::of(&bytes);
+                request.respond(
+                    Response::from_data(bytes)
+                        .with_header(
+                            tiny_http::Header::from_bytes(
+                                "Content-Type",
+                                "application/octet-stream",
+                            )
+                            .unwrap(),
+                        )
+                        .with_header(
+                            tiny_http::Header::from_bytes(
+                                "Watane-Release",
+                                entry["release"].as_str().ok_or("missing release")?,
+                            )
+                            .unwrap(),
+                        )
+                        .with_header(
+                            tiny_http::Header::from_bytes("Watane-Package", id.to_string())
+                                .unwrap(),
+                        ),
+                )?;
+            } else {
+                request.respond(
+                    Response::from_string(
+                        json!({"error":{"code":"fetch_refused","message":"unknown release"}})
+                            .to_string(),
+                    )
+                    .with_status_code(409),
+                )?;
+            }
+            continue;
+        }
+        if path == "/api/publish"
+            && let Some(header) = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Watane-Provider-Links"))
+        {
+            fs::write(
+                home.join("requests")
+                    .join(format!("{count}-provider-links")),
+                header.value.as_str(),
+            )?;
+        }
         let (status, value) = if path == "/api/search" {
             (
                 config["search_status"].as_u64().unwrap_or(200) as u16,
@@ -177,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     fs::write(home.join("releases.json"), serde_json::to_vec(&releases)?)?;
                     (
                         200,
-                        json!({"release":release, "seq":seq, "site":home.join("site"), "link":link}),
+                        json!({"release":release, "seq":seq, "site":home.join("site"), "link":link, "providers":config.get("providers").cloned().unwrap_or_else(|| json!([]))}),
                     )
                 }
                 Err(e) => (

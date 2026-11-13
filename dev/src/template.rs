@@ -78,6 +78,13 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
         files: FILES.iter().map(|(name, _)| (*name).to_string()).collect(),
     })
 }
+/// Install dev-owned instructions alongside a release's data.
+pub fn write_guides(dir: &Path, slug: &Slug) -> Result<(), Problem> {
+    for (name, text) in &FILES[..3] {
+        fs::write(dir.join(name), render(text, slug)).map_err(Problem::internal)?;
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;

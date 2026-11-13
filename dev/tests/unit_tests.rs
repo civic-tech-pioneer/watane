@@ -154,16 +154,42 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
 }
 
 #[test]
+fn ac11_endless_test_stops_with_exact_message() {
+    endless_limit(Duration::from_secs(60));
+}
+
+#[test]
 #[ignore = "timing: run on a quiescent machine, see factory/README.md"]
 fn ac10_endless_test_stops_with_exact_message_within_deadline() {
+    endless_limit(Duration::from_secs(7));
+}
+
+fn endless_limit(deadline: Duration) {
     let f = Fixture::new();
     // Warm the build cache before timing the endless test, so this measures execution.
     assert_eq!(output(&mut f.command("test")).0, 0);
     f.source("#[test]\nfn endless() { loop {} }");
     let started = Instant::now();
-    let (status, v) = output(f.command("test").env("WATANE_DEV_UNIT_SECONDS", "2"));
+    let mut child = f
+        .command("test")
+        .env("WATANE_DEV_UNIT_SECONDS", "2")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    while child.try_wait().unwrap().is_none() {
+        if started.elapsed() > Duration::from_secs(60) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("endless test exceeded 60 s hang guard");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().unwrap();
+    let status = out.status.code().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(
-        started.elapsed() < Duration::from_secs(7),
+        started.elapsed() < deadline,
         "elapsed: {:?}; {v}",
         started.elapsed()
     );

@@ -3,6 +3,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(into = "&'static str")]
 pub enum Code {
+    UsageNoSource,
+    ModReleaseProviderMissing,
+    PublishProviderUnlisted,
     UsageArgs,
     UsageNotAMod,
     UsageSlug,
@@ -42,6 +45,9 @@ pub enum Code {
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::UsageNoSource => "usage.no_source",
+            Self::ModReleaseProviderMissing => "mod.release_provider_missing",
+            Self::PublishProviderUnlisted => "publish.provider_unlisted",
             Self::UsageArgs => "usage.args",
             Self::UsageNotAMod => "usage.not_a_mod",
             Self::UsageSlug => "usage.slug",
@@ -81,8 +87,9 @@ impl Code {
     }
     pub fn class(self) -> Class {
         match self {
-            Self::PreviewPrevious => Class::Warning,
-            Self::UsageArgs
+            Self::PreviewPrevious | Self::PublishProviderUnlisted => Class::Warning,
+            Self::UsageNoSource
+            | Self::UsageArgs
             | Self::UsageNotAMod
             | Self::UsageSlug
             | Self::UsageExists
@@ -93,7 +100,8 @@ impl Code {
             | Self::EnvToolchain
             | Self::EnvNoWasmTarget
             | Self::EnvAllowlist => Class::Env,
-            Self::PublishVersionExists
+            Self::ModReleaseProviderMissing
+            | Self::PublishVersionExists
             | Self::PublishLocalDependency
             | Self::ModInvalid
             | Self::ModSelfDependency

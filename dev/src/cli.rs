@@ -27,7 +27,12 @@ pub enum Command {
     /// Create a mod from the counter template
     New {
         /// Lowercase mod slug, such as reading-list
-        slug: String,
+        #[arg(required_unless_present = "from")]
+        slug: Option<String>,
+        #[arg(long, help = "Create from the source of a published mod link")]
+        from: Option<String>,
+        #[arg(long, requires = "from", help = "Home of the running watane app")]
+        home: Option<PathBuf>,
     },
     /// Check the mod layout, WIT and builder constraints
     Check,
@@ -38,7 +43,12 @@ pub enum Command {
     /// Add a local provider and report its WIT imports
     Add {
         /// Folder of the provider mod
-        provider: PathBuf,
+        #[arg(required_unless_present = "release", conflicts_with = "release")]
+        provider: Option<PathBuf>,
+        #[arg(long, help = "Published provider link or ReleaseRef")]
+        release: Option<String>,
+        #[arg(long, requires = "release", help = "Home of the running watane app")]
+        home: Option<PathBuf>,
     },
     /// Test local mods and ask the person to install them in their app
     Install {
@@ -101,8 +111,22 @@ pub fn run(cli: Cli) -> Outcome {
     {
         return search(&text, publisher.as_deref(), interface.as_deref(), home);
     }
+    if let Command::New {
+        slug,
+        from: Some(target),
+        home,
+    } = &cli.command
+    {
+        return derive(
+            cli.dir.as_deref(),
+            slug.as_deref(),
+            target,
+            home.clone(),
+            &cwd,
+        );
+    }
     let dir = cli.dir.unwrap_or_else(|| match &cli.command {
-        Command::New { slug } => cwd.join(slug),
+        Command::New { slug, .. } => cwd.join(slug.as_deref().expect("clap requires a slug")),
         _ => cwd.clone(),
     });
     let dir = if dir.is_absolute() {
@@ -120,7 +144,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
         Command::Publish { no_source, home, wait } => return publish(&dir, no_source, home, wait),
-        Command::New { slug } => template::new_mod(&dir, &slug)
+        Command::New { slug, .. } => template::new_mod(&dir, slug.as_deref().expect("clap requires a slug"))
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
@@ -142,7 +166,17 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Test => {
             return test(&dir);
         }
-        Command::Add { provider } => deps::add_local(&dir, &provider)
+        Command::Add { release: Some(target), home, .. } => {
+            let result = (|| {
+                let home = app_home(home)?;
+                let client = crate::api::Client::for_app(&home).map_err(|e|vec![e])?;
+                let env = Env::from_process().map_err(|e|vec![e])?;
+                crate::build_on::add_release(&dir, &target, &client, &env)
+            })();
+            outcome.next = Some("Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves. Contract tests use a fake of it (see AGENTS.md).".into());
+            result
+        }
+        Command::Add { provider, .. } => deps::add_local(&dir, provider.as_deref().expect("clap requires a provider"))
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
                 outcome.dir = dir.canonicalize().ok();
@@ -200,6 +234,67 @@ pub fn run(cli: Cli) -> Outcome {
     }
 }
 
+fn is_cached_provider(dir: &Path) -> bool {
+    Env::from_process().is_ok_and(|env| dir.starts_with(env.cache.join("providers")))
+}
+
+fn derive(
+    destination: Option<&Path>,
+    slug: Option<&str>,
+    target: &str,
+    home: Option<PathBuf>,
+    cwd: &Path,
+) -> Outcome {
+    let mut outcome = Outcome::new("new", None);
+    let result = (|| {
+        if let Some(slug) = slug {
+            slug.parse::<watane_pkg::Slug>().map_err(|e|vec![Problem::new(crate::outcome::Code::UsageSlug,format!("{slug:?} is not a valid slug: {e}")).fix("Use lowercase words of letters and digits joined by \"-\", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list")])?;
+        }
+        let destination = destination
+            .map(Path::to_path_buf)
+            .or_else(|| slug.map(|s| cwd.join(s)));
+        let destination = destination
+            .map(|p| resolved_path(&cwd.join(p)))
+            .transpose()
+            .map_err(|e| vec![Problem::internal(e)])?;
+        outcome.dir = destination.clone();
+        if let Some(dir) = &destination
+            && dir.symlink_metadata().is_ok()
+        {
+            return Err(vec![crate::build_on::exists(dir)]);
+        }
+        let home = app_home(home)?;
+        let client = crate::api::Client::for_app(&home).map_err(|e| vec![e])?;
+        let env = Env::from_process().map_err(|e| vec![e])?;
+        crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env)
+    })();
+    match result {
+        Ok(value) => {
+            let from = value["from_slug"].as_str().expect("from slug");
+            let slug = value["slug"].as_str().expect("slug");
+            outcome.dir = value["dir"].as_str().map(PathBuf::from);
+            outcome.next = Some(
+                if value["mentions"].as_array().is_some_and(|v| !v.is_empty()) {
+                    format!(
+                        "Replace {from} with {slug} (and {} with {}) at each result.mentions entry, then run: watane-dev test --json",
+                        from.replace('-', "_"),
+                        slug.replace('-', "_")
+                    )
+                } else {
+                    "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev test --json"
+                        .into()
+                },
+            );
+            outcome.result = Some(value);
+            outcome
+        }
+        Err(errors) => {
+            outcome.next = errors.first().and_then(|e| e.fix.clone());
+            outcome.fail(errors)
+        }
+    }
+}
+
 fn serve_next(result: &serde_json::Value, json: bool) -> Option<String> {
     if result["stopped"] == true {
         return Some(
@@ -230,6 +325,9 @@ fn test_local(dir: &Path) -> Outcome {
         Err(e) => return Outcome::new("test", Some(dir.to_path_buf())).fail(vec![e]),
     };
     for provider in order {
+        if provider != dir && is_cached_provider(&provider) {
+            continue;
+        }
         let mut tested = test(&provider);
         if !tested.ok {
             if provider != dir {
@@ -387,7 +485,11 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
             outcome.next = tested.next;
             return Err(tested.errors);
         }
-        let folders = deps::local_order(&dir).map_err(|e| vec![e])?;
+        let folders: Vec<_> = deps::local_order(&dir)
+            .map_err(|e| vec![e])?
+            .into_iter()
+            .filter(|p| !is_cached_provider(p))
+            .collect();
         let installed = client
             .install_wait(&folders, wait.unwrap_or(600))
             .map_err(|e| vec![e])?;
@@ -572,7 +674,18 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                     .fix("Fix the package contents, then run publish again"),
             ],
         })?;
-        let answer = client.publish(&package, std::time::Duration::from_secs(wait.unwrap_or(600)))
+        let config = deps::read_config(dir).map_err(|e| vec![e])?;
+        let links: Vec<_> = providers
+            .iter()
+            .filter_map(|(slug, _)| {
+                config
+                    .release_providers
+                    .get(slug.as_str())
+                    .and_then(|r| r.link.clone())
+            })
+            .collect();
+        let timeout = publish_timeout(&providers, &releases, wait.unwrap_or(600));
+        let answer = client.publish_with_links(&package, timeout, &links)
             .map_err(|mut e| {
                 if e.code == Code::HostDeclined {
                     let slug = deps::label(dir);
@@ -582,6 +695,18 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
                 outcome.next = e.fix.clone();
                 vec![e]
             })?;
+        let listed = answer
+            .get("providers")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
+        if let Some(providers) = listed.as_array() {
+            for provider in providers.iter().filter(|p| p["listed"] == false) {
+                let name = provider["provider"].as_str().unwrap_or_default();
+                let slug = deps::label(dir);
+                outcome.warnings.push(Problem::new(Code::PublishProviderUnlisted, format!("{name} is not listed in your channel, so people who install {slug} need a channel or an index that names where it is published"))
+                    .fix(format!("Ask the person to list {name} in their own index in the watane app")));
+            }
+        }
         outcome.next = Some(
             if answer["link"].is_null() {
                 "Set your site's URL in the watane app, then run publish again to get the link"
@@ -591,7 +716,7 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
             .into(),
         );
         Ok(
-            serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source()}),
+            serde_json::json!({"home": home, "release": answer["release"], "site": answer["site"], "link": answer["link"], "package": package.id(), "source": package.has_source(), "providers": listed}),
         )
     })();
     match result {
@@ -617,6 +742,24 @@ fn publish(dir: &Path, no_source: bool, home: Option<PathBuf>, wait: Option<u64>
     }
 }
 
+fn publish_timeout(
+    providers: &watane_pkg::Deps,
+    releases: &serde_json::Value,
+    wait: u64,
+) -> std::time::Duration {
+    let own_key = releases["releases"]
+        .as_array()
+        .and_then(|r| r.first())
+        .and_then(|r| r["release"].as_str())
+        .and_then(|r| r.split_once('/'))
+        .map(|(key, _)| key);
+    let foreign = providers
+        .iter()
+        .filter(|(_, p)| p.is_some_and(|p| Some(p.to_string()).as_deref() != own_key))
+        .count() as u64;
+    std::time::Duration::from_secs(wait.saturating_mul(1 + foreign))
+}
+
 fn install_next(installed: &[serde_json::Value]) -> Option<String> {
     installed
         .iter()
@@ -629,6 +772,27 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac6_publish_timeout_allows_each_foreign_provider_listing() {
+        let mut providers = watane_pkg::Deps::default();
+        let own: watane_pkg::PublisherKey = "y".repeat(52).parse().unwrap();
+        let other = watane_pkg::PublisherKey::from_bytes([1; 32]);
+        providers.set("ratings".parse().unwrap(), Some(other));
+        providers.set("tags".parse().unwrap(), Some(own.clone()));
+        assert_eq!(
+            publish_timeout(
+                &providers,
+                &json!({"releases":[{"release":format!("{own}/stats@0.1.0")}]}),
+                2
+            ),
+            std::time::Duration::from_secs(4)
+        );
+        assert_eq!(
+            publish_timeout(&providers, &json!({"releases":[]}), 2),
+            std::time::Duration::from_secs(6)
+        );
+    }
 
     #[test]
     fn ac3_only_search_hides_global_dir() {

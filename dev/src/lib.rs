@@ -1,5 +1,6 @@
 pub mod allowlist;
 pub mod api;
+pub mod build_on;
 pub mod builder;
 pub mod check;
 pub mod cli;

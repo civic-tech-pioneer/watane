@@ -135,7 +135,7 @@ fn approved(dir: &Path, home: &Path, number: usize, source: bool, slug: &str, ve
         "release":format!("{}/{slug}@{version}", "y".repeat(52)),
         "site":home.canonicalize().unwrap().join("site"),
         "link":format!("https://fake.invalid/#{slug}"),
-        "package":package.id().to_string(), "source":source})
+        "package":package.id().to_string(), "source":source, "providers":[]})
     );
     assert_eq!(value["next"], "Put the site folder on your static web host");
     if source && dir.join("logic/src").exists() {

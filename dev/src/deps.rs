@@ -18,19 +18,27 @@ pub struct AddReport {
 }
 
 #[derive(Default, Deserialize, Serialize)]
-struct Local {
+pub(crate) struct Local {
     #[serde(default)]
-    local_providers: BTreeMap<String, String>,
+    pub local_providers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub release_providers: BTreeMap<String, crate::build_on::ReleaseProvider>,
 }
-pub fn read_local(dir: &Path) -> Result<BTreeMap<String, String>, Problem> {
+pub(crate) fn read_config(dir: &Path) -> Result<Local, Problem> {
     let file = dir.join(".watane-dev.json");
     match fs::read(&file) {
         Ok(bytes) => serde_json::from_slice::<Local>(&bytes)
-            .map(|local| local.local_providers)
             .map_err(|e| Problem::internal(e).at(file.to_string_lossy(), None, None)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Local::default()),
         Err(e) => Err(Problem::internal(e).at(file.to_string_lossy(), None, None)),
     }
+}
+pub fn read_local(dir: &Path) -> Result<BTreeMap<String, String>, Problem> {
+    read_config(dir).map(|c| c.local_providers)
+}
+pub(crate) fn write_config(dir: &Path, config: &Local) -> Result<(), Problem> {
+    let text = serde_json::to_string_pretty(config).map_err(Problem::internal)?;
+    fs::write(dir.join(".watane-dev.json"), format!("{text}\n")).map_err(Problem::internal)
 }
 fn missing(slug: &str) -> Problem {
     Problem::new(
@@ -65,34 +73,62 @@ fn visit(
     stack: &mut Vec<PathBuf>,
     seen: &mut BTreeSet<PathBuf>,
     order: &mut Vec<PathBuf>,
+    inherited: &BTreeMap<String, crate::build_on::ReleaseProvider>,
 ) -> Result<(), Problem> {
     if seen.contains(dir) {
         return Ok(());
     }
     stack.push(dir.to_path_buf());
     let deps = Deps::read(dir).map_err(|e| crate::check::mod_problems(e).remove(0))?;
-    let local = read_local(dir)?;
+    let config = read_config(dir)?;
+    let mut records = inherited.clone();
+    records.extend(config.release_providers);
     for (slug, publisher) in deps.iter() {
-        if publisher.is_some() {
-            continue;
-        }
-        let path = local
-            .get(&slug.to_string())
-            .ok_or_else(|| missing(slug.as_str()))?;
-        let provider = dir
-            .join(path)
-            .canonicalize()
-            .map_err(|_| missing(slug.as_str()))?;
-        if !provider.join("mod.toml").is_file() {
-            return Err(missing(slug.as_str()));
-        }
+        let provider = if let Some(publisher) = publisher {
+            let release = crate::build_on::provider_release(dir, slug, publisher)?;
+            let missing = || {
+                Problem::new(
+                    Code::ModReleaseProviderMissing,
+                    format!("the provider {release} is not in the cache of watane-dev"),
+                )
+                .fix(format!(
+                    "Start the watane app, then run: watane-dev add --release {release}"
+                ))
+            };
+            let record = records
+                .get(slug.as_str())
+                .filter(|r| r.release == release)
+                .ok_or_else(missing)?;
+            let folder = crate::env::Env::from_process()?
+                .cache
+                .join("providers")
+                .join(record.package.to_string());
+            let m = Mod::read(&folder).map_err(|_| missing())?;
+            if m.slug() != slug || *m.version() != release.version {
+                return Err(missing());
+            }
+            folder
+        } else {
+            let path = config
+                .local_providers
+                .get(&slug.to_string())
+                .ok_or_else(|| missing(slug.as_str()))?;
+            let provider = dir
+                .join(path)
+                .canonicalize()
+                .map_err(|_| missing(slug.as_str()))?;
+            if !provider.join("mod.toml").is_file() {
+                return Err(missing(slug.as_str()));
+            }
+            provider
+        };
         if let Some(start) = stack.iter().position(|p| p == &provider) {
             return Err(cycle(&stack[start..], &provider).fix(format!(
                 "Remove mods:{slug} from deps.json and wit/deps/{slug}/ in {}",
                 dir.display()
             )));
         }
-        visit(&provider, stack, seen, order)?;
+        visit(&provider, stack, seen, order, &records)?;
     }
     stack.pop();
     seen.insert(dir.to_path_buf());
@@ -102,7 +138,13 @@ fn visit(
 pub fn local_order(dir: &Path) -> Result<Vec<PathBuf>, Problem> {
     let dir = dir.canonicalize().map_err(Problem::internal)?;
     let mut order = Vec::new();
-    visit(&dir, &mut Vec::new(), &mut BTreeSet::new(), &mut order)?;
+    visit(
+        &dir,
+        &mut Vec::new(),
+        &mut BTreeSet::new(),
+        &mut order,
+        &BTreeMap::new(),
+    )?;
     Ok(order)
 }
 fn relative(dir: &Path, provider: &Path) -> String {
@@ -153,6 +195,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         &mut vec![dir.clone()],
         &mut BTreeSet::new(),
         &mut Vec::new(),
+        &BTreeMap::new(),
     )
     .map_err(|e| {
         let e = if e.code == Code::ModDependencyCycle {
@@ -169,10 +212,10 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
     let path = relative(&dir, &provider);
     let mut local = read_local(&dir).map_err(|e| vec![e])?;
     local.insert(m.slug().to_string(), path.clone());
-    let mut text = serde_json::to_string_pretty(&Local {
-        local_providers: local,
-    })
-    .map_err(|e| vec![Problem::internal(e)])?;
+    let mut config = read_config(&dir).map_err(|e| vec![e])?;
+    config.local_providers = local;
+    config.release_providers.remove(m.slug().as_str());
+    let mut text = serde_json::to_string_pretty(&config).map_err(|e| vec![Problem::internal(e)])?;
     text.push('\n');
     watane_pkg::add_provider(&dir, &m, None).map_err(crate::check::mod_problems)?;
     fs::write(dir.join(".watane-dev.json"), text).map_err(|e| vec![Problem::internal(e)])?;

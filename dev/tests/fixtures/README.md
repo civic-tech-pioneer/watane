@@ -20,3 +20,12 @@ env -i PATH="$PATH" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
 cp /tmp/watane-s11-fixture-target/wasm32-wasip2/release/recommendations.wasm \
   tests/fixtures/recommendations/logic.wasm
 ```
+
+# Released ratings fixture
+
+`ratings/` is the unmodified counter template named `ratings`, built through
+`watane-dev test --json`. It keeps only the package files without source. To
+rebuild, run `watane-dev new ratings --dir /tmp/ratings`, then
+`watane-dev test --dir /tmp/ratings --json` and copy `mod.toml`, `wit/`, `ui/`
+and `logic.wasm` into `ratings/`. It exports `api.get`, `api.add` and
+`changes.counted`; all expectations are the literal template contract.

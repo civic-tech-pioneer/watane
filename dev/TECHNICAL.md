@@ -29,7 +29,7 @@ dev/
   src/unit.rs           build the unit tests; run them in Wasmtime
   src/contract.rs       the contract test file; run it on the host Harness
   src/json_eq.rs        equality of two JSON values for tests
-  src/deps.rs           `add <mod folder>`; .watane-dev.json; local providers in order
+  src/deps.rs           `add <mod folder>`; .watane-dev.json; local and released providers in order
   src/build_on.rs       step 5: `new --from`, `add --release`, released providers in the cache (10.1)
   src/api.rs            the local API client; find a running host
   src/preview.rs        `serve`; find the program `watane`
@@ -708,7 +708,7 @@ watane.on((message) => {
 The stream also dispatches `changed` when it opens, so no separate first
 read is needed (host 8.4–8.5).
 
-`template/AGENTS.md`: the guide for the coding agent, at most 150 lines,
+`template/AGENTS.md`: the guide for the coding agent, at most 143 lines,
 with these sections in this order (section 10 joins with its slice):
 1. **This folder**: a table of the files above and who edits each.
    `wit/deps/`, `deps.json` and `.watane-dev.json` are written by
@@ -1262,7 +1262,7 @@ next command and fixes of `serve`.
 3. Test the mod (sections 5 to 8). Failures send no publish request and
    retain the test pipeline's errors and `next`, as `install` does.
 4. `watane_pkg::pack(dir, !no_source)`: include source unless `--no-source`.
-5. `Client::publish(&package, wait)` posts to `/api/publish` with
+5. `Client::publish_with_links(&package, wait, &links)` posts to `/api/publish` with
    `Content-Type: application/octet-stream` and `Package::as_bytes()` as
    the body, using the proxy-free localhost transport of `install`.
    `--wait` defaults to 600 seconds. The app asks the participant, who sees
@@ -1271,7 +1271,11 @@ next command and fixes of `serve`.
    non-null `link` of each `release_providers` entry whose slug is a
    provider in `deps.json` (app 8.1), and the request timeout is `--wait`
    times (1 + the number of providers with another publisher's key), since
-   the app asks for the release and then for each listing. `dist` signs and writes the site folder. dev reports only
+   the app asks for the release and then for each listing. The own key is
+   inferred from `/api/releases` when it has a release; before the first
+   publication, count every published provider as potentially foreign, giving
+   enough time for every listing. `Client::publish` remains the no-links entry
+   point. `dist` signs and writes the site folder. dev reports only
    `home`, the answer's `release`, `site`, `link`, `package` (`Package::id()`)
    and `source` (`Package::has_source()`), as in 2.4, and step 5's `providers`.
 
@@ -1313,9 +1317,13 @@ transport, with a 330 s timeout (dist's package timeout plus 30 s). It
 reads at most `MAX_PACKAGE_BYTES` + 1 bytes (more is `host.refused`
 `[too_large]`). `Package::from_bytes` must accept the body and
 `PackageId::of(body)` must equal the `Watane-Package` header; else
-`internal`. The `Watane-Release` header parses as a `ReleaseRef` and must
+`internal`. The package's WIT slug and version must also match `Watane-Release`.
+The `Watane-Release` header parses as a `ReleaseRef` and must
 match the request: equal to the asked ReleaseRef, or with the key and
-slug of the asked link; else `internal`, and nothing is stored. dev trusts
+slug of the asked link; else `internal`, and nothing is stored. `Link` belongs to dist, which dev does
+not depend on: dev reads only the key between `watane:` and the first `@`,
+and the slug after the last `#`, to match `Watane-Release`; the app validates
+the link and answers 400 when it is invalid. dev trusts
 the app of its own home for the signature check (dist 5.7); it checks the
 bytes again because they cross a socket. Error answers are `host.refused`
 `[<code>] <message>`; a 400 gets the fix `Pass a mod link
@@ -1410,6 +1418,7 @@ error type. `Vec<Problem>` carries all errors of a stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(into = "&'static str")]
 pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
+    UsageNoSource, ModReleaseProviderMissing, PublishProviderUnlisted,
     EnvToolchain, EnvNoWasmTarget, EnvAllowlist, EnvWataneMissing, EnvPreviewStart,
     EnvHostNotRunning, ModInvalid, ModCargoKey, ModDependency, ModLogicFile, ModSymlink,
     ModNoContractTests, ModSelfDependency, ModDependencyCycle, ModProviderMissing,
@@ -1433,8 +1442,8 @@ impl Outcome { pub fn exit_code(&self) -> u8; pub fn to_json(&self) -> String; p
 
 // cli.rs (clap attributes left out)
 pub struct Cli { pub json: bool, pub dir: Option<PathBuf>, pub command: Command }
-pub enum Command { New { slug: String }, Check, Test, Serve { stop: bool }, Doctor,
-    Add { provider: PathBuf },
+pub enum Command { New { slug: Option<String>, from: Option<String>, home: Option<PathBuf> }, Check, Test, Serve { stop: bool }, Doctor,
+    Add { provider: Option<PathBuf>, release: Option<String>, home: Option<PathBuf> },
     Install { home: Option<PathBuf>, wait: Option<u64> },
     Publish { no_source: bool, home: Option<PathBuf>, wait: Option<u64> },
     Search { text: Vec<String>, publisher: Option<String>, interface: Option<String>, home: Option<PathBuf> } }
@@ -1448,6 +1457,7 @@ impl Env { pub fn from_process() -> Result<Env, Problem>; }
 #[derive(Serialize)] pub struct NewReport { pub slug: String, pub dir: PathBuf, pub files: Vec<String> }
 pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem>;
 pub fn render(text: &str, slug: &watane_pkg::Slug) -> String;
+pub fn write_guides(dir: &Path, slug: &watane_pkg::Slug) -> Result<(), Problem>;
 
 // S2 embeds its allowlist in check; the check entry point remains
 // check(dir: &Path) -> Result<(watane_pkg::Mod, CheckReport), Vec<Problem>>.
@@ -1517,17 +1527,28 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
 pub fn local_order(dir: &Path) -> Result<Vec<PathBuf>, Problem>;   // providers first, `dir` last
 pub fn read_local(dir: &Path) -> Result<BTreeMap<String, String>, Problem>;   // .watane-dev.json
 
+// build_on.rs
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ReleaseProvider { pub release: watane_pkg::ReleaseRef, pub package: watane_pkg::PackageId, pub link: Option<String> }
+pub fn provider_release(dir: &Path, slug: &watane_pkg::Slug, publisher: &watane_pkg::PublisherKey) -> Result<watane_pkg::ReleaseRef, Problem>;
+pub fn store(package: &watane_pkg::Package, env: &Env) -> Result<PathBuf, Problem>;
+pub fn fetch_providers(dir: &Path, client: &Client, env: &Env) -> Result<Vec<watane_pkg::ReleaseRef>, Vec<Problem>>;
+pub fn new_from(destination: Option<&Path>, slug: Option<&str>, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
+pub fn add_release(dir: &Path, target: &str, client: &Client, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
+
 // api.rs
 pub struct Client { /* base URL, ureq::Agent */ }
 impl Client {
     pub fn for_home(home: &Path) -> Result<Option<Client>, Problem>;   // None: no run.json or no answer
-    pub fn status(&self) -> Result<serde_json::Value, Problem>;
+    pub fn home_status(home: &Path) -> Option<serde_json::Value>;
     pub fn for_app(home: &Path) -> Result<Client, Problem>;   // 9.6: a home host with the app, else env.host_not_running
     pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem>;   // preview: 60 s
     pub fn install_wait(&self, folders: &[PathBuf], wait: u64) -> Result<Vec<InstalledMod>, Problem>;   // home: --wait seconds
     pub fn search(&self, text: &str, publisher: Option<&str>, interface: Option<&str>) -> Result<serde_json::Value, Problem>;   // POST /api/search, 30 s
     pub fn releases(&self) -> Result<serde_json::Value, Problem>;   // GET /api/releases, status timeout (2 s)
     pub fn publish(&self, package: &watane_pkg::Package, wait: Duration) -> Result<serde_json::Value, Problem>;
+    pub fn publish_with_links(&self, package: &watane_pkg::Package, wait: Duration, links: &[String]) -> Result<serde_json::Value, Problem>;
+    pub fn fetch(&self, target: &str) -> Result<(watane_pkg::ReleaseRef, watane_pkg::Package), Problem>;
 }
 
 // preview.rs
@@ -1650,9 +1671,10 @@ stop before compilation need no warmed cache. No product code changes.
 | contract | existing parse/run_steps tests, `ac3_single_event_equality_and_failure_payloads` | unit: literal returns, failures, events, short/full names, order, numeric equality, delivery and fakes |
 | preview | `ac4_mcp_from_literal_ready`, `ac6_serve_posts_all_folders_once_in_provider_order`, `ac7_previous_warning_requires_answering_preview_and_names_page` | unit: literal Ready/JSON, loopback server; no real host |
 | cli | existing provider-failure and next-page tests; `ac4_install_next_uses_last_available_page`, `ac7_install_help_and_default_wait`, `ac8_template_explains_home_install` | unit: absolute next/fixes, first failing provider, consumer page, install follow-up/help/guide |
-| api | `ac2_wrong_host_status`, `ac5_install_timeout_and_host_errors`, `ac5_install_timeout_in_response_body` | loopback unit: literal status and error answers, delayed headers and body |
+| api | `ac2_wrong_host_status`, `ac5_install_timeout_and_host_errors`, `ac5_install_timeout_in_response_body`, `ac7_missing_released_provider_names_app_install_fix`, `ac8_fetch_refuses_corrupt_headers_bytes_and_app_errors` | loopback unit: literal status and error answers, delayed headers and body |
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
+| build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -1678,7 +1700,7 @@ rules belong to 15.1.
 | DEV-S-13 | `builder::ac6_build_with_network_denied` → `ac6_build_counter_component` | slow; OS refusal permitted for nested sandbox |
 | DEV-S-14 | `unit_tests::ac4_unit_tests_have_no_files_environment_or_network`, `ac4_unit_host_imports_trap`; `unit::tests::ac3_unit_host_imports_are_unknown_import_traps` | integration, warm cache; slow Rust import wiring; unit trap |
 | DEV-S-15 | `unit_tests::ac2_panic_names_assert_and_counts_remaining_tests`; `unit::tests::ac3_panic_classification_counts_location_and_fix` | integration; unit |
-| DEV-S-16 | `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline`; `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | timing; unit classification |
+| DEV-S-16 | `unit_tests::ac11_endless_test_stops_with_exact_message` (default suite, exact status/code/message, 60 s hang guard); `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline` (7 s); `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | integration; timing; unit classification |
 | DEV-S-17 | `contract::ac3_each_contract_file_starts_from_fresh_state` (committed Wasm); `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file` (slow: full pipeline); `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
 | DEV-S-18 | `contract::ac1_s11_fake_answers_provider_call`, `ac1_s11_missing_fake_fails` | integration: committed Wasm fixture |
 | DEV-S-19 | `contract::ac2_s11_deliver_retains_state_and_emits`, `ac2_s11_deliver_compares_emitted_events`, `ac2_s11_deliver_rejects_non_subscription`; `contract::tests::ac4_run_steps_events_exact_order_names_and_failed_calls`, `ac3_single_event_equality_and_failure_payloads` | integration: prebuilt; unit |
@@ -1697,6 +1719,12 @@ rules belong to 15.1.
 | DEV-S-33 | `search::s33_results_pass_through` | integration against `fake-watane` |
 | DEV-S-34 | `search::s34_no_index_next` | integration against `fake-watane` |
 | DEV-S-32 | `envelope::ac8_json_argument_errors_use_envelope`, `check::ac2_check_counter_mod_and_rejections`; `outcome::tests::ac3_exit_classes_and_problem_envelope` | integration; unit all exit classes |
+| DEV-S-35 | `build_on::ac1_derive_source_guides_origin_mentions_and_default_slug` | integration: fake fetch, source package |
+| DEV-S-36 | `build_on::ac2_no_source_writes_nothing` | integration: no-source package |
+| DEV-S-37 | `build_on::ac3_exists_precedes_fetch_and_absent_app_writes_nothing` | integration: no build |
+| DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
+| DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
+| DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -1759,14 +1787,24 @@ proves both help flags and invalid invocations. It listens on
 (`{"watane":1,"pid","port","mode"}`), prints a ready line in the form of
 `watane_host::Ready` (token `wt_fake` in a preview, `null` in a home), and
 answers `GET /api/status` (`app: true` in a home), `GET /api/releases`, `POST /api/install` and
-`POST /api/publish` and `POST /api/search`. Search records its JSON body as
+`POST /api/publish`, `POST /api/search` and `POST /api/fetch`. Search records its JSON body as
 `<dir>/requests/<n>-search` and returns status 200 with `fake.json`'s `search`
 value unchanged when set (any JSON body), otherwise `{"indexes":0,"results":[]}`.
-Search ignores the consent `answer` setting. It stores each request body as
+Search ignores the consent `answer` setting. `POST /api/fetch` likewise ignores
+consent and records its JSON body as `<dir>/requests/<n>-fetch`. `fake.json`
+`"fetch"` is an object keyed by link text or ReleaseRef text. Each value is
+`{"release":"<ReleaseRef>","package":"<path of a package file>"}`. A known key
+answers 200 with those bytes, `Content-Type: application/octet-stream`,
+`Watane-Release` from the entry and `Watane-Package` computed from the bytes.
+An unknown key answers 409 `fetch_refused`. `fake.json` `"providers"`
+(default `[]`) is copied into the publish answer unchanged. For publish header
+assertions, the fake records `Watane-Provider-Links` in `<n>-provider-links`.
+It stores each request body as
 `<dir>/requests/<n>-<path>`. `<dir>/fake.json` (`{"answer": "approve" |
 "decline"}`, default approve) sets the answer; decline answers 403
 `{"error":{"code":"refused","message":"declined"}}`. An installed folder
-gets local name = folder name and a page URL if it has `ui/`. Publish approves
+gets local name = mod slug (including cached folders named by package id)
+and a page URL if it has `ui/`. Publish approves
 by decoding and unpacking the posted package: `release` is
 `<fake key>/<slug>@<version>`, `site` is `<dir>/site`, and `link` is
 `https://fake.invalid/#<slug>`. `GET /api/releases` returns `{"releases":[]}`
