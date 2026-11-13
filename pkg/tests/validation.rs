@@ -266,6 +266,29 @@ fn ac2_s33_own_provider_copy_without_deps_reports_folder() {
 }
 
 #[test]
+fn regress_s33_own_copy_other_version() {
+    // A hand-made wit/deps/<own slug>/ copied from another version of the mod
+    // is still the mod's own package; it must not fall through to the WIT
+    // "repeated package" error (which dev answers with the `add` fix).
+    let dir = temporary("hello");
+    put(dir.path(), "wit/world.wit", "package mods:s@0.2.0; world s {}");
+    put(
+        dir.path(),
+        "wit/deps/s/world.wit",
+        "package mods:s@0.1.0; world s {}",
+    );
+    let v = refused(dir.path(), Rule::Provider, "wit/deps/s");
+    assert_eq!(
+        v,
+        [Violation {
+            rule: Rule::Provider,
+            file: "wit/deps/s".into(),
+            message: "wit/deps/s holds this mod's own package mods:s".into(),
+        }]
+    );
+}
+
+#[test]
 fn ac1_s31_unused_provider_message() {
     let dir = temporary("hello");
     put(dir.path(), "deps.json", r#"{"mods:unused":null}"#);
