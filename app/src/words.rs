@@ -38,7 +38,51 @@ pub(crate) fn provider(provider: &Provider, parties: &Parties) -> String {
         }
     }
 }
+fn bound_target(bind: &watane_host::Bind, parties: &Parties) -> String {
+    let Some((publisher, slug)) = bind.to.split_once('/') else {
+        return bind.to.clone();
+    };
+    if publisher == "local" {
+        return format!("{slug} (local)");
+    }
+    let p = party(publisher, parties);
+    let label = p
+        .name
+        .map(|n| format!("{n} ({})", p.fingerprint))
+        .unwrap_or(p.fingerprint);
+    format!("{slug} by {label}")
+}
+pub(crate) fn bind_line(bind: &watane_host::Bind, parties: &Parties) -> String {
+    format!(
+        "{} in place of {} (your pick)",
+        bound_target(bind, parties),
+        provider(&bind.provider, parties)
+    )
+}
+pub(crate) fn provider_bound(
+    p: &Provider,
+    binds: &[watane_host::Bind],
+    parties: &Parties,
+) -> String {
+    match binds.iter().find(|b| b.provider == *p) {
+        Some(bind) => format!(
+            "{} (in place of {})",
+            bound_target(bind, parties),
+            provider(p, parties)
+        ),
+        None => provider(p, parties),
+    }
+}
 pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) -> GrantLine {
+    grant_line_bound(grant, &[], parties, granted, new)
+}
+pub fn grant_line_bound(
+    grant: &Grant,
+    binds: &[watane_host::Bind],
+    parties: &Parties,
+    granted: bool,
+    new: bool,
+) -> GrantLine {
     let (kind, text) = match grant {
         Grant::Storage => (
             GrantKind::Storage,
@@ -50,14 +94,17 @@ pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) ->
             provider: p,
         } => (
             GrantKind::Call,
-            format!("Call {interface} of {}", provider(p, parties)),
+            format!("Call {interface} of {}", provider_bound(p, binds, parties)),
         ),
         Grant::Subscribe {
             interface,
             provider: p,
         } => (
             GrantKind::Subscribe,
-            format!("Receive the {interface} events of {}", provider(p, parties)),
+            format!(
+                "Receive the {interface} events of {}",
+                provider_bound(p, binds, parties)
+            ),
         ),
     };
     GrantLine {
@@ -105,6 +152,85 @@ pub(crate) fn bad_note(cause: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac3_bound_grants_and_bind_lines_name_both_parties() {
+        let carol = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        let frank = "59dc6y8s5c95d6jiotx5czp8b7sb5o7e4cquc54i8yo81xdubf6y";
+        let p = Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: Some(carol.parse().unwrap()),
+        };
+        let bind = watane_host::Bind {
+            consumer: "local/stats".into(),
+            provider: p.clone(),
+            to: format!("{frank}/ratings"),
+        };
+        let parties = Parties::new();
+        for known in [false, true] {
+            if known {
+                parties.insert(carol.into(), "Carol".into());
+                parties.insert(frank.into(), "Frank".into());
+            }
+            let from = if known {
+                "Carol (47pjoycnsr)"
+            } else {
+                "47pjoycnsr"
+            };
+            let to = if known {
+                "Frank (59dc6y8s5c)"
+            } else {
+                "59dc6y8s5c"
+            };
+            let target = format!("ratings by {to} (in place of ratings by {from})");
+            assert_eq!(
+                provider_bound(&p, std::slice::from_ref(&bind), &parties),
+                target
+            );
+            assert_eq!(
+                bind_line(&bind, &parties),
+                format!("ratings by {to} in place of ratings by {from} (your pick)")
+            );
+            let interface: watane_host::watane_pkg::InterfaceName =
+                "mods:ratings/scores@1.0.0".parse().unwrap();
+            for (grant, expected) in [
+                (
+                    Grant::Call {
+                        interface: interface.clone(),
+                        provider: p.clone(),
+                    },
+                    format!("Call {interface} of {target}"),
+                ),
+                (
+                    Grant::Subscribe {
+                        interface: interface.clone(),
+                        provider: p.clone(),
+                    },
+                    format!("Receive the {interface} events of {target}"),
+                ),
+                (Grant::Storage, "Keep its own data on this device".into()),
+                (
+                    Grant::Http {
+                        host: "example.org".parse().unwrap(),
+                    },
+                    "Connect to example.org".into(),
+                ),
+            ] {
+                assert_eq!(
+                    grant_line_bound(&grant, std::slice::from_ref(&bind), &parties, false, true)
+                        .text,
+                    expected
+                );
+                let plain = grant_line(&grant, &parties, false, true);
+                assert_eq!(grant_line_bound(&grant, &[], &parties, false, true), plain);
+                let bound =
+                    grant_line_bound(&grant, std::slice::from_ref(&bind), &parties, false, true);
+                assert_eq!(
+                    (bound.key, bound.kind, bound.granted, bound.new),
+                    (plain.key, plain.kind, plain.granted, plain.new)
+                );
+            }
+        }
+    }
     #[test]
     fn ac1_grant_words_match_section_four() {
         let interface: watane_host::watane_pkg::InterfaceName =

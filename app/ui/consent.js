@@ -1,5 +1,5 @@
 import { call } from './ipc.js';
-import { signTitle } from './words.js';
+import { signTitle, checkedLabel } from './words.js';
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
@@ -8,16 +8,23 @@ const grants = [];
 let timer;
 let view;
 let submitting = false;
+let gateReady = false;
+let choice = null;
+function updateApprove() {
+  approve.disabled = !gateReady || submitting || (view?.request.kind === 'pick' && choice === null);
+}
 
 function disarm() {
   clearTimeout(timer);
-  approve.disabled = true;
+  gateReady = false;
+  updateApprove();
 }
 function arm() {
   disarm();
   deny.focus();
   timer = setTimeout(() => {
-    if (document.hasFocus() && !submitting) approve.disabled = false;
+    gateReady = document.hasFocus();
+    updateApprove();
   }, 800);
 }
 window.addEventListener('blur', disarm);
@@ -39,7 +46,7 @@ async function answer(allow) {
   deny.disabled = true;
   try {
     const withheld = allow ? grants.filter(g => !g.input.checked).map(g => ({local: g.local, key: g.key})) : [];
-    await call('consent_answer', {id: view.id, approve: allow, withheld});
+    await call('consent_answer', {id: view.id, approve: allow, withheld, choice: allow ? choice : null});
   } catch (e) {
     text(document.querySelector('#error'), 'span', e.message || String(e));
     submitting = false;
@@ -55,7 +62,7 @@ try {
   if (view) {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
-    document.querySelector('h1').textContent = request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : signTitle(request.statement);
+    document.querySelector('h1').textContent = request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : signTitle(request.statement);
     if (request.kind === 'install') {
       if (request.by_program) text(main, 'p', 'Asked by a program on this device');
       for (const mod of request.mods) {
@@ -64,6 +71,8 @@ try {
         text(section, 'h2', mod.name);
         text(section, 'p', mod.version);
         text(section, 'p', mod.publisher ? `${mod.release} by ${party(mod.publisher)} · signature verified` : 'local');
+        if (mod.origin) text(section, 'p', `made from ${mod.origin} (the publisher says so)`);
+        for (const bind of mod.binds || []) text(section, 'p', bind);
         if (mod.replaces) text(section, 'p', `replaces ${mod.replaces}`);
         for (const grant of mod.grants) {
           const label = document.createElement('label');
@@ -76,6 +85,28 @@ try {
           grants.push({input, local: mod.local, key: grant.key});
         }
         for (const provider of mod.uses) text(section, 'p', `uses ${provider}`);
+      }
+    } else if (request.kind === 'pick') {
+      approve.textContent = 'Use this mod';
+      text(main, 'p', `${request.provider} is not available: ${request.cause}`);
+      for (const candidate of request.candidates) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'candidate';
+        input.value = candidate.choice;
+        input.onchange = () => {
+          choice = candidate.choice;
+          updateApprove();
+        };
+        label.append(input);
+        text(label, 'strong', `${candidate.name} ${candidate.version}`);
+        text(label, 'p', candidate.summary);
+        text(label, 'p', `by ${party(candidate.publisher)} · signature verified`);
+        if (candidate.origin) text(label, 'p', `made from ${candidate.origin} (the publisher says so)`);
+        if (candidate.installed) text(label, 'p', 'installed');
+        text(label, 'p', checkedLabel({checkedAt: candidate.checked_at, uncheckedSince: null}));
+        main.append(label);
       }
     } else {
       text(main, 'p', party(request.signer));

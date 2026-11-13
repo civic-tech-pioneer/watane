@@ -6,6 +6,7 @@ pub struct AskId(String); // 32 lowercase hex characters from 16 random bytes
 #[serde(tag = "answer", rename_all = "snake_case")]
 pub enum Answer {
     Approve { withheld: Vec<Withheld> },
+    Pick { choice: String },
     Deny,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,11 +20,21 @@ pub enum ConsentError {
     Stale,
     #[error("a withheld grant is not in the request: {0}")]
     UnknownGrant(String),
+    #[error("this answer does not fit the request")]
+    WrongAnswer,
+    #[error("the choice is not in the request: {0}")]
+    UnknownChoice(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
+    Pick {
+        consumer: String,
+        provider: String,
+        cause: String,
+        candidates: Vec<Candidate>,
+    },
     Install {
         mods: Vec<PlanMod>,
         by_program: bool,
@@ -33,6 +44,17 @@ pub enum Request {
         signer: Party,
         details: Vec<Detail>,
     },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Candidate {
+    pub choice: String,
+    pub name: String,
+    pub summary: String,
+    pub version: String,
+    pub publisher: Party,
+    pub origin: Option<String>,
+    pub installed: bool,
+    pub checked_at: Option<u64>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanMod {
@@ -45,6 +67,9 @@ pub struct PlanMod {
     pub replaces: Option<String>, // the installed version that this replaces
     pub grants: Vec<GrantLine>,
     pub uses: Vec<String>, // providers, as {provider} of section 4
+    pub origin: Option<String>,
+    #[serde(default)]
+    pub binds: Vec<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party {
@@ -81,6 +106,24 @@ pub enum Statement {
 pub struct Detail {
     pub label: String,
     pub value: String,
+}
+
+impl Request {
+    pub(crate) fn answer(
+        &self,
+        approve: bool,
+        choice: Option<String>,
+        withheld: Vec<Withheld>,
+    ) -> Result<Answer, ConsentError> {
+        if !approve {
+            return Ok(Answer::Deny);
+        }
+        match (self, choice) {
+            (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
+            (Self::Pick { .. }, _) | (_, Some(_)) => Err(ConsentError::WrongAnswer),
+            (_, None) => Ok(Answer::Approve { withheld }),
+        }
+    }
 }
 
 impl AskId {
@@ -198,13 +241,25 @@ impl Broker {
                 .front()
                 .filter(|e| &e.id == id)
                 .ok_or(ConsentError::Stale)?;
+            match (&entry.request, &answer) {
+                (Request::Pick { candidates, .. }, Answer::Pick { choice }) => {
+                    if !candidates.iter().any(|c| c.choice == *choice) {
+                        return Err(ConsentError::UnknownChoice(choice.clone()));
+                    }
+                }
+                (_, Answer::Deny) => {}
+                (Request::Pick { .. }, _) | (_, Answer::Pick { .. }) => {
+                    return Err(ConsentError::WrongAnswer);
+                }
+                _ => {}
+            }
             if let Answer::Approve { withheld } = &answer {
                 for grant in withheld {
                     let known = match &entry.request {
                         Request::Install { mods, .. } => mods.iter().any(|m| {
                             m.local == grant.local && m.grants.iter().any(|g| g.key == grant.key)
                         }),
-                        Request::Sign { .. } => false,
+                        Request::Sign { .. } | Request::Pick { .. } => false,
                     };
                     if !known {
                         return Err(ConsentError::UnknownGrant(format!(
@@ -292,7 +347,7 @@ mod tests {
             "local":"reading-list","name":"Reading list","slug":"reading-list",
             "version":"0.1.0","release":null,"publisher":null,"replaces":null,
             "grants":[{"key":"storage","kind":"storage","text":"Keep its own data on this device",
-            "granted":true,"new":true}],"uses":[]}]}))
+            "granted":true,"new":true}],"uses":[],"origin":null,"binds":[]}]}))
         .unwrap()
     }
 
@@ -303,6 +358,104 @@ mod tests {
             Poll::Ready(())
         })
         .await;
+    }
+
+    fn pick() -> Request {
+        serde_json::from_value(json!({"kind":"pick", "consumer":"Dave's stats",
+            "provider":"Carol's ratings", "cause":"site unavailable", "candidates":[{
+                "choice":"frank/ratings@1.0.0", "name":"Frank ratings", "summary":"Scores",
+                "version":"1.0.0", "publisher":{"name":"Frank", "fingerprint":"frank-key"},
+                "origin":null, "installed":false, "checked_at":null}]}))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn ac1_pick_answers_validate_kind_choice_and_keep_rejected_head() {
+        let sign = serde_json::from_value(json!({"kind":"sign", "statement":"profile",
+            "signer":{"name":null,"fingerprint":"key"},"details":[]}))
+        .unwrap();
+        for request in [pick(), install(), sign] {
+            let b = Broker::new();
+            let mut pending = pin!(b.ask(request.clone()));
+            queue(pending.as_mut()).await;
+            let id = b.current().unwrap().0;
+            for value in [
+                json!({"answer":"pick","choice":"unknown"}),
+                json!({"answer":"approve","withheld":[]}),
+                json!({"answer":"pick","choice":"frank/ratings@1.0.0"}),
+            ] {
+                let answer: Answer = serde_json::from_value(value.clone()).unwrap();
+                let is_pick = matches!(request, Request::Pick { .. });
+                let result = b.answer(&id, answer.clone());
+                let accepted = if is_pick {
+                    value["choice"] == "frank/ratings@1.0.0"
+                } else {
+                    value["answer"] == "approve"
+                };
+                if accepted {
+                    result.unwrap();
+                    assert_eq!(pending.as_mut().await, answer);
+                    break;
+                }
+                if is_pick && value["answer"] == "pick" {
+                    assert!(
+                        matches!(result, Err(ConsentError::UnknownChoice(c)) if c == "unknown")
+                    );
+                } else {
+                    assert!(matches!(result, Err(ConsentError::WrongAnswer)));
+                }
+                assert_eq!(b.current(), Some((id.clone(), request.clone())));
+            }
+            // Each kind also accepts deny.
+            let mut pending = pin!(b.ask(request));
+            queue(pending.as_mut()).await;
+            b.answer(&b.current().unwrap().0, Answer::Deny).unwrap();
+            assert_eq!(pending.await, Answer::Deny);
+        }
+    }
+
+    #[test]
+    fn ac2_answer_argument_table_every_row() {
+        let sign: Request = serde_json::from_value(json!({"kind":"sign", "statement":"profile",
+            "signer":{"name":null,"fingerprint":"key"},"details":[]}))
+        .unwrap();
+        for request in [install(), sign, pick()] {
+            for approve in [false, true] {
+                for choice in [
+                    None,
+                    Some("frank/ratings@1.0.0".to_string()),
+                    Some("unknown".to_string()),
+                ] {
+                    for withheld in [
+                        vec![],
+                        vec![Withheld {
+                            local: "reading-list".into(),
+                            key: "storage".into(),
+                        }],
+                    ] {
+                        let result = request.answer(approve, choice.clone(), withheld.clone());
+                        if !approve {
+                            assert_eq!(result.unwrap(), Answer::Deny);
+                        } else if matches!(request, Request::Pick { .. }) {
+                            if choice.is_none() || !withheld.is_empty() {
+                                assert!(matches!(result, Err(ConsentError::WrongAnswer)));
+                            } else {
+                                assert_eq!(
+                                    result.unwrap(),
+                                    Answer::Pick {
+                                        choice: choice.clone().unwrap()
+                                    }
+                                );
+                            }
+                        } else if choice.is_some() {
+                            assert!(matches!(result, Err(ConsentError::WrongAnswer)));
+                        } else {
+                            assert_eq!(result.unwrap(), Answer::Approve { withheld });
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -518,7 +671,7 @@ mod tests {
         let value = json!({"kind":"install","by_program":false,"mods":[{
             "local":"reading-list","name":"Reading list","slug":"reading-list","version":"0.1.0",
             "release":null,"publisher":null,"replaces":null,"grants":[{"key":"storage","kind":"storage",
-            "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[]}]});
+            "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[],"origin":null,"binds":[]}]});
         assert_eq!(serde_json::to_value(install()).unwrap(), value);
         let sign = json!({"kind":"sign","statement":"release","signer":{"name":"Alice","fingerprint":"abc"},
             "details":[{"label":"Package","value":"123"}]});
@@ -593,6 +746,7 @@ mod stage_c_tests {
                     ("Size", "123".into()),
                     ("Source included", "yes".into()),
                     ("Summary", "Books".into()),
+                    ("Made from", "none".into()),
                 ],
             ),
             (
@@ -610,6 +764,7 @@ mod stage_c_tests {
                     ("Size", "123".into()),
                     ("Source included", "no".into()),
                     ("Summary", "Books".into()),
+                    ("Made from", "none".into()),
                 ],
             ),
             (

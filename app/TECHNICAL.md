@@ -321,7 +321,7 @@ pub struct Detail { pub label: String, pub value: String }
  {"local":"reading-list","name":"Reading list","slug":"reading-list","version":"0.1.0","release":null,
   "publisher":null,"replaces":null,
   "grants":[{"key":"storage","kind":"storage","text":"Keep its own data on this device","granted":true,"new":true}],
-  "uses":[]}]}}
+  "uses":[],"origin":null,"binds":[]}]}}
 ```
 
 Sign details, in this order. A release is named by its ReleaseRef text
@@ -335,6 +335,12 @@ Sign details, in this order. A release is named by its ReleaseRef text
 | `list` (step 4) | `Mod`: `<key>/<slug>` with the publisher's name and fingerprint when known; `Location`: the link's base; `Note` (or `none`) |
 | `include` (step 4) | `Index`: the key with its name and fingerprint when known; `Location`; `Note` (or `none`) |
 | `unlist` (step 4) | `Ends`: `list` or `include`, and its `Mod` or `Index` value as above |
+
+HostConfirm uses every active `PlanEntry.binds` for grant and `uses` words.
+For `PlanMod.binds`, it omits binds already held by the installed mod with
+that local name, so this list shows only new picks; stage A has no installed
+mod and shows every supplied bind. Missing `origin` and `binds` in driver
+fixtures mean `None` and an empty list.
 
 `signer` is the own identity: profile name and fingerprint.
 

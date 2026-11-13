@@ -26,6 +26,17 @@ fn request_view(
             .entries
             .iter()
             .map(|e| consent::PlanMod {
+                origin: e.origin.as_ref().map(ToString::to_string),
+                binds: e
+                    .binds
+                    .iter()
+                    .filter(|b| {
+                        !host
+                            .and_then(|h| h.get(&e.local))
+                            .is_some_and(|m| m.binds.contains(b))
+                    })
+                    .map(|b| words::bind_line(b, parties))
+                    .collect(),
                 local: e.local.to_string(),
                 name: e.name.clone(),
                 slug: e.slug.to_string(),
@@ -42,7 +53,15 @@ fn request_view(
                 grants: e
                     .grants
                     .iter()
-                    .map(|g| words::grant_line(g, parties, true, e.new_grants.contains(g)))
+                    .map(|g| {
+                        words::grant_line_bound(
+                            g,
+                            &e.binds,
+                            parties,
+                            true,
+                            e.new_grants.contains(g),
+                        )
+                    })
                     .collect(),
                 uses: e
                     .providers
@@ -66,7 +85,25 @@ fn request_view(
                             })
                         });
                         provider
-                            .map(|p| words::provider(&p, parties))
+                            .map(|p| {
+                                // A uses line names the picked target and the pinned provider.
+                                let pinned = e.binds.iter().find(|b| {
+                                    b.to == format!(
+                                        "{}/{}",
+                                        p.publisher
+                                            .as_ref()
+                                            .map(ToString::to_string)
+                                            .unwrap_or_else(|| "local".into()),
+                                        p.slug
+                                    )
+                                });
+                                match pinned {
+                                    Some(b) => {
+                                        words::provider_bound(&b.provider, &e.binds, parties)
+                                    }
+                                    None => words::provider(&p, parties),
+                                }
+                            })
                             .unwrap_or_else(|| local.to_string())
                     })
                     .collect(),
@@ -76,7 +113,7 @@ fn request_view(
 }
 fn host_answer(answer: consent::Answer, request: &InstallRequest) -> Answer {
     match answer {
-        consent::Answer::Deny => Answer::Deny,
+        consent::Answer::Deny | consent::Answer::Pick { .. } => Answer::Deny,
         consent::Answer::Approve { withheld } => {
             let mut withhold = Vec::new();
             for w in withheld {
@@ -116,7 +153,7 @@ impl watane_dist::Confirm for DistConfirm {
     fn confirm(&self, request: &watane_dist::SignRequest) -> watane_dist::Decision {
         match self.broker.ask_blocking(sign_view(request, &self.parties)) {
             consent::Answer::Approve { .. } => watane_dist::Decision::Approve,
-            consent::Answer::Deny => watane_dist::Decision::Refuse,
+            consent::Answer::Deny | consent::Answer::Pick { .. } => watane_dist::Decision::Refuse,
         }
     }
 }
@@ -149,6 +186,21 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
                     if release.source { "yes" } else { "no" }.into(),
                 ),
                 ("Summary", release.summary.clone()),
+                (
+                    "Made from",
+                    release
+                        .origin
+                        .as_ref()
+                        .map(|origin| {
+                            let p = words::party(&origin.publisher.to_string(), parties);
+                            let label = p
+                                .name
+                                .map(|n| format!("{n} ({})", p.fingerprint))
+                                .unwrap_or(p.fingerprint);
+                            format!("{origin} by {label}")
+                        })
+                        .unwrap_or_else(|| "none".into()),
+                ),
             ],
         ),
         Statement::Withdraw {
@@ -224,6 +276,137 @@ mod tests {
         LocalName, PlanEntry,
         watane_pkg::{Grant, Provider},
     };
+    #[test]
+    fn ac4_host_origin_new_binds_and_bound_uses() {
+        let carol = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        let frank = "y".repeat(52);
+        let parties = Parties::new();
+        parties.insert(carol.into(), "Carol".into());
+        parties.insert(frank.clone(), "Frank".into());
+        let provider = Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: Some(carol.parse().unwrap()),
+        };
+        let bind = watane_host::Bind {
+            consumer: "local/stats".into(),
+            provider: provider.clone(),
+            to: format!("{frank}/ratings"),
+        };
+        let origin = format!("{carol}/ratings@1.0.0");
+        let grant = Grant::Call {
+            interface: "mods:ratings/scores@1.0.0".parse().unwrap(),
+            provider,
+        };
+        let entry = PlanEntry {
+            local: LocalName::parse("stats").unwrap(),
+            identity: "local/stats".into(),
+            slug: "stats".parse().unwrap(),
+            name: "Stats".into(),
+            summary: String::new(),
+            version: "1.0.0".parse().unwrap(),
+            publisher: None,
+            package: "00".repeat(32).parse().unwrap(),
+            release: None,
+            origin: Some(origin.parse().unwrap()),
+            change: Change::New,
+            grants: vec![grant.clone()],
+            new_grants: vec![grant],
+            providers: vec![LocalName::parse("ratings").unwrap()],
+            binds: vec![bind.clone()],
+        };
+        let provider_entry = PlanEntry {
+            local: LocalName::parse("ratings").unwrap(),
+            identity: bind.to.clone(),
+            slug: "ratings".parse().unwrap(),
+            name: "Ratings".into(),
+            summary: String::new(),
+            version: "1.0.0".parse().unwrap(),
+            publisher: Some(frank.parse().unwrap()),
+            package: "00".repeat(32).parse().unwrap(),
+            release: None,
+            origin: None,
+            change: Change::New,
+            grants: vec![],
+            new_grants: vec![],
+            providers: vec![],
+            binds: vec![],
+        };
+        let request = InstallRequest {
+            entries: vec![provider_entry, entry],
+            requester: Requester::App,
+        };
+        let consent::Request::Install { mods, .. } = request_view(&request, &parties, None) else {
+            panic!()
+        };
+        assert_eq!(mods[1].origin.as_deref(), Some(origin.as_str()));
+        assert_eq!(mods[1].binds, [words::bind_line(&bind, &parties)]);
+        assert_eq!(
+            mods[1].uses,
+            ["ratings by Frank (yyyyyyyyyy) (in place of ratings by Carol (47pjoycnsr))"]
+        );
+        assert_eq!(
+            mods[1].grants[0].text,
+            "Call mods:ratings/scores@1.0.0 of ratings by Frank (yyyyyyyyyy) (in place of ratings by Carol (47pjoycnsr))"
+        );
+        assert!(mods[0].origin.is_none());
+        assert!(mods[0].binds.is_empty());
+    }
+
+    #[test]
+    fn ac4_release_ends_with_made_from_named_or_fingerprint_or_none() {
+        let key = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
+        let origin = format!("{key}/ratings@1.0.0");
+        let parties = Parties::new();
+        for known in [false, true] {
+            if known {
+                parties.insert(key.into(), "Carol".into());
+            }
+            for parent in [None, Some(origin.clone())] {
+                let request = watane_dist::SignRequest {
+                    channel: key.parse().unwrap(),
+                    fingerprint: "signer".into(),
+                    statement: watane_dist::Statement::Release {
+                        reference: format!("{key}/stats@1.0.0").parse().unwrap(),
+                        release: watane_dist::Release {
+                            slug: "stats".parse().unwrap(),
+                            version: "1.0.0".parse().unwrap(),
+                            name: "Stats".into(),
+                            summary: "Scores".into(),
+                            package: "00".repeat(32).parse().unwrap(),
+                            size: 123,
+                            source: false,
+                            offers: vec![],
+                            events: vec![],
+                            grants: vec![],
+                            origin: parent.as_ref().map(|o| o.parse().unwrap()),
+                        },
+                    },
+                };
+                let consent::Request::Sign { details, .. } = sign_view(&request, &parties) else {
+                    panic!()
+                };
+                let expected = match parent {
+                    None => "none".into(),
+                    Some(o) => format!(
+                        "{o} by {}",
+                        if known {
+                            "Carol (47pjoycnsr)"
+                        } else {
+                            "47pjoycnsr"
+                        }
+                    ),
+                };
+                assert_eq!(
+                    details.last(),
+                    Some(&consent::Detail {
+                        label: "Made from".into(),
+                        value: expected
+                    })
+                );
+            }
+        }
+    }
+
     #[test]
     fn ac2_install_request_and_withheld_answer() {
         let storage = Grant::Storage;

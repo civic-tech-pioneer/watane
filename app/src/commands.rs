@@ -1,6 +1,6 @@
 use crate::{
     AppState, CmdError,
-    consent::{Answer, AskId, Withheld},
+    consent::{AskId, Withheld},
     core::{ModView, ToolRow},
     views,
 };
@@ -106,19 +106,21 @@ pub(crate) fn consent_answer(
     id: AskId,
     approve: bool,
     withheld: Vec<Withheld>,
+    choice: Option<String>,
 ) -> Result<(), CmdError> {
     record(&webview, "consent_answer");
-    state
-        .broker
-        .answer(
-            &id,
-            if approve {
-                Answer::Approve { withheld }
-            } else {
-                Answer::Deny
-            },
-        )
-        .map_err(|e| CmdError::new("refused", e.to_string()))
+    let result = (|| {
+        let (head, request) = state
+            .broker
+            .current()
+            .ok_or(crate::consent::ConsentError::Stale)?;
+        if head != id {
+            return Err(crate::consent::ConsentError::Stale);
+        }
+        let answer = request.answer(approve, choice, withheld)?;
+        state.broker.answer(&id, answer)
+    })();
+    result.map_err(|e| CmdError::new("refused", e.to_string()))
 }
 
 #[tauri::command]

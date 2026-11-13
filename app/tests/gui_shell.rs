@@ -667,3 +667,151 @@ fn ac4b_index_title_words() {
             .success()
     );
 }
+
+fn pick_request() -> Value {
+    let candidate = |choice, name, version, publisher, fingerprint, installed| {
+        json!({
+            "choice":choice,"name":name,"summary":"Ratings for books","version":version,
+            "publisher":{"name":publisher,"fingerprint":fingerprint},"origin":"alice/reading-list@1.0.0",
+            "installed":installed,"checked_at":0
+        })
+    };
+    json!({"kind":"pick","consumer":"Dave stats","provider":"Carol ratings",
+    "cause":"<img src=x onerror=alert(1)>","candidates":[
+        candidate("frank/ratings@1.0.0", "Frank ratings", "1.0.0", "Frank", "frank-key", false),
+        candidate("grace/ratings@2.0.0", "<img src=x onerror=alert(1)>", "2.0.0", "Grace", "grace-key", true)
+    ]})
+}
+
+#[test]
+fn ac5_s37_pick_shows_candidates_requires_selection_and_answers_pick_or_deny() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let request = pick_request();
+    let ask = app.ask(request.clone());
+    consent(&app);
+    let text = app
+        .eval("consent", "document.body.textContent")
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for field in [
+        "Choose a mod for Dave stats",
+        "Carol ratings is not available:",
+        "<img src=x onerror=alert(1)>",
+        "Frank ratings",
+        "1.0.0",
+        "2.0.0",
+        "Frank (frank-key)",
+        "Grace (grace-key)",
+        "made from alice/reading-list@1.0.0",
+        "installed",
+        "checked",
+        "Ratings for books",
+        "signature verified",
+    ] {
+        assert!(text.contains(field), "missing {field}: {text}");
+    }
+    assert_eq!(
+        app.eval("consent", "document.querySelectorAll('img').length"),
+        0
+    );
+    assert_eq!(
+        app.eval(
+            "consent",
+            "document.querySelectorAll('input[type=radio]:checked').length"
+        ),
+        0
+    );
+    // Hidden windows have no native focus. Advance the same focus gate through DOM events.
+    app.eval("consent", "Object.defineProperty(document, 'hasFocus', {value: () => true}); window.dispatchEvent(new Event('focus')); null");
+    app.eval(
+        "consent",
+        "window.__gateElapsed = false; setTimeout(() => window.__gateElapsed = true, 850); null",
+    );
+    until(&app, "consent", "window.__gateElapsed");
+    assert_eq!(
+        app.eval("consent", "document.querySelector('#approve').disabled"),
+        true
+    );
+    app.eval(
+        "consent",
+        "document.querySelectorAll('input[type=radio]')[1].click(); null",
+    );
+    assert_eq!(
+        app.eval("consent", "document.querySelector('#approve').textContent"),
+        "Use this mod"
+    );
+    until(
+        &app,
+        "consent",
+        "!document.querySelector('#approve').disabled",
+    );
+    app.eval(
+        "consent",
+        "document.querySelector('#approve').click(); null",
+    );
+    assert_eq!(
+        ask.wait(TIMEOUT),
+        Some(json!({"answer":"pick","choice":"grace/ratings@2.0.0"}))
+    );
+    let ask = app.ask(request);
+    consent(&app);
+    app.eval("consent", "document.querySelector('#deny').click(); null");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac6_s37_install_origin_bind_and_release_made_from_are_literal() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let mut request = install("Stats");
+    request["mods"][0]["origin"] = json!("alice/reading-list@1.0.0");
+    request["mods"][0]["binds"] = json!([
+        "ratings by Frank (frank-key) in place of ratings by Carol (carol-key) (your pick)"
+    ]);
+    let ask = app.ask(request);
+    consent(&app);
+    let text = app
+        .eval("consent", "document.body.textContent")
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(text.contains("made from alice/reading-list@1.0.0 (the publisher says so)"));
+    assert!(text.contains(
+        "ratings by Frank (frank-key) in place of ratings by Carol (carol-key) (your pick)"
+    ));
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    let ask = app.ask(json!({"kind":"sign","statement":"release","signer":{"name":"Carol","fingerprint":"carol-key"},
+        "details":[{"label":"Made from","value":"alice/reading-list@1.0.0 by Alice (alice-key)"}]}));
+    consent(&app);
+    assert_eq!(app.eval("consent", "document.body.textContent.includes('Made from: alice/reading-list@1.0.0 by Alice (alice-key)')"), true);
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac5_s37_page_dom_pick_and_focus_gate() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "pick"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+#[test]
+fn ac6_s37_page_dom_origin_binds_and_sign() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "install"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
