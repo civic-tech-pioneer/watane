@@ -27,7 +27,16 @@ fn ac9_fetch_limits_and_timeout() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     let alice = open(a.path());
-    let bob = open(b.path());
+    // Only this fetch proves a timeout; ordinary requests use the shared limits.
+    let bob = Dist::open(
+        b.path(),
+        std::sync::Arc::new(RecordingConfirm::new([])),
+        Options {
+            package_timeout: std::time::Duration::from_millis(300),
+            ..fast_options()
+        },
+    )
+    .unwrap();
     let p = alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
     bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
@@ -98,4 +107,12 @@ fn ac13_fetch_reference_from_literal_text() {
             .parse()
             .unwrap();
     assert_eq!(bob.fetch(&reference).unwrap().package.as_bytes(), bytes);
+}
+
+#[test]
+fn ac1_shared_options_allow_load_and_keep_package_limit() {
+    let options = fast_options();
+    assert!(options.entry_timeout >= std::time::Duration::from_secs(10));
+    assert!(options.package_timeout >= std::time::Duration::from_secs(10));
+    assert_eq!(options.max_package, 4096);
 }

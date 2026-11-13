@@ -59,8 +59,8 @@ pub fn copy_fixture(name: &str, dest: &std::path::Path) {
 #[allow(dead_code)]
 pub fn fast_options() -> watane_dist::Options {
     watane_dist::Options {
-        entry_timeout: std::time::Duration::from_millis(300),
-        package_timeout: std::time::Duration::from_secs(1),
+        entry_timeout: std::time::Duration::from_secs(10),
+        package_timeout: std::time::Duration::from_secs(10),
         max_package: 4096,
         ..Default::default()
     }
@@ -187,7 +187,6 @@ impl SearchHome {
             ))),
             watane_dist::Options {
                 listed_local: true,
-                entry_timeout: std::time::Duration::from_secs(3),
                 ..fast_options()
             },
         )

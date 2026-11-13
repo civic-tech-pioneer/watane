@@ -270,7 +270,6 @@ impl Home {
     fn new() -> Self {
         Self::with_options(Options {
             listed_local: true,
-            entry_timeout: std::time::Duration::from_secs(3),
             ..fast_options()
         })
     }
@@ -471,10 +470,7 @@ fn ac5_index_compromised() {
     let fork = Dist::open(
         f.path(),
         Arc::new(RecordingConfirm::new([Decision::Approve])),
-        Options {
-            entry_timeout: std::time::Duration::from_secs(3),
-            ..fast_options()
-        },
+        fast_options(),
     )
     .unwrap();
     fork.restore(&ivy.dist.backup("secret").unwrap(), "secret")
