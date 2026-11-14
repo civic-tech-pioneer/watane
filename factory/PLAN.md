@@ -298,6 +298,49 @@ Step 6 done 2026-11-14: `app/tests/j5.rs::ac2_j5_github` passes; every step-6 st
 and local git remotes: no real repository, no real static host, no second machine, and no
 installer for watane itself.
 
+Step 7 (The real world). Not a step of the build plan: the build plan is finished. VISION's
+"Success of the first version" states five things that happen between people on machines, and every
+one of them has so far been proved in one process tree, on `127.0.0.1`, against local bare git
+remotes and `dev/src/bin/fake-gh.rs`, a GitHub written from the same spec as the code it answers.
+These slices remove one piece of fakery each. S50 comes first: the others all need a watane that a
+person can install. S52, S53 and S54 need things the human must provide (see "Waiting on the
+human"), so they cannot be handed to a cloud foreman as they stand.
+
+- [ ] **S50 A person can install watane.** Someone with a clean Mac and no Rust toolchain ends up
+  with a working `watane` and `watane-app` from one command, and can run `watane-dev new` straight
+  after. Outcome: the install is exercised somewhere that has no cargo, no target folder and no
+  checkout, so the test cannot be a `cargo test` in this repo. Open: whether the app bundle is
+  signed and notarized (Gatekeeper refuses an unsigned one, which puts a frightening dialog between
+  a person and their first use) — the human decides. Touches: a new `install/`, `app`, release
+  packaging. Nothing in the repo does any of this today: `app/scripts/` holds only `linux-test.sh`.
+- [ ] **S51 Toolsets and tokens are complete in the app (host stage 4).** The app can remove a
+  toolset, not only end a token. `Host::remove_toolset` exists (`host/src/tools.rs:195`) and
+  `host/tests/catalog.rs:1000` covers it; nothing in `app/src/commands.rs` calls it. Closes the last
+  `part` row in Stage coverage, carried since S5. Small; a cloud foreman can take it.
+- [ ] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
+  unlocked screen, so the four `front:` tests fail on a locked Mac (`gui_isolation` ac1) instead of
+  skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
+  run all four once on an unlocked screen and record the result. These four have never run.
+  Needs the Mac and a human at it.
+- [ ] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
+  account with the real `gh`, in place of `fake-gh`. `fake-gh` was written from the same spec as the
+  code it serves, so this is the slice most likely to find something. Needs a throwaway org and a
+  token (the human). Keep `fake-gh` for the fast suite; the real run is a separate, ignored target.
+- [ ] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
+  fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
+  404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
+  IP literal is skipped) against a base that is neither. After S53.
+- [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
+  mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
+  homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
+
+After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
+host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
+hand — outside the substrate, steering coding agents and changing itself, which is what VISION
+describes except for where it runs. Moving it inside makes the thing that built watane the first
+serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
+its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
+
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
@@ -401,6 +444,19 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
+  (a) S53 needs a GitHub account and token for a throwaway org, so the journeys can run against a
+  real repository instead of `fake-gh`. (b) S54 needs somewhere to serve a channel for real
+  (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
+  own. None of the three can run in a cloud foreman as it stands, because each needs a credential
+  or a device that belongs to the human.
+- S50 (2026-11-14): is the app bundle signed and notarized? Options: (a) signed and notarized with
+  an Apple Developer account, so a person's first run is an ordinary one; (b) unsigned, and the
+  install tells the person how to get past Gatekeeper. Recommendation: (a) if the account exists,
+  because (b) puts a frightening dialog between a person and their first use of watane, which is
+  exactly the moment the vision is being judged. Cost to undo: (a) a yearly fee and a secret the
+  build needs; (b) nothing, but it is in every person's way.
 
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
