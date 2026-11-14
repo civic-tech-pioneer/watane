@@ -313,10 +313,8 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   signed and notarized (Gatekeeper refuses an unsigned one, which puts a frightening dialog between
   a person and their first use) — the human decides. Touches: a new `install/`, `app`, release
   packaging. Nothing in the repo does any of this today: `app/scripts/` holds only `linux-test.sh`.
-- [ ] **S51 Toolsets and tokens are complete in the app (host stage 4).** The app can remove a
-  toolset, not only end a token. `Host::remove_toolset` exists (`host/src/tools.rs:195`) and
-  `host/tests/catalog.rs:1000` covers it; nothing in `app/src/commands.rs` calls it. Closes the last
-  `part` row in Stage coverage, carried since S5. Small; a cloud foreman can take it.
+- [ ] **S51 Toolsets and tokens are complete in the app (host stage 4).** Folded into S58: it
+  touches the same `app/src` and `app/ui` files, so it cannot run beside it.
 - [ ] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
   unlocked screen, so the four `front:` tests fail on a locked Mac (`gui_isolation` ac1) instead of
   skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
@@ -362,6 +360,55 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   flags at share.rs:711, 791, 816, 860, 876; "it has no release" at publish.rs:76), so the tests
   move with the text. Touches: dev only. Cloud: dev's suite runs there; `scripts/vendor.sh` must be
   run first because `dev/allowlist/vendor` is gitignored. The app journeys cannot run in the cloud.
+- [~] **S57 pkg, log and dist say what is wrong (leftover sweep).** Branch `slice/s57`. Six open
+  items from "Leftovers", all of them a refusal that misleads or a read that is not safe. Re-check
+  each against main before writing a task.
+
+  pkg: `add_provider` still lstats a path and then re-reads the path string (add.rs:9-26, 35, 48),
+  so it never moved to the no-follow handle walk S46 built — the one part of pkg that still has the
+  check-then-read gap S22 and S46 closed everywhere else. An error during a mid-read swap is plain
+  I/O text with no rule (folder.rs:110, 200, 275) and has no test at all. `Mod::read` and `pack`
+  word the same FIFO or link differently (folder.rs:92, 217 vs package.rs:24, 298).
+
+  log: `NotPlain` adds "(a symbolic link is refused)" even when the type mismatch is an ordinary
+  one (lib.rs:29, raised at identity.rs:23), so a plain file is blamed for being a link. A bad
+  backup magic shows U+FFFD (`from_utf8_lossy`, identity.rs:212); the only magic test corrupts into
+  valid ASCII, so non-UTF-8 is uncovered — write that case.
+
+  dist: when every base is stale the answer is a bare `UnknownRelease` with no next step
+  (error.rs:80). The single-stale-base case was fixed in S45 and reads well; this one reads the same
+  to a person and tells them nothing.
+
+  Out of scope: Q12 (log entries of unlisted channels are never removed) needs a `forget` API that
+  log does not have, so it is a design question, not a sweep. The six items in "Decide, do not
+  sketch" are not here either.
+
+  Outcome: each of the six refusals names the real cause, and the two uncovered cases have a test.
+  Touches: pkg, log, dist. Cloud: all three suites run there.
+- [~] **S58 The app is complete and says what happened (leftover sweep, host stage 4).** Branch
+  `slice/s58`. Takes S51 with it. Re-check each item against main first.
+
+  The last `part` row: the app can remove a toolset, not only end a token. `Host::remove_toolset`
+  exists (host/src/tools.rs:195) and host/tests/catalog.rs:1000 covers it; nothing in
+  `app/src/commands.rs` calls it. That closes host stage 4, carried as `part` since S5.
+
+  The text, six items: list, include, publish and install consents show the 52-character key before
+  the name, though own rows were fixed in S44 (app/src/confirm.rs:206, 219, 28 — pinned by
+  `ac1_index_sign_details_are_complete_and_ordered`). A wrong-channel follow error shows fingerprints
+  only, with no party-name lookup on that path (core.rs:537, dist/src/error.rs:99). A mod card's
+  refresh error is raw transport text while index rows go through `words::index_read`
+  (core.rs:357, 229). A non-JSON body gets "give link or release", discarding the serde cause
+  (api.rs:296). On a new home the own row sits beside the "add an index" hint (app/ui/app.js:222).
+  The app's JS re-derives the MCP tool name with `.replace()` instead of using the server's `tool`
+  field (app/ui/app.js:117).
+
+  Out of scope: the app's behaviour items (no busy state on a hanging follow, hidden windows polling
+  only on focus, `Core::mods()` re-reading channel views every 2 s, the busy-port Install button,
+  the missing grant-change notification) and the four host items. They are a slice of their own.
+
+  Outcome: host stage 4 goes to `done`, and a person reads a name rather than a key or a transport
+  error everywhere the ledger named. Touches: app, host. Needs the Mac: the app cannot build without
+  GTK, and J2 and J4 must pass.
 
 After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -611,6 +658,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
 - S56: cloud routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` (running, handed out 2026-11-14).
+- S57: cloud routine `trig_019eZQGSqCu2ziUPVNcDiXD8` (running, handed out 2026-11-14).
+- S58: `6d47f9c4` (sessionId `6d47f9c4-c628-4791-b732-a7a9659e264f`), worktree `.claude/worktrees/s58`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
