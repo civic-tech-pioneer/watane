@@ -76,7 +76,9 @@ fn ac1_local_providers_precede_status_and_pipeline() {
             assert_eq!(error["code"], "publish.local_dependency");
             assert_eq!(
                 error["message"],
-                format!("mods:{slug} is a local provider; it has no release")
+                format!(
+                    "mods:{slug} is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers"
+                )
             );
             assert_eq!(
                 error["fix"],
@@ -137,7 +139,13 @@ fn approved(dir: &Path, home: &Path, number: usize, source: bool, slug: &str, ve
         "link":format!("https://fake.invalid/#{slug}"),
         "package":package.id().to_string(), "source":source, "providers":[]})
     );
-    assert_eq!(value["next"], "Put the site folder on your static web host");
+    assert_eq!(
+        value["next"],
+        format!(
+            "Put the site folder {} on your static web host, then give the person this link: https://fake.invalid/#{slug}",
+            home.canonicalize().unwrap().join("site").display()
+        )
+    );
     if source && dir.join("logic/src").exists() {
         assert!(package.paths().any(|p| p.starts_with("logic/src/")));
     }
@@ -202,7 +210,8 @@ fn ac7_text_output_and_help_walk() {
         "publish: ok",
         "release: ",
         "package: ",
-        "Put the site folder on your static web host",
+        "Put the site folder ",
+        " on your static web host, then give the person this link: ",
     ] {
         assert!(text.contains(expected), "{text}");
     }
@@ -340,7 +349,11 @@ fn ac2_missing_link_then_retry_recovers_link() {
     assert!(value["result"]["link"].is_null());
     assert_eq!(
         value["next"],
-        "Set your site's URL in the watane app, then run publish again to get the link"
+        format!(
+            "Ask the person to set your site's URL in the watane app, then run: watane-dev publish --json --dir {} --home {}",
+            value["dir"].as_str().unwrap(),
+            home.path().canonicalize().unwrap().display()
+        )
     );
     fs::write(
         home.path().join("fake.json"),
@@ -469,9 +482,13 @@ fn ac1_publish_paths_match_explicit_and_default_symlink_home() {
                 assert_eq!(
                     value["next"],
                     format!(
-                        "watane-dev publish --json --dir {} --home {}",
+                        "watane-dev publish --json --dir {}{}",
                         dir.display(),
-                        resolved.display()
+                        if explicit {
+                            format!(" --home {}", resolved.display())
+                        } else {
+                            String::new()
+                        }
                     )
                 );
             }
@@ -527,9 +544,8 @@ fn ac1_default_home_and_publish_retry_paths_are_canonical() {
             assert_eq!(
                 value["next"],
                 format!(
-                    "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
-                    dir.display(),
-                    resolved.display()
+                    "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {}",
+                    dir.display()
                 )
             );
         }

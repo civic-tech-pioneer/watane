@@ -158,9 +158,12 @@ fn s34_no_index_next() {
         assert_eq!(
             value["next"],
             if indexes == 0 {
-                "Ask the person to add an index in the watane app, then run search again"
+                format!(
+                    "Ask the person to add an index in the watane app, then run: watane-dev search --json reading --home {}",
+                    home.path().canonicalize().unwrap().display()
+                )
             } else {
-                "Try fewer words, or search with --interface <name>"
+                "Try other words, or search with --interface <name>: watane-dev search --json <other words>".to_string()
             }
         );
     }
@@ -384,4 +387,54 @@ fn ac2_search_app_failure_names_app() {
         );
         assert_eq!(value["next"], value["errors"][0]["fix"]);
     }
+}
+
+#[test]
+fn ac6_search_next_names_home_only_when_given() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("no-app");
+    fs::create_dir(&home).unwrap();
+    for explicit in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        command
+            .args(["search", "--json", "reading"])
+            .env("WATANE_HOME", &home);
+        if explicit {
+            command.arg("--home").arg(&home);
+        }
+        let output = command.output().unwrap();
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output.status.code(), Some(3), "{value}");
+        assert_eq!(
+            value["next"],
+            format!(
+                "watane-dev search --json reading{}",
+                if explicit {
+                    format!(" --home {}", home.canonicalize().unwrap().display())
+                } else {
+                    String::new()
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn ac4_search_with_two_words_and_no_results_tries_the_first_word() {
+    let home = tempfile::tempdir().unwrap();
+    let _host = start(home.path());
+    fs::write(
+        home.path().join("fake.json"),
+        json!({"search":{"indexes":1,"results":[]}}).to_string(),
+    )
+    .unwrap();
+    let (code, value) = search(home.path(), &["reading", "list"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["next"],
+        format!(
+            "Try fewer words: watane-dev search --json reading --home {}",
+            home.path().canonicalize().unwrap().display()
+        )
+    );
 }

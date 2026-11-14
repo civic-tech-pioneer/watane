@@ -126,6 +126,49 @@ fn ac8_json_argument_errors_use_envelope() {
 }
 
 #[test]
+fn ac1_s56_usage_messages_drop_clap_prefix_and_name_missing_command() {
+    let temp = tempfile::tempdir().unwrap();
+    let (code, v) = run(temp.path(), &["--json", "--bogus", "check"]);
+    assert_eq!(code, 2);
+    assert_eq!(v["errors"][0]["code"], "usage.args");
+    assert_eq!(
+        v["errors"][0]["message"],
+        "unexpected argument '--bogus' found"
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(temp.path())
+        .args(["--bogus", "check"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.starts_with("error[usage.args]: unexpected argument"),
+        "{text}"
+    );
+    assert_eq!(text.matches("error:").count(), 0, "{text}");
+    let missing = "no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search";
+    for args in [&[][..], &["--json"][..]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(temp.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(!text.contains("Usage:"), "{text}");
+        if args.is_empty() {
+            assert!(
+                text.starts_with(&format!("error[usage.args]: {missing}\n")),
+                "{text}"
+            );
+        } else {
+            let v: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(v["errors"][0]["message"], missing);
+        }
+    }
+}
+
+#[test]
 fn ac1_ac3_public_reports_are_typed() {
     use watane_dev::{
         check::{CheckReport, ProviderReport},
@@ -402,10 +445,10 @@ fn ac6_s39_specs_cover_paths_derivation_fake_and_argument_errors() {
     let spec =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md")).unwrap();
     for (section, marker) in [
-        ("### 2.3", "error[usage.args]: <clap text>"),
+        ("### 2.3", "error[usage.args]: <message>"),
         ("## 3.", "x/../h (x does not exist)"),
         ("### 9.6", "canonical existing ancestor"),
-        ("### 9.7", "--dir <canonical mod> --home <canonical home>"),
+        ("### 9.7", "--dir <canonical mod> [--home <canonical home>]"),
         ("### 10.2", "Remove `logic.wasm`"),
         (
             "### 15.2",

@@ -49,7 +49,10 @@ fn ac1_dev_s25_add_copies_wit_and_reports_lines() {
     );
     assert_eq!(
         v["next"],
-        "Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves."
+        format!(
+            "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves), then run: watane-dev test --json --dir {}",
+            b.canonicalize().unwrap().display()
+        )
     );
     assert_eq!(
         fs::read(b.join("wit/deps/a/world.wit")).unwrap(),

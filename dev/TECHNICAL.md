@@ -195,7 +195,7 @@ The exit status is the class of the first error; 0 when there is none.
 
 | Code | Class | When | Message (template) | Fix |
 |---|---|---|---|---|
-| `usage.args` | 2 | clap rejects the arguments | the clap text | `watane-dev --help` |
+| `usage.args` | 2 | clap rejects the arguments | clap's first line without its leading `error: `; with no command, `no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search` | `watane-dev --help` |
 | `usage.not_a_mod` | 2 | the folder has no `mod.toml` | `<dir> is not a mod folder: it has no mod.toml` | `Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>` |
 | `usage.slug` | 2 | `watane_pkg::Slug::from_str` refuses it | `"<s>" is not a valid slug: <pkg reason>` | `Use lowercase words of letters and digits joined by "-", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list` |
 | `usage.exists` | 2 | `new` into an existing path | `<path> exists` | `Choose another slug, or pass --dir <new folder>` |
@@ -205,7 +205,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
-| `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run this command again` |
+| `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run this command again`; for a home with a missing ancestor, `Pass --home the folder that the watane app uses (<missing> does not exist), then run this command again` |
 | `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file`; preserve wit-parser `--> <file>:<line>:<col>` locations when present, using the more specific WIT file relative to the mod | — |
 | `mod.cargo_key` | 1 | a key of `logic/Cargo.toml` outside 5.2 | ``logic/Cargo.toml: `<key>` is not allowed`` | `Remove it. Allowed: <list>` |
 | `mod.dependency` | 1 | a dependency outside the allowlist, or of a refused form | ``dependency `<name>` is not in the allowlist`` / `... must be a version requirement` / `... requires <req>, the allowlist has <version>` | `Use only: <direct crates with versions>` |
@@ -224,7 +224,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release and link), then run: watane-dev add --release <that link>` |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
 | `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
@@ -311,7 +311,7 @@ join with `, `; an empty list prints `none` (for example,
 `calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
 are added to these values.
-Argument errors print `error[usage.args]: <clap text>` and
+Argument errors print `error[usage.args]: <message>` (clap's first line without its leading `error: `; with no command, the `no command given` text of 2.2) and
 `  fix: watane-dev --help`, then the failure line. Unknown subcommands,
 missing arguments and no arguments all follow this rule.
 Argument errors use the first known subcommand name found in the arguments
@@ -396,7 +396,9 @@ returned when the mod has no page. With `reused: true`, the page instruction
 is unchanged, or null when the mod has no page. On failure with an
 `env.*` first error, `next` is `watane-dev doctor --json`. A consumer's
 unit/limit or contract step failure uses the test recovery text above with
-`watane-dev serve --json`; otherwise its first fix, or the plain serve
+`watane-dev serve --json`, and the `fix` of each `test.unit`,
+`test.unit_limit` and `test.contract` error is rewritten the same way (only
+when the failing mod is the served one); otherwise its first fix, or the plain serve
 rerun. A local provider failure retains `watane-dev test --json
 --dir <absolute provider folder>` (single-quoted for the shell when it has
 other characters than letters, digits, `/._-`). **serve --stop**:
@@ -436,9 +438,14 @@ old slug: `<from_slug>` or its `_` form as a whole word (bounded by no
 and line, never the text: the source is the publisher's, and the agent
 reads it in the file as data (section 11). `next`: with
 mentions, `Replace <from_slug> with <slug> (and <from_snake> with
-<snake>) at each result.mentions entry, then run: watane-dev test --json`;
+<snake>) at each result.mentions entry, then run: watane-dev test --json --dir <dir>`;
 without, `Edit wit/world.wit, logic/src/lib.rs and ui/, then run:
-watane-dev test --json`.
+watane-dev test --json --dir <dir>` (`<dir>` is the canonical new folder, quoted
+as in 2.4). For a prebuilt package (`logic.wasm`, no `logic/Cargo.toml`): same
+slug, `Edit wit/world.wit and ui/ (logic.wasm is prebuilt and keeps its
+exports), then run: ...`; renamed, `<the mentions part, if any>, write the
+logic source under logic/ (logic/Cargo.toml and logic/src) for <slug>, then
+run: ...` (without mentions it starts `Write the logic source ...`).
 
 **add --release** (step 5)
 ```json
@@ -458,7 +465,7 @@ the `add` text, plus ` Contract tests use a fake of it (see AGENTS.md).`
  "imports": ["import mods:a/api@0.1.0;"],
  "subscriptions": ["export mods:a/changes@0.1.0;"]}
 ```
-`next`: `Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves.`
+`next`: `Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves), then run: watane-dev test --json --dir <canonical mod folder>`; `add --release` adds `; contract tests use a fake of it, see AGENTS.md` inside the parentheses.
 
 **install** (step 2)
 ```json
@@ -468,8 +475,10 @@ the `add` text, plus ` Contract tests use a fake of it (see AGENTS.md).`
 From the host's `InstalledMod` list, in install order, retaining exactly these five fields.
 `next`: `Give the person this page: <url>` for the last entry with a page,
 else null. On `env.host_not_running`, `next` is
-`watane-dev install --json --dir <canonical mod folder> --home <resolved home>`,
-including `--dir` when it was omitted from the original command, adding
+`watane-dev install --json --dir <canonical mod folder> [--home <resolved home>]`,
+including `--dir` when it was omitted from the original command, `--home` only
+when the command was given `--home` (not when the home came from `WATANE_HOME`
+or the default), adding
 ` --wait <n>` only when `--wait` was explicitly passed. Quote each path for the
 shell when it contains characters other than letters, digits or `/._-`.
 Run it once the person has started the app. Other `env.*` errors use
@@ -496,8 +505,8 @@ is `Package::has_source()` (false also when the mod has no source files).
 `release`, `site` and `link` come from the app's answer; `link` is null
 while no site URL is set. Step 6: with `--push`, the result adds `push`
 and its own `next` (10.4.1). With a link, `next` is
-`Put the site folder on your static web host`; without one, it is
-`Set your site's URL in the watane app, then run publish again to get the link`.
+`Put the site folder <absolute site> on your static web host, then give the person this link: <link>`; without one, it is
+`Ask the person to set your site's URL in the watane app, then run: <rerun>`.
 That rerun checks existing releases and reports the release and current link.
 It keeps `publish.version_exists` and exit 1, with `result` containing only
 `home`, `release` and `link` from the listed release (home is resolved).
@@ -511,7 +520,7 @@ Every publish refusal has a `next`:
   Both use the complete canonical publish rerun of 9.7; error fixes stay as in 2.2.
 - `publish.local_dependency`: `watane-dev publish --json --dir <absolute provider folder>`
   for the first local provider whose folder `.watane-dev.json` knows; quote the
-  paths for the shell as above. If `--home <h>` was passed, append
+  paths for the shell as above. If `--home <h>` was passed (only then), append
   `--home <absolute h>` to keep the same home, without contacting it.
   If none is known, use the first error's fix.
 - `env.host_not_running`: repeat publish with `--json`, canonical `--dir`,
@@ -533,8 +542,10 @@ Every publish refusal has a `next`:
 (app 8.2), in its order; dev keeps results as untyped JSON, including unknown
 fields. Text output flattens them as in 2.3. `next`:
 with results, null; with none and `indexes` 0, `Ask the person to add an
-index in the watane app, then run search again`; with none otherwise,
-`Try fewer words, or search with --interface <name>`.
+index in the watane app, then run: <the search command>`; with none otherwise
+and two or more words, `Try fewer words: <the search command with only the first word>`;
+with one word or none, `Try other words, or search with --interface <name>: watane-dev search --json <other words>`.
+The search command is the one built for `env.host_not_running` below.
 
 ## 3. Environment
 
@@ -1315,7 +1326,7 @@ Run elsewhere (the consumer's parent, a subfolder of the provider), `.` is
 Before any mod traversal or test pipeline, resolve home: `--home`, else
 `watane_host::default_home()`; use the canonical existing ancestor plus any
 missing suffix (section 3). Read its `RunInfo`. Missing-app retry paths
-in `next` use this resolved home and the canonical mod folder.
+in `next` use the canonical mod folder, and this resolved home only when the command was given `--home`.
 `GET /api/status` must match the home, port and protocol version and
 say `mode: "home"` and `app: true`; else `env.host_not_running` with the
 cause ("the host of <home> is a preview" / "the host of <home> runs
@@ -1389,7 +1400,8 @@ a 409 `version_exists` answer (a race after step 2b) is
 version-bump fix and file as the preflight refusal. Both version-conflict
 paths use `Raise the version in wit/world.wit, then run: <rerun>` for `next`;
 `host.no_answer` uses `Run again with a longer --wait: <rerun>`.
-The rerun is `watane-dev publish --json --dir <canonical mod> --home <canonical home>`,
+The rerun is `watane-dev publish --json --dir <canonical mod> [--home <canonical home>]`
+(`--home` only when the command was given `--home`),
 with `--no-source`, `--push` (step 6) and explicit `--wait <n>` retained, paths shell quoted.
 This includes default homes and timeouts while listing releases, and does
 not change error fix texts.
@@ -1401,7 +1413,7 @@ to the fix. Success chooses the link-dependent instruction of 2.4.
 `search` needs no mod folder (`dir` is null). It resolves the home and
 checks the app status as `install` does (9.6, step 1: `env.host_not_running`
 with the same causes). On a missing app, `next` repeats
-`watane-dev search --json <same words> [--publisher <key>] [--interface <name>] --home <absolute home>`;
+`watane-dev search --json <same words> [--publisher <key>] [--interface <name>] [--home <absolute home>]` (`--home` only when given);
 quote each word and option value for the shell as in 2.4 (including empty words).
 No mod folder is read, even with `--dir`. Then send one `POST /api/search` with
 `{"text": <the words joined with one space, or "">, "publisher", "interface"}`
@@ -1691,7 +1703,7 @@ Result (2.4 `publish` plus `push`):
 
 `next` on success: with a link, `Give the person this link to share:
 <link>`; without a link and with `raw`, `Ask the person to set the site
-URL in the watane app to <raw>, then run publish again to get the link`;
+URL in the watane app to <raw>, then run: <rerun>`;
 without either, the 2.4 text. With `publish.push_failed`, the commands of
 each `push_failed` fix, joined with ` && `. The raw URL can serve an older
 file for a few minutes after a push; the link stays valid because each

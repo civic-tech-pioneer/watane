@@ -124,6 +124,9 @@ impl Fixture {
         assert!(!self.home.join("requests").exists());
     }
 }
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\"'\"'"))
+}
 #[test]
 fn ac1_first_push_creates_both_repositories_and_names_the_mod_repository() {
     let f = Fixture::new();
@@ -135,7 +138,11 @@ fn ac1_first_push_creates_both_repositories_and_names_the_mod_repository() {
     );
     assert_eq!(
         v["next"],
-        "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/, then run publish again to get the link"
+        format!(
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/, then run: watane-dev publish --json --dir {} --home {} --push",
+            shell_quote(&f.dir.canonicalize().unwrap()),
+            shell_quote(&f.home.canonicalize().unwrap())
+        )
     );
     assert!(v["result"]["link"].is_null());
     let manifest = fs::read_to_string(f.dir.join("mod.toml")).unwrap();

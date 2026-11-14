@@ -165,7 +165,10 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
     );
     assert_eq!(
         v["next"],
-        "Replace reading-list with ratings (and reading_list with ratings) at each result.mentions entry, then run: watane-dev test --json"
+        format!(
+            "Replace reading-list with ratings (and reading_list with ratings) at each result.mentions entry, then run: watane-dev test --json --dir {}",
+            v["dir"].as_str().unwrap()
+        )
     );
     let (code, v) = f.run(&["new", "--from", &link("reading-list")]);
     assert_eq!(code, 0, "{v}");
@@ -173,7 +176,10 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
     assert_eq!(v["result"]["mentions"], json!([]));
     assert_eq!(
         v["next"],
-        "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev test --json"
+        format!(
+            "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev test --json --dir {}",
+            v["dir"].as_str().unwrap()
+        )
     );
 }
 #[test]
@@ -258,7 +264,10 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
         assert_eq!(v["result"]["providers"], json!([release("ratings")]));
         assert_eq!(
             v["next"],
-            "Copy the lines that the mod needs into the world in wit/world.wit. Each line is a grant that the participant approves. Contract tests use a fake of it (see AGENTS.md)."
+            format!(
+                "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves; contract tests use a fake of it, see AGENTS.md), then run: watane-dev test --json --dir {}",
+                v["dir"].as_str().unwrap()
+            )
         );
     }
     let (code, v) = f.run(&[
@@ -645,6 +654,29 @@ fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
         }
         let dir = f.root.path().join(slug);
         assert_eq!(fs::read(dir.join("logic.wasm")).unwrap(), expected);
+        let dir_arg = v["dir"].as_str().unwrap();
+        let mentions = v["result"]["mentions"].as_array().unwrap().len();
+        let (from, to) = ("ratings", v["result"]["slug"].as_str().unwrap());
+        let replace = format!(
+            "Replace {from} with {to} (and {from} with {}) at each result.mentions entry",
+            to.replace('-', "_")
+        );
+        let step = match (to == from, mentions > 0) {
+            (true, _) => {
+                "Edit wit/world.wit and ui/ (logic.wasm is prebuilt and keeps its exports)"
+                    .to_string()
+            }
+            (false, true) => format!(
+                "{replace}, write the logic source under logic/ (logic/Cargo.toml and logic/src) for {to}"
+            ),
+            (false, false) => format!(
+                "Write the logic source under logic/ (logic/Cargo.toml and logic/src) for {to}"
+            ),
+        };
+        assert_eq!(
+            v["next"],
+            format!("{step}, then run: watane-dev test --json --dir {dir_arg}")
+        );
         assert!(
             v["result"]["files"]
                 .as_array()

@@ -35,8 +35,19 @@ fn main() {
                     _ => None,
                 })
                 .unwrap_or("watane-dev");
+            let message = if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                    | clap::error::ErrorKind::MissingSubcommand
+            ) {
+                "no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search".to_string()
+            } else {
+                let text = e.to_string();
+                let first = text.lines().next().unwrap_or_default();
+                first.strip_prefix("error: ").unwrap_or(first).to_string()
+            };
             Outcome::new(command, None).fail(vec![
-                Problem::new(Code::UsageArgs, e.to_string()).fix("watane-dev --help"),
+                Problem::new(Code::UsageArgs, message).fix("watane-dev --help"),
             ])
         }
     };

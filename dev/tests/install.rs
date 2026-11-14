@@ -556,9 +556,13 @@ fn ac1_install_next_matches_explicit_and_default_missing_symlink_home() {
             assert_eq!(
                 value["next"],
                 format!(
-                    "watane-dev install --json --dir {} --home {}",
+                    "watane-dev install --json --dir {}{}",
                     resolved.display(),
-                    resolved.join("home").display()
+                    if explicit {
+                        format!(" --home {}", resolved.join("home").display())
+                    } else {
+                        String::new()
+                    }
                 )
             );
             assert_eq!(value["dir"], serde_json::json!(resolved));
@@ -581,6 +585,10 @@ fn ac2_missing_home_component_before_parent_is_environment_error() {
         assert_eq!(
             value["errors"][0]["message"],
             "no watane app runs for the home x/../h (x does not exist)"
+        );
+        assert_eq!(
+            value["errors"][0]["fix"],
+            "Pass --home the folder that the watane app uses (x does not exist), then run this command again"
         );
     }
 }
