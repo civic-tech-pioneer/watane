@@ -230,10 +230,10 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
 | `env.gh_auth` | 3 | step 6: `gh api user` answers 401 or asks for a login | `gh is not logged in: <gh's last stderr line>` | `Ask the person to run: gh auth login (dev never logs in for them), then run: <rerun>` |
-| `env.git_identity` | 3 | step 6: `git var GIT_COMMITTER_IDENT` fails in the mod folder | `git has no name and email for commits: <git's last stderr line>` | `Ask the person to run: git config --global user.name "<name>" and git config --global user.email "<email>", then run: <rerun>` |
+| `env.git_identity` | 3 | step 6: `git var GIT_COMMITTER_IDENT` fails in the mod folder | `git has no name and email for commits: <git's last stderr line, without its guess (got 'user@host...')>` (no colon when stderr is empty) | `Ask the person to run: git config --global user.name "<name>" and git config --global user.email "<email>", then run: <rerun>` |
 | `publish.origin_differs` | 1 | step 6: the mod folder's git remote `origin` is not the `repository` of `mod.toml`, or there is no `repository` | `the mod folder's git remote origin is <url>, and mod.toml names <repository, or no repository>` (file `mod.toml`) | `Set repository in mod.toml to the https URL of the origin repository, or change the origin with: git -C '<dir>' remote set-url origin <repository>; then run: <rerun>` |
 | `publish.repository_exists` | 1 | step 6: `<owner>/<slug>` exists on GitHub, is not empty, and `mod.toml` names no repository | `https://github.com/<owner>/<slug> exists and holds commits that watane-dev did not push for this mod` (file `mod.toml`) | `Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: <rerun>` |
-| `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last stderr lines>` | `<the failed command and the rest of its list>` |
+| `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last 5 non-empty stderr lines, a repeated leading `remote: ` collapsed to one, trailing whitespace trimmed>` | `<the failed command and the rest of its list>`, shown without dev's transfer guard flags (`-c http.lowSpeed*`), which dev still passes to git |
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
 | `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run this command again` |
@@ -1534,7 +1534,9 @@ http.lowSpeedTime=60` to every git command that uses the network, so a
 stalled transfer ends. Each command is one argument vector, never a shell
 line; a URL or path argument comes after `--` where git accepts one.
 Standard output is read only where stated below. A failure keeps the last
-5 lines of standard error for the message. dev never runs `push --force`,
+5 non-empty lines of standard error for the message (a repeated leading
+`remote: ` collapsed to one, trailing whitespace trimmed); the fix shows
+the commands without the `-c http.lowSpeed*` flags. dev never runs `push --force`,
 never rewrites a pushed commit and never deletes a pushed tag.
 
 A remote's URL is always read with `git config --get remote.origin.url`

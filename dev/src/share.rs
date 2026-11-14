@@ -20,12 +20,19 @@ impl Run {
             .env("GIT_LFS_SKIP_SMUDGE", "1")
             .output()
     }
+    /// The command as shown in messages and fixes: without dev's own
+    /// `-c http.lowSpeed*` guard, which `args` (the argv) keeps.
     fn text(&self) -> String {
-        std::iter::once(self.program)
-            .chain(self.args.iter().map(String::as_str))
-            .map(quote)
-            .collect::<Vec<_>>()
-            .join(" ")
+        let mut shown = vec![self.program];
+        let mut args = self.args.iter().map(String::as_str).peekable();
+        while let Some(arg) = args.next() {
+            if arg == "-c" && args.peek().is_some_and(|v| v.starts_with("http.lowSpeed")) {
+                args.next();
+            } else {
+                shown.push(arg);
+            }
+        }
+        shown.into_iter().map(quote).collect::<Vec<_>>().join(" ")
     }
     fn failure(&self, stderr: &str, rest: &[Run]) -> Problem {
         let tail = stderr_tail(stderr);
@@ -39,6 +46,16 @@ impl Run {
 fn stderr_tail(stderr: &str) -> String {
     stderr
         .lines()
+        .map(|line| {
+            let mut line = line.trim_end();
+            while let Some(rest) = line.strip_prefix("remote: remote:") {
+                line = &line[line.len() - rest.len() - "remote:".len()..];
+            }
+            line
+        })
+        .filter(|line| !line.is_empty() && *line != "remote:")
+        .collect::<Vec<_>>()
+        .into_iter()
         .rev()
         .take(5)
         .collect::<Vec<_>>()
@@ -46,6 +63,19 @@ fn stderr_tail(stderr: &str) -> String {
         .rev()
         .collect::<Vec<_>>()
         .join("\n")
+}
+/// Only git's last stderr line, without its guess `(got 'user@host...')`,
+/// which is the person's private machine name.
+fn identity_message(stderr: &str) -> String {
+    let last = stderr.lines().rev().find(|l| !l.trim().is_empty());
+    match last {
+        None => "git has no name and email for commits".into(),
+        Some(line) => {
+            let line = line.trim();
+            let line = line.find(" (got ").map_or(line, |i| &line[..i]);
+            format!("git has no name and email for commits: {line}")
+        }
+    }
 }
 fn quote(s: &str) -> String {
     if !s.is_empty()
@@ -282,7 +312,7 @@ pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem> {
     let ident = git(dir, &["var", "GIT_COMMITTER_IDENT"]);
     let output = ident.output().map_err(Problem::internal)?;
     if !output.status.success() {
-        return Err(Problem::new(Code::EnvGitIdentity,format!("git has no name and email for commits: {}",stderr_tail(&String::from_utf8_lossy(&output.stderr)))).fix(format!("Ask the person to run: git config --global user.name \"<name>\" and git config --global user.email \"<email>\", then run: {rerun}")));
+        return Err(Problem::new(Code::EnvGitIdentity,identity_message(&String::from_utf8_lossy(&output.stderr))).fix(format!("Ask the person to run: git config --global user.name \"<name>\" and git config --global user.email \"<email>\", then run: {rerun}")));
     }
     let command = gh(&["api", "user", "--jq", ".login"]);
     let output=command.output().map_err(|e| {
@@ -693,6 +723,46 @@ pub fn push(
 mod tests {
     use super::*;
     #[test]
+    fn ac1_text_omits_transfer_guard_but_argv_keeps_it() {
+        for sub in ["push", "fetch", "ls-remote"] {
+            let run = git(Path::new("d"), &[sub, "-q"]);
+            assert_eq!(run.text(), format!("git -C d {sub} -q"));
+            assert_eq!(
+                run.args[..6],
+                [
+                    "-C",
+                    "d",
+                    "-c",
+                    "http.lowSpeedLimit=1000",
+                    "-c",
+                    "http.lowSpeedTime=60"
+                ]
+            );
+            assert_eq!(run.args[6], sub);
+        }
+    }
+    #[test]
+    fn ac2_stderr_tail_collapses_prefix_and_drops_empty_lines() {
+        assert_eq!(
+            stderr_tail("remote: remote: error: denied   \nremote: \n\n"),
+            "remote: error: denied"
+        );
+        let many: String = (1..=8).map(|i| format!("l{i}\n")).collect();
+        assert_eq!(stderr_tail(&many), "l4\nl5\nl6\nl7\nl8");
+    }
+    #[test]
+    fn ac3_identity_message_drops_guess_and_hint() {
+        let stderr = "\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n\nfatal: unable to auto-detect email address (got 'root@box.(none)')\n";
+        assert_eq!(
+            identity_message(stderr),
+            "git has no name and email for commits: fatal: unable to auto-detect email address"
+        );
+        assert_eq!(
+            identity_message(""),
+            "git has no name and email for commits"
+        );
+    }
+    #[test]
     fn ac7_watane_branch_finishes_with_default_branch_edit() {
         let commands = mod_commands(
             Path::new("mod"),
@@ -708,7 +778,7 @@ mod tests {
                 "git -C mod add -f -- mod.toml",
                 "git -C mod commit -q -m 'ratings 0.1.0'",
                 "git -C mod tag key/ratings@0.1.0",
-                "git -C mod -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD refs/tags/key/ratings@0.1.0",
+                "git -C mod push -q origin HEAD refs/tags/key/ratings@0.1.0",
                 "gh repo edit carol/ratings --default-branch watane",
             ]
         );
@@ -788,7 +858,7 @@ mod tests {
                 "git -C site remote add origin -- https://github.com/alice/watane-channel",
                 "git -C site add -A -- head entries packages",
                 "git -C site commit -q -m key/demo@0.1.0",
-                "git -C site -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD",
+                "git -C site push -q origin HEAD",
             ]
         );
         assert!(
@@ -813,7 +883,7 @@ mod tests {
             [
                 "git -C site init -q -b main",
                 "git -C site remote add origin -- https://github.com/alice/watane-channel",
-                "git -C site -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 fetch -q origin",
+                "git -C site fetch -q origin",
                 "git -C site reset -q origin/main",
             ]
         );
@@ -857,7 +927,7 @@ mod tests {
         ];
         assert_eq!(
             finishing(&cmds[1..]),
-            "git -C 'Alice'\"'\"'s mod' -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD refs/tags/key/demo@0.1.0"
+            "git -C 'Alice'\"'\"'s mod' push -q origin HEAD refs/tags/key/demo@0.1.0"
         );
     }
     #[test]
@@ -873,7 +943,7 @@ mod tests {
                 "git -C mod add -f -- mod.toml ui/index.html",
                 "git -C mod commit -q -m 'demo 0.1.0'",
                 "git -C mod tag key/demo@0.1.0",
-                "git -C mod -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 push -q origin HEAD refs/tags/key/demo@0.1.0",
+                "git -C mod push -q origin HEAD refs/tags/key/demo@0.1.0",
             ]
         );
         assert_eq!(
