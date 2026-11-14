@@ -315,7 +315,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
-| host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): `remove_toolset`, `toolsets`, `tokens` with the app (step 2) |
+| host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): all three exist and host tests cover them; the app reads `toolsets` and `tokens`, but nothing in it calls `remove_toolset`, so a person cannot remove a toolset from the app |
 | host | 5 catalog and home | 1, 2 | done (S8, S11, S12a: plan, `Source::Folder`, grants, revoke, update, remove, home mode) |
 | host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
 | host | 8 releases | 3 | done (S21b: `Source::Release`, S31, S32) |
