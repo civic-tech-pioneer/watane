@@ -334,12 +334,34 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
 
-- [ ] **S56 Leftover sweep (dev messages).** The "Leftovers" section lists 20 open dev items, almost
-  all of them a message, a fix or a `next` that misleads: the doubled "error", the `--home` fix that
-  still says to start the app, the `next` values that are prose, the `push_failed` noise, the
-  `<owner>/<slug>` placeholder. None is hard; together they are most of what a maker's agent reads
-  when something goes wrong. One slice, re-checking each line against main first. Cloud; no
-  credentials needed. The pkg, log, host, app and dist items can follow as their own sweeps.
+- [~] **S56 Leftover sweep (dev messages).** Branch `slice/s56`. What a maker's coding agent reads
+  at the moment something has already gone wrong. Fifteen items from "Leftovers", every one of them
+  a message, a fix or a `next` that misleads; none is hard, and together they are most of dev's
+  text on a bad day. Re-check each against main before writing a task: this ledger was audited on
+  2026-11-14, but that is exactly the check S49 skipped.
+
+  In scope: the doubled "error" and the whole help text on no arguments (main.rs:20, 12); the failed
+  serve whose fix says `test --json` while `next` says `serve --json`; the `add --release` fix that
+  says to pass another mod's folder; the `--home x/../h` fix that still says to start the app; the
+  `next` values that are prose instead of a rerun (cli.rs:184, 198, 308, 511, 850, 881); "it has no
+  release" with dev/TECHNICAL.md:227 documenting a fix the code no longer gives; the deps.json self
+  entry naming a `wit/deps` folder that does not exist; the prebuilt `next` that contradicts its own
+  warning; the misleading `--no-source` refusal; `build.reads_outside` on a leftover `wit_bindgen`
+  path; `env.git_identity` keeping git's stderr verbatim, user@host included; `push_failed`'s
+  "remote: remote:" and trailing whitespace; the `-c http.lowSpeed*` flags in its fix and `next`;
+  the `--home <abs>` appended to every `next` even when the home came from `WATANE_HOME`; and the
+  `repository` fix printing a literal `<owner>/<slug>` though the slug is in scope.
+
+  Out of scope, and why: `doctor` in a mod folder (unsettled, needs one run to confirm); the WIT
+  `line: null` (the fix belongs in pkg); fake-watane's missing never-answer mode and the leaking
+  `ac2_real_home_without_app` (test infrastructure, not a person's text); `test` and `serve`
+  refusing `--home` (a feature, not a message).
+
+  Outcome: a maker's agent that hits each of these reads a sentence that names the real cause and a
+  `next` it can run. Two of these are pinned by expected strings in dev/tests (`push_failed`'s
+  flags at share.rs:711, 791, 816, 860, 876; "it has no release" at publish.rs:76), so the tests
+  move with the text. Touches: dev only. Cloud: dev's suite runs there; `scripts/vendor.sh` must be
+  run first because `dev/allowlist/vendor` is gitignored. The app journeys cannot run in the cloud.
 
 After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -588,6 +610,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
+- S56: cloud routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` (running, handed out 2026-11-14).
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
