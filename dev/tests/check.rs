@@ -128,7 +128,7 @@ fn ac4_own_provider_message_does_not_claim_own_events_are_unused() {
     );
     assert_eq!(
         error["fix"],
-        "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself"
+        "Ask before deleting mods:consumer from deps.json: a mod cannot depend on itself"
     );
 }
 
@@ -183,7 +183,7 @@ fn ac7_deps_only_own_slug_never_suggests_importing_itself() {
         .unwrap();
     assert_eq!(
         error["fix"],
-        "Ask before deleting wit/deps/consumer/ and mods:consumer from deps.json: a mod cannot depend on itself"
+        "Ask before deleting mods:consumer from deps.json: a mod cannot depend on itself"
     );
 }
 

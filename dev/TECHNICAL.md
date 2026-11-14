@@ -212,12 +212,12 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.logic_file` | 1 | a file of `logic/` outside 5.3 | `logic/build.rs is not allowed: the builder runs no build script` (one text for each kind) | `Remove <file>` |
 | `mod.symlink` | 1 | a symbolic link in the mod folder | `<file> is a symbolic link` | `Replace it with a file` |
 | `mod.no_contract_tests` | 1 | a logic part and no `tests/*.json` | `the mod has a logic part and no contract test` | `Add tests/<name>.json (see AGENTS.md)` |
-| `mod.self_dependency` | 1 | `add` of the mod itself | `a mod cannot depend on itself` | `Pass the folder of another mod to add` |
-| `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | From `add`: `Do not add <provider slug>: it already depends on this mod`. From traversal: `Remove mods:<slug> from deps.json and wit/deps/<slug>/ in <absolute folder>` for the edge that closes the cycle. |
+| `mod.self_dependency` | 1 | `add` of the mod itself | `a mod cannot depend on itself` | `Pass the folder of another mod to add` (for `add --release`: `Pass the link or release of another mod to add --release`) |
+| `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | From `add`: `Do not add <provider slug>: it already depends on this mod`. From traversal: `Remove mods:<slug> from deps.json and wit/deps/<slug>/ in <absolute folder>` (without ` and wit/deps/<slug>/` when that folder does not exist) for the edge that closes the cycle. |
 | `mod.provider_missing` | 1 | a local provider has no folder in `.watane-dev.json`, or the folder is gone | `the local provider <slug> has no known folder` | `Run: watane-dev add <folder of <slug>>` |
 | `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>` |
 | `build.compile` | 1 | each rustc error | the rustc message, with its location | — |
-| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it` |
+| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` |
 | `build.imports` | 1 | each `Violation` of `Mod::check_component` | `[component] <message>` | — |
 | `test.unit` | 1 | each failed unit test | the panic message | — |
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
@@ -225,7 +225,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider; it has no release` | `Publish <slug> first (if it is already published, that run reports its release and link), then run: watane-dev add --release <that link>` |
-| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source: its publisher published it with --no-source` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
@@ -250,7 +250,8 @@ In step 6, `<rerun>` is the canonical publish rerun of 9.7 with `--push`.
 A `mod.invalid` from a pkg `mod-toml` violation whose message starts with
 `` `repository` `` (pkg 4.2) gets the fix `Set repository in mod.toml to the
 https URL of the mod's git repository (for example
-https://github.com/<owner>/<slug>), or remove the line`.
+https://github.com/<owner>/<slug>), or remove the line`; when the mod's own slug is
+readable from `wit/world.wit`, `<slug>` is that slug.
 
 Warning codes (step 5 first; step 6 adds `new.fork_unavailable`,
 `new.fork_differs` and `publish.fork_unavailable`, 10.4.2): `new.prebuilt_renamed` (a renamed derivative
@@ -278,7 +279,9 @@ wit/world.wit imports none of its interfaces`; for an own provider it is
 import its interface in `wit/world.wit`, or
 ask before deleting `wit/deps/<slug>/` and `mods:<slug>` from `deps.json`.
 For an own provider the fix is `Ask before deleting wit/deps/<slug>/ and
-mods:<slug> from deps.json: a mod cannot depend on itself`. dev passes both
+mods:<slug> from deps.json: a mod cannot depend on itself`, or, when
+`wit/deps/<slug>/` does not exist, `Ask before deleting mods:<slug> from
+deps.json: a mod cannot depend on itself`. dev passes both
 messages through from pkg. If pkg instead reports the own slug as unused
 (including a deps.json-only entry with no copied WIT), dev compares it with
 the mod's own WIT declaration and uses the self-dependency fix, never the

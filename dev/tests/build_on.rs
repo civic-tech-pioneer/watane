@@ -188,7 +188,7 @@ fn ac2_no_source_writes_nothing() {
     assert_eq!(
         v["errors"][0]["message"],
         format!(
-            "the release {} holds no source: its publisher published it with --no-source",
+            "the release {} holds no source (no logic/Cargo.toml, logic/src/ or tests/)",
             release("reading-list")
         )
     );
@@ -285,6 +285,10 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
     ]);
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "mod.self_dependency");
+    assert_eq!(
+        v["errors"][0]["fix"],
+        "Pass the link or release of another mod to add --release"
+    );
 }
 #[test]
 fn ac9_template_documents_building_on_data() {

@@ -123,8 +123,13 @@ fn visit(
             provider
         };
         if let Some(start) = stack.iter().position(|p| p == &provider) {
+            let folder = if dir.join("wit/deps").join(slug.as_str()).exists() {
+                format!(" and wit/deps/{slug}/")
+            } else {
+                String::new()
+            };
             return Err(cycle(&stack[start..], &provider).fix(format!(
-                "Remove mods:{slug} from deps.json and wit/deps/{slug}/ in {}",
+                "Remove mods:{slug} from deps.json{folder} in {}",
                 dir.display()
             )));
         }
@@ -299,7 +304,7 @@ mod tests {
             error.fix.as_deref(),
             Some(
                 format!(
-                    "Remove mods:a from deps.json and wit/deps/a/ in {}",
+                    "Remove mods:a from deps.json in {}",
                     c.canonicalize().unwrap().display()
                 )
                 .as_str()

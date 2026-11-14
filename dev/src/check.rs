@@ -102,10 +102,24 @@ fn wit_location(message: &str) -> Option<(String, u32, u32)> {
 }
 /// Map pkg violations, preserving locations supplied in parser diagnostics.
 pub(crate) fn mod_problems(e: ModError) -> Vec<Problem> {
-    mod_problems_for_slug(e, None)
+    mod_problems_for_slug(e, None, None)
 }
 
-fn mod_problems_for_slug(e: ModError, own_slug: Option<&watane_pkg::Slug>) -> Vec<Problem> {
+fn mod_problems_for_slug(
+    e: ModError,
+    own_slug: Option<&watane_pkg::Slug>,
+    dir: Option<&Path>,
+) -> Vec<Problem> {
+    // Name wit/deps/<slug>/ only when that folder is really there.
+    let self_fix = |slug: &str| {
+        if dir.is_some_and(|d| d.join("wit/deps").join(slug).exists()) {
+            format!(
+                "Ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json: a mod cannot depend on itself"
+            )
+        } else {
+            format!("Ask before deleting mods:{slug} from deps.json: a mod cannot depend on itself")
+        }
+    };
     match e {
         ModError::Invalid(v) => v
             .into_iter()
@@ -132,13 +146,13 @@ fn mod_problems_for_slug(e: ModError, own_slug: Option<&watane_pkg::Slug>) -> Ve
                 let fix = if file == "deps.json"
                     && let Some(slug) = v.message.strip_prefix("deps.json lists this mod itself as mods:")
                 {
-                    format!("Ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json: a mod cannot depend on itself")
+                    self_fix(slug)
                 } else if file == "deps.json"
                     && let Some(slug) = v.message.strip_prefix("deps.json lists mods:")
                         .and_then(|s| s.strip_suffix(" but wit/world.wit imports none of its interfaces"))
                 {
                     if own_slug.is_some_and(|own| own.as_str() == slug) {
-                        format!("Ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json: a mod cannot depend on itself")
+                        self_fix(slug)
                     } else {
                         format!("Import the provider's interface in wit/world.wit, or ask before deleting wit/deps/{slug}/ and mods:{slug} from deps.json")
                     }
@@ -154,7 +168,7 @@ fn mod_problems_for_slug(e: ModError, own_slug: Option<&watane_pkg::Slug>) -> Ve
                 } else if v.rule == watane_pkg::Rule::ModToml
                     && v.message.starts_with("`repository`")
                 {
-                    "Set repository in mod.toml to the https URL of the mod's git repository (for example https://github.com/<owner>/<slug>), or remove the line".into()
+                    format!("Set repository in mod.toml to the https URL of the mod's git repository (for example https://github.com/<owner>/{}), or remove the line", own_slug.map_or("<slug>", |s| s.as_str()))
                 } else {
                     format!("Correct {} according to the reported rule", v.file)
                 };
@@ -251,7 +265,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
             ),
             (error, _) => error,
         };
-        mod_problems_for_slug(error, own_slug.as_ref())
+        mod_problems_for_slug(error, own_slug.as_ref(), Some(dir))
     })?;
     if dir.join("logic").exists() {
         let path = dir.join("logic/Cargo.toml");
@@ -851,6 +865,8 @@ mod tests {
     fn ac7_own_provider_diagnostics_use_identity_and_actual_folder() {
         use watane_pkg::{Rule, Violation};
         let own = "consumer".parse().unwrap();
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join("wit/deps/consumer")).unwrap();
         for (file, message, expected) in [
             (
                 "deps.json",
@@ -870,10 +886,47 @@ mod tests {
                     message: message.into(),
                 }]),
                 Some(&own),
+                Some(t.path()),
             );
             assert_eq!(errors[0].fix.as_deref(), Some(expected));
             assert_eq!(errors[0].file.as_deref(), Some(file));
         }
+        let empty = tempfile::tempdir().unwrap();
+        let errors = mod_problems_for_slug(
+            ModError::Invalid(vec![Violation {
+                rule: Rule::Provider,
+                file: "deps.json".into(),
+                message: "deps.json lists this mod itself as mods:consumer".into(),
+            }]),
+            Some(&own),
+            Some(empty.path()),
+        );
+        assert_eq!(
+            errors[0].fix.as_deref(),
+            Some("Ask before deleting mods:consumer from deps.json: a mod cannot depend on itself")
+        );
+    }
+
+    #[test]
+    fn ac3_repository_fix_names_the_own_slug() {
+        use watane_pkg::{Rule, Violation};
+        let fix = |own: Option<&watane_pkg::Slug>| {
+            mod_problems_for_slug(
+                ModError::Invalid(vec![Violation {
+                    rule: Rule::ModToml,
+                    file: "mod.toml".into(),
+                    message: "`repository` has no host".into(),
+                }]),
+                own,
+                None,
+            )[0]
+            .fix
+            .clone()
+            .unwrap()
+        };
+        let ratings = "ratings".parse().unwrap();
+        assert!(fix(Some(&ratings)).contains("https://github.com/<owner>/ratings)"));
+        assert!(fix(None).contains("https://github.com/<owner>/<slug>)"));
     }
 
     #[test]

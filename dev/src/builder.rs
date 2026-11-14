@@ -365,14 +365,7 @@ pub(crate) fn compile(
     if !outside.is_empty() {
         return Err(outside
             .into_iter()
-            .map(|path| {
-                Problem::new(
-                    Code::BuildReadsOutside,
-                    format!("the build read {}, outside the mod", path.display()),
-                )
-                .at(path.to_string_lossy(), None, None)
-                .fix("Remove the include_bytes!, include_str!, include! or #[path] that names it")
-            })
+            .map(|path| reads_outside_problem(&path))
             .collect());
     }
     Ok(artifacts)
@@ -456,6 +449,23 @@ fn normalized(path: &Path) -> PathBuf {
     })
 }
 
+fn reads_outside_problem(path: &Path) -> Problem {
+    let fix = if path.extension().is_some_and(|e| e == "wit") {
+        format!(
+            "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at {}",
+            path.display()
+        )
+    } else {
+        "Remove the include_bytes!, include_str!, include! or #[path] that names it".into()
+    };
+    Problem::new(
+        Code::BuildReadsOutside,
+        format!("the build read {}, outside the mod", path.display()),
+    )
+    .at(path.to_string_lossy(), None, None)
+    .fix(fix)
+}
+
 fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
     let roots: Vec<_> = allowed.iter().map(|p| normalized(p)).collect();
     let mut outside = BTreeSet::new();
@@ -502,6 +512,18 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac6_reads_outside_fix_depends_on_the_path() {
+        let wit = reads_outside_problem(Path::new("/x/other/wit/world.wit"));
+        assert_eq!(
+            wit.fix.as_deref(),
+            Some(
+                "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at /x/other/wit/world.wit"
+            )
+        );
+        let data = reads_outside_problem(Path::new("/x/data.bin"));
+        assert!(data.fix.unwrap().starts_with("Remove the include_bytes!,"));
+    }
     #[test]
     fn ac1_release_and_unit_build_progress_stays_on_stderr() {
         const CHILD: &str = "WATANE_TEST_BUILD_PROGRESS";
