@@ -814,6 +814,16 @@ fn ac5_s37_page_dom_pick_and_focus_gate() {
     );
 }
 #[test]
+fn regress_s58_install_consent_release_line_names_first() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "regress_s58"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+#[test]
 fn ac6_s37_page_dom_origin_binds_and_sign() {
     assert!(
         std::process::Command::new("node")

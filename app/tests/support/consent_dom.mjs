@@ -59,6 +59,16 @@ if (process.argv[2] === 'pick') {
   assert.deepEqual(calls, [{command:'consent_answer',args:{id:'request-id',approve:true,choice:'second',withheld:[]}}]);
   await load(request); await nodes['#deny'].click();
   assert.deepEqual(calls[0].args, {id:'request-id',approve:false,choice:null,withheld:[]});
+} else if (process.argv[2] === 'regress_s58') {
+  // S58 AC2: a value that starts with a release reference starts with the readable part;
+  // the reference follows at the end. Seen live: '<key>/reading-list@0.1.0 by Alice (6gduw4q4p6) · signature verified'.
+  const release = 'c1prermeecwogtb8mo8wra1h76noou5q87ffp86o6wqreycrigoy/reading-list@0.1.0';
+  await load({kind:'install',by_program:false,mods:[{name:'Reading list',version:'0.1.0',local:'reading-list',slug:'reading-list',
+    release,publisher:{name:'Alice',fingerprint:'c1prermeec'},grants:[],uses:[],binds:[]}]});
+  const line = all(main).map(n => n.content).find(t => t.includes(release));
+  assert.ok(line, 'the release reference stays visible');
+  assert.ok(!line.startsWith(release), `starts with the reference: ${line}`);
+  assert.ok(line.indexOf('Alice (c1prermeec)') < line.indexOf(release), `name after reference: ${line}`);
 } else {
   await load({kind:'install',by_program:false,mods:[{name:'Stats',version:'1.0.0',local:'stats',publisher:null,
     grants:[],uses:[],origin:'alice/books@1.0.0',binds:['Frank in place of Carol (your pick)']}]});
