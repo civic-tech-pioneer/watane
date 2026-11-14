@@ -192,7 +192,10 @@ fn links_below(
             found |= violations.len() > before;
             continue;
         };
-        let list = crate::open::entries(&handle).map_err(|e| io(&root.join(&relative), e))?;
+        let Some(list) = list_entries(&handle, root, &relative, violations)? else {
+            found |= violations.len() > before;
+            continue;
+        };
         for (name, m) in list.into_iter().rev() {
             let path = format!("{relative}/{}", name.to_string_lossy());
             match m.kind {
@@ -246,6 +249,27 @@ fn open_listed(
         Err((part, e)) => Err(io(&root.join(part), e)),
     }
 }
+// Listing an opened directory: an entry gone before its stat is a change, not a fault of the folder.
+fn list_entries(
+    handle: &crate::open::Dir,
+    root: &Path,
+    relative: &str,
+    violations: &mut Vec<Violation>,
+) -> Result<Option<Vec<(std::ffi::OsString, crate::open::Stat)>>, ModError> {
+    match crate::open::entries(handle) {
+        Ok(list) => Ok(Some(list)),
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            add(violations, Rule::Path, relative, CHANGED);
+            Ok(None)
+        }
+        Err(e) => Err(io(&root.join(relative), e)),
+    }
+}
 fn segment(s: &str) -> bool {
     let first = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
     !s.is_empty()
@@ -295,7 +319,9 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
             let Some(handle) = open_listed(dir, &relative, violations)? else {
                 continue;
             };
-            let list = crate::open::entries(&handle).map_err(|e| io(&dir.join(&relative), e))?;
+            let Some(list) = list_entries(&handle, dir, &relative, violations)? else {
+                continue;
+            };
             for (name, child) in list.into_iter().rev() {
                 let Some(name) = name.to_str() else {
                     add(

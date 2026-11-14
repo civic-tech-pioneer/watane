@@ -297,7 +297,7 @@ where a file or directory may stand is `a symbolic link; replace it with a regul
 directory`; a link where only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`)
 is `a symbolic link; replace it with a regular file`. `PackageError::Symlink` displays
 `` `<path>`: `` followed by the text for that path. An entry that was listed and is gone or no
-longer a directory when the walk opens it is rule `path` at that entry, `changed while the mod was read; read it
+longer a directory when the walk opens it, or an entry of it that is gone before its stat, is rule `path` at that entry, `changed while the mod was read; read it
 again`. Other I/O errors stay `ModError::Io`.
 
 ### 4.8 `add_provider` (step 2)
