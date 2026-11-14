@@ -357,8 +357,9 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   `Sign a withdrawal`, `Sign your profile`, `List in your index`,
   `Include in your index` or `End a listing` (step 4); for `by_program` also
   `Asked by a program on this device`.
-- An install shows one block per mod: name, version, then the ReleaseRef
-  with `by <party> · signature verified`, or `local`; `replaces <version>`
+- An install shows one block per mod: name, version, then
+  `<slug> <version> by <party label> · signature verified — <ReleaseRef>`,
+  with the readable part first and the full reference last, or `local`; `replaces <version>`
   if set; then each
   grant line with a checkbox `Allow`, checked at load; a new grant carries
   the label `new`. Then `uses <provider>` lines; step 5: `made from

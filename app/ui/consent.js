@@ -70,7 +70,7 @@ try {
         main.append(section);
         text(section, 'h2', mod.name);
         text(section, 'p', mod.version);
-        text(section, 'p', mod.publisher ? `${mod.release} by ${party(mod.publisher)} · signature verified` : 'local');
+        text(section, 'p', mod.publisher ? `${mod.slug} ${mod.version} by ${party(mod.publisher)} · signature verified — ${mod.release}` : 'local');
         if (mod.origin) text(section, 'p', `made from ${mod.origin} (the publisher says so)`);
         for (const bind of mod.binds || []) text(section, 'p', bind);
         if (mod.replaces) text(section, 'p', `replaces ${mod.replaces}`);

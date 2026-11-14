@@ -386,3 +386,19 @@
   and `_LSModifyNotification ... error -50`. The full driver suite also
   stops on the API window test's same readiness failure; its Rust/API tests
   pass. No front tests ran. Native assertions still need a working GUI session.
+# S58 install consent release line
+
+- Published install lines now read `<slug> <version> by <party label> · signature verified — <reference>`;
+  previously they started with `<reference> by <party label> · signature verified`.
+  Local lines and the other consent fields are unchanged. No dependencies added.
+- The existing `regress_s58_install_consent_release_line_names_first` failed
+  before the change and passes afterward, as do all Node consent modes
+  (`regress_s58`, `pick`, `install`). No existing assertion required updating.
+- `cargo build`, `cargo test`, driver clippy with warnings denied, and
+  `cargo fmt --check` pass. The release build with driver fails at the
+  intended debug-only compile error.
+- `cargo test --features driver` passes 77 unit tests and nine API tests,
+  then fails `ac6_publish_through_consent_window_and_host_guards` before app
+  readiness: macOS reports `Connection Invalid error for service
+  com.apple.hiservices-xpcservice` and `_LSModifyNotification` error -50.
+  No front tests ran; no tests were weakened.
