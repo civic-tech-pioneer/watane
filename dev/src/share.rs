@@ -48,14 +48,12 @@ fn stderr_tail(stderr: &str) -> String {
         .lines()
         .map(|line| {
             let mut line = line.trim_end();
-            while let Some(rest) = line.strip_prefix("remote: remote:") {
-                line = &line[line.len() - rest.len() - "remote:".len()..];
+            while line.starts_with("remote: remote:") {
+                line = &line["remote: ".len()..];
             }
             line
         })
         .filter(|line| !line.is_empty() && *line != "remote:")
-        .collect::<Vec<_>>()
-        .into_iter()
         .rev()
         .take(5)
         .collect::<Vec<_>>()
@@ -747,7 +745,8 @@ mod tests {
             stderr_tail("remote: remote: error: denied   \nremote: \n\n"),
             "remote: error: denied"
         );
-        let many: String = (1..=8).map(|i| format!("l{i}\n")).collect();
+        assert_eq!(stderr_tail("remote: remote: remote: x\n"), "remote: x");
+        let many: String = (1..=8).map(|i| format!("l{i}\n\n")).collect();
         assert_eq!(stderr_tail(&many), "l4\nl5\nl6\nl7\nl8");
     }
     #[test]
