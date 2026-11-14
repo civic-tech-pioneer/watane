@@ -148,7 +148,7 @@ pub enum Error {
     Io { path: PathBuf, source: std::io::Error },
     #[error("exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
     Exposed { path: PathBuf, mode: u32 },
-    #[error("{path} is not a {expected} (a symbolic link is refused)")]
+    #[error("{path} is not a {expected}")]           // link: "{path} is a symbolic link; a {expected} is required (a link is refused)"
     NotPlain { path: PathBuf, expected: &'static str, link: bool }, // expected: "directory" or "regular file"
     #[error("the log directory path is empty")]
     EmptyPath,                                        // Log::open("")
