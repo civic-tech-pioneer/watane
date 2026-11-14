@@ -334,6 +334,13 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
 
+- [ ] **S56 Leftover sweep (dev messages).** The "Leftovers" section lists 20 open dev items, almost
+  all of them a message, a fix or a `next` that misleads: the doubled "error", the `--home` fix that
+  still says to start the app, the `next` values that are prose, the `push_failed` noise, the
+  `<owner>/<slug>` placeholder. None is hard; together they are most of what a maker's agent reads
+  when something goes wrong. One slice, re-checking each line against main first. Cloud; no
+  credentials needed. The pkg, log, host, app and dist items can follow as their own sweeps.
+
 After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
@@ -386,6 +393,149 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
+
+## Leftovers
+
+Every deferred note in "Slices" audited against main on 2026-11-14: 95 items from 27 notes.
+57 were already fixed by a later slice and are gone from here; the per-slice notes are kept as
+history but this section is the live list. Each line gives the slice that found it and where the
+gap is visible. Before sketching from this, re-check the line: that is the lesson of S49.
+
+Items closed silently by S39, S44, S45, S46, S47, S48 and S49 are the bulk of the 57. Three were
+filed under the wrong subsystem and are moved here: S41's `repository` fix is dev, S44's unknown
+`/api` route is host, S12b's `ac2_real_home_without_app` is dev. Two were filed twice (the
+deps.json self entry in S33 and S39; the 52-character consent key in S29 and S44) and are one row.
+
+### Decide, do not sketch
+
+These are true but are now what the specs say. Acting on any of them is a spec change, not a fix.
+
+- [S15] a link in a hidden folder (`ui/.git/x`) is rule `path` at the link's own path
+  (pkg/TECHNICAL.md:288, pinned by `ac1_s46_hidden_link_named`).
+- [S12b] `--wait` does not count the test pipeline; it is the time the participant has to answer
+  (dev/TECHNICAL.md:131).
+- [S39] a killed run's `<id>.<pid>.tmp` folder is never swept; `store` removes only its own pid's
+  (dev/src/build_on.rs:136, asserted at build_on.rs:440).
+- [S49] dist does not try the next base when a mirror answers 404 for the package: the package is
+  read from the one base that served (dist/TECHNICAL.md:990).
+- [S49] by DD-33 the cache-path link can point at a dead base (dist/TECHNICAL.md:1270;
+  `ac4_cache_hit_no_record_links_first_base` serves a dead host and asserts the link).
+- [S37] `{"release"}` in a home with no record answers 200 from dist's cache
+  (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
+  link-then-release sequence.
+
+### pkg
+
+- [S46] `add_provider` keeps the check-then-read gap: it lstats a path, then re-reads the same path
+  string (pkg/src/add.rs:9-26, 35, 48); writes and `remove_dir_all` are path-based (add.rs:55, 115).
+  It never moved to the no-follow handle walk S46 introduced.
+- [S46] an error during a mid-read swap is plain I/O text with no rule (pkg/src/folder.rs:110, 200,
+  275 fall through to `ModError::Io`). No swap test exists in pkg.
+- [S49] `Mod::read` and `pack` word the same FIFO or link differently (folder.rs:92, 217 vs
+  package.rs:24, 298).
+
+### log
+
+- [S49] `NotPlain` adds "(a symbolic link is refused)" even for a plain type mismatch
+  (log/src/lib.rs:29, raised at identity.rs:23).
+- [S49] a bad backup magic shows U+FFFD (`from_utf8_lossy`, log/src/identity.rs:212); the only magic
+  test corrupts into valid ASCII, so non-UTF-8 is uncovered.
+
+### host
+
+- [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
+  (host/tests/program.rs:567); the probe-to-bind window stands.
+- [S45] the 413 guard passes because the test tolerates a reset, not because the server drains the
+  unread body (host/tests/api.rs:401; the server sets `Connection: close`). Worth knowing before
+  trusting it under other guards.
+- [S12a] an abrupt disconnect mid-`/call` has no test; `Served::shutdown` still documents a 5 s
+  bound (host/src/server.rs:195).
+- [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
+
+### dev
+
+- [S17] `doctor` run inside a mod folder suggests `new`: dev/src/doctor.rs has no `mod.toml` branch.
+  Evidence is absent code, not present code; one `watane-dev doctor --json` in a mod folder settles it.
+- [S17] a WIT syntax error keeps `line: null` (dev/src/check.rs:528); dev's `wit_location` works only
+  when pkg supplies a `-->` line, so the fix belongs in pkg.
+- [S12b] `fake-watane` has no never-answer mode (fake-watane.rs:212 handles only `decline`), so
+  `host.no_answer` is covered only by in-crate stubs the integration tests cannot reach.
+- [S12b] `install::ac2_real_home_without_app` leaves `watane` running if it panics
+  (dev/tests/install.rs:429-446; no Drop guard).
+- [S30] the local-dependency message still says "it has no release" (dev/src/cli.rs:701, pinned by
+  dev/tests/publish.rs:76), and dev/TECHNICAL.md:227 documents a fix the code no longer gives.
+- [S33, S39] a deps.json-only self entry's fix names a `wit/deps` folder that does not exist
+  (dev/src/check.rs:135, 141; deps.rs:125; proven by `ac7_deps_only_own_slug...`).
+- [S39] text mode doubles "error" (clap's string already starts with it, dev/src/main.rs:20) and
+  prints the whole help text on no arguments (no special case at main.rs:12).
+- [S39] after a failed serve the problem's own fix says `test --json` while `next` says
+  `serve --json`; only `next` is rewritten (dev/src/cli.rs:213; contract.rs:337, unit.rs:45).
+- [S39] `add --release <own release>` is fixed with "Pass the folder of another mod"
+  (dev/src/build_on.rs:255).
+- [S39] the `--home x/../h` fix still says "Start the watane app" though the message now names the
+  missing ancestor (dev/src/cli.rs:650, api.rs:23).
+- [S39] several `next` values are prose, not a rerun (dev/src/cli.rs:184, 198, 308, 511, 850, 881).
+- [S47] after `new --from` on a prebuilt package, both `next` branches end "then run:
+  watane-dev test --json", contradicting the warning (dev/src/cli.rs:297-318).
+- [S47] a prebuilt mod with no `tests/` is refused with a misleading `--no-source` message
+  (dev/src/build_on.rs:289). Narrower now: publish runs check, so the reachable case is a mod with
+  no logic part and no `tests/`.
+- [S47] `test` and `serve` refuse `--home`, while `new`, `add`, `install`, `publish` and `search`
+  take one (dev/src/cli.rs:36-40, 85-89).
+- [S47] `build.reads_outside` misleads when the cause is a `wit_bindgen` path left by the rename
+  (dev/src/builder.rs:365); no bindgen-specific cause exists.
+- [S42] `env.git_identity` keeps git's last five stderr lines verbatim, user@host included
+  (`stderr_tail`, dev/src/share.rs:39, used at share.rs:285).
+- [S42] `push_failed` doubles "remote: remote:" and keeps trailing whitespace (same `stderr_tail`).
+- [S42] `push_failed`'s fix and `next` carry the `-c http.lowSpeed*` flags (dev/src/share.rs:66,
+  cli.rs:869). The flags are pinned in expected strings at share.rs:711, 791, 816, 860, 876, so a
+  fix touches those tests.
+- [S42] every `next` appends `--home <abs>` even when the home came from `WATANE_HOME`
+  (dev/src/cli.rs:663, 736; dev/tests/publish.rs:444 drives the env case and asserts the append).
+- [S41] the `repository` fix prints the literal `<owner>/<slug>` placeholder though `own_slug` is in
+  scope (dev/src/check.rs:157, pinned at check.rs:826).
+
+### app
+
+- [S12a] a disabled provider shows the fixture page's "not granted" and hides the host's message
+  (app/tests/fixtures/recommendations/ui/app.js:5, asserted by app/tests/j2.rs:212).
+- [S12a] there is no grant-change message, so the app reloads the whole window
+  (app/src/core.rs:313).
+- [S18] the Linux runner prints versions without names (app/scripts/linux-test.sh:14).
+- [S18] about 17 AT-SPI warnings bury the output; `NO_AT_BRIDGE` is set nowhere.
+- [S18] the app's JS re-derives the MCP tool name with `.replace()` instead of using the server's
+  `tool` field (app/ui/app.js:117).
+- [S29, S44] list, include, publish and install consents show the 52-character key before the name
+  (app/src/confirm.rs:206, 219, 28). Own rows are fixed; these are not.
+- [S29] on a new home the own row sits next to the "add an index" hint (app/ui/app.js:222;
+  `ac1_find_no_index` asserts both are present).
+- [S27] the busy-port window shows "Install folders" with no working local API; the failure path
+  only disables it (app/ui/index.html:2, app.js:151).
+- [S27] hidden windows poll only on focus (app/ui/app.js:164).
+- [S44] no busy state during a 30 s hanging follow or add-index (app/ui/app.js:262, 273).
+- [S44] a wrong-channel follow error shows fingerprints only; no party-name lookup on this path
+  (app/src/core.rs:537, dist/src/error.rs:99).
+- [S44] a mod card's refresh error is raw transport text, unlike index rows
+  (app/src/core.rs:357, surfaced at core.rs:229).
+- [S44] a non-JSON body gets "give link or release", discarding the serde cause
+  (app/src/api.rs:296; app/tests/api.rs:409 asserts only the code).
+- [S44] `Core::mods()` re-reads every related channel view on each 2 s refresh, with no memoization
+  (app/src/core.rs:276, 167, 1490; the poll is app/ui/app.js:156).
+
+### dist
+
+- [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
+  only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
+  dist/TECHNICAL.md:1231 still carries Q12 open.
+- [S45] when every base is stale the answer is a bare `UnknownRelease` with no next step
+  (dist/src/error.rs:80, `ac3_all_bases_stale_is_unknown_release`). By design; flagged because the
+  single-stale-base case was fixed and this one reads the same to a person.
+
+### Unsettled
+
+- [S30] a fake-app publish took about 30 s, close to `--wait 30`. The code says that time is the
+  pre-post test pipeline (dev/src/cli.rs:804), not a host wait. A timed `publish` run against
+  fake-watane settles it.
 
 ## Foremen
 
