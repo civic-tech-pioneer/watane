@@ -442,7 +442,25 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   host `--include-ignored` 153 green. The four `front:` tests were not run (S52, needs an unlocked
   screen).
 
-After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
+Step 8 (Own machines). Decided by the human 2026-11-14: step 7 stays "the real world" and the peer
+design is step 8. A person's machines keep each other current directly, with no static host between
+them and no endpoint someone else runs (VISION "After the first version"). It is stage D1 of
+`spec/PEERS.md` 10, designed there and in `net/`: the new subsystems `net` (node key, tickets with
+hints, `watane/1`, iroh-blobs and iroh-gossip, pairing, a device list with expiry, mDNS, relay
+choice, the DHT switch) and `node` (`watane-node`, full replica and relay role); a keyless open in
+`log` and `dist`, and dist's holder methods; the app's views to turn `net` on, pair, list devices
+and choose a relay. Its journey is J8 (spec/FUNCTIONAL.md). Friends, strangers, public peers and
+scale (D2 to D5) are a sketch in PEERS.md and come after it.
+
+Not sliced yet, on purpose: the design is uncommitted in the human's working tree (`spec/PEERS.md`,
+`net/`, and edits to `spec/VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`, `README.md` and the dist, log
+and host TECHNICAL.md files), with `net/REVIEW.md` beside it. Slices are sketched once it is on main.
+A design slice may come first if the review leaves anything open. J8 needs two homes that do not
+share a filesystem: two homes on the Mac may do for the first slices, but the journey wants the
+second machine S55 is waiting for. Step 8 does not wait for step 7 to finish: nothing in D1 needs
+real GitHub or a real static host.
+
+After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
 describes except for where it runs. Moving it inside makes the thing that built watane the first
