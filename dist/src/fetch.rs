@@ -106,6 +106,7 @@ impl Dist {
             let mut served = None;
             let mut failure = None;
             let mut stale = None;
+            let mut answered = 0usize;
             for base in &bases {
                 match self.read_channel_entries(key, base, true) {
                     Ok(RefreshReport {
@@ -126,6 +127,7 @@ impl Dist {
                     Ok(_) => {
                         // 5.11 step 3 (DD-32, DD-34): a base ends the reads only when the
                         // stored view then holds the release; a stale mirror does not.
+                        answered += 1;
                         if stale.is_none() {
                             stale = Some(base.clone());
                         }
@@ -141,7 +143,13 @@ impl Dist {
                     }
                 }
             }
-            // Every base that served was stale: the first one answers `UnknownRelease`.
+            // Every base that served was stale: say so (DD-34).
+            if served.is_none() && answered > 0 {
+                return Err(DistError::StaleBases {
+                    release: reference.clone(),
+                    bases: answered,
+                });
+            }
             let served = served.or(stale);
             if served.is_none() && !stored {
                 return Err(failure.expect("every provider base failed"));

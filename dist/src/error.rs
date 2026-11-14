@@ -79,6 +79,12 @@ pub enum DistError {
     NoRelease { channel: PublicKey, slug: Slug },
     #[error("unknown release {release}")]
     UnknownRelease { release: ReleaseRef },
+    #[error(
+        "release {release} is not on any base that serves its channel: the {bases} base(s) read \
+         hold an older copy of the channel; follow the publisher's own link, or try again when the \
+         mirrors catch up"
+    )]
+    StaleBases { release: ReleaseRef, bases: usize },
     #[error("release {release} withdrawn: {}", reason.escape_debug())]
     Withdrawn { release: ReleaseRef, reason: String },
     #[error("not found: {}", url.escape_debug())]
@@ -304,5 +310,30 @@ mod tests {
         let text = error.to_string();
         assert!(text.contains("http://example.invalid/\\u{1b}\\nentries/2"));
         assert!(!text.contains(['\u{1b}', '\n']));
+    }
+
+    #[test]
+    fn ac3_stale_bases_text() {
+        let key = PublicKey::from_bytes(&[1; 32]).unwrap();
+        let error = DistError::StaleBases {
+            release: ReleaseRef {
+                publisher: PublisherKey::from_bytes(*key.as_bytes()),
+                slug: "ratings".parse().unwrap(),
+                version: "1.0.0".parse().unwrap(),
+            },
+            bases: 1,
+        };
+        let release = match &error {
+            DistError::StaleBases { release, .. } => release.to_string(),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "release {release} is not on any base that serves its channel: the 1 base(s) \
+                 read hold an older copy of the channel; follow the publisher's own link, or \
+                 try again when the mirrors catch up"
+            )
+        );
     }
 }

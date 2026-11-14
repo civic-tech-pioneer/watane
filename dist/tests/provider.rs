@@ -541,7 +541,7 @@ fn ac3_stale_first_base_falls_through() {
     );
 }
 #[test]
-fn ac3_all_bases_stale_is_unknown_release() {
+fn ac3_all_bases_stale_is_stale_bases() {
     let (carol, dave, eve, mirror, old) = stale_setup();
     // A second stale mirror of the same old head, named by Dave's listing.
     let second = TestHost::serve(old.path());
@@ -558,7 +558,13 @@ fn ac3_all_bases_stale_is_unknown_release() {
         .dist
         .fetch_for(&reference(&carol, "ratings"), Some(&dave.dist.identity()))
         .unwrap_err();
-    assert!(matches!(error, DistError::UnknownRelease { .. }), "{error}");
+    assert!(
+        matches!(error, DistError::StaleBases { bases: 2, .. }),
+        "{error}"
+    );
+    let text = error.to_string();
+    assert!(text.contains("older copy of the channel"), "{text}");
+    assert!(text.contains("follow the publisher's own link"), "{text}");
     // DD-34: both stale bases were read, neither got a package request.
     for (host, before) in [&mirror, &second].into_iter().zip(before) {
         assert!(host.count() > before);
