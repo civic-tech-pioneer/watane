@@ -60,6 +60,18 @@ pub(crate) fn already_listed(include: bool) -> &'static str {
 pub(crate) fn index_read(index: &str, cause: &str) -> String {
     format!("Could not read {index}: {cause}")
 }
+pub(crate) fn wrong_channel(url: &str, expected: &str, found: &str, parties: &Parties) -> String {
+    format!(
+        "{} serves {}, not {}",
+        url.escape_debug(),
+        party_label(&party(found, parties)),
+        party_label(&party(expected, parties))
+    )
+}
+pub(crate) fn channel_read(channel: &str, cause: &str, parties: &Parties) -> String {
+    let p = party(channel, parties);
+    index_read(p.name.as_deref().unwrap_or(&p.fingerprint), cause)
+}
 pub(crate) fn provider(provider: &Provider, parties: &Parties) -> String {
     match &provider.publisher {
         None => format!("{} (local)", provider.slug),
@@ -181,6 +193,36 @@ pub(crate) fn bad_note(cause: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac3_wrong_channel_names_both_parties() {
+        let named = "a".repeat(52);
+        let unnamed = "b".repeat(52);
+        let parties = Parties::new();
+        parties.insert(named.clone(), "Alice".into());
+        assert_eq!(
+            wrong_channel("https://site/head", &named, &unnamed, &parties),
+            "https://site/head serves bbbbbbbbbb, not Alice (aaaaaaaaaa)"
+        );
+        parties.set_own(unnamed.clone());
+        assert_eq!(
+            wrong_channel("https://site/head", &unnamed, &named, &parties),
+            "https://site/head serves Alice (aaaaaaaaaa), not you"
+        );
+    }
+    #[test]
+    fn ac4_mod_refresh_notice_names_channel_or_fingerprint() {
+        let key = "a".repeat(52);
+        let parties = Parties::new();
+        assert_eq!(
+            channel_read(&key, "offline", &parties),
+            "Could not read aaaaaaaaaa: offline"
+        );
+        parties.insert(key.clone(), "Alice".into());
+        assert_eq!(
+            channel_read(&key, "offline", &parties),
+            "Could not read Alice: offline"
+        );
+    }
     #[test]
     fn ac1_party_cache_names_an_unfollowed_channel_view() {
         struct Approve;

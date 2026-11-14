@@ -414,6 +414,13 @@ fn ac1_find_no_index() {
         ),
         0
     );
+    assert_eq!(
+        app.eval(
+            "main",
+            "document.querySelectorAll('#indexes [data-own]').length"
+        ),
+        0
+    );
     assert!(!app.windows().iter().any(|w| w["label"] == "consent"));
     assert!(app.quit().success());
 }
@@ -435,6 +442,31 @@ fn ac6_latest_action_owns_the_error_line() {
       errors.show({{message:'old failure'}}, first);
       assert.equal(line, 'new failure');
     "#,
+        include_str!("../ui/words.js")
+    );
+    assert!(
+        std::process::Command::new("node")
+            .args(["--input-type=module", "-e", &script])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn ac6_find_hides_only_the_empty_own_index() {
+    let script = format!(
+        r#"{}
+        import assert from 'node:assert/strict';
+        const own = {{own:true, listings:[], included:[]}};
+        assert.deepEqual(visibleIndexes([own]), []);
+        const listed = {{...own, listings:[{{kind:'list'}}]}};
+        const included = {{...own, included:[{{name:'Ivy'}}]}};
+        assert.deepEqual(visibleIndexes([listed]), [listed]);
+        assert.deepEqual(visibleIndexes([included]), [included]);
+        const other = {{own:false}};
+        assert.deepEqual(visibleIndexes([own, other]), [own, other]);
+        "#,
         include_str!("../ui/words.js")
     );
     assert!(

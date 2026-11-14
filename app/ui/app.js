@@ -1,5 +1,5 @@
 import { call } from './ipc.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors } from './words.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -114,11 +114,12 @@ async function agentsView() {
   if (JSON.stringify(sets) !== lastSets) {
     lastSets = JSON.stringify(sets); $('#toolsets').replaceChildren(); $('#token-toolset').replaceChildren();
     for (const set of sets) {
-      const row = element('p', `${set.name}: ${set.entries.map(entry => entry.replace(':', '_').replace('.', '_')).join(', ')} `, $('#toolsets'));
+      const row = element('p', `${set.name}: ${set.tools.join(', ')} `, $('#toolsets'));
       button(row, 'Edit', 'edit', () => {
         $('#toolset-name').value = set.name;
         for (const input of $('#tools').querySelectorAll('input')) input.checked = set.entries.includes(input.value);
       });
+      button(row, 'Remove', 'remove-toolset', () => action('toolset_remove', {name: set.name}));
       const option = element('option', set.name, $('#token-toolset')); option.value = set.name;
     }
   }
@@ -223,7 +224,7 @@ async function findView() {
   const signature = JSON.stringify(indexes);
   if (signature !== lastIndexes) {
     lastIndexes = signature; $('#indexes').replaceChildren();
-    for (const index of indexes) {
+    for (const index of visibleIndexes(indexes)) {
       const row = element('div', '', $('#indexes'), 'index-row'); row.dataset.index = index.channel;
       if (index.own) row.dataset.own = 'true';
       element('h3', index.own ? `Your index · ${partyLabel(index)}` : partyLabel(index), row);

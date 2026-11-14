@@ -21,6 +21,7 @@ fn ac8_static_security_configuration() {
         "tools_list",
         "toolsets_list",
         "toolset_save",
+        "toolset_remove",
         "tokens_list",
         "token_issue",
         "token_end",
@@ -94,6 +95,7 @@ fn ac8_static_security_configuration() {
             "tools_list",
             "toolsets_list",
             "toolset_save",
+            "toolset_remove",
             "tokens_list",
             "token_issue",
             "token_end",
@@ -201,4 +203,19 @@ fn ac7_specs_and_notes_record_s44_behavior() {
         assert!(functional.contains(text), "FUNCTIONAL missing {text}");
     }
     assert!(include_str!("../NOTES.md").contains("S44"));
+}
+
+#[test]
+fn ac8_specs_record_toolset_removal_and_readable_causes() {
+    let technical = read("TECHNICAL.md");
+    assert!(technical.contains("| `toolset_remove` | main | `name` | `null` |"));
+    assert!(technical.contains("tools: [string]"));
+    assert!(technical.contains("give link or release: <serde cause>"));
+    assert!(read("FUNCTIONAL.md").contains("remove a saved toolset"));
+    assert!(
+        !std::fs::read_to_string(root().join("../host/TECHNICAL.md"))
+            .unwrap()
+            .contains("`remove_toolset`, `toolsets`, and `tokens` wait")
+    );
+    assert!(read("NOTES.md").contains("S58"));
 }

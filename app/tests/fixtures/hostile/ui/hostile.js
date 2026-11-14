@@ -53,6 +53,7 @@
     "install_folders": {},
     "tools_list": {},
     "toolsets_list": {},
+    "toolset_remove": { name: "reader" },
     "toolset_save": { name: "hostile", entries: [] },
     "tokens_list": {},
     "token_issue": { toolset: "hostile", handle: "hostile" },

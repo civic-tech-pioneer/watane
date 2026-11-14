@@ -406,6 +406,30 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
     let link = published.link.unwrap();
     let home = tempfile::tempdir().unwrap();
     let dist = open(home.path(), Recording::new(true), false);
+    for (body, expected) in [
+        ("{", "EOF while parsing an object at line 1 column 1"),
+        ("[]", "data did not match any variant"),
+        ("{}", "give link or release"),
+        (r#"{"link":4,"release":[]}"#, "give link or release"),
+        (r#"{"link":"a","release":"b"}"#, "give link or release"),
+    ] {
+        let (status, _, bytes) = api_request(
+            Some(dist.clone()),
+            "/api/fetch",
+            body.as_bytes().to_vec(),
+            None,
+        )
+        .await;
+        assert_eq!(status, 400);
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let message = value["error"]["message"].as_str().unwrap();
+        if body == "{" || body == "[]" {
+            assert!(message.starts_with("give link or release: "), "{message}");
+            assert!(message.contains(expected), "{message}");
+        } else {
+            assert_eq!(message, expected);
+        }
+    }
     for bytes in [
         b"{".to_vec(),
         serde_json::to_vec(

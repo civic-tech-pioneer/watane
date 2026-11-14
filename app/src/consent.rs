@@ -744,7 +744,7 @@ mod stage_c_tests {
                 },
                 Statement::Release,
                 vec![
-                    ("Release", reference.to_string()),
+                    ("Release", format!("reading-list 0.1.0 — {reference}")),
                     ("Package", release.package.to_string()),
                     ("Size", "123".into()),
                     ("Source included", "yes".into()),
@@ -762,7 +762,7 @@ mod stage_c_tests {
                 },
                 Statement::Release,
                 vec![
-                    ("Release", reference.to_string()),
+                    ("Release", format!("reading-list 0.1.0 — {reference}")),
                     ("Package", release.package.to_string()),
                     ("Size", "123".into()),
                     ("Source included", "no".into()),
@@ -781,7 +781,7 @@ mod stage_c_tests {
                 },
                 Statement::Withdraw,
                 vec![
-                    ("Release", reference.to_string()),
+                    ("Release", format!("reading-list 0.1.0 — {reference}")),
                     ("Reason", "Retired".into()),
                 ],
             ),

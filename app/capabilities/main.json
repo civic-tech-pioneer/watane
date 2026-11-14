@@ -16,6 +16,7 @@
     "allow-tools-list",
     "allow-toolsets-list",
     "allow-toolset-save",
+    "allow-toolset-remove",
     "allow-tokens-list",
     "allow-token-issue",
     "allow-token-end",

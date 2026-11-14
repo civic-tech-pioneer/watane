@@ -54,3 +54,7 @@ export function actionErrors(render) {
     }
   };
 }
+
+export function visibleIndexes(indexes) {
+  return indexes.filter(index => !index.own || indexes.some(other => !other.own) || index.listings.length || index.included.length);
+}

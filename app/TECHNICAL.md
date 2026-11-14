@@ -324,16 +324,16 @@ pub struct Detail { pub label: String, pub value: String }
   "uses":[],"origin":null,"binds":[]}]}}
 ```
 
-Sign details, in this order. A release is named by its ReleaseRef text
-`<signer key>/<slug>@<version>` (D-A1):
+Sign details, in this order. Readable names precede the full key or
+ReleaseRef after ` — `; the full value remains visible (D-A1):
 
 | Statement | Details (label: value) |
 |---|---|
-| `release` | `Release`: ReleaseRef; `Package`: package id (64 hex); `Size`: bytes; `Source included`: `yes` or `no`; `Summary`; `Made from` (step 5): the origin ReleaseRef with its publisher's name and fingerprint when known, or `none` |
-| `withdraw` | `Release`: ReleaseRef of the withdrawn release; `Reason` |
+| `release` | `Release`: `<slug> <version> — <ReleaseRef>`; `Package`: package id (64 hex); `Size`: bytes; `Source included`: `yes` or `no`; `Summary`; `Made from` (step 5): `<slug> <version> by <party label> — <ReleaseRef>`, or `none` |
+| `withdraw` | `Release`: `<slug> <version> — <ReleaseRef>` of the withdrawn release; `Reason` |
 | `profile` | `Name` |
-| `list` (step 4) | `Mod`: `<key>/<slug>` with the publisher's name and fingerprint when known; `Location`: the link's base; `Note` (or `none`) |
-| `include` (step 4) | `Index`: the key with its name and fingerprint when known; `Location`; `Note` (or `none`) |
+| `list` (step 4) | `Mod`: `<slug> by <party label> — <key>/<slug>`; `Location`: the link's base; `Note` (or `none`) |
+| `include` (step 4) | `Index`: `<party label> — <key>`; `Location`; `Note` (or `none`) |
 | `unlist` (step 4) | `Ends`: `list` or `include`, and its `Mod` or `Index` value as above |
 
 HostConfirm uses every active `PlanEntry.binds` for grant and `uses` words.
@@ -430,8 +430,9 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `grant_give` | main | `local`, `key` | `null` | B |
 | `install_folders` | main | — | `{installed: [local]}` | B |
 | `tools_list` | main | — | `[{entry: string, tool: string}]` | B |
-| `toolsets_list` | main | — | `[{name, entries: [string]}]` | B |
+| `toolsets_list` | main | — | `[{name, entries: [string], tools: [string]}]` | B |
 | `toolset_save` | main | `name`, `entries: [string]` | `null` | B |
+| `toolset_remove` | main | `name` | `null` | B |
 | `tokens_list` | main | — | `[{id, toolset, handle}]` | B |
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
@@ -510,8 +511,15 @@ Behaviour:
   `<local>:<interface>.<function>` and `tool` `<local>_<interface>_<function>`
   (short interface name, host 3.2 and 10.1). The page labels each checkbox
   with `tool` and keeps `entry` as its value. Saved toolsets also display
-  entries by their MCP tool names, including entries of unavailable mods;
+  `tools` returned by `toolsets_list`, derived in Rust by the same function
+  as `tool_row`, aligned with `entries`. This includes unavailable or disabled
+  mods; a whole-interface entry `<local>:<interface>` reads
+  `<local>_<interface>`. The page never derives tool names.
   `toolset_save` still passes the unchanged entry strings to `set_toolset`.
+- `toolset_remove(name)`: parse `ToolsetName`, then `host.remove_toolset`;
+  unknown names keep the host's `no_toolset` code. Each saved row has a
+  `Remove` button with class `remove-toolset`. Refresh removes the row and
+  its `#token-toolset` option; the host determines what happens to bound tokens.
 - `token_issue`: the page shows the token once with `Served::mcp_url` and a
   copy button, and keeps no copy. `token_end` false gives `not_found`.
 - `identity_backup`: a passphrase of at least 12 characters, else
@@ -666,7 +674,7 @@ behind:
 | Result | Status | Body or code |
 |---|---|---|
 | fetched | 200 | `Content-Type: application/octet-stream`; the package bytes; headers `Watane-Release: <ReleaseRef>` and `Watane-Package: <package id>` |
-| bad JSON, both or neither field (including both null), a link or release that does not parse, a link with no slug | 400 | `bad_request`; invalid JSON/request shape reads `give link or release`, never serde text |
+| bad JSON, both or neither field (including both null), a link or release that does not parse, a link with no slug | 400 | `bad_request`; non-JSON or wrong shape reads `give link or release: <serde cause>` using the rejection body text; both/neither fields keep exactly `give link or release` |
 | `NoRelease`, `Withdrawn`, `Compromised` | 409 | `fetch_refused` with dist's cause |
 | `NotFollowed` (no base known for a release), `BadUrl` (a local address) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
@@ -794,7 +802,9 @@ target version until a successful app install of that mod clears them.
 For followed published mods, the offer is the highest version of the slug
 with no withdrawal, unless already installed; it can be a downgrade.
 Notice priority is compromised channel, installed release withdrawal with
-reason, then the last update result. Host code `refused` becomes
+reason, then the last update result, then the channel refresh failure as
+`Could not read <channel name, else fingerprint>: <cause>` through
+`words::index_read`. Host code `refused` becomes
 `You declined the update to <version>.`; every other failure remains
 `Update to <version> failed: <cause>` with the whole cause. Local mods
 and unfollowed publishers have neither notice nor offer. Text comes from
@@ -830,6 +840,9 @@ consent, including the release and withdrawal reason.
 The main window gets a view **find**: the chosen indexes on top, a search
 form (words, publisher, interface) and the results below. With no chosen
 index it says: "Add an index from a link that someone shared with you."
+When the own channel is the only index and has no live listings or includes,
+its row is hidden and the hint shows alone. Any live own listing or include,
+or another chosen index, makes the own row visible again.
 watane adds no index by itself (W23). A row of the channels view gets the
 buttons "Use as index" (`index_choose` with the row's link), "Include in my
 index", and for each of its mods "List in my index".
@@ -926,8 +939,9 @@ mod's origin. The details show it as `Made from <name or slug> <version> by
 parties cache and dist's view of the origin's channel when stored, else
 the ReleaseRef text. The install consent and the `release` sign request
 show it too (6.2, 6.3). The confirmation adapter retains the origin
-reference and appends the installed origin's name, version and party when
-the real host has that release; without it, the reference with its cached party label is the fallback.
+reference at the end after ` — `. It starts with
+`<name> <version> by <party label>` when the real host has that release;
+otherwise it uses the slug, version and cached party label.
 `PlanMod.origin` remains nullable text; no consent command or field is added.
 
 **Derived mods** (F-BUILD-4, APP-F-42). For an installed mod with a
@@ -1124,6 +1138,13 @@ or serde diagnostic reaches the error line. Each main-window action has an
 increasing id; starting it clears the line. Its asynchronous errors (including
 refreshes) may update the line only while that id is still the latest.
 
+Wrong-channel follows use `words::wrong_channel`:
+`<url> serves <found label>, not <expected label>`. Labels use locally stored
+profiles through `words::party`/`party_label`, `you` for the own identity,
+and the fingerprint otherwise. Mod refresh failures use `words::channel_read`
+and `index_read` to name the channel before its cause. The fetch route's
+malformed-body response retains the JSON rejection body text (section 8.3).
+
 Busy-port startup uses `words::port_in_use(P)`:
 `Port P is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port.`
 The app stays open to show this; it never chooses another port by itself.
@@ -1209,7 +1230,7 @@ From **host** (`../host/TECHNICAL.md` sections 2, 3, 8, 10 to 12):
   package: Package, entry: Entry } }`; `Plan::entries`, `missing`;
   `install(plan, requester) -> Vec<InstalledMod>`; `mods`, `get`, `enable`,
   `disable`, `remove`, `grant`, `revoke` (no confirmation, host 4.4);
-  `functions`; `set_toolset`, `toolsets`, `issue_token -> Token`, `tokens`,
+  `functions`; `set_toolset`, `remove_toolset`, `toolsets`, `issue_token -> Token`, `tokens`,
   `end_token -> bool`.
 - `PlanEntry`, `Change`, `MissingProvider`, `InstalledMod`, `GrantState`,
   `LinkView`; their `release` and `origin` are ReleaseRef text (D-A1).

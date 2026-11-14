@@ -36,9 +36,15 @@ fn request_view(
                     .map(|m| {
                         let party = words::party(&origin.publisher.to_string(), parties);
                         let label = words::party_label(&party);
-                        format!("{reference} — {} {} by {label}", m.name, origin.version)
+                        format!("{} {} by {label} — {reference}", m.name, origin.version)
                     })
-                    .unwrap_or_else(|| words::release_label(origin, parties))
+                    .unwrap_or_else(|| {
+                        let label = words::party_label(&words::party(
+                            &origin.publisher.to_string(),
+                            parties,
+                        ));
+                        format!("{} {} by {label} — {origin}", origin.slug, origin.version)
+                    })
                 }),
                 binds: e
                     .binds
@@ -207,11 +213,10 @@ fn listing_target(link: &watane_dist::Link, parties: &Parties) -> String {
     let key = link.channel().to_string();
     let party = words::party(&key, parties);
     let label = words::party_label(&party);
-    let target = link
-        .slug()
-        .map(|slug| format!("{key}/{slug}"))
-        .unwrap_or(key);
-    format!("{target} by {label}")
+    match link.slug() {
+        Some(slug) => format!("{slug} by {label} — {key}/{slug}"),
+        None => format!("{label} — {key}"),
+    }
 }
 fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::Request {
     use watane_dist::Statement;
@@ -220,7 +225,10 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
         Statement::Release { reference, release } => (
             consent::Statement::Release,
             vec![
-                ("Release", reference.to_string()),
+                (
+                    "Release",
+                    format!("{} {} — {reference}", reference.slug, reference.version),
+                ),
                 ("Package", release.package.to_string()),
                 ("Size", release.size.to_string()),
                 (
@@ -236,7 +244,7 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
                         .map(|origin| {
                             let p = words::party(&origin.publisher.to_string(), parties);
                             let label = words::party_label(&p);
-                            format!("{origin} by {label}")
+                            format!("{} {} by {label} — {origin}", origin.slug, origin.version)
                         })
                         .unwrap_or_else(|| "none".into()),
                 ),
@@ -249,7 +257,10 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
         } => (
             consent::Statement::Withdraw,
             vec![
-                ("Release", reference.to_string()),
+                (
+                    "Release",
+                    format!("{} {} — {reference}", reference.slug, reference.version),
+                ),
                 ("Reason", withdraw.reason.clone()),
             ],
         ),
@@ -379,7 +390,16 @@ mod tests {
         };
         assert_eq!(
             mods[1].origin.as_deref(),
-            Some(format!("{origin} by Carol (47pjoycnsr)").as_str())
+            Some(format!("ratings 1.0.0 by Carol (47pjoycnsr) — {origin}").as_str())
+        );
+        let consent::Request::Install { mods: unknown, .. } =
+            request_view(&request, &Parties::new(), None)
+        else {
+            panic!()
+        };
+        assert_eq!(
+            unknown[1].origin.as_deref(),
+            Some(format!("ratings 1.0.0 by 47pjoycnsr — {origin}").as_str())
         );
         assert_eq!(mods[1].binds, [words::bind_line(&bind, &parties)]);
         assert_eq!(
@@ -480,14 +500,29 @@ mod tests {
         host.install(plan, Requester::App).await.unwrap();
         let mut request = request;
         request.entries[0].origin = Some(published.info.reference);
-        let parties = Parties::new();
-        parties.insert(dist.identity().to_string(), "Alice".into());
-        let consent::Request::Install { mods, .. } = request_view(&request, &parties, Some(&host))
-        else {
-            panic!()
-        };
-        let origin = mods[0].origin.as_ref().unwrap();
-        assert!(origin.contains("Reading list 0.1.0 by Alice"), "{origin}");
+        for known in [false, true] {
+            let parties = Parties::new();
+            if known {
+                parties.insert(dist.identity().to_string(), "Alice".into());
+            }
+            let consent::Request::Install { mods, .. } =
+                request_view(&request, &parties, Some(&host))
+            else {
+                panic!()
+            };
+            let label = if known {
+                format!("Alice ({})", dist.fingerprint())
+            } else {
+                dist.fingerprint()
+            };
+            assert_eq!(
+                mods[0].origin.as_ref().unwrap(),
+                &format!(
+                    "Reading list 0.1.0 by {label} — {}",
+                    request.entries[0].origin.as_ref().unwrap()
+                )
+            );
+        }
     }
     #[test]
     fn ac4_release_ends_with_made_from_named_or_fingerprint_or_none() {
@@ -522,10 +557,11 @@ mod tests {
                 let consent::Request::Sign { details, .. } = sign_view(&request, &parties) else {
                     panic!()
                 };
+                assert_eq!(details[0].value, format!("stats 1.0.0 — {key}/stats@1.0.0"));
                 let expected = match parent {
                     None => "none".into(),
                     Some(o) => format!(
-                        "{o} by {}",
+                        "ratings 1.0.0 by {} — {o}",
                         if known {
                             "Carol (47pjoycnsr)"
                         } else {
@@ -682,8 +718,8 @@ mod index_tests {
             } else {
                 "47pjoycnsr"
             };
-            let target = format!("{key}/reading-list by {party}");
-            let index_target = format!("{key} by {party}");
+            let target = format!("reading-list by {party} — {key}/reading-list");
+            let index_target = format!("{party} — {key}");
             for (statement, kind, details) in [
                 (
                     Statement::List(listing.clone()),

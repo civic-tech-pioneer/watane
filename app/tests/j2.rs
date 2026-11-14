@@ -286,6 +286,30 @@ fn ac5_journey_j2() {
     );
     until(&app, "main", "!document.querySelector('#tokens button')");
     assert_eq!(call().status(), 401);
+    // S58 AC1: remove a second toolset through its saved row.
+    app.eval("main", "document.querySelector('#toolset-name').value = 'temporary'; document.querySelector('#save-toolset').click(); null");
+    until(
+        &app,
+        "main",
+        "Array.from(document.querySelectorAll('#token-toolset option')).some(o => o.value === 'temporary')",
+    );
+    app.eval("main", "Array.from(document.querySelectorAll('#toolsets p')).find(row => row.textContent.startsWith('temporary:')).querySelector('.remove-toolset').click(); null");
+    until(
+        &app,
+        "main",
+        "!document.querySelector('#toolsets').textContent.includes('temporary') && !Array.from(document.querySelectorAll('#token-toolset option')).some(o => o.value === 'temporary')",
+    );
+    assert!(
+        app.eval(
+            "main",
+            "document.querySelector('#toolsets').textContent.includes('reader')"
+        )
+        .as_bool()
+        .unwrap()
+    );
+    app.eval("main", "window.__removeError = null; window.__TAURI_INTERNALS__.invoke('toolset_remove', {name:'missing'}).then(() => window.__removeError = {code:'unexpected_success'}, e => window.__removeError = e); null");
+    until(&app, "main", "window.__removeError !== null");
+    assert_eq!(app.eval("main", "window.__removeError.code"), "no_toolset");
     // S10: prove recommendations' own received-event state is populated.
     until(
         &app,

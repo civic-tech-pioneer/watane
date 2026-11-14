@@ -1398,7 +1398,7 @@ on the API host at `/mcp/<toolset>`. MCP has its own 1 MiB body limit;
 the local API's 64 KiB limit does not apply. The preview program issues
 one token with handle `preview` after installation and prints its MCP URL
 and token in the existing Ready fields. Tokens stay in memory as hashes.
-`remove_toolset`, `toolsets`, and `tokens` wait for the app in step 2.
+`remove_toolset`, `toolsets`, and `tokens` are available in the app agents view (S58 completes host stage 4).
 `Harness::functions` remains deferred. The existing preview-only open and
 serve signatures stay until participant homes arrive. `wit-parser` 0.254.2
 reads only doc comments; compiled types supply function metadata and schemas.

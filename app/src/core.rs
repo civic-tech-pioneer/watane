@@ -32,11 +32,40 @@ pub(crate) struct ToolRow {
     pub entry: String,
     pub tool: String,
 }
+fn tool_name(entry: &str) -> String {
+    entry.replace([':', '.'], "_")
+}
 fn tool_row(local: &str, interface: &str, function: &str) -> ToolRow {
-    ToolRow {
-        entry: format!("{local}:{interface}.{function}"),
-        tool: format!("{local}_{interface}_{function}"),
-    }
+    let entry = format!("{local}:{interface}.{function}");
+    let tool = tool_name(&entry);
+    ToolRow { entry, tool }
+}
+pub(crate) fn toolset_row(name: &str, entries: Vec<String>) -> serde_json::Value {
+    let tools: Vec<_> = entries.iter().map(|entry| tool_name(entry)).collect();
+    serde_json::json!({"name":name, "entries":entries, "tools":tools})
+}
+fn follow_channel(
+    dist: &watane_dist::Dist,
+    parties: &Parties,
+    link: &watane_dist::Link,
+) -> Result<watane_dist::RefreshReport, CmdError> {
+    dist.follow(link).map_err(|error| {
+        if let watane_dist::DistError::WrongChannel {
+            url,
+            expected,
+            found,
+        } = &error
+        {
+            // A cached profile is available even when this channel is not followed.
+            let _ = cache_channels(dist, parties, [*expected, *found]);
+            CmdError::new(
+                "dist",
+                words::wrong_channel(url, &expected.to_string(), &found.to_string(), parties),
+            )
+        } else {
+            error.into()
+        }
+    })
 }
 pub(crate) struct Core {
     pub host: Arc<Host>,
@@ -232,9 +261,13 @@ impl Core {
         let failures = self.update_failures.lock().unwrap();
         let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()))
             .or_else(|| {
-                m.publisher
-                    .as_ref()
-                    .and_then(|p| self.failures.lock().unwrap().get(&p.to_string()).cloned())
+                m.publisher.as_ref().and_then(|p| {
+                    self.failures
+                        .lock()
+                        .unwrap()
+                        .get(&p.to_string())
+                        .map(|cause| words::channel_read(&p.to_string(), cause, &self.parties))
+                })
             });
         let offer = release_offer(m.release.as_ref(), channel);
         let offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
@@ -536,7 +569,7 @@ impl Core {
     }
     pub fn follow(&self, text: &str) -> Result<ChannelRow, CmdError> {
         let link: watane_dist::Link = text.parse()?;
-        self.dist.follow(&link)?;
+        follow_channel(&self.dist, &self.parties, &link)?;
         self.failures
             .lock()
             .unwrap()
@@ -724,6 +757,19 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac7_saved_toolsets_derive_function_and_interface_names_without_mods() {
+        let entries = vec![
+            "missing:books.list".to_string(),
+            "disabled:books".to_string(),
+        ];
+        let row = toolset_row("reader", entries.clone());
+        assert_eq!(
+            row,
+            serde_json::json!({"name":"reader", "entries":entries, "tools":["missing_books_list", "disabled_books"]})
+        );
+        assert_eq!(tool_row("missing", "books", "list").tool, row["tools"][0]);
+    }
     #[test]
     fn ac1_tool_row_keeps_entry_and_mcp_name() {
         let row = tool_row("reading-list", "books", "list");
@@ -1718,6 +1764,41 @@ mod find_integration_tests {
         )
         .unwrap()
         .into_bytes()
+    }
+    #[test]
+    fn ac3_follow_wrong_channel_uses_names_from_dist_log() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        alice.set_name("Alice").unwrap();
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
+        let alice_release = alice.publish(package()).unwrap();
+        let ivy_home = tempfile::tempdir().unwrap();
+        let ivy = open(&ivy_home);
+        ivy.set_name("Ivy").unwrap();
+        let ivy_site = Site::serve(ivy.site_dir());
+        ivy.set_site_url(&ivy_site.base).unwrap();
+        let ivy_release = ivy.publish(package()).unwrap();
+        let reader_home = tempfile::tempdir().unwrap();
+        let reader = open(&reader_home);
+        reader
+            .read_link(alice_release.link.as_ref().unwrap())
+            .unwrap();
+        reader
+            .read_link(ivy_release.link.as_ref().unwrap())
+            .unwrap();
+        let wrong = Link::new(alice.identity(), &ivy_site.base, None).unwrap();
+        let error = follow_channel(&reader, &Parties::new(), &wrong).unwrap_err();
+        assert_eq!(error.code, "dist");
+        assert!(
+            error.message.contains(&format!(
+                "serves Ivy ({}), not Alice ({})",
+                ivy.fingerprint(),
+                alice.fingerprint()
+            )),
+            "{}",
+            error.message
+        );
     }
     #[test]
     fn ac5_failed_index_choose_uses_profile_or_link_fingerprint() {

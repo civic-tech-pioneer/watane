@@ -339,3 +339,48 @@
   and the full driver suite encounter this same environment failure. The
   full run was interrupted after repeated readiness failures (exit 130);
   window assertions remain enabled and need a working macOS GUI session.
+
+## S58 — app completion and readable names/causes
+
+- Saved toolset rows gain Remove, wired through the main-only
+  `toolset_remove` command to host. Unknown names retain `no_toolset`;
+  removal leaves tokens exactly as host does. J2 now saves and removes a
+  second toolset after ending its token, asserting both row and option vanish.
+  Static configuration and hostile-command literal lists include the command.
+  `support_selftest::ac4_hostile_external_script_reports_every_attack_before_navigation`
+  now expects 120 attacks (was 119) and 105 IPC calls (was 104).
+- `confirm::index_tests::ac1_index_sign_details_are_complete_and_ordered`
+  now expects `reading-list by <party> — <key>/reading-list` and
+  `<party> — <key>`, including unlist Ends, for known/unknown parties.
+  `ac4_host_origin_new_binds_and_bound_uses` checks known and unknown install
+  origins with slug/version first; `ac8_real_host_omits_existing_binds_and_ac7_names_installed_origin`
+  checks the installed name first and reference last.
+  `ac4_release_ends_with_made_from_named_or_fingerprint_or_none` now checks
+  readable Release and Made from values. The existing
+  `consent::stage_c_tests::ac1_dist_confirm_maps_each_statement_and_broker_answer`
+  release/withdraw expectations also change to slug/version before reference.
+- Wrong-channel follow errors name both parties from dist's local log,
+  falling back to fingerprints and using you for the own identity.
+  Mod-card refresh notices now name the channel before its preserved cause,
+  matching index rows; compromise, withdrawal and update notice priorities stay.
+- `tests/api.rs::ac3_fetch_errors_loopback_and_host_origin_guard` now
+  checks the serde cause for malformed/wrong-shaped JSON; both/neither
+  fields retain exactly `give link or release`.
+- `tests/find.rs::ac1_find_no_index` additionally requires no own row.
+  A focused Node test covers empty own, listed own, included own and another
+  chosen index. Existing own-listing assertions still require the own row.
+- Saved toolsets return aligned Rust-derived `tools` alongside unchanged
+  entries. Function and whole-interface mappings include unavailable/disabled
+  mod entries; J2's existing MCP tool-name assertion stays unchanged.
+- No dependencies added. Additional necessary files: `src/consent.rs`
+  updates the existing adapter's changed consent fact;
+  `tests/fixtures/hostile/ui/hostile.js` probes the new command, as required
+  by the hostile-command coverage test.
+- Validation: app and host binary builds pass; default app tests, focused
+  Node empty-index checks, clippy with driver and fmt pass. The release build
+  with driver fails at the intended debug-only compile error.
+  J2, J4 and `ac1_find_no_index` fail before app readiness with macOS
+  `Connection Invalid error for service com.apple.hiservices-xpcservice`
+  and `_LSModifyNotification ... error -50`. The full driver suite also
+  stops on the API window test's same readiness failure; its Rust/API tests
+  pass. No front tests ran. Native assertions still need a working GUI session.

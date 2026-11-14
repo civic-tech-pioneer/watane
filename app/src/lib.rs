@@ -246,6 +246,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::tools_list,
             commands::toolsets_list,
             commands::toolset_save,
+            commands::toolset_remove,
             commands::tokens_list,
             commands::token_issue,
             commands::token_end,

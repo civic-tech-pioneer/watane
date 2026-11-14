@@ -13,6 +13,7 @@ fn main() {
             "tools_list",
             "toolsets_list",
             "toolset_save",
+            "toolset_remove",
             "tokens_list",
             "token_issue",
             "token_end",

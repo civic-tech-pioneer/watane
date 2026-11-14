@@ -274,8 +274,19 @@ fn publish_providers(
 #[derive(serde::Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 enum FetchQuery {
-    Link { link: String },
-    Release { release: String },
+    Link {
+        link: String,
+    },
+    Release {
+        release: String,
+    },
+    Invalid {
+        #[serde(rename = "link")]
+        _link: serde_json::Value,
+        #[serde(rename = "release")]
+        _release: serde_json::Value,
+    },
+    Empty {},
 }
 enum FetchTarget {
     Link(watane_dist::Link),
@@ -294,8 +305,9 @@ async fn fetch(
         );
     };
     let target = (|| -> Result<_, String> {
-        let Json(query) = query.map_err(|_| "give link or release".to_string())?;
+        let Json(query) = query.map_err(|e| format!("give link or release: {}", e.body_text()))?;
         match query {
+            FetchQuery::Invalid { .. } | FetchQuery::Empty {} => Err("give link or release".into()),
             FetchQuery::Link { link } => {
                 let link: watane_dist::Link = link.parse().map_err(|e: DistError| e.to_string())?;
                 if link.slug().is_none() {

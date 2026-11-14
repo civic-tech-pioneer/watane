@@ -232,7 +232,7 @@ pub(crate) fn toolsets_list(
             .host
             .toolsets()
             .into_iter()
-            .map(|(name, entries)| json!({"name":name, "entries":entries}))
+            .map(|(name, entries)| crate::core::toolset_row(&name.to_string(), entries))
             .collect::<Vec<_>>()
     ))
 }
@@ -247,6 +247,18 @@ pub(crate) fn toolset_save(
     Ok(core(&state)?
         .host
         .set_toolset(&watane_host::ToolsetName::parse(&name)?, entries)?)
+}
+fn remove_toolset(host: &watane_host::Host, name: &str) -> Result<(), CmdError> {
+    Ok(host.remove_toolset(&watane_host::ToolsetName::parse(name)?)?)
+}
+#[tauri::command]
+pub(crate) fn toolset_remove(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<(), CmdError> {
+    record(&webview, "toolset_remove");
+    remove_toolset(&core(&state)?.host, &name)
 }
 #[tauri::command]
 pub(crate) fn tokens_list(
@@ -844,4 +856,29 @@ pub(crate) async fn index_unlist(
         Ok(())
     })
     .await
+}
+
+#[cfg(test)]
+mod toolset_tests {
+    use super::*;
+    #[test]
+    fn ac1_toolset_remove_unknown_name_keeps_host_code() {
+        let home = tempfile::tempdir().unwrap();
+        let host =
+            watane_host::Host::open(home.path(), watane_host::Mode::Preview, Default::default())
+                .unwrap();
+        assert_eq!(
+            remove_toolset(&host, "missing").unwrap_err().code,
+            "no_toolset"
+        );
+        let name = watane_host::ToolsetName::parse("reader").unwrap();
+        host.set_toolset(&name, vec![]).unwrap();
+        let token = host
+            .issue_token(&name, &watane_host::Handle::parse("agent").unwrap())
+            .unwrap();
+        remove_toolset(&host, "reader").unwrap();
+        assert!(host.toolsets().is_empty());
+        assert_eq!(host.tokens().len(), 1);
+        drop(token);
+    }
 }
