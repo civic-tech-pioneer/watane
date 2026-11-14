@@ -9,7 +9,7 @@ const GOLDEN: &str = concat!(
     "0866e9df433265eaf0d959c589d82f1c2020d5b07faf7a530b012ec9f62ff87b",
     "189ff4808080f6"
 );
-const LINK: &str = "replace the symbolic link with a regular entry";
+const LINK: &str = "a symbolic link; replace it with a regular file or directory";
 
 #[cfg(unix)]
 fn mkfifo(path: &Path) {
@@ -88,7 +88,9 @@ fn ac2_s46_fifo_refused_by_read() {
         [Violation {
             rule: Rule::Path,
             file: "ui/extra".into(),
-            message: "expected a regular file or a directory".into()
+            message:
+                "not a regular file or a directory (a FIFO, socket or device); replace or remove it"
+                    .into()
         }]
     );
     assert!(matches!(

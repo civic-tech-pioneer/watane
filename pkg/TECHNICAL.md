@@ -250,8 +250,8 @@ grant: the table of spec §3 is applied as written.
 
 `read_file` opens once through 6.4, takes file type and size from that
 handle and reads it with a cap. A refused link is rule `path`, with
-`replace the symbolic link with a regular entry`; a non-regular file is
-`expected a regular file` under the caller's rule. A missing optional
+`a symbolic link; replace it with a regular file`; a non-regular file, a
+socket included, is `expected a regular file` under the caller's rule. A missing optional
 file remains `Ok(None)`. A part (`mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit`) that is a symbolic link gets exactly one violation, rule `path` with the part's name; no `parts` or other derived violation is added for it.
 
 `Mod::read` collects every violation that it can find and returns them all
@@ -289,8 +289,16 @@ A symbolic link anywhere below `ui/` or `wit/`, hidden entries included, is rule
 link's own path. Below a WIT directory this section refuses, the reader still descends without
 following links and reports each link instead of the directory rule; with none, the directory
 rule applies. A non-hidden entry below `ui/` that is neither a regular file nor a directory is rule
-`path`, `expected a regular file or a directory`; hidden special files are ignored, as pack ignores
-them (S46).
+`path`, `not a regular file or a directory (a FIFO, socket or device); replace or remove it`; hidden
+special files are ignored, as pack ignores them (S46).
+
+Pack and `Mod::read` word a link and a special file alike, from one set of constants (S57): a link
+where a file or directory may stand is `a symbolic link; replace it with a regular file or
+directory` (`PackageError::Symlink` displays `` `<path>`: `` followed by that text); a link where
+only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`) is `a symbolic link;
+replace it with a regular file`. An entry that was listed and is gone or no longer a directory
+when the walk opens it is rule `path` at that entry, `changed while the mod was read; read it
+again`. Other I/O errors stay `ModError::Io`.
 
 ### 4.8 `add_provider` (step 2)
 
@@ -312,6 +320,11 @@ write. Copy and comparison select regular `.wit` files; unrelated files
 are ignored as in 4.7. Consumer destination ancestors must be directories
 without symbolic links. Conflicts use `provider` at `wit/deps/E`; path
 violations use `path`. I/O failures may leave completed copies in place.
+
+Every read and write goes through the no-follow handles of 6.4. Preflight opens the consumer's
+`wit/deps` once (creating `wit` and `wit/deps` when absent) and `wit/deps/<slug>` when present;
+all later writes are relative to those handles, a link inside the old slug folder is unlinked and
+never followed, and a link swapped in after the checks is never written through.
 
 ### 4.9 `Mod::check_component`
 
@@ -501,7 +514,10 @@ nothing in proportion to a declared size. Refusals are `TooLarge`,
 
 Every walk of the mod folder (`Mod::read` and pack) opens directories through the shared no-follow
 walk and lists and stats entries relative to the open directory handle, never by a path string
-below the root (S46).
+below the root (S46). The write helpers of `open.rs` act relative to an open directory: `mkdirat`
+(mode 0755), `openat` with `CREAT | EXCL | NOFOLLOW` (mode 0644) and `unlinkat` (with `REMOVEDIR`
+for a directory); `add_provider` is the only writer (S57). An entry listed and then gone or
+replaced when opened is the `changed while the mod was read` violation of 4.7.
 
 ### 6.5 Example (golden)
 
@@ -716,7 +732,7 @@ pub enum PackageError {
     #[error("too many files; the limit is 4096")] TooManyFiles,
     #[error("bad package format: {0}")] Format(String),
     #[error("path `{}` is not allowed: {reason}", path.escape_debug())] Path { path: String, reason: &'static str },
-    #[error("`{}` is a symbolic link; a package holds no links", path.escape_debug())] Symlink { path: String },
+    #[error("`{}`: a symbolic link; replace it with a regular file or directory", path.escape_debug())] Symlink { path: String },
     #[error("{} exists already", path.display())] DestExists { path: PathBuf },
     #[error("{}: {source}", path.display())] Io { path: PathBuf, #[source] source: std::io::Error },
     #[error(transparent)] Mod(#[from] ModError),
@@ -808,7 +824,7 @@ world recommendations {
 | No overwrite through case or file/directory clashes | the lowercase and parent checks of 6.2. |
 | No size bomb | no compression; the length limit is checked first; each declared size is compared with the remaining input; `.wit`, `mod.toml`, `deps.json` and release limits are checked before parsing; WIT nesting ≤ 32. |
 | A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. Malformed release errors name context and cause once. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
-| No secret leaves through a package | only the paths of 6.1; hidden directory descendants checked for links before omission; symbolic links refused; every mod and pack content read uses the shared all-components no-follow walk and same-handle checks of 6.4 on Unix; WIT resolves checked bytes without reopening; private state lives in the home, never in a mod folder. |
+| No secret leaves through a package | only the paths of 6.1; hidden directory descendants checked for links before omission; symbolic links refused; every mod and pack content read and every `add_provider` read and write uses the shared all-components no-follow walk and same-handle checks of 6.4 on Unix; WIT resolves checked bytes without reopening; private state lives in the home, never in a mod folder. |
 | One meaning, one byte string | canonical package bytes (6.3) and canonical release CBOR (7.2) with decode-then-re-encode; so one id and one signature per meaning. |
 | A package matches its release | `Release::check` re-derives the body from the unpacked mod and compares every field. |
 | `pkg` runs nothing | it only parses; it starts no process and loads no Wasm into a runtime. |

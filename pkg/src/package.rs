@@ -21,7 +21,7 @@ pub enum PackageError {
     Format(String),
     #[error("path `{}` is not allowed: {reason}", path.escape_debug())]
     Path { path: String, reason: &'static str },
-    #[error("`{}` is a symbolic link; a package holds no links", path.escape_debug())]
+    #[error("`{}`: {}", path.escape_debug(), crate::refusal::LINK_ENTRY)]
     Symlink { path: String },
     #[error("{} exists already", path.display())]
     DestExists { path: PathBuf },
@@ -291,10 +291,9 @@ fn finish_unpack(dest: &Path, result: Result<Mod, PackageError>) -> Result<Mod, 
 fn pack_error(root: &Path, part: String, e: std::io::Error) -> PackageError {
     if crate::open::is_link(&e) {
         PackageError::Symlink { path: part }
-    } else if matches!(
-        e.kind(),
-        std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
-    ) {
+    } else if e.kind() == std::io::ErrorKind::InvalidInput || crate::open::is_socket(&e) {
+        path_error(&part, crate::refusal::SPECIAL)
+    } else if e.kind() == std::io::ErrorKind::NotADirectory {
         path_error(&part, "expected a regular file or a content directory")
     } else {
         io(&root.join(part), e)
@@ -421,10 +420,7 @@ impl Input {
             check_size(self.size)?;
             self.files.insert(relative.into());
         } else {
-            return Err(path_error(
-                relative,
-                "expected a regular file or a content directory",
-            ));
+            return Err(path_error(relative, crate::refusal::SPECIAL));
         }
         Ok(())
     }
@@ -491,7 +487,9 @@ mod tests {
             let link = PackageError::Symlink { path: path.into() };
             assert_eq!(
                 link.to_string(),
-                format!("`{escaped}` is a symbolic link; a package holds no links")
+                format!(
+                    "`{escaped}`: a symbolic link; replace it with a regular file or directory"
+                )
             );
             assert!(matches!(link, PackageError::Symlink { path: raw } if raw == path));
             let error = path_error(path, "test rule");

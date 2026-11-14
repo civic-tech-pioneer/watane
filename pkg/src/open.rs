@@ -13,6 +13,19 @@ pub(crate) fn is_link(error: &io::Error) -> bool {
     }
 }
 
+/// An open refused because the entry is a socket (ENXIO on Linux, EOPNOTSUPP on macOS).
+pub(crate) fn is_socket(error: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        matches!(error.raw_os_error(), Some(code) if code == rustix::io::Errno::NXIO.raw_os_error() || code == rustix::io::Errno::OPNOTSUPP.raw_os_error())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = error;
+        false
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     File,
@@ -99,6 +112,100 @@ pub(crate) fn entries(dir: &Dir) -> io::Result<Vec<(OsString, Stat)>> {
     }
     list.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(list)
+}
+
+/// Open the directory `name` of `dir` without following it; a link reports `is_link`.
+pub(crate) fn child(dir: &Dir, name: &str) -> io::Result<Dir> {
+    #[cfg(unix)]
+    {
+        use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat};
+        let flags = OFlags::RDONLY | OFlags::CLOEXEC | OFlags::DIRECTORY | OFlags::NOFOLLOW;
+        match openat(&dir.fd, name, flags, Mode::empty()) {
+            Ok(fd) => Ok(Dir { fd: File::from(fd) }),
+            Err(e) if e == rustix::io::Errno::NOTDIR => {
+                let link = statat(&dir.fd, name, AtFlags::SYMLINK_NOFOLLOW)
+                    .is_ok_and(|s| FileType::from_raw_mode(s.st_mode) == FileType::Symlink);
+                Err(io::Error::from(if link {
+                    rustix::io::Errno::LOOP
+                } else {
+                    e
+                }))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let path = dir.path.join(name);
+        if std::fs::symlink_metadata(&path)?.file_type().is_symlink() {
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
+        Ok(Dir { path })
+    }
+}
+
+/// Open the directory `name` of `dir`, creating it (mode 0755) when absent.
+pub(crate) fn child_or_create(dir: &Dir, name: &str) -> io::Result<Dir> {
+    match child(dir, name) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        other => return other,
+    }
+    #[cfg(unix)]
+    {
+        use rustix::fs::{Mode, mkdirat};
+        mkdirat(&dir.fd, name, Mode::from_raw_mode(0o755))?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir(dir.path.join(name))?;
+    child(dir, name)
+}
+
+/// Create the regular file `name` of `dir` (mode 0644); an existing entry, a link included, is refused.
+pub(crate) fn create_file(dir: &Dir, name: &str, bytes: &[u8]) -> io::Result<()> {
+    use io::Write;
+    #[cfg(unix)]
+    let mut file = {
+        use rustix::fs::{Mode, OFlags, openat};
+        let flags =
+            OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::WRONLY | OFlags::CLOEXEC;
+        File::from(openat(&dir.fd, name, flags, Mode::from_raw_mode(0o644))?)
+    };
+    #[cfg(not(unix))]
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir.path.join(name))?;
+    file.write_all(bytes)
+}
+
+/// Remove everything inside `dir`; a link is unlinked, never followed.
+pub(crate) fn clear(dir: &Dir) -> io::Result<()> {
+    for (name, stat) in entries(dir)? {
+        let name = name.to_string_lossy();
+        if stat.kind == Kind::Dir {
+            clear(&child(dir, &name)?)?;
+        }
+        remove(dir, &name, stat.kind == Kind::Dir)?;
+    }
+    Ok(())
+}
+fn remove(dir: &Dir, name: &str, is_dir: bool) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use rustix::fs::{AtFlags, unlinkat};
+        let flags = if is_dir {
+            AtFlags::REMOVEDIR
+        } else {
+            AtFlags::empty()
+        };
+        Ok(unlinkat(&dir.fd, name, flags)?)
+    }
+    #[cfg(not(unix))]
+    if is_dir {
+        std::fs::remove_dir(dir.path.join(name))
+    } else {
+        std::fs::remove_file(dir.path.join(name))
+    }
 }
 
 #[cfg(unix)]

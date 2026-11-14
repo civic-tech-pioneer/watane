@@ -86,11 +86,7 @@ pub(crate) fn read_file(
     let opened = match crate::open::file(dir, file) {
         Ok(file) => file,
         Err((part, e)) if crate::open::is_link(&e) => {
-            return Err(invalid(
-                Rule::Path,
-                &part,
-                "replace the symbolic link with a regular file",
-            ));
+            return Err(invalid(Rule::Path, &part, crate::refusal::LINK_FILE));
         }
         Err((_, e)) if e.kind() == std::io::ErrorKind::NotFound => {
             return if optional {
@@ -100,10 +96,11 @@ pub(crate) fn read_file(
             };
         }
         Err((_, e))
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
-            ) =>
+            if crate::open::is_socket(&e)
+                || matches!(
+                    e.kind(),
+                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
+                ) =>
         {
             return Err(invalid(rule, file, "expected a regular file"));
         }
@@ -190,14 +187,10 @@ fn links_below(
     let mut found = false;
     let mut stack = vec![relative.to_string()];
     while let Some(relative) = stack.pop() {
-        let handle = match crate::open::dir(root, &relative) {
-            Ok(handle) => handle,
-            Err((part, e)) if crate::open::is_link(&e) => {
-                found = true;
-                add(violations, Rule::Path, &part, LINK);
-                continue;
-            }
-            Err((part, e)) => return Err(io(&root.join(part), e)),
+        let before = violations.len();
+        let Some(handle) = open_listed(root, &relative, violations)? else {
+            found |= violations.len() > before;
+            continue;
         };
         let list = crate::open::entries(&handle).map_err(|e| io(&root.join(&relative), e))?;
         for (name, m) in list.into_iter().rev() {
@@ -214,7 +207,45 @@ fn links_below(
     }
     Ok(found)
 }
-const LINK: &str = "replace the symbolic link with a regular entry";
+use crate::refusal::{CHANGED, LINK_ENTRY as LINK, LINK_FILE, SPECIAL};
+#[cfg(test)]
+type OpenHook = Option<Box<dyn FnMut(&str)>>;
+#[cfg(test)]
+thread_local!(static BEFORE_OPEN: std::cell::RefCell<OpenHook> = const { std::cell::RefCell::new(None) });
+// Test hook: runs after an entry was listed and before it is opened.
+fn before_open(_relative: &str) {
+    #[cfg(test)]
+    BEFORE_OPEN.with(|h| {
+        if let Some(f) = h.borrow_mut().as_mut() {
+            f(_relative);
+        }
+    });
+}
+// Opening a listed directory: a link keeps its own refusal; a vanished or replaced entry is a change.
+fn open_listed(
+    root: &Path,
+    relative: &str,
+    violations: &mut Vec<Violation>,
+) -> Result<Option<crate::open::Dir>, ModError> {
+    before_open(relative);
+    match crate::open::dir(root, relative) {
+        Ok(handle) => Ok(Some(handle)),
+        Err((part, e)) if crate::open::is_link(&e) => {
+            add(violations, Rule::Path, &part, LINK);
+            Ok(None)
+        }
+        Err((_, e))
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            add(violations, Rule::Path, relative, CHANGED);
+            Ok(None)
+        }
+        Err((part, e)) => Err(io(&root.join(part), e)),
+    }
+}
 fn segment(s: &str) -> bool {
     let first = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
     !s.is_empty()
@@ -228,12 +259,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
     let mut files = Vec::new();
     for file in ["mod.toml", "deps.json", "logic.wasm"] {
         if lstat(dir, file)?.is_some_and(|m| m.kind == Kind::Link) {
-            add(
-                violations,
-                Rule::Path,
-                file,
-                "replace the symbolic link with a regular file",
-            );
+            add(violations, Rule::Path, file, LINK_FILE);
         }
     }
     let mut stack = Vec::new();
@@ -266,13 +292,8 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                 }
                 continue;
             }
-            let handle = match crate::open::dir(dir, &relative) {
-                Ok(handle) => handle,
-                Err((part, e)) if crate::open::is_link(&e) => {
-                    add(violations, Rule::Path, &part, LINK);
-                    continue;
-                }
-                Err((part, e)) => return Err(io(&dir.join(part), e)),
+            let Some(handle) = open_listed(dir, &relative, violations)? else {
+                continue;
             };
             let list = crate::open::entries(&handle).map_err(|e| io(&dir.join(&relative), e))?;
             for (name, child) in list.into_iter().rev() {
@@ -320,12 +341,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                 }
             }
         } else if m.kind == Kind::Other {
-            add(
-                violations,
-                Rule::Path,
-                &relative,
-                "expected a regular file or a directory",
-            );
+            add(violations, Rule::Path, &relative, SPECIAL);
         }
     }
     files.sort();
@@ -643,7 +659,7 @@ mod tests {
         assert_eq!(v[0].rule, Rule::Path);
         assert_eq!(
             v[0].message,
-            "replace the symbolic link with a regular file"
+            "a symbolic link; replace it with a regular file"
         );
         fs::remove_file(&path).unwrap();
         assert!(
@@ -659,5 +675,65 @@ mod tests {
             panic!("expected invalid")
         };
         assert_eq!(v[0].message, "expected a regular file");
+    }
+    fn hello() -> tempfile::TempDir {
+        fn copy(from: &Path, to: &Path) {
+            fs::create_dir_all(to).unwrap();
+            for e in fs::read_dir(from).unwrap() {
+                let p = e.unwrap().path();
+                let dest = to.join(p.file_name().unwrap());
+                if p.is_dir() {
+                    copy(&p, &dest);
+                } else {
+                    fs::copy(p, dest).unwrap();
+                }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        copy(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hello"),
+            dir.path(),
+        );
+        dir
+    }
+    fn changed(dir: &Path, entry: &'static str, swap: impl Fn(&Path) + 'static) {
+        let root = dir.to_path_buf();
+        BEFORE_OPEN.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |relative| {
+                if relative == entry {
+                    swap(&root);
+                }
+            }));
+        });
+        let result = Mod::read(dir);
+        BEFORE_OPEN.with(|h| *h.borrow_mut() = None);
+        let Err(ModError::Invalid(v)) = result else {
+            panic!("expected invalid")
+        };
+        assert!(
+            v.contains(&Violation {
+                rule: Rule::Path,
+                file: entry.into(),
+                message: "changed while the mod was read; read it again".into()
+            }),
+            "{v:?}"
+        );
+    }
+    #[test]
+    fn ac5_s57_inspect_entry_replaced_by_file() {
+        let dir = hello();
+        fs::create_dir_all(dir.path().join("ui/sub")).unwrap();
+        changed(dir.path(), "ui/sub", |root| {
+            fs::remove_dir(root.join("ui/sub")).unwrap();
+            fs::write(root.join("ui/sub"), "x").unwrap();
+        });
+    }
+    #[test]
+    fn ac5_s57_links_below_entry_removed() {
+        let dir = hello();
+        fs::create_dir_all(dir.path().join("wit/x/sub")).unwrap();
+        changed(dir.path(), "wit/x/sub", |root| {
+            fs::remove_dir(root.join("wit/x/sub")).unwrap();
+        });
     }
 }

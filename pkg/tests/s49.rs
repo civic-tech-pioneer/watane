@@ -9,7 +9,7 @@ const GOLDEN: &str = concat!(
     "0866e9df433265eaf0d959c589d82f1c2020d5b07faf7a530b012ec9f62ff87b",
     "189ff4808080f6"
 );
-const LINK: &str = "replace the symbolic link with a regular entry";
+const LINK: &str = "a symbolic link; replace it with a regular file or directory";
 
 fn hex(s: &str) -> Vec<u8> {
     (0..s.len())
@@ -109,7 +109,7 @@ fn ac1_s49_linked_logic_wasm_one_violation() {
                 [Violation {
                     rule: Rule::Path,
                     file: "logic.wasm".into(),
-                    message: "replace the symbolic link with a regular file".into()
+                    message: "a symbolic link; replace it with a regular file".into()
                 }],
                 "{fixture}"
             ),
