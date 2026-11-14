@@ -169,6 +169,16 @@ fn ac1_s56_usage_messages_drop_clap_prefix_and_name_missing_command() {
 }
 
 #[test]
+fn ac2_s56_fix1_missing_provider_message_is_exact() {
+    let temp = tempfile::tempdir().unwrap();
+    let (_, v) = run(temp.path(), &["--json", "add"]);
+    assert_eq!(
+        v["errors"][0]["message"],
+        "the following required arguments were not provided: <PROVIDER>"
+    );
+}
+
+#[test]
 fn regress_s56_missing_argument_message_names_the_argument() {
     // An agent that forgets the slug of `new` or the provider of `add` must read which
     // argument is missing; clap puts that on the line after "error: ...:".

@@ -195,7 +195,7 @@ The exit status is the class of the first error; 0 when there is none.
 
 | Code | Class | When | Message (template) | Fix |
 |---|---|---|---|---|
-| `usage.args` | 2 | clap rejects the arguments | clap's first line without its leading `error: `; with no command, `no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search` | `watane-dev --help` |
+| `usage.args` | 2 | clap rejects the arguments | clap's error text without its leading `error: ` and without its usage and help lines, on one line (`the following required arguments were not provided: <PROVIDER>`); with no command, `no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search` | `watane-dev --help` |
 | `usage.not_a_mod` | 2 | the folder has no `mod.toml` | `<dir> is not a mod folder: it has no mod.toml` | `Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>` |
 | `usage.slug` | 2 | `watane_pkg::Slug::from_str` refuses it | `"<s>" is not a valid slug: <pkg reason>` | `Use lowercase words of letters and digits joined by "-", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list` |
 | `usage.exists` | 2 | `new` into an existing path | `<path> exists` | `Choose another slug, or pass --dir <new folder>` |
@@ -311,7 +311,7 @@ join with `, `; an empty list prints `none` (for example,
 `calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
 are added to these values.
-Argument errors print `error[usage.args]: <message>` (clap's first line without its leading `error: `; with no command, the `no command given` text of 2.2) and
+Argument errors print `error[usage.args]: <message>` (clap's error text without its leading `error: ` and without its usage and help lines, on one line (`the following required arguments were not provided: <PROVIDER>`); with no command, the `no command given` text of 2.2) and
 `  fix: watane-dev --help`, then the failure line. Unknown subcommands,
 missing arguments and no arguments all follow this rule.
 Argument errors use the first known subcommand name found in the arguments

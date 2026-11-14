@@ -43,8 +43,16 @@ fn main() {
                 "no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search".to_string()
             } else {
                 let text = e.to_string();
-                let first = text.lines().next().unwrap_or_default();
-                first.strip_prefix("error: ").unwrap_or(first).to_string()
+                let body: Vec<&str> = text
+                    .lines()
+                    .take_while(|line| !line.trim().is_empty())
+                    .map(str::trim)
+                    .collect();
+                let joined = body.join(" ");
+                joined
+                    .strip_prefix("error: ")
+                    .unwrap_or(&joined)
+                    .to_string()
             };
             Outcome::new(command, None).fail(vec![
                 Problem::new(Code::UsageArgs, message).fix("watane-dev --help"),
