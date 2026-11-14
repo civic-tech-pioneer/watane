@@ -654,28 +654,18 @@ fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
         }
         let dir = f.root.path().join(slug);
         assert_eq!(fs::read(dir.join("logic.wasm")).unwrap(), expected);
-        let dir_arg = v["dir"].as_str().unwrap();
-        let mentions = v["result"]["mentions"].as_array().unwrap().len();
-        let (from, to) = ("ratings", v["result"]["slug"].as_str().unwrap());
-        let replace = format!(
-            "Replace {from} with {to} (and {from} with {}) at each result.mentions entry",
-            to.replace('-', "_")
-        );
-        let step = match (to == from, mentions > 0) {
-            (true, _) => {
-                "Edit wit/world.wit and ui/ (logic.wasm is prebuilt and keeps its exports)"
-                    .to_string()
-            }
-            (false, true) => format!(
-                "{replace}, write the logic source under logic/ (logic/Cargo.toml and logic/src) for {to}"
-            ),
-            (false, false) => format!(
-                "Write the logic source under logic/ (logic/Cargo.toml and logic/src) for {to}"
-            ),
+        let dir_arg = dir.canonicalize().unwrap();
+        let step = if slug == "my-ratings" {
+            "Replace ratings with my-ratings (and ratings with my_ratings) at each result.mentions entry, write the logic source under logic/ (logic/Cargo.toml and logic/src) for my-ratings"
+        } else {
+            "Edit wit/world.wit and ui/ (logic.wasm is prebuilt and keeps its exports)"
         };
         assert_eq!(
             v["next"],
-            format!("{step}, then run: watane-dev test --json --dir {dir_arg}")
+            format!(
+                "{step}, then run: watane-dev test --json --dir {}",
+                dir_arg.display()
+            )
         );
         assert!(
             v["result"]["files"]

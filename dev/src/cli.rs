@@ -210,9 +210,8 @@ pub fn run(cli: Cli) -> Outcome {
                 if stop {
                     preview::stop(&dir, &env)
                 } else {
-                    let tested = test_local(&dir);
+                    let mut tested = test_local(&dir);
                     if !tested.ok {
-                        let mut tested = tested;
                         outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {
                             let next = failed_test_next(&tested.errors, "serve");
                             for error in &mut tested.errors {
@@ -298,22 +297,17 @@ fn derive(
             let from = value["from_slug"].as_str().expect("from slug");
             let slug = value["slug"].as_str().expect("slug");
             outcome.dir = value["dir"].as_str().map(PathBuf::from);
-            if from != slug
-                && value["files"].as_array().is_some_and(|files| {
-                    files.contains(&serde_json::json!("logic.wasm"))
-                        && !files.contains(&serde_json::json!("logic/Cargo.toml"))
-                })
-            {
+            let prebuilt = value["files"].as_array().is_some_and(|files| {
+                files.contains(&serde_json::json!("logic.wasm"))
+                    && !files.contains(&serde_json::json!("logic/Cargo.toml"))
+            });
+            if prebuilt && from != slug {
                 outcome.warnings.push(Problem::new(
                     crate::outcome::Code::NewPrebuiltRenamed,
                     format!("logic.wasm was built for {from}, not {slug}: it will fail the contract tests until the mod has logic source"),
                 ).fix(format!("Write the logic source under logic/ (logic/Cargo.toml and logic/src) for {slug}, or run new --from again with the slug {from}")));
             }
 
-            let prebuilt = value["files"].as_array().is_some_and(|files| {
-                files.contains(&serde_json::json!("logic.wasm"))
-                    && !files.contains(&serde_json::json!("logic/Cargo.toml"))
-            });
             let mentions = value["mentions"].as_array().is_some_and(|v| !v.is_empty());
             let replace = format!(
                 "Replace {from} with {slug} (and {} with {}) at each result.mentions entry",
