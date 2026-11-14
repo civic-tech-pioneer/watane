@@ -333,7 +333,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
 
-- [~] **S56 Leftover sweep (dev messages).** Branch `slice/s56`. What a maker's coding agent reads
+- [x] **S56 Leftover sweep (dev messages).** Delivered 2026-11-14 (cloud, merged to main `3a39a6f`). What a maker's coding agent reads
   at the moment something has already gone wrong. Fifteen items from "Leftovers", every one of them
   a message, a fix or a `next` that misleads; none is hard, and together they are most of dev's
   text on a bad day. Re-check each against main before writing a task: this ledger was audited on
@@ -361,7 +361,16 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   flags at share.rs:711, 791, 816, 860, 876; "it has no release" at publish.rs:76), so the tests
   move with the text. Touches: dev only. Cloud: dev's suite runs there; `scripts/vendor.sh` must be
   run first because `dev/allowlist/vendor` is gitignored. The app journeys cannot run in the cloud.
-- [~] **S57 pkg, log and dist say what is wrong (leftover sweep).** Branch `slice/s57`. Six open
+
+  Delivered. All fifteen were still open on re-check; four were described slightly wrong (the
+  `lowSpeed` pins are in dev/src/share.rs unit tests, cli.rs:308 is the `new --from` next with no
+  `--dir`, dev/TECHNICAL.md:227 was changed to the code's fix rather than the reverse, the cycle fix
+  names its folder only when it exists). user-sim REJECTED once: S56-3 made a missing-argument usage
+  error lose the argument's name; fixed in S56-fix1, then ACCEPTED. The foreman flagged
+  `api::tests::ac5_search_timeout_is_thirty_seconds` as flaky (6 of 8 failed in the cloud); it
+  passed 6 of 6 on the Mac at 30.51 s, so it is the cloud. Verified on the Mac stacked with S57 on
+  S58: dev `--include-ignored` 311 green, including the 18 real-host tests the cloud cannot bind.
+- [x] **S57 pkg, log and dist say what is wrong (leftover sweep).** Delivered 2026-11-14 (cloud, merged to main `3a39a6f`). Six open
   items from "Leftovers", all of them a refusal that misleads or a read that is not safe. Re-check
   each against main before writing a task.
 
@@ -386,6 +395,15 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 
   Outcome: each of the six refusals names the real cause, and the two uncovered cases have a test.
   Touches: pkg, log, dist. Cloud: all three suites run there.
+
+  Delivered. `add_provider` was already safe on the read side; the real gap was the write side
+  (`create_dir_all` and `fs::write` under a swapped `wit/deps` wrote outside the mod). It now writes
+  fd-relative (mkdirat, openat with O_CREAT|O_EXCL|O_NOFOLLOW, an unlinkat walk); the AC1 test fails
+  on the old code. user-sim REJECTED once: a second mid-read window, between listing and stat in
+  `open::entries`, still read as plain I/O; fixed in S57-fix1, then ACCEPTED. dist has a new
+  `DistError::StaleBases { release, bases }`, and DD-34 says so. Verified on the Mac stacked with
+  S56 on S58: pkg 140, log 29, dist 113, host 153, app 146, J2-J5 green; fmt and clippy
+  `-D warnings` clean across the workspace.
 - [x] **S58 The app is complete and says what happened (leftover sweep, host stage 4).** Delivered
   2026-11-14 (`c424dd2`, branch `slice/s58`, merged to main). Takes S51 with it.
 
@@ -509,20 +527,15 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### pkg
 
-- [S46] `add_provider` keeps the check-then-read gap: it lstats a path, then re-reads the same path
-  string (pkg/src/add.rs:9-26, 35, 48); writes and `remove_dir_all` are path-based (add.rs:55, 115).
-  It never moved to the no-follow handle walk S46 introduced.
-- [S46] an error during a mid-read swap is plain I/O text with no rule (pkg/src/folder.rs:110, 200,
-  275 fall through to `ModError::Io`). No swap test exists in pkg.
-- [S49] `Mod::read` and `pack` word the same FIFO or link differently (folder.rs:92, 217 vs
-  package.rs:24, 298).
+- [S57] under a live swap race `add_provider` refuses safely, but with plain I/O text ("wit/deps: File
+  exists", "No such file or directory").
+- [S57] `pack` has the same list-then-stat window `Mod::read` had (`pack_error` gives `Io`), and
+  maps every `InvalidInput` to the FIFO/socket text, so a directory swapped in for a file is misnamed.
 
 ### log
 
-- [S49] `NotPlain` adds "(a symbolic link is refused)" even for a plain type mismatch
-  (log/src/lib.rs:29, raised at identity.rs:23).
-- [S49] a bad backup magic shows U+FFFD (`from_utf8_lossy`, log/src/identity.rs:212); the only magic
-  test corrupts into valid ASCII, so non-UTF-8 is uncovered.
+- [S57] log/src/identity.rs still does `symlink_metadata` and then `File::open` on the key path: a
+  check-then-open, inside a 0700 dir.
 
 ### host
 
@@ -545,38 +558,17 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   `host.no_answer` is covered only by in-crate stubs the integration tests cannot reach.
 - [S12b] `install::ac2_real_home_without_app` leaves `watane` running if it panics
   (dev/tests/install.rs:429-446; no Drop guard).
-- [S30] the local-dependency message still says "it has no release" (dev/src/cli.rs:701, pinned by
-  dev/tests/publish.rs:76), and dev/TECHNICAL.md:227 documents a fix the code no longer gives.
-- [S33, S39] a deps.json-only self entry's fix names a `wit/deps` folder that does not exist
-  (dev/src/check.rs:135, 141; deps.rs:125; proven by `ac7_deps_only_own_slug...`).
-- [S39] text mode doubles "error" (clap's string already starts with it, dev/src/main.rs:20) and
-  prints the whole help text on no arguments (no special case at main.rs:12).
-- [S39] after a failed serve the problem's own fix says `test --json` while `next` says
-  `serve --json`; only `next` is rewritten (dev/src/cli.rs:213; contract.rs:337, unit.rs:45).
-- [S39] `add --release <own release>` is fixed with "Pass the folder of another mod"
-  (dev/src/build_on.rs:255).
-- [S39] the `--home x/../h` fix still says "Start the watane app" though the message now names the
-  missing ancestor (dev/src/cli.rs:650, api.rs:23).
-- [S39] several `next` values are prose, not a rerun (dev/src/cli.rs:184, 198, 308, 511, 850, 881).
-- [S47] after `new --from` on a prebuilt package, both `next` branches end "then run:
-  watane-dev test --json", contradicting the warning (dev/src/cli.rs:297-318).
-- [S47] a prebuilt mod with no `tests/` is refused with a misleading `--no-source` message
-  (dev/src/build_on.rs:289). Narrower now: publish runs check, so the reachable case is a mod with
-  no logic part and no `tests/`.
 - [S47] `test` and `serve` refuse `--home`, while `new`, `add`, `install`, `publish` and `search`
   take one (dev/src/cli.rs:36-40, 85-89).
-- [S47] `build.reads_outside` misleads when the cause is a `wit_bindgen` path left by the rename
-  (dev/src/builder.rs:365); no bindgen-specific cause exists.
-- [S42] `env.git_identity` keeps git's last five stderr lines verbatim, user@host included
-  (`stderr_tail`, dev/src/share.rs:39, used at share.rs:285).
-- [S42] `push_failed` doubles "remote: remote:" and keeps trailing whitespace (same `stderr_tail`).
-- [S42] `push_failed`'s fix and `next` carry the `-c http.lowSpeed*` flags (dev/src/share.rs:66,
-  cli.rs:869). The flags are pinned in expected strings at share.rs:711, 791, 816, 860, 876, so a
-  fix touches those tests.
-- [S42] every `next` appends `--home <abs>` even when the home came from `WATANE_HOME`
-  (dev/src/cli.rs:663, 736; dev/tests/publish.rs:444 drives the env case and asserts the append).
-- [S41] the `repository` fix prints the literal `<owner>/<slug>` placeholder though `own_slug` is in
-  scope (dev/src/check.rs:157, pinned at check.rs:826).
+- [S56] some fixes are still "run this command again" prose (host_not_running, a `--home` with a
+  missing ancestor, `add --release` self), and `test`/`serve` fixes and `next` carry no `--dir`.
+- [S56] `usage.no_source`'s fix says `<link>` though the release is known.
+- [S56] `build.reads_outside` reports one error per .wit file, and a relative `generate!` path can
+  resolve into a stale cache sibling, giving a misleading `build.compile`.
+- [S56] "Replace counter with tally (and counter with tally)" repeats when the slug has no dash.
+- [S56] `local_dependency` says "names its folder" for a null entry.
+- [S56] a quoted multi-word search counts as one word.
+- [S56] `watane-dev --help | head` panics on a broken pipe (older than S56).
 
 ### app
 
@@ -604,12 +596,11 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### dist
 
+- [S57] `StaleBases` says "1 base(s)", and a slug that does not exist at all behind a stale mirror
+  also reads as stale.
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
   dist/TECHNICAL.md:1231 still carries Q12 open.
-- [S45] when every base is stale the answer is a bare `UnknownRelease` with no next step
-  (dist/src/error.rs:80, `ac3_all_bases_stale_is_unknown_release`). By design; flagged because the
-  single-stale-base case was fixed and this one reads the same to a person.
 
 ### Unsettled
 
@@ -668,8 +659,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
-- S56: cloud routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` (running, handed out 2026-11-14).
-- S57: cloud routine `trig_019eZQGSqCu2ziUPVNcDiXD8` (running, handed out 2026-11-14).
+- S56: delivered 2026-11-14 and merged; routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` finished, branch removed.
+- S57: delivered 2026-11-14 and merged; routine `trig_019eZQGSqCu2ziUPVNcDiXD8` finished, branch removed.
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
@@ -906,6 +897,17 @@ The human may veto each one.
 
 ## Friction
 
+- S56, S57: both delivered by 11:30 UTC and sat unmerged for about eight hours. The product owner
+  started `factory/watch-cloud.sh` with `s56` and `s57`, and its `--grep` was case-sensitive against
+  `DELIVERED S56`. Fixed (`-i`) in `3a39a6f`.
+- S56: three parallel builds on hard-linked target copies plus leaked test temp dirs (about 600 MB
+  each in /tmp) filled the cloud's 20 GB disk; two implementers and a validator hit "No space left
+  on device". S57 needed a 3.9 GB `cp -R` of target per worktree. Cargo also reused a stale binary
+  when the target was shared with another worktree (mtime fingerprints), costing a false bisect.
+- S56: `api::tests::ac5_search_timeout_is_thirty_seconds` (0.5 s margin) fails in the cloud but not
+  on the Mac. A brief for a cloud foreman should say this one is the Mac's to judge.
+- S57: three items in one pkg brief, and the brief did not say which side (read or write) had the
+  gap, so the swap ACs were hard to make fail first.
 - S58: a bare `target/debug/watane` with no arguments serves the real home instead of printing
   usage. user-sim ran one to see the usage text and created `~/.watane` (home.json, an empty lock,
   mods/, staging/) on the human's machine at 12:40 on 2026-11-14; it is left in place, `rm -r
@@ -1227,3 +1229,6 @@ The human may veto each one.
 - S38: dist's suite passes in parallel on a busy machine.
 - S58: a person removes a toolset from the app's agents view (host stage 4 done), and reads a name
   before a key at every consent, a party name on a wrong-channel follow, and a cause on a mod card.
+- S56: a maker's agent reads the real cause and a runnable `next` at fifteen dev messages that misled.
+- S57: `add_provider` cannot be made to write outside the mod by a swapped link, and pkg, log and
+  dist name the real cause at six refusals, `StaleBases` among them.
