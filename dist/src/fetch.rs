@@ -105,7 +105,6 @@ impl Dist {
             }
             let mut served = None;
             let mut failure = None;
-            let mut stale = None;
             let mut answered = 0usize;
             for base in &bases {
                 match self.read_channel_entries(key, base, true) {
@@ -128,9 +127,6 @@ impl Dist {
                         // 5.11 step 3 (DD-32, DD-34): a base ends the reads only when the
                         // stored view then holds the release; a stale mirror does not.
                         answered += 1;
-                        if stale.is_none() {
-                            stale = Some(base.clone());
-                        }
                         if self
                             .channel(&key)?
                             .releases
@@ -150,7 +146,6 @@ impl Dist {
                     bases: answered,
                 });
             }
-            let served = served.or(stale);
             if served.is_none() && !stored {
                 return Err(failure.expect("every provider base failed"));
             }

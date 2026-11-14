@@ -733,7 +733,9 @@ small, and one derivation keeps one rule.
    first from its provider bases (5.11), so that step 2 sees its entries.
    That read changes no record (a listed record keeps its bases and times).
 2. Derive the view. The release statement with this slug and version (rule
-   4 of 4.1: at most one): none gives `UnknownRelease`; withdrawn gives
+   4 of 4.1: at most one): none gives `UnknownRelease` (after a provider
+   base read where every base that served lacks it: `StaleBases`, DD-34);
+   withdrawn gives
    `Withdrawn { reason }`.
 3. Cache: if `packages/<id>` exists and its `PackageId::of` equals
    `release.package`, use it (no request). If it differs, delete the file.
@@ -978,7 +980,8 @@ already holds (W25, DD-28):
 4. No base: `NotFollowed { channel, local_only }` (DD-31); its message says
    that no followed channel, chosen index or listing names a base for it,
    or, when every named base was skipped as local, that those listings
-   point at a local address. Every base
+   point at a local address. Every base that served lacks the release
+   (stale mirrors): `StaleBases { release, bases }` (DD-34). Every base
    failed: the cause of the first base's failure (for example
    `WrongChannel`); but when the stored view already holds the release
    (an earlier read), a failed read is no error, as for `open_link`, and
