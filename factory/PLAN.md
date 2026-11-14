@@ -286,11 +286,18 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   a bad backup magic shows U+FFFD; `Mod::read` and `pack` word a FIFO or link differently; dist
   does not try the next base when a mirror answers 404 for the package; by DD-33 the cache-path
   link can still point at a dead base.
-- [~] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
+- [x] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
-  package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks.
-  Outcome: `app/tests/j5.rs::ac2_j5_github` passes; a tampered remote falls back with a warning.
-  Touches: dev, `app/tests`. After S42 (same files).
+  package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks the
+  upstream repository on branch `watane`. `app/tests/j5.rs::ac2_j5_github` passes; user-sim
+  ACCEPTED on the first run. Verified on the Mac: dev 300 passed with `--include-ignored`,
+  app driver + J3 + J5 142 passed. Front tests not run (they take over the screen).
+
+Step 6 done 2026-11-14: `app/tests/j5.rs::ac2_j5_github` passes; every step-6 stage is done
+(pkg 8, dev 10, dev 11). Every step of the build plan is delivered. GitHub is still the fake `gh`
+and local git remotes: no real repository, no real static host, no second machine, and no
+installer for watane itself.
+
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the
@@ -332,7 +339,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 9 build on | 5 | done (S36) |
 | pkg | 8 repository | 6 | done (S41) |
 | dev | 10 publish --push | 6 | done (S42) |
-| dev | 11 new --from clone and fork | 6 | open (S43) |
+| dev | 11 new --from clone and fork | 6 | done (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
@@ -388,7 +395,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S47: `a53ccf69` (sessionId `a53ccf69-4e62-4282-ab17-9f6bb89b8139`), worktree `.claude/worktrees/s47` (stopped, removed).
 - S48: cloud routine `trig_011mjvemHKPo9ej8gdsR7qHR` (done).
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
-- S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43`.
+- S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
@@ -403,6 +410,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S43: `share::fork` takes the ReleaseRef (a `Package` has none; dev TECHNICAL 12 corrected); the
+  clone gets the `http.lowSpeed` limits; `publish.fork_unavailable` names `<uo>/<un>`; a rerun
+  after a declined first push reports `created: false, forked: false`, because `mod.toml` already
+  names the fork.
 - S48: dist `NothingToUnfollow { channel }` (unfollow only); DD-34: a provider base ends the reads
   only when its stored view then holds the wanted release; host messages show `<fp>/<slug>` (the
   JSON `missing` keeps the full key); candidates sort by natural order.
@@ -605,6 +616,16 @@ The human may veto each one.
   "Fix the cause" prefix; the message reads `<command> failed: <stderr>` (dev 2.2, 10.4.1).
 
 ## Friction
+
+- S43: Sol cannot run the GUI journeys or `ac6_build_with_network_denied` in Codex's sandbox, so
+  S43-2 reached the validator unrun. Same as S47's. A brief whose outcome is a journey test should
+  say who runs it.
+- S43: leftover `pgrep` polling loops in the tests matched their own command line.
+- `dev --test publish ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths` fails on a
+  loaded machine: it runs the client with `--wait 1` against a server with a 10 s `recv_timeout`,
+  in a target where another test runs over 60 s. Alone it takes 5.6 s and passes; the whole target
+  with `--test-threads=1` is green. Second load-sensitive test after S49's fixture race. Raising
+  the test's own budget would fix it.
 
 - S12a: giving back a withdrawn grant asks no consent (app TECHNICAL 7); app FUNCTIONAL S9 changed to match.
 - S12a: the app fixtures ship a committed `logic.wasm` (`tests/fixtures/build.sh`); no app test builds a mod.
