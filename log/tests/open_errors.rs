@@ -15,16 +15,11 @@ fn ac1_regular_file_is_not_a_directory() {
         e,
         Error::NotPlain {
             expected: "directory",
+            link: false,
             ..
         }
     ));
-    assert_eq!(
-        e.to_string(),
-        format!(
-            "{} is not a directory (a symbolic link is refused)",
-            f.display()
-        )
-    );
+    assert_eq!(e.to_string(), format!("{} is not a directory", f.display()));
 }
 
 #[test]
@@ -32,24 +27,39 @@ fn ac2_symlink_dir_and_directory_key() {
     let t = dir();
     let link = t.path().join("l");
     symlink(t.path(), &link).unwrap();
+    let e = Log::open(&link).unwrap_err();
     assert!(matches!(
-        Log::open(&link),
-        Err(Error::NotPlain {
+        e,
+        Error::NotPlain {
             expected: "directory",
+            link: true,
             ..
-        })
+        }
     ));
+    assert_eq!(
+        e.to_string(),
+        format!(
+            "{} is a symbolic link; a directory is required (a link is refused)",
+            link.display()
+        )
+    );
     let d = t.path().join("d");
     std::fs::create_dir(&d).unwrap();
     std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::create_dir(d.join("identity.key")).unwrap();
+    let e = Log::open(&d).unwrap_err();
     assert!(matches!(
-        Log::open(&d),
-        Err(Error::NotPlain {
+        e,
+        Error::NotPlain {
             expected: "regular file",
+            link: false,
             ..
-        })
+        }
     ));
+    assert_eq!(
+        e.to_string(),
+        format!("{} is not a regular file", d.join("identity.key").display())
+    );
 }
 
 #[test]

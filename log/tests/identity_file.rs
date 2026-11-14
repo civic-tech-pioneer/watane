@@ -44,10 +44,17 @@ fn ac2_refuse_exposed_symlink_and_corrupt_unchanged() {
         e,
         Error::NotPlain {
             expected: "regular file",
+            link: true,
             ..
         }
     ));
-    assert!(e.to_string().contains("not a regular file"));
+    assert_eq!(
+        e.to_string(),
+        format!(
+            "{} is a symbolic link; a regular file is required (a link is refused)",
+            path.display()
+        )
+    );
     fs::remove_file(&path).unwrap();
     fs::write(&path, [0; 31]).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();

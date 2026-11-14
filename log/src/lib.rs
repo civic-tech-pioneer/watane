@@ -15,6 +15,17 @@ pub const MAX_ENTRY: usize = 65_728;
 pub const MAX_SEQ: u64 = (1 << 53) - 1;
 pub const BACKUP_LEN: usize = 108;
 
+fn not_plain_text(path: &std::path::Path, expected: &str, link: bool) -> String {
+    if link {
+        format!(
+            "{} is a symbolic link; a {expected} is required (a link is refused)",
+            path.display()
+        )
+    } else {
+        format!("{} is not a {expected}", path.display())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{path}: {source}")]
@@ -26,10 +37,11 @@ pub enum Error {
         "exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)"
     )]
     Exposed { path: PathBuf, mode: u32 },
-    #[error("{} is not a {expected} (a symbolic link is refused)", path.display())]
+    #[error("{}", not_plain_text(path, expected, *link))]
     NotPlain {
         path: PathBuf,
         expected: &'static str,
+        link: bool,
     },
     #[error("the log directory path is empty")]
     EmptyPath,

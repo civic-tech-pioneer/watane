@@ -96,6 +96,15 @@ fn ac6_failures_keep_identity_and_reject_bounds_fast() {
         );
         assert!(start.elapsed() < std::time::Duration::from_millis(50));
     }
+    let mut ascii = backup.clone();
+    ascii[0] = b'v';
+    let mut high = backup.clone();
+    high[0] = 0xff;
+    for (raw, shown) in [(ascii, "\"vatanek1\""), (high, "\"\\xffatanek1\"")] {
+        let e = l.restore_identity(&raw, "correct horse").unwrap_err();
+        assert!(matches!(&e, Error::BadBackup{field:"magic",found,..} if found==shown));
+        assert!(!e.to_string().contains('\u{fffd}'));
+    }
     assert_eq!(
         std::fs::read(d.path().join("identity.key")).unwrap(),
         before

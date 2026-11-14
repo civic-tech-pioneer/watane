@@ -27,6 +27,7 @@ fn check(path: &Path, directory: bool) -> Result<(), Error> {
             } else {
                 "regular file"
             },
+            link: meta.file_type().is_symlink(),
         });
     }
     let mode = meta.permissions().mode() & 0o7777;
@@ -209,7 +210,7 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
         return Err(bad(
             "magic",
             "\"watanek1\"".into(),
-            format!("{:?}", String::from_utf8_lossy(&backup[..8])),
+            format!("\"{}\"", backup[..8].escape_ascii()),
         ));
     }
     let n = |i| u32::from_le_bytes(backup[i..i + 4].try_into().expect("checked backup length"));
