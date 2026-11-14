@@ -27,24 +27,14 @@ fn request_view(
             .iter()
             .map(|e| consent::PlanMod {
                 origin: e.origin.as_ref().map(|origin| {
-                    let reference = origin.to_string();
-                    host.and_then(|h| {
-                        h.mods()
-                            .into_iter()
-                            .find(|m| m.release.as_ref() == Some(origin))
-                    })
-                    .map(|m| {
-                        let party = words::party(&origin.publisher.to_string(), parties);
-                        let label = words::party_label(&party);
-                        format!("{} {} by {label} — {reference}", m.name, origin.version)
-                    })
-                    .unwrap_or_else(|| {
-                        let label = words::party_label(&words::party(
-                            &origin.publisher.to_string(),
-                            parties,
-                        ));
-                        format!("{} {} by {label} — {origin}", origin.slug, origin.version)
-                    })
+                    let name = host
+                        .and_then(|h| {
+                            h.mods()
+                                .into_iter()
+                                .find(|m| m.release.as_ref() == Some(origin))
+                        })
+                        .map_or_else(|| origin.slug.to_string(), |m| m.name);
+                    words::origin_line(&name, origin, parties)
                 }),
                 binds: e
                     .binds
@@ -241,11 +231,7 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
                     release
                         .origin
                         .as_ref()
-                        .map(|origin| {
-                            let p = words::party(&origin.publisher.to_string(), parties);
-                            let label = words::party_label(&p);
-                            format!("{} {} by {label} — {origin}", origin.slug, origin.version)
-                        })
+                        .map(|origin| words::origin_line(&origin.slug.to_string(), origin, parties))
                         .unwrap_or_else(|| "none".into()),
                 ),
             ],

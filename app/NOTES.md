@@ -349,6 +349,8 @@
   Static configuration and hostile-command literal lists include the command.
   `support_selftest::ac4_hostile_external_script_reports_every_attack_before_navigation`
   now expects 120 attacks (was 119) and 105 IPC calls (was 104).
+  `gui_isolation::ac2_hostile_attacks_are_refused_without_side_effects` expects
+  120 attacks (was 119).
 - `confirm::index_tests::ac1_index_sign_details_are_complete_and_ordered`
   now expects `reading-list by <party> — <key>/reading-list` and
   `<party> — <key>`, including unlist Ends, for known/unknown parties.

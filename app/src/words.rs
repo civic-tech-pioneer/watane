@@ -50,6 +50,14 @@ pub(crate) fn release_label(r: &watane_dist::ReleaseRef, parties: &Parties) -> S
         party_label(&party(&r.publisher.to_string(), parties))
     )
 }
+/// "<name> <version> by <party> — <reference>": the readable part first (S58 AC2).
+pub(crate) fn origin_line(name: &str, r: &watane_dist::ReleaseRef, parties: &Parties) -> String {
+    format!(
+        "{name} {} by {} — {r}",
+        r.version,
+        party_label(&party(&r.publisher.to_string(), parties))
+    )
+}
 pub(crate) fn already_listed(include: bool) -> &'static str {
     if include {
         "This channel is already in the index."
