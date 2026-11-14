@@ -94,4 +94,10 @@ fn ac7_s57_mod_toml_link() {
         v.contains(&(Rule::Path, "mod.toml".into(), LINK_FILE.into())),
         "{v:?}"
     );
+    match pack(dir.path(), false) {
+        Err(e @ PackageError::Symlink { .. }) => {
+            assert_eq!(e.to_string(), format!("`mod.toml`: {LINK_FILE}"));
+        }
+        other => panic!("{other:?}"),
+    }
 }

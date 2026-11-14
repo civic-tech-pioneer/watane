@@ -294,10 +294,10 @@ special files are ignored, as pack ignores them (S46).
 
 Pack and `Mod::read` word a link and a special file alike, from one set of constants (S57): a link
 where a file or directory may stand is `a symbolic link; replace it with a regular file or
-directory` (`PackageError::Symlink` displays `` `<path>`: `` followed by that text); a link where
-only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`) is `a symbolic link;
-replace it with a regular file`. An entry that was listed and is gone or no longer a directory
-when the walk opens it is rule `path` at that entry, `changed while the mod was read; read it
+directory`; a link where only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`)
+is `a symbolic link; replace it with a regular file`. `PackageError::Symlink` displays
+`` `<path>`: `` followed by the text for that path. An entry that was listed and is gone or no
+longer a directory when the walk opens it is rule `path` at that entry, `changed while the mod was read; read it
 again`. Other I/O errors stay `ModError::Io`.
 
 ### 4.8 `add_provider` (step 2)
@@ -324,7 +324,9 @@ violations use `path`. I/O failures may leave completed copies in place.
 Every read and write goes through the no-follow handles of 6.4. Preflight opens the consumer's
 `wit/deps` once (creating `wit` and `wit/deps` when absent) and `wit/deps/<slug>` when present;
 all later writes are relative to those handles, a link inside the old slug folder is unlinked and
-never followed, and a link swapped in after the checks is never written through.
+never followed, and a link swapped in after the checks is never written through. `deps.json` is
+written as in 4.3: the temporary file is created with `create_new` and renamed over `deps.json`,
+so a link at either name is replaced, never followed.
 
 ### 4.9 `Mod::check_component`
 
@@ -732,7 +734,7 @@ pub enum PackageError {
     #[error("too many files; the limit is 4096")] TooManyFiles,
     #[error("bad package format: {0}")] Format(String),
     #[error("path `{}` is not allowed: {reason}", path.escape_debug())] Path { path: String, reason: &'static str },
-    #[error("`{}`: a symbolic link; replace it with a regular file or directory", path.escape_debug())] Symlink { path: String },
+    #[error("`{}`: {}", path.escape_debug(), refusal::link(path) /* 4.7 */)] Symlink { path: String },
     #[error("{} exists already", path.display())] DestExists { path: PathBuf },
     #[error("{}: {source}", path.display())] Io { path: PathBuf, #[source] source: std::io::Error },
     #[error(transparent)] Mod(#[from] ModError),

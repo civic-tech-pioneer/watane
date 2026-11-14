@@ -236,6 +236,22 @@ mod tests {
         assert_eq!(fs::read(outside.path().join("keep.wit")).unwrap(), b"keep");
     }
     #[test]
+    fn deps_json_swapped_after_preflight_is_not_followed() {
+        let (_p, c, m) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret");
+        fs::write(&secret, "keep").unwrap();
+        let (root, out) = (c.path().to_path_buf(), secret.clone());
+        hook::set(move || symlink(&out, root.join("deps.json")).unwrap());
+        not_outside(add_provider(c.path(), &m, None));
+        assert_eq!(fs::read(&secret).unwrap(), b"keep");
+        assert!(
+            !fs::symlink_metadata(c.path().join("deps.json"))
+                .unwrap()
+                .is_symlink()
+        );
+    }
+    #[test]
     fn ac3_s57_provider_dep_link() {
         let (p, c, m) = setup();
         let outside = tempfile::tempdir().unwrap();

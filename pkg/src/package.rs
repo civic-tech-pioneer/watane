@@ -21,7 +21,7 @@ pub enum PackageError {
     Format(String),
     #[error("path `{}` is not allowed: {reason}", path.escape_debug())]
     Path { path: String, reason: &'static str },
-    #[error("`{}`: {}", path.escape_debug(), crate::refusal::LINK_ENTRY)]
+    #[error("`{}`: {}", path.escape_debug(), crate::refusal::link(path))]
     Symlink { path: String },
     #[error("{} exists already", path.display())]
     DestExists { path: PathBuf },

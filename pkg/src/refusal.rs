@@ -3,6 +3,14 @@
 pub(crate) const LINK_ENTRY: &str = "a symbolic link; replace it with a regular file or directory";
 /// A link where only a file may stand (mod.toml, deps.json, logic.wasm).
 pub(crate) const LINK_FILE: &str = "a symbolic link; replace it with a regular file";
+/// The link text for `path`: only a file may stand at the top-level file parts.
+pub(crate) fn link(path: &str) -> &'static str {
+    if matches!(path, "mod.toml" | "deps.json" | "logic.wasm") {
+        LINK_FILE
+    } else {
+        LINK_ENTRY
+    }
+}
 /// A FIFO, socket or device.
 pub(crate) const SPECIAL: &str =
     "not a regular file or a directory (a FIFO, socket or device); replace or remove it";
