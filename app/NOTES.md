@@ -386,6 +386,7 @@
   and `_LSModifyNotification ... error -50`. The full driver suite also
   stops on the API window test's same readiness failure; its Rust/API tests
   pass. No front tests ran. Native assertions still need a working GUI session.
+
 # S58 install consent release line
 
 - Published install lines now read `<slug> <version> by <party label> · signature verified — <reference>`;

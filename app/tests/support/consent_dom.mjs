@@ -69,6 +69,7 @@ if (process.argv[2] === 'pick') {
   assert.ok(line, 'the release reference stays visible');
   assert.ok(!line.startsWith(release), `starts with the reference: ${line}`);
   assert.ok(line.indexOf('Alice (c1prermeec)') < line.indexOf(release), `name after reference: ${line}`);
+  assert.equal(line, `reading-list 0.1.0 by Alice (c1prermeec) · signature verified — ${release}`);
 } else {
   await load({kind:'install',by_program:false,mods:[{name:'Stats',version:'1.0.0',local:'stats',publisher:null,
     grants:[],uses:[],origin:'alice/books@1.0.0',binds:['Frank in place of Carol (your pick)']}]});
