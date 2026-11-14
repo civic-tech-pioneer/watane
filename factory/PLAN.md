@@ -313,8 +313,9 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   signed and notarized (Gatekeeper refuses an unsigned one, which puts a frightening dialog between
   a person and their first use) — the human decides. Touches: a new `install/`, `app`, release
   packaging. Nothing in the repo does any of this today: `app/scripts/` holds only `linux-test.sh`.
-- [ ] **S51 Toolsets and tokens are complete in the app (host stage 4).** Folded into S58: it
-  touches the same `app/src` and `app/ui` files, so it cannot run beside it.
+- [x] **S51 Toolsets and tokens are complete in the app (host stage 4).** Folded into S58 and
+  delivered with it 2026-11-14: it touches the same `app/src` and `app/ui` files, so it could not
+  run beside it.
 - [ ] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
   unlocked screen, so the four `front:` tests fail on a locked Mac (`gui_isolation` ac1) instead of
   skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
@@ -385,8 +386,8 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 
   Outcome: each of the six refusals names the real cause, and the two uncovered cases have a test.
   Touches: pkg, log, dist. Cloud: all three suites run there.
-- [~] **S58 The app is complete and says what happened (leftover sweep, host stage 4).** Branch
-  `slice/s58`. Takes S51 with it. Re-check each item against main first.
+- [x] **S58 The app is complete and says what happened (leftover sweep, host stage 4).** Delivered
+  2026-11-14 (`c424dd2`, branch `slice/s58`, merged to main). Takes S51 with it.
 
   The last `part` row: the app can remove a toolset, not only end a token. `Host::remove_toolset`
   exists (host/src/tools.rs:195) and host/tests/catalog.rs:1000 covers it; nothing in
@@ -409,6 +410,19 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Outcome: host stage 4 goes to `done`, and a person reads a name rather than a key or a transport
   error everywhere the ledger named. Touches: app, host. Needs the Mac: the app cannot build without
   GTK, and J2 and J4 must pass.
+
+  Delivered. The app's agents view has a Remove button per toolset (`app/ui/app.js:122` ->
+  `toolset_remove` -> `Host::remove_toolset`), driver-tested in `app/tests/j2.rs:310`: host stage 4
+  is done, the last `part` row in the table. All seven items were still open on re-check; only one
+  line had drifted (the mod-card notice surfaces at `core.rs:237`, not 229). Consent values now read
+  `<readable> - <key or reference>`, name first, full key kept so it can still be checked.
+  `toolsets_list` returns `tools[]` from the same Rust function as `tools_list`, so the JS no longer
+  re-derives tool names. user-sim REJECTED once: the install consent's per-mod release line
+  (`app/ui/consent.js:73`) was key-first too and the sketch had missed it; fixed in S58-fix1, then
+  ACCEPTED. Verified by the product owner on the Mac with `WATANE_BIN` set: app `--features driver`
+  all non-ignored green (77 + 10 + 5 + 10 + 1 + 4 + 19 + 3 + 3 + 5 + 9), J2, J3, J4 and J5 green,
+  host `--include-ignored` 153 green. The four `front:` tests were not run (S52, needs an unlocked
+  screen).
 
 After step 7, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -434,7 +448,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 1 runtime core | 1 | done (S2) |
 | host | 2 links and events | 1, 2 | done (S3, S11: links, subscribers, hops on the preview `install_folders` path) |
 | host | 3 server and pages | 1 | done (S9); the subscription and revoke hostile rows in step 2 |
-| host | 4 tools (toolsets, tokens, MCP) | 1 | part (S5): all three exist and host tests cover them; the app reads `toolsets` and `tokens`, but nothing in it calls `remove_toolset`, so a person cannot remove a toolset from the app |
+| host | 4 tools (toolsets, tokens, MCP) | 1 | done (S5, S58: the app lists toolsets, removes one and issues tokens) |
 | host | 5 catalog and home | 1, 2 | done (S8, S11, S12a: plan, `Source::Folder`, grants, revoke, update, remove, home mode) |
 | host | 6 program | 1 | done (S9: `--home` runs a participant home with no app) |
 | host | 8 releases | 3 | done (S21b: `Source::Release`, S31, S32) |
@@ -572,24 +586,21 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   (app/src/core.rs:313).
 - [S18] the Linux runner prints versions without names (app/scripts/linux-test.sh:14).
 - [S18] about 17 AT-SPI warnings bury the output; `NO_AT_BRIDGE` is set nowhere.
-- [S18] the app's JS re-derives the MCP tool name with `.replace()` instead of using the server's
-  `tool` field (app/ui/app.js:117).
-- [S29, S44] list, include, publish and install consents show the 52-character key before the name
-  (app/src/confirm.rs:206, 219, 28). Own rows are fixed; these are not.
-- [S29] on a new home the own row sits next to the "add an index" hint (app/ui/app.js:222;
-  `ac1_find_no_index` asserts both are present).
 - [S27] the busy-port window shows "Install folders" with no working local API; the failure path
   only disables it (app/ui/index.html:2, app.js:151).
 - [S27] hidden windows poll only on focus (app/ui/app.js:164).
 - [S44] no busy state during a 30 s hanging follow or add-index (app/ui/app.js:262, 273).
-- [S44] a wrong-channel follow error shows fingerprints only; no party-name lookup on this path
-  (app/src/core.rs:537, dist/src/error.rs:99).
-- [S44] a mod card's refresh error is raw transport text, unlike index rows
-  (app/src/core.rs:357, surfaced at core.rs:229).
-- [S44] a non-JSON body gets "give link or release", discarding the serde cause
-  (app/src/api.rs:296; app/tests/api.rs:409 asserts only the code).
 - [S44] `Core::mods()` re-reads every related channel view on each 2 s refresh, with no memoization
   (app/src/core.rs:276, 167, 1490; the poll is app/ui/app.js:156).
+- [S58] Remove has no confirmation, and a token bound to a removed toolset gives no hint that its
+  toolset is gone (app/ui/app.js:122).
+- [S58] installing from an index follows the channel silently, with nothing said about the follow.
+- [S58] reinstalling after "Keep data" marks the storage `new`.
+- [S58] "Deny" reads "statement refused", which says nothing about what was denied.
+- [S58] channel rows still show raw transport text.
+- [S58] `/api/fetch` with `[]` or `{"link":5}` surfaces "untagged enum FetchQuery"
+  (app/src/api.rs:296; the non-JSON and wrong-shape cases now carry the serde cause, this one
+  carries serde's internal wording).
 
 ### dist
 
@@ -659,7 +670,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S49: cloud routine `trig_012gxPCMrrWKr657qWjMVzf6` (done).
 - S56: cloud routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` (running, handed out 2026-11-14).
 - S57: cloud routine `trig_019eZQGSqCu2ziUPVNcDiXD8` (running, handed out 2026-11-14).
-- S58: `6d47f9c4` (sessionId `6d47f9c4-c628-4791-b732-a7a9659e264f`), worktree `.claude/worktrees/s58`.
+- S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -895,6 +906,14 @@ The human may veto each one.
 
 ## Friction
 
+- S58: a bare `target/debug/watane` with no arguments serves the real home instead of printing
+  usage. user-sim ran one to see the usage text and created `~/.watane` (home.json, an empty lock,
+  mods/, staging/) on the human's machine at 12:40 on 2026-11-14; it is left in place, `rm -r
+  ~/.watane` if unused. A program that silently takes over a person's real home when an agent runs
+  it to read its usage is a trap worth closing.
+- S58: Sol's Codex sandbox cannot start the GUI, so every driver test (J2, J4, find) had to be run
+  by the foreman and the validator outside it. Third time (S43, S47): a brief whose outcome is a
+  driver or journey test must name who runs it.
 - S43: Sol cannot run the GUI journeys or `ac6_build_with_network_denied` in Codex's sandbox, so
   S43-2 reached the validator unrun. Same as S47's. A brief whose outcome is a journey test should
   say who runs it.
@@ -1206,3 +1225,5 @@ The human may veto each one.
 - S35: Eve's dist fetches Carol's release from the bases named by live listings, verified against
   Carol's key; search filters by origin.
 - S38: dist's suite passes in parallel on a busy machine.
+- S58: a person removes a toolset from the app's agents view (host stage 4 done), and reads a name
+  before a key at every consent, a party name on a wrong-channel follow, and a cause on a mod card.
