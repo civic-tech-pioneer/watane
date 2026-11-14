@@ -310,6 +310,17 @@ mod tests {
                 .as_str()
             )
         );
+        fs::create_dir_all(c.join("wit/deps/a")).unwrap();
+        assert_eq!(
+            local_order(&a).unwrap_err().fix.as_deref(),
+            Some(
+                format!(
+                    "Remove mods:a from deps.json and wit/deps/a/ in {}",
+                    c.canonicalize().unwrap().display()
+                )
+                .as_str()
+            )
+        );
         assert_eq!(
             add_fix.as_deref(),
             Some("Do not add a: it already depends on this mod")
