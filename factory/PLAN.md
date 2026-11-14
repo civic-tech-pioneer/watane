@@ -457,8 +457,9 @@ Not sliced yet, on purpose: the design is uncommitted in the human's working tre
 and host TECHNICAL.md files), with `net/REVIEW.md` beside it. Slices are sketched once it is on main.
 A design slice may come first if the review leaves anything open. J8 needs two homes that do not
 share a filesystem: two homes on the Mac may do for the first slices, but the journey wants the
-second machine S55 is waiting for. Step 8 does not wait for step 7 to finish: nothing in D1 needs
-real GitHub or a real static host.
+second machine S55 is waiting for. Open for the human: VISION says each step works before the next
+starts, but nothing in D1 needs real GitHub or a real static host, and step 7 is blocked on the human
+anyway. The product owner recommends starting D1 once the design is on main, beside step 7.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
