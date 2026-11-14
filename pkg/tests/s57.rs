@@ -101,3 +101,52 @@ fn ac7_s57_mod_toml_link() {
         other => panic!("{other:?}"),
     }
 }
+// An entry listed by readdir and gone before its no-follow stat is a mid-read change too:
+// today `open::entries` returns the stat's NotFound as `ModError::Io` naming the parent
+// ("<mod>/ui: No such file or directory"), though `ui` is there.
+#[test]
+fn regress_s57_entry_gone_between_list_and_stat() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let dir = hello();
+    let ui = dir.path().join("ui");
+    fs::create_dir_all(&ui).unwrap();
+    for i in 0..200 {
+        fs::write(ui.join(format!("f{i:03}.txt")), "x").unwrap();
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let churn = {
+        let stop = stop.clone();
+        let ui = ui.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                for i in 0..200 {
+                    let f = ui.join(format!("f{i:03}.txt"));
+                    let _ = fs::remove_file(&f);
+                    let _ = fs::write(&f, "x");
+                }
+            }
+        })
+    };
+    let mut io = None;
+    for _ in 0..2000 {
+        match Mod::read(dir.path()) {
+            Err(e @ ModError::Io { .. }) => {
+                io = Some(e.to_string());
+                break;
+            }
+            Err(ModError::Invalid(v)) => {
+                for v in v {
+                    assert_eq!(v.rule, Rule::Path, "{v:?}");
+                    assert_eq!(v.message, "changed while the mod was read; read it again");
+                }
+            }
+            Ok(_) => {}
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    churn.join().unwrap();
+    assert_eq!(io, None, "a mid-read change reads as plain I/O");
+}
