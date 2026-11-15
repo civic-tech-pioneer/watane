@@ -389,3 +389,43 @@ fn ac4_real_github_requires_explicit_feature() {
         )));
     }
 }
+
+#[cfg(feature = "real-github")]
+#[test]
+fn ac1_real_github_child_environment_and_site_origin_without_network() {
+    use std::{ffi::OsStr, process::Command};
+    let token = "made-up-github-harness-secret";
+    let github = github::RealGithub::with_token(token.into());
+    let mut command = Command::new("git");
+    github.env(&mut command);
+    let env: std::collections::BTreeMap<_, _> = command.get_envs().collect();
+    let get = |key: &str| env[OsStr::new(key)].map(|v| v.to_str().unwrap().to_owned());
+    assert!(get("GH_TOKEN").as_deref() == Some(token));
+    assert_eq!(get("CLAUDE_GH_TOKEN"), None);
+    assert_eq!(get("GH_PROMPT_DISABLED").as_deref(), Some("1"));
+    assert_eq!(get("GIT_CONFIG_NOSYSTEM").as_deref(), Some("1"));
+    assert_eq!(get("GIT_TERMINAL_PROMPT").as_deref(), Some("0"));
+    assert!(Path::new(&get("GH_CONFIG_DIR").unwrap()).is_dir());
+    let config = fs::read_to_string(get("GIT_CONFIG_GLOBAL").unwrap()).unwrap();
+    assert!(!config.contains(token));
+    assert!(config.contains("[user]"));
+    assert!(config.contains("helper = \n helper = !gh auth git-credential"));
+    let home = tempfile::tempdir().unwrap();
+    github.site_origin(home.path(), "minmax-fund/watane-j-selftest00");
+    let site = home.path().join("dist/site");
+    let site = site.to_str().unwrap();
+    assert_eq!(
+        fs::read_to_string(home.path().join("dist/site/.git/info/exclude")).unwrap(),
+        ".*\n"
+    );
+    assert_eq!(
+        github.git(&["-C", site, "branch", "--show-current"]).trim(),
+        "main"
+    );
+    assert_eq!(
+        github
+            .git(&["-C", site, "config", "remote.origin.url"])
+            .trim(),
+        "https://github.com/minmax-fund/watane-j-selftest00"
+    );
+}

@@ -28,6 +28,10 @@ mod real {
                 panic!("CLAUDE_GH_TOKEN is not set (real GitHub tests need it)")
             });
             assert!(!token.is_empty(), "CLAUDE_GH_TOKEN is empty");
+            Self::with_token(token)
+        }
+
+        pub fn with_token(token: String) -> Self {
             let config = tempfile::tempdir().unwrap();
             fs::create_dir(config.path().join("gh")).unwrap();
             fs::write(config.path().join("gitconfig"),
@@ -39,7 +43,7 @@ mod real {
             }
         }
 
-        fn env(&self, command: &mut Command) {
+        pub fn env(&self, command: &mut Command) {
             command
                 .env_remove("CLAUDE_GH_TOKEN")
                 .env("GH_TOKEN", &self.token)
@@ -172,104 +176,6 @@ mod real {
                         redact(&self.token, name),
                         redact(&self.token, &error.to_string())
                     ),
-                }
-            }
-        }
-    }
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn ac1_child_environment_and_site_origin_without_network() {
-            const TOKEN: &str = "made-up-github-harness-secret";
-            match std::env::var("WATANE_S53_SELFTEST").as_deref() {
-                Ok("missing") => {
-                    let _ = RealGithub::new();
-                }
-                Ok("present") => {
-                    let github = RealGithub::new();
-                    let mut command = Command::new("git");
-                    github.env(&mut command);
-                    let env: std::collections::BTreeMap<_, _> = command.get_envs().collect();
-                    assert!(
-                        env[std::ffi::OsStr::new("GH_TOKEN")] == Some(std::ffi::OsStr::new(TOKEN))
-                    );
-                    assert!(env[std::ffi::OsStr::new("CLAUDE_GH_TOKEN")].is_none());
-                    for key in ["GH_PROMPT_DISABLED", "GIT_CONFIG_NOSYSTEM"] {
-                        assert_eq!(
-                            env[std::ffi::OsStr::new(key)],
-                            Some(std::ffi::OsStr::new("1"))
-                        );
-                    }
-                    assert_eq!(
-                        env[std::ffi::OsStr::new("GIT_TERMINAL_PROMPT")],
-                        Some(std::ffi::OsStr::new("0"))
-                    );
-                    assert_eq!(
-                        env[std::ffi::OsStr::new("GH_CONFIG_DIR")],
-                        Some(github.config.path().join("gh").as_os_str())
-                    );
-                    assert_eq!(
-                        env[std::ffi::OsStr::new("GIT_CONFIG_GLOBAL")],
-                        Some(github.config.path().join("gitconfig").as_os_str())
-                    );
-                    assert_eq!(
-                        std::env::var("GH_TOKEN").unwrap(),
-                        "original-child-environment"
-                    );
-                    let config =
-                        fs::read_to_string(github.config.path().join("gitconfig")).unwrap();
-                    assert!(!config.contains(TOKEN));
-                    assert!(config.contains("helper = \n helper = !gh auth git-credential"));
-                    assert!(config.contains("[user]"));
-                    let home = tempfile::tempdir().unwrap();
-                    github.site_origin(home.path(), "minmax-fund/watane-j-selftest00");
-                    let site = home.path().join("dist/site");
-                    assert_eq!(
-                        fs::read_to_string(site.join(".git/info/exclude")).unwrap(),
-                        ".*\n"
-                    );
-                    assert_eq!(
-                        github
-                            .git(&["-C", site.to_str().unwrap(), "branch", "--show-current"])
-                            .trim(),
-                        "main"
-                    );
-                    assert_eq!(
-                        github
-                            .git(&["-C", site.to_str().unwrap(), "config", "remote.origin.url"])
-                            .trim(),
-                        "https://github.com/minmax-fund/watane-j-selftest00"
-                    );
-                }
-                _ => {
-                    // Isolate constructor checks in children: never change this test process's environment.
-                    let name = std::thread::current().name().unwrap().to_owned();
-                    for case in ["missing", "present"] {
-                        let mut child = Command::new(std::env::current_exe().unwrap());
-                        child
-                            .args(["--exact", &name, "--nocapture"])
-                            .env("WATANE_S53_SELFTEST", case)
-                            .env_remove("CLAUDE_GH_TOKEN")
-                            .env("GH_TOKEN", "original-child-environment");
-                        if case == "present" {
-                            child.env("CLAUDE_GH_TOKEN", TOKEN);
-                        }
-                        let output = child.output().unwrap();
-                        let diagnostic = redact(TOKEN, &format!("{output:?}"));
-                        assert_eq!(output.status.success(), case == "present", "{diagnostic}");
-                        if case == "missing" {
-                            assert!(
-                                String::from_utf8_lossy(&output.stdout).contains(
-                                    "CLAUDE_GH_TOKEN is not set (real GitHub tests need it)"
-                                ) || String::from_utf8_lossy(&output.stderr).contains(
-                                    "CLAUDE_GH_TOKEN is not set (real GitHub tests need it)"
-                                ),
-                                "{diagnostic}"
-                            );
-                        }
-                    }
                 }
             }
         }

@@ -2270,9 +2270,8 @@ page and no MCP. SIGTERM ends it (the default action).
 
 ### 15.4 GitHub in tests (step 6)
 
-The dev suite never reaches GitHub. App S53 adds separately opted-in,
-ignored real-GitHub journeys (`app`, feature `real-github`); see
-`app/NOTES.md`, "S53 real GitHub". Each fake step-6 test makes, in its temp folder:
+No dev test reaches GitHub (only app's opt-in `real-github` journeys do,
+app 11). Each step-6 test makes, in its temp folder:
 
 - `remotes/`: the bare repositories. fake-gh creates `remotes/<owner>/<name>`
   (no `.git` suffix) with `git init -q --bare -b main`.

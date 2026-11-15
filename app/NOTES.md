@@ -422,10 +422,10 @@
   is supplied only through child environment variables, with isolated gh and
   git configuration. The made-up-token self-test failed before redaction was
   implemented, then passed.
-- Real GitHub journeys have not been run here, as required by the task.
-  The foreman must run them and report any output, exit-code or error-text
-  differences. No observed differences are available yet; `fake-gh.rs`
-  remains unchanged.
+- The foreman ran both real journeys with the token: `ac3_j3_real_github`
+  passed (143 s), `ac3_j5_real_github` passed (222 s), and no
+  `watane-j-*` repository was left. No difference from `fake-gh.rs` showed
+  up in what dev runs, so `fake-gh.rs` is unchanged.
 
 Local validation: the default build and tests passed. The offline harness
 self-tests (redaction, missing token, child-only environment, isolated
