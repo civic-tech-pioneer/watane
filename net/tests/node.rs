@@ -5,11 +5,14 @@ use std::{fs, os::unix::fs::PermissionsExt, time::Duration};
 use support::*;
 use watane_net::{Net, Options};
 
+// `/dev/fd` exists on Linux and macOS; `/proc/self/fd` only on Linux. A stat of
+// `/dev/fd/<n>` reports the open file itself, so the type says whether it is a socket.
 fn sockets() -> usize {
-    fs::read_dir("/proc/self/fd")
+    use std::os::unix::fs::FileTypeExt;
+    fs::read_dir("/dev/fd")
         .unwrap()
-        .filter_map(|e| fs::read_link(e.ok()?.path()).ok())
-        .filter(|target| target.to_string_lossy().starts_with("socket:"))
+        .filter_map(|e| fs::metadata(e.ok()?.path()).ok())
+        .filter(|m| m.file_type().is_socket())
         .count()
 }
 
