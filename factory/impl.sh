@@ -22,7 +22,7 @@ OPTS=(-m gpt-6.1-sol -c "model_reasoning_effort=\"${EFFORT:-medium}\"" -c 'sandb
       -c 'sandbox_workspace_write.network_access=true' --json -o "$R/$ID.last.md"
       # writable: the worktree, both git dirs (Codex protects .git unless each is named), runs, cargo home.
       # Given as -c, not --add-dir, because `codex exec resume` takes only -c.
-      -c "sandbox_workspace_write.writable_roots=[\"$W\",\"$G\",\"$GD\",\"$R\",\"${CARGO_HOME:-$HOME/.cargo}\"]")
+      -c "sandbox_workspace_write.writable_roots=[\"$W\",\"$G\",\"$GD\",\"$R\",\"${CARGO_HOME:-$HOME/.cargo}\"${CARGO_TARGET_DIR:+,\"$CARGO_TARGET_DIR\"}]")
 cd "$W/$SUB" || exit 2  # resume runs in the current folder
 if [ "$MODE" = new ] && [ -e "$R/$ID.jsonl" ]; then
   N=1; while [ -e "$R/$ID.$N.jsonl" ]; do N=$((N+1)); done
