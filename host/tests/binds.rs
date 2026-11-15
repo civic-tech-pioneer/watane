@@ -50,7 +50,7 @@ impl Releases {
             .unwrap();
         fs::write(
             recs.join("deps.json"),
-            json!({"mods:shelf": k1.identity().to_string()}).to_string(),
+            json!({"mods:shelf": k1.identity().unwrap().to_string()}).to_string(),
         )
         .unwrap();
         Self {
@@ -75,12 +75,14 @@ impl Releases {
     }
     fn bind(&self) -> Bind {
         Bind {
-            consumer: format!("{}/recs", self.k2.identity()),
+            consumer: format!("{}/recs", self.k2.identity().unwrap()),
             provider: Provider {
                 slug: "shelf".parse().unwrap(),
-                publisher: Some(PublisherKey::from_bytes(*self.k1.identity().as_bytes())),
+                publisher: Some(PublisherKey::from_bytes(
+                    *self.k1.identity().unwrap().as_bytes(),
+                )),
             },
-            to: format!("{}/shelf", self.k3.identity()),
+            to: format!("{}/shelf", self.k3.identity().unwrap()),
         }
     }
 }
@@ -178,7 +180,7 @@ async fn ac2_binds_persist_and_step4_catalog_opens() {
     let mut value = disk(dir.path());
     assert_eq!(
         rec(&value)["binds"],
-        json!([{"consumer":r.bind().consumer,"provider":{"slug":"shelf","publisher":r.k1.identity().to_string()},"to":r.bind().to}])
+        json!([{"consumer":r.bind().consumer,"provider":{"slug":"shelf","publisher":r.k1.identity().unwrap().to_string()},"to":r.bind().to}])
     );
     drop(host);
     for m in value["mods"].as_array_mut().unwrap() {
@@ -523,7 +525,7 @@ async fn plan_of_second_shelf_for_installed_unbound_recs_is_ambiguous() {
     assert_eq!(error.status(), 409);
     let expected = format!(
         "recs needs {}/shelf and 2 installed or planned mods fit: shelf, shelf-2; pick one to settle it",
-        &r.k1.identity().to_string()[..10]
+        &r.k1.identity().unwrap().to_string()[..10]
     );
     assert_eq!(error.to_string(), expected);
     assert_eq!(

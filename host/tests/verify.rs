@@ -47,7 +47,7 @@ fn ac1_ac6_plan_identifies_the_signed_publisher_through_reexports() {
     let plan = host.plan(vec![Source::Release { package, entry }]).unwrap();
     assert_eq!(plan.entries().len(), 1);
     let planned = &plan.entries()[0];
-    let key = log.identity().to_string();
+    let key = log.identity().unwrap().to_string();
     assert_eq!(planned.publisher.as_ref().unwrap().to_string(), key);
     assert_eq!(planned.identity, format!("{key}/counter"));
     assert_eq!(
@@ -156,7 +156,7 @@ async fn ac4_release_install_survives_restart_with_page_and_calls() {
     assert!(plan.needs_confirmation());
     let installed = host.install(plan, Requester::App).await.unwrap();
     let local = installed[0].local.clone();
-    let key = log.identity().to_string();
+    let key = log.identity().unwrap().to_string();
     let expected_release = format!("{key}/counter@0.1.0");
     assert_eq!(
         installed[0].release.as_ref().unwrap().to_string(),
@@ -241,7 +241,7 @@ async fn ac4_recovery_restores_committed_release_bytes_including_source() {
         assert!(!current.with_extension("old").exists());
         assert_eq!(
             host.mods()[0].release.as_ref().unwrap().to_string(),
-            format!("{}/counter@0.1.0", log.identity())
+            format!("{}/counter@0.1.0", log.identity().unwrap())
         );
     }
 }
