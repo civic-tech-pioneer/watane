@@ -495,3 +495,25 @@
   J5 is unchanged and uses commands rather than Settings DOM controls.
   All 118 default tests, strict all-targets/driver clippy and formatting pass;
   window suites are left to the native validator and were not run here.
+
+## S54 real static host
+
+- Blocked before implementation by AC5: a link retains the same channel and
+  base and changes only its slug, but `Dist::open_link` resolves that slug
+  against the verified channel and returns `NoRelease` before fetching a
+  package (`dist/src/fetch.rs`, `open_link`). Links contain no version or
+  package path. The app's `Core::plan_link` calls this method; both
+  `NoRelease` and HTTP `NotFound` map to app code `dist`, but only the latter
+  names a URL and says `not found`.
+- A temporary local probe `ac5_changed_slug_returns_cdn_not_found` published
+  the prebuilt Reading list, installed it through `Dist::open_link` in Bob's
+  independent home, then opened a link with the same key and base and slug
+  `never-published`. `cargo test -p watane-app --features driver --test
+  s54_probe -- --nocapture` failed its `NotFound` assertion with
+  `NoRelease { ..., slug: Slug("never-published") }` and message
+  `channel <fingerprint> has no release of never-published`. The probe was
+  removed after collecting this evidence; existing tests are unchanged.
+- Per the task's stop rule, no dist, dev or journey behavior was changed.
+  AC5 needs a revised fixture (a missing resource that dist actually requests)
+  or an explicitly authorized dist change. No GitHub request or real journey
+  was run, so Pages first-serve time, content types and 404 body are unobserved.
