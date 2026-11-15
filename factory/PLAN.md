@@ -342,6 +342,15 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
   IP literal is skipped) against a base that is neither. After S53.
+- [ ] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
+  chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
+  derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
+  `organization=<owner>` when the owner is not the `gh` login; without `--owner`, as today. fake-gh
+  accepts and checks `organization=`. The template `AGENTS.md` and `publish`'s help name the flag.
+  Outcome: the real J5 runs Carol's fork in `minmax-fund` (forked, the parent set, watane's default
+  branch), and the fake J5 checks `organization=`. Touches: dev/src (share.rs, the publish CLI),
+  dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/j5.rs. Local (the token). After S69
+  (dev).
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
@@ -905,16 +914,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- S53 (2026-11-15): `watane-dev publish --push` cannot publish under a GitHub org. It takes the
-  owner from `gh api user` (the person's login), and forks without `organization`, which a token
-  scoped to an org refuses (403). Found on real GitHub in `minmax-fund`. Options: (a) a flag
-  `publish --push --owner <account>`: derived repos become `<owner>/<slug>` and
-  `<owner>/watane-channel`, and the fork adds `organization=<owner>`; fake-gh checks it. (b) No change;
-  J5's fork stays proven only against fake-gh. (c) dev takes the owner from the site's git origin when
-  there is one: no flag, but implicit, and a person with no channel yet still gets the wrong account.
-  Recommended: (a), as its own slice after S65 (which owns dev/src). Cost to undo: (a) a public flag
-  that agents read, so removing it breaks them; (b) none, but anyone publishing under an org hits
-  the bug. Meanwhile S53 runs J5 up to Carol's publish (option b).
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
