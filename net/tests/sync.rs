@@ -421,7 +421,17 @@ fn ac6_unknown_nodes_get_nothing_on_blobs_and_gossip() {
     use iroh::address_lookup::memory::MemoryLookup;
     use iroh_gossip::{Gossip, TopicId};
     let x = [54u8; 32];
-    let target = node(holding(&[(chan(x), chain(x, 2))], true), None);
+    // a node with a list (so it is on its topic) that trusts another key
+    let target = node_trusting(
+        holding(&[(chan(x), chain(x, 2))], true),
+        vec![node_key_of_seed([82u8; 32])],
+        None,
+    );
+    let topic = {
+        let mut input = b"watane/own/1\0".to_vec();
+        input.extend(target.key.as_bytes());
+        TopicId::from_bytes(*blake3::hash(&input).as_bytes())
+    };
     let package = vec![5u8; 1000];
     let id = target.holdings.add_blob(&package);
     let calls = target.holdings.calls();
@@ -440,18 +450,41 @@ fn ac6_unknown_nodes_get_nothing_on_blobs_and_gossip() {
         let got =
             iroh_blobs::get::request::get_blob(conn, iroh_blobs::Hash::from_bytes(id.0)).await;
         assert!(got.is_err(), "an unknown node downloaded a package");
-        // gossip
+        // gossip: the gate closes the connection before iroh-gossip sees it
+        let conn = ep.connect(to.clone(), iroh_gossip::ALPN).await.unwrap();
+        let closed = tokio::time::timeout(Duration::from_secs(3), conn.closed())
+            .await
+            .expect("the gossip connection of an unknown node was kept");
+        assert!(
+            matches!(
+                &closed,
+                iroh::endpoint::ConnectionError::ApplicationClosed(c)
+                    if u64::from(c.error_code) == 403
+            ),
+            "{closed:?}"
+        );
+        // and a join fails, even where the target could reach it back
+        target
+            .net
+            .add_addrs(&node_key_of_seed([80u8; 32]), &[ep.bound_sockets()[0]]);
         let gossip = Gossip::builder().spawn(ep.clone());
         let router = iroh::protocol::Router::builder(ep.clone())
             .accept(iroh_gossip::ALPN, gossip.clone())
             .spawn();
-        let topic = TopicId::from_bytes([1; 32]);
         let mut sub = gossip.subscribe(topic, vec![to.id]).await.unwrap();
         let joined = tokio::time::timeout(Duration::from_secs(3), sub.joined()).await;
         assert!(
             joined.is_err() || joined.unwrap().is_err(),
             "joined the topic"
         );
+        // a true hint for a seq above the target's head, sent anyway
+        let mut hint = vec![0x83, 0x58, 0x20];
+        hint.extend(chan(x).as_bytes());
+        hint.extend([0x05, 0x58, 0x20]);
+        hint.extend([1u8; 32]);
+        let (sender, _rx) = sub.split();
+        let _ = sender.broadcast(hint.into()).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         let _ = router.shutdown().await;
     });
     assert_eq!(target.holdings.calls(), calls, "a hint reached the holder");
@@ -478,7 +511,7 @@ fn ac4_a_gossip_message_that_is_not_a_hint_reaches_nobody() {
     };
     let rt = runtime();
     let calls = target.holdings.calls();
-    let raw_addr = rt.block_on(async {
+    rt.block_on(async {
         let ep = builder(seed).bind().await.unwrap();
         let lookup = MemoryLookup::new();
         ep.address_lookup().unwrap().add(lookup.clone());
@@ -491,9 +524,16 @@ fn ac4_a_gossip_message_that_is_not_a_hint_reaches_nobody() {
         let router = iroh::protocol::Router::builder(ep.clone())
             .accept(iroh_gossip::ALPN, gossip.clone())
             .spawn();
-        let sub = gossip.subscribe(topic, vec![to.id]).await.unwrap();
+        // the target knows where the trusted machine is, so the join
+        // completes both ways
+        target.net.add_addrs(&rawkey, &[ep.bound_sockets()[0]]);
+        let mut sub = gossip.subscribe(topic, vec![to.id]).await.unwrap();
+        // a trusted machine is let onto the topic
+        tokio::time::timeout(Duration::from_secs(5), sub.joined())
+            .await
+            .expect("joined in time")
+            .unwrap();
         let (sender, _rx) = sub.split();
-        let addr = ep.bound_sockets()[0];
         // not hints: too short, trailing byte, a text, a long seq form
         let key = chan(x);
         let mut good = vec![0x83, 0x58, 0x20];
@@ -514,9 +554,71 @@ fn ac4_a_gossip_message_that_is_not_a_hint_reaches_nobody() {
             }
             tokio::time::sleep(Duration::from_millis(150)).await;
         }
+        assert_eq!(target.holdings.calls(), calls, "junk reached the holder");
+        // the control: the true hint on the same topic does reach the holder
+        let _ = sender.broadcast(good.clone().into()).await;
+        for _ in 0..50 {
+            if target.holdings.calls() > calls {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(target.holdings.calls() > calls, "the topic never delivered");
         let _ = router.shutdown().await;
-        addr
     });
-    target.net.add_addrs(&rawkey, &[raw_addr]);
-    assert_eq!(target.holdings.calls(), calls, "junk reached the holder");
+}
+
+/// Every file under `dir`, with its size.
+fn files_under(dir: &std::path::Path) -> Vec<(std::path::PathBuf, u64)> {
+    let mut out = vec![];
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let meta = e.metadata().unwrap();
+        if meta.is_dir() {
+            out.extend(files_under(&e.path()));
+        } else {
+            out.push((e.path(), meta.len()));
+        }
+    }
+    out
+}
+
+/// AC5: a trusted machine fetches a package the holder gives; the store
+/// keeps a reference, not a copy; once the holder no longer gives it, it is
+/// not served.
+#[test]
+fn ac5_a_package_is_served_by_reference_and_not_once_the_holder_drops_it() {
+    use iroh::address_lookup::memory::MemoryLookup;
+    let seed = [83u8; 32];
+    let laptop = node_trusting(holding(&[], true), vec![node_key_of_seed(seed)], None);
+    let package: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 253) as u8).collect();
+    let id = laptop.holdings.add_blob(&package);
+    let hash = iroh_blobs::Hash::from_bytes(id.0);
+    let rt = runtime();
+    rt.block_on(async {
+        let ep = builder(seed).bind().await.unwrap();
+        let lookup = MemoryLookup::new();
+        ep.address_lookup().unwrap().add(lookup.clone());
+        let to = iroh::EndpointAddr::from_parts(
+            iroh::EndpointId::from_bytes(laptop.key.as_bytes()).unwrap(),
+            laptop.net.addrs().into_iter().map(iroh::TransportAddr::Ip),
+        );
+        lookup.add_endpoint_info(to.clone());
+        let conn = ep.connect(to.clone(), iroh_blobs::ALPN).await.unwrap();
+        let got = iroh_blobs::get::request::get_blob(conn.clone(), hash)
+            .bytes()
+            .await
+            .expect("a trusted machine fetches a package the holder gives");
+        assert_eq!(got.as_ref(), package.as_slice());
+        let blobs = laptop.dir.path().join("net").join("blobs");
+        // the store's data files: none (its database holds the outboard and
+        // the reference to the holder's file)
+        let data: Vec<_> = files_under(&blobs)
+            .into_iter()
+            .filter(|(p, _)| p.extension().is_some_and(|x| x == "data"))
+            .collect();
+        assert!(data.is_empty(), "a second copy: {data:?}");
+        laptop.holdings.remove_blob(&id);
+        let again = iroh_blobs::get::request::get_blob(conn, hash).bytes().await;
+        assert!(again.is_err(), "served after the holder dropped it");
+    });
 }

@@ -224,7 +224,8 @@ pub struct MemHoldings {
 }
 
 impl MemHoldings {
-    fn make(
+    /// A holder with these chains (and a forked channel), anchor or not.
+    pub fn custom(
         chains: BTreeMap<PublicKey, Vec<Entry>>,
         fork: Option<(PublicKey, (Entry, Entry))>,
         anchor: bool,
@@ -245,23 +246,15 @@ impl MemHoldings {
             dir: tempfile::tempdir().unwrap(),
         })
     }
-    /// A holder with these chains (and a forked channel), anchor or not.
-    pub fn custom(
-        chains: BTreeMap<PublicKey, Vec<Entry>>,
-        fork: Option<(PublicKey, (Entry, Entry))>,
-        anchor: bool,
-    ) -> Arc<MemHoldings> {
-        Self::make(chains, fork, anchor)
-    }
     pub fn empty() -> Arc<MemHoldings> {
-        Self::make(BTreeMap::new(), None, false)
+        Self::custom(BTreeMap::new(), None, false)
     }
     pub fn new(fx: &Fixture) -> Arc<MemHoldings> {
-        Self::make(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), false)
+        Self::custom(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), false)
     }
     /// The same, in a home that holds the participant key.
     pub fn anchor(fx: &Fixture) -> Arc<MemHoldings> {
-        Self::make(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), true)
+        Self::custom(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), true)
     }
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
@@ -295,6 +288,10 @@ impl MemHoldings {
         std::fs::write(&path, bytes).unwrap();
         self.files.lock().unwrap().insert(id.0, path);
         id
+    }
+    /// The holder no longer gives this package (a withdrawn release).
+    pub fn remove_blob(&self, id: &BlobId) {
+        self.files.lock().unwrap().remove(&id.0);
     }
     /// A package this holder wants (`wanted_blobs` lists it until stored).
     pub fn want_blob(&self, id: BlobId, size: u64) {
@@ -725,13 +722,7 @@ pub fn op_of(request: &[u8]) -> &'static str {
             .take(12)
             .any(|w| w == op.as_bytes())
         {
-            return match op {
-                "hello" => "hello",
-                "heads" => "heads",
-                "entries" => "entries",
-                "fork" => "fork",
-                _ => "devices",
-            };
+            return op;
         }
     }
     "other"
