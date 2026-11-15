@@ -277,3 +277,133 @@ fn ac2_j3_github() {
     assert!(bob.quit().success());
     assert!(alice.quit().success());
 }
+
+#[cfg(feature = "real-github")]
+#[test]
+#[ignore = "real: GitHub minmax-fund"]
+fn ac3_j3_real_github() {
+    use std::fs;
+    use support::{dev::workspace_dev, github::RealGithub};
+
+    let dev = workspace_dev();
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().canonicalize().unwrap();
+    let mut github = RealGithub::new();
+    let mod_name = github.create();
+    let site_name = github.create();
+    let repository = format!("https://github.com/{mod_name}");
+    let site_repository = format!("https://github.com/{site_name}");
+    let alice_home = root.join("alice");
+    let alice = App::start(&alice_home, &[]);
+    begin(&alice, "identity_set_name", json!({"name":"Alice"}));
+    consent(&alice);
+    approve(&alice);
+    assert_eq!(finish(&alice), json!({"ok":null}));
+    let reading = root.join("reading-list");
+    copy_dir(&fixture("reading-list"), &reading);
+    github.repository(&reading, &repository);
+    github.site_origin(&alice.home, &site_name);
+    let command = || github.dev_command(&dev, &alice, &reading, &["publish", "--push"]);
+    // AC1: the real command waits for Alice's signature in her app.
+    let mut first = command();
+    let pending = std::thread::spawn(move || first.output().unwrap());
+    consent(&alice);
+    let text = alice.eval("consent", "document.body.textContent");
+    assert!(text.as_str().unwrap().contains("reading-list"), "{text}");
+    approve(&alice);
+    let output = pending.join().unwrap();
+    let published = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(published["ok"], true, "{published}");
+    let result = &published["result"];
+    let raw = format!("https://raw.githubusercontent.com/{site_name}/main/");
+    assert_eq!(result["push"]["site"]["raw"], raw);
+    assert!(result["link"].is_null(), "{published}");
+    assert!(
+        published["next"].as_str().unwrap().contains(&raw),
+        "{published}"
+    );
+
+    // Inspect fresh HTTPS clones of the pushed repositories.
+    let mod_remote = root.join("cloned-mod");
+    github.git(&["clone", &repository, mod_remote.to_str().unwrap()]);
+    let site_remote = site_repository;
+    let release = result["release"].as_str().unwrap();
+    assert_eq!(result["push"]["mod"]["tag"], release);
+    assert_eq!(
+        github
+            .git(&["-C", mod_remote.to_str().unwrap(), "tag"])
+            .trim(),
+        release
+    );
+    let manifest = fs::read_to_string(reading.join("mod.toml")).unwrap();
+    assert!(
+        manifest.contains(&format!("repository = \"{repository}\"")),
+        "{manifest}"
+    );
+
+    // AC3: serve only a fresh clone of the pushed site, then ask dev for its link.
+    let clone = root.join("served-site");
+    github.git(&["clone", "-b", "main", &site_remote, clone.to_str().unwrap()]);
+    assert!(
+        !github
+            .git(&["-C", clone.to_str().unwrap(), "show", "main:head"])
+            .is_empty()
+    );
+    let site = Site::serve(clone);
+    invoke(&alice, "site_set_url", json!({"url":site.base}));
+    let output = command().output().unwrap();
+    let retry = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(retry["ok"], false, "{retry}");
+    assert_eq!(
+        retry["errors"][0]["code"], "publish.version_exists",
+        "{retry}"
+    );
+    assert_eq!(retry["result"]["release"], release);
+    let link = retry["result"]["link"].as_str().unwrap();
+    assert!(
+        link.contains(&site.base),
+        "{link} does not name {}",
+        site.base
+    );
+
+    // AC4: Bob has a fresh identity and installs the bytes from the clone.
+    let bob_home = root.join("bob");
+    let bob = App::start(&bob_home, &[]);
+    begin(&bob, "install_link", json!({"link":link}));
+    consent(&bob);
+    let text = bob.eval("consent", "document.body.textContent");
+    for field in ["Alice", "signature verified"] {
+        assert!(text.as_str().unwrap().contains(field), "{text}");
+    }
+    approve(&bob);
+    let installed = finish(&bob);
+    assert!(installed.get("error").is_none(), "{installed}");
+    let mods = invoke(&bob, "mods_list", json!({}));
+    assert_eq!(mods.as_array().unwrap().len(), 1, "{mods}");
+    let reading = &mods[0];
+    assert_eq!(reading["publisher"]["name"], "Alice");
+    assert_eq!(reading["release"], release);
+    invoke(&bob, "mod_open", json!({"local":reading["local"]}));
+    let label = format!("mod-{}", reading["local"].as_str().unwrap());
+    assert!(bob.wait(&label, TIMEOUT));
+    assert!(
+        bob.eval(&label, "document.body.textContent")
+            .as_str()
+            .unwrap()
+            .contains("Reading")
+    );
+    assert!(bob.quit().success());
+    assert!(alice.quit().success());
+}

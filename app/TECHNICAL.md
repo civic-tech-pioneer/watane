@@ -1296,6 +1296,19 @@ committed component and no `logic/` source folder.
 Never weaken a test. If a fact changes (for example after a Tauri update),
 record it in `NOTES.md` with the old and the new result.
 
+### S53: opt-in real GitHub journeys
+
+`real-github = ["driver"]` compiles `ac3_j3_real_github` and
+`ac3_j5_real_github`; both are ignored as `real: GitHub minmax-fund`.
+They use real gh and HTTPS git with child-only `GH_TOKEN` from
+`CLAUDE_GH_TOKEN`, isolated configuration and redacted diagnostics.
+`tests/support/github.rs` preflights randomly named throwaway repositories
+with a 404 and deletes only recorded names on drop. Every mod repository
+and site origin is pre-created: gh's owner lookup returns the human's
+login for this org token. J5 proves tagged ancestry without a GitHub fork.
+The fast `ac2` stories and their assertions remain unchanged. The foreman
+runs the real journeys; implementation checks only compile them.
+
 ## 12. Build plan
 
 | Stage | Builds | Needs | Fake until then | Done when |

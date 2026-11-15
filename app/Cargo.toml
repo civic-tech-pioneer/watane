@@ -8,6 +8,7 @@ name = "watane_app"
 
 [features]
 driver = ["dep:webkit2gtk"]
+real-github = ["driver"]
 
 [build-dependencies]
 tauri-build = "=2.7.4"

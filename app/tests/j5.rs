@@ -537,3 +537,227 @@ fn ac2_j5_github() {
     assert!(carol.quit().success());
     assert!(alice.quit().success());
 }
+
+#[cfg(feature = "real-github")]
+#[test]
+#[ignore = "real: GitHub minmax-fund"]
+fn ac3_j5_real_github() {
+    use support::github::RealGithub;
+
+    let dev = workspace_dev();
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().canonicalize().unwrap();
+    let mut github = RealGithub::new();
+    let mod_name = github.create();
+    let site_name = github.create();
+    let carol_mod = github.create();
+    let carol_site = github.create();
+    let repository = format!("https://github.com/{mod_name}");
+    let site_repository = format!("https://github.com/{site_name}");
+    let alice = App::start(&root.join("alice"), &[]);
+    begin(&alice, "identity_set_name", json!({"name":"Alice"}));
+    consent(&alice);
+    approve(&alice);
+    assert_eq!(finish(&alice), json!({"ok":null}));
+    let reading = root.join("reading-list");
+    copy_dir(&fixture("reading-list"), &reading);
+    github.repository(&reading, &repository);
+    github.site_origin(&alice.home, &site_name);
+
+    // AC1: publish from Alice's real app, then serve only her pushed bytes.
+    let mut command = github.dev_command(&dev, &alice, &reading, &["publish", "--push"]);
+    let pending = std::thread::spawn(move || command.output().unwrap());
+    consent(&alice);
+    contains(&body(&alice), &["release", "reading-list"]);
+    approve(&alice);
+    let output = pending.join().unwrap();
+    let published = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(published["ok"], true, "{published}");
+    let raw = format!("https://raw.githubusercontent.com/{site_name}/main/");
+    assert_eq!(published["result"]["push"]["site"]["raw"], raw);
+    assert!(published["result"]["link"].is_null(), "{published}");
+    assert!(
+        published["next"].as_str().unwrap().contains(&raw),
+        "{published}"
+    );
+    let alice_release = published["result"]["release"].as_str().unwrap();
+    assert_eq!(published["result"]["push"]["mod"]["tag"], alice_release);
+    let alice_remote = root.join("cloned-alice");
+    github.git(&["clone", &repository, alice_remote.to_str().unwrap()]);
+    assert_eq!(
+        github
+            .git(&["-C", alice_remote.to_str().unwrap(), "tag"])
+            .trim(),
+        alice_release
+    );
+    let site_remote = site_repository;
+    let clone = root.join("served-site");
+    github.git(&["clone", "-b", "main", &site_remote, clone.to_str().unwrap()]);
+    assert!(
+        !github
+            .git(&["-C", clone.to_str().unwrap(), "show", "main:head"])
+            .is_empty()
+    );
+    let site = Site::serve(clone);
+    invoke(&alice, "site_set_url", json!({"url":site.base}));
+    let output = github
+        .dev_command(&dev, &alice, &reading, &["publish", "--push"])
+        .output()
+        .unwrap();
+    let retry = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(retry["ok"], false, "{retry}");
+    assert_eq!(
+        retry["errors"][0]["code"], "publish.version_exists",
+        "{retry}"
+    );
+    assert_eq!(retry["result"]["release"], alice_release);
+    let link = retry["result"]["link"].as_str().unwrap();
+    assert!(link.contains(&site.base), "{link}");
+
+    // AC2: Carol follows Alice, and new --from retains the tagged git history.
+    let (carol, _carol_site, _) = participant(&root.join("carol"), "Carol");
+    let alice_channel = invoke(&alice, "status", json!({}))["site"]["link"].clone();
+    invoke(&carol, "channel_follow", json!({"link":alice_channel}));
+    let ratings = root.join("ratings");
+    let output = github
+        .dev_command(&dev, &carol, &ratings, &["new", "ratings", "--from", link])
+        .output()
+        .unwrap();
+    let created = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    assert_eq!(
+        created["result"]["fork"],
+        json!({"repository":repository,"tag":alice_release})
+    );
+    assert!(ratings.join(".git").is_dir());
+    let alice_commit = github.git(&[
+        "-C",
+        alice_remote.to_str().unwrap(),
+        "rev-parse",
+        &format!("{alice_release}^{{commit}}"),
+    ]);
+    assert_eq!(
+        github.git(&["-C", ratings.to_str().unwrap(), "rev-parse", "HEAD"]),
+        alice_commit
+    );
+    assert_eq!(
+        github
+            .git(&[
+                "-C",
+                ratings.to_str().unwrap(),
+                "config",
+                "remote.upstream.url"
+            ])
+            .trim(),
+        repository
+    );
+    let origin_meta = fs::read_to_string(ratings.join("mod.toml")).unwrap();
+    contains(
+        &origin_meta,
+        &["[origin]", &format!("release = \"{alice_release}\"")],
+    );
+    assert!(
+        watane_host::watane_pkg::Mod::read(&ratings)
+            .unwrap()
+            .repository()
+            .is_none(),
+        "{origin_meta}"
+    );
+
+    // AC3: the agent replaces the implementation, keeping origin and .git.
+    // Alice's files (her tests/books.json, ui/app.js) are not the ratings mod.
+    for entry in fs::read_dir(&ratings).unwrap() {
+        let path = entry.unwrap().path();
+        if path.file_name() == Some(".git".as_ref()) {
+            continue;
+        }
+        if path.is_dir() {
+            fs::remove_dir_all(&path).unwrap();
+        } else {
+            fs::remove_file(&path).unwrap();
+        }
+    }
+    copy_dir(&fixture("ratings"), &ratings);
+    fs::write(
+        ratings.join("mod.toml"),
+        format!(
+            "{}\n[origin]{}",
+            fs::read_to_string(fixture("ratings").join("mod.toml")).unwrap(),
+            origin_meta.split_once("[origin]").unwrap().1,
+        ),
+    )
+    .unwrap();
+    github.repository(&ratings, &format!("https://github.com/{carol_mod}"));
+    github.site_origin(&carol.home, &carol_site);
+    // dev publish runs the contract tests that the agent writes with its logic.
+    fs::create_dir(ratings.join("tests")).unwrap();
+    fs::write(
+        ratings.join("tests/score.json"),
+        r#"{"steps":[{"call":"api.score","returns":1}]}"#,
+    )
+    .unwrap();
+    assert!(ratings.join(".git").is_dir());
+    let mut command = github.dev_command(&dev, &carol, &ratings, &["publish", "--push"]);
+    let pending = std::thread::spawn(move || command.output().unwrap());
+    consent(&carol);
+    contains(
+        &body(&carol),
+        &["release", "ratings", "Made from", alice_release, "Alice"],
+    );
+    approve(&carol);
+    let output = pending.join().unwrap();
+    let published = github.json(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        github.diagnostic(&output)
+    );
+    assert_eq!(published["ok"], true, "{published}");
+    assert_eq!(published["warnings"], json!([]), "{published}");
+    assert_eq!(
+        published["result"]["push"]["mod"]["forked"], false,
+        "{published}"
+    );
+    let clone = root.join("cloned-carol");
+    github.git(&[
+        "clone",
+        &format!("https://github.com/{carol_mod}"),
+        clone.to_str().unwrap(),
+    ]);
+    let release = published["result"]["release"].as_str().unwrap();
+    let commit = github.git(&[
+        "-C",
+        clone.to_str().unwrap(),
+        "rev-parse",
+        &format!("{release}^{{commit}}"),
+    ]);
+    github.git(&[
+        "-C",
+        clone.to_str().unwrap(),
+        "merge-base",
+        "--is-ancestor",
+        alice_commit.trim(),
+        commit.trim(),
+    ]);
+    assert!(carol.quit().success());
+    assert!(alice.quit().success());
+}

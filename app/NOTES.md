@@ -403,3 +403,45 @@
   readiness: macOS reports `Connection Invalid error for service
   com.apple.hiservices-xpcservice` and `_LSModifyNotification` error -50.
   No front tests ran; no tests were weakened.
+
+## S53 real GitHub
+
+- Added opt-in `real-github` (enables `driver`) journeys
+  `ac3_j3_real_github` and `ac3_j5_real_github`, ignored as
+  `real: GitHub minmax-fund`. Ordinary driver and include-ignored runs
+  without the feature cannot compile these tests in.
+- Repositories are pre-created under `minmax-fund/watane-j-<random>` and
+  recorded for deletion on drop, including unwinding. Preflight requires
+  an HTTP 404 before creation. No organisation repository listing is used.
+- The org token still makes `gh api user --jq .login` return the human's
+  login. Both participants therefore supply their mod repository and site
+  origin explicitly. Carol's repository retains Alice's tagged ancestry,
+  but is not a GitHub fork (`push.mod.forked == false`). Real fork and
+  owner selection remain out of scope.
+- Child output is redacted before JSON parsing and assertions; authentication
+  is supplied only through child environment variables, with isolated gh and
+  git configuration. The made-up-token self-test failed before redaction was
+  implemented, then passed.
+- Real GitHub journeys have not been run here, as required by the task.
+  The foreman must run them and report any output, exit-code or error-text
+  differences. No observed differences are available yet; `fake-gh.rs`
+  remains unchanged.
+
+Local validation: the default build and tests passed. The offline harness
+self-tests (redaction, missing token, child-only environment, isolated
+configuration and local site origin) passed. A driver-suite run failed in
+`api::ac6_publish_through_consent_window_and_host_guards` before app readiness,
+with invalid connections to `com.apple.hiservices-xpcservice` in app stderr.
+This is a macOS GUI-session failure; no existing test was changed.
+
+The separate unchanged fake-J3/J5 command also stopped at
+`ac2_j3_github` with the same app-readiness/GUI-service failure; Cargo did
+not reach J5. Dev's fake-GitHub `share` suite passed all 18 tests.
+Driver-only J3/J5 test listings contain no real-GitHub tests. The release
+build with `driver` failed at the intended compile guard, "the driver
+feature is only for debug test builds".
+
+Final checks: `cargo test -p watane-app --features real-github --no-run`,
+all 12 support self-tests with `real-github`, Clippy with both `driver`
+and `real-github` (`--all-targets -- -D warnings`), and `cargo fmt --check`
+passed. No new dependency was added.

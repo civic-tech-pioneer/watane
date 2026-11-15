@@ -359,3 +359,33 @@ fn ac8_prebuilt_j4_versions_and_grants_pack_without_building() {
         assert!(!publish::update_package(version, network).is_empty());
     }
 }
+
+#[allow(dead_code)]
+#[path = "support/github.rs"]
+mod github;
+
+#[test]
+fn ac1_real_github_redacts_token() {
+    let token = "made-up-secret-token";
+    let result = github::redact(token, &format!("{token}: stdout {token}; stderr {token}"));
+    assert!(!result.contains(token));
+    assert_eq!(result, "[token]: stdout [token]; stderr [token]");
+}
+
+#[cfg(feature = "real-github")]
+#[allow(dead_code)]
+#[path = "support/dev.rs"]
+mod dev;
+
+#[test]
+fn ac4_real_github_requires_explicit_feature() {
+    let app = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(app.join("Cargo.toml")).unwrap();
+    assert!(cargo.contains("real-github = [\"driver\"]"));
+    for journey in ["j3", "j5"] {
+        let source = fs::read_to_string(app.join(format!("tests/{journey}.rs"))).unwrap();
+        assert!(source.contains(&format!(
+            "#[cfg(feature = \"real-github\")]\n#[test]\n#[ignore = \"real: GitHub minmax-fund\"]\nfn ac3_{journey}_real_github()"
+        )));
+    }
+}

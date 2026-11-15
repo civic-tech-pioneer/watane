@@ -11,3 +11,7 @@ pub mod publish;
 
 #[allow(dead_code)]
 pub mod dev;
+
+#[cfg(feature = "real-github")]
+#[allow(dead_code)]
+pub mod github;

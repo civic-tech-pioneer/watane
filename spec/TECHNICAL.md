@@ -302,12 +302,17 @@ provider listings of a publish and the derived view in `app/TECHNICAL.md`
 Step 6 is designed (S40, W29, W30): the `repository` key and its grammar
 in `pkg/TECHNICAL.md` 4.2 (pkg stage 8); `publish --push`, the fork of
 `new --from`, their results, errors and warnings in `dev/TECHNICAL.md`
-10.4 (dev stages 10 and 11). No test reaches GitHub: a local bare
+10.4 (dev stages 10 and 11). In the default suite, a local bare
 repository per GitHub repository, git's own `insteadOf` rewrite of
 `https://github.com/`, and `fake-gh` on `PATH` stand in (dev 15.4); J3 and
 J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
 `app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
-repository.
+repository. S53 adds feature-gated, ignored `ac3_j3_real_github` and
+`ac3_j5_real_github` journeys (`app`, feature `real-github`) against
+throwaway `minmax-fund/watane-j-<random>` repositories, deleted by the tests.
+These pre-create the mod and site repositories; Carol's derivation retains
+Alice's git ancestry without exercising GitHub's fork link. They require
+`CLAUDE_GH_TOKEN` and are run separately by the foreman.
 
 Step 8 is designed (`PEERS.md`, `net/VISION.md`, `net/FUNCTIONAL.md`,
 `net/TECHNICAL.md`; W31 to W33; S59): `node/` (the holder over `dist`, the
