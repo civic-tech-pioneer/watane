@@ -27,6 +27,7 @@ fn ac4_hello_page_only() {
             calls: vec![],
             subscriptions: vec![],
             storage: false,
+            manage: false,
             http: false
         }
     );

@@ -653,6 +653,9 @@ impl Mod {
                 }
             }
         }
+        if w.manage {
+            grants.push(Grant::Manage);
+        }
         grants.sort();
         grants.dedup();
         grants

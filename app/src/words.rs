@@ -137,6 +137,10 @@ pub fn grant_line_bound(
             GrantKind::Storage,
             "Keep its own data on this device".into(),
         ),
+        Grant::Manage => (
+            GrantKind::Manage,
+            "Manage your mods: see every mod and its grants, turn mods off, withdraw grants, and ask you to add, turn on or remove mods".into(),
+        ),
         Grant::Http { host } => (GrantKind::Http, format!("Connect to {host}")),
         Grant::Call {
             interface,

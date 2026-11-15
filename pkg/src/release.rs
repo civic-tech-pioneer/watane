@@ -96,6 +96,9 @@ impl Release {
                 Grant::Storage => {
                     e.array(1)?.u8(0)?;
                 }
+                Grant::Manage => {
+                    e.array(1)?.u8(4)?;
+                }
                 Grant::Http { host } => {
                     e.array(2)?.u8(1)?.str(host.as_str())?;
                 }
@@ -163,7 +166,7 @@ impl Release {
         let source = r.read("source", "a boolean", |d| d.bool())?;
         let offers = r.interfaces("offers", "offer", &slug, &version)?;
         let events = r.interfaces("events", "event", &slug, &version)?;
-        let count = r.array(81, "grants")?;
+        let count = r.array(82, "grants")?;
         let mut grants = Vec::new();
         for _ in 0..count {
             let len = r.array(3, "grant")?;
@@ -172,7 +175,8 @@ impl Release {
                 0 => 1,
                 1 => 2,
                 2 | 3 => 3,
-                _ => return Err(expected("grant kind", "0, 1, 2 or 3", tag.to_string())),
+                4 => 1,
+                _ => return Err(expected("grant kind", "0, 1, 2, 3 or 4", tag.to_string())),
             };
             if len != want {
                 return Err(expected(
@@ -183,6 +187,7 @@ impl Release {
             }
             let grant = match tag {
                 0 => Grant::Storage,
+                4 => Grant::Manage,
                 1 => Grant::Http {
                     host: r.name("host")?,
                 },

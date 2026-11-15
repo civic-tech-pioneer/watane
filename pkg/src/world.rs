@@ -16,6 +16,7 @@ pub struct World {
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
     pub storage: bool,
+    pub manage: bool,
     pub http: bool,
 }
 #[derive(Clone, Debug)]
@@ -359,6 +360,7 @@ pub(crate) fn read(
         calls: vec![],
         subscriptions: vec![],
         storage: false,
+        manage: false,
         http: false,
     };
     for (import, items) in [(true, &wit_world.imports), (false, &wit_world.exports)] {
@@ -428,6 +430,10 @@ pub(crate) fn read(
                     "watane" => match text.as_str() {
                         "watane:host/state@0.1.0" => {
                             world.storage = true;
+                            true
+                        }
+                        "watane:host/manage@0.1.0" => {
+                            world.manage = true;
                             true
                         }
                         "watane:host/caller@0.1.0" => true,

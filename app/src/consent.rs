@@ -93,6 +93,7 @@ pub enum GrantKind {
     Http,
     Call,
     Subscribe,
+    Manage,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

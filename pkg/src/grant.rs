@@ -30,6 +30,7 @@ pub enum Grant {
         interface: InterfaceName,
         provider: Provider,
     },
+    Manage,
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -46,12 +47,14 @@ enum RawGrant {
         interface: InterfaceName,
         provider: Provider,
     },
+    Manage,
 }
 impl TryFrom<RawGrant> for Grant {
     type Error = &'static str;
     fn try_from(raw: RawGrant) -> Result<Self, Self::Error> {
         let grant = match raw {
             RawGrant::Storage => Self::Storage,
+            RawGrant::Manage => Self::Manage,
             RawGrant::Http { host } => Self::Http { host },
             RawGrant::Call {
                 interface,
@@ -87,6 +90,7 @@ impl fmt::Display for Grant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Storage => f.write_str("storage"),
+            Self::Manage => f.write_str("manage"),
             Self::Http { host } => write!(f, "http {host}"),
             Self::Call {
                 interface,
