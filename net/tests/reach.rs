@@ -159,6 +159,13 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
         "{cause}"
     );
     assert!(cause.contains(&second.key.short()), "{cause}");
+    // once, not at every redial (the keeper redials within this time)
+    let end = Instant::now() + Duration::from_millis(2500);
+    while let Some(left) = end.checked_duration_since(Instant::now()) {
+        if let Ok(Event::Unreachable { node, cause }) = laptop_events.recv_timeout(left) {
+            assert_ne!(node, second.key, "told again: {cause}");
+        }
+    }
 
     // she adds the server's relay on both machines
     let with_relay = |limits| Options {
@@ -178,8 +185,12 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
     assert_eq!(book(&laptop)["on"], true);
 
     // AC6: the relay stops when net turns off
+    let at = std::net::SocketAddr::from(([127, 0, 0, 1], relay.port().unwrap()));
+    let listens = || std::net::TcpStream::connect_timeout(&at, Duration::from_secs(1)).is_ok();
+    assert!(listens());
     server_net.set_options(Options::default()).unwrap();
     assert!(server_net.relay_url().is_none());
+    assert!(wait_for(2, || !listens()), "the relay still listens");
 }
 
 /// AC5: the anchor passes on where it knows the others are, so two machines
