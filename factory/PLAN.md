@@ -350,7 +350,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Outcome: the real J5 runs Carol's fork in `minmax-fund` (forked, the parent set, watane's default
   branch), and the fake J5 checks `organization=`. Touches: dev/src (share.rs, the publish CLI),
   dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/j5.rs. Local (the token). After S69
-  (dev).
+  (dev). Also fixes dev's `ac10_endless...` deadline test (Friction, S65 and S69).
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
@@ -649,7 +649,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   collect; a command mod that also calls the shell is refused at the plan, naming the cycle); J2 to
   J5 still pass. Touches: app/src/words.rs, app/tests/j9.rs, app/TECHNICAL.md. Local (the app).
   After S52 and S53: both change app/tests/support and app/TECHNICAL.md.
-- [~] **S69 A maker's agent is told how collects work (dev, S65's leftovers).** Branch `slice/s69`.
+- [x] **S69 A maker's agent is told how collects work (dev, S65's leftovers).** Branch `slice/s69`.
   From S65's user-sim: (1) the template `AGENTS.md` says to keep `world <slug>`; an outlet named like
   the slug then fails with "duplicate item named <slug>" and the fix text does not help: say to
   rename the world, in the guide (at its 150-line cap: make room) and in that error's fix; (2) a
@@ -743,6 +743,7 @@ deps.json self entry in S33 and S39; the 52-character consent key in S29 and S44
 
 These are true but are now what the specs say. Acting on any of them is a spec change, not a fix.
 
+  Delivered (894275d, merged rebased): a maker's agent writing S65's `menu` and `item` gets all four right on the first try (user-sim ACCEPTED). Fake function names come from `logic.wasm`'s imports; `collects` beside `events` in `check --json`. Verified on the Mac: dev green with its 18 server tests, J2 and J4 green; dev's `ac10_endless...` deadline test failed again (see Friction). Later (user-sim): the guide does not say to change `generate!(world: ...)` after renaming the world; a misspelled `deliver` name does not list the real functions; a misspelled fake of an imported-but-uncalled interface is not refused.
 - [S15] a link in a hidden folder (`ui/.git/x`) is rule `path` at the link's own path
   (pkg/TECHNICAL.md:288, pinned by `ac1_s46_hidden_link_named`).
 - [S12b] `--wait` does not count the test pipeline; it is the time the participant has to answer
@@ -906,7 +907,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S65: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S68: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S70: cloud routine `trig_01QbpjxCQTvBQU9oPKrrXK2J` (handed out 2026-11-15), branch `slice/s70`.
-- S69: cloud routine `trig_01BmBHENwzLjoHREaA7V68F1` (handed out 2026-11-15), branch `slice/s69`.
+- S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -1419,7 +1420,9 @@ The human may veto each one.
 - S65: the cloud has no IPv6 loopback and host's server binds 127.0.0.1 and ::1, so about 90 host and
   dev server tests run only on the Mac. A v4-only bind option for tests would let the cloud run them.
 - S65: host fixture builds are not byte-reproducible; rebuild only new fixtures.
-- S65 (merge): dev's `ac10_endless...` deadline test fails under load (two local foremen building).
+- S65, S69 (merge): dev's `ac10_endless_test_stops_with_exact_message_within_deadline` fails in the
+  full ignored run on the Mac (7 s against its deadline) and passes alone. S71 gives it a deadline
+  that measures the stop, not the cold start.
 - S53: Codex filters TOKEN env vars, so every credentialed run falls to the foreman.
 - S68 (merge): the product owner gave a verification its own `CARGO_TARGET_DIR` beside main's and
   filled the disk again (two local foremen' cloned targets diverge as they rebuild: 40+ GB each).
