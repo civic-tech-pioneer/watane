@@ -457,3 +457,23 @@ fn ac2_own_outlet_fake_key_is_accepted_and_at_is_refused() {
     let (_, problems) = watane_dev::contract::contract_tests(&menu, &slug).unwrap();
     assert_eq!(problems[0].code.as_str(), "test.contract_file");
 }
+
+#[test]
+fn ac3_fake_of_a_function_the_interface_lacks_is_refused() {
+    let temp = tempfile::tempdir().unwrap();
+    let menu = temp.path().join("menu");
+    copy_fixture("menu", &menu);
+    let (code, v) = test_in(
+        &menu,
+        json!({"fakes":{"mods:menu/menu":{"asks":["x"]}},
+               "steps":[{"call":"api.items","returns":[]}]}),
+    );
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract_file", "{v}");
+    assert_eq!(v["errors"][0]["file"], "tests/c.json", "{v}");
+    assert_eq!(
+        v["errors"][0]["message"],
+        "tests/c.json: fakes mods:menu/menu has no function asks; its functions: ask, clicked",
+        "{v}"
+    );
+}

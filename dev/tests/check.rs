@@ -26,7 +26,7 @@ fn ac2_check_counter_mod_and_rejections() {
     assert_eq!(c, 0);
     assert_eq!(
         v["result"],
-        json!({"slug":"hello","version":"0.1.0","name":"Hello","page":true,"logic":true,"grants":["storage"],"exports":["mods:hello/api@0.1.0"],"events":["mods:hello/changes@0.1.0"],"calls":[],"subscriptions":[],"providers":[]})
+        json!({"slug":"hello","version":"0.1.0","name":"Hello","page":true,"logic":true,"grants":["storage"],"exports":["mods:hello/api@0.1.0"],"events":["mods:hello/changes@0.1.0"],"collects":[],"calls":[],"subscriptions":[],"providers":[]})
     );
     fs::write(dir.join("mod.toml"), "name = \"Hello\"\n").unwrap();
     let (c, v) = run(&dir, &["check", "--json"]);
@@ -214,4 +214,35 @@ fn ac7_own_package_in_different_folder_names_actual_folder() {
         error["fix"],
         "Ask before deleting wit/deps/renamed/: a mod cannot depend on itself"
     );
+}
+
+#[test]
+fn ac1_ac4_collect_outlet_named_like_slug() {
+    let t = tempfile::tempdir().unwrap();
+    assert_eq!(run(t.path(), &["new", "menu", "--json"]).0, 0);
+    let dir = t.path().join("menu");
+    let world = "package mods:menu@0.1.0;\ninterface menu { ask: func() -> list<string>; }\ninterface api { items: func() -> list<string>; }\nworld WORLD { import menu; export api; }\n";
+    fs::write(dir.join("wit/world.wit"), world.replace("WORLD", "menu")).unwrap();
+    let (c, v) = run(&dir, &["check", "--json"]);
+    assert_eq!(c, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "mod.invalid");
+    assert!(
+        v["errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("duplicate item named `menu`"),
+        "{v}"
+    );
+    let fix = v["errors"][0]["fix"].as_str().unwrap();
+    assert!(
+        fix.contains("rename the world")
+            && fix.contains("world menu-mod")
+            && fix.contains("package line keeps the slug"),
+        "{fix}"
+    );
+    fs::write(dir.join("wit/world.wit"), world.replace("WORLD", "shell")).unwrap();
+    let (c, v) = run(&dir, &["check", "--json"]);
+    assert_eq!(c, 0, "{v}");
+    assert_eq!(v["result"]["collects"], json!(["mods:menu/menu@0.1.0"]));
+    assert_eq!(v["result"]["events"], json!(["mods:menu/menu@0.1.0"]));
 }

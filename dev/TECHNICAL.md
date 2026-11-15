@@ -333,11 +333,13 @@ They end with `<command>: failed`, never a blank command name.
  "grants": ["storage"],
  "exports": ["mods:reading-list/api@0.1.0"],
  "events": ["mods:reading-list/changes@0.1.0"],
+ "collects": [],
  "calls": [], "subscriptions": [],
  "providers": [{"slug": "a", "publisher": null, "path": "../a"}]}
 ```
-`grants` are the `Display` texts of `watane_pkg::Grant`. The four lists
-are the fields of `watane_pkg::World`. `path` is the value recorded for
+`grants` are the `Display` texts of `watane_pkg::Grant`. The five lists
+are the fields of `watane_pkg::World` (`collects` are the outlets whose
+function returns a list). `path` is the value recorded for
 the slug in `.watane-dev.json`, or null when none is recorded.
 When the first error is mod-class (including `mod.invalid`), `next` is
 `Fix the errors, then run: watane-dev check --json`. Env-class failures
@@ -465,7 +467,7 @@ the `add` text, plus ` Contract tests use a fake of it (see AGENTS.md).`
  "imports": ["import mods:a/api@0.1.0;"],
  "subscriptions": ["export mods:a/changes@0.1.0;"]}
 ```
-`next`: `Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves), then run: watane-dev test --json --dir <canonical mod folder>`; `add --release` adds `; contract tests use a fake of it, see AGENTS.md` inside the parentheses.
+`next`: `Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves), then run: watane-dev test --json --dir <canonical mod folder>`; `add --release` adds `; contract tests use a fake of it, see AGENTS.md` inside the parentheses.
 
 **install** (step 2)
 ```json
@@ -804,11 +806,13 @@ with these sections in this order (section 10 joins with its slice):
    without write access to the watane checkout. Edit `wit/world.wit`, then `logic/src/lib.rs`, then
    `ui/`; run `watane-dev test --json` until `ok` is true, then
    `watane-dev serve --json` and give the page URL to the person.
-3. **The world**: keep `package mods:{{slug}}@<version>;` and
-   `world {{slug}}`; the version of the package line is the version of
-   the mod. Each import is a grant that the participant approves, so import
+3. **The world**: keep `package mods:{{slug}}@<version>;`; the version of
+   the package line is the version of the mod. Rename the world
+   (`world {{slug}}-mod`) when an interface of the mod is named like the
+   slug. Each import is a grant that the participant approves, so import
    only what the mod calls. An import of an interface of the own package
-   sends events. WIT names are kebab-case; a keyword as a name takes `%`.
+   sends events. The `export` lines of `add` (`result.subscriptions`) are
+   how the mod answers a provider's events and collects. WIT names are kebab-case; a keyword as a name takes `%`.
 4. **The logic part**: how WIT names map to Rust
    (`exports::mods::{{crate}}::<iface>::Guest`, kebab to snake case, the
    types in the module of their interface). The host interfaces are in
@@ -1152,7 +1156,7 @@ Each is one JSON object. Unknown fields are errors.
 
 | Field | Meaning |
 |---|---|
-| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. |
+| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. A fake of a function that an imported interface does not have is `test.contract_file`, naming the function, the interface and its functions (read from the built component's imports). |
 | `steps` | Required, at least one. Run in order, on one host, so state carries from step to step. |
 | `call` | An export function as `watane.js` names it (`<iface>.<fn>`). Runs as the page. |
 | `deliver` | Instead of `call`: a subscription export (`<iface>.<fn>`, the short name of the provider's interface), called as the host calls it for an event. Step 9: for a collect, its `returns` checks the mod's own answer. |

@@ -261,6 +261,46 @@ fn step_lines(text: &str) -> Vec<u32> {
     lines
 }
 
+/// The functions of each interface the built component imports, keyed by
+/// the interface name without its version. Empty when there is no readable
+/// logic.wasm: the harness then reports the real problem.
+fn imported_functions(dir: &Path) -> std::collections::BTreeMap<String, Vec<String>> {
+    use wasmtime::component::{Component, types::ComponentItem};
+    let mut found = std::collections::BTreeMap::new();
+    let engine = wasmtime::Engine::default();
+    let Ok(component) = Component::from_file(&engine, dir.join("logic.wasm")) else {
+        return found;
+    };
+    for (interface, item) in component.component_type().imports(&engine) {
+        if let ComponentItem::ComponentInstance(instance) = item.ty {
+            let name = interface.split('@').next().unwrap_or(interface);
+            let functions = instance
+                .exports(&engine)
+                .filter(|(_, item)| matches!(item.ty, ComponentItem::ComponentFunc(_)))
+                .map(|(name, _)| name.to_string())
+                .collect();
+            found.insert(name.to_string(), functions);
+        }
+    }
+    found
+}
+
+/// The first fake of a function that its (imported) interface does not have.
+fn unknown_fake(
+    file: &str,
+    fakes: &watane_host::Fakes,
+    interfaces: &std::collections::BTreeMap<String, Vec<String>>,
+) -> Option<String> {
+    fakes.iter().find_map(|(interface, answers)| {
+        let functions = interfaces.get(interface)?;
+        let function = answers.keys().find(|f| !functions.contains(f))?;
+        Some(format!(
+            "{file}: fakes {interface} has no function {function}; its functions: {}",
+            functions.join(", ")
+        ))
+    })
+}
+
 pub fn contract_tests(
     dir: &Path,
     slug: &watane_pkg::Slug,
@@ -302,6 +342,14 @@ pub fn contract_tests(
                 continue;
             }
         };
+        if let Some(message) = unknown_fake(&file, &contract.fakes, &imported_functions(dir)) {
+            errors.push(
+                Problem::new(Code::TestContractFile, message)
+                    .at(&file, None, None)
+                    .fix("Fake only functions of the interface; see its wit/world.wit or wit/deps"),
+            );
+            continue;
+        }
         let failures = match watane_host::Harness::open(dir, contract.fakes) {
             Ok(harness) => {
                 let (passed, failures) = run_steps(
@@ -670,6 +718,24 @@ mod tests {
                 assert!(failures[0].got.as_ref().unwrap().is_array());
             }
         }
+    }
+
+    #[test]
+    fn ac3_unknown_fake_function_names_the_real_ones() {
+        let interfaces = std::collections::BTreeMap::from([(
+            "mods:menu/menu".to_string(),
+            vec!["ask".to_string(), "clicked".to_string()],
+        )]);
+        let fakes = |text| parse(text).unwrap().fakes;
+        let bad = fakes(r#"{"fakes":{"mods:menu/menu":{"asks":["x"]}},"steps":[{"call":"a.b"}]}"#);
+        assert_eq!(
+            unknown_fake("tests/x.json", &bad, &interfaces).unwrap(),
+            "tests/x.json: fakes mods:menu/menu has no function asks; its functions: ask, clicked"
+        );
+        let good = fakes(
+            r#"{"fakes":{"mods:menu/menu":{"ask":["x"]},"mods:other/o":{"z":1}},"steps":[{"call":"a.b"}]}"#,
+        );
+        assert!(unknown_fake("tests/x.json", &good, &interfaces).is_none());
     }
 
     #[test]

@@ -50,7 +50,7 @@ fn ac1_dev_s25_add_copies_wit_and_reports_lines() {
     assert_eq!(
         v["next"],
         format!(
-            "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves), then run: watane-dev test --json --dir {}",
+            "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves), then run: watane-dev test --json --dir {}",
             b.canonicalize().unwrap().display()
         )
     );

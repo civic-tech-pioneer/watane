@@ -181,7 +181,7 @@ pub fn run(cli: Cli) -> Outcome {
             // A failed fetch has no lines to copy: its fix is the next step.
             return match result {
                 Ok(v) => {
-                    outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves; contract tests use a fake of it, see AGENTS.md), then run: watane-dev test --json --dir {}", quote(&dir)));
+                    outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves; contract tests use a fake of it, see AGENTS.md), then run: watane-dev test --json --dir {}", quote(&dir)));
                     outcome.result = Some(v);
                     outcome
                 }
@@ -195,7 +195,7 @@ pub fn run(cli: Cli) -> Outcome {
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
                 outcome.dir = dir.canonicalize().ok();
-                outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (each line is a grant that the participant approves), then run: watane-dev test --json --dir {}", quote(outcome.dir.as_deref().unwrap_or(&dir))));
+                outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves), then run: watane-dev test --json --dir {}", quote(outcome.dir.as_deref().unwrap_or(&dir))));
             }),
         Command::Serve { stop } => dir
             .canonicalize()

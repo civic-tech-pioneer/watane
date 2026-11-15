@@ -87,6 +87,7 @@ pub struct CheckReport {
     pub grants: Vec<String>,
     pub exports: Vec<String>,
     pub events: Vec<String>,
+    pub collects: Vec<String>,
     pub calls: Vec<String>,
     pub subscriptions: Vec<String>,
     pub providers: Vec<ProviderReport>,
@@ -161,6 +162,11 @@ fn mod_problems_for_slug(
                         .is_some_and(|slug| slug.parse::<watane_pkg::Slug>().is_ok())
                 {
                     format!("Ask before deleting wit/deps/{folder}/: a mod cannot depend on itself")
+                } else if let Some(name) = v.message.split("duplicate item named `").nth(1)
+                    .and_then(|rest| rest.split('`').next())
+                    && file.ends_with("world.wit")
+                {
+                    format!("An interface of the mod is named like the world `{name}`: rename the world in wit/world.wit (for example `world {name}-mod`). The package line keeps the slug, and the world name is free")
                 } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
                     || Path::new(&file).starts_with("wit/deps")
                 {
@@ -320,6 +326,7 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
         grants: m.grants().iter().map(ToString::to_string).collect(),
         exports: strings(&w.exports),
         events: strings(&w.events),
+        collects: strings(&w.collects),
         calls: strings(&w.calls),
         subscriptions: strings(&w.subscriptions),
         providers: m
@@ -905,6 +912,19 @@ mod tests {
             errors[0].fix.as_deref(),
             Some("Ask before deleting mods:consumer from deps.json: a mod cannot depend on itself")
         );
+    }
+
+    #[test]
+    fn ac1_duplicate_item_fix_renames_the_world() {
+        use watane_pkg::{Rule, Violation};
+        let errors = mod_problems(ModError::Invalid(vec![Violation {
+            rule: Rule::Wit,
+            file: "wit/world.wit".into(),
+            message: "duplicate item named `menu`\n --> wit/world.wit:3:1".into(),
+        }]));
+        let fix = errors[0].fix.as_deref().unwrap();
+        assert!(fix.contains("rename the world in wit/world.wit (for example `world menu-mod`)"));
+        assert!(fix.contains("package line keeps the slug") && fix.contains("world name is free"));
     }
 
     #[test]
