@@ -1159,6 +1159,10 @@ removal rule of 4.4 keeps every kept record.
      fails here.
   4. A fork: `Compromised { seq }`. A gap with nothing stored and no head:
      `Failed(Gap { channel, seq })`. Else `Stored(head seq)`.
+  5. A call that ends in `Failed` with nothing stored for the channel (no
+     head) takes back the kept mark that step 2 added: a record it created
+     is removed, a record that existed keeps its earlier `kept`. Any other
+     record is left as it was.
   `Asked` adds no record. The own channel never gets a record: its
   entries are ingested as `log` allows, which is how a restored home
   learns its own head (log 5.2). `ingest` takes neither lock of 5.2.

@@ -154,6 +154,7 @@ impl Dist {
         self.mark_kept(channel, &mut records)
     }
     pub fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, reason: Reason) -> Ingested {
+        let mut added = None;
         let result = (|| {
             if let watane_log::Status::Compromised(f) = self.log.status(channel)? {
                 return Ok(Ingested::Compromised { seq: f.chain.seq() });
@@ -182,7 +183,11 @@ impl Dist {
                 }
             }
             if let Some(records) = records.as_mut() {
-                self.mark_kept(channel, records)?;
+                let had = records.contains_key(channel);
+                if !records.get(channel).is_some_and(|r| r.kept) {
+                    self.mark_kept(channel, records)?;
+                    added = Some(had);
+                }
             }
             drop(records);
             let ingested = self.log.ingest(channel, &entries)?;
@@ -197,7 +202,32 @@ impl Dist {
                 }),
             }
         })();
+        let failed = matches!(result, Err(_) | Ok(Ingested::Failed(_)));
+        if let (Some(had), true) = (added, failed) {
+            self.take_back_kept(channel, had);
+        }
         result.unwrap_or_else(Ingested::Failed)
+    }
+    /// Takes back the kept mark a failed `ingest` added, when nothing is stored.
+    fn take_back_kept(&self, channel: &PublicKey, had: bool) {
+        if self.log.head(channel).ok().flatten().is_some() {
+            return;
+        }
+        let mut records = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut next = records.clone();
+        match next.get_mut(channel) {
+            Some(r) if had => r.kept = false,
+            Some(r) if !r.followed => {
+                next.remove(channel);
+            }
+            _ => return,
+        }
+        if self.save_follows(&next).is_ok() {
+            *records = next;
+        }
     }
 }
 

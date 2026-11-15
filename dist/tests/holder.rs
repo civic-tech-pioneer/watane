@@ -413,3 +413,57 @@ fn ac5_holder_concurrent_package_writes() {
         fixture("1.0.0", false)
     );
 }
+
+fn follows_keys(home: &std::path::Path) -> Option<serde_json::Value> {
+    let bytes = std::fs::read(home.join("dist/follows.json")).ok()?;
+    Some(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["channels"].clone())
+}
+
+#[test]
+fn ac1_ac2_ac3_failed_kept_ingest_leaves_no_record() {
+    let a = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    alice.set_name("A").unwrap();
+    alice.set_name("B").unwrap();
+    alice.set_name("C").unwrap();
+    let key = alice.identity().unwrap();
+    let all = entries(&alice, 2);
+    let h = tempfile::tempdir().unwrap();
+    let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
+    // AC1: a gap
+    assert!(matches!(
+        d.ingest(&key, vec![all[2].clone()], Reason::Kept),
+        Ingested::Failed(DistError::Gap { .. })
+    ));
+    let none =
+        |h: &std::path::Path| follows_keys(h).is_none_or(|c| c.get(key.to_string()).is_none());
+    assert!(none(h.path()));
+    assert!(!d.heads(None).unwrap().iter().any(|(k, _)| *k == key));
+    // AC2: a changed byte
+    let bad = Entry::decode(&{
+        let mut b = all[0].bytes().to_vec();
+        b[10] ^= 1;
+        b
+    });
+    if let Ok(bad) = bad {
+        assert!(!matches!(
+            d.ingest(&key, vec![bad], Reason::Kept),
+            Ingested::Stored(_)
+        ));
+        assert!(none(h.path()));
+    }
+    // AC3: an existing kept record stays as it was
+    assert!(matches!(
+        d.ingest(&key, all[..1].to_vec(), Reason::Kept),
+        Ingested::Stored(0)
+    ));
+    let before = std::fs::read(h.path().join("dist/follows.json")).unwrap();
+    assert!(matches!(
+        d.ingest(&key, vec![all[2].clone()], Reason::Kept),
+        Ingested::Stored(0)
+    ));
+    assert_eq!(
+        before,
+        std::fs::read(h.path().join("dist/follows.json")).unwrap()
+    );
+}
