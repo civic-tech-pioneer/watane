@@ -339,7 +339,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   S65 owns the rest of dev/ (src, tests) until it merges: a fix needed in dev/src goes to the product
   owner as a question.
   Delivered (8fa245b, merged rebased): J3 and J5 pass against real GitHub in `minmax-fund` with the real `gh` (`cargo test -p watane-app --features driver,real-github --test j3 --test j5 -- --ignored real_github`, with `CLAUDE_GH_TOKEN`). Behind the `real-github` app feature, so no cloud run reaches GitHub; test processes drop the token. No difference from fake-gh came up apart from publishing under an org (Waiting on the human); Carol's fork is not exercised. Verified on the Mac: hakari clean, app and J2 to J5 green, both real journeys green (77 s, 73 s), the org left with only OpenMLOps.
-- [ ] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
+- [~] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
   IP literal is skipped) against a base that is neither. The human chose (2026-11-15) GitHub Pages in
@@ -347,6 +347,9 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   creates and deletes; the token never in output). Pages can take minutes to serve a first build:
   the test waits with a deadline and says so when it runs out. Local (the token), behind the
   `real-github` app feature. After S71: it publishes the channel with `--owner minmax-fund`.
+  Branch `slice/s54`. Touches: a new app test file (`app/tests/pages.rs` or a new `real_github` test
+  in a file S74 does not own), app/tests/support/github.rs and pages.rs, dist only if a finding needs
+  it. S74 (local) owns app/src, app/ui, app/tests/support/journey.rs and driver.rs, j2, j4, manager.
 - [x] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
   chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
   derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
@@ -702,7 +705,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   spec/FUNCTIONAL.md (J10 only), pkg, host, dev TECHNICAL and FUNCTIONAL; app/TECHNICAL.md only in a
   new section at its end (S74 edits app/TECHNICAL 5.3 and 5.4). Docs only. Cloud.
   Delivered (merged as 1153b15): step 10 can be built from the documents. host 6.4 (the WIT of `watane:host/manage`), 6.10 (reads; three reductions: disable, withdraw, close-page; requests: install, update, enable, grant, remove, each an id with `request(id)`; effects wait in the outbox and the grant is checked again before each; one open request per manager), 12.1 (`Confirm::{manage, reduced}`, `Requester::Mod`); pkg 4.5, 5.1, 7.2 (`Grant::Manage`, CBOR `[4]`, grant limit 82); dev 8.1 (a manage fake, `manages`); app 17 (words, consents, S43 to S48, j10.rs; APP-F-70 to 75 sit in 17.1 until S74 merges). Build rows: pkg 11, host 11, dev 13, app J. Validator PASS in round 1. Six questions for the human (host/TECHNICAL 18, Q28 to Q33), each built so either answer keeps the WIT.
-- [ ] **S76 A mod manages Alice's mods, and asks for anything more (pkg 11, host 11, dev 13).**
+- [~] **S76 A mod manages Alice's mods, and asks for anything more (pkg 11, host 11, dev 13).**
   Branch `slice/s76`. Builds the rows S73 wrote: pkg 11 (`Grant::Manage`, `World::manage`), host 11
   (`watane:host/manage`, host 6.10 and 12.1; S40 to S47), dev 13 (the manage fake, DEV-S-53).
   Outcome: host S40 to S47 and DEV-S-53 pass; every earlier suite passes. Built as designed (the
