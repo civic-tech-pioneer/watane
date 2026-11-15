@@ -48,8 +48,8 @@ pub(crate) fn services(
     }
 }
 
-/// Why a dial failed (NET-F-28, NET-F-32): with no relay and no DHT chosen
-/// the participant is told what to choose.
+/// Why a dial failed (NET-F-28, NET-F-32): the cause names what the
+/// participant has not yet chosen, a relay, the DHT or both.
 pub(crate) fn no_path_cause(relays: bool, dht: bool) -> String {
     match (relays, dht) {
         (false, false) => "no direct path; choose a relay or turn on the DHT",
