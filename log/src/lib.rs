@@ -264,9 +264,6 @@ impl Log {
     pub fn drop_identity(&self) -> Result<(), Error> {
         let mut inner = self.lock();
         let author = inner.identity().ok_or(Error::NoIdentity)?;
-        if store::head(&inner.db, &author)?.is_some() {
-            return Err(Error::IdentityInUse(author));
-        }
         let Inner { key, db, dir } = &mut *inner;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         if store::head(&tx, &author)?.is_some() {
