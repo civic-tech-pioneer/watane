@@ -252,6 +252,8 @@ pub struct Faults {
     pub entries: Option<Vec<Entry>>,
     pub fork: Option<Option<(Entry, Entry)>>,
     pub delay: Option<Duration>,
+    /// `ingest` sleeps this long before it stores.
+    pub ingest_delay: Option<Duration>,
 }
 
 /// A holder in memory. It counts the calls it gets. Its chains and packages
@@ -463,6 +465,10 @@ impl Holdings for MemHoldings {
             .collect()
     }
     fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, why: Why) -> Ingested {
+        let slow = self.faults.lock().unwrap().ingest_delay;
+        if let Some(d) = slow {
+            std::thread::sleep(d);
+        }
         self.ingests
             .lock()
             .unwrap()

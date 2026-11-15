@@ -45,7 +45,7 @@ pub(crate) struct Link {
 pub(crate) struct Slot {
     running: bool,
     full: bool,
-    hints: BTreeMap<PublicKey, (u64, [u8; 32])>,
+    hints: BTreeMap<PublicKey, (u64, [u8; 32], u32)>,
     last_full: Option<Instant>,
 }
 
@@ -63,8 +63,9 @@ pub(crate) struct Dial {
 pub(crate) enum Want {
     /// 5.6, steps 1 to 4.
     Everything,
-    /// Step 2 for one channel (a hint: seq and id as told).
-    Hint(PublicKey, u64, [u8; 32]),
+    /// Step 2 for one channel (a hint: seq and id as told), and how many
+    /// times it was asked again already (5.7).
+    Hint(PublicKey, u64, [u8; 32], u32),
 }
 
 impl Core {
@@ -406,10 +407,12 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
         let slot = syncs.entry(node).or_default();
         match want {
             Want::Everything => slot.full = true,
-            Want::Hint(c, seq, id) => {
-                let entry = slot.hints.entry(c).or_insert((seq, id));
+            Want::Hint(c, seq, id, tries) => {
+                let entry = slot.hints.entry(c).or_insert((seq, id, tries));
                 if seq > entry.0 {
-                    *entry = (seq, id);
+                    *entry = (seq, id, tries);
+                } else if seq == entry.0 {
+                    entry.2 = entry.2.min(tries);
                 }
             }
         }
@@ -443,8 +446,18 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
                 sync_all(&core, &node).await
             } else {
                 let mut result = Ok(());
-                for (channel, (seq, id)) in hints {
-                    result = result.and(sync_channel(&core, &node, &channel, seq, id).await);
+                for (channel, (seq, id, tries)) in hints {
+                    match sync_channel(&core, &node, &channel, seq, id).await {
+                        Ok(Hinted::Behind) if tries < HINT_RETRIES => {
+                            let core = core.clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(HINT_RETRY).await;
+                                request(&core, node, Want::Hint(channel, seq, id, tries + 1));
+                            });
+                        }
+                        Ok(_) => {}
+                        Err(e) => result = result.and(Err(e)),
+                    }
                 }
                 result
             };
@@ -506,6 +519,27 @@ async fn sync_all(core: &Arc<Core>, node: &NodeKey) -> Result<(), NetError> {
     fetch_wanted(core, node, role).await
 }
 
+/// How long after a hint found the delivering machine behind it is asked again.
+const HINT_RETRY: Duration = Duration::from_millis(250);
+/// How many times: 20 times 250 ms, 5 s in all (5.7).
+const HINT_RETRIES: u32 = 20;
+
+/// How acting on a hint ended.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Hinted {
+    /// Done: pulled, forged, or nothing to pull.
+    Done,
+    /// The delivering machine's head is below the hint's seq and ours is
+    /// too: ask it again soon.
+    Behind,
+}
+
+/// Is a hint still waiting for the machine that delivered it? It is when
+/// that machine's head is below the hint's seq and this machine's is too.
+pub(crate) fn waits_for(remote: Option<HeadInfo>, own: Option<HeadInfo>, seq: u64) -> bool {
+    remote.is_none_or(|h| h.seq < seq) && own.is_none_or(|h| h.seq < seq)
+}
+
 /// A hint: step 2 for one channel, with the machine that delivered it.
 async fn sync_channel(
     core: &Arc<Core>,
@@ -513,15 +547,16 @@ async fn sync_channel(
     channel: &PublicKey,
     seq: u64,
     id: [u8; 32],
-) -> Result<(), NetError> {
+) -> Result<Hinted, NetError> {
     let role = role_of(core).await;
     let remote = client::heads_async(core, node, &[*channel]).await?;
-    let Some((_, Some(head))) = remote.into_iter().next() else {
-        return Ok(());
-    };
+    let head = remote.into_iter().next().and_then(|(_, h)| h);
     // the hint is a hint: at the seq it names, the head must be the id it names
-    if head.seq == seq && head.id.as_bytes() != &id {
-        return Ok(());
+    if let Some(head) = head
+        && head.seq == seq
+        && head.id.as_bytes() != &id
+    {
+        return Ok(Hinted::Done);
     }
     let key = *channel;
     let own_head = holder(core, move |h| h.heads(Some(&[key])))
@@ -529,9 +564,19 @@ async fn sync_channel(
         .into_iter()
         .next()
         .and_then(|(_, h)| h);
+    // the deliverer has not got the hint's seq: pull nothing, ask it again
+    // soon, while this machine lacks it too
+    let Some(head) = head.filter(|h| h.seq >= seq) else {
+        return Ok(if waits_for(head, own_head, seq) {
+            Hinted::Behind
+        } else {
+            Hinted::Done
+        });
+    };
     pull(core, node, role, channel, head, own_head).await?;
     // a new head may name a package
-    fetch_wanted(core, node, role).await
+    fetch_wanted(core, node, role).await?;
+    Ok(Hinted::Done)
 }
 
 /// Step 2 and 3 for one channel: read from `own seq + 1` to the other's seq
@@ -626,4 +671,33 @@ async fn fetch_wanted(core: &Arc<Core>, node: &NodeKey, role: Role) -> Result<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EntryId;
+
+    fn head(seq: u64) -> Option<HeadInfo> {
+        Some(HeadInfo {
+            seq,
+            id: EntryId::from_bytes([0; 32]),
+            forked: false,
+        })
+    }
+
+    #[test]
+    fn a_hint_waits_only_while_both_heads_are_below_its_seq() {
+        assert!(waits_for(None, None, 3));
+        assert!(waits_for(head(2), head(1), 3));
+        assert!(waits_for(head(2), None, 3));
+        assert!(!waits_for(head(3), head(1), 3));
+        assert!(!waits_for(head(2), head(3), 3));
+        assert!(!waits_for(None, head(3), 3));
+    }
+
+    #[test]
+    fn the_retry_window_is_five_seconds() {
+        assert_eq!(HINT_RETRY * HINT_RETRIES, Duration::from_secs(5));
+    }
 }

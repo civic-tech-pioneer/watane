@@ -237,7 +237,7 @@ fn received(core: &Arc<Core>, from: NodeKey, content: &[u8]) {
             return;
         };
         if acts_on(role, &hint, own, listed) {
-            sync::request(&core, from, Want::Hint(channel, hint.seq, hint.id));
+            sync::request(&core, from, Want::Hint(channel, hint.seq, hint.id, 0));
         }
     });
 }
