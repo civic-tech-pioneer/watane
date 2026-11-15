@@ -24,7 +24,8 @@ struct Chain {
     publish: bool,
     ready: AtomicBool,
     job: Arc<Job>,
-    // Fuel left by the last invoke that failed after it started (9.4).
+    // Lowest fuel left by an invoke that failed in the current answer of a
+    // collect; the collect resets it before each answer (9.4).
     failed_fuel: AtomicU64,
 }
 #[derive(Clone)]
@@ -413,9 +414,10 @@ impl Invocation {
             })
         })();
         if result.is_err() {
+            // The minimum keeps the burn of a failed nested call of this mod.
             chain
                 .failed_fuel
-                .store(store.get_fuel().unwrap_or(0), Ordering::Release);
+                .fetch_min(store.get_fuel().unwrap_or(0), Ordering::AcqRel);
         }
         let value = result.map_err(|e| limits::classify(e, &stderr))?;
         let fuel = store.get_fuel().map_err(CallError::internal)?;

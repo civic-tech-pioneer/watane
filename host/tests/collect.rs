@@ -203,17 +203,61 @@ fn ac5_clicked_stays_an_event() {
     assert!(!has_key(home.path(), "item-a", "asked"));
 }
 
+/// Copies the folder of `item-bad` as the mod `name`, so that two answers fail.
+fn item_bad_copy(dir: &Path, name: &str) -> PathBuf {
+    let to = dir.join(name);
+    for entry in walkdir(&fixture("item-bad")) {
+        let rel = entry.strip_prefix(fixture("item-bad")).unwrap();
+        std::fs::create_dir_all(to.join(rel).parent().unwrap()).unwrap();
+        let bytes = std::fs::read(&entry).unwrap();
+        let bytes = match rel.to_str().unwrap() {
+            "mod.toml" | "wit/world.wit" => String::from_utf8(bytes)
+                .unwrap()
+                .replace("item-bad", name)
+                .into_bytes(),
+            _ => bytes,
+        };
+        std::fs::write(to.join(rel), bytes).unwrap();
+    }
+    to
+}
+fn walkdir(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walkdir(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
 #[test]
 fn ac2_s37_failed_answer_keeps_its_fuel_spent() {
-    // item-bad burns about 19.5M fuel and then traps. At this limit it just
-    // fails, and the 3k fuel left is too little for item-c's answer. If the
-    // failed answer gave its fuel back, the list `["c"]` would return.
+    // item-bad and its copy item-bad2 each burn about 19.5M fuel (B) and
+    // then trap; item-c answers after them. The limit holds one burn with a
+    // wide margin but not two: any B from 15M to 30M works. With the fuel
+    // of a failed answer spent, item-bad2 runs out and the collector fails
+    // with fuel. If a failed answer gave its fuel back, `["c"]` would return.
+    let copies = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let limits = Limits {
-        fuel: 19_508_000,
+        fuel: 30_000_000,
         ..Limits::default()
     };
-    let host = install(home.path(), limits, &["menu", "item-bad", "item-c"]);
+    let host = Host::open(home.path(), Mode::Preview, limits).unwrap();
+    host.install_folders(
+        &[
+            fixture("menu"),
+            fixture("item-bad"),
+            item_bad_copy(copies.path(), "item-bad2"),
+            fixture("item-c"),
+        ],
+        0,
+    )
+    .unwrap();
     let error = host
         .call(&Caller::Page, &local("menu"), "api.items", json!(null))
         .unwrap_err();
