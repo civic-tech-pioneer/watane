@@ -101,6 +101,24 @@ fn ac7_idle_polling_disabled_entry_and_consent_focus() {
     until(
         &app,
         "main",
+        "document.querySelector('#dependency-dialog').open",
+    );
+    assert!(
+        app.eval(
+            "main",
+            "document.querySelector('#dependency-dialog').textContent"
+        )
+        .as_str()
+        .unwrap()
+        .contains("recommendations")
+    );
+    app.eval(
+        "main",
+        "document.querySelector('#dependency-continue').click(); null",
+    );
+    until(
+        &app,
+        "main",
         "document.querySelector('[data-local=reading-list]').textContent.includes('Disabled') && !!document.querySelector('[data-local=reading-list] button.enable') && !document.querySelector('[data-local=reading-list] button.open')",
     );
     app.eval(
@@ -223,6 +241,7 @@ fn ac5_journey_j2() {
         "document.querySelector('#books')?.textContent.includes('Foundation') && !document.querySelector('#error')?.textContent",
     );
     // S11 through the agent controls.
+    area(&app, "#settings");
     app.eval("main", "document.querySelector('#toolset-name').value = 'reader'; document.querySelector('input[value=\"reading-list:books.list\"]').checked = true; document.querySelector('#save-toolset').click(); null");
     until(
         &app,
@@ -310,6 +329,7 @@ fn ac5_journey_j2() {
     app.eval("main", "window.__removeError = null; window.__TAURI_INTERNALS__.invoke('toolset_remove', {name:'missing'}).then(() => window.__removeError = {code:'unexpected_success'}, e => window.__removeError = e); null");
     until(&app, "main", "window.__removeError !== null");
     assert_eq!(app.eval("main", "window.__removeError.code"), "no_toolset");
+    area(&app, "#mods");
     // S10: prove recommendations' own received-event state is populated.
     until(
         &app,

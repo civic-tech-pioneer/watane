@@ -195,14 +195,14 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match field(v, "op")? {
         "menu" => {
-            let id = field(v, "id")?.to_owned();
-            if !["mods", "settings"].contains(&id.as_str()) {
-                return Err("unknown menu id".into());
+            let item = field(v, "item")?.to_owned();
+            if !["mods", "settings"].contains(&item.as_str()) {
+                return Err("unknown menu item".into());
             }
             let handle = app.clone();
             let (tx, rx) = std::sync::mpsc::channel();
             app.run_on_main_thread(move || {
-                let _ = tx.send(crate::views::menu(&handle, &id).map_err(|e| e.to_string()));
+                let _ = tx.send(crate::views::menu(&handle, &item).map_err(|e| e.to_string()));
             })
             .map_err(|e| e.to_string())?;
             rx.recv_timeout(Duration::from_secs(30))

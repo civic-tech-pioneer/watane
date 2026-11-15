@@ -471,7 +471,7 @@
   and remove first warn about enabled dependents with Cancel focused; removal
   then keeps the established data question. Automatic update history uses
   host's `Plan::needs_confirmation`, holds at most 50 successes, and is not
-  persisted. Existing selector-based journeys navigate via the support driver.
+  persisted. Journeys navigate explicitly with the `journey::area` helper.
 - Stage G is absent in this checkout (the app has no node dependency or machine
   commands). Settings explicitly labels its machines section unavailable;
   implementing machines remains outside this task.
@@ -483,28 +483,15 @@
   existing startup readiness timeout fires. This is the earlier documented
   sandbox failure, not a reason to relax any window assertion. Docker is not
   available (`~/.docker/run/docker.sock` is absent).
-- Preserved conflict: `tests/j2.rs::ac7_idle_polling_disabled_entry_and_consent_focus`
-  clicks Disable on reading-list with enabled recommendations installed, then
-  expects immediate disable. APP-F-67/AC5 now requires a warning before that
-  action. The existing test is left unchanged as requested; it would need an
-  explicit Continue step to exercise the new behavior without losing its
-  existing assertions.
-- Validation: `cargo build -p watane-app` and all 118 default tests pass;
-  strict all-targets/driver clippy and formatting pass. The main selection,
-  persistence/removal, install-order and link/grant unit tests pass, as do all
-  three manager JavaScript behavior tests. Release plus driver fails at the
-  intended debug-only compile error.
 - `--skip front:` does not filter ignore reasons in libtest. The full driver
   run therefore also explicitly skips all four existing front-test names,
   while including ignored journeys and continuing through failed suites.
 
-- Final native results: driver library tests pass (86). `tests/manager.rs`
-  has three passing calculation tests and eight failures before app readiness,
-  all with the same HIServices XPC error. API (9 pass/1 startup failure),
-  Build-on (2 pass/3 startup failures), Find (3 pass/7 startup failures),
-  fixtures and isolation were attempted in the broad run; it was stopped
-  during repeated GUI-shell startup timeouts. J2, J3, J4, J5 and J9 were
-  also run separately with ignored journeys enabled and all stopped at app
-  readiness with that same environment error. No front test ran. AC9 is
-  therefore not met; native window assertions and the preserved J2 conflict
-  need a working GUI session to resolve.
+- Validator round 1: menu item names now use `item`, distinct from the
+  numeric request `id`. The summary moved into Details, restoring the version
+  directly after the name heading. J2 explicitly checks and continues the new
+  dependent warning, retaining every prior assertion. App::eval again sends
+  only the supplied JavaScript; J2/J4 navigate explicitly between areas.
+  J5 is unchanged and uses commands rather than Settings DOM controls.
+  All 118 default tests, strict all-targets/driver clippy and formatting pass;
+  window suites are left to the native validator and were not run here.

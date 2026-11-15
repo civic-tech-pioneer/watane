@@ -1206,7 +1206,7 @@ setup and the first page load of the startup window (`main` or
 | `eval` | `label`, `js` | the string that `eval_with_callback` returns (JSON text) |
 | `wait` | `label`, `timeoutMs` | `true` when the window exists and its last page load finished |
 | `screen` | — | `{mode: "hidden" \| "background" \| "front", accessory: bool}`; on macOS reads AppKit’s actual activation policy on the main thread (false on other platforms) |
-| `menu` | `id: "mods" \| "settings"` | `true`; invokes the same Rust handler as the native menu on the event loop; other ids are errors |
+| `menu` | `item: "mods" \| "settings"` | `true`; invokes the same Rust handler as the native menu on the event loop; other items are errors |
 | `windows` | — | `[{label, url, title, alwaysOnTop, focused, visible}]` |
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |

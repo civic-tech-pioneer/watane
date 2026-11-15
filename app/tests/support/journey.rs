@@ -15,6 +15,31 @@ pub fn until(app: &App, label: &str, js: &str) {
         std::thread::yield_now();
     }
 }
+pub fn area(app: &App, hash: &str) {
+    let selector = match hash {
+        "#mods" => "#library",
+        "#settings" => "#settings",
+        "#find" => "#find",
+        "#updates" => "#updates",
+        _ => panic!("unknown app area: {hash}"),
+    };
+    let parent = if hash == "#settings" {
+        "#settings"
+    } else {
+        "#mods"
+    };
+    app.eval("main", &format!("location.hash = {}; null", json!(hash)));
+    until(
+        app,
+        "main",
+        &format!(
+            "document.body.dataset.ready === 'true' && location.hash === {} && !document.querySelector({}).hidden && !document.querySelector({}).hidden",
+            json!(hash),
+            json!(selector),
+            json!(parent)
+        ),
+    );
+}
 pub fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")

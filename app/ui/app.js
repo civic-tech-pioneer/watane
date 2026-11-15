@@ -49,7 +49,6 @@ function modsView(mods) {
     const entry = element('section', '', launcher); entry.dataset.local = mod.local;
     const heading = element('h2', '', entry);
     button(heading, mod.name, 'select-mod', () => { entry.querySelector('details').open = true; });
-    element('p', mod.summary || '', entry, 'summary');
     element('span', mod.version, entry, 'version');
     if (mod.notice) element('p', mod.notice, entry, 'notice');
     if (mod.offer) button(entry, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release: mod.offer}));
@@ -61,6 +60,7 @@ function modsView(mods) {
     button(entry, 'Remove', 'remove', () => warn(mod, () => remove(mod), 'Remove'));
     const details = element('details', '', entry); details.open = expanded.has(mod.local);
     element('summary', 'Details', details);
+    element('p', mod.summary || '', details, 'summary');
     if (mod.page) button(details, mod.main ? 'Unset main' : 'Make main', 'main-set', () => action('main_set', {local: mod.main ? null : mod.local}));
     const links = element('div', '', details, 'connections');
     const connected = connections(mod, mods);

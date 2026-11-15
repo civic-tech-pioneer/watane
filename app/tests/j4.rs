@@ -43,6 +43,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     let carol_home = tempfile::tempdir().unwrap();
     let alice = App::start(alice_home.path(), &[]);
     let carol = App::start(carol_home.path(), &[]);
+    area(&alice, "#settings");
     let saved = alice_home.path().join("alice.backup");
     backup(&alice, &saved);
     begin(&alice, "identity_set_name", json!({"name":"Alice"}));
@@ -70,6 +71,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
         "index_choose",
         json!({"link":watane_dist::Link::new(alice_link.channel(), alice_link.base(), None).unwrap().to_string()}),
     );
+    area(&carol, "#find");
     choose(&carol, &ivy.own_link(None).unwrap().to_string());
     search_reading(&carol);
     let hit = carol.eval("main", "document.querySelector('#results').textContent");
@@ -185,6 +187,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     let m = mod_view(&carol);
     assert_eq!(m["notice"], "Withdrawn by the publisher: breaks lists");
     assert_eq!(m["offer"], second["release"]);
+    area(&carol, "#mods");
     carol.eval("main", "window.dispatchEvent(new Event('focus')); null");
     until(
         &carol,
@@ -215,6 +218,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     assert_eq!(finish(&carol)["error"]["code"], "bad_input");
     let fork_home = tempfile::tempdir().unwrap();
     let fork = App::start(fork_home.path(), &[]);
+    area(&fork, "#settings");
     fork.pick(std::slice::from_ref(&saved));
     invoke(
         &fork,
@@ -235,6 +239,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
         mod_view(&carol)["notice"],
         "The publisher's channel is compromised"
     );
+    area(&carol, "#find");
     carol.eval("main", "window.dispatchEvent(new Event('focus')); null");
     until(
         &carol,
