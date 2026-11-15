@@ -201,7 +201,7 @@ impl SearchHome {
     }
     pub fn link(&self, slug: Option<&str>) -> watane_dist::Link {
         watane_dist::Link::new(
-            self.dist.identity(),
+            self.dist.identity().unwrap(),
             &self.url,
             slug.map(|s| s.parse().unwrap()).as_ref(),
         )

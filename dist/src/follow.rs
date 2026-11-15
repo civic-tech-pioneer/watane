@@ -27,7 +27,7 @@ impl Dist {
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
-        if link.channel() == self.identity() {
+        if Some(link.channel()) == self.identity() {
             return Err(DistError::OwnChannel);
         }
         let _guard = self
@@ -55,6 +55,7 @@ impl Dist {
             base: link.base().into(),
             followed: true,
             index: false,
+            kept: false,
             bases: Vec::new(),
             _followed_at: time,
             _last_attempt: time,

@@ -25,7 +25,7 @@ fn last_success(home: &SearchHome, key: PublicKey) -> Option<u64> {
     file["channels"][key.to_string()]["last_success"].as_u64()
 }
 fn reference(home: &SearchHome, slug: &str, version: &str) -> String {
-    format!("{}/{slug}@{version}", home.dist.identity())
+    format!("{}/{slug}@{version}", home.dist.identity().unwrap())
 }
 
 #[test]
@@ -52,13 +52,16 @@ fn ac1_search_finds() {
         assert_eq!(
             hit.via,
             [Via::Index {
-                index: ivy.dist.identity(),
+                index: ivy.dist.identity().unwrap(),
                 through: None,
                 note: "good for books".into()
             }]
         );
         assert_eq!(hit.status, Status::Ok);
-        assert_eq!(hit.checked_at, last_success(&carol, alice.dist.identity()));
+        assert_eq!(
+            hit.checked_at,
+            last_success(&carol, alice.dist.identity().unwrap())
+        );
         assert!(hit.checked_at.is_some());
         assert_eq!(hit.unchecked_since, None);
     }
@@ -104,7 +107,7 @@ fn ac2_search_withdrawn() {
     assert_eq!(
         hits[0].via,
         [Via::Index {
-            index: ivy.dist.identity(),
+            index: ivy.dist.identity().unwrap(),
             through: None,
             note: "".into()
         }]
@@ -124,7 +127,7 @@ fn ac2_search_listing_without_stored_publisher() {
     assert!(
         carol
             .dist
-            .channel(&alice.dist.identity())
+            .channel(&alice.dist.identity().unwrap())
             .unwrap()
             .releases
             .is_empty()
@@ -134,21 +137,21 @@ fn ac2_search_listing_without_stored_publisher() {
 #[test]
 fn ac3_search_mark() {
     let (mut alice, _ivy, carol) = setup();
-    let before = last_success(&carol, alice.dist.identity());
+    let before = last_success(&carol, alice.dist.identity().unwrap());
     assert!(before.is_some());
     alice.host.take();
     let reports = carol.dist.refresh();
     assert!(
         reports
             .iter()
-            .any(|r| r.channel == alice.dist.identity()
+            .any(|r| r.channel == alice.dist.identity().unwrap()
                 && matches!(r.outcome, Outcome::Failed { .. }))
     );
     let hits = carol.dist.search(&Query::default()).unwrap();
     assert_eq!(refs(&hits), [reference(&alice, "reading-list", "0.2.0")]);
     assert_eq!(hits[0].checked_at, before);
     assert_eq!(hits[0].unchecked_since, before);
-    assert_eq!(last_success(&carol, alice.dist.identity()), before);
+    assert_eq!(last_success(&carol, alice.dist.identity().unwrap()), before);
 }
 #[test]
 fn ac4_search_bad_query() {
@@ -240,9 +243,9 @@ fn ac6_search_order() {
         ]
     );
     let mut indexes = vec![
-        carol.dist.identity(),
-        ivy.dist.identity(),
-        jay.dist.identity(),
+        carol.dist.identity().unwrap(),
+        ivy.dist.identity().unwrap(),
+        jay.dist.identity().unwrap(),
     ];
     indexes.sort();
     assert_eq!(hits[0].via[0], Via::Followed);
@@ -290,14 +293,17 @@ fn ac4_search_filters() {
     let carol = SearchHome::new("Carol");
     alice
         .dist
-        .publish(interface_fixture("offer", alice.dist.identity()))
+        .publish(interface_fixture("offer", alice.dist.identity().unwrap()))
         .unwrap();
     alice
         .dist
-        .publish(interface_fixture("call", alice.dist.identity()))
+        .publish(interface_fixture("call", alice.dist.identity().unwrap()))
         .unwrap();
     bob.dist
-        .publish(interface_fixture("subscribe", alice.dist.identity()))
+        .publish(interface_fixture(
+            "subscribe",
+            alice.dist.identity().unwrap(),
+        ))
         .unwrap();
     bob.dist
         .publish(named_fixture("unrelated", "Unrelated"))
@@ -322,7 +328,7 @@ fn ac4_search_filters() {
             &carol
                 .dist
                 .search(&Query {
-                    publisher: Some(alice.dist.identity()),
+                    publisher: Some(alice.dist.identity().unwrap()),
                     ..query
                 })
                 .unwrap(),
@@ -368,7 +374,8 @@ fn ac7_search_compromised() {
         .unwrap();
     let zero =
         Entry::decode(&std::fs::read(alice.dist.site_dir().join("entries/0")).unwrap()).unwrap();
-    fork.ingest(&alice.dist.identity(), &[zero]).unwrap();
+    fork.ingest(&alice.dist.identity().unwrap(), &[zero])
+        .unwrap();
     fork.confirm_own_head().unwrap();
     let other = fork.append("profile", b"\x81\x65Other").unwrap();
     std::fs::write(alice.dist.site_dir().join("head"), other.bytes()).unwrap();
@@ -404,13 +411,13 @@ fn ac6_search_distinct_indexes_and_included_provenance() {
         hits[1].via,
         [
             Via::Index {
-                index: ivy.dist.identity(),
+                index: ivy.dist.identity().unwrap(),
                 through: None,
                 note: "direct".into()
             },
             Via::Index {
-                index: ivy.dist.identity(),
-                through: Some(alice.dist.identity()),
+                index: ivy.dist.identity().unwrap(),
+                through: Some(alice.dist.identity().unwrap()),
                 note: "".into()
             },
         ]
@@ -447,7 +454,10 @@ fn ac8_search_origin() {
     eve.dist.follow(&alice.link(None)).unwrap();
     eve.dist.follow(&carol.link(None)).unwrap();
     let query = Query {
-        origin: Some((alice.dist.identity(), "reading-list".parse().unwrap())),
+        origin: Some((
+            alice.dist.identity().unwrap(),
+            "reading-list".parse().unwrap(),
+        )),
         ..Default::default()
     };
     assert_eq!(
@@ -457,7 +467,7 @@ fn ac8_search_origin() {
     assert!(
         eve.dist
             .search(&Query {
-                origin: Some((alice.dist.identity(), "other".parse().unwrap())),
+                origin: Some((alice.dist.identity().unwrap(), "other".parse().unwrap())),
                 ..query
             })
             .unwrap()

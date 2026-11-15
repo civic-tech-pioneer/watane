@@ -3,7 +3,7 @@ use support::*;
 use watane_dist::*;
 
 fn reference(home: &SearchHome, slug: &str) -> ReleaseRef {
-    format!("{}/{slug}@0.1.0", home.dist.identity())
+    format!("{}/{slug}@0.1.0", home.dist.identity().unwrap())
         .parse()
         .unwrap()
 }
@@ -32,7 +32,7 @@ fn ac1_provider_from_listing() {
     assert_eq!(got.link, Some(carol.link(Some("ratings"))));
     assert!(
         records(&eve)["channels"]
-            .get(carol.dist.identity().to_string())
+            .get(carol.dist.identity().unwrap().to_string())
             .is_none()
     );
     assert_eq!(
@@ -42,7 +42,7 @@ fn ac1_provider_from_listing() {
             .iter()
             .map(|v| v.channel)
             .collect::<Vec<_>>(),
-        [dave.dist.identity()]
+        [dave.dist.identity().unwrap()]
     );
     assert!(
         eve.dist
@@ -75,7 +75,7 @@ fn ac2_provider_wrong_channel() {
         .unwrap();
     dave.dist.follow(&carol.link(None)).unwrap();
     let wrong = Link::new(
-        carol.dist.identity(),
+        carol.dist.identity().unwrap(),
         &mallory.url,
         Some(&"ratings".parse().unwrap()),
     )
@@ -83,7 +83,7 @@ fn ac2_provider_wrong_channel() {
     dave.dist.list(&wrong, "provider").unwrap();
     eve.dist.follow(&dave.link(None)).unwrap();
     assert!(
-        matches!(eve.dist.fetch(&reference(&carol, "ratings")), Err(DistError::WrongChannel { expected, found, .. }) if expected == carol.dist.identity() && found == mallory.dist.identity())
+        matches!(eve.dist.fetch(&reference(&carol, "ratings")), Err(DistError::WrongChannel { expected, found, .. }) if expected == carol.dist.identity().unwrap() && found == mallory.dist.identity().unwrap())
     );
     assert_eq!(
         std::fs::read_dir(eve.dir.path().join("dist/packages"))
@@ -93,7 +93,7 @@ fn ac2_provider_wrong_channel() {
     );
     assert!(
         eve.dist
-            .channel(&mallory.dist.identity())
+            .channel(&mallory.dist.identity().unwrap())
             .unwrap()
             .head
             .is_none()
@@ -107,7 +107,7 @@ fn ac3_provider_no_hint() {
     eve.dist.follow(&dave.link(None)).unwrap();
     let error = eve.dist.fetch(&reference(&carol, "ratings")).unwrap_err();
     assert!(
-        matches!(error, DistError::NotFollowed { channel, local_only: false } if channel == carol.dist.identity())
+        matches!(error, DistError::NotFollowed { channel, local_only: false } if channel == carol.dist.identity().unwrap())
     );
     let text = error.to_string();
     assert!(text.contains("no followed channel, chosen index or listing names a base"));
@@ -126,7 +126,7 @@ fn ac3_provider_no_hint() {
     let before = carol.host.as_ref().unwrap().count();
     let error = restricted.fetch(&reference(&carol, "ratings")).unwrap_err();
     assert!(
-        matches!(error, DistError::NotFollowed { channel, local_only: true } if channel == carol.dist.identity())
+        matches!(error, DistError::NotFollowed { channel, local_only: true } if channel == carol.dist.identity().unwrap())
     );
     let text = error.to_string();
     assert!(text.contains("local address"));
@@ -140,7 +140,7 @@ fn ac4_provider_trust_order() {
     let gil = SearchHome::new("Gil");
     let first = SearchHome::new("First");
     let second = SearchHome::new("Second");
-    let (dave, zed) = if first.dist.identity() > second.dist.identity() {
+    let (dave, zed) = if first.dist.identity().unwrap() > second.dist.identity().unwrap() {
         (first, second)
     } else {
         (second, first)
@@ -163,7 +163,7 @@ fn ac4_provider_trust_order() {
         zed.dist
             .list(
                 &Link::new(
-                    carol.dist.identity(),
+                    carol.dist.identity().unwrap(),
                     &host.url,
                     Some(&slug.parse().unwrap()),
                 )
@@ -177,7 +177,7 @@ fn ac4_provider_trust_order() {
         .unwrap();
     eve.dist.follow(&dave.link(None)).unwrap();
     eve.dist.choose_index(&zed.link(None)).unwrap();
-    let before = records(&eve)["channels"][carol.dist.identity().to_string()].clone();
+    let before = records(&eve)["channels"][carol.dist.identity().unwrap().to_string()].clone();
     assert_eq!(
         before["bases"],
         serde_json::json!(dead.iter().map(|h| &h.url).collect::<Vec<_>>())
@@ -197,7 +197,10 @@ fn ac4_provider_trust_order() {
     }
     let got = eve
         .dist
-        .fetch_for(&reference(&carol, "ratings"), Some(&dave.dist.identity()))
+        .fetch_for(
+            &reference(&carol, "ratings"),
+            Some(&dave.dist.identity().unwrap()),
+        )
         .unwrap();
     assert_eq!(got.link, Some(carol.link(Some("ratings"))));
     let first = carol.host.as_ref().unwrap().request_times.lock().unwrap()[0];
@@ -213,11 +216,14 @@ fn ac4_provider_trust_order() {
         // 5.11 step 3 amendment (DD-32): the first base serves, so no dead base is read.
         0
     );
-    let after = records(&eve)["channels"][carol.dist.identity().to_string()].clone();
+    let after = records(&eve)["channels"][carol.dist.identity().unwrap().to_string()].clone();
     assert_eq!(before, after);
     let nested = eve
         .dist
-        .fetch_for(&reference(&gil, "tags"), Some(&carol.dist.identity()))
+        .fetch_for(
+            &reference(&gil, "tags"),
+            Some(&carol.dist.identity().unwrap()),
+        )
         .unwrap();
     assert_eq!(nested.link, Some(gil.link(Some("tags"))));
 }
@@ -237,7 +243,7 @@ fn ac5_provider_cap_four() {
         dave.dist
             .list(
                 &Link::new(
-                    carol.dist.identity(),
+                    carol.dist.identity().unwrap(),
                     &host.url,
                     Some(&slug.parse().unwrap()),
                 )
@@ -303,14 +309,14 @@ fn ac7_provider_offline() {
     let reference = reference(&carol, "ratings");
     let link = carol.link(Some("ratings"));
     eve.dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     carol.host.take();
     dave.host.take();
     eve.host.take();
     let got = eve
         .dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(got.package.id(), id);
     assert_eq!(got.link, Some(link));
@@ -333,7 +339,7 @@ fn provider_cached_without_hint() {
     let (carol, dave, eve, id) = setup();
     let reference = reference(&carol, "ratings");
     eve.dist.fetch(&reference).unwrap();
-    eve.dist.unfollow(&dave.dist.identity()).unwrap();
+    eve.dist.unfollow(&dave.dist.identity().unwrap()).unwrap();
     let count = carol.host.as_ref().unwrap().count();
     let got = eve.dist.fetch(&reference).unwrap();
     assert_eq!(got.package.id(), id);
@@ -352,7 +358,7 @@ fn read_link_record_uses_record_base() {
     let empty = tempfile::tempdir().unwrap();
     let other = TestHost::serve(empty.path());
     let link = Link::new(
-        carol.dist.identity(),
+        carol.dist.identity().unwrap(),
         &other.url,
         Some(&"ratings".parse().unwrap()),
     )
@@ -369,7 +375,7 @@ fn regress_s35_cache_hit_keeps_consumer_base() {
     let carol = SearchHome::new("Carol");
     let first = SearchHome::new("First");
     let second = SearchHome::new("Second");
-    let (dave, zed) = if first.dist.identity() > second.dist.identity() {
+    let (dave, zed) = if first.dist.identity().unwrap() > second.dist.identity().unwrap() {
         (first, second)
     } else {
         (second, first)
@@ -384,7 +390,7 @@ fn regress_s35_cache_hit_keeps_consumer_base() {
     zed.dist
         .list(
             &Link::new(
-                carol.dist.identity(),
+                carol.dist.identity().unwrap(),
                 &dead.url,
                 Some(&"ratings".parse().unwrap()),
             )
@@ -401,12 +407,12 @@ fn regress_s35_cache_hit_keeps_consumer_base() {
     let reference = reference(&carol, "ratings");
     let once = eve
         .dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(once.link, Some(carol.link(Some("ratings"))));
     let twice = eve
         .dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(twice.link, Some(carol.link(Some("ratings"))));
 }
@@ -425,7 +431,7 @@ fn ac3_provider_stops_at_first_serving_base() {
     eve.dist.list(&carol.link(Some("ratings")), "own").unwrap();
     dave.dist
         .list(
-            &Link::new(carol.dist.identity(), &second.url, Some(&slug)).unwrap(),
+            &Link::new(carol.dist.identity().unwrap(), &second.url, Some(&slug)).unwrap(),
             "followed",
         )
         .unwrap();
@@ -448,7 +454,7 @@ fn ac4_cache_hit_no_record_links_first_base() {
     let empty = tempfile::tempdir().unwrap();
     let dead = TestHost::serve(empty.path());
     let dead_link = Link::new(
-        carol.dist.identity(),
+        carol.dist.identity().unwrap(),
         &dead.url,
         Some(&"ratings".parse().unwrap()),
     )
@@ -459,7 +465,7 @@ fn ac4_cache_hit_no_record_links_first_base() {
     let count = carol.host.as_ref().unwrap().count();
     let got = eve
         .dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(got.link, Some(dead_link));
     assert_eq!(carol.host.as_ref().unwrap().count(), count);
@@ -496,7 +502,7 @@ fn stale_setup() -> (
         .publish(named_fixture("ratings", "Ratings"))
         .unwrap();
     let stale = Link::new(
-        carol.dist.identity(),
+        carol.dist.identity().unwrap(),
         &mirror.url,
         Some(&"one".parse().unwrap()),
     )
@@ -515,7 +521,7 @@ fn ac3_stale_first_base_falls_through() {
     let before = mirror.count();
     let got = eve
         .dist
-        .fetch_for(&reference, Some(&dave.dist.identity()))
+        .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(got.link, Some(carol.link(Some("ratings"))));
     let id = got.package.id();
@@ -546,7 +552,7 @@ fn ac3_all_bases_stale_is_stale_bases() {
     // A second stale mirror of the same old head, named by Dave's listing.
     let second = TestHost::serve(old.path());
     let link = Link::new(
-        carol.dist.identity(),
+        carol.dist.identity().unwrap(),
         &second.url,
         Some(&"one".parse().unwrap()),
     )
@@ -556,7 +562,10 @@ fn ac3_all_bases_stale_is_stale_bases() {
     let before = [mirror.count(), second.count()];
     let error = eve
         .dist
-        .fetch_for(&reference(&carol, "ratings"), Some(&dave.dist.identity()))
+        .fetch_for(
+            &reference(&carol, "ratings"),
+            Some(&dave.dist.identity().unwrap()),
+        )
         .unwrap_err();
     assert!(
         matches!(error, DistError::StaleBases { bases: 2, .. }),

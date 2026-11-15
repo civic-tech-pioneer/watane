@@ -23,6 +23,7 @@ pub struct ChannelView {
     pub status: Status,
     pub followed: bool,
     pub index: bool,
+    pub kept: bool,
     pub listed_by: Vec<PublicKey>,
     pub listings: Vec<ListingInfo>,
     pub last_attempt: Option<u64>,
@@ -82,6 +83,7 @@ pub struct Options {
     pub max_listed_per_index: usize,
     pub max_listed_entries: u64,
     pub listed_local: bool,
+    pub max_kept: usize,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -96,6 +98,7 @@ impl Default for Options {
             max_listed_per_index: 128,
             max_listed_entries: 1_000,
             listed_local: false,
+            max_kept: 4096,
         }
     }
 }
@@ -117,6 +120,17 @@ impl Dist {
         home: &Path,
         confirm: Arc<dyn Confirm>,
         options: Options,
+    ) -> Result<Self, DistError> {
+        Self::open_inner(home, confirm, options, false)
+    }
+    pub fn open_keyless(home: &Path, options: Options) -> Result<Self, DistError> {
+        Self::open_inner(home, Arc::new(KeylessConfirm), options, true)
+    }
+    fn open_inner(
+        home: &Path,
+        confirm: Arc<dyn Confirm>,
+        options: Options,
+        keyless: bool,
     ) -> Result<Self, DistError> {
         use std::fs::{self, OpenOptions};
         use std::os::unix::fs::OpenOptionsExt;
@@ -158,7 +172,11 @@ impl Dist {
             Err(source) => return Err(DistError::Io { path: tmp, source }),
         }
         private_dir(&tmp)?;
-        let log = watane_log::Log::open(&home.join("log"))?;
+        let log = if keyless {
+            watane_log::Log::open_keyless(&home.join("log"))?
+        } else {
+            watane_log::Log::open(&home.join("log"))?
+        };
         let mut follows = std::collections::BTreeMap::new();
         if let Some(file) = read_json::<Follows>(&dir.join("follows.json"))? {
             let path = dir.join("follows.json");
@@ -173,13 +191,23 @@ impl Dist {
                     path: path.clone(),
                     cause: e.to_string(),
                 })?;
-                record.base = Link::new(channel, &record.base, None)
-                    .map_err(|e| DistError::Corrupt {
+                if !record.base.is_empty() {
+                    record.base = Link::new(channel, &record.base, None)
+                        .map_err(|e| DistError::Corrupt {
+                            path: path.clone(),
+                            cause: e.to_string(),
+                        })?
+                        .base()
+                        .into();
+                }
+                if record.base.is_empty()
+                    && (!record.kept || record.followed || record.index || !record.bases.is_empty())
+                {
+                    return Err(DistError::Corrupt {
                         path: path.clone(),
-                        cause: e.to_string(),
-                    })?
-                    .base()
-                    .into();
+                        cause: "empty base requires a kept-only record".into(),
+                    });
+                }
                 if record.bases.len() > 4 {
                     return Err(DistError::Corrupt {
                         path: path.clone(),
@@ -195,7 +223,7 @@ impl Dist {
                         .base()
                         .into();
                 }
-                if !record.followed && !record.index {
+                if !record.followed && !record.index && !record.base.is_empty() {
                     if record.bases.is_empty() {
                         record.bases.push(record.base.clone());
                     }
@@ -215,13 +243,17 @@ impl Dist {
                     });
                 }
                 Some(
-                    Link::new(log.identity(), &file.url, None)
-                        .map_err(|e| DistError::Corrupt {
-                            path,
-                            cause: e.to_string(),
-                        })?
-                        .base()
-                        .into(),
+                    Link::new(
+                        log.identity().ok_or(DistError::NoIdentity)?,
+                        &file.url,
+                        None,
+                    )
+                    .map_err(|e| DistError::Corrupt {
+                        path,
+                        cause: e.to_string(),
+                    })?
+                    .base()
+                    .into(),
                 )
             }
         };
@@ -244,11 +276,14 @@ impl Dist {
             read_mutex: Mutex::new(()),
         })
     }
-    pub fn identity(&self) -> PublicKey {
+    pub fn identity(&self) -> Option<PublicKey> {
         self.log.identity()
     }
-    pub fn fingerprint(&self) -> String {
-        self.identity().fingerprint()
+    pub fn fingerprint(&self) -> Option<String> {
+        self.identity().map(|key| key.fingerprint())
+    }
+    fn require_identity(&self) -> Result<PublicKey, DistError> {
+        self.identity().ok_or(DistError::NoIdentity)
     }
     pub fn site_dir(&self) -> PathBuf {
         self.home.join("dist/site")
@@ -263,6 +298,8 @@ struct Follow {
     followed: bool,
     #[serde(default)]
     index: bool,
+    #[serde(default)]
+    kept: bool,
     #[serde(default)]
     bases: Vec<String>,
     #[serde(rename = "followed_at")]
@@ -377,3 +414,13 @@ pub use index::{IndexView, Skipped};
 
 mod search;
 pub use search::{Hit, InterfaceQuery, Query, Via};
+
+struct KeylessConfirm;
+impl Confirm for KeylessConfirm {
+    fn confirm(&self, _: &SignRequest) -> Decision {
+        unreachable!("keyless homes never ask for signatures")
+    }
+}
+
+mod holder;
+pub use holder::{HeadState, Ingested, Reason};

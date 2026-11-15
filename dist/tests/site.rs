@@ -35,7 +35,7 @@ fn ac6_site_releases_and_withdrawal() {
     d.publish(bytes.clone()).unwrap();
     d.withdraw(&a.info.reference, "bug").unwrap();
     assert_eq!(c.requests.lock().unwrap().len(), 3);
-    let key = d.identity();
+    let key = d.identity().unwrap();
     let site = d.site_dir();
     drop(d);
     let log = watane_log::Log::open(&home.path().join("log")).unwrap();
@@ -111,7 +111,7 @@ fn ac9_site_link_round_trip_and_persistence() {
         .to_string()
         .parse()
         .unwrap();
-    assert_eq!(link.channel(), d.identity());
+    assert_eq!(link.channel(), d.identity().unwrap());
     assert_eq!(link.base(), "https://alice.example/mods/");
     assert_eq!(link.slug(), Some(&slug));
     drop(d);

@@ -66,7 +66,9 @@ impl Dist {
             .get(&key)
             .cloned();
         let stored = view.releases.iter().any(|r| r.reference == *reference);
-        let base = if key == self.identity() {
+        let base = if Some(key) == self.identity()
+            || record.as_ref().is_some_and(|r| r.kept && r.base.is_empty())
+        {
             None
         } else if record.as_ref().is_none_or(|r| !r.followed && !r.index)
             && view
@@ -87,7 +89,12 @@ impl Dist {
                 .0
                 .into_iter()
                 .next()
-                .or_else(|| record.as_ref().map(|r| r.base.clone()));
+                .or_else(|| {
+                    record
+                        .as_ref()
+                        .filter(|r| !r.base.is_empty())
+                        .map(|r| r.base.clone())
+                });
             if let Some(base) = &base {
                 self.check_listed_base(base)?;
             }
@@ -156,7 +163,7 @@ impl Dist {
             if !record.followed && !record.index {
                 self.check_listed_base(&record.base)?;
             }
-            Some(record.base)
+            (!record.base.is_empty()).then_some(record.base)
         };
         self.fetched(reference, base.as_deref())
     }
@@ -191,7 +198,7 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        let mut channels = vec![self.identity()];
+        let mut channels: Vec<_> = self.identity().into_iter().collect();
         channels.extend(consumer.copied());
         for class in 0..3 {
             channels.extend(
@@ -346,16 +353,16 @@ impl Dist {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&key)
             .cloned();
-        let mut base = (key != self.identity()).then(|| link.base().to_owned());
-        if key != self.identity() {
+        let mut base = (Some(key) != self.identity()).then(|| link.base().to_owned());
+        if Some(key) != self.identity() {
             if let Some(record) = record {
                 // Like open_link, a failed refresh can still use a verified stored release.
                 self.read_record(key)?;
                 // As open_link: the package comes from the record's base, never the link's.
-                if !record.followed && !record.index {
+                if !record.base.is_empty() && !record.followed && !record.index {
                     self.check_listed_base(&record.base)?;
                 }
-                base = Some(record.base);
+                base = (!record.base.is_empty()).then_some(record.base);
             } else {
                 self.check_listed_base(link.base())?;
                 match self.read_channel_entries(key, link.base(), true)?.outcome {
@@ -379,7 +386,7 @@ impl Dist {
         let slug = link.slug().ok_or(DistError::BadLink {
             cause: "a release link needs a slug",
         })?;
-        if link.channel() != self.identity() {
+        if Some(link.channel()) != self.identity() {
             let followed = self
                 .follows
                 .lock()
@@ -423,11 +430,11 @@ mod tests {
         std::fs::write(dist.cache_path(&package.id()), package.as_bytes()).unwrap();
         let info = ReleaseInfo {
             reference: ReleaseRef {
-                publisher: PublisherKey::from_bytes(*dist.identity().as_bytes()),
+                publisher: PublisherKey::from_bytes(*dist.identity().unwrap().as_bytes()),
                 slug: release.slug.clone(),
                 version: release.version.clone(),
             },
-            channel: dist.identity(),
+            channel: dist.identity().unwrap(),
             entry: "0000000000000000000000000000000000000000000000000000000000000000"
                 .parse()
                 .unwrap(),

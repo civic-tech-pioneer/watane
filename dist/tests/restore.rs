@@ -15,9 +15,9 @@ fn ac4_s21b_restore_rejects_another_key_without_request() {
     restored
         .restore(&alice.backup("secret").unwrap(), "secret")
         .unwrap();
-    let link = Link::new(carol.identity(), &host.url, None).unwrap();
+    let link = Link::new(carol.identity().unwrap(), &host.url, None).unwrap();
     let error = restored.confirm_own(Some(&link)).unwrap_err();
-    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity()));
+    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity().unwrap()));
     assert!(error.to_string().contains("this link is not your channel"));
     assert!(!restored.own_confirmed().unwrap());
     assert_eq!(host.count(), 0);
@@ -35,7 +35,7 @@ fn ac11_restore_confirms_published_head_before_signing() {
     alice.set_name("Alice").unwrap();
     let p = alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     bob.follow(&link).unwrap();
     let confirm = std::sync::Arc::new(RecordingConfirm::new([Decision::Approve]));
     let restored = Dist::open(r.path(), confirm.clone(), fast_options()).unwrap();
@@ -43,7 +43,7 @@ fn ac11_restore_confirms_published_head_before_signing() {
         restored
             .restore(&alice.backup("secret").unwrap(), "secret")
             .unwrap(),
-        alice.identity()
+        alice.identity().unwrap()
     );
     assert!(!restored.own_confirmed().unwrap());
     assert!(matches!(
@@ -53,9 +53,11 @@ fn ac11_restore_confirms_published_head_before_signing() {
     assert!(confirm.requests.lock().unwrap().is_empty());
     let requests = host.count();
     let error = restored
-        .confirm_own(Some(&Link::new(carol.identity(), &host.url, None).unwrap()))
+        .confirm_own(Some(
+            &Link::new(carol.identity().unwrap(), &host.url, None).unwrap(),
+        ))
         .unwrap_err();
-    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity()));
+    assert!(matches!(error, DistError::NotOwnLink { found } if found == carol.identity().unwrap()));
     assert!(error.to_string().contains("this link is not your channel"));
     assert_eq!(host.count(), requests);
     assert!(!restored.own_confirmed().unwrap());
@@ -64,7 +66,7 @@ fn ac11_restore_confirms_published_head_before_signing() {
     let carol_host = TestHost::serve(&carol.site_dir());
     assert!(matches!(
         restored.confirm_own(Some(
-            &Link::new(alice.identity(), &carol_host.url, None).unwrap()
+            &Link::new(alice.identity().unwrap(), &carol_host.url, None).unwrap()
         )),
         Err(DistError::WrongChannel { .. })
     ));
@@ -79,8 +81,14 @@ fn ac11_restore_confirms_published_head_before_signing() {
         bob.refresh()[0].outcome,
         Outcome::Current { head: 2 }
     ));
-    assert_eq!(bob.channel(&alice.identity()).unwrap().status, Status::Ok);
+    assert_eq!(
+        bob.channel(&alice.identity().unwrap()).unwrap().status,
+        Status::Ok
+    );
     let log = watane_log::Log::open(&r.path().join("log")).unwrap();
     assert!(log.own_head_confirmed().unwrap());
-    assert_eq!(log.head(&alice.identity()).unwrap().unwrap().seq, 2);
+    assert_eq!(
+        log.head(&alice.identity().unwrap()).unwrap().unwrap().seq,
+        2
+    );
 }

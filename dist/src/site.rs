@@ -2,7 +2,7 @@ use crate::*;
 use std::{
     fs,
     io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, PermissionsExt},
 };
 
 pub(crate) fn io(path: &Path, source: std::io::Error) -> DistError {
@@ -47,41 +47,23 @@ pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, 
         return Ok(false);
     }
     let parent = path.parent().expect("file parent");
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name().unwrap().to_string_lossy()
-    ));
-    // Remove a stale temporary name rather than following it.
-    match fs::remove_file(&tmp) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(io(&tmp, e)),
-    }
-    let result = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&tmp)
-            .map_err(|e| io(&tmp, e))?;
-        file.write_all(bytes).map_err(|e| io(&tmp, e))?;
-        file.set_permissions(fs::Permissions::from_mode(mode))
-            .map_err(|e| io(&tmp, e))?;
-        file.sync_all().map_err(|e| io(&tmp, e))?;
-        fs::rename(&tmp, path).map_err(|e| io(path, e))?;
-        fs::File::open(parent)
-            .and_then(|f| f.sync_all())
-            .map_err(|e| io(parent, e))?;
-        Ok(true)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(tmp);
-    }
-    result
+    // Holder writes may run alongside a web fetch. Each writer owns its temporary name.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| io(parent, e))?;
+    tmp.write_all(bytes).map_err(|e| io(tmp.path(), e))?;
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(mode))
+        .map_err(|e| io(tmp.path(), e))?;
+    tmp.as_file().sync_all().map_err(|e| io(tmp.path(), e))?;
+    tmp.persist(path).map_err(|e| io(path, e.error))?;
+    fs::File::open(parent)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| io(parent, e))?;
+    Ok(true)
 }
 impl Dist {
     pub fn set_site_url(&self, url: &str) -> Result<(), DistError> {
-        let link = Link::new(self.identity(), url, None)?;
+        self.require_identity()?;
+        let link = Link::new(self.require_identity()?, url, None)?;
         let mut base = self
             .base
             .lock()
@@ -93,17 +75,19 @@ impl Dist {
         Ok(())
     }
     pub fn own_link(&self, slug: Option<&Slug>) -> Result<Link, DistError> {
+        self.require_identity()?;
         let base = self
             .base
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Link::new(
-            self.identity(),
+            self.require_identity()?,
             base.as_deref().ok_or(DistError::NoSiteUrl)?,
             slug,
         )
     }
     pub fn export(&self, dir: &Path) -> Result<Exported, DistError> {
+        self.require_identity()?;
         let _guard = self
             .own_mutex
             .lock()
@@ -111,7 +95,7 @@ impl Dist {
         self.export_unlocked(dir)
     }
     pub(crate) fn export_unlocked(&self, dir: &Path) -> Result<Exported, DistError> {
-        let own = self.identity();
+        let own = self.require_identity()?;
         let entries = self.log.entries(&own, 0, usize::MAX)?;
         let head = entries.last().map(Entry::seq);
         let head_path = dir.join("head");

@@ -10,7 +10,7 @@ fn ac2_fetch_changed_package_never_cached() {
     let bob = open(b.path());
     let p = alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     let id = p.info.release.package;
     let path = alice.site_dir().join("packages").join(id.to_string());
@@ -30,7 +30,7 @@ fn ac9_fetch_limits_and_timeout() {
     let bob = open(b.path());
     let p = alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     let expected = format!("{}packages/{}", host.url, p.info.release.package);
     *host.mode.lock().unwrap() = Mode::Oversize(p.info.release.size as usize + 1);
@@ -68,7 +68,7 @@ fn ac10_fetch_cached_offline_without_request() {
     let bytes = fixture("1.0.0", false);
     let p = alice.publish(bytes.clone()).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     bob.fetch(&p.info.reference).unwrap();
     let requests = host.requests.clone();
@@ -102,7 +102,7 @@ fn ac13_fetch_reference_from_literal_text() {
     let bytes = fixture("1.0.0", false);
     alice.publish(bytes.clone()).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     let reference: ReleaseRef =
         "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy/reading-list@1.0.0"

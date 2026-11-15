@@ -1,6 +1,7 @@
 use crate::*;
 impl Dist {
     pub fn set_name(&self, name: &str) -> Result<Entry, DistError> {
+        self.require_identity()?;
         body::text(name, 64).map_err(|cause| DistError::BadName { cause })?;
         let guard = self
             .own_mutex
@@ -21,7 +22,7 @@ impl Dist {
         body: Vec<u8>,
         package: Option<&Package>,
     ) -> Result<(Entry, Exported), DistError> {
-        let own = self.identity();
+        let own = self.require_identity()?;
         if let watane_log::Status::Compromised(fork) = self.log.status(&own)? {
             return Err(DistError::Compromised {
                 channel: own,
@@ -87,8 +88,8 @@ impl Dist {
             _ => unreachable!("only known statement kinds are signed"),
         };
         let request = SignRequest {
-            channel: self.identity(),
-            fingerprint: self.fingerprint(),
+            channel: own,
+            fingerprint: own.fingerprint(),
             statement,
         };
         if self.confirm.confirm(&request) == Decision::Refuse {
@@ -116,6 +117,7 @@ impl Dist {
         Ok((entry, site))
     }
     pub fn publish(&self, bytes: Vec<u8>) -> Result<Published, DistError> {
+        self.require_identity()?;
         if bytes.len() as u64 > self.options.max_package {
             return Err(DistError::PackageTooLarge {
                 size: bytes.len() as u64,
@@ -166,6 +168,7 @@ impl Dist {
         })
     }
     pub fn withdraw(&self, release: &ReleaseRef, reason: &str) -> Result<Entry, DistError> {
+        self.require_identity()?;
         body::text(reason, 280).map_err(|cause| DistError::BadReason { cause })?;
         let guard = self
             .own_mutex
@@ -198,7 +201,7 @@ impl Dist {
         .map(|(entry, _)| entry)
     }
     pub fn own(&self) -> Result<ChannelView, DistError> {
-        self.channel(&self.identity())
+        self.channel(&self.require_identity()?)
     }
     pub fn channel(&self, key: &PublicKey) -> Result<ChannelView, DistError> {
         let entries = self.log.entries(key, 0, usize::MAX)?;
@@ -209,7 +212,7 @@ impl Dist {
                 seq: fork.chain.seq(),
             },
         };
-        if *key == self.identity() {
+        if Some(*key) == self.identity() {
             view.base = self
                 .base
                 .lock()
@@ -221,13 +224,14 @@ impl Dist {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(key)
         {
-            view.base = Some(record.base.clone());
+            view.base = (!record.base.is_empty()).then(|| record.base.clone());
+            view.kept = record.kept;
             view.followed = record.followed;
             view.index = record.index;
             view.last_attempt = Some(record._last_attempt);
             view.last_success = record.last_success;
         }
-        if *key != self.identity() {
+        if Some(*key) != self.identity() {
             view.listed_by = self
                 .read_sets()?
                 .iter()
@@ -257,12 +261,15 @@ impl Dist {
 
 impl Dist {
     pub fn backup(&self, passphrase: &str) -> Result<Vec<u8>, DistError> {
+        self.require_identity()?;
         Ok(self.log.export_identity(passphrase)?)
     }
     pub fn own_confirmed(&self) -> Result<bool, DistError> {
+        self.require_identity()?;
         Ok(self.log.own_head_confirmed()?)
     }
     pub fn restore(&self, backup: &[u8], passphrase: &str) -> Result<PublicKey, DistError> {
+        self.require_identity()?;
         let _guard = self
             .own_mutex
             .lock()
@@ -282,6 +289,7 @@ impl Dist {
         Ok(key)
     }
     pub fn confirm_own(&self, own: Option<&Link>) -> Result<(), DistError> {
+        self.require_identity()?;
         let _guard = self
             .own_mutex
             .lock()
@@ -291,7 +299,7 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(link) = own {
-            let key = self.identity();
+            let key = self.require_identity()?;
             if link.channel() != key {
                 return Err(DistError::NotOwnLink {
                     found: link.channel(),
@@ -338,6 +346,7 @@ impl Dist {
         self.add_listing(link, note, true)
     }
     fn add_listing(&self, link: &Link, note: &str, include: bool) -> Result<Entry, DistError> {
+        self.require_identity()?;
         body::note_text(note).map_err(|cause| DistError::BadNote { cause })?;
         if include == link.slug().is_some() {
             return Err(DistError::BadLink {
@@ -349,7 +358,7 @@ impl Dist {
             });
         }
         let key = link.channel();
-        if key == self.identity() {
+        if Some(key) == self.identity() {
             return Err(DistError::OwnListing);
         }
         let guard = self
@@ -407,6 +416,7 @@ impl Dist {
         .map(|(entry, _)| entry)
     }
     pub fn unlist(&self, listing: &EntryId) -> Result<Entry, DistError> {
+        self.require_identity()?;
         let guard = self
             .own_mutex
             .lock()
@@ -421,5 +431,70 @@ impl Dist {
         }
         self.sign_and_append(guard, "unlist", body::encode_unlist(listing), None)
             .map(|(entry, _)| entry)
+    }
+}
+
+impl Dist {
+    pub fn drop_identity(&self) -> Result<(), DistError> {
+        let _guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.require_identity()?;
+        self.log.drop_identity()?;
+        let path = self.home.join("dist/site.json");
+        match std::fs::remove_file(&path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => return Err(site::io(&path, e)),
+        }
+        *self
+            .base
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        for item in std::fs::read_dir(self.site_dir()).map_err(|e| site::io(&self.site_dir(), e))? {
+            let path = item.map_err(|e| site::io(&self.site_dir(), e))?.path();
+            let result = if path
+                .symlink_metadata()
+                .map_err(|e| site::io(&path, e))?
+                .is_dir()
+            {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+            result.map_err(|e| site::io(&path, e))?;
+        }
+        Ok(())
+    }
+    pub fn confirm_own_head(&self, seq: u64, id: &EntryId) -> Result<(), DistError> {
+        let _guard = self
+            .own_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let key = self.require_identity()?;
+        if self.log.own_head_confirmed()? {
+            return Ok(());
+        }
+        if let watane_log::Status::Compromised(f) = self.log.status(&key)? {
+            return Err(DistError::Compromised {
+                channel: key,
+                seq: f.chain.seq(),
+            });
+        }
+        if !self
+            .log
+            .head(&key)?
+            .is_some_and(|h| h.seq == seq && h.id == *id)
+        {
+            return Err(DistError::HeadNotStored { seq });
+        }
+        self.log.confirm_own_head()?;
+        self.export_unlocked(&self.site_dir())
+            .map_err(|cause| DistError::SiteNotWritten {
+                entry: *id,
+                cause: Box::new(cause),
+            })?;
+        Ok(())
     }
 }

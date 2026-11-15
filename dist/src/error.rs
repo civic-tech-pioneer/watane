@@ -2,6 +2,16 @@ use crate::*;
 use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum DistError {
+    #[error("this home holds no identity; it can read and store channels but never sign")]
+    NoIdentity,
+    #[error("own head {seq} is not stored")]
+    HeadNotStored { seq: u64 },
+    #[error("channel {} has a gap at {seq}", channel.fingerprint())]
+    Gap { channel: PublicKey, seq: u64 },
+    #[error("no live stored release names package {id}")]
+    NotNamed { id: PackageId },
+    #[error("at most {max} kept channels are allowed")]
+    TooManyKept { max: usize },
     #[error("home is locked at {}", path.display().to_string().escape_debug())]
     Locked { path: PathBuf },
     #[error("{}", path.display().to_string().escape_debug())]
@@ -13,7 +23,7 @@ pub enum DistError {
     #[error("corrupt {}: {}", path.display().to_string().escape_debug(), cause.escape_debug())]
     Corrupt { path: PathBuf, cause: String },
     #[error(transparent)]
-    Log(#[from] watane_log::Error),
+    Log(watane_log::Error),
     #[error(transparent)]
     Package(#[from] PackageError),
     #[error(transparent)]
@@ -144,6 +154,15 @@ pub enum DistError {
     NotListed { entry: EntryId },
     #[error("channel {} is not a chosen index", channel.fingerprint())]
     NotIndex { channel: PublicKey },
+}
+
+impl From<watane_log::Error> for DistError {
+    fn from(error: watane_log::Error) -> Self {
+        match error {
+            watane_log::Error::NoIdentity => Self::NoIdentity,
+            other => Self::Log(other),
+        }
+    }
 }
 
 #[cfg(test)]

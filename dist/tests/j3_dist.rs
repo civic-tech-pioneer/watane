@@ -31,7 +31,7 @@ fn ac12_j3_dist() {
     let tampered = TestHost::serve(copy.path());
     let fresh = open(c.path());
     let err = fresh
-        .open_link(&Link::new(alice.identity(), &tampered.url, link.slug()).unwrap())
+        .open_link(&Link::new(alice.identity().unwrap(), &tampered.url, link.slug()).unwrap())
         .unwrap_err();
     assert!(matches!(err, DistError::HashMismatch { .. }));
     let message = err.to_string().to_lowercase();

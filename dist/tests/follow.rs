@@ -17,14 +17,18 @@ fn ac1_s21b_follow_rejects_damaged_head_entry() {
     bytes[last] ^= 1;
     std::fs::write(path, bytes).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     assert!(matches!(
         bob.follow(&link),
         Err(DistError::HeadMismatch { url }) if url == format!("{}entries/2", host.url)
     ));
     assert!(bob.followed().unwrap().is_empty());
     let log = watane_log::Log::open(&b.path().join("log")).unwrap();
-    assert!(log.entries(&alice.identity(), 2, 1).unwrap().is_empty());
+    assert!(
+        log.entries(&alice.identity().unwrap(), 2, 1)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -36,7 +40,7 @@ fn ac2_s21b_refresh_rejects_damaged_head_entry() {
     alice.set_name("Alice").unwrap();
     alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     bob.follow(&link).unwrap();
     alice.publish(fixture("1.1.0", false)).unwrap();
     let path = alice.site_dir().join("entries/2");
@@ -45,11 +49,14 @@ fn ac2_s21b_refresh_rejects_damaged_head_entry() {
     bytes[last] ^= 1;
     std::fs::write(path, bytes).unwrap();
     assert!(matches!(
-        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        bob.refresh_channel(&alice.identity().unwrap()).unwrap().outcome,
         Outcome::Failed { cause: DistError::HeadMismatch { url } }
             if url == format!("{}entries/2", host.url)
     ));
-    assert_eq!(bob.channel(&alice.identity()).unwrap().head, Some(1));
+    assert_eq!(
+        bob.channel(&alice.identity().unwrap()).unwrap().head,
+        Some(1)
+    );
 }
 
 #[test]
@@ -61,7 +68,7 @@ fn ac3_s21b_undamaged_follow_and_refresh_check_new_head_file() {
     alice.set_name("Alice").unwrap();
     alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     assert!(matches!(
         bob.follow(&link).unwrap().outcome,
         Outcome::Current { head: 1 }
@@ -73,13 +80,17 @@ fn ac3_s21b_undamaged_follow_and_refresh_check_new_head_file() {
     host.requests.lock().unwrap().clear();
     alice.publish(fixture("1.1.0", false)).unwrap();
     assert!(matches!(
-        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        bob.refresh_channel(&alice.identity().unwrap())
+            .unwrap()
+            .outcome,
         Outcome::Current { head: 2 }
     ));
     assert_eq!(*host.requests.lock().unwrap(), ["/head", "/entries/2"]);
     host.requests.lock().unwrap().clear();
     assert!(matches!(
-        bob.refresh_channel(&alice.identity()).unwrap().outcome,
+        bob.refresh_channel(&alice.identity().unwrap())
+            .unwrap()
+            .outcome,
         Outcome::Current { head: 2 }
     ));
     assert_eq!(*host.requests.lock().unwrap(), ["/head"]);
@@ -100,7 +111,7 @@ fn ac5_s21b_first_follow_invalid_intermediate_entry_is_err() {
     bytes[last] ^= 1;
     std::fs::write(path, bytes).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     assert!(
         matches!(bob.follow(&link), Err(DistError::Invalid { url, .. })
         if url == format!("{}entries/1", host.url))
@@ -119,7 +130,7 @@ fn ac1_follow_open_link_verified() {
     let published = alice.publish(bytes.clone()).unwrap();
     let host = TestHost::serve(&alice.site_dir());
     let link = Link::new(
-        alice.identity(),
+        alice.identity().unwrap(),
         &host.url,
         Some(&"reading-list".parse().unwrap()),
     )
@@ -128,17 +139,17 @@ fn ac1_follow_open_link_verified() {
     assert_eq!(fetched.package.as_bytes(), bytes);
     let log = watane_log::Log::open(&a.path().join("log")).unwrap();
     let entry = log
-        .entries(&alice.identity(), published.entry.seq(), 1)
+        .entries(&alice.identity().unwrap(), published.entry.seq(), 1)
         .unwrap()
         .remove(0);
     assert_eq!(fetched.entry.bytes(), entry.bytes());
-    assert!(bob.channel(&alice.identity()).unwrap().followed);
+    assert!(bob.channel(&alice.identity().unwrap()).unwrap().followed);
     assert_eq!(fetched.publisher_name.as_deref(), Some("Alice"));
     assert!(fetched.checked_at.is_some());
     drop(bob);
     let bob = open(b.path());
     assert_eq!(bob.followed().unwrap().len(), 1);
-    bob.unfollow(&alice.identity()).unwrap();
+    bob.unfollow(&alice.identity().unwrap()).unwrap();
     assert!(bob.followed().unwrap().is_empty());
 }
 
@@ -157,12 +168,15 @@ fn ac3_follow_tampered_entry_keeps_only_verified_prefix() {
     bytes[n] ^= 1;
     std::fs::write(path, bytes).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     assert!(
         matches!(bob.follow(&link), Err(DistError::Invalid {url,..}) if url == format!("{}entries/1", host.url))
     );
     assert!(bob.followed().unwrap().is_empty());
-    assert_eq!(bob.channel(&alice.identity()).unwrap().head, Some(0));
+    assert_eq!(
+        bob.channel(&alice.identity().unwrap()).unwrap().head,
+        Some(0)
+    );
 }
 
 #[test]
@@ -176,7 +190,7 @@ fn ac4_follow_wrong_channel() {
     carol.set_name("Carol").unwrap();
     let host = TestHost::serve(&carol.site_dir());
     assert!(matches!(
-        bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap()),
+        bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap()),
         Err(DistError::WrongChannel { .. })
     ));
     assert!(bob.followed().unwrap().is_empty());
@@ -186,7 +200,7 @@ fn ac5_follow_own_channel() {
     let a = tempfile::tempdir().unwrap();
     let alice = open(a.path());
     assert!(matches!(
-        alice.follow(&Link::new(alice.identity(), "http://127.0.0.1:1/", None).unwrap()),
+        alice.follow(&Link::new(alice.identity().unwrap(), "http://127.0.0.1:1/", None).unwrap()),
         Err(DistError::OwnChannel)
     ));
 }
@@ -199,7 +213,7 @@ fn ac6_refresh_releases_and_withdrawals_in_order() {
     let bob = open(b.path());
     let old = alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     alice.publish(fixture("1.1.0", false)).unwrap();
     alice.withdraw(&old.info.reference, "bug").unwrap();
@@ -225,13 +239,13 @@ fn ac7_refresh_fork_stops_fetch_and_requests() {
     let release = alice.publish(fixture("1.0.0", false)).unwrap();
     alice.set_name("Alice two").unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     // The task explicitly requires a fork made with log alone.
     let fork = watane_log::Log::open(&f.path().join("log")).unwrap();
     fork.restore_identity(&alice.backup("passphrase").unwrap(), "passphrase")
         .unwrap();
-    fork.ingest(&alice.identity(), &[zero]).unwrap();
+    fork.ingest(&alice.identity().unwrap(), &[zero]).unwrap();
     fork.confirm_own_head().unwrap();
     let other = fork.append("profile", b"\x81\x65Other").unwrap();
     std::fs::write(alice.site_dir().join("head"), other.bytes()).unwrap();
@@ -261,7 +275,7 @@ fn ac8_refresh_behind_keeps_newer_head() {
     let old = alice.publish(fixture("1.0.0", false)).unwrap();
     alice.set_name("New Alice").unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    bob.follow(&Link::new(alice.identity(), &host.url, None).unwrap())
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     std::fs::write(alice.site_dir().join("head"), old.entry.bytes()).unwrap();
     assert!(matches!(
@@ -271,7 +285,10 @@ fn ac8_refresh_behind_keeps_newer_head() {
             stored: 2
         }
     ));
-    assert_eq!(bob.channel(&alice.identity()).unwrap().head, Some(2));
+    assert_eq!(
+        bob.channel(&alice.identity().unwrap()).unwrap().head,
+        Some(2)
+    );
 }
 
 #[test]
@@ -283,13 +300,16 @@ fn ac3_follow_wrong_seq_and_read_limits() {
     alice.publish(fixture("1.0.0", false)).unwrap();
     alice.set_name("New Alice").unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     std::fs::write(alice.site_dir().join("entries/1"), zero.bytes()).unwrap();
     let bob = open(b.path());
     assert!(
         matches!(bob.follow(&link),Err(DistError::WrongSeq {expected:1,found:0,url}) if url==format!("{}entries/1",host.url))
     );
-    assert_eq!(bob.channel(&alice.identity()).unwrap().head, Some(0));
+    assert_eq!(
+        bob.channel(&alice.identity().unwrap()).unwrap().head,
+        Some(0)
+    );
     assert!(bob.followed().unwrap().is_empty());
     let c = tempfile::tempdir().unwrap();
     let mut options = fast_options();
@@ -312,12 +332,12 @@ fn ac6_refresh_failure_records_attempt_and_keeps_success() {
     let bob = open(b.path());
     alice.set_name("Alice").unwrap();
     let host = TestHost::serve(&alice.site_dir());
-    let link = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     bob.follow(&link).unwrap();
     let metadata = b.path().join("dist/follows.json");
     let mut file: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&metadata).unwrap()).unwrap();
-    file["channels"][alice.identity().to_string()]["last_attempt"] = 0.into();
+    file["channels"][alice.identity().unwrap().to_string()]["last_attempt"] = 0.into();
     std::fs::write(&metadata, serde_json::to_vec(&file).unwrap()).unwrap();
     drop(bob);
     let bob = open(b.path());
@@ -325,11 +345,11 @@ fn ac6_refresh_failure_records_attempt_and_keeps_success() {
     assert!(matches!(bob.follow(&link), Err(DistError::NotFound { .. })));
     let after: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&metadata).unwrap()).unwrap();
-    let record = &after["channels"][alice.identity().to_string()];
+    let record = &after["channels"][alice.identity().unwrap().to_string()];
     assert!(record["last_attempt"].as_u64().unwrap() > 0);
     assert_eq!(
         record["last_success"],
-        file["channels"][alice.identity().to_string()]["last_success"]
+        file["channels"][alice.identity().unwrap().to_string()]["last_success"]
     );
-    assert!(bob.channel(&alice.identity()).unwrap().followed);
+    assert!(bob.channel(&alice.identity().unwrap()).unwrap().followed);
 }

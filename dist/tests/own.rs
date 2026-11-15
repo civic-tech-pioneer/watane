@@ -7,7 +7,7 @@ fn ac6_own_refuse_set_name() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Refuse]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
-    let key = dist.identity();
+    let key = dist.identity().unwrap();
     assert!(matches!(dist.set_name("Alice"), Err(DistError::Refused)));
     assert_eq!(c.requests.lock().unwrap().len(), 1);
     drop(dist);
@@ -20,7 +20,7 @@ fn ac7_own_request_set_name() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
-    let key = dist.identity();
+    let key = dist.identity().unwrap();
     let entry = dist.set_name("Alice").unwrap();
     let expected = vec![0x81, 0x65, 0x41, 0x6c, 0x69, 0x63, 0x65];
     assert_eq!(entry.body(), expected);
@@ -84,7 +84,7 @@ fn ac10_own_refuse_unknown_withdraw() {
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
     let reference = ReleaseRef {
-        publisher: PublisherKey::from_bytes(*dist.identity().as_bytes()),
+        publisher: PublisherKey::from_bytes(*dist.identity().unwrap().as_bytes()),
         slug: "reading-list".parse().unwrap(),
         version: "1.0.0".parse().unwrap(),
     };
@@ -118,7 +118,7 @@ fn ac1_own_refuse_publish() {
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
     let bytes = support::fixture("1.0.0", false);
     let id = blake3::hash(&bytes).to_hex().to_string();
-    let key = dist.identity();
+    let key = dist.identity().unwrap();
     assert!(matches!(dist.publish(bytes), Err(DistError::Refused)));
     assert_eq!(c.requests.lock().unwrap().len(), 1);
     assert_eq!(std::fs::read_dir(dist.site_dir()).unwrap().count(), 0);
@@ -154,7 +154,10 @@ fn ac2_own_request_publish() {
             panic!()
         };
         assert_eq!(recorded, &release);
-        assert_eq!(reference.publisher.as_bytes(), dist.identity().as_bytes());
+        assert_eq!(
+            reference.publisher.as_bytes(),
+            dist.identity().unwrap().as_bytes()
+        );
         assert_eq!(reference.slug.to_string(), "reading-list");
         assert_eq!(reference.version.to_string(), "1.2.3");
         drop(dist);

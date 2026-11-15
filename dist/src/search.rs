@@ -66,11 +66,26 @@ pub enum Via {
         through: Option<PublicKey>,
         note: String,
     },
+    Kept,
 }
 
 impl Dist {
     /// Searches verified, stored channel entries without making any network request.
     pub fn search(&self, query: &Query) -> Result<Vec<Hit>, DistError> {
+        self.search_candidates(query, None)
+    }
+    pub fn search_stored(
+        &self,
+        query: &Query,
+        channels: &[PublicKey],
+    ) -> Result<Vec<Hit>, DistError> {
+        self.search_candidates(query, Some(channels))
+    }
+    fn search_candidates(
+        &self,
+        query: &Query,
+        stored: Option<&[PublicKey]>,
+    ) -> Result<Vec<Hit>, DistError> {
         if query.text.len() > 256 {
             return Err(DistError::BadQuery {
                 cause: "text exceeds 256 bytes",
@@ -82,10 +97,18 @@ impl Dist {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        let sets = self.read_sets()?;
-        // Derive every publisher once. Entries without a record cannot supply a remote hit.
+        let sets = if stored.is_none() {
+            self.read_sets()?
+        } else {
+            Vec::new()
+        };
+        // Derive each candidate channel once; ordinary search uses only held channels.
         let mut views = BTreeMap::new();
-        for key in std::iter::once(own).chain(records.keys().copied().filter(|k| *k != own)) {
+        let keys: BTreeSet<_> = match stored {
+            Some(channels) => channels.iter().copied().collect(),
+            None => own.into_iter().chain(records.keys().copied()).collect(),
+        };
+        for key in keys {
             let mut view = view::derive(key, &self.log.entries(&key, 0, usize::MAX)?);
             view.status = match self.log.status(&key)? {
                 watane_log::Status::Ok => Status::Ok,
@@ -97,7 +120,15 @@ impl Dist {
         }
         let mut candidates: BTreeMap<(PublicKey, Slug), Vec<Via>> = BTreeMap::new();
         for (key, view) in &views {
-            let via = if *key == own {
+            if stored.is_some() {
+                for r in &view.releases {
+                    candidates
+                        .entry((*key, r.release.slug.clone()))
+                        .or_default();
+                }
+                continue;
+            }
+            let via = if Some(*key) == own {
                 Some(Via::Own)
             } else if records[key].followed {
                 Some(Via::Followed)
@@ -113,7 +144,7 @@ impl Dist {
         for set in sets {
             for (key, through) in set.whole {
                 // Own releases already have Via::Own; own listings still count as Index.
-                if key == own {
+                if Some(key) == own {
                     continue;
                 }
                 if let Some(view) = views.get(&key) {
@@ -132,7 +163,7 @@ impl Dist {
                 }
             }
             for m in set.mods {
-                if m.channel != own {
+                if Some(m.channel) != own {
                     add(
                         &mut candidates,
                         m.channel,
@@ -143,6 +174,17 @@ impl Dist {
                             note: m.note,
                         },
                     );
+                }
+            }
+        }
+        if stored.is_none() {
+            for (key, record) in &records {
+                if record.kept
+                    && let Some(view) = views.get(key)
+                {
+                    for r in &view.releases {
+                        add(&mut candidates, *key, &r.release.slug, Via::Kept);
+                    }
                 }
             }
         }
@@ -194,11 +236,12 @@ impl Dist {
                 continue;
             }
             via.sort_by(|a, b| via_order(a).cmp(&via_order(b)));
-            let record = records.get(&key).filter(|_| key != own);
+            let record = records.get(&key).filter(|_| Some(key) != own);
             let checked_at = record.and_then(|r| r.last_success);
             let unchecked_since =
                 record.and_then(|r| r.last_success.filter(|s| r._last_attempt > *s));
             let link = record
+                .filter(|r| !r.base.is_empty())
                 .map(|r| Link::new(key, &r.base, Some(&slug)))
                 .transpose()?;
             hits.push(Hit {
@@ -241,6 +284,7 @@ fn via_order(via: &Via) -> (u8, Option<PublicKey>, Option<PublicKey>, &str) {
     match via {
         Via::Own => (0, None, None, ""),
         Via::Followed => (1, None, None, ""),
+        Via::Kept => (3, None, None, ""),
         Via::Index {
             index,
             through,

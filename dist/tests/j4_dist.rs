@@ -23,7 +23,7 @@ fn ac8_j4_dist() {
         .remove(0);
     assert_eq!(
         hit.info.reference.to_string(),
-        format!("{}/reading-list@0.1.0", alice.dist.identity())
+        format!("{}/reading-list@0.1.0", alice.dist.identity().unwrap())
     );
     carol.dist.follow(hit.link.as_ref().unwrap()).unwrap();
     let fetched = carol.dist.fetch(&hit.info.reference).unwrap();
@@ -33,11 +33,11 @@ fn ac8_j4_dist() {
         blake3::hash(&bytes).to_hex().to_string()
     );
     alice.dist.publish(fixture("0.2.0", false)).unwrap();
-    let newer = format!("{}/reading-list@0.2.0", alice.dist.identity());
+    let newer = format!("{}/reading-list@0.2.0", alice.dist.identity().unwrap());
     let reports = carol.dist.refresh();
     let report = reports
         .iter()
-        .find(|r| r.channel == alice.dist.identity())
+        .find(|r| r.channel == alice.dist.identity().unwrap())
         .unwrap();
     assert_eq!(report.changes.len(), 1);
     assert!(matches!(&report.changes[0], Change::Release(r) if r.reference.to_string()==newer));
@@ -45,7 +45,7 @@ fn ac8_j4_dist() {
     let reports = carol.dist.refresh();
     let report = reports
         .iter()
-        .find(|r| r.channel == alice.dist.identity())
+        .find(|r| r.channel == alice.dist.identity().unwrap())
         .unwrap();
     assert_eq!(report.changes.len(), 1);
     assert!(
@@ -58,7 +58,8 @@ fn ac8_j4_dist() {
         .unwrap();
     let zero =
         Entry::decode(&std::fs::read(alice.dist.site_dir().join("entries/0")).unwrap()).unwrap();
-    fork.ingest(&alice.dist.identity(), &[zero]).unwrap();
+    fork.ingest(&alice.dist.identity().unwrap(), &[zero])
+        .unwrap();
     fork.confirm_own_head().unwrap();
     let other = fork.append("profile", b"\x81\x65Other").unwrap();
     std::fs::write(alice.dist.site_dir().join("head"), other.bytes()).unwrap();
@@ -68,14 +69,14 @@ fn ac8_j4_dist() {
             .dist
             .refresh()
             .iter()
-            .any(|r| r.channel == alice.dist.identity()
+            .any(|r| r.channel == alice.dist.identity().unwrap()
                 && matches!(r.outcome, Outcome::Compromised { seq: 1 }))
     );
     let hits = carol.dist.search(&Query::default()).unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(
         hits[0].info.reference.to_string(),
-        format!("{}/reading-list@0.1.0", alice.dist.identity())
+        format!("{}/reading-list@0.1.0", alice.dist.identity().unwrap())
     );
     assert_eq!(hits[0].status, Status::Compromised { seq: 1 });
     assert!(matches!(

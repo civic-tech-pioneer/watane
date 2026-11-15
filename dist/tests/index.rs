@@ -20,8 +20,8 @@ fn ac4_own_listing_refuse_and_requests() {
     alice.publish(fixture("1.0.0", false)).unwrap();
     let host = TestHost::serve(&alice.site_dir());
     let slug = "reading-list".parse().unwrap();
-    let link = Link::new(alice.identity(), &host.url, Some(&slug)).unwrap();
-    let channel = Link::new(alice.identity(), &host.url, None).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, Some(&slug)).unwrap();
+    let channel = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     let confirm = Arc::new(RecordingConfirm::new([
         Decision::Refuse,
         Decision::Approve,
@@ -105,12 +105,15 @@ fn ac4_own_listing_invalid_before_confirm() {
     ]));
     let ivy = Dist::open(i.path(), confirm.clone(), fast_options()).unwrap();
     let slug = "reading-list".parse().unwrap();
-    let link = Link::new(alice.identity(), &host.url, Some(&slug)).unwrap();
-    let channel = Link::new(alice.identity(), &host.url, None).unwrap();
-    let own = Link::new(ivy.identity(), &host.url, Some(&slug)).unwrap();
+    let link = Link::new(alice.identity().unwrap(), &host.url, Some(&slug)).unwrap();
+    let channel = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
+    let own = Link::new(ivy.identity().unwrap(), &host.url, Some(&slug)).unwrap();
     assert!(matches!(ivy.list(&own, ""), Err(DistError::OwnListing)));
     assert!(matches!(
-        ivy.include(&Link::new(ivy.identity(), &host.url, None).unwrap(), ""),
+        ivy.include(
+            &Link::new(ivy.identity().unwrap(), &host.url, None).unwrap(),
+            ""
+        ),
         Err(DistError::OwnListing)
     ));
     assert_eq!(host.count(), 0);
@@ -131,7 +134,7 @@ fn ac4_own_listing_invalid_before_confirm() {
         Err(DistError::BadNote { .. })
     ));
     let missing = Link::new(
-        alice.identity(),
+        alice.identity().unwrap(),
         &host.url,
         Some(&"missing".parse().unwrap()),
     )
@@ -146,7 +149,12 @@ fn ac4_own_listing_invalid_before_confirm() {
     let listed = ivy.list(&link, "").unwrap();
     let inc = ivy.include(&channel, "").unwrap();
     confirm.requests.lock().unwrap().clear();
-    let mirror = Link::new(alice.identity(), "https://mirror.example.org/", Some(&slug)).unwrap();
+    let mirror = Link::new(
+        alice.identity().unwrap(),
+        "https://mirror.example.org/",
+        Some(&slug),
+    )
+    .unwrap();
     assert!(matches!(
         ivy.list(&mirror, ""),
         Err(DistError::AlreadyListed { seq: 0 })
@@ -204,24 +212,24 @@ fn ac5_read_listing_changes_in_seq_order() {
     alice.publish(fixture("1.0.0", false)).unwrap();
     let ah = TestHost::serve(&alice.site_dir());
     let link = Link::new(
-        alice.identity(),
+        alice.identity().unwrap(),
         &ah.url,
         Some(&"reading-list".parse().unwrap()),
     )
     .unwrap();
-    let channel = Link::new(alice.identity(), &ah.url, None).unwrap();
+    let channel = Link::new(alice.identity().unwrap(), &ah.url, None).unwrap();
     let ivy = open(i.path());
     ivy.set_name("Ivy").unwrap();
     let ih = TestHost::serve(&ivy.site_dir());
     let carol = open(c.path());
     carol
-        .follow(&Link::new(ivy.identity(), &ih.url, None).unwrap())
+        .follow(&Link::new(ivy.identity().unwrap(), &ih.url, None).unwrap())
         .unwrap();
     let listed = ivy.list(&link, "books").unwrap();
     let included = ivy.include(&channel, "").unwrap();
     ivy.unlist(&listed.id()).unwrap();
     ivy.unlist(&included.id()).unwrap();
-    let report = carol.refresh_channel(&ivy.identity()).unwrap();
+    let report = carol.refresh_channel(&ivy.identity().unwrap()).unwrap();
     assert_eq!(report.changes.len(), 4);
     for (change, seq, id, include) in [
         (&report.changes[0], 1, listed.id(), false),
@@ -248,13 +256,13 @@ fn ac5_read_listing_changes_in_seq_order() {
             (seq, id, Some(seq))
         );
     }
-    let view = carol.channel(&ivy.identity()).unwrap();
+    let view = carol.channel(&ivy.identity().unwrap()).unwrap();
     assert_eq!(view.listings.len(), 2);
     assert!(!view.index);
     assert!(view.listed_by.is_empty());
     assert!(
         carol
-            .refresh_channel(&ivy.identity())
+            .refresh_channel(&ivy.identity().unwrap())
             .unwrap()
             .changes
             .is_empty()
@@ -289,11 +297,11 @@ impl Home {
         Self { dist, host, dir }
     }
     fn link(&self) -> Link {
-        Link::new(self.dist.identity(), &self.host.url, None).unwrap()
+        Link::new(self.dist.identity().unwrap(), &self.host.url, None).unwrap()
     }
     fn mod_link(&self) -> Link {
         Link::new(
-            self.dist.identity(),
+            self.dist.identity().unwrap(),
             &self.host.url,
             Some(&"reading-list".parse().unwrap()),
         )
@@ -314,22 +322,22 @@ fn ac1_index_choose() {
     let reports = carol.dist.choose_index(&ivy.link()).unwrap();
     assert_eq!(
         reports.iter().map(|r| r.channel).collect::<Vec<_>>(),
-        [ivy.dist.identity(), alice.dist.identity()]
+        [ivy.dist.identity().unwrap(), alice.dist.identity().unwrap()]
     );
     assert_eq!(
         carol
             .dist
-            .channel(&alice.dist.identity())
+            .channel(&alice.dist.identity().unwrap())
             .unwrap()
             .releases
             .len(),
         1
     );
     let records = carol.records();
-    let i = &records["channels"][ivy.dist.identity().to_string()];
+    let i = &records["channels"][ivy.dist.identity().unwrap().to_string()];
     assert_eq!(i["index"], true);
     assert_eq!(i["followed"], false);
-    let a = &records["channels"][alice.dist.identity().to_string()];
+    let a = &records["channels"][alice.dist.identity().unwrap().to_string()];
     assert_eq!(a["index"], false);
     assert_eq!(a["followed"], false);
     assert_eq!(a["bases"], serde_json::json!([alice.host.url]));
@@ -337,10 +345,10 @@ fn ac1_index_choose() {
     assert_eq!(
         carol
             .dist
-            .channel(&alice.dist.identity())
+            .channel(&alice.dist.identity().unwrap())
             .unwrap()
             .listed_by,
-        [ivy.dist.identity()]
+        [ivy.dist.identity().unwrap()]
     );
     let indexes = carol.dist.indexes().unwrap();
     assert_eq!(indexes.len(), 1);
@@ -387,11 +395,19 @@ fn ac2_index_wrong_channel() {
         }
     ));
     assert_eq!(
-        carol.dist.channel(&mallory.dist.identity()).unwrap().head,
+        carol
+            .dist
+            .channel(&mallory.dist.identity().unwrap())
+            .unwrap()
+            .head,
         None
     );
     assert_eq!(
-        carol.dist.channel(&alice.dist.identity()).unwrap().head,
+        carol
+            .dist
+            .channel(&alice.dist.identity().unwrap())
+            .unwrap()
+            .head,
         None
     );
 }
@@ -412,19 +428,23 @@ fn ac3_index_one_level() {
     assert_eq!(
         reports.iter().map(|r| r.channel).collect::<Vec<_>>(),
         [
-            ivy.dist.identity(),
-            jay.dist.identity(),
-            ken.dist.identity()
+            ivy.dist.identity().unwrap(),
+            jay.dist.identity().unwrap(),
+            ken.dist.identity().unwrap()
         ]
     );
     assert_eq!(lou.host.count(), 0);
     assert_eq!(
         carol.dist.indexes().unwrap()[0].included,
-        [jay.dist.identity()]
+        [jay.dist.identity().unwrap()]
     );
     assert_eq!(
-        carol.dist.channel(&ken.dist.identity()).unwrap().listed_by,
-        [ivy.dist.identity()]
+        carol
+            .dist
+            .channel(&ken.dist.identity().unwrap())
+            .unwrap()
+            .listed_by,
+        [ivy.dist.identity().unwrap()]
     );
 }
 
@@ -443,7 +463,7 @@ fn ac4_index_unlist() {
         ivy.dist.unlist(&listed.id()).unwrap();
         carol.dist.refresh();
         let records = carol.records();
-        let a = &records["channels"][alice.dist.identity().to_string()];
+        let a = &records["channels"][alice.dist.identity().unwrap().to_string()];
         if followed {
             assert_eq!(a["followed"], true);
         } else {
@@ -452,7 +472,7 @@ fn ac4_index_unlist() {
         assert!(
             carol
                 .dist
-                .channel(&alice.dist.identity())
+                .channel(&alice.dist.identity().unwrap())
                 .unwrap()
                 .listed_by
                 .is_empty()
@@ -486,7 +506,7 @@ fn ac5_index_compromised() {
         reports[0].outcome,
         Outcome::Compromised { seq: 1 }
     ));
-    assert!(carol.records()["channels"][alice.dist.identity().to_string()].is_null());
+    assert!(carol.records()["channels"][alice.dist.identity().unwrap().to_string()].is_null());
     let count = alice.host.count();
     carol.dist.refresh();
     assert_eq!(alice.host.count(), count);
@@ -524,11 +544,14 @@ fn ac1_index_cap() {
         assert_eq!(
             index.skipped,
             vec![Skipped {
-                channel: publishers[2].dist.identity(),
+                channel: publishers[2].dist.identity().unwrap(),
                 cause: "over the listing limit"
             }]
         );
-        assert!(carol.records()["channels"][publishers[2].dist.identity().to_string()].is_null());
+        assert!(
+            carol.records()["channels"][publishers[2].dist.identity().unwrap().to_string()]
+                .is_null()
+        );
     }
 }
 
@@ -543,7 +566,7 @@ fn ac7_index_stale_mirror() {
     alice.dist.export(copy.path()).unwrap();
     let stale = TestHost::serve(copy.path());
     let stale_link = Link::new(
-        alice.dist.identity(),
+        alice.dist.identity().unwrap(),
         &stale.url,
         Some(&"reading-list".parse().unwrap()),
     )
@@ -556,12 +579,12 @@ fn ac7_index_stale_mirror() {
         .withdraw(&release.info.reference, "gone")
         .unwrap();
     carol.dist.choose_index(&jay.link()).unwrap();
-    let a = carol.dist.channel(&alice.dist.identity()).unwrap();
+    let a = carol.dist.channel(&alice.dist.identity().unwrap()).unwrap();
     assert!(a.releases[0].withdrawn.is_some());
     assert!(a.last_success.is_some());
     assert_eq!(a.last_attempt, a.last_success);
     let records = carol.records();
-    let a = &records["channels"][alice.dist.identity().to_string()];
+    let a = &records["channels"][alice.dist.identity().unwrap().to_string()];
     assert_eq!(a["base"], alice.host.url);
     assert_eq!(a["bases"][0], alice.host.url);
     assert!(
@@ -572,7 +595,11 @@ fn ac7_index_stale_mirror() {
     );
     carol.dist.refresh();
     assert!(
-        carol.dist.channel(&alice.dist.identity()).unwrap().releases[0]
+        carol
+            .dist
+            .channel(&alice.dist.identity().unwrap())
+            .unwrap()
+            .releases[0]
             .withdrawn
             .is_some()
     );
@@ -592,11 +619,11 @@ fn ac8_index_no_local() {
     assert_eq!(
         carol.dist.indexes().unwrap()[0].skipped,
         vec![Skipped {
-            channel: alice.dist.identity(),
+            channel: alice.dist.identity().unwrap(),
             cause: "local address"
         }]
     );
-    assert!(carol.records()["channels"][alice.dist.identity().to_string()].is_null());
+    assert!(carol.records()["channels"][alice.dist.identity().unwrap().to_string()].is_null());
 }
 
 #[test]
@@ -610,13 +637,13 @@ fn ac9_index_own_skipped() {
     assert_eq!(
         carol.dist.indexes().unwrap()[0].skipped,
         vec![Skipped {
-            channel: carol.dist.identity(),
+            channel: carol.dist.identity().unwrap(),
             cause: "own channel"
         }]
     );
     assert_eq!(carol.host.count(), 0);
     assert_eq!(reports.len(), 1);
-    assert!(carol.records()["channels"][carol.dist.identity().to_string()].is_null());
+    assert!(carol.records()["channels"][carol.dist.identity().unwrap().to_string()].is_null());
     assert!(carol.dist.own().unwrap().listed_by.is_empty());
 }
 
@@ -632,7 +659,7 @@ fn ac10_index_base_followed_wins() {
     ivy.dist
         .list(
             &Link::new(
-                alice.dist.identity(),
+                alice.dist.identity().unwrap(),
                 &mirror.url,
                 Some(&"reading-list".parse().unwrap()),
             )
@@ -645,7 +672,7 @@ fn ac10_index_base_followed_wins() {
     carol.dist.choose_index(&ivy.link()).unwrap();
     carol.dist.refresh();
     assert_eq!(
-        carol.records()["channels"][alice.dist.identity().to_string()]["base"],
+        carol.records()["channels"][alice.dist.identity().unwrap().to_string()]["base"],
         alice.host.url
     );
     assert_eq!(mirror.count(), 0);
@@ -664,22 +691,25 @@ fn ac11_index_drop() {
         if followed {
             carol.dist.follow(&ivy.link()).unwrap();
         }
-        carol.dist.drop_index(&ivy.dist.identity()).unwrap();
+        carol
+            .dist
+            .drop_index(&ivy.dist.identity().unwrap())
+            .unwrap();
         assert!(carol.dist.indexes().unwrap().is_empty());
         let records = carol.records();
-        assert!(records["channels"][alice.dist.identity().to_string()].is_null());
+        assert!(records["channels"][alice.dist.identity().unwrap().to_string()].is_null());
         if followed {
             assert_eq!(
-                records["channels"][ivy.dist.identity().to_string()]["followed"],
+                records["channels"][ivy.dist.identity().unwrap().to_string()]["followed"],
                 true
             );
         } else {
-            assert!(records["channels"][ivy.dist.identity().to_string()].is_null());
+            assert!(records["channels"][ivy.dist.identity().unwrap().to_string()].is_null());
         }
         for key in [
-            ivy.dist.identity(),
-            alice.dist.identity(),
-            carol.dist.identity(),
+            ivy.dist.identity().unwrap(),
+            alice.dist.identity().unwrap(),
+            carol.dist.identity().unwrap(),
         ] {
             assert!(
                 matches!(carol.dist.drop_index(&key), Err(DistError::NotIndex {channel}) if channel == key)
@@ -704,12 +734,12 @@ fn ac12_refresh_pass_order() {
     carol.dist.list(&ken.mod_link(), "Ken too").unwrap();
     carol.dist.choose_index(&ivy.link()).unwrap();
     let mut pass_b = vec![
-        alice.dist.identity(),
-        jay.dist.identity(),
-        ken.dist.identity(),
+        alice.dist.identity().unwrap(),
+        jay.dist.identity().unwrap(),
+        ken.dist.identity().unwrap(),
     ];
     pass_b.sort();
-    let mut expected = vec![ivy.dist.identity()];
+    let mut expected = vec![ivy.dist.identity().unwrap()];
     expected.extend(pass_b);
     for p in [&ivy, &jay, &alice, &ken] {
         p.host.requests.lock().unwrap().clear();
@@ -731,10 +761,10 @@ fn ac12_refresh_pass_order() {
         .unlist(&carol.dist.own().unwrap().listings[0].entry)
         .unwrap();
     carol.dist.follow(&alice.link()).unwrap();
-    let mut pass_a = vec![ivy.dist.identity(), alice.dist.identity()];
+    let mut pass_a = vec![ivy.dist.identity().unwrap(), alice.dist.identity().unwrap()];
     pass_a.sort();
     let mut expected = pass_a;
-    expected.extend([jay.dist.identity(), ken.dist.identity()]);
+    expected.extend([jay.dist.identity().unwrap(), ken.dist.identity().unwrap()]);
     assert_eq!(
         carol
             .dist
@@ -752,7 +782,7 @@ fn ac13_step3_records_and_unfollow() {
     let ivy = Home::new();
     let carol = Home::new();
     alice.dist.publish(fixture("1.0.0", false)).unwrap();
-    let key = alice.dist.identity().to_string();
+    let key = alice.dist.identity().unwrap().to_string();
     let path = carol.dir.path().join("dist/follows.json");
     let legacy = serde_json::json!({"version":1,"channels":{key.clone():{"base":alice.host.url,"followed_at":1,"last_attempt":2,"last_success":2}}});
     std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
@@ -772,15 +802,15 @@ fn ac13_step3_records_and_unfollow() {
     ivy.dist.list(&alice.mod_link(), "").unwrap();
     dist.choose_index(&ivy.link()).unwrap();
     dist.follow(&ivy.link()).unwrap();
-    dist.unfollow(&ivy.dist.identity()).unwrap();
+    dist.unfollow(&ivy.dist.identity().unwrap()).unwrap();
     assert_eq!(dist.indexes().unwrap().len(), 1);
-    dist.unfollow(&alice.dist.identity()).unwrap();
+    dist.unfollow(&alice.dist.identity().unwrap()).unwrap();
     let records: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(records["channels"][&key]["followed"], false);
     assert!(matches!(
-        dist.unfollow(&alice.dist.identity()),
-        Err(DistError::NothingToUnfollow { channel }) if channel == alice.dist.identity()
+        dist.unfollow(&alice.dist.identity().unwrap()),
+        Err(DistError::NothingToUnfollow { channel }) if channel == alice.dist.identity().unwrap()
     ));
     let stranger = PublicKey::from_bytes(&[9; 32]).unwrap();
     let bytes = std::fs::read(&path).unwrap();
@@ -789,7 +819,7 @@ fn ac13_step3_records_and_unfollow() {
         Err(DistError::NothingToUnfollow { channel }) if channel == stranger
     ));
     assert!(matches!(
-        dist.unfollow(&alice.dist.identity()),
+        dist.unfollow(&alice.dist.identity().unwrap()),
         Err(DistError::NothingToUnfollow { .. })
     ));
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -821,19 +851,26 @@ fn ac6_index_entry_cap() {
         ["/head", "/entries/0"]
     );
     assert_eq!(
-        carol.dist.channel(&alice.dist.identity()).unwrap().head,
+        carol
+            .dist
+            .channel(&alice.dist.identity().unwrap())
+            .unwrap()
+            .head,
         Some(0)
     );
     assert_eq!(
         carol
             .dist
-            .channel(&alice.dist.identity())
+            .channel(&alice.dist.identity().unwrap())
             .unwrap()
             .last_success,
         None
     );
     alice.host.requests.lock().unwrap().clear();
-    let r = carol.dist.refresh_channel(&alice.dist.identity()).unwrap();
+    let r = carol
+        .dist
+        .refresh_channel(&alice.dist.identity().unwrap())
+        .unwrap();
     assert!(matches!(
         r.outcome,
         Outcome::Failed {
@@ -859,7 +896,7 @@ fn ac7_index_behind_falls_back() {
     ivy.dist
         .list(
             &Link::new(
-                alice.dist.identity(),
+                alice.dist.identity().unwrap(),
                 &stale.url,
                 Some(&"reading-list".parse().unwrap()),
             )
@@ -876,7 +913,7 @@ fn ac7_index_behind_falls_back() {
     carol.dist.choose_index(&ivy.link()).unwrap();
     let path = carol.dir.path().join("dist/follows.json");
     let mut records = carol.records();
-    let a = &mut records["channels"][alice.dist.identity().to_string()];
+    let a = &mut records["channels"][alice.dist.identity().unwrap().to_string()];
     a["base"] = serde_json::json!(stale.url);
     a["bases"] = serde_json::json!([stale.url, alice.host.url]);
     std::fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
@@ -893,14 +930,14 @@ fn ac7_index_behind_falls_back() {
     let old_count = stale.count();
     let current_count = alice.host.count();
     assert!(matches!(
-        dist.refresh_channel(&alice.dist.identity())
+        dist.refresh_channel(&alice.dist.identity().unwrap())
             .unwrap()
             .outcome,
         Outcome::Current { head: 2 }
     ));
     assert_eq!(stale.count(), old_count + 1);
     assert_eq!(alice.host.count(), current_count + 1);
-    let view = dist.channel(&alice.dist.identity()).unwrap();
+    let view = dist.channel(&alice.dist.identity().unwrap()).unwrap();
     assert_eq!(view.last_attempt, view.last_success);
     assert_eq!(view.base.as_deref(), Some(alice.host.url.as_str()));
 }
@@ -936,7 +973,7 @@ fn ac1_index_skipped_once() {
     assert_eq!(
         carol.dist.indexes().unwrap()[0].skipped,
         vec![Skipped {
-            channel: alice.dist.identity(),
+            channel: alice.dist.identity().unwrap(),
             cause: "local address"
         }]
     );
@@ -949,7 +986,7 @@ fn ac6_index_cap_across_passes() {
     let jay = Home::new();
     let lou = Home::new();
     let alice = Home::new();
-    let (first, second) = if ivy.dist.identity() < other.dist.identity() {
+    let (first, second) = if ivy.dist.identity().unwrap() < other.dist.identity().unwrap() {
         (&ivy, &other)
     } else {
         (&other, &ivy)
@@ -982,14 +1019,14 @@ fn ac6_index_cap_across_passes() {
     );
     assert_eq!(lou.host.count(), 1);
     assert_eq!(alice.host.count(), 0);
-    assert!(carol.records()["channels"][alice.dist.identity().to_string()].is_null());
+    assert!(carol.records()["channels"][alice.dist.identity().unwrap().to_string()].is_null());
     // The new listing is eligible on the next refresh, still within the cap.
     let reports = carol.dist.refresh();
     assert_eq!(reports.len(), 4);
     assert!(
         carol
             .dist
-            .channel(&alice.dist.identity())
+            .channel(&alice.dist.identity().unwrap())
             .unwrap()
             .head
             .is_some()
@@ -1007,7 +1044,9 @@ fn ac8_index_local_check_after_reopen() {
     drop(carol.dist);
     let dist = open(carol.dir.path());
     alice.host.requests.lock().unwrap().clear();
-    let report = dist.refresh_channel(&alice.dist.identity()).unwrap();
+    let report = dist
+        .refresh_channel(&alice.dist.identity().unwrap())
+        .unwrap();
     assert!(matches!(report.outcome, Outcome::Failed { .. }));
     assert_eq!(alice.host.count(), 0);
     dist.refresh();
@@ -1034,7 +1073,11 @@ fn ac6_explicit_links_use_regular_entry_cap() {
             carol.dist.follow(&alice.link()).unwrap();
         }
         assert_eq!(
-            carol.dist.channel(&alice.dist.identity()).unwrap().head,
+            carol
+                .dist
+                .channel(&alice.dist.identity().unwrap())
+                .unwrap()
+                .head,
             Some(2)
         );
     }
@@ -1050,7 +1093,7 @@ fn ac13_record_bases_validated_on_open() {
     carol.dist.choose_index(&ivy.link()).unwrap();
     let path = carol.dir.path().join("dist/follows.json");
     let mut records = carol.records();
-    records["channels"][alice.dist.identity().to_string()]["bases"] =
+    records["channels"][alice.dist.identity().unwrap().to_string()]["bases"] =
         serde_json::json!(["file:///tmp/"]);
     std::fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
     drop(carol.dist);
@@ -1078,7 +1121,7 @@ fn ac7_index_stale_mirror_after_outage() {
     ivy.dist
         .list(
             &Link::new(
-                alice.dist.identity(),
+                alice.dist.identity().unwrap(),
                 &mirror.url,
                 Some(&"reading-list".parse().unwrap()),
             )
@@ -1094,13 +1137,13 @@ fn ac7_index_stale_mirror_after_outage() {
     assert!(matches!(
         reports
             .iter()
-            .find(|r| r.channel == alice.dist.identity())
+            .find(|r| r.channel == alice.dist.identity().unwrap())
             .unwrap()
             .outcome,
         Outcome::Current { head: 1 }
     ));
     assert_eq!(
-        carol.records()["channels"][alice.dist.identity().to_string()]["bases"][0],
+        carol.records()["channels"][alice.dist.identity().unwrap().to_string()]["bases"][0],
         mirror.url
     );
     std::fs::write(alice.dist.site_dir().join("head"), head).unwrap();
@@ -1113,7 +1156,7 @@ fn ac7_index_stale_mirror_after_outage() {
     for _ in 0..3 {
         carol.dist.refresh();
     }
-    let view = carol.dist.channel(&alice.dist.identity()).unwrap();
+    let view = carol.dist.channel(&alice.dist.identity().unwrap()).unwrap();
     assert!(view.releases[0].withdrawn.is_some());
     assert_eq!(view.last_attempt, view.last_success);
     assert_eq!(view.base.as_deref(), Some(alice.host.url.as_str()));
@@ -1155,12 +1198,16 @@ fn ac12_refresh_listed_failure_has_listed_key() {
     let reports = carol.dist.refresh();
     assert_eq!(
         reports.iter().map(|r| r.channel).collect::<Vec<_>>(),
-        [ivy.dist.identity(), alice.dist.identity()]
+        [ivy.dist.identity().unwrap(), alice.dist.identity().unwrap()]
     );
     assert!(
         matches!(&reports[1].outcome, Outcome::Failed {cause: DistError::ExportConflict {path: failed, ..}} if failed == &path)
     );
-    assert!(reports.iter().all(|r| r.channel != carol.dist.identity()));
+    assert!(
+        reports
+            .iter()
+            .all(|r| r.channel != carol.dist.identity().unwrap())
+    );
 }
 
 #[test]
@@ -1174,12 +1221,12 @@ fn ac7_index_equal_heads_keep_first_base() {
     alice.dist.export(copy.path()).unwrap();
     let mirror = TestHost::serve(copy.path());
     let slug = "reading-list".parse().unwrap();
-    let mirror_link = Link::new(alice.dist.identity(), &mirror.url, Some(&slug)).unwrap();
+    let mirror_link = Link::new(alice.dist.identity().unwrap(), &mirror.url, Some(&slug)).unwrap();
     ivy.dist.list(&mirror_link, "").unwrap();
     jay.dist.list(&alice.mod_link(), "").unwrap();
     carol.dist.choose_index(&ivy.link()).unwrap();
     carol.dist.choose_index(&jay.link()).unwrap();
-    let key = alice.dist.identity().to_string();
+    let key = alice.dist.identity().unwrap().to_string();
     let bases = carol.records()["channels"][&key]["bases"].clone();
     assert_eq!(bases.as_array().unwrap().len(), 2);
     let (a, m) = (alice.host.count(), mirror.count());
@@ -1200,7 +1247,7 @@ fn ac1_skipped_walk_order() {
     for home in [&alice, &bob, &carol] {
         home.dist.publish(fixture("1.0.0", false)).unwrap();
     }
-    let (first, second) = if alice.dist.identity() > bob.dist.identity() {
+    let (first, second) = if alice.dist.identity().unwrap() > bob.dist.identity().unwrap() {
         (&alice, &bob)
     } else {
         (&bob, &alice)
@@ -1217,15 +1264,15 @@ fn ac1_skipped_walk_order() {
         carol.dist.indexes().unwrap()[0].skipped,
         vec![
             Skipped {
-                channel: first.dist.identity(),
+                channel: first.dist.identity().unwrap(),
                 cause: "local address"
             },
             Skipped {
-                channel: carol.dist.identity(),
+                channel: carol.dist.identity().unwrap(),
                 cause: "own channel"
             },
             Skipped {
-                channel: second.dist.identity(),
+                channel: second.dist.identity().unwrap(),
                 cause: "local address"
             },
         ]

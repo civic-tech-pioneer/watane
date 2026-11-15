@@ -9,8 +9,8 @@ fn ac5_open_offline_locked_reopen_modes() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
-    let key = dist.identity();
-    assert_eq!(dist.fingerprint(), key.to_string()[..10]);
+    let key = dist.identity().unwrap();
+    assert_eq!(dist.fingerprint().unwrap(), key.to_string()[..10]);
     assert!(matches!(
         Dist::open(home.path(), c.clone(), Options::default()),
         Err(DistError::Locked { .. })
@@ -41,7 +41,7 @@ fn ac5_open_offline_locked_reopen_modes() {
     std::fs::write(home.path().join("dist/tmp/stale"), b"old").unwrap();
     drop(dist);
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
-    assert_eq!(dist.identity(), key);
+    assert_eq!(dist.identity().unwrap(), key);
     assert!(!home.path().join("dist/tmp/stale").exists());
     assert!(c.requests.lock().unwrap().is_empty());
 }
@@ -51,7 +51,7 @@ fn ac5_open_metadata_and_corrupt_files() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
-    let own = dist.identity();
+    let own = dist.identity().unwrap();
     assert_eq!(dist.own().unwrap().base, None);
     assert_eq!(dist.site_dir(), home.path().join("dist/site"));
     drop(dist);

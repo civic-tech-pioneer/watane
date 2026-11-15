@@ -11,6 +11,7 @@ pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
         status: Status::Ok,
         followed: false,
         index: false,
+        kept: false,
         listed_by: Vec::new(),
         listings: Vec::new(),
         last_attempt: None,
@@ -142,12 +143,14 @@ mod tests {
         log.append("withdraw", &[0x80]).unwrap();
         log.append("release", &[0x80]).unwrap();
         log.append("profile", &[0x81, 0x61, b' ']).unwrap();
-        let entries = log.entries(&log.identity(), 0, usize::MAX).unwrap();
-        let v = derive(log.identity(), &entries);
-        assert_eq!(v.channel, log.identity());
+        let entries = log
+            .entries(&log.identity().unwrap(), 0, usize::MAX)
+            .unwrap();
+        let v = derive(log.identity().unwrap(), &entries);
+        assert_eq!(v.channel, log.identity().unwrap());
         assert_eq!(v.head, Some(11));
         assert_eq!(v.name.as_deref(), Some("B"));
-        assert_eq!(v.fingerprint, log.identity().to_string()[..10]);
+        assert_eq!(v.fingerprint, log.identity().unwrap().to_string()[..10]);
         assert_eq!(v.base, None);
         assert_eq!(v.status, Status::Ok);
         assert!(!v.followed);
@@ -155,7 +158,7 @@ mod tests {
         assert_eq!(v.releases.len(), 1);
         let info = &v.releases[0];
         assert_eq!(info.seq, 4);
-        assert_eq!(info.channel, log.identity());
+        assert_eq!(info.channel, log.identity().unwrap());
         assert_eq!(
             info.release,
             Release {
@@ -177,7 +180,7 @@ mod tests {
         assert_eq!(info.reference.version.to_string(), "1.0.0");
         assert_eq!(
             info.reference.publisher.as_bytes(),
-            log.identity().as_bytes()
+            log.identity().unwrap().as_bytes()
         );
         assert_eq!(
             info.withdrawn,
@@ -233,7 +236,7 @@ mod index_tests {
         log.append(
             "list",
             &listing(
-                &log.identity().to_string(),
+                &log.identity().unwrap().to_string(),
                 "#reading-list",
                 "own.example.org",
             ),
@@ -241,7 +244,7 @@ mod index_tests {
         .unwrap(); // 2 own
         log.append(
             "include",
-            &listing(&log.identity().to_string(), "", "own.example.org"),
+            &listing(&log.identity().unwrap().to_string(), "", "own.example.org"),
         )
         .unwrap(); // 3 own
         let first = log.append("list", &m).unwrap(); // 4
@@ -266,8 +269,10 @@ mod index_tests {
         log.append("list", &[0x80]).unwrap(); // 13 bad body
         log.append("include", &[0x80]).unwrap(); // 14
         log.append("unlist", &[0x80]).unwrap(); // 15
-        let entries = log.entries(&log.identity(), 0, usize::MAX).unwrap();
-        let v = derive(log.identity(), &entries);
+        let entries = log
+            .entries(&log.identity().unwrap(), 0, usize::MAX)
+            .unwrap();
+        let v = derive(log.identity().unwrap(), &entries);
         assert!(!v.index);
         assert!(v.listed_by.is_empty());
         assert_eq!(

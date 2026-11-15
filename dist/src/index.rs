@@ -134,7 +134,7 @@ impl Dist {
             }
             false
         };
-        if key == self.identity() {
+        if Some(key) == self.identity() {
             return skip("own channel");
         }
         if records.get(&key).is_some_and(|r| r.followed || r.index) {
@@ -153,7 +153,7 @@ impl Dist {
         true
     }
     fn index_keys(&self) -> Vec<PublicKey> {
-        let mut keys = vec![self.identity()];
+        let mut keys: Vec<_> = self.identity().into_iter().collect();
         keys.extend(
             self.follows
                 .lock()
@@ -167,7 +167,7 @@ impl Dist {
     pub fn indexes(&self) -> Result<Vec<IndexView>, DistError> {
         self.read_sets()?
             .into_iter()
-            .filter(|s| s.index != self.identity())
+            .filter(|s| Some(s.index) != self.identity())
             .map(|s| {
                 let mut mods = BTreeSet::new();
                 for (key, _) in &s.whole {
@@ -216,7 +216,7 @@ impl Dist {
         let mut next = records.clone();
         let record = next
             .get_mut(channel)
-            .filter(|r| r.index && *channel != self.identity())
+            .filter(|r| r.index && Some(*channel) != self.identity())
             .ok_or(DistError::NotIndex { channel: *channel })?;
         record.index = false;
         self.save_follows(&next)?;
@@ -230,7 +230,7 @@ impl Dist {
                 cause: "index needs a channel link",
             });
         }
-        if link.channel() == self.identity() {
+        if Some(link.channel()) == self.identity() {
             return Err(DistError::OwnChannel);
         }
         let _guard = self
@@ -258,6 +258,7 @@ impl Dist {
             base: link.base().into(),
             followed: false,
             index: true,
+            kept: false,
             bases: Vec::new(),
             _followed_at: time,
             _last_attempt: time,
@@ -348,6 +349,7 @@ impl Dist {
             base: bases[0].clone(),
             followed: false,
             index: false,
+            kept: false,
             bases: Vec::new(),
             _followed_at: follow::now(),
             _last_attempt: 0,
@@ -379,6 +381,15 @@ impl Dist {
                 channel: key,
                 local_only: false,
             })?;
+        if record.kept && record.base.is_empty() && record.bases.is_empty() {
+            return Ok(RefreshReport {
+                channel: key,
+                outcome: Outcome::Current {
+                    head: self.log.head(&key)?.map_or(0, |h| h.seq),
+                },
+                changes: Vec::new(),
+            });
+        }
         let bases = if record.followed || record.index {
             vec![record.base]
         } else {
@@ -482,13 +493,22 @@ impl Dist {
         let mut next = records.clone();
         let removed = next
             .iter()
-            .find(|(k, r)| !r.followed && !r.index && !walk.bases.contains_key(k))
+            .find(|(k, r)| !r.followed && !r.index && !r.kept && !walk.bases.contains_key(k))
             .map(|(k, _)| *k);
         let channel = removed
             .or_else(|| walk.bases.keys().next().copied())
             .or_else(|| next.keys().next().copied())
-            .unwrap_or_else(|| self.identity());
-        next.retain(|k, r| r.followed || r.index || walk.bases.contains_key(k));
+            .or_else(|| self.identity());
+        let Some(channel) = channel else {
+            return Ok(());
+        };
+        next.retain(|k, r| r.followed || r.index || r.kept || walk.bases.contains_key(k));
+        for (key, record) in &mut next {
+            if record.kept && !record.followed && !record.index && !walk.bases.contains_key(key) {
+                record.base.clear();
+                record.bases.clear();
+            }
+        }
         self.save_follows(&next)
             .map_err(|cause| Box::new((channel, cause)))?;
         *records = next;
