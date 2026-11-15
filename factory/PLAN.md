@@ -811,6 +811,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- Step 9 (2026-11-15): the spec for collects (51e0dfb) is on main, and dev's scenario map is red
+  until step 9 builds `contract::ac_collect_fake_and_answer`. Start step 9 beside step 8? (a) Yes:
+  its files (host, pkg, dev, app stage H) are disjoint from net and node, so it costs step 8
+  nothing; undo is stopping the slice. (b) No, after J8: main stays red until then. Recommended: (a).
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53 needs a GitHub account and token for a throwaway org, so the journeys can run against a
   real repository instead of `fake-gh`. (b) S54 needs somewhere to serve a channel for real
