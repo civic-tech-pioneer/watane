@@ -200,10 +200,14 @@ fn ac1_s40_mods_lists_every_mod_in_order_with_literal_json() {
             {"kind":"subscribe","interface":"mods:shelf/events@0.1.0","provider":"shelf","provider-interface":"mods:shelf/events@0.1.0"},
         ])
     );
-    let grants = recs["grants"].as_array().unwrap();
-    assert!(grants.iter().all(|g| g["granted"] == true));
-    assert!(grants.contains(&json!({"grant":"storage","granted":true})));
-    assert!(grants.contains(&json!({"grant":{"call":{"interface":"mods:shelf/items@0.1.0","provider":"local/shelf"}},"granted":true})));
+    assert_eq!(
+        recs["grants"],
+        json!([
+            {"grant":"storage","granted":true},
+            {"grant":{"call":{"interface":"mods:shelf/items@0.1.0","provider":"local/shelf"}},"granted":true},
+            {"grant":{"subscribe":{"interface":"mods:shelf/events@0.1.0","provider":"local/shelf"}},"granted":true},
+        ])
+    );
     assert_eq!(mods[1]["name"], "Desk");
     assert!(
         mods[1]["grants"]
@@ -627,4 +631,54 @@ fn ac9_s5_3_a_component_that_imports_manage_without_the_world_is_refused() {
     let error = host.install_folders(&[manager], 0).unwrap_err();
     assert_eq!(error.code(), "invalid_mod");
     assert!(error.to_string().contains("watane:host/manage"), "{error}");
+}
+
+/// Withdraws the manager's `Manage` while the participant decides.
+struct Revoker(std::sync::OnceLock<Arc<Host>>);
+impl Confirm for Revoker {
+    fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
+        if let Requester::Mod(by) = &request.requester {
+            self.0.get().unwrap().revoke(by, &Grant::Manage).unwrap();
+        }
+        Box::pin(async { Answer::Approve { withhold: vec![] } })
+    }
+}
+
+#[test]
+fn ac4_s43_a_manager_install_is_checked_again_before_the_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = Arc::new(Revoker(std::sync::OnceLock::new()));
+    let host = Host::open(
+        dir.path(),
+        Mode::Home {
+            app: Some(app.clone()),
+        },
+        Limits::default(),
+    )
+    .unwrap();
+    app.0.set(host.clone()).ok().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let plan = host
+        .plan(vec![
+            Source::Folder(fixture("manager")),
+            Source::Folder(fixture("counter")),
+        ])
+        .unwrap();
+    runtime
+        .block_on(host.install(plan, Requester::App))
+        .unwrap();
+    let copy = counter_copy();
+    bump(copy.path(), "// S43 changed while asked\n");
+    let plan = host
+        .plan(vec![Source::Folder(copy.path().to_owned())])
+        .unwrap();
+    let error = runtime
+        .block_on(host.install(plan, Requester::Mod(local("manager"))))
+        .unwrap_err();
+    assert_eq!(error.code(), "refused");
+    let installed = fs::read(dir.path().join("mods/counter/ui/app.js")).unwrap();
+    assert_eq!(
+        installed,
+        fs::read(fixture("counter").join("ui/app.js")).unwrap()
+    );
 }

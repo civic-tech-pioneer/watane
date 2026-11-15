@@ -569,3 +569,52 @@ impl Host {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Limits, Mode};
+    use std::path::Path;
+
+    /// Q24's rule in 6.10: the grant is checked again before each effect,
+    /// so effects queued after the manager withdrew its own `Manage` drop.
+    #[test]
+    fn effects_recheck_manage_before_each() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let fixture = |name| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/mods")
+                .join(name)
+        };
+        host.install_folders(&[fixture("manager"), fixture("counter")], 0)
+            .unwrap();
+        let (manager, counter) = (
+            LocalName::parse("manager").unwrap(),
+            LocalName::parse("counter").unwrap(),
+        );
+        let effect = |action| Effect {
+            by: manager.clone(),
+            record: ManageRecord {
+                function: String::new(),
+                args: Value::Null,
+            },
+            action,
+        };
+        let id = RequestId::random().unwrap();
+        host.apply_manage(vec![
+            effect(Action::Reduce(Reduction::Withdraw {
+                local: manager.clone(),
+                grant: Grant::Manage,
+            })),
+            effect(Action::Reduce(Reduction::Disable(counter.clone()))),
+            effect(Action::Request(id.clone(), Ask::Enable(counter.clone()))),
+        ]);
+        assert!(!host.is_manager(&manager));
+        assert!(host.get(&counter).unwrap().enabled);
+        assert_eq!(
+            host.requests.lock().unwrap().state(&manager, id.as_str()),
+            json!("denied")
+        );
+    }
+}
