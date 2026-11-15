@@ -202,3 +202,20 @@ fn ac5_clicked_stays_an_event() {
     assert!(has_key(home.path(), "item-a", "clicked"));
     assert!(!has_key(home.path(), "item-a", "asked"));
 }
+
+#[test]
+fn ac2_s37_failed_answer_keeps_its_fuel_spent() {
+    // item-bad burns about 19.5M fuel and then traps. At this limit it just
+    // fails, and the 3k fuel left is too little for item-c's answer. If the
+    // failed answer gave its fuel back, the list `["c"]` would return.
+    let home = tempfile::tempdir().unwrap();
+    let limits = Limits {
+        fuel: 19_508_000,
+        ..Limits::default()
+    };
+    let host = install(home.path(), limits, &["menu", "item-bad", "item-c"]);
+    let error = host
+        .call(&Caller::Page, &local("menu"), "api.items", json!(null))
+        .unwrap_err();
+    assert_eq!(error.code, CallCode::Limit(Limit::Fuel), "{error:?}");
+}

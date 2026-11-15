@@ -1117,6 +1117,7 @@ C's invoke, from the `func_new` of the outlet:
    - On a `limit`/`time` or `limit`/`fuel` error: the budget of the whole
      chain is spent (6.2), so return the error, and C traps with it.
    - On any other error: S's writes and events are dropped (6.6 step 5).
+     A failed answer's fuel stays spent.
      Log `watane: collect <interface>.<function> of <C> from <S> failed:
      <code>: <message>`, and go on. No retry.
 3. Return the joined list to C. Lowering it into C counts against C's
@@ -1313,7 +1314,7 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `empty` | `mod.toml` and an empty world; no part |
 | `menu` (step 9) | outlet `menu { ask: func() -> list<string>; clicked: func(id: string); }`; export `api { items: func() -> list<string>; ping: func() -> string; click: func(id: string); }`, where `items` returns `ask()` and `click` calls `clicked`; its world is named `shell`, because the outlet already has the name `menu` |
 | `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]` and puts the state key `asked`; `clicked` puts the state key `clicked` |
-| `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key and then traps; `ask` of `item-spin` spins |
+| `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key, burns a fixed loop of about 19.5M fuel and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 
 The mutual fixtures copy only provider interfaces and outlets into

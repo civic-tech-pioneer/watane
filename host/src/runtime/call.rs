@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{
         Arc, Condvar, Mutex, MutexGuard,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::Instant,
 };
@@ -24,6 +24,8 @@ struct Chain {
     publish: bool,
     ready: AtomicBool,
     job: Arc<Job>,
+    // Fuel left by the last invoke that failed after it started (9.4).
+    failed_fuel: AtomicU64,
 }
 #[derive(Clone)]
 pub(super) struct Invocation {
@@ -92,6 +94,7 @@ pub(crate) fn run(
         publish,
         ready: AtomicBool::new(false),
         job: Arc::new(Job::new()),
+        failed_fuel: AtomicU64::new(0),
     });
     let invocation = Invocation {
         chain: chain.clone(),
@@ -252,6 +255,7 @@ impl Invocation {
                     depth: self.depth.saturating_add(1),
                     hop: self.hop,
                 };
+                self.chain.failed_fuel.store(fuel, Ordering::Release);
                 match nested.invoke(
                     &Caller::Mod(self.local.clone()),
                     &format!("{}.{function}", link.interface),
@@ -272,10 +276,14 @@ impl Invocation {
                     {
                         return Err(error);
                     }
-                    Err(error) => eprintln!(
-                        "watane: collect {interface}.{function} of {} from {} failed: {:?}: {}",
-                        self.local, m.local, error.code, error.message
-                    ),
+                    Err(error) => {
+                        // What the failed answer burned stays spent.
+                        fuel = self.chain.failed_fuel.load(Ordering::Acquire).min(fuel);
+                        eprintln!(
+                            "watane: collect {interface}.{function} of {} from {} failed: {:?}: {}",
+                            self.local, m.local, error.code, error.message
+                        );
+                    }
                 }
             }
         }
@@ -404,6 +412,11 @@ impl Invocation {
                 None => Value::Null,
             })
         })();
+        if result.is_err() {
+            chain
+                .failed_fuel
+                .store(store.get_fuel().unwrap_or(0), Ordering::Release);
+        }
         let value = result.map_err(|e| limits::classify(e, &stderr))?;
         let fuel = store.get_fuel().map_err(CallError::internal)?;
         let ctx = store.into_data();
@@ -644,6 +657,7 @@ fn process(delivery: &Delivery) {
                 publish: true,
                 ready: AtomicBool::new(false),
                 job: job.clone(),
+                failed_fuel: AtomicU64::new(0),
             });
             let invocation = Invocation {
                 chain: subscriber.clone(),
