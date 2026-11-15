@@ -635,8 +635,14 @@ is a step-7-style check, after S55.
   `watane-node` binary between homes on 127.0.0.1; the three-machine hint test passes 20 of 20 runs
   without the workaround. Touches: node (the bin, tests, docs), net (5.7 and its test). Cloud.
   Delivered (merged rebased as 69954c2): Alice runs her server as `watane-node` (`join`, `run`, `status`, `relay`, `dht`, optional `--bind`); a hint whose machine lacks the seq retries every 250 ms on the next trusted machine, up to 20 times, and the light.rs workaround is gone. Decisions: tokio's signal feature, not signal-hook; `url` a direct node dependency (Cargo.lock: tokio and url in node's list, no new crate); a join stores the anchor's answering address; `Net::options()`; a signal during join exits 1 `interrupted`; a removed machine's `run` points to `join --replace`; S13 uses another author's entries. Verified on the Mac: hakari clean, net and node green with ignored, node's light test 5 of 5, app builds. For a later slice (user-sim wording, about ten items in the S72 report): the key printed twice in causes; `--help` says unknown flag; the y/N prompt and its answer share a line; no confirmation after dht and relay changes; a second run reports the dist lock instead of another watane-node.
-- Then app G after S72; J8 closes the
-  step.
+- [ ] **S75 Alice pairs her laptop and her server from the app, and J8 passes (app stage G).** Branch
+  `slice/s75`. Builds app stage G (app/TECHNICAL.md 9.8 and 12, row G) on node stages 1 to 3: turn own
+  machines on, the pairing code and the join question with the short key, devices and roles, expiry,
+  relays, the DHT switch with its consent text, restore hints; in the app's settings, where S74 puts
+  own machines. Folds in S61's stage G leftovers (`Core::indexes` fails keyless; `choose_index`
+  reports `NoIdentity` after it worked; the `IdentityInUse` text). Outcome: J8 (`app/tests/j8.rs`)
+  passes on loopback homes on one Mac, and J2 to J5, J9 still pass. Touches: app (src, ui, tests/j8.rs,
+  TECHNICAL 9.8). Local (the app). After S74, which changes the same app/src and app/ui.
 
 ### Step 9: Extension points (J9)
 
