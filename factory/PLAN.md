@@ -654,7 +654,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   the grant words and J9 are S66. Cloud. The human has uncommitted edits in pkg/FUNCTIONAL.md and
   pkg/TECHNICAL.md: change those two only where the slice must, and say so in the report.
   Delivered (1462015, merged as 7d58990): a shell mod calls a collect on its own outlet and gets the joined answers of the mods granted to subscribe, in local-name order, without learning who answered; a maker's agent fakes a collect in `watane-dev test` and checks an answer with `deliver`. Dev's scenario map is green again. Decisions: a failed answer's fuel stays spent (else N failing subscribers spend N budgets; host 9.4); the fixture world is `shell` (wit refuses a world named like its outlet); dev needed no src change. Verified on the Mac: pkg, host (with the ~90 server tests the cloud cannot run), dev, app and J2 to J5 green; dev's `ac10_endless_test_stops_with_exact_message_within_deadline` failed once under load (7.0 s) and passed on rerun. For S66 from user-sim: the template should say to rename the world when an outlet is named like the slug (the guide is at its 150-line cap); a misspelled fake function is silently ignored; `check --json` lists a collect outlet under `events`; `add`'s next hint does not say that exporting the outlet answers a collect.
-- [~] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
+- [x] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
   Builds app stage H (app/TECHNICAL.md 12, row H): the step 9 text of the subscription row in
   `app/src/words.rs` ("Receive the {interface} events of {provider} and answer its requests"), and
   `app/tests/j9.rs` with host's fixtures `menu` and `item-*`. Outcome: J9 passes as spec/FUNCTIONAL
@@ -663,6 +663,9 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   collect; a command mod that also calls the shell is refused at the plan, naming the cycle); J2 to
   J5 still pass. Touches: app/src/words.rs, app/tests/j9.rs, app/TECHNICAL.md. Local (the app).
   S71 (local) owns dev/ and app/tests/j5.rs.
+  Delivered (1259216): J9 passes. Alice installs a shell and command mods; the plan reads "Receive the {interface} events of {provider} and answer its requests"; the shell shows the commands without learning who gave which; a failing mod is left out; a withdrawn grant removes its command at the next collect; a cycle is refused at the plan. Decisions: the shell page is an app test fixture (`app/tests/fixtures/menu-ui`) over host's `menu`; `clicked` is an event every granted command mod receives; app gains redb 4.5 as a dev-dependency only, to read a mod's state after quitting; `factory/impl.sh` adds `CARGO_TARGET_DIR` to Sol's writable roots, so Sol can build into main's shared `target/`. Verified natively on the Mac by the foreman after its rebase on main: app suite, J2 to J5, J9 green; hakari clean. Later (user-sim): the cycle error reads like an internal message and does not say what to do; the mod list does not show which mods add commands to which, or that one answered nothing.
+
+  **Step 9 is done:** J9 passes and pkg 9, host 10, dev 12 and app H are done.
 - [x] **S69 A maker's agent is told how collects work (dev, S65's leftovers).** Branch `slice/s69`.
   From S65's user-sim: (1) the template `AGENTS.md` says to keep `world <slug>`; an outlet named like
   the slug then fails with "duplicate item named <slug>" and the fix text does not help: say to
@@ -703,7 +706,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
 | host | 10 collect | 9 | done (S65) |
 | dev | 12 collect fakes and answers | 9 | done (S65) |
-| app | H extension points (J9) | 9 | open |
+| app | H extension points (J9) | 9 | done (S66) |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
@@ -922,7 +925,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S68: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S70: delivered 2026-11-15 and merged; routine finished, branches removed.
 - S72: cloud routine `trig_012y9RCK9KGTAZoXU9FitRky` (handed out 2026-11-15), branch `slice/s72`.
-- S66: `be806ab3` (sessionId `be806ab3-f745-499f-86a1-8e6e27dbc3a8`), worktree `.claude/worktrees/s66` (local: the app; builds in main's `target/`).
+- S66: delivered 2026-11-15 and merged; foreman stopped, worktree and branch removed.
 - S71: `0173237e` (sessionId `0173237e-96d8-45eb-a71f-6366484ebb0b`), worktree `.claude/worktrees/s71` (local: the token; builds in main's `target/`).
 - S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
