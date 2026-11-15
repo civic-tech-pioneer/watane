@@ -479,12 +479,9 @@ impl Core {
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
         let followed = self.dist.followed()?;
         self.parties.remember(&party_views(&self.dist)?);
-        self.parties.set_own(
-            self.dist
-                .identity()
-                .ok_or(watane_dist::DistError::NoIdentity)?
-                .to_string(),
-        );
+        if let Some(key) = self.dist.identity() {
+            self.parties.set_own(key.to_string());
+        }
         let failures = self.failures.lock().unwrap();
         Ok(followed
             .iter()
@@ -1562,11 +1559,9 @@ pub(crate) fn cache_channels(
     parties: &Parties,
     keys: impl IntoIterator<Item = watane_dist::PublicKey>,
 ) -> Result<(), watane_dist::DistError> {
-    parties.set_own(
-        dist.identity()
-            .ok_or(watane_dist::DistError::NoIdentity)?
-            .to_string(),
-    );
+    if let Some(key) = dist.identity() {
+        parties.set_own(key.to_string());
+    }
     let mut pending: Vec<_> = keys.into_iter().collect();
     let mut seen = std::collections::BTreeSet::new();
     while let Some(key) = pending.pop() {
@@ -1713,12 +1708,9 @@ impl Core {
     }
     pub fn search(&self, query: &watane_dist::Query) -> Result<Vec<serde_json::Value>, CmdError> {
         self.parties.remember(&party_views(&self.dist)?);
-        self.parties.set_own(
-            self.dist
-                .identity()
-                .ok_or(watane_dist::DistError::NoIdentity)?
-                .to_string(),
-        );
+        if let Some(key) = self.dist.identity() {
+            self.parties.set_own(key.to_string());
+        }
         let installed = self.host.mods();
         let hits = self.dist.search(query)?;
         cache_channels(
@@ -1896,6 +1888,27 @@ mod find_integration_tests {
                 .as_deref(),
             Some("Alice")
         );
+    }
+    #[test]
+    fn keyless_reader_caches_channel_names_without_an_own_key() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        alice.set_name("Alice").unwrap();
+        let site = Site::serve(alice.site_dir());
+        alice.set_site_url(&site.base).unwrap();
+        let published = alice.publish(package()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let options = Options {
+            listed_local: true,
+            ..Default::default()
+        };
+        let reader = Dist::open_keyless(home.path(), options).unwrap();
+        reader.read_link(published.link.as_ref().unwrap()).unwrap();
+        let parties = Parties::new();
+        cache_channels(&reader, &parties, [alice.identity().unwrap()]).unwrap();
+        let party = words::party(&alice.identity().unwrap().to_string(), &parties);
+        assert_eq!(party.name.as_deref(), Some("Alice"));
+        assert!(!party.you);
     }
     #[test]
     fn ac5_install_hit_follows_before_fetch_and_keeps_dist_cause() {
