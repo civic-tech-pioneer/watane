@@ -123,6 +123,9 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
    "Timing tests"). If the merge fails, send the foreman "rebase on main
    and run the tests again". A cloud slice: `git fetch origin`, merge the branch
    `watch-cloud.sh` printed, and run the tests its report lists as `not run (cloud)`.
+   If the slice changed a `Cargo.toml`: `cargo hakari generate && cargo hakari manage-deps`
+   (the `workspace-hack` crate gives every package one feature set, so a `cargo test` in one
+   subsystem reuses the workspace's build instead of adding a copy of ~9 GB to `target/`).
 3. `claude stop <id>` (local), then remove its worktree and branch, and the branch on `origin` if the foreman pushed it
    (`git push origin --delete slice/<id>`; the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a

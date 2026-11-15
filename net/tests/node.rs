@@ -7,13 +7,38 @@ use watane_net::{Net, Options};
 
 // `/dev/fd` exists on Linux and macOS; `/proc/self/fd` only on Linux. A stat of
 // `/dev/fd/<n>` reports the open file itself, so the type says whether it is a socket.
+// Unix-domain sockets are not net's: tokio's signal driver (on in the workspace build)
+// keeps a socket pair per process and a copy per runtime.
 fn sockets() -> usize {
     use std::os::unix::fs::FileTypeExt;
-    fs::read_dir("/dev/fd")
+    // Listed first: `unix` opens a copy, which must not join the listing.
+    let paths: Vec<_> = fs::read_dir("/dev/fd")
         .unwrap()
-        .filter_map(|e| fs::metadata(e.ok()?.path()).ok())
-        .filter(|m| m.file_type().is_socket())
+        .filter_map(|e| Some(e.ok()?.path()))
+        .collect();
+    paths
+        .iter()
+        .filter(|p| fs::metadata(p).is_ok_and(|m| m.file_type().is_socket()))
+        .filter(|p| !unix(p))
         .count()
+}
+
+fn unix(path: &std::path::Path) -> bool {
+    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+    // macOS: opening `/dev/fd/<n>` copies the descriptor, and a Unix socket has a Unix address.
+    if let Ok(file) = fs::File::open(path) {
+        return UnixStream::from(OwnedFd::from(file)).local_addr().is_ok();
+    }
+    // Linux: the link reads `socket:[<inode>]`, and /proc/net/unix lists the Unix ones.
+    let Ok(link) = fs::read_link(path) else {
+        return false;
+    };
+    let link = link.to_string_lossy();
+    let inode = link.trim_start_matches("socket:[").trim_end_matches(']');
+    fs::read_to_string("/proc/net/unix").is_ok_and(|t| {
+        t.lines()
+            .any(|l| l.split_whitespace().nth(6) == Some(inode))
+    })
 }
 
 #[test]

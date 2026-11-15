@@ -1,7 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["pkg", "host", "dev", "app", "log", "dist", "net"]
+members = ["pkg", "host", "dev", "app", "log", "dist", "net", "workspace-hack"]
 
 # Line tables keep file:line in backtraces; full debug info made every worktree's target/ ~20% larger.
 [profile.dev]
+debug = "line-tables-only"
+
+# Same as dev, so a crate used both at build time and at run time builds once in every
+# `cargo test -p` (with Cargo's default here, `-p` and `--workspace` built it twice).
+[profile.dev.build-override]
 debug = "line-tables-only"
