@@ -37,16 +37,30 @@ fn loaded(window: tauri::WebviewWindow, event: tauri::webview::PageLoadPayload<'
     let _ = (window, event);
 }
 pub(crate) fn main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("watane")
-        .inner_size(1000., 700.)
-        .on_page_load(loaded);
+    main_window_at(app, "#mods")
+}
+fn main_window_at(app: &tauri::AppHandle, hash: &str) -> tauri::Result<()> {
+    let builder = WebviewWindowBuilder::new(
+        app,
+        "main",
+        WebviewUrl::App(format!("index.html{hash}").into()),
+    )
+    .title("watane")
+    .inner_size(1000., 700.)
+    .on_page_load(loaded);
     let w = screen_builder(app, builder).build()?;
+    let drop_window = w.clone();
     let handle = app.clone();
     w.on_window_event(move |event| {
-        if matches!(event, WindowEvent::CloseRequested { .. }) {
-            handle.state::<AppState>().broker.deny_all();
-            handle.exit(0);
+        if let WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+            let _ = drop_window.eval(format!(
+                "window.wataneDropped({})",
+                serde_json::json!(paths)
+            ));
+        }
+        if matches!(event, WindowEvent::Destroyed) {
+            unloaded(&handle, "main");
+            quit_if_last(&handle, "main");
         }
     });
     Ok(())
@@ -113,6 +127,7 @@ pub(crate) fn open_mod(
     w.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
             unloaded(&h, &label);
+            quit_if_last(&h, &label);
         }
     });
     Ok(())
@@ -191,4 +206,58 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
             state.broker.deny_all();
         }
     }
+}
+
+fn quit_if_last(app: &tauri::AppHandle, closed: &str) {
+    if !app
+        .webview_windows()
+        .keys()
+        .any(|label| label != "consent" && label != closed)
+    {
+        app.state::<AppState>().broker.deny_all();
+        app.exit(0);
+    }
+}
+pub(crate) fn menu(app: &tauri::AppHandle, id: &str) -> tauri::Result<()> {
+    let hash = match id {
+        "mods" => "#mods",
+        "settings" => "#settings",
+        _ => return Ok(()),
+    };
+    if app.get_webview_window("main").is_none() {
+        return main_window_at(app, hash);
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        window.eval(format!("location.hash = {}", serde_json::json!(hash)))?;
+        #[cfg(feature = "driver")]
+        if app.state::<AppState>().screen == crate::driver::Screen::Front {
+            window.show()?;
+        }
+        #[cfg(not(feature = "driver"))]
+        window.show()?;
+        focus(&window, false)?;
+    }
+    Ok(())
+}
+pub(crate) fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, SubmenuBuilder};
+    let submenu = SubmenuBuilder::new(app, "watane")
+        .about(None)
+        .text("mods", "Mods…")
+        .text("settings", "Settings…")
+        .separator()
+        .quit()
+        .build()?;
+    for (id, accelerator) in [("mods", "CmdOrCtrl+Shift+M"), ("settings", "CmdOrCtrl+,")] {
+        if let Some(item) = submenu.get(id).and_then(|i| i.as_menuitem().cloned()) {
+            item.set_accelerator(Some(accelerator))?;
+        }
+    }
+    app.set_menu(Menu::with_items(app, &[&submenu])?)?;
+    app.on_menu_event(|app, event| {
+        if let Err(error) = menu(app, event.id().as_ref()) {
+            eprintln!("{error}");
+        }
+    });
+    Ok(())
 }

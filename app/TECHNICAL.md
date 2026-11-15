@@ -254,10 +254,23 @@ or `#settings`:
 - **Settings**: identity, site, backup and restore, agents (toolsets and
   tokens) and own machines, as before.
 
+Settings groups controls into `identity`, `site`, `backup` and `agents`,
+retaining the established input and button ids. Until stage G is built,
+its `machines` section explicitly reads
+unavailable; stage I adds no machine command.
+The manager tabs use `#mods` (Library), `#find`, and `#updates`;
+`#settings` selects Settings. The library filter matches every entered word
+against the name and publisher and can select published or local mods.
+A dependency warning is a dialog in the main page, before disabling or
+before the existing removal/data dialog; Cancel is focused and Escape cancels.
+
 Connections come from `ModView.links` (section 7): `Uses` is the
 providers of the mod's `call` links, `Adds to` of its `subscribe` links,
 `Used by` and `Extended by` the inverse over all installed mods; only links
-whose grant is granted count. The page derives them; no command is added.
+whose grant is granted count. Host's `LinkView` has no grant flag: Core
+matches its kind and interface against `InstalledMod.grants`, and omits
+unbound links. The page derives connections and links to the other mod's
+details; no command is added.
 
 ### 5.4 Menu and the main mod (stage I)
 
@@ -551,7 +564,7 @@ Status     {home, port, mark, error: null | string,   // identity is null on a r
             identity: null | {name: null | string, fingerprint, ownConfirmed: bool,
                               releases: [{release, version, slug, withdrawn: null | reason}]},
             site: null | {dir, url: null | string, link: null | string}}
-ModView    {local, name, slug, version, release: null | string (ReleaseRef),
+ModView    {local, name, summary, slug, version, release: null | string (ReleaseRef),
             publisher: null | Party, enabled, page: null | string (page URL),
             package (package id), derivedFrom: null | string (ReleaseRef),
             derivedFromLabel: null | string (display text with publisher claim),
@@ -1184,7 +1197,8 @@ Transport: one JSON object per line; requests on stdin; responses and
 events on stdout. All logging goes to stderr. Request
 `{"id": <u64>, "op": "<op>", ...}`; response `{"id": n, "ok": <value>}` or
 `{"id": n, "err": "<text>"}`. Responses can arrive out of order. After
-setup and the first page load of `main`, the app prints
+setup and the first page load of the startup window (`main` or
+`mod-<local>`), the app prints
 `{"event": "ready", "port": <u16>}`, or `{"event": "failed", "cause": "..."}`.
 
 | op | Fields | ok value |
@@ -1192,6 +1206,7 @@ setup and the first page load of `main`, the app prints
 | `eval` | `label`, `js` | the string that `eval_with_callback` returns (JSON text) |
 | `wait` | `label`, `timeoutMs` | `true` when the window exists and its last page load finished |
 | `screen` | — | `{mode: "hidden" \| "background" \| "front", accessory: bool}`; on macOS reads AppKit’s actual activation policy on the main thread (false on other platforms) |
+| `menu` | `id: "mods" \| "settings"` | `true`; invokes the same Rust handler as the native menu on the event loop; other ids are errors |
 | `windows` | — | `[{label, url, title, alwaysOnTop, focused, visible}]` |
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |

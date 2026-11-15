@@ -10,6 +10,10 @@ use watane_host::{GrantState, Host, LocalName, Served, watane_pkg::Grant};
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModView {
+    pub main: bool,
+    pub proposes_main: bool,
+    pub links: Vec<ModLink>,
+    pub summary: String,
     pub local: String,
     pub name: String,
     pub slug: String,
@@ -26,6 +30,41 @@ pub(crate) struct ModView {
     pub notice: Option<String>,
     pub offer: Option<String>,
     pub offer_grants: Vec<GrantLine>,
+}
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ModLink {
+    kind: String,
+    provider: String,
+    granted: bool,
+}
+fn mod_links(m: &watane_host::InstalledMod) -> Vec<ModLink> {
+    m.links
+        .iter()
+        .filter_map(|link| {
+            let provider = link.provider.as_ref()?.to_string();
+            let kind = match link.kind {
+                watane_host::LinkKind::Call => "call",
+                watane_host::LinkKind::Subscribe => "subscribe",
+            };
+            let granted =
+                m.grants.iter().any(|g| {
+                    g.granted
+                        && match (&g.grant, &link.kind) {
+                            (Grant::Call { interface, .. }, watane_host::LinkKind::Call)
+                            | (
+                                Grant::Subscribe { interface, .. },
+                                watane_host::LinkKind::Subscribe,
+                            ) => interface == &link.interface,
+                            _ => false,
+                        }
+                });
+            Some(ModLink {
+                kind: kind.into(),
+                provider,
+                granted,
+            })
+        })
+        .collect()
 }
 #[derive(serde::Serialize)]
 pub(crate) struct ToolRow {
@@ -68,13 +107,23 @@ fn follow_channel(
     })
 }
 pub(crate) struct Core {
+    pub main: crate::main_mod::MainMod,
     pub host: Arc<Host>,
     pub dist: Arc<watane_dist::Dist>,
     failures: Mutex<std::collections::BTreeMap<String, String>>,
+    updates: Mutex<Vec<UpdateDone>>,
     update_failures: Mutex<std::collections::BTreeMap<String, String>>,
     pub served: Mutex<Option<Served>>,
     app: tauri::AppHandle,
     parties: Arc<Parties>,
+}
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct UpdateDone {
+    local: String,
+    name: String,
+    from: String,
+    to: String,
+    at: u64,
 }
 fn release_offer(
     installed: Option<&watane_dist::ReleaseRef>,
@@ -182,16 +231,18 @@ impl Core {
         host: Arc<Host>,
         dist: Arc<watane_dist::Dist>,
         parties: Arc<Parties>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, CmdError> {
+        Ok(Self {
+            main: crate::main_mod::MainMod::open(&host)?,
             app,
             host,
             served: Mutex::new(None),
             dist,
             failures: Mutex::new(Default::default()),
             parties,
+            updates: Mutex::new(Vec::new()),
             update_failures: Mutex::new(Default::default()),
-        }
+        })
     }
     fn cache_installed_parties(&self) -> Result<(), CmdError> {
         let mods = self.host.mods();
@@ -279,7 +330,18 @@ impl Core {
             .and_then(|key| self.dist.channel(&key).ok());
         let derived_from_label =
             origin_label(m.origin.as_ref(), origin_channel.as_ref(), &self.parties);
+        let metadata = watane_host::watane_pkg::Mod::read(
+            &self.host.home().join("mods").join(m.local.as_ref()),
+        )
+        .ok();
         ModView {
+            main: self.main.get().as_deref() == Some(m.local.as_ref()),
+            proposes_main: metadata.as_ref().is_some_and(|m| m.main()),
+            summary: metadata
+                .as_ref()
+                .map(|m| m.summary().to_owned())
+                .unwrap_or_default(),
+            links: mod_links(&m),
             derived_from_label,
             notice,
             offer,
@@ -330,7 +392,9 @@ impl Core {
     pub fn remove(&self, local: &str, delete_data: bool) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
         views::close_mod(&self.app, local)?;
-        Ok(self.host.remove(&name, delete_data)?)
+        self.host.remove(&name, delete_data)?;
+        self.main.removed(local)?;
+        Ok(())
     }
     pub fn grant(&self, local: &str, key: &str, give: bool) -> Result<(), CmdError> {
         let local = LocalName::parse(local)?;
@@ -513,6 +577,9 @@ impl Core {
         }
         Ok((self.channels()?, updates))
     }
+    pub fn updates_done(&self) -> Vec<UpdateDone> {
+        self.updates.lock().unwrap().clone()
+    }
     pub fn spawn_updates(self: &Arc<Self>, updates: Vec<watane_dist::ReleaseRef>) {
         for release in updates {
             let core = self.clone();
@@ -521,11 +588,13 @@ impl Core {
             });
         }
     }
-    pub fn installed(&self, installed: &[watane_host::InstalledMod]) {
+    pub fn installed(&self, installed: &[watane_host::InstalledMod]) -> Result<(), CmdError> {
+        self.main.installed(&self.host, installed)?;
         let mut failures = self.update_failures.lock().unwrap();
         for m in installed {
             failures.remove(m.local.as_ref());
         }
+        Ok(())
     }
     pub async fn install_release(
         self: &Arc<Self>,
@@ -547,6 +616,7 @@ impl Core {
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
         let planner = self.clone();
         let target = release.clone();
+        let background = pick.is_none();
         let result = async {
             let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
                 let fetched = fetch_release(&planner.dist, &target, link.as_ref())?;
@@ -554,7 +624,35 @@ impl Core {
             })
             .await
             .map_err(|e| CmdError::new("io", e.to_string()))??;
+            let automatic = background && !plan.needs_confirmation();
+            let before = self.host.mods();
             let installed = self.host.install(plan, watane_host::Requester::App).await?;
+            self.installed(&installed)?;
+            if automatic {
+                let at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let mut updates = self.updates.lock().unwrap();
+                for m in &installed {
+                    if let Some(old) = before
+                        .iter()
+                        .find(|old| old.local == m.local && old.version != m.version)
+                    {
+                        updates.insert(
+                            0,
+                            UpdateDone {
+                                local: m.local.to_string(),
+                                name: m.name.clone(),
+                                from: old.version.to_string(),
+                                to: m.version.to_string(),
+                                at,
+                            },
+                        );
+                    }
+                }
+                updates.truncate(50);
+            }
             let follower = self.clone();
             tauri::async_runtime::spawn_blocking(move || follower.follow_fetched(&fetched))
                 .await
@@ -563,7 +661,7 @@ impl Core {
         }
         .await;
         match &result {
-            Ok(installed) => self.installed(installed),
+            Ok(_) => {}
             Err(error) => {
                 for m in self.host.mods().iter().filter(|m| {
                     m.release
@@ -1150,6 +1248,10 @@ mod stage_d_more_tests {
             ),
         ] {
             let row = ModView {
+                main: false,
+                proposes_main: false,
+                summary: String::new(),
+                links: vec![],
                 local: "reading-list".into(),
                 name: "Reading list".into(),
                 slug: "reading-list".into(),
@@ -1171,6 +1273,9 @@ mod stage_d_more_tests {
             assert_eq!(value["notice"], serde_json::json!(notice));
             assert_eq!(value["offer"], serde_json::json!(offer));
             assert_eq!(value["offerGrants"], serde_json::json!([]));
+            assert_eq!(value["main"], false);
+            assert_eq!(value["proposesMain"], false);
+            assert_eq!(value["links"], serde_json::json!([]));
         }
     }
     #[test]
@@ -2048,5 +2153,51 @@ mod find_integration_tests {
         assert_eq!(rows[0]["you"], true);
         assert_eq!(rows[0]["listings"].as_array().unwrap().len(), 1);
         assert_eq!(rows[0]["mods"], 1, "{}", rows[0]);
+    }
+}
+
+#[cfg(test)]
+mod manager_tests {
+    use super::*;
+    #[tokio::test]
+    async fn ac7_links_follow_host_bindings_and_withdrawn_grants() {
+        let home = tempfile::tempdir().unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let plan = host
+            .plan(
+                ["reading-list", "recommendations"]
+                    .into_iter()
+                    .map(|n| watane_host::Source::Folder(fixtures.join(n)))
+                    .collect(),
+            )
+            .unwrap();
+        host.install(plan, watane_host::Requester::App)
+            .await
+            .unwrap();
+        let local = LocalName::parse("recommendations").unwrap();
+        let m = host.get(&local).unwrap();
+        let links = mod_links(&m);
+        assert_eq!(links.len(), 2);
+        assert!(
+            links
+                .iter()
+                .all(|l| l.provider == "reading-list" && l.granted)
+        );
+        let call = m
+            .grants
+            .iter()
+            .find(|g| matches!(g.grant, Grant::Call { .. }))
+            .unwrap();
+        host.revoke(&local, &call.grant).unwrap();
+        let links = mod_links(&host.get(&local).unwrap());
+        assert!(!links.iter().find(|l| l.kind == "call").unwrap().granted);
+        assert!(
+            links
+                .iter()
+                .find(|l| l.kind == "subscribe")
+                .unwrap()
+                .granted
+        );
     }
 }

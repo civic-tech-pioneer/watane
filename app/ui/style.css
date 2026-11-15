@@ -4,3 +4,10 @@ section { padding: 1rem 0; border-bottom: 1px solid #d5d8d4; } button { font: in
 label { display: block; margin: .75rem 0; } #error { color: #a02323; } footer { margin-top: 1.5rem; }
 #find input { width: min(36rem, 85%); } .index-row, #results article { border-left: 3px solid #c6ccc8; padding: .5rem 1rem; margin: 1rem 0; }
 .checked, .skipped { color: #535d61; } #indexes [data-own] h3 { font-weight: 500; }
+
+[hidden] { display: none !important; }
+nav { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
+#launcher { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+#launcher > section { border: 1px solid #d5d8d4; padding: 1rem; border-radius: .5rem; }
+#launcher h2 { margin: 0; } .select-mod { margin: 0; padding: 0; border: 0; background: transparent; font-weight: bold; cursor: pointer; }
+.connections a { color: #235d51; } dialog { max-width: 36rem; } button:focus-visible, a:focus-visible { outline: 2px solid #235d51; }

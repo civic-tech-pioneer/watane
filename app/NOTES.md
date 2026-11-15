@@ -452,3 +452,59 @@
 
 - S52: Front tests now pass early on a locked screen with one explicit stderr skip line; unknown ioreg session state still panics, and focus assertions remain unchanged. All four real front tests passed locked with one skip line each; build/default tests (112), clippy and fmt pass. In the Codex sandbox the full driver suite fails before API consent-window readiness with the macOS hiservices XPC error; natively it passes (validator). No dependencies added.
 - S52 front run (app, foreman, 2026-11-15 20:14-20:20, macOS 27, unlocked, terminal in front): all four front tests pass for real (gui_isolation ac1 in 310 s, most of it waiting for 30 s of idle time; gui_shell ac3_consent_takes_focus, ac3_reopening_an_open_mod_focuses_it, ac4_approve_delay_and_deny_focus in 32 s). First run of these four. On a locked screen each skips with one visible stderr line.
+
+
+## S74-2 — main mod and manager (stage I)
+
+- Startup reads `app/main`, removes an unknown installed name, and opens an
+  enabled main page alone; otherwise it opens Library. Selection, unset and
+  removal persist through that file. Every app install entry point shares the
+  proposal adoption hook, with the first proposal in install order winning.
+  Installed folders are only read through pkg's `Mod::read`; a read failure
+  makes `proposesMain` false. No dependency was added.
+- Native Mods… and Settings… menu items route the main window; its close no
+  longer unconditionally quits. Closing the last non-consent window does.
+  The driver waits for whichever startup page opens and has a `menu` op using
+  the same event-loop handler. Tests use hidden windows, with no front tests.
+- Library, Find and Updates are separate from Settings. Connection links use
+  host's resolved local providers and the corresponding grant state. Disable
+  and remove first warn about enabled dependents with Cancel focused; removal
+  then keeps the established data question. Automatic update history uses
+  host's `Plan::needs_confirmation`, holds at most 50 successes, and is not
+  persisted. Existing selector-based journeys navigate via the support driver.
+- Stage G is absent in this checkout (the app has no node dependency or machine
+  commands). Settings explicitly labels its machines section unavailable;
+  implementing machines remains outside this task.
+- Red/green checks: the new command capability expectations failed before the
+  permissions were added; connection/warning/filter modules failed on missing
+  exports; the removal and startup policy unit tests failed on missing methods.
+  The new quiet-window tests cannot reach their assertions in this sandbox:
+  macOS reports `com.apple.hiservices-xpcservice` Connection Invalid and the
+  existing startup readiness timeout fires. This is the earlier documented
+  sandbox failure, not a reason to relax any window assertion. Docker is not
+  available (`~/.docker/run/docker.sock` is absent).
+- Preserved conflict: `tests/j2.rs::ac7_idle_polling_disabled_entry_and_consent_focus`
+  clicks Disable on reading-list with enabled recommendations installed, then
+  expects immediate disable. APP-F-67/AC5 now requires a warning before that
+  action. The existing test is left unchanged as requested; it would need an
+  explicit Continue step to exercise the new behavior without losing its
+  existing assertions.
+- Validation: `cargo build -p watane-app` and all 118 default tests pass;
+  strict all-targets/driver clippy and formatting pass. The main selection,
+  persistence/removal, install-order and link/grant unit tests pass, as do all
+  three manager JavaScript behavior tests. Release plus driver fails at the
+  intended debug-only compile error.
+- `--skip front:` does not filter ignore reasons in libtest. The full driver
+  run therefore also explicitly skips all four existing front-test names,
+  while including ignored journeys and continuing through failed suites.
+
+- Final native results: driver library tests pass (86). `tests/manager.rs`
+  has three passing calculation tests and eight failures before app readiness,
+  all with the same HIServices XPC error. API (9 pass/1 startup failure),
+  Build-on (2 pass/3 startup failures), Find (3 pass/7 startup failures),
+  fixtures and isolation were attempted in the broad run; it was stopped
+  during repeated GUI-shell startup timeouts. J2, J3, J4, J5 and J9 were
+  also run separately with ignored journeys enabled and all stopped at app
+  readiness with that same environment error. No front test ran. AC9 is
+  therefore not met; native window assertions and the preserved J2 conflict
+  need a working GUI session to resolve.

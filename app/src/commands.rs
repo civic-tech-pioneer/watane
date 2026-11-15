@@ -171,7 +171,6 @@ pub(crate) async fn install_folders(
 ) -> Result<Value, CmdError> {
     record(&webview, "install_folders");
     let core = core(&state)?.clone();
-    let host = core.host.clone();
     #[cfg(feature = "driver")]
     let picked = state.driver.pick.lock().unwrap().take();
     #[cfg(not(feature = "driver"))]
@@ -196,6 +195,28 @@ pub(crate) async fn install_folders(
         .await
         .map_err(|e| CmdError::new("io", e.to_string()))??
     };
+    install_selected(core, paths).await
+}
+#[tauri::command]
+pub(crate) async fn install_paths(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    paths: Vec<std::path::PathBuf>,
+) -> Result<Value, CmdError> {
+    record(&webview, "install_paths");
+    install_selected(core(&state)?.clone(), paths).await
+}
+async fn install_selected(
+    core: std::sync::Arc<crate::core::Core>,
+    paths: Vec<std::path::PathBuf>,
+) -> Result<Value, CmdError> {
+    let host = core.host.clone();
+    if paths.iter().any(|path| !path.is_dir()) {
+        return Err(CmdError::new(
+            "bad_request",
+            "each install path must be a directory",
+        ));
+    }
     if paths.is_empty() {
         return Ok(json!({"installed":[]}));
     }
@@ -210,7 +231,7 @@ pub(crate) async fn install_folders(
     .await
     .map_err(|e| CmdError::new("io", e.to_string()))??;
     let installed = host.install(plan, watane_host::Requester::App).await?;
-    core.installed(&installed);
+    core.installed(&installed)?;
     Ok(json!({"installed": installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
 #[tauri::command]
@@ -326,7 +347,7 @@ pub(crate) async fn install_link(
     let host = planner.host.clone();
     let (plan, fetched) = blocking(move || planner.plan_link(&link)).await?;
     let installed = host.install(plan, watane_host::Requester::App).await?;
-    core.installed(&installed);
+    core.installed(&installed)?;
     blocking(move || {
         core.follow_fetched(&fetched);
         Ok(())
@@ -881,4 +902,23 @@ mod toolset_tests {
         assert_eq!(host.tokens().len(), 1);
         drop(token);
     }
+}
+
+#[tauri::command]
+pub(crate) fn main_set(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    local: Option<String>,
+) -> Result<(), CmdError> {
+    record(&webview, "main_set");
+    let core = core(&state)?;
+    core.main.set(&core.host, local.as_deref())
+}
+#[tauri::command]
+pub(crate) fn updates_done(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<crate::core::UpdateDone>, CmdError> {
+    record(&webview, "updates_done");
+    Ok(core(&state)?.updates_done())
 }

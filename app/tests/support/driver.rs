@@ -222,6 +222,70 @@ impl App {
             .expect("driver response timed out")
     }
     pub fn eval(&self, label: &str, js: &str) -> Value {
+        // Existing journeys address controls by selector. Navigate to their
+        // area before interacting, so dialogs also have a visible ancestor.
+        let interacting =
+            js.contains(".click()") || js.contains(".value =") || js.contains(".checked =");
+        let area = if label == "main" && interacting {
+            if [
+                "#profile-name",
+                "#set-name",
+                "#site-url",
+                "#set-site",
+                "#passphrase",
+                "#identity-",
+                "#own-channel",
+                "#never-published",
+                "#confirm-identity",
+                "#toolset",
+                "#tools",
+                "#save-toolset",
+                "#handle",
+                "#issue-token",
+                "#token-",
+                "#tokens",
+                "#copy-token",
+                "#close-token",
+                "#releases",
+            ]
+            .iter()
+            .any(|s| js.contains(s))
+            {
+                Some("#settings")
+            } else if [
+                "#search",
+                "#index",
+                "#add-index",
+                "#follow",
+                "#refresh-find",
+                "#refresh-channels",
+                "#channels",
+            ]
+            .iter()
+            .any(|s| js.contains(s))
+            {
+                Some("#find")
+            } else if js.contains("[data-local=")
+                || js.contains("'#install'")
+                || js.contains("#install-link")
+                || js.contains("#install-from-link")
+            {
+                Some("#mods")
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let navigation = area
+            .map(|area| {
+                format!(
+                    "location.hash = {}; window.dispatchEvent(new Event('hashchange')); ",
+                    json!(area)
+                )
+            })
+            .unwrap_or_default();
+        let js = format!("{navigation}{js}");
         let v = self.call(json!({"op":"eval","label":label,"js":js}));
         serde_json::from_str(v.as_str().unwrap()).unwrap_or_else(|e| {
             panic!("native eval returned invalid JSON: {e}; {label}: {js}; {v}")
@@ -237,6 +301,9 @@ impl App {
     #[allow(dead_code)] // Shared support: mode probes live in gui_shell.
     pub fn screen(&self) -> Value {
         self.call(json!({"op":"screen"}))
+    }
+    pub fn menu(&self, id: &str) {
+        assert_eq!(self.call(json!({"op":"menu", "id":id})), true);
     }
     pub fn windows(&self) -> Vec<Value> {
         self.call(json!({"op":"windows"}))
@@ -259,6 +326,13 @@ impl App {
     }
     pub fn quit(mut self) -> std::process::ExitStatus {
         self.send(json!({"op":"quit"}));
+        self.wait_exit()
+    }
+    pub fn close_last(mut self, label: &str) -> std::process::ExitStatus {
+        self.send(json!({"op":"close", "label":label}));
+        self.wait_exit()
+    }
+    pub fn wait_exit(&mut self) -> std::process::ExitStatus {
         let deadline = std::time::Instant::now() + TIMEOUT;
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {

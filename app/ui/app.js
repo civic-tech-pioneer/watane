@@ -1,4 +1,5 @@
 import { call } from './ipc.js';
+import {connections, dependents, matchesLibrary, updateOffers} from './manager.js';
 import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
@@ -33,8 +34,10 @@ function button(parent, text, className, callback) {
   const b = element('button', text, parent, className);
   b.onclick = () => Promise.resolve().then(callback).catch(showError); return b;
 }
-let lastMods = '';
+let lastMods = '', currentMods = [];
+let managerTab = 'library';
 function modsView(mods) {
+  currentMods = mods;
   // Polls must not replace controls while the participant is using them.
   const signature = JSON.stringify(mods);
   if (signature === lastMods) return;
@@ -44,7 +47,9 @@ function modsView(mods) {
   if (!mods.length) element('p', 'No mods yet', launcher);
   for (const mod of mods) {
     const entry = element('section', '', launcher); entry.dataset.local = mod.local;
-    element('h2', mod.name, entry);
+    const heading = element('h2', '', entry);
+    button(heading, mod.name, 'select-mod', () => { entry.querySelector('details').open = true; });
+    element('p', mod.summary || '', entry, 'summary');
     element('span', mod.version, entry, 'version');
     if (mod.notice) element('p', mod.notice, entry, 'notice');
     if (mod.offer) button(entry, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release: mod.offer}));
@@ -52,10 +57,28 @@ function modsView(mods) {
     if (mod.enabled && mod.page) button(entry, 'Open', 'open', () => action('mod_open', {local: mod.local}));
     if (!mod.enabled) { element('p', 'Disabled', entry); button(entry, 'Enable', 'enable', () => action('mod_enable', {local: mod.local})); }
     // Keep the established disable hook, including its disabled state.
-    const disable = button(entry, 'Disable', 'disable', () => action('mod_disable', {local: mod.local})); disable.disabled = !mod.enabled;
-    button(entry, 'Remove', 'remove', () => remove(mod));
+    const disable = button(entry, 'Disable', 'disable', () => warn(mod, () => action('mod_disable', {local: mod.local}), 'Disable')); disable.disabled = !mod.enabled;
+    button(entry, 'Remove', 'remove', () => warn(mod, () => remove(mod), 'Remove'));
     const details = element('details', '', entry); details.open = expanded.has(mod.local);
     element('summary', 'Details', details);
+    if (mod.page) button(details, mod.main ? 'Unset main' : 'Make main', 'main-set', () => action('main_set', {local: mod.main ? null : mod.local}));
+    const links = element('div', '', details, 'connections');
+    const connected = connections(mod, mods);
+    if (Object.values(connected).every(names => !names.length)) element('p', 'Works on its own: it uses no mod and no mod uses it.', links);
+    for (const [kind, label] of [['uses', 'Uses'], ['addsTo', 'Adds to'], ['usedBy', 'Used by'], ['extendedBy', 'Extended by']]) {
+      if (!connected[kind].length) continue;
+      const row = element('p', `${label}: `, links);
+      connected[kind].forEach((local, i) => {
+        if (i) row.append(document.createTextNode(', '));
+        const a = element('a', local, row); a.href = '#mods';
+        a.onclick = () => {
+          $('#library-filter').value = ''; $('#library-source').value = ''; filterLibrary();
+          managerTab = 'library'; route();
+          const target = Array.from(launcher.children).find(e => e.dataset.local === local);
+          if (target) { target.querySelector('details').open = true; target.scrollIntoView(); }
+        };
+      });
+    }
     const publisher = mod.publisher ? `${partyLabel(mod.publisher)} · signature verified` : 'local';
     for (const text of [mod.version, publisher, mod.page, mod.package, mod.release, mod.derivedFromLabel]) if (text) element('p', text, details);
     if (mod.release) {
@@ -88,7 +111,22 @@ function modsView(mods) {
       button(row, grant.granted ? 'Withdraw' : 'Give back', grant.granted ? 'withdraw' : 'give', () => action(grant.granted ? 'grant_withdraw' : 'grant_give', {local:mod.local, key:grant.key}));
     }
   }
+  filterLibrary();
 }
+let confirming = null;
+function warn(mod, proceed, verb) {
+  const affected = dependents(mod, currentMods);
+  if (!affected.length) return proceed();
+  confirming = proceed;
+  $('#dependency-dialog p').textContent = `${verb} ${mod.name}? These mods use it: ${affected.join(', ')}.`;
+  $('#dependency-dialog').showModal(); $('#dependency-cancel').focus();
+}
+$('#dependency-cancel').onclick = () => $('#dependency-dialog').close();
+$('#dependency-continue').onclick = () => {
+  const proceed = confirming; confirming = null; $('#dependency-dialog').close();
+  Promise.resolve().then(proceed).catch(showError);
+};
+$('#dependency-dialog').addEventListener('close', () => { confirming = null; });
 let removing = null;
 function remove(mod) {
   removing = mod.local;
@@ -154,7 +192,9 @@ function refresh() {
     identityView(status);
     await channelsView();
     await findView();
-    modsView(await call('mods_list'));
+    const mods = await call('mods_list');
+    modsView(mods);
+    await updatesView(mods);
     await agentsView();
     document.body.dataset.ready = 'true';
   })().finally(() => { refreshing = null; });
@@ -289,3 +329,50 @@ $('#confirm-identity').onclick = () => {
   if (!$('#never-published').checked && !$('#own-channel').value) {showError({message:'Enter your channel link or state that this identity never published'});return;}
   action('identity_confirm_own', {link: $('#never-published').checked ? null : $('#own-channel').value}).catch(showError);
 };
+
+function filterLibrary() {
+  let matches = 0;
+  for (const entry of launcher.querySelectorAll('section[data-local]')) {
+    const mod = currentMods.find(m => m.local === entry.dataset.local);
+    entry.hidden = !matchesLibrary(mod, $('#library-filter').value, $('#library-source').value);
+    if (!entry.hidden) matches++;
+  }
+  $('#no-matches').hidden = !currentMods.length || matches > 0;
+}
+$('#library-filter').oninput = filterLibrary;
+$('#library-source').onchange = filterLibrary;
+function route() {
+  const settings = location.hash === '#settings';
+  managerTab = location.hash === '#find' ? 'find' : location.hash === '#updates' ? 'updates' : 'library';
+  $('#settings').hidden = !settings; $('#mods').hidden = settings;
+  for (const tab of ['library', 'find', 'updates']) {
+    $(`#${tab}`).hidden = tab !== managerTab;
+    $(`[data-tab=${tab}]`).setAttribute('aria-pressed', String(tab === managerTab));
+  }
+}
+for (const tab of document.querySelectorAll('[data-tab]')) tab.onclick = () => { location.hash = tab.dataset.tab === 'library' ? '#mods' : `#${tab.dataset.tab}`; route(); };
+window.addEventListener('hashchange', route);
+if (!location.hash) location.hash = '#mods';
+route();
+let lastUpdates = '';
+async function updatesView(mods) {
+  const [done, channels, indexes] = await Promise.all([call('updates_done'), call('channels_list'), call('indexes_list')]);
+  const offers = updateOffers(mods);
+  $('#updates-count').textContent = offers.length ? String(offers.length) : '';
+  const signature = JSON.stringify([offers, channels, indexes, done]);
+  if (signature === lastUpdates) return;
+  lastUpdates = signature;
+  for (const selector of ['#update-offers', '#update-channels', '#update-done']) $(selector).replaceChildren();
+  for (const mod of offers) {
+    const row = element('p', `${mod.name}: ${mod.notice || ''}`, $('#update-offers'));
+    if (mod.offer) button(row, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release:mod.offer}));
+  }
+  const seen = new Set();
+  for (const channel of [...channels, ...indexes]) {
+    if (channel.cause && !seen.has(channel.channel)) { seen.add(channel.channel); element('p', `${partyLabel(channel)}: ${channel.cause}`, $('#update-channels')); }
+  }
+  for (const update of done) element('p', `${update.name}: ${update.from} → ${update.to} · ${new Date(update.at).toLocaleString()}`, $('#update-done'));
+}
+
+
+window.wataneDropped = paths => action('install_paths', {paths}).catch(showError);

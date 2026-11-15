@@ -9,6 +9,7 @@ mod core;
 #[cfg(feature = "driver")]
 mod driver;
 mod find;
+mod main_mod;
 pub mod mark;
 mod views;
 mod words;
@@ -248,6 +249,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::grant_withdraw,
             commands::grant_give,
             commands::install_folders,
+            commands::install_paths,
+            commands::main_set,
+            commands::updates_done,
             commands::tools_list,
             commands::toolsets_list,
             commands::toolset_save,
@@ -288,50 +292,59 @@ pub fn run(config: Config) -> Result<(), AppError> {
             if state.failed.get().is_none()
                 && let (Ok(host), Ok(dist)) = (host, dist)
             {
-                let core = Arc::new(core::Core::new(
-                    h.clone(),
-                    host.clone(),
-                    dist.clone(),
-                    parties.clone(),
-                ));
-                let initial = core.clone();
-                let result = tauri::async_runtime::block_on(async move {
-                    tauri::async_runtime::spawn_blocking(move || initial.channels()).await
-                });
-                match result {
-                    Ok(Ok(_)) => match tauri::async_runtime::block_on(
-                        host.serve(config.port, api::router_with_parties(Some(dist), parties)),
+                'startup: {
+                    let core = match core::Core::new(
+                        h.clone(),
+                        host.clone(),
+                        dist.clone(),
+                        parties.clone(),
                     ) {
-                        Ok(served) => {
-                            *core.served.lock().unwrap() = Some(served);
-                            let _ = state.core.set(core.clone());
-                            let weak = Arc::downgrade(&core);
-                            tauri::async_runtime::spawn(async move {
-                                let mut timer =
-                                    tokio::time::interval(std::time::Duration::from_secs(600));
-                                loop {
-                                    timer.tick().await;
-                                    let Some(core) = weak.upgrade() else { break };
-                                    let _ = tauri::async_runtime::spawn_blocking(move || {
-                                        let (rows, updates) = core.refresh()?;
-                                        core.spawn_updates(updates);
-                                        Ok::<_, CmdError>(rows)
-                                    })
-                                    .await;
-                                }
-                            });
+                        Ok(core) => Arc::new(core),
+                        Err(error) => {
+                            let _ = state.failed.set(error.message);
+                            break 'startup;
+                        }
+                    };
+                    let initial = core.clone();
+                    let result = tauri::async_runtime::block_on(async move {
+                        tauri::async_runtime::spawn_blocking(move || initial.channels()).await
+                    });
+                    match result {
+                        Ok(Ok(_)) => match tauri::async_runtime::block_on(host.serve(
+                            config.port,
+                            api::router_with_parties(Some(dist), parties.clone()),
+                        )) {
+                            Ok(served) => {
+                                *core.served.lock().unwrap() = Some(served);
+                                let _ = state.core.set(core.clone());
+                                let weak = Arc::downgrade(&core);
+                                tauri::async_runtime::spawn(async move {
+                                    let mut timer =
+                                        tokio::time::interval(std::time::Duration::from_secs(600));
+                                    loop {
+                                        timer.tick().await;
+                                        let Some(core) = weak.upgrade() else { break };
+                                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                                            let (rows, updates) = core.refresh()?;
+                                            core.spawn_updates(updates);
+                                            Ok::<_, CmdError>(rows)
+                                        })
+                                        .await;
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                let message = serve_error(&e);
+                                eprintln!("{message}");
+                                let _ = state.failed.set(message);
+                            }
+                        },
+                        Ok(Err(e)) => {
+                            let _ = state.failed.set(e.message);
                         }
                         Err(e) => {
-                            let message = serve_error(&e);
-                            eprintln!("{message}");
-                            let _ = state.failed.set(message);
+                            let _ = state.failed.set(e.to_string());
                         }
-                    },
-                    Ok(Err(e)) => {
-                        let _ = state.failed.set(e.message);
-                    }
-                    Err(e) => {
-                        let _ = state.failed.set(e.to_string());
                     }
                 }
             }
@@ -340,7 +353,26 @@ pub fn run(config: Config) -> Result<(), AppError> {
                 let h = handle.clone();
                 let _ = handle.run_on_main_thread(move || views::sync_consent(&h));
             }));
-            views::main_window(&h)?;
+            views::install_menu(&h)?;
+            let initial = state
+                .core
+                .get()
+                .and_then(|core| core.main.startup(&core.host));
+            if let Some(m) = initial {
+                let party = m
+                    .publisher
+                    .map(|p| words::party_label(&words::party(&p.to_string(), &parties)))
+                    .unwrap_or_else(|| "local".into());
+                views::open_mod(
+                    &h,
+                    m.local.as_ref(),
+                    m.page.as_deref().unwrap(),
+                    &format!("{} — {party}", m.name),
+                )
+                .map_err(|e| e.message)?;
+            } else {
+                views::main_window(&h)?;
+            }
             #[cfg(feature = "driver")]
             driver::start(h);
             Ok(())
