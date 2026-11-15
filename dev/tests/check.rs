@@ -71,6 +71,7 @@ fn ac2_check_repairs_host_wit() {
         fs::read_to_string(dir.join("wit/deps/watane-host/host.wit")).unwrap(),
         watane_host::HOST_WIT
     );
+    assert!(watane_host::HOST_WIT.contains("interface manage"));
 }
 
 #[test]

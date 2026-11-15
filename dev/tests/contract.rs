@@ -477,3 +477,88 @@ fn ac3_fake_of_a_function_the_interface_lacks_is_refused() {
         "{v}"
     );
 }
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &destination);
+        } else {
+            fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+}
+
+/// Host's prebuilt `manager` fixture: logic.wasm, mod.toml and wit.
+fn copy_manager(to: &std::path::Path) {
+    copy_dir(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../host/tests/fixtures/mods/manager"),
+        to,
+    );
+}
+
+#[test]
+fn ac_manage_fake_and_records() {
+    let temp = tempfile::tempdir().unwrap();
+    let manager = temp.path().join("manager");
+    copy_manager(&manager);
+    let w = json!({
+        "local": "weather", "identity": "weather-id", "slug": "weather", "name": "Weather",
+        "summary": "Shows the weather.", "version": "0.1.0", "publisher": "alice",
+        "release": "weather@0.1.0", "origin": "https://example.org/weather",
+        "enabled": true, "has-page": true, "has-logic": true,
+        "grants": [{"grant": "storage", "granted": true}],
+        "links": [], "binds": [], "error": null
+    });
+    let disable = json!({"call":"api.disable","args":{"local":"weather"},
+        "returns":{"ok":null},
+        "manages":[{"fn":"disable","args":{"local":"weather"}}]});
+    let first = json!({
+        "fakes": {"watane:host/manage": {"mods": [w]}},
+        "steps": [
+            {"call":"api.mods","returns":[w]},
+            disable,
+            {"call":"api.request-remove","args":{"local":"notes","delete-data":true},
+             "returns":{"ok":"r1"},
+             "manages":[{"fn":"request-remove","args":{"local":"notes","delete-data":true}}]}
+        ]
+    });
+    let (code, v) = test_in(&manager, first);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], 3, "{v}");
+    let mut wrong = disable.clone();
+    wrong["manages"] = json!([]);
+    let (code, v) = test_in(&manager, json!({"steps":[wrong]}));
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract", "{v}");
+    let failure = &v["result"]["contract"]["failures"][0];
+    assert_eq!(failure["step"], 1, "{v}");
+    assert_eq!(failure["call"], "api.disable", "{v}");
+    assert_eq!(failure["expected"], json!([]), "{v}");
+    assert_eq!(
+        failure["got"],
+        json!([{"fn":"disable","args":{"local":"weather"}}]),
+        "{v}"
+    );
+}
+
+#[test]
+fn ac3_fake_of_a_function_manage_lacks_is_refused() {
+    let temp = tempfile::tempdir().unwrap();
+    let manager = temp.path().join("manager");
+    copy_manager(&manager);
+    let (code, v) = test_in(
+        &manager,
+        json!({"fakes":{"watane:host/manage":{"modz":[]}},"steps":[{"call":"api.mods","returns":[]}]}),
+    );
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract_file", "{v}");
+    let message = v["errors"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("fakes watane:host/manage has no function modz; its functions: ")
+            && message.contains("request-remove"),
+        "{message}"
+    );
+}

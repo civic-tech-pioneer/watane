@@ -279,4 +279,20 @@ mod tests {
             assert!(!render(text, &slug).contains("{{"));
         }
     }
+
+    #[test]
+    fn ac4_guide_teaches_a_manager_to_fake_and_check_manage() {
+        let guide = include_str!("../template/AGENTS.md");
+        for marker in [
+            "imports `watane:host/manage`",
+            "key `watane:host/manage`",
+            r#""manages": [{"fn": "disable", "args": {"local": "weather"}}]"#,
+            "reads are not listed",
+            "grant that the person approves",
+            r#"{"type":"catalog"}"#,
+            "`watane:host/caller`",
+        ] {
+            assert!(guide.contains(marker), "missing {marker}");
+        }
+    }
 }

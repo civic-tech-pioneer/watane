@@ -130,7 +130,7 @@ A `deliver` step invokes a subscription as `<provider iface>.<fn>`, with `args` 
 
 An own-interface function with a `list` result is a collect: the answers of the mods granted to answer it, joined. Fake it
 under `mods:<slug>/<outlet>` with the whole list (no fake gives `[]`); answer one with `deliver` `<outlet>.<fn>` and `returns`.
-Serve runs all tests before starting or updating the preview.
+A mod that imports `watane:host/manage` manages mods. Fake its reads under the key `watane:host/manage` (`mods`: the `mod-info` list; no fake gives `[]`, `request` gives `pending`); its reductions and requests succeed. Check them with `manages`, in order: `"manages": [{"fn": "disable", "args": {"local": "weather"}}]` (`fn` is the WIT function name, `args` by parameter name; reads are not listed). Each import of it is a grant that the person approves; a request only asks the person, and its answer comes later through `request(id)` and the page message `{"type":"catalog"}`. Whoever may call the mod (its page, an agent, another mod) uses that grant: read `watane:host/caller` where it matters. Serve runs all tests before starting or updating the preview.
 
 ## Results
 

@@ -15,6 +15,7 @@ pub struct Step {
     pub args: Value,
     pub expect: Expect,
     pub emits: Option<Vec<ExpectedEvent>>,
+    pub manages: Option<Vec<ExpectedManage>>,
 }
 pub enum Target {
     Call(String),
@@ -29,6 +30,14 @@ pub enum Expect {
 #[serde(deny_unknown_fields)]
 pub struct ExpectedEvent {
     pub event: String,
+    pub args: Value,
+}
+/// A reduction or request of `watane:host/manage`: `fn` is the WIT function name.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedManage {
+    #[serde(rename = "fn")]
+    pub function: String,
     pub args: Value,
 }
 #[derive(Default, Serialize)]
@@ -123,12 +132,23 @@ fn parse_step(value: Value) -> Result<Step, String> {
     {
         return Err("event args must be an object".into());
     }
+    let manages: Option<Vec<ExpectedManage>> = step
+        .remove("manages")
+        .map(|value| serde_json::from_value(value).map_err(|e| e.to_string()))
+        .transpose()?;
+    if manages
+        .as_ref()
+        .is_some_and(|records| records.iter().any(|m| !m.args.is_object()))
+    {
+        return Err("manages args must be an object".into());
+    }
     no_unknown(&step)?;
     Ok(Step {
         target,
         args,
         expect,
         emits,
+        manages,
     })
 }
 
@@ -199,6 +219,29 @@ pub fn run_steps(
                     };
                     name == b.event && json_eq(&a.args, &b.args)
                 });
+            (!same).then(|| (json!(expected), json!(got)))
+        });
+        // A failed call makes none. Omitted manages makes no assertion.
+        let mismatch = mismatch.or_else(|| {
+            let expected = step.manages.as_ref()?;
+            let got: Vec<ExpectedManage> = outcome
+                .as_ref()
+                .ok()
+                .map(|o| {
+                    o.manages
+                        .iter()
+                        .map(|m| ExpectedManage {
+                            function: m.function.clone(),
+                            args: m.args.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let same = expected.len() == got.len()
+                && expected
+                    .iter()
+                    .zip(&got)
+                    .all(|(a, b)| a.function == b.function && json_eq(&a.args, &b.args));
             (!same).then(|| (json!(expected), json!(got)))
         });
         if let Some((expected, got)) = mismatch {
@@ -654,6 +697,7 @@ mod tests {
                 args: json!({}),
                 expect,
                 emits: None,
+                manages: None,
             };
             let (passed, failures) =
                 run_steps("tests/counter.json", &[step], "counter", &mut |_, _| {
@@ -817,5 +861,60 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn manages_mismatch_report() {
+        use watane_host::ManageRecord;
+        let made = |function: &str, args: Value| ManageRecord {
+            function: function.into(),
+            args,
+        };
+        let disable = json!({"fn":"disable","args":{"local":"weather"}});
+        for (expected, passes) in [
+            (json!([disable]), true),
+            (json!([]), false),
+            (json!([{"fn":"disable","args":{"local":"notes"}}]), false),
+            (json!([{"fn":"withdraw","args":{"local":"weather"}}]), false),
+            (json!([disable, disable]), false),
+        ] {
+            let steps = parse(
+                &json!({"steps":[{"call":"api.disable","args":{"local":"weather"},"manages":expected}]})
+                    .to_string(),
+            )
+            .unwrap()
+            .steps;
+            let (passed, failures) = run_steps("tests/m.json", &steps, "manager", &mut |_, _| {
+                Ok(Outcome {
+                    value: json!({"ok":null}),
+                    events: vec![],
+                    manages: vec![made("disable", json!({"local":"weather"}))],
+                })
+            });
+            assert_eq!(passed, u32::from(passes), "{failures:?}");
+            if !passes {
+                assert_eq!(failures[0].step, 1);
+                assert_eq!(failures[0].expected, Some(expected.clone()));
+                assert_eq!(failures[0].got, Some(json!([disable])));
+                assert_eq!(
+                    failures[0].message,
+                    format!(
+                        "tests/m.json step 1 (api.disable): expected {expected}, got {}",
+                        json!([disable])
+                    )
+                );
+            }
+        }
+        // A failed call makes none.
+        let steps = parse(r#"{"steps":[{"call":"api.disable","fails":true,"manages":[]}]}"#)
+            .unwrap()
+            .steps;
+        let (passed, _) = run_steps("tests/m.json", &steps, "manager", &mut |_, _| {
+            Err(CallError {
+                code: watane_host::CallCode::Trap,
+                message: "x".into(),
+            })
+        });
+        assert_eq!(passed, 1);
     }
 }
