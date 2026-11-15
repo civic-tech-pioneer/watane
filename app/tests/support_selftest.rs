@@ -4,6 +4,8 @@ mod pages;
 use pages::{Listener, Pages};
 use std::{fs, path::Path, time::Duration};
 
+// Serializes tests that bind loopback ports, so a dropped port is not reused
+// by another test before a "stops on drop" check.
 static NET: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const CSP: &str = "default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'";
@@ -564,6 +566,7 @@ mod github_harness {
     #[test]
     fn ac2_pages_wait_reports_client_error_and_attempts_tls() {
         use std::io::Write;
+        let _net = super::NET.lock().unwrap_or_else(|e| e.into_inner());
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!(
@@ -781,6 +784,7 @@ esac
 
 #[test]
 fn ac5_missing_base_reports_http_not_found_after_install_fetch() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     struct Approve;
     impl watane_dist::Confirm for Approve {
         fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {

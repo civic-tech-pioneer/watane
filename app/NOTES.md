@@ -514,8 +514,11 @@
   dist); reqwest's features are unchanged. Deadline errors retain the last
   redacted client error as well as status. A local plaintext listener proves
   the client attempts TLS and reports its failure in under five seconds.
-  Hakari generation needed no changes and verification passed. Pages first-
-  serve time, content types and CDN 404 body await the foreman's rerun.
+  Hakari generation needed no changes and verification passed.
+- Real run (foreman, 2026-11-16): `ac3_j3_real_github` passed in 136 s
+  total, over real TLS from GitHub Pages; afterwards minmax-fund held only
+  OpenMLOps (the reserved site repository was removed). Pages first-serve
+  time, content types and the CDN 404 body were not recorded.
 - Validation: `cargo build`, default tests, test compilations with `driver` and
   `driver,real-github`, both clippy feature combinations and
   fmt passed. All 20 harness self-tests passed with `real-github` enabled.
@@ -524,4 +527,4 @@
   XPC); natively it passes (validator, 39 s). After the TLS fix, the driver
   suite still fails at API GUI readiness with the same sandbox hiservices
   XPC error; default tests (115), both feature compilations/clippy, fmt and
-  the 20 harness tests pass. The real Pages rerun remains for the foreman.
+  the 20 harness tests pass.
