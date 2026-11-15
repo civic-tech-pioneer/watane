@@ -26,6 +26,7 @@ fn refusal(menu: &str) -> String {
         panic!("{menu} must be refused")
     };
     let v = v.iter().find(|v| v.rule == Rule::Import).unwrap();
+    assert_eq!(v.file, "wit/world.wit");
     v.message.clone()
 }
 
@@ -52,14 +53,9 @@ fn ac2_non_list_result_is_refused() {
 fn ac3_kinds_of_result() {
     let m = read("clicked: func(id: string);").unwrap();
     assert!(m.world().collects.is_empty());
-    assert!(
-        read("a: func() -> list<u8>;")
-            .unwrap()
-            .world()
-            .collects
-            .len()
-            == 1
-    );
+    let m = read("a: func() -> list<u8>;").unwrap();
+    assert_eq!(m.world().collects, m.world().events);
+    assert_eq!(m.world().collects.len(), 1);
     let m = read("record r { x: u32 } a: func() -> list<r>;").unwrap();
     assert_eq!(m.world().collects.len(), 1);
     for bad in [
