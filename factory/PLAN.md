@@ -711,7 +711,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   Outcome: host S40 to S47 and DEV-S-53 pass; every earlier suite passes. Built as designed (the
   options marked "built" in Q28 to Q33); a change from the human's answers comes as its own task.
   Touches: pkg, host, dev. Cloud. After S71 (dev).
-- [~] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
+- [x] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
   pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
   5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
   page the main mod and unsets it; a mod that proposes itself becomes main when installed and none is
@@ -720,6 +720,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   and J2 to J5, J9 pass. Touches: pkg (meta.rs, its tests, TECHNICAL 4.2 if a decision lands), app
   (src, ui, tests/manager.rs, TECHNICAL 5.3, 5.4). Local (the app). S71 (local) owns dev/ and
   app/tests/j5.rs; S72 (cloud) owns node/ and net/; S73 (cloud) owns the docs above.
+  Delivered (merged as a2bf077): Alice's main mod (one she picks, or one that proposes itself with `main = true`) opens at start in place of the manager; Mods… and Settings… in the app menu open the manager (Library, Find, Updates, details with connections and a warning before disable or remove) or Settings (identity, site, backup, agents, machines). Decisions: the app reads `Mod::main()` with `Mod::read(<home>/mods/<local>)` (read only, false on error), host's `InstalledMod` unchanged; the fixture desk is page-only; the driver op `menu` takes `item`, not `id` (collides with the request id, TECHNICAL 10); pkg: `main = true` with a symlinked ui/ gives only the path violation; j2 ac7 goes through the APP-F-67 warning; Settings shows own machines as "Unavailable" until S75. Verified on the Mac: pkg green with ignored; the app driver suite green with ignored (front tests not run), j2 and manager on a rerun after S54's build swapped `watane-app`. For a later slice (user-sim): the library does not mark the main mod; the consent for a mod that proposes main does not say it becomes the start window; a connection link does not move focus to the target's details; the disable warning says "These mods use it" when only an Extended-by link remains.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -751,8 +752,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 10 collect | 9 | done (S65) |
 | dev | 12 collect fakes and answers | 9 | done (S65) |
 | app | H extension points (J9) | 9 | done (S66) |
-| pkg | 10 `main` in `mod.toml` | 10 | open (S74) |
-| app | I main mod and manager | 10 | open (S74) |
+| pkg | 10 `main` in `mod.toml` | 10 | done (S74) |
+| app | I main mod and manager | 10 | done (S74) |
 | pkg | 11 `Grant::Manage` | 10 | open |
 | host | 11 `watane:host/manage` | 10 | open |
 | dev | 13 manage fake | 10 | open |
@@ -977,7 +978,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S72: delivered 2026-11-15 and merged; routine finished, branches removed.
 - S66: delivered 2026-11-15 and merged; foreman stopped, worktree and branch removed.
 - S73: cloud routine `trig_01CZpy9oswGijTpTZhRtsFVq` (handed out 2026-11-15), branch `slice/s73`.
-- S74: `5977e817` (sessionId `5977e817-a1e3-4195-b580-115e9ddb2317`), worktree `.claude/worktrees/s74` (local: the app; builds in main's `target/`).
+- S74: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: cloud routine `trig_01PfRdUs1u8HSXgu7UBhoY7c` (handed out 2026-11-15), branch `slice/s76`.
 - S54: `71fd3eb5` (sessionId `71fd3eb5-d288-4b30-88d3-f43f009adf27`), worktree `.claude/worktrees/s54` (local: the token; builds in main's `target/`).
@@ -1515,6 +1516,10 @@ The human may veto each one.
 - S71: Sol wrote an 11 GB `target/` inside the worktree (it could not write main's `target/`, though
   impl.sh lists `$CARGO_TARGET_DIR`; to check), and S74's build replaced `watane-dev` under S71's
   suite (about 70 false reds). A foreman's verification holds only while no other foreman builds.
+- S74: the same swap, a third time: another slice's build replaced `watane-app` during S74's user-sim
+  and during the PO's verification (j2 and 8 manager tests red, green on a rerun alone). Codex's
+  sandbox cannot start macOS window tests (HIServices XPC): Sol reports window ACs PARTIAL and the
+  validator runs them all. Proposed to the human: each local slice its own target again.
 - S73 to S76: main is red on dev's envelope ac5 again: S73's design names
   `contract::ac_manage_fake_and_records`, which S76 builds. Not a slice's failure until then.
 
