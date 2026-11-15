@@ -427,8 +427,8 @@ iroh-gossip). N2 builds `Gate` around `watane/1`; N3 puts the iroh-blobs
 and iroh-gossip handlers in it.
 
 Every connection and request goes through, in order: the peer's
-allowance for its ALPN, the peer's budget (`over_budget`), decode
-(`bad_request`), size (`too_large`), the allowance for the op
+allowance for its ALPN, the peer's budget (`over_budget`), size
+(`too_large`, before decoding), decode (`bad_request`), the allowance for the op
 (`not_allowed`), then the op. iroh's router gives each protocol handler
 the connection with its remote node key; `net` wraps the iroh-blobs and
 iroh-gossip handlers, so a connection whose allowance for that protocol is
