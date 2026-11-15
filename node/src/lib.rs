@@ -12,7 +12,6 @@ pub use error::NodeError;
 pub use holdings::DistHoldings;
 pub use watane_dist as dist;
 pub use watane_net as net;
-pub use watane_net::{HeadInfo, NodeKey};
 
 use std::{path::Path, sync::Arc};
 use watane_dist::Dist;

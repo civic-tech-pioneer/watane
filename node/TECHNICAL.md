@@ -217,6 +217,11 @@ an install keeps it (5.3).
   name, whose hits are merged by channel and entry (5.4 step 2); a query
   with none sends `interface` `null`. `search_stored` then applies dist's
   own filter again (5.4 step 4).
+  Built so far: dist's `InterfaceQuery` has no accessor for its name, so
+  `search` sends one net query with `interface` `null` and only
+  `search_stored` applies the interface (12): the shown hits are the
+  same, but the remote machine's 200 hits and net's 32 pulls are spent on
+  hits of any interface.
 - **Hit.** dist's `Hit` to net's: `[channel, seq, entry]` from
   `hit.info.channel`, `hit.info.seq` and `hit.info.entry`.
 - **Package ids.** net's `BlobId` and pkg's `PackageId` are both the plain
@@ -507,7 +512,7 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | Subsystem | Gap |
 |---|---|
 | `dist` | `InterfaceQuery` has no accessor for its name, so `search` cannot turn a query with an interface into a `net` query (4.3). It sends the remote query with no interface and lets `search_stored` apply the interface (5.4 step 4): correct, but the remote machine may return hits that are then dropped. |
-| `net` | In a topic of three machines (anchor, a full and a light replica) a gossip hint of an own statement sometimes does not reach a machine, also when told again (about 1 run in 6 of S6 and S7). A reconnect (`set_options` off and on) syncs it, as the 10-minute sync would. The tests of S6 and S7 reconnect after 3 s without the entry. |
+| `net` | A hint is acted on with the machine that delivered it (net 5.7), and iroh-gossip's `delivered_from` is the neighbor that relayed the message, not the machine that told it. In a topic of three machines the hint often reaches a machine through another replica that has not pulled the head yet (seen in S7: the light machine got the server's relay of the laptop's hint, asked the server, which still had the old head, and pulled nothing). The head then waits for the next sync (on connect, or 10 minutes). In about 1 run in 5 of `tests/light.rs` the tests of S6 and S7 reconnect (`set_options` off and on, which syncs) after 3 to 5 s without the entry. Fix in net: act on a hint with the machine that told it, or retry the delivering machine once it holds the hint's seq. |
 
 ## 13. Questions
 

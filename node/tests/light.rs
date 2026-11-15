@@ -42,9 +42,11 @@ fn world() -> World {
     }
 }
 
-/// Waits until the server holds the release's entry and package. A hint over gossip is
-/// sometimes not delivered to the server in a three-machine topic (net TECHNICAL 12): then
-/// the server reconnects, which syncs (net 5.6, on connect), as its 10-minute sync would.
+/// Waits until the server holds the release's entry and package. A workaround for a net
+/// gap (node TECHNICAL 12): net acts on a hint with the machine that relayed it over
+/// gossip, which may not hold the head yet, and then nothing is pulled until the next
+/// sync. Then the server reconnects, which syncs (net 5.6, on connect), as its 10-minute
+/// sync would. Remove it, and the one in S7, once net pulls from the machine that told.
 fn keeps(w: &World, p: &watane_dist::Published) -> bool {
     let alice = w.laptop.dist().identity().unwrap();
     let want = Some((p.entry.seq(), p.entry.id()));
@@ -88,7 +90,9 @@ fn s6_the_light_laptop_searches_and_installs_through_the_server() {
     assert_eq!(hits[0].from, vec![key_of(&w.server)], "from {short}");
     assert_eq!(hits[0].hit.info.reference, published.info.reference);
 
-    // no link location and no web host: the package can only come from the server
+    // no link location and no web host, and the laptop is gone: the package can only
+    // come from the server
+    w.laptop.net().set_options(Default::default()).unwrap();
     let fetched = w.light.fetch(&hits[0].hit.info.reference).unwrap();
     assert_eq!(fetched.package.as_bytes(), &want[..]);
     assert!(fetched.link.is_none());
@@ -232,7 +236,7 @@ fn s7_the_installed_mod_gets_the_next_release_through_the_server() {
             .is_some_and(|r| r.release.version == version)
     };
     if !wait_for(5, offered) {
-        // a lost hint (see `keeps`): the machines reconnect and sync
+        // the net gap of `keeps`: the machines reconnect and sync
         reconnect(&w.server, &w.laptop);
         std::thread::sleep(std::time::Duration::from_secs(2));
         reconnect(&w.light, &w.server);

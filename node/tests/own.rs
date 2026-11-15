@@ -71,6 +71,40 @@ fn s4_the_server_keeps_what_alice_publishes() {
     assert!(record(l_dir.path(), &third.key).is_null());
 }
 
+/// AC7 at the level that shows it: the laptop (anchor, not light) never asks the server
+/// with `need` before a read, and tells the server a head it read from a web host.
+#[test]
+fn s4_the_laptop_tells_what_it_read_and_never_needs() {
+    let (l_dir, s_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (laptop, server) = (app(l_dir.path()), keyless(s_dir.path()));
+    pair(&laptop, &server, Role::Full, false);
+
+    // a channel only the server holds: a `need` before the read would bring it here
+    let other = Alice::new();
+    assert!(matches!(
+        server
+            .dist()
+            .ingest(&other.key, other.entries(), Reason::Kept),
+        watane_dist::Ingested::Stored(_)
+    ));
+    let _ = laptop.refresh_channel(&other.key);
+    let _ = laptop.fetch(&other.published.info.reference);
+    assert_eq!(
+        head(&laptop, &other.key),
+        None,
+        "no need on a non-light machine"
+    );
+
+    // a head read from a web host is told: the server pulls it within seconds
+    let alice = Alice::new();
+    let want = alice.dist.heads(None).unwrap()[0].1.map(|h| (h.seq, h.id));
+    laptop.follow(&alice.link()).unwrap();
+    assert!(
+        wait_for(5, || head(&server, &alice.key) == want),
+        "the server holds the head the laptop read"
+    );
+}
+
 /// A web host that answers each request after `delay`.
 struct SlowHost {
     url: String,
