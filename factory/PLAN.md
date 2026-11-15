@@ -492,7 +492,7 @@ is a step-7-style check, after S55.
   book.json; `Options` and `Limits` derive Clone, Debug, Default), Q3 to N3 (gossip hints on a light
   machine only for channels in `heads(None)`), Q5 and Q6 to N2 and N4 (prefer a full replica over
   the anchor; a cap of 32 channels per query). Whichever net slice comes next takes each one.
-- [~] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Creates the `net`
+- [x] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Delivered 2026-11-15 (cloud, `4d93c35`, merged with a product-owner fix `5a53ccd`). Creates the `net`
   crate and adds it to the workspace: the node key, the pairing code text, the wire codecs and their
   limits in bytes, `hello`, `heads`, `entries` and `fork` between two local nodes, and the 4.3
   golden vectors made with `ed25519-compact`. Pins iroh, iroh-blobs and iroh-gossip, and answers
@@ -501,6 +501,21 @@ is a step-7-style check, after S55.
   net/TECHNICAL.md 12 before N3. Outcome: scenario S1 and `heads` and `entries` between two trusted
   test nodes pass; S13 runs from here on. Touches: new `net/` crate, workspace `Cargo.toml`. Cloud:
   bind `127.0.0.1`, not `::1` (the cloud has no IPv6 loopback); no test reaches the internet.
+  Delivered. Pins iroh =1.4.1, iroh-blobs =0.105.0, iroh-gossip =0.102.0 (iroh-relay waits for
+  N4); Cargo.lock adds 170 packages and moves none (checked by package set, not by diff). net Q1
+  answered yes on both counts, each with a test: iroh-blobs adds a file by reference
+  (`ImportMode::TryReference`, a 1 MiB file grows the store by under 64 KiB), and a `Gate<P:
+  ProtocolHandler>` wraps a handler in the router by the connection's remote key. N3 needs no
+  replacement; byte budgets will poll `Connection::stats()` in N2. node Q1 (from S59) answered in net
+  5.1: `Options.on` false keeps net off, with it true book.json decides. Stand-ins until N2:
+  `Options::trusted` for the device list; `Options::bind` sets the bind address; every endpoint has
+  no relay, no address lookup and no portmapper. user-sim REJECTED once (the fixture leaked temp
+  dirs), S60-fix1 fixed it; the foreman reviewed the 14-line fix itself and did not rerun user-sim.
+  Product owner on the Mac: S1 panicked, because it counted sockets through `/proc/self/fd`, which
+  macOS lacks; fixed to stat `/dev/fd/<n>` (`5a53ccd`), and S1 still asserts a socket appears once
+  net is on, so the count is not vacuous. Then net 37/37 `--include-ignored`, fmt and clippy clean,
+  host 153/153 (the cloud cannot bind `::1`; one earlier run had 1 failure under S61's load and
+  passed twice since, test not captured), and the workspace builds with the app.
 - [~] **S61 A home can be a replica: it reads, verifies and stores with no identity (log L6, dist
   S8).** Branch `slice/s61`. Builds log L6 (log/TECHNICAL.md 5.5 and the L6 row of 9:
   `Log::open_keyless`, `identity() -> Option<PublicKey>`, `drop_identity`, `channels`, `NoIdentity`,
@@ -540,7 +555,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
-| net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | open (S60) |
+| net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | open |
 | net | N3 sync, gossip hints, blobs | 8 | open |
 | net | N4 light machines, restore, reach | 8 | open |
@@ -756,7 +771,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
 - S59: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S61: `f08e7a50` (sessionId `f08e7a50-9121-4b3b-9a63-05939c67abf9`), worktree `.claude/worktrees/s61` (local: the app).
-- S60: cloud routine `trig_01M5extWhubXi1jcvW9VAoyd` (running, handed out 2026-11-15), branch `slice/s60`.
+- S60: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -998,6 +1013,12 @@ The human may veto each one.
 
 ## Friction
 
+- S60: a test that reads `/proc/self/fd` passed in the cloud and panicked on the Mac. The cloud is
+  Linux and the human's machine is macOS: a test that leans on a Linux-only path passes where it is
+  written and fails where it is used. Briefs for cloud foremen should say so.
+- S60: the cloud's shared target reached 28 GB and filled the disk during user-sim (S56 too). The
+  foreman built with `CARGO_PROFILE_DEV_DEBUG=0` after a clean. Worth putting in every cloud brief.
+- S60: `cargo test` stops at the first failing binary without `--no-fail-fast`, hiding later ones.
 - S59: the product owner's brief fenced S59 out of net/TECHNICAL.md except Q2 and Q3, to keep it off
   S60's lines. So four net gaps it found went into node's documents as questions instead of being
   fixed in net. Fence by section, but let a design slice add a question row to the subsystem it
