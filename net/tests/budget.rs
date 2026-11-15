@@ -111,7 +111,7 @@ fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
                 send.write_all(&[0x82]).await.unwrap(); // the start of a request
                 held.push((send, recv));
             }
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
             assert_eq!(
                 code_of(ask(&conn, &hello_request()).await),
                 expect,

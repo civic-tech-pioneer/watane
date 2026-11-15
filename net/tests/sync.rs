@@ -670,10 +670,11 @@ fn ac2_close_and_turn_off_are_fast_with_kept_connections_open() {
     let a = node(holding(&[(chan(x), entries.clone())], true), None);
     let b = node(MemHoldings::empty(), None);
     let c = node(MemHoldings::empty(), None);
-    let (ea, eb) = (a.net.events(), b.net.events());
+    let (ea, ec) = (a.net.events(), c.net.events());
     pair_into(&a, &b, Role::Full);
     pair_into(&a, &c, Role::Full);
     assert_eq!(b.holdings.raws(&chan(x)), raws(&entries));
+    assert!(wait_for(5, || c.holdings.raws(&chan(x)) == raws(&entries)));
     let bound = Duration::from_secs(1);
 
     let t = std::time::Instant::now();
@@ -685,10 +686,12 @@ fn ac2_close_and_turn_off_are_fast_with_kept_connections_open() {
         .try_iter()
         .any(|e| matches!(e, Event::PeerDown(k) if k == b.key))));
 
-    drop(c);
+    // A still keeps its connection to C open
     let t = std::time::Instant::now();
     a.net.close();
     let closed = t.elapsed();
     assert!(closed < bound, "close took {closed:?}");
-    drop(eb);
+    assert!(wait_for(5, || ec
+        .try_iter()
+        .any(|e| matches!(e, Event::PeerDown(k) if k == a.key))));
 }
