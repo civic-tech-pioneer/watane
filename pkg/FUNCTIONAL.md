@@ -20,7 +20,7 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
 
 - **PKG-F-5** pkg shall derive the grants of a mod only from its WIT world, its provider list and its list of network hosts. There is no other list of grants.
   Traces: F-RUN-2, F-RUN-7, F-INST-1, F-INST-2.
-- **PKG-F-6** pkg shall give each grant one of the four kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events of a named interface of a named provider.
+- **PKG-F-6** pkg shall give each grant one of the four kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events and collects of a named interface of a named provider.
   Traces: F-RUN-7, F-APP-5.
 - **PKG-F-7** pkg shall name the provider of each call and subscription with its slug and its publisher, or as local. A WIT package name alone never names a provider.
   Traces: F-RUN-5, F-RUN-6, F-INST-1.
@@ -78,6 +78,8 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
   Traces: F-INST-7, J4.
 - **PKG-F-25** (step 5) pkg shall read and keep the origin of a derived mod, and carry it in the release body.
   Traces: F-BUILD-1, F-BUILD-4, J5.
+- **PKG-F-26** (step 9) pkg shall tell each function of an interface that a mod imports from its own package as an event (no result) or a collect (a `list` result), and refuse any other result, naming the function.
+  Traces: F-RUN-6, F-RUN-9, J9.
 
 ## Acceptance scenarios
 
@@ -111,3 +113,5 @@ Each scenario is one test. The expected values come from this file or from
 | A23 | the release hex of section 7.3 with one change: a non-shortest integer, an indefinite array, an extra item, or trailing bytes | it is decoded | refused | PKG-F-22 |
 | A24 | a release body whose `summary` differs from the package's `mod.toml` | it is checked against the package | refused with field `summary` | PKG-F-23 |
 | A25 | the publisher key of 32 bytes `0x01` | it is written as text | `yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo` | PKG-F-15 |
+| A26 | a world that imports its own interface `menu` with `ask: func() -> list<string>` and `clicked: func(id: string)` | it is read | events `[mods:<slug>/menu@<version>]`, collects the same; grants unchanged | PKG-F-26 |
+| A27 | the same world with `ask: func() -> string` | it is read | refused with rule `import`, naming `menu.ask` | PKG-F-26 |

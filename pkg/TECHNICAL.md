@@ -223,12 +223,21 @@ rule `wit`. Type items are allowed and ignored.
 | import | `wasi:http/outgoing-handler@0.2.x` | network | one `Http { host }` for each host of `[http] hosts` |
 | import | `wasi:http/types@0.2.x` | types of the above | none |
 | import | other `wasi:*` | — | rule `import` |
-| import | `mods:<own slug>/*` | an event interface (`World::events`) | none |
+| import | `mods:<own slug>/*` | an outlet: its events and collects (`World::events`; below) | none |
 | import | `mods:<other slug>/*` | a call (`World::calls`) | `Call { interface, provider }` |
 | import | any other namespace | — | rule `import` |
 | export | `mods:<own slug>/*` | an offered interface (`World::exports`) | none |
 | export | `mods:<other slug>/*` | a subscription (`World::subscriptions`) | `Subscribe { interface, provider }` |
 | export | any other | — | rule `export` |
+
+**Outlet functions** (step 9, W34). Each function of an outlet has no
+result (an event) or a result `list<T>` for any `T` (a collect). Any other
+result is rule `import`, with the message `<interface>.<function>: a
+function of an own interface that the world imports returns nothing (an
+event) or a list (a collect)`. `World::collects` lists the outlets that
+hold at least one collect; it is a subset of `World::events`. A
+subscription to an outlet takes its collects with its events: the
+subscriber exports the whole interface, so it answers both.
 
 `provider` = `Provider { slug: <other slug>, publisher: deps.json value }`.
 `Mod::grants()` returns the grants sorted by `Ord` (5.1), without
@@ -683,6 +692,7 @@ impl Mod {
 pub struct World {                                // each list sorted, no duplicates
     pub exports: Vec<InterfaceName>,
     pub events: Vec<InterfaceName>,
+    pub collects: Vec<InterfaceName>,             // step 9: the outlets of `events` with a collect (4.5)
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
     pub storage: bool,
@@ -896,6 +906,7 @@ fmt --check` green.
 | 6 | `add_provider` (4.8) | `add_provider` passes | dev `add` (J2) |
 | 7 | `release.rs` (section 7) | `release_*` pass | dist publish and fetch, host verify (J3) |
 | 8 (step 6) | `repository` in `meta.rs` (4.2), `Mod::repository` | `mod_toml_repository` passes | dev `publish --push`, `new --from` (step 6) |
+| 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
 
 `Grant::same_authority` (step 4) is one function; build it with stage 3 or
 when step 4 starts.

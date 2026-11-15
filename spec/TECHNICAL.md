@@ -85,9 +85,15 @@ imports and exports. There is no second list.
 | import `watane:host/state` | private storage |
 | import `wasi:http/outgoing-handler`, with hosts in `mod.toml` | network access to those hosts |
 | import an interface of another package | a call to that interface of the provider in `deps.json` |
-| export an interface of another package | a subscription to those events of that provider |
-| import an interface of its own package | none: these are the events that the mod sends |
+| export an interface of another package | a subscription to those events and collects of that provider |
+| import an interface of its own package | none: these are the events and collects that the mod sends |
 | import `watane:host/caller` | none: always present |
+
+**Events and collects.** A function of an interface that a mod imports from
+its own package is an **event** when it has no result, and a **collect**
+when its result is `list<T>` (step 9). Any other result is refused. One
+interface may hold both. A subscriber exports the interface and so answers
+both; one subscription grant covers them.
 
 **Package.** A package is the built mod folder as one canonical file: equal
 input gives equal bytes. It holds `mod.toml`, `wit/`, `deps.json`,
@@ -138,6 +144,16 @@ interface caller {            // "page", "agent:<handle>" or "mod:<local name>"
 - An event is a call to an interface of the mod's own package. The host
   queues it and, after the call succeeds, delivers it as one call into each
   granted subscriber.
+- A collect (step 9) runs inside the call that makes it. The host invokes
+  the same function in each granted subscriber, in local-name order, as a
+  nested call, and returns the concatenation of their lists. A subscriber
+  that fails is left out and logged; its writes and events are dropped.
+  The chain's fuel and time stay shared, so an answer that spends them
+  fails the collector too.
+  The collector never learns who answered, as an emitter never learns its
+  subscribers. A collect link is an edge from the collector to the
+  subscriber, so a subscriber of a collect cannot also call its collector
+  (no cycles, as for calls).
 - An import with no grant is linked to a stub. A call to it fails the
   whole call with the code `not_granted`, which the page shows. The mod
   itself still loads and runs its other calls.
@@ -180,7 +196,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Sandbox | The device and the host from a logic part | Wasmtime; fuel, memory and time limits for each call |
 | Linker | The host and other mods from an ungranted import | only granted imports reach a provider; the rest are stubs |
 | Origin | The host and other mods from a page | one origin for each mod; a strict content policy; `/call` accepts only the exact origin |
-| Broker | Mods from each other | the caller comes from the transport, never from the request; a grant check at each call; no cycles |
+| Broker | Mods from each other | the caller comes from the transport, never from the request; a grant check at each call and at each answer of a collect; no cycles of call and collect links |
 | Toolset | Mods and the participant from an agent | only the calls of the toolset; a token for each run; no request with an `Origin` header |
 | Local API | The participant from web pages and local programs | no request with an `Origin` header; no request has authority without the confirmation floor |
 | Builder | The maker's device from mod source | offline build, locked dependencies from a reviewed allowlist, no build script or procedural macro in the mod; unit tests run as Wasm with no capabilities |
@@ -239,6 +255,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | W31 | A link names a channel by key and a **location**: a URI, read by the resolver of its scheme (`dist` 4.2). `http` and `https` are the only resolvers now; a node resolver comes with `PEERS.md` stage D3, and others (a purl, a content address) when a step needs them. A link whose scheme has no resolver here still parses: the listing stays live, and a read from it fails with the scheme named. So a later scheme never breaks an older reader's view of an index. |
 | W32 | `net` is off until the participant turns it on. No relay, DHT, bootstrap host or public peer is on by default; each is one choice, named in its consent. A personal node serves strangers nothing in step 8. (step 8) |
 | W33 | A replica holds no participant key: `log` and `dist` open a home with no identity, which can read, verify and store but never sign. Own machines are bound by a device list that the anchor's node key signs, never by a public statement. (step 8) |
+| W34 | **Collect** (step 9): an own-package import whose function returns `list<T>` asks every granted subscriber and returns their answers concatenated, in local-name order; a function with no result stays an event; any other result is refused. It reuses the subscription link and the `Subscribe` grant: no new grant kind, no new file, no new host interface. A collect link is a cycle edge from collector to subscriber; event links stay no edges. A failing subscriber is skipped, not fatal, except when it spends the chain's shared fuel or time; the collector does not learn who answered. Answers carry no source: a collector that must address one answerer later says so in the answer type (for example a command id), and reaches it with an event. |
 
 ## 8. Build order
 
@@ -252,6 +269,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
 | 7 The real world | nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | the journeys pass on real hosts and machines |
 | 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
+| 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -293,6 +311,12 @@ calls to `net`, `watane-node`; node stages 1 to 3), the keyless open in
 in `dist/TECHNICAL.md` 5.12 (stage S8), and the views in
 `app/TECHNICAL.md` 9.8 (stage G). W31 changes the link parser
 now, before any second scheme is published.
+
+Step 9 is designed (W34): the outlet rule in `pkg/TECHNICAL.md` 4.5; the
+collect in `host/TECHNICAL.md` 4.2, 6.4, 6.6 and 9.4; fakes and answers in
+`dev/TECHNICAL.md` 8.1; the grant words in `app/TECHNICAL.md` 4. It needs
+nothing of steps 7 and 8, so it can be built beside them. J9 lives in
+`app/tests/`.
 
 ## 10. Reference material
 

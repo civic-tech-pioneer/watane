@@ -48,7 +48,7 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 
 - **HOST-F-22** When a caller asks for a plan, the host shall list each mod with its publisher or "local", its grants, its providers and whether it is new or an update, and name each provider that is neither installed nor supplied. Traces: F-INST-1, J2.
 - **HOST-F-23** The host shall install the providers of a mod before the mod. Traces: F-INST-4.
-- **HOST-F-24** If the call links of a plan would form a cycle, then the host shall refuse the plan and name the cycle. Traces: F-RUN-5.
+- **HOST-F-24** If the call links of a plan would form a cycle, then the host shall refuse the plan and name the cycle. From step 9, a collect link counts as a link from the collector to the subscriber. Traces: F-RUN-5, F-RUN-9.
 - **HOST-F-25** In a participant home, the host shall install a plan that adds a mod or a grant only after the app confirms it, and only with the grants that the participant approved. Traces: F-INST-2, F-AGENT-4.
 - **HOST-F-26** If a participant home has no app, then the host shall refuse each install that needs a confirmation. Traces: F-AGENT-4.
 - **HOST-F-27** When an update of an installed mod asks for no new grant, the host shall install it without a question, and keep its local name, its state and its granted grants. Traces: F-INST-7, J1.
@@ -79,6 +79,12 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 
 - **HOST-F-44** When the app plans with a bind, the host shall link that consumer to the picked mod in place of the provider that `deps.json` names, only if the picked mod has the same slug and offers every interface that the consumer needs, shall ask the participant for every new bind, and shall keep the bind across updates of the consumer until the picked mod is removed, which deletes the bind. Traces: F-BUILD-3, J5.
 - **HOST-F-45** In a preview, the host shall link a provider by slug and interface, whatever its publisher. Traces: F-BUILD-2, W27.
+
+### 2.6 Step 9: Extension points
+
+- **HOST-F-46** When a mod calls a collect, the host shall call the same function in each enabled subscriber that holds the subscription grant, in local-name order, inside the collector's call, and return their lists joined in that order. The collector shall not learn who answered. Traces: F-RUN-9, J9.
+- **HOST-F-47** If an answer of a collect fails, then the host shall leave it out, drop its writes and events, log it, and go on with the next subscriber. Only a failure that ends the whole call (its time or fuel) fails the collector. Traces: F-RUN-3, F-RUN-9.
+- **HOST-F-48** In a contract test, the host shall answer a collect with its fake, or with the empty list when the file gives none. Traces: F-MAKE-3, F-RUN-9.
 
 ## 3. Acceptance scenarios
 
@@ -223,3 +229,18 @@ API, the HTTP server or the program `watane`.
   `shelf` (local) and `recs` whose `deps.json` pins `shelf` to K1. When
   both are installed, then `recs` links to `shelf`. In a participant home
   the same plan names `K1/shelf` as missing.
+- **S36 Collect** (HOST-F-46). Given `menu` and the subscribers `item-a`
+  and `item-b`, all granted, and `item-c` installed with its subscription
+  grant withheld. When `menu`'s `api.items` runs, then it returns
+  `["a", "b"]`, and `item-c` was not called.
+- **S37 Failed answer** (HOST-F-47). Given S36 and `item-bad`, granted,
+  whose answer writes to state and then traps. When `api.items` runs, then
+  it returns `["a", "b"]`, the log names `item-bad`, and `item-bad`'s state
+  is unchanged. With `item-spin`, whose answer spins, the call fails with
+  `limit`/`time` or `limit`/`fuel`.
+- **S38 Collect cycle** (HOST-F-24). When `menu` and `item-back`, which
+  answers `menu`'s collect and calls `menu`'s `api`, are planned, then the
+  plan fails with code `cycle` and the message names both.
+- **S39 Collect fake** (HOST-F-48). Given a harness of `menu` with no fake,
+  `api.items` returns `[]`; with the fake `{"mods:menu/menu": {"ask":
+  ["x"]}}`, it returns `["x"]`.

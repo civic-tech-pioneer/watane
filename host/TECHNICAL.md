@@ -339,6 +339,7 @@ pub struct TokenInfo { pub id: TokenId, pub toolset: ToolsetName, pub handle: Ha
 
 ```rust
 /// Interface without version ("mods:shelf/items") -> function -> JSON result.
+/// Step 9: a collect is faked under the mod's own outlet ("mods:menu/menu").
 pub type Fakes = BTreeMap<String, BTreeMap<String, Value>>;
 
 pub struct Harness { /* private: Arc<Host> on a temporary preview home, LocalName, Fakes */ }
@@ -373,6 +374,12 @@ under the same rules as `call`. A fake returns its JSON converted to the
 import's result type. A conversion mismatch is `trap` naming the function.
 A function with no fake fails with `trap`, "no fake for
 <interface>.<function>". The network import will deny every request.
+
+Step 9: a collect of the mod under test returns the JSON of its fake as
+the whole joined list, converted like a call fake; with no fake it returns
+the empty list, because a home with no subscriber answers so too. `deliver`
+of a collect function (a subscription export) returns the mod's own answer
+in `Outcome.value`.
 
 ## 3. Home
 
@@ -508,8 +515,11 @@ identity: the second is an update of the first.
      `release` = `<publisher>/<slug>@<version of interface>` when the
      publisher is set). Two or more: `ambiguous_provider`. One: a link.
 8. Refuse a cycle of call links across the whole catalog (`cycle`, with
-   the path, first name repeated at the end). Subscription links are no
-   edges.
+   the path, first name repeated at the end). Step 9: a subscription link
+   to an outlet in the provider's `world().collects` is an edge from the
+   provider (the collector) to the subscriber, because a collect calls
+   into the subscriber while the collector's lock is held (6.6). Other
+   subscription links are no edges.
 9. Order the entries topologically by their links (providers first); break
    ties by local name. `providers` lists the linked providers of each
    entry.
@@ -637,8 +647,8 @@ component against `mod.world()`. Allowed imports:
   `wasi:sockets` interfaces at `0.2.x`;
 - `wasi:http/*@0.2.x`, only if `world().http`;
 - `watane:host/state@0.1.0` only if `world().storage`; `watane:host/caller@0.1.0`;
-- an interface in `world().events` whose functions all return nothing (an
-  outlet);
+- an interface in `world().events` whose functions each return nothing
+  (an event) or a `list` (a collect, step 9; pkg 4.5);
 - an interface in `world().calls`.
 
 Allowed exports: the interfaces in `world().exports` (its calls) and
@@ -714,7 +724,8 @@ The linker of a mod is built once per registry and kept as an
 | `wasi:http/*` | `wasmtime_wasi_http::p2::add_only_http_to_linker_sync`, hooks of 6.8 |
 | `watane:host/state` | the state transaction; each function first checks the `Storage` grant, else `not_granted` ("<local> has no grant for watane:host/state") |
 | `watane:host/caller` | the caller string of the store |
-| outlet | `func_new`: append the event to the store's outbox (section 9) |
+| outlet | `func_new`: an event function appends the event to the store's outbox (section 9); a collect function runs the collect (9.4) |
+| in a `Harness`, a collect | `func_new`: the fake, or the empty list (2.6) |
 | call import | `func_new`: nested call (6.6) |
 | in a `Harness`, a call import | `func_new`: the fake |
 
@@ -760,8 +771,9 @@ Invoke(mod, interface, function, values, ctx), used for top-level and
 nested calls:
 
 1. If `ctx.depth > limits.depth`: `limit`/`depth`.
-2. Lock the mod's call mutex (one call per mod at a time). The call links
-   are acyclic, so lock waits follow the link order and cannot deadlock.
+2. Lock the mod's call mutex (one call per mod at a time). The call and
+   collect links are acyclic (4.2 step 8), so lock waits follow the link
+   order and cannot deadlock.
 3. New store; `set_fuel(ctx.fuel)`; deadline callback; instantiate from the
    `InstancePre`; call; `post_return`.
 4. On success: read the fuel left; commit the state transaction; append
@@ -1088,6 +1100,39 @@ One `tokio::sync::broadcast` channel per host, capacity 1024, of
 `(LocalName, Arc<str>)` messages. Each `/events` stream subscribes and
 filters by its local name.
 
+### 9.4 Collect (step 9)
+
+A call by collector C to a collect function of its outlet O runs inside
+C's invoke, from the `func_new` of the outlet:
+
+1. Subscribers: from the current catalog, the enabled mods with a
+   subscription link to (C, O) and the `Subscribe` grant, in local-name
+   order: the set of 9.2 step 4.
+2. For each subscriber S: Invoke(S, its subscription export of O, the same
+   function, the same values, ctx with depth + 1, caller `mod:<C>`, fuel =
+   C's store's fuel left), as a nested call (6.6).
+   - On success: set C's store fuel to the fuel that S left, and append
+     S's list to the answer. S's writes commit and its events join the
+     chain effects, as for a nested call.
+   - On a `limit`/`time` or `limit`/`fuel` error: the budget of the whole
+     chain is spent (6.2), so return the error, and C traps with it.
+   - On any other error: S's writes and events are dropped (6.6 step 5).
+     Log `watane: collect <interface>.<function> of <C> from <S> failed:
+     <code>: <message>`, and go on. No retry.
+3. Return the joined list to C. Lowering it into C counts against C's
+   memory limit (6.2).
+
+C learns nothing of who answered: the list has no source, and the order
+is the subscribers' local-name order. No new limit: the subscribers are
+bounded by the catalog, and their work by the chain's fuel, time and
+depth. A collect is not an event: it is never queued, never counts as a
+hop or a delivery, and sends no page bus message. A subscriber cannot call
+C (4.2 step 8), so C's held lock is never awaited inside the collect.
+
+Known limit: one budget for the whole chain, so one subscriber that spins
+fails the collector. The way up is a share of the fuel and time for each
+answer, when a real shell meets it.
+
 ## 10. Tools and MCP
 
 ### 10.1 Toolsets
@@ -1266,6 +1311,10 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `cyc-a`, `cyc-b` | each imports an interface that the other exports |
 | `net` | `[http] hosts = ["example.org"]`; export `api { get: func(url: string) -> result<u16, string>; }` |
 | `empty` | `mod.toml` and an empty world; no part |
+| `menu` (step 9) | outlet `menu { ask: func() -> list<string>; clicked: func(id: string); }`; export `api { items: func() -> list<string>; ping: func() -> string; }`, where `items` returns `ask()` |
+| `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]`; `clicked` does nothing |
+| `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key and then traps; `ask` of `item-spin` spins |
+| `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1309,6 +1358,8 @@ run on the preview install path.
 | A release is what its publisher signed | `Entry` and `Package` exist only after their checked decoders; the checks of 5.2 | S31, S32 |
 | A provider is the pinned one | publisher equality in linking (4.2 step 7); the one exception is a bind, which only the app passes after the participant picked it, and which the consent view shows (4.5); a preview compares no publisher (W27) | catalog, `tests/binds.rs` |
 | State is private | one table per identity; host functions touch only the calling mod's table (7) | runtime |
+| A collect asks only granted subscribers, and does not name them | the set of 9.2 step 4, read from the current catalog at each collect; the answer list carries no source (9.4) | S36 |
+| A collect cannot deadlock | collect links are cycle edges (4.2 step 8) | S38 |
 | A network grant is narrow | HTTPS only, exact host list (6.8) | S27 |
 | A preview never holds participant data | mode fixed in `home.json`; one host per home (3.1) | S2, S3 |
 | No path escapes `ui/` | path rules and canonical prefix (8.3) | pages |
@@ -1462,6 +1513,7 @@ is added.
 | 7 Network grant | wasi:http hooks; fixture `net` | stage 5 | none | `tests/net.rs` passes |
 | 8 Releases | `Source::Release`, section 5.2 | `log`: `Entry`, `Log` (tests); `pkg`: `Release` | none; the stage waits | S31, S32 pass; J3 with `dist` and `app` |
 | 9 Binds (step 5) | `Bind`, `plan_with`, 4.5, `binds` in `installed.json`; the preview rule of 4.2 step 7 | stage 8 | none | S33 to S35 pass (`tests/binds.rs`); J5 with `dev`, `dist` and `app` |
+| 10 Collect (step 9) | 9.4; the outlet row of 6.4; collect edges in 4.2 step 8; the 5.3 rule; collect fakes in `Harness` (2.6); fixtures `menu`, `item-*` | stage 5; `pkg` stage 9 (`World::collects`) | none; the stage waits for pkg | S36 to S39 pass (`tests/collect.rs`); J9 with `dev` and `app` |
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.

@@ -12,6 +12,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | logic part | The isolated part of a mod that computes and holds its state. |
 | interface | A named, versioned set of calls that a mod offers to other mods. |
 | event | A message that a mod sends to the mods that subscribe to it. |
+| collect | A question that a mod asks all the mods that subscribe to it at once. It gets back their answers in one list. (step 9) |
 | grant | One authority that a mod asks for and the participant approves. |
 | host | The program that runs the installed mods together. |
 | app | The desktop application around the host. The participant gives every approval there. |
@@ -49,8 +50,9 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-RUN-4** The host isolates each page from the host and from other pages. A page calls only the logic part of its own mod.
 - **F-RUN-5** A mod calls an interface of another mod only if it declared the call and the participant granted it.
 - **F-RUN-6** The host delivers an event only to the mods that the participant granted the subscription. The sender does not choose or see its subscribers.
-- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, and subscriptions to the events of a named provider.
+- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, and subscriptions to the events and collects of a named provider.
 - **F-RUN-8** Each mod has private state. A failed call changes no state.
+- **F-RUN-9** A mod can collect: the host asks each mod that the participant granted the subscription and gives the asking mod all their answers in one list. The asking mod does not choose or see who answered. An answer that fails is left out and does not fail the collect, unless it uses up the time or the fuel of the whole call. (step 9)
 
 ### 2.3 Install (step 2)
 
@@ -187,6 +189,17 @@ laptop; the server stops serving it. Alice restores her identity on a new
 laptop, pairs the server again, and the new laptop learns her newest
 statement from it; she confirms it before she publishes. No relay and no
 DHT was used.
+
+### J9: Extend a shell
+
+Alice installs a shell mod and two mods that add commands to it. The plan
+shows, for each command mod, the grant to answer the shell. The shell
+collects and shows both commands; it does not learn which mod gave which.
+Alice clicks one, and the mod that gave it acts. One command mod fails
+when asked; the shell still shows the other command. Alice withdraws one
+mod's grant, and its command is gone at the next collect. A command
+mod that also calls the shell is refused at the plan, which names the
+cycle.
 
 ## 4. Later
 

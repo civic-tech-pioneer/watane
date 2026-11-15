@@ -87,6 +87,10 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-46** If a push fails, then dev shall report the release and the parts that were pushed, and give the commands that finish the push without a new publish. Traces: F-QUAL-3, F-PUB-8.
 - **DEV-F-47** When the release of `new --from` names a repository, dev shall clone it at the tag named by the release (`<key>/<slug>@<version>`) and use the clone only when its source equals the source of the verified package, keeping no file of it that the package does not hold. Otherwise dev shall make the mod from the package and warn with the cause. Traces: F-BUILD-1, W24, W29, J5.
 
+## 5b. Extension points (step 9)
+
+- **DEV-F-48** A contract test shall fake a collect of the mod under test with the whole list of answers, and use the empty list when the file gives no fake. A `deliver` step to a collect that the mod answers shall check its answer. Traces: F-MAKE-3, F-RUN-9, J9.
+
 ## 6. Acceptance scenarios
 
 | Id | Given | When | Then |
@@ -142,3 +146,4 @@ test; `TECHNICAL.md` section 15 names its oracle.
 | DEV-S-49 | DEV-S-47 with the remote deleted | `new ratings --from <link> --json` | exit 0; warning `new.fork_unavailable`; no `.git`; the files equal those of DEV-S-35. |
 | DEV-S-50 | DEV-S-47's `ratings` with its import fixed, `gh` logged in as `carol`, an approving app | `publish --push --json` | exit 0; `result.push.mod.forked` is true; `remotes/carol/ratings` is a fork of `alice/reading-list` whose default branch is `watane`, holding Alice's tagged commit and Carol's commit with the tag `<Carol key>/ratings@0.1.0`; its `main` equals `alice/reading-list`'s `main`; no warning. A rerun after a declined first run uses that fork and still sets the default branch. |
 | DEV-S-51 | DEV-S-50 where `carol` already has a fork of `alice/reading-list` under another name; or a derived mod made from the package (no `upstream`) | `publish --push --json` | exit 0; warning `publish.fork_unavailable`; `remotes/carol/ratings` was created (not a fork); the existing fork is unchanged; with the clone, its `main` holds Alice's tagged commit and Carol's commit. |
+| DEV-S-52 | a mod `menu` whose world imports its own `menu { ask: func() -> list<string>; }` and exports `api { items: func() -> list<string>; }` returning `ask()`; and a mod `item` that exports `mods:menu/menu` with `ask` returning `["a"]` | `test --json` with `{"steps": [{"call": "api.items", "returns": []}]}` and then `{"fakes": {"mods:menu/menu": {"ask": ["x", "y"]}}, "steps": [{"call": "api.items", "returns": ["x", "y"]}]}` in `menu`; `{"steps": [{"deliver": "menu.ask", "returns": ["a"]}]}` in `item` | exit 0 for both mods; each step passes. |

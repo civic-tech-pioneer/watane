@@ -152,7 +152,7 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
 | storage | `storage` | `Keep its own data on this device` |
 | network, host `{host}` | `http` | `Connect to {host}` |
 | call of `{interface}` from `{provider}` | `call` | `Call {interface} of {provider}` |
-| subscription to `{interface}` of `{provider}` | `subscribe` | `Receive the {interface} events of {provider}` |
+| subscription to `{interface}` of `{provider}` | `subscribe` | `Receive the {interface} events of {provider}`; from step 9 `Receive the {interface} events of {provider} and answer its requests`, because one subscription also answers its collects (W34) |
 
 - `{host}` is the host name as `mod.toml` writes it.
 - `{interface}` is the interface as `pkg` writes it, for example
@@ -1248,6 +1248,7 @@ record it in `NOTES.md` with the old and the new result.
 | D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
 | E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; the `origin` argument of `search`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass |
 | G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
+| H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page

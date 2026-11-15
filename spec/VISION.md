@@ -70,6 +70,10 @@ After the first version:
   else runs. Friends, strangers and public peers come later (`PEERS.md`
   10). Step 7 is the build plan's own "real world" step
   (`factory/PLAN.md`).
+- **Extension points (step 9).** A mod can ask all the mods that the
+  participant granted to answer it, and get their answers at once: a
+  collect. This is what a plugin host needs, a menu or a toolbar for
+  example, and it uses the same grants as events.
 
 ## Success of the first version
 

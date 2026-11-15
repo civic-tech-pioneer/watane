@@ -1152,10 +1152,10 @@ Each is one JSON object. Unknown fields are errors.
 
 | Field | Meaning |
 |---|---|
-| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. |
+| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. |
 | `steps` | Required, at least one. Run in order, on one host, so state carries from step to step. |
 | `call` | An export function as `watane.js` names it (`<iface>.<fn>`). Runs as the page. |
-| `deliver` | Instead of `call`: a subscription export (`<iface>.<fn>`, the short name of the provider's interface), called as the host calls it for an event. |
+| `deliver` | Instead of `call`: a subscription export (`<iface>.<fn>`, the short name of the provider's interface), called as the host calls it for an event. Step 9: for a collect, its `returns` checks the mod's own answer. |
 | `args` | Optional, default `{}`: an object by parameter name or an array in order. |
 | `returns` | The call must succeed with this value. |
 | `fails` | `true`: the call must fail. A string: the call must fail, and `"<code>: <message>"` of the error must contain it (`"not_granted"`, `"trap"`, a word of a panic). |
@@ -2155,6 +2155,7 @@ rules belong to 15.1.
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
 | DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
 | DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
+| DEV-S-52 | `contract::ac_collect_fake_and_answer` | integration: the `menu` and `item` folders of the scenario, on the real `Harness` |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2344,6 +2345,7 @@ Carol's. The raw URL itself appears only as text (`raw`,
 | 9 (step 5) | `build_on`: 10.1 to 10.3, `release_providers`, 9.2 released providers, `publish.provider_unlisted`, the `missing_providers` fix of 9.6; template `AGENTS.md` lines for `new --from`, `add --release` and source as data | app: `/api/fetch` (app 8.3); host stage 9 (the preview rule) | `fake-watane` answers `/api/fetch` from packages named in `fake.json` | S-35 to S-40 pass; dev's part of J5 |
 | 10 (step 6) | `share`: 10.4.1 `publish --push`; the codes and result of 2.2, 2.4; `fake-gh`; the fake-watane site files (15.4); template `AGENTS.md` lines for `publish --push` and asking the person for `gh auth login` | pkg stage 8 (`repository`); the maker's git and gh | `fake-gh`, local bare remotes (15.4) | S-41 to S-46 pass; with the app, J3 on a local remote (`ac2_j3_github`) |
 | 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result; the GitHub fork of 10.4.1 step 3 and `publish.fork_unavailable` | stage 10 | as stage 10 | S-47 to S-51 pass; J5 on a local remote (`ac2_j5_github`) |
+| 12 (step 9) | collect fakes and answers in contract tests (8.1); template `AGENTS.md` lines: an own-interface function with a `list` result is a collect, and how to fake it and answer one | host stage 10: collect fakes in `Harness` | none; the stage waits for host | S-52 passes; dev's part of J9 |
 
 ## 17. Questions for spec/
 
