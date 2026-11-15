@@ -10,8 +10,10 @@ use watane_log::{Entry, EntryId, MAX_ENTRY, PublicKey};
 
 pub(crate) const ALPN: &[u8] = b"watane/1";
 pub(crate) const VERSION: u64 = 1;
-/// The ops of stage N2, in the order `hello` lists them.
-pub(crate) const OPS: [&str; 6] = ["hello", "heads", "entries", "fork", "devices", "pair"];
+/// The ops this node answers, in the order `hello` lists them.
+pub(crate) const OPS: [&str; 7] = [
+    "hello", "heads", "entries", "fork", "devices", "pair", "query",
+];
 
 /// Answer byte limits of each op: the whole stream, CBOR framing included.
 pub(crate) const HELLO_ANSWER: usize = 1024;

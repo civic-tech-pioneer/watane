@@ -44,7 +44,9 @@ fn ac5_hello_from_a_trusted_and_an_unknown_node() {
         assert_eq!(hello.version, 1);
         assert_eq!(
             hello.ops,
-            ["hello", "heads", "entries", "fork", "devices", "pair"]
+            [
+                "hello", "heads", "entries", "fork", "devices", "pair", "query"
+            ]
         );
         let l = hello.limits;
         assert_eq!(l.request, 262_144);

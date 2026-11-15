@@ -526,7 +526,6 @@ impl Net {
         })
     }
 
-    /// Every receiver gets every later event (node Q2).
     /// Light: pull `channel` from a full machine with `Why::Asked` (5.9).
     pub fn need(&self, channel: &PublicKey) -> Result<(), NetError> {
         light::need(self, channel)
@@ -548,6 +547,7 @@ impl Net {
         light::own_heads(self, channel)
     }
 
+    /// Every receiver gets every later event (node Q2).
     pub fn events(&self) -> mpsc::Receiver<Event> {
         let (tx, rx) = mpsc::channel();
         lock(&self.core.subscribers).push(tx);

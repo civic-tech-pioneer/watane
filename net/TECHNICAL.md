@@ -244,8 +244,8 @@ code is trimmed; whitespace inside it is a bad code.
 answer is one item `[hits]` of at most `min(limit, hits per answer)` hits, from
 `holdings.search` only, within the request deadline; its answer limit is
 32 KiB. The caller refuses more hits than it asked for, or a hit whose
-channel or id is not 32 bytes (`BadObject`). `hello` still lists the six ops
-of N2; no caller reads the list to choose an op.
+channel or id is not 32 bytes (`BadObject`). `hello` lists the ops this node
+answers, `query` included since N4; no caller reads the list to choose an op.
 
 The other two ALPNs are iroh-blobs' and iroh-gossip's own. `serve.rs`
 accepts a connection on them only from a trusted node (5.4).
@@ -813,7 +813,7 @@ N4 part 1 notes (built, S67):
   the hash); a hash mismatch says "package <hex8> from <short key> does not
   match its hash"; every `Refused` cause contains the node's short key (the
   event adds "node <short>: " when the cause lacks it).
-- No `Limits` field is new; `hello` is unchanged.
+- No `Limits` field is new; `hello`'s ops now name `query`.
 - Tests: `tests/light.rs` (S8, S9 query part, S12, the anchor, the causes),
   unit tests in `light.rs` and `wire.rs`.
 

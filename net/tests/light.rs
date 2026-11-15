@@ -58,8 +58,8 @@ fn quick() -> Limits {
 
 /// Four paired machines that S8 and the query part of S9 share (pairing
 /// costs seconds): the anchor laptop, the server and a third machine (both
-/// full replicas) and Alice's second laptop (light), which knows the server
-/// and not the third machine.
+/// full replicas, which know each other) and Alice's second laptop (light),
+/// which knows the server and not the third machine.
 struct Shared {
     anchor: Node,
     server: Node,
@@ -89,6 +89,13 @@ fn shared() -> std::sync::MutexGuard<'static, Shared> {
             pair_into(&anchor, &server, Role::Full);
             pair_into(&anchor, &third, Role::Full);
             pair_into(&anchor, &light, Role::Light);
+            // the server reaches the third machine (a server that forwarded a
+            // query would ask it) and takes none of its channels
+            server
+                .holdings
+                .not_wanted
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            introduce(&server, &third);
             introduce(&light, &server);
             settle(&[&anchor, &server, &third, &light]);
             std::sync::Mutex::new(Shared {
@@ -175,6 +182,10 @@ fn s9_a_light_query_reaches_the_server_and_no_third_node() {
     let (light, server, third) = (&f.light, &f.server, &f.third);
     let w = f.cw[0].author();
     assert!(server.holdings.raws(&w).is_empty());
+    // the server reaches the third machine: the third, a full replica, pulled
+    // the server's channel
+    let x = f.cx[0].author();
+    assert!(wait_for(5, || third.holdings.raws(&x) == raws(&f.cx)));
     let before = third.holdings.calls();
 
     let answer = light.net.query(&query());
