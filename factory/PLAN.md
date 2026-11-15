@@ -534,7 +534,7 @@ is a step-7-style check, after S55.
   Option), possibly host and dev. Needs the Mac: the app cannot build in the cloud, and J2 to J5 must
   stay green. S60 is building net in the cloud at the same time and owns the workspace Cargo.toml
   and Cargo.lock: add no dependency.
-- [~] **S62 Alice pairs her server with a code, and only her own machines are served (net N2).**
+- [x] **S62 Alice pairs her server with a code, and only her own machines are served (net N2).**
   Branch `slice/s62`. Builds net N2 (net/TECHNICAL.md 5.3 to 5.5 and the N2 row of 9): the signed
   device list with expiry, pairing by code (`answer_join` with the short key confirmed), classes,
   and allowances and budgets in bytes per peer on every protocol, polled from `Connection::stats()`
@@ -543,6 +543,7 @@ is a step-7-style check, after S55.
   FUNCTIONAL 3), each as a test `s<n>_...`. Also takes node/TECHNICAL.md 13 Q4 (`Options` and
   `Limits` derive Clone, Debug and Default) and the N2 part of Q5 (a light machine prefers a full
   replica over the anchor), each answered in net's documents. Touches: net only. Cloud.
+  Delivered (ea231f3): one implementer run and a validator pass, plus S62-fix1 from user-sim (a hello pulls a newer device list from a trusted node; pairing codes trim whitespace). Verified on the Mac: workspace build, net all green including ignored, host green.
 - Then, sketched just in time as each lands: net N3 and N4 in turn on one line, and node 1 once S61
   and S62 are both in. node 1 joins
   them after N2, node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
@@ -565,7 +566,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
-| net | N2 device list, pairing, classes, allowances | 8 | open (S62) |
+| net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | open |
 | net | N4 light machines, restore, reach | 8 | open |
 | log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open (S61) |
