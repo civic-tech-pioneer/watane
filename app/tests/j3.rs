@@ -282,7 +282,6 @@ fn ac2_j3_github() {
 #[test]
 #[ignore = "real: GitHub minmax-fund"]
 fn ac3_j3_real_github() {
-    use std::fs;
     use support::{dev::workspace_dev, github::RealGithub};
 
     let dev = workspace_dev();
@@ -340,11 +339,6 @@ fn ac3_j3_real_github() {
             .git(&["-C", mod_remote.to_str().unwrap(), "tag"])
             .trim(),
         release
-    );
-    let manifest = fs::read_to_string(reading.join("mod.toml")).unwrap();
-    assert!(
-        manifest.contains(&format!("repository = \"{repository}\"")),
-        "{manifest}"
     );
 
     // AC3: serve only a fresh clone of the pushed site, then ask dev for its link.

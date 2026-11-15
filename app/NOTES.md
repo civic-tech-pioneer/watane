@@ -426,22 +426,6 @@
   passed (143 s), `ac3_j5_real_github` passed (222 s), and no
   `watane-j-*` repository was left. No difference from `fake-gh.rs` showed
   up in what dev runs, so `fake-gh.rs` is unchanged.
-
-Local validation: the default build and tests passed. The offline harness
-self-tests (redaction, missing token, child-only environment, isolated
-configuration and local site origin) passed. A driver-suite run failed in
-`api::ac6_publish_through_consent_window_and_host_guards` before app readiness,
-with invalid connections to `com.apple.hiservices-xpcservice` in app stderr.
-This is a macOS GUI-session failure; no existing test was changed.
-
-The separate unchanged fake-J3/J5 command also stopped at
-`ac2_j3_github` with the same app-readiness/GUI-service failure; Cargo did
-not reach J5. Dev's fake-GitHub `share` suite passed all 18 tests.
-Driver-only J3/J5 test listings contain no real-GitHub tests. The release
-build with `driver` failed at the intended compile guard, "the driver
-feature is only for debug test builds".
-
-Final checks: `cargo test -p watane-app --features real-github --no-run`,
-all 12 support self-tests with `real-github`, Clippy with both `driver`
-and `real-github` (`--all-targets -- -D warnings`), and `cargo fmt --check`
-passed. No new dependency was added.
+- Acceptance run (user-sim, after rebase on main): both real journeys and
+  both fake journeys (`ac2_j3_github`, `ac2_j5_github`) passed; no
+  `watane-j-*` repository left; the token never appeared in output.
