@@ -452,14 +452,46 @@ choice, the DHT switch) and `node` (`watane-node`, full replica and relay role);
 and choose a relay. Its journey is J8 (spec/FUNCTIONAL.md). Friends, strangers, public peers and
 scale (D2 to D5) are a sketch in PEERS.md and come after it.
 
-Not sliced yet, on purpose: the design is uncommitted in the human's working tree (`spec/PEERS.md`,
-`net/`, and edits to `spec/VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`, `README.md` and the dist, log
-and host TECHNICAL.md files), with `net/REVIEW.md` beside it. Slices are sketched once it is on main.
-A design slice may come first if the review leaves anything open. J8 needs two homes that do not
-share a filesystem: two homes on the Mac may do for the first slices, but the journey wants the
-second machine S55 is waiting for. Open for the human: VISION says each step works before the next
-starts, but nothing in D1 needs real GitHub or a real static host, and step 7 is blocked on the human
-anyway. The product owner recommends starting D1 once the design is on main, beside step 7.
+The design landed on main as `7be1bfe` (2026-11-15), the review's questions decided by the human
+(net/ARCHITECTURE-PROPOSAL.md 16.1). Four pieces are still marked "for the step 8 design slice":
+`node`'s own documents (net/TECHNICAL 8), dist's keyless open and holder methods (dist Q13), log's
+keyless open (log/TECHNICAL 12 item 13), and the app's views for own machines (net Q3). So step 8
+starts with a design slice, and net's N1, which needs none of those, runs beside it.
+
+Open for the human: VISION says each step works before the next starts, but nothing in D1 needs
+real GitHub or a real static host, and step 7 is blocked on the human anyway. The product owner
+recommends starting S59 and S60 now, beside step 7. Neither is handed out until the human answers.
+
+J8 runs on one machine: net's test plan binds every node to loopback with mDNS off (net/TECHNICAL
+7), so the journey's server and laptops are homes on the Mac. Running it on real separate machines
+is a step-7-style check, after S55.
+
+- [ ] **S59 Step 8 is designed down to its last subsystem (design slice).** Writes `node/VISION.md`,
+  `node/FUNCTIONAL.md` and `node/TECHNICAL.md`, with a build plan: the crate that joins `dist` and
+  `net` (neither knows the other), `Holdings` over a `Dist` handle, the `told`, `need` and
+  `need_blob` calls, and the `watane-node` program (a keyless home, full or light, relay by flag).
+  Settles dist Q13 in dist/TECHNICAL.md (`Dist::open_keyless`, the holder methods of net/TECHNICAL
+  3.1, a record reason `kept`, reads that do not hold the store lock across network calls, RV-06)
+  and log item 13 (`Log::open_keyless`) as build-plan stages of their own. Designs the app's D1
+  views (turn on, the join question with the short key, devices and roles, expiry, relays, the DHT
+  switch with its consent text) in app/FUNCTIONAL.md and app/TECHNICAL.md, which answers net Q3,
+  and decides net Q2. Outcome: every stage step 8 needs has a row in a subsystem's build plan, and
+  `Stage coverage` here gets one row each. No code. Touches: new `node/`, dist, log, app, net
+  (Q2, Q3 closed). Cloud: documents only. A reviewed design merges; a choice that is hard to revert
+  goes to the human as change, alternatives and consequences.
+- [ ] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Creates the `net`
+  crate and adds it to the workspace: the node key, the pairing code text, the wire codecs and their
+  limits in bytes, `hello`, `heads`, `entries` and `fork` between two local nodes, and the 4.3
+  golden vectors made with `ed25519-compact`. Pins iroh, iroh-blobs and iroh-gossip, and answers
+  net Q1 against those pinned releases: can the blobs store add a file by reference, and can a
+  protocol handler be wrapped in iroh's router. If either is missing, the replacement goes into
+  net/TECHNICAL.md 12 before N3. Outcome: scenario S1 and `heads` and `entries` between two trusted
+  test nodes pass; S13 runs from here on. Touches: new `net/` crate, workspace `Cargo.toml`. Cloud:
+  bind `127.0.0.1`, not `::1` (the cloud has no IPv6 loopback); no test reaches the internet.
+- Then, sketched just in time as each lands: net N2 (device list, pairing, classes, allowances and
+  budgets), N3 (sync, gossip hints, blobs), N4 (light machines, restore, reach: mDNS, addresses,
+  relay, the DHT switch); the `log` and `dist` keyless opens and holder methods; `node` and
+  `watane-node`; the app's views; and J8, which closes the step.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -477,6 +509,11 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
+| net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | open (S60) |
+| net | N2 device list, pairing, classes, allowances | 8 | open |
+| net | N3 sync, gossip hints, blobs | 8 | open |
+| net | N4 light machines, restore, reach | 8 | open |
+| node, log, dist, app | step 8 stages | 8 | not yet named: S59 writes them |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
