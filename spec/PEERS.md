@@ -315,7 +315,7 @@ are a sketch: a later step designs each one.
 |---|---|
 | `VISION.md` | Step 8, own machines. Nothing else: V4 holds (no endpoint on by default), V7 holds (no mod-defined kinds). |
 | `FUNCTIONAL.md` | Terms, F-OWN requirements and J8 for step 8; F-QUAL-1 and F-APP-6 name own machines. |
-| `TECHNICAL.md` | Subsystems `net` and `node`; W10, W13; W31 (links name a location URI read by a resolver); W32 (`net` off by default, no endpoint on); W33 (a replica holds no participant key); build order row 7; security rows. |
+| `TECHNICAL.md` | Subsystems `net` and `node`; W10, W13; W31 (links name a location URI read by a resolver); W32 (`net` off by default, no endpoint on); W33 (a replica holds no participant key); build order row 8; security rows. |
 | `log` | A keyless open (step 8). `Log::forget` at D5. No format change. |
 | `dist` | The link location is a URI with resolvers (now, W31). The holder methods and a keyless open (step 8). No new kind. |
 | `host` | Reserves `<home>/net/`. |

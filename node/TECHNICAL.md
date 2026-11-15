@@ -165,7 +165,7 @@ read from a web host (NODE-F-7).
 | `blob(id)` | `dist.package_file(&id)` (4.3) |
 | `wanted_blobs(Full)` | `dist.missing_packages()` |
 | `wanted_blobs(Light)` | the packages that `need_blob` asked for (5.3) and `dist.package_file` still lacks |
-| `ingest(channel, entries, why)` | `dist.ingest(channel, entries, Reason::Kept)` for `Why::Kept`, `Reason::Asked` for `Why::Asked`; `dist::Ingested` as `net::Ingested`, a `Compromised` without its seq, a `Failed` with the error's text |
+| `ingest(channel, entries, why)` | `dist.ingest(channel, entries, Reason::Kept)` for `Why::Kept` on a replica; `Reason::Asked` for `Why::Asked`, and for `Why::Kept` on the anchor (NO-8); `dist::Ingested` as `net::Ingested`, a `Compromised` without its seq, a `Failed` with the error's text |
 | `store_blob(id, file)` | `dist.store_package(&id, file)`, its error as text |
 | `search(query)` | `dist.search(&q)` with `q` from 4.3, each hit as `net::Hit` (4.3) |
 
@@ -192,9 +192,12 @@ an install keeps it (5.3).
   release has the name in that mode: `offers` in `release.offers`, `sends`
   in `release.events`, `uses` in a call or subscribe grant. `limit` cuts
   the result. Back, for `net.query` (5.4): dist's `text`, `publisher` and
-  `origin`, `interface` as `null`, `limit` 200. dist's `InterfaceQuery`
-  matches any mode and net's names one, so the interface filter runs here,
-  in `search_stored` (5.4 step 4), and never on the other machine.
+  `origin` and `limit` 200. dist's `InterfaceQuery` matches any of the
+  three modes and net's names one, so a query with an interface becomes
+  three net queries, one per mode (`offers`, `uses`, `sends`) with that
+  name, whose hits are merged by channel and entry (5.4 step 2); a query
+  with none sends `interface` `null`. `search_stored` then applies dist's
+  own filter again (5.4 step 4).
 - **Hit.** dist's `Hit` to net's: `[channel, seq, entry]` from
   `hit.info.channel`, `hit.info.seq` and `hit.info.entry`.
 - **Package ids.** net's `BlobId` and pkg's `PackageId` are both the plain
@@ -256,7 +259,8 @@ On any other home it does nothing: the app follows `fetched.link` as before
 
 1. `local = dist.search(query)`. Not light: return each as `NodeHit` with
    `from` empty.
-2. `remote = net.query(&q)` with `q` from 4.3. `net` already pulled each
+2. `remote = net.query(&q)` with `q` from 4.3 (three calls when the
+   query has an interface, merged). `net` already pulled each
    hit's channel that the holder lacked, from the machine that gave it, at
    most 32 channels per query (net 5.9).
 3. For each remote hit whose channel is stored with a head below the hit's
@@ -291,9 +295,10 @@ unused identity loses nothing.
 `Node::open(home, confirm, options)`:
 
 1. `holdings = Arc::new(DistHoldings::empty())`.
-2. `net = Net::open(home/net, holdings.clone(), options.net)`. `net`
-   reads its own switches (`on`, relays, the DHT) from `book.json` (net
-   4.5, 5.1); a new home starts with all of them off.
+2. `net = Net::open(home/net, holdings.clone(), options.net)` with
+   `options.net.on` true: `net` then takes its own switches (`on`,
+   relays, the DHT) from `book.json` (net 4.5, 5.1, Q1); a new home starts
+   with all of them off.
 3. A **replica**: `net.devices()` is `Some(list)` and `list.anchor !=
    net.node_key()`.
 4. Replica: `Dist::open_keyless(home, options.dist)`. Else
@@ -342,6 +347,11 @@ created when missing. A home with `home.json` (a home of the app or of
 `watane`) is refused (`HostHome`): a node home holds no mods and no
 identity. Arguments are parsed by hand, as `watane` does.
 
+- Every command but `join` and `run` opens with `options.net.on` false,
+  so it makes no network contact whatever `book.json` says (Q1).
+  `join` and `run` set `on: true` with `net.set_options` when they start,
+  and `on: false` when they end, also on SIGINT and SIGTERM; after a crash
+  `book.json` may still say on, which no other command acts on.
 - **join**: `Node::open_keyless`; `net.set_options` with `on: true` for
   the duration of the command; print `this machine: <short key>` and
   `waiting for your answer on the anchor`; `node.join(code, replace)`;
@@ -476,7 +486,9 @@ Then app stage G (app 12) builds the views on stage 2, and J8
 
 | # | Question | Answer used here |
 |---|---|---|
-| Q1 | net 3 gives `Net::open` an `Options` with `on`, `relays` and `dht`, and net 5.1 reads the same switches from `book.json`. Which wins at open? | `book.json` wins once it exists; `Options` gives the values of a new home; `set_options` writes `book.json`. node always passes the defaults (all off) and changes switches only with `set_options`. For net N1 to confirm. |
+| Q1 | net 3 gives `Net::open` an `Options` with `on`, `relays` and `dht`, and net 5.1 reads the same switches from `book.json`. Which wins at open? | `Options.on` false keeps the endpoint off for that open, whatever `book.json` says. With `Options.on` true, `book.json` decides `on`, the relays and the DHT; a new home's `book.json` has all of them off. `set_options` writes `book.json`. For net N1 to confirm and write into net 3 and 5.1. |
+| Q3 | net 5.7 runs a pull for any told channel whose seq is above the holder's. On a light machine that pulls every channel any machine tells, as `Asked`, against NET-F-21 and net Q2. | node assumes the net N3 rule: a light machine acts on a hint only for a channel in `holdings.heads(None)`; a full machine for any channel. For net N3 to write into net 5.7 (outside S59's part of net). |
+| Q4 | node 3 derives `Default`, `Clone` and `Debug` on an `Options` that holds `watane_net::Options`. | net's `Options` and `Limits` derive `Clone`, `Debug` and `Default`, with `on` false, `relays` empty, `dht` false, `relay_server` `None` and the limits of net 4.2. For net N1 to write into net 3. |
 | Q2 | Does `Net::events()` give one receiver or one per call? | node takes no events itself; the app and the program each call it once, and each needs every later event. |
 
 ## 14. Decisions of this subsystem
@@ -490,3 +502,4 @@ Then app stage G (app 12) builds the views on stage 2, and J8
 | NO-5 | A remote hit counts only when its entry is stored here; the shown hit is dist's view of it. | One verifier, the same filters as a local hit (F-FIND-4, PEERS 8.2). |
 | NO-6 | An install from a remote hit with no link gives the channel a `kept` record on a replica. | Updates keep coming through the full machines, as a follow does through a web host (DD-24); it is net Q2's answer. |
 | NO-7 | The consent texts live in `node`, used by the app and the program. | One text per choice, wherever it is made (W32). |
+| NO-8 | Only a replica keeps: on the anchor, a `Kept` pull is ingested as `Asked`, with no record. | The anchor's held set comes only from the participant's own acts there (follow, index, install), so an unfollow on the anchor takes effect and the anchor does not collect what the light machines follow. Undo: cheap. |

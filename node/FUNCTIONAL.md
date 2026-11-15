@@ -36,7 +36,7 @@ All of this is step 8 (own machines, stage D1 of `spec/PEERS.md`).
   Traces: NET-F-14, NET-F-15.
 - **NODE-F-5** node shall hand everything that `net` pulled to the holder, which verifies it again before it stores it; node shall store nothing itself.
   Traces: PG-3, NET-F-23.
-- **NODE-F-6** A full machine shall keep each channel that it pulled from an own machine as a kept channel, with no follow and no index choice, and keep it current from the own machines.
+- **NODE-F-6** A full replica shall keep each channel that it pulled from an own machine as a kept channel, with no follow and no index choice, and keep it current from the own machines. The anchor shall hold only what the participant's own acts on it chose; what it pulls besides is stored and not kept.
   Traces: F-OWN-3, F-OWN-4, NET-F-21.
 - **NODE-F-7** No question of `net` shall wait for a read of the holder from a web host.
   Traces: F-OWN-4.

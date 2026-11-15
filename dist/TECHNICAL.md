@@ -1190,6 +1190,10 @@ and an `Asked` channel has no record. For either:
   that `node` pulled from a full machine (`node` 5.3, A46).
 - a hit (5.10) and `search_stored` of a kept-only record have `link`
   `None`, so "Install a hit" follows nothing.
+- `refresh_channel` of a kept-only record makes no request: its outcome
+  is `Current { head }` with the stored head, its changes are empty, and
+  `last_attempt` and `last_success` do not change (no web host checked
+  it; the own machines keep it, `node` 5.3). `refresh` skips it.
 
 A "live release of a stored channel" is found through every stored
 channel (`log.channels()`, log 5.5); dist may keep an index from package
@@ -1288,7 +1292,7 @@ literal values, `std::fs`, the `blake3` crate, and `watane_log` and
 | `keyless_*` (S8) | A42, A43; every signing path of 5.12 is `NoIdentity` with no `confirm` call and no file change | `std::fs`; recorded requests |
 | `holder_*` (S8) | A44, A45, A46, A48; `entries` byte cut; `package_file` of a withdrawn release is `None` | entries and packages of a keyed home made in the test; `blake3::hash`; `follows.json` with `serde_json` |
 | `holder_lock` (S8) | A47 | a `TestHost` in `Stall(20 s)` mode; the test's clock |
-| `kept_*` (S8) | kept records survive refresh, unfollow and `drop_index`; `Via::Kept` hits; `search_stored` gives no `via` | literal expected hits |
+| `kept_*` (S8) | kept records survive refresh, unfollow and `drop_index`; `Via::Kept` hits; `search_stored` gives no `via`; `refresh_channel` of a kept-only record makes no request and leaves its times | literal expected hits; request counts; `follows.json` with `serde_json` |
 
 Step 4 tests use one `TestHost` per channel (Alice, Ivy, Jay, ...), each
 serving that home's site folder. The index owner's statements are made by
@@ -1487,7 +1491,7 @@ are `list` and `include` statements of 4.1.
 | DD-34 | A provider base ends the reads (5.11 step 3, DD-32) only when, after its read (`Current` or `Behind`), the stored view holds the wanted release; a base that serves without it is a stale mirror and the next base is read. When no base has it but at least one served the channel, the answer is `StaleBases { release, bases }` (the count of bases that served), naming the cause and the next step; `UnknownRelease` stays for a followed or index record whose stored view lacks the release. `unfollow` of a channel with no `followed: true` record is the new `NothingToUnfollow { channel }`, not `NotFollowed`. | A stale mirror ahead in trust order hid a good base behind it; "follow the publisher's link" was no help for a channel Eve never followed. Undo: cheap. |
 | DD-35 | A link's base is a URI of any scheme (W31); `http` and `https` are the only resolvers. Another scheme parses, keeps its listing live, and fails a read with `NoResolver`. | Links are published in `list` and `include` statements and cannot be recalled; a reader that refused a new scheme at parse would mark the statement bad, and its later `unlist` too. Undo: cheap now, costly once a second scheme is published. |
 | DD-36 | A keyless home is a `Dist` like any other, opened with `open_keyless`; every signing path is `NoIdentity`, and `identity()` is an `Option`. | One type and one store for both kinds of home; the type tells each caller that a home may hold no key. Undo: cheap (workspace callers only). |
-| DD-37 | A full machine's copy is a record reason `kept` in `follows.json`, with no base, beside `followed`, `index` and the listed state. | The record already carries the reasons a channel is held; a kept channel must survive refresh and unfollow like the others. Additive: the version stays 1, as in step 4. |
+| DD-37 | A full replica's copy is a record reason `kept` (the anchor ingests as `Asked`, `node` NO-8) in `follows.json`, with no base, beside `followed`, `index` and the listed state. | The record already carries the reasons a channel is held; a kept channel must survive refresh and unfollow like the others. Additive: the version stays 1, as in step 4. |
 | DD-38 | An `Asked` ingest makes no record (net Q2); `keep` makes one after an install. | A search hit pulled through a full machine must not grow the held set; an installed mod must keep getting updates (DD-24). |
 | DD-39 | The holder methods take no read lock and no own-channel lock; only `log`'s and `follows`'s, never across a request. | RV-06: a web read must not stall the own machines; every source only raises a head (PEERS A2), so no coordination is needed. |
 | DD-40 | Kept channels are search candidates with `Via::Kept`, which counts as no index in the order. | A full machine answers a light machine's query from what the own machines hold; the order still uses only the participant's choices. |
