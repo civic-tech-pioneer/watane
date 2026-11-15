@@ -63,7 +63,18 @@ pub(super) fn linker(
         for (name, item) in instance.exports(engine) {
             if let ComponentItem::ComponentFunc(func) = item.ty {
                 if func.results().len() != 0 {
-                    // A collect (9.4); pkg checked that its result is a list.
+                    // A collect (9.4). The host checks the compiled type
+                    // itself (5.3): one result, a list.
+                    let mut results = func.results();
+                    if !matches!(
+                        (results.next(), results.next()),
+                        (Some(wasmtime::component::types::Type::List(_)), None)
+                    ) {
+                        return Err(HostError::Internal(format!(
+                            "outlet {outlet}.{name} must return nothing or a list"
+                        ))
+                        .into());
+                    }
                     let collect_interface = outlet.clone();
                     let collect_function = name.to_owned();
                     interface.func_new(name, move |mut ctx, ty, values, results| {
