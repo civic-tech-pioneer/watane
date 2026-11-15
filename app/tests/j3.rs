@@ -463,6 +463,7 @@ fn ac3_j3_real_github() {
     );
     let index = index.as_str().unwrap();
     assert!(!index.contains("local address"), "{index}");
+    assert!(!index.contains("Skipped"), "{index}");
     assert!(
         !index.contains(&alice_link.channel().fingerprint()),
         "{index}"

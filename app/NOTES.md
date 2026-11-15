@@ -515,7 +515,6 @@
   `driver,real-github`, both clippy feature combinations and
   fmt passed. All 19 harness self-tests passed with `real-github` enabled.
   Release with `driver` failed as required (`the driver feature is only for
-  debug test builds`). The unchanged fake J3 and the driver suite failed at
-  app readiness with `com.apple.hiservices-xpcservice` connection invalid,
-  before their GUI assertions; no test was weakened. Native GUI validation
-  and the real Pages journey remain for the foreman.
+  debug test builds`). The fake J3 failed in the Codex sandbox (hiservices
+  XPC); natively it passes (validator, 39 s). The real Pages journey remains
+  for the foreman.
