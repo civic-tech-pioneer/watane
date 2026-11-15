@@ -316,13 +316,14 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 - [x] **S51 Toolsets and tokens are complete in the app (host stage 4).** Folded into S58 and
   delivered with it 2026-11-14: it touches the same `app/src` and `app/ui` files, so it could not
   run beside it.
-- [~] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
+- [x] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
   unlocked screen, so the four `front:` tests fail on a locked Mac (`gui_isolation` ac1) instead of
   skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
   run all four once on an unlocked screen and record the result. These four have never run.
   Needs the Mac and a human at it: the human allows the screen at weekends and after 18:00 on any
   day (2026-11-15). Local, branch `slice/s52`. Touches: app/src (the front wait), app/tests/gui_*.
   S53 owns app/tests j3, j5 and support/dev.rs.
+  Delivered (16c874a): the four front tests ran for the first time, on an unlocked screen, 2026-11-15 20:14 to 20:20, and all four passed (recorded in app/NOTES.md). On a locked screen each skips with a visible line; `App::front` returns `Option<App>`; an unreadable lock state panics rather than counting as unlocked. Verified natively on the Mac by the foreman after its rebase on 19fe1e9: app `--features driver --include-ignored` green, clippy and fmt clean.
 - [x] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
   account with the real `gh`, in place of `fake-gh`. `fake-gh` was written from the same spec as the
   code it serves, so this is the slice most likely to find something. Keep `fake-gh` for the fast
@@ -902,7 +903,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S63: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S67: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S53: delivered 2026-11-15 and merged; foreman exited, worktree, its target and branch removed.
-- S52: `e94a9b4e` (sessionId `e94a9b4e-fe58-4627-a92e-734ec694d848`), worktree `.claude/worktrees/s52` (local: the screen).
+- S52: delivered 2026-11-15 and merged; foreman stopped, worktree, its target and branch removed.
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S65: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S68: delivered 2026-11-15 and merged; routine finished, branch removed.
