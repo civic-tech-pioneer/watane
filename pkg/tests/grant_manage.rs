@@ -1,8 +1,5 @@
 use std::{fs, path::Path};
 use watane_pkg::*;
-#[path = "support/release.rs"]
-#[allow(dead_code)]
-mod support;
 
 const HOST: &str = "package watane:host@0.1.0;
 interface state { get: func(key: string) -> option<list<u8>>; }
