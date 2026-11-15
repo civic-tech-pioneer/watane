@@ -20,7 +20,7 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
 
 - **PKG-F-5** pkg shall derive the grants of a mod only from its WIT world, its provider list and its list of network hosts. There is no other list of grants.
   Traces: F-RUN-2, F-RUN-7, F-INST-1, F-INST-2.
-- **PKG-F-6** pkg shall give each grant one of the four kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events and collects of a named interface of a named provider.
+- **PKG-F-6** pkg shall give each grant one of the kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events and collects of a named interface of a named provider, and (step 10) the management of mods.
   Traces: F-RUN-7, F-APP-5.
 - **PKG-F-7** pkg shall name the provider of each call and subscription with its slug and its publisher, or as local. A WIT package name alone never names a provider.
   Traces: F-RUN-5, F-RUN-6, F-INST-1.
@@ -82,6 +82,8 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
   Traces: F-RUN-6, F-RUN-9, J9.
 - **PKG-F-27** pkg shall read whether a mod with a page proposes itself as the main mod, and refuse the proposal from a mod with no page.
   Traces: F-APP-7, J10.
+- **PKG-F-28** (step 10) pkg shall give a mod whose world imports the management interface of the host the grant to manage mods, and carry that grant in the release body like any other.
+  Traces: F-RUN-7, F-INST-9, J10.
 
 ## Acceptance scenarios
 
@@ -119,3 +121,5 @@ Each scenario is one test. The expected values come from this file or from
 | A27 | the same world with `ask: func() -> string` | it is read | refused with rule `import`, naming `menu.ask` | PKG-F-26 |
 | A28 | the folder `hello` with `main = true` in `mod.toml` | it is read | `main` is true; without the key it is false | PKG-F-27 |
 | A29 | a folder with `main = true` and no `ui/index.html`, or with `main = "yes"` | it is read | refused with rule `mod-toml` and the messages of `TECHNICAL.md` 4.2 | PKG-F-27 |
+| A30 | a world that imports `watane:host/state@0.1.0` and `watane:host/manage@0.1.0` (with a page and an export, so it has a logic part) | it is read | `World::manage` is true; grants exactly `[storage, manage]` | PKG-F-28 |
+| A31 | the mod of A30 | its release body is made and encoded | the grants array is the hex `828100 8104`; decode gives `[Storage, Manage]` back | PKG-F-28 |

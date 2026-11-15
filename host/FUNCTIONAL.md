@@ -17,6 +17,8 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 | link | The binding of an import or a subscription of a mod to one installed provider. |
 | plan | What an install would do: the mods, their grants, their providers, and what is missing. |
 | app | The in-process party that answers a confirmation. A host has no app, or one app. |
+| manager | (step 10) A mod with the grant to manage mods. |
+| request | (step 10) An addition that a manager asks for: the app decides it, and the host acts only on the answer. |
 
 ## 2. Requirements
 
@@ -85,6 +87,17 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-46** When a mod calls a collect, the host shall call the same function in each enabled subscriber that holds the subscription grant, in local-name order, inside the collector's call, and return their lists joined in that order. The collector shall not learn who answered. Traces: F-RUN-9, J9.
 - **HOST-F-47** If an answer of a collect fails, then the host shall leave it out, drop its writes and events, log it, and go on with the next subscriber. Only a failure that ends the whole call (its time or fuel) fails the collector. Traces: F-RUN-3, F-RUN-9.
 - **HOST-F-48** In a contract test, the host shall answer a collect with its fake, or with the empty list when the file gives none. Traces: F-MAKE-3, F-RUN-9.
+
+### 2.7 Step 10: Own manager
+
+- **HOST-F-49** When a manager asks, the host shall give it every installed mod with its version, publisher, origin, enabled state, grants, links and binds. If a mod without the grant to manage uses a function of management, then the host shall fail that call with "not granted". Traces: F-INST-9, J10.
+- **HOST-F-50** A manager shall be able to disable a mod, withdraw a grant of a mod, and close the page of a mod, without a question. Traces: F-INST-10, J10.
+- **HOST-F-51** When a manager asks for an install, an update, an enable, a grant or a removal, the host shall pass the request to the app, give the manager an id to follow it by, and act only after the app's answer. A manager shall have at most one open request. Traces: F-INST-11, F-AGENT-4, J10.
+- **HOST-F-52** The host shall ask the app before each install or update that a manager asked for, also one that adds no grant. Traces: F-INST-11, F-AGENT-4.
+- **HOST-F-53** When a manager loses the grant to manage, the host shall end its open requests as denied and fail its later functions of management. Traces: F-INST-5, F-INST-9, J10.
+- **HOST-F-54** If a call of a manager fails, then the host shall disable, withdraw and ask nothing for it. Traces: F-RUN-8.
+- **HOST-F-55** In a preview, or in a home with no app, the host shall refuse each request of a manager at once. The reductions still work. Traces: F-AGENT-4, F-MAKE-4.
+- **HOST-F-56** In a contract test, the host shall fake the functions of management and record each reduction and request of the mod under test, in order. Traces: F-MAKE-3.
 
 ## 3. Acceptance scenarios
 
@@ -244,3 +257,52 @@ API, the HTTP server or the program `watane`.
 - **S39 Collect fake** (HOST-F-48). Given a harness of `menu` with no fake,
   `api.items` returns `[]`; with the fake `{"mods:menu/menu": {"ask":
   ["x"]}}`, it returns `["x"]`.
+
+### 3.5 Step 10
+
+The mod `manager` (TECHNICAL 13.1) passes each function of management
+through its `api`. Unless a scenario says otherwise, it holds the grant to
+manage, beside `counter`, `shelf` and `recs` in a participant home whose
+app is a fake that records what it is asked.
+
+- **S40 Read** (HOST-F-49). When `manager`'s `api.mods` runs, then it
+  returns four entries in the order `counter`, `manager`, `recs`, `shelf`;
+  `recs` has the call link to `shelf` and its grants with `granted` true.
+  Given `manager` installed with the grant to manage withheld, `api.mods`
+  fails with `not_granted`.
+- **S41 Reduce** (HOST-F-50). When `api.disable("counter")` runs, then the
+  app was told `Disable(counter)` before, and `counter`'s `api.get` fails
+  with `disabled`. When `api.withdraw` runs for `recs`'s call grant, then
+  `recs`'s `api.suggest` fails with `not_granted`. `api.close-page("shelf")`
+  tells the app `ClosePage(shelf)` and changes no catalog. `api.disable("nope")`
+  returns the failure `no_mod`.
+- **S42 Ask** (HOST-F-51). Given `recs`'s call grant withdrawn, when
+  `api.request-grant` runs for it, then it returns an id of 32 hex
+  characters, the app got `Ask::Grant` with `by` = `manager`, and
+  `api.request(id)` is `pending`; after the app answers `Approved`, it is
+  `approved`, and the grant is still withdrawn, because the app acts, not
+  the host. `api.request-enable("counter")` for an enabled `counter` is the
+  failure `bad_request`.
+- **S43 Always asked** (HOST-F-52). An update of `counter` (a copy with
+  one byte of `ui/app.js` changed, so no new grant), installed with `Requester::Mod(manager)`, calls the app's
+  `install` once, with that requester; installed with `Requester::App`, it
+  calls none. With `manager`'s grant withdrawn, the install with
+  `Requester::Mod(manager)` is `refused`.
+- **S44 One at a time** (HOST-F-51). While a request is pending, a second
+  `request-*` returns the failure `request_open` naming the first id; after
+  the app answers, a new request succeeds.
+- **S45 Grant gone** (HOST-F-53). Given a pending request, when the
+  participant withdraws `manager`'s grant to manage, then the request is
+  `denied`, the app's future was dropped, and `api.mods` fails with
+  `not_granted`.
+- **S46 A failed call** (HOST-F-54). `api.disable-then-fail("counter")`
+  fails with `trap`; `counter` is still enabled and the app was told
+  nothing. `api.disable-then-read("counter")` returns `true`, and after
+  it `counter` is disabled.
+- **S47 No app, harness** (HOST-F-55, 56). In a preview with `manager` and
+  `counter`, `api.request-enable("counter")` returns the failure `refused`
+  and `api.disable("counter")` disables it. In a harness of `manager`,
+  `api.disable("x")` returns ok and records `disable {"local":"x"}`, and
+  `api.mods` returns `[]`; with the fake `{"watane:host/manage": {"mods":
+  [...]}}` it returns that list. A served `manager`'s `/events` gets
+  `{"type":"catalog"}` after the app disables `counter`.

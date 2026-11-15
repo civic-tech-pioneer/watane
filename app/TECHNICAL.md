@@ -1538,3 +1538,173 @@ Each answer is the one this spec uses.
     DHT go through the consent view (`Request::Reach`); turning on, which
     reaches only the local network and paired machines, is a switch in
     `main` under the text of `node` 7, like a grant give-back (host 4.4).
+
+## 17. Step 10: a mod as manager (stage J)
+
+Designed in S73 (W35; host 6.10). The app's own manager (5.3, 5.4)
+stays as it is: a native view on the same host functions. This section
+adds what a managing mod needs from the app: the words of the grant, the
+consent requests a manager starts, and the windows its reductions close.
+It needs no new Tauri command and no local API route: a manager reaches
+the app only through the host's `Confirm` (host 12.1).
+
+### 17.1 Requirements
+
+These join `FUNCTIONAL.md` (Step 10) in the slice that builds stage J,
+after S74's edits of that file have merged.
+
+- **APP-F-70** The grant to manage shall read in words in the consent view and in the details of a mod, like every other grant. Traces: F-INST-9, F-APP-5, J10.
+- **APP-F-71** Each request of a managing mod shall show in the consent view, which shall name that mod, with its publisher or "local", as the one who asks. The app shall act on it only after the participant approves. Traces: F-INST-11, F-APP-4, F-AGENT-4, J10.
+- **APP-F-72** An install or an update that a managing mod asked for shall show in the consent view also when it adds no grant. The app shall install only a release that it can read through the channels and indexes it already reads, and shall contact no other host for the request. Traces: F-INST-11, F-OWN-7, J10.
+- **APP-F-73** A request to remove a mod shall say whether its data is deleted, and name the mods that use it (APP-F-67). Traces: F-INST-5, F-INST-11, J10.
+- **APP-F-74** When a managing mod disables a mod or closes its page, the app shall close that mod's window, and the details of a disabled mod shall say which mod turned it off, until the app restarts. Traces: F-INST-10, F-APP-9, J10.
+- **APP-F-75** When the participant denies a request, closes the consent view or does not answer in 10 minutes, nothing shall change, and the managing mod shall learn that the request was denied. Traces: F-INST-11, W19.
+
+### 17.2 Words
+
+A new row of section 4:
+
+| Grant | `kind` | `text` |
+|---|---|---|
+| manage (step 10) | `manage` | `Manage your mods: see every mod and its grants, turn mods off, withdraw grants, and ask you to add, turn on or remove mods` |
+
+`GrantKind` gains `Manage`; `GrantLine.key` is `manage` (pkg 5.1). The
+details switch of 5.3 withdraws and gives it back like any grant, with the
+existing `grant_withdraw` and `grant_give`.
+
+The asker of a request is `<name> (local)` for a local manager and
+`<name> by <party>` for a published one (section 4).
+
+### 17.3 HostConfirm::manage
+
+`HostConfirm` (9.2) implements `Confirm::manage` and `Confirm::reduced`.
+`manage` runs each `Ask` as the app's own button does, with the manager
+named, and maps the result: the change made gives `Approved`; a `Deny`
+of the participant, or the host's `refused` after one, gives `Denied`;
+any other error gives `Failed(<its text>)`.
+
+| `Ask` | The app |
+|---|---|
+| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), `Failed("<asker> named a channel this home does not read: <link>")`, with no network request (host Q30). Else the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`. dist fetches only through the bases it already holds (dist 5.11), so no new host is read. |
+| `Update(local)` | The offer of that mod (`ModView.offer`, 9.5); none gives `Failed("no update is offered for <name>")`. Else install it as `Install` does, with `Requester::Mod(by)`. |
+| `Enable(local)` | `Request::Manage` with `Enable`; on approve, `host.enable`. |
+| `Grant { local, grant }` | `Request::Manage` with `Grant` and the grant line; on approve, `host.grant`. |
+| `Remove { local, delete_data }` | `Request::Manage` with `Remove` or `RemoveData` and the users of APP-F-67; on approve, what `mod_remove` does: `views::close_mod`, `host.remove(local, delete_data)`, and the main mod file of 5.4. |
+
+`HostConfirm::install` with `Requester::Mod(by)` builds `Request::Install`
+with `asked_by` set (17.4); the host asks it for every such plan (host
+12.1), so an update with no new grant shows too (APP-F-72).
+
+`reduced(by, reduction)` must not block: it posts to the main thread and
+returns. `Disable(local)` and `ClosePage(local)` close `mod-<local>`
+(`views::close_mod`); `Disable` also keeps the notice `Turned off by
+<asker>` for `local` in memory, which `ModView.notice` shows until the app
+restarts or the mod is enabled. `Withdraw` keeps `Grant withdrawn by
+<asker>` the same way.
+
+### 17.4 Consent requests
+
+```rust
+// Request::Install and Request::Pick gain, with #[serde(default)]:
+//     asked_by: Option<Asker>,                      // step 10: the manager that asked
+pub enum Request {
+    // ... the variants of 6.2, and:
+    /// Step 10 (17.3): an enable, a grant or a removal that a manager asks for.
+    Manage { asked_by: Asker, action: ManageAction, target: Target,
+             grant: Option<GrantLine>, users: Vec<String> },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Asker { pub local: String, pub name: String, pub publisher: Option<Party> }   // None = local
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Target { pub local: String, pub name: String, pub version: String, pub publisher: Option<Party> }
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManageAction { Enable, Grant, Remove, RemoveData }
+```
+
+A `Manage` request takes only `Approve` with no `withheld`, or `Deny`
+(`WrongAnswer`), as `Join` does (6.1). `grant` is set only for `Grant`;
+`users` holds the APP-F-67 names (the enabled mods that call it or
+receive its events) only for `Remove` and `RemoveData`.
+
+The consent page (6.3):
+
+| Request | Title | Lines |
+|---|---|---|
+| `install` with `asked_by` | as 6.3 | first line `Asked by <asker>, which manages your mods`; the rest as 6.3 |
+| `pick` with `asked_by` | as 6.3 | the same first line |
+| `manage`, `enable` | `<asker name> asks to turn on <target name>` | the target as an install block names it (name, version, party or `local`) |
+| `manage`, `grant` | `<asker name> asks to give <target name> a grant` | the target; the grant line, with no checkbox |
+| `manage`, `remove` | `<asker name> asks to remove <target name>` | the target; `Its data is kept. Installing it again brings it back.`; `Used by: <users>` when not empty |
+| `manage`, `remove_data` | `<asker name> asks to remove <target name> and delete its data` | the target; `Its data is deleted. This cannot be undone.`; `Used by: <users>` when not empty |
+
+The buttons, the focus rule, the 800 ms gate and the mark are those of
+6.3 and 6.4: a manager cannot cover, imitate or answer the consent view
+(APP-F-71). Every untrusted string, the asker's name included, is set
+with `textContent`.
+
+### 17.5 Tests
+
+Fixtures: **Desk** is host's prebuilt `manager` (host 13.1; `name =
+"Desk"`) copied to a temporary folder, with the page of
+`tests/fixtures/desk-ui/ui/` and `main = true` added to its `mod.toml`.
+The page has one button per `api` function, with text inputs for the
+local name and the release, and shows each result or error code as text.
+**Weather** is the fixture `reading-list`, **Notes** the fixture
+`recommendations` (it holds state), and **Book club** a copy of host's
+`counter`, published from Ivy's home made with `watane_dist` and listed in
+Ivy's index, as `tests/find.rs` does.
+
+| Test | Checks | Oracle |
+|---|---|---|
+| `consent::tests` (J) | a `Manage` request takes `Approve` with no withheld, or `Deny`; else `WrongAnswer` | the answers that the test submitted |
+| `words::tests` (J) | the `manage` row of 17.2; the asker label for a local and a published manager | literal strings |
+| `tests/gui_shell.rs` (J) | through the driver's `ask`: an `install` with `asked_by`, and a `manage` request of each action, show the title and lines of 17.4; a hostile asker name shows as text | `eval` of the consent DOM text |
+| `tests/manage.rs` (J) | S43 to S48 | below |
+| `tests/j10.rs` (J) | J10 on the real app: the steps of spec/FUNCTIONAL.md J10 with the fixtures above | the window labels the driver reports; the consent DOM text; `<home>/mods/` and `<home>/app/main` read with `std::fs`; Desk's page DOM text |
+
+Scenarios of `tests/manage.rs`:
+
+- **S43 Grant words** (APP-F-70). The plan of Desk shows the line
+  `Manage your mods: ...` of 17.2 with `new`; its details after install
+  show it with a switch.
+- **S44 Turn off** (APP-F-74). With `mod-weather` open, Desk's page calls
+  `api.disable` with `reading-list`: the window `mod-weather` closes and
+  Weather's details show `Turned off by Desk (local)`. After a restart the
+  notice is gone and Weather is still off.
+- **S45 Install asked** (APP-F-71, 72, 75). Desk asks to install Book
+  club's release with Ivy's link: the consent view's first line is `Asked
+  by Desk (local), which manages your mods`; a deny leaves `<home>/mods/`
+  unchanged and Desk's page shows `denied`; a second ask and an approve
+  install it, and Desk's page shows `approved`. A link to a channel this
+  home does not read gives `failed`, and a loopback test listener at that
+  link gets no connection.
+- **S46 Update asked** (APP-F-72). With an update of Book club offered that
+  adds no grant, Desk's `request-update` shows the consent view with the
+  `Update ... to ...` title and the asked-by line.
+- **S47 Remove with data** (APP-F-73). Desk asks to remove Notes with its
+  data: the title is `Desk asks to remove Notes and delete its data`, with
+  no `Used by` line, because no mod uses Notes; after approve, `<home>/mods/recommendations/` is gone and its state does not
+  come back on a reinstall. Desk asks to remove Weather, which Notes uses:
+  the `Used by: Notes` line shows; a deny keeps Weather.
+- **S48 Enable and grant** (APP-F-71). With Weather off, Desk's
+  `request-enable` shows `Desk asks to turn on Weather`; approve enables it.
+  With Notes's call grant withdrawn, `request-grant` shows the grant line;
+  approve gives it back.
+
+### 17.6 Build plan
+
+A row for section 12, which joins it with this stage's slice:
+
+| Stage | Builds | Needs | Fake until then | Done when |
+|---|---|---|---|---|
+| J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/manage.rs`, `tests/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
+
+### 17.7 Security properties
+
+| Property | Enforced by | Test |
+|---|---|---|
+| A manager adds nothing without the participant | every `Ask` goes through the broker; an install with `Requester::Mod` always asks (host 12.1); a `Manage` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
+| The participant sees who asks | `asked_by` and `Manage.asked_by`, from the host's `by`, never from the manager's arguments | S45, `gui_shell` |
+| A manager's install reads no new host | `link` must name a channel dist already reads; dist fetches through known bases only | S45 |
+| A manager has no app command | it has no window of its own beyond `mod-<local>`; section 14 holds for it as for any mod | S6 |

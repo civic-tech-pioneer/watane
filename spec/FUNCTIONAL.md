@@ -215,10 +215,11 @@ Alice installs Desk, a shell that declares itself a main view and asks to
 manage her mods. The plan shows that grant in words. At the next start the
 app opens Desk, not the manager. Desk lists her mods with their grants and
 connections. From Desk, Alice turns Weather off, and it stops at once.
-From Desk she asks to install Book club: the consent view shows the plan,
-and Desk cannot approve it. Desk asks to remove Notes with its data, and
-the consent view asks Alice. Alice withdraws Desk's grant to manage; Desk
-still runs, and its next request fails. "Mods…" in the app menu opens the
+From Desk she asks to install Book club, which her index lists: the
+consent view shows the plan and that Desk asked, and Desk cannot approve
+it. Alice approves, and Desk sees Book club installed. Desk asks to remove
+Notes with its data, and the consent view asks Alice. Alice withdraws
+Desk's grant to manage; Desk still runs, and its next request fails. "Mods…" in the app menu opens the
 manager of the app at any time.
 
 ## 4. Later

@@ -845,7 +845,14 @@ with these sections in this order (section 10 joins with its slice):
    unit test run, so the tests after it do not run. Contract tests: the
    form of 8.1 in short, with an `emits` example, failure matching and
    reports. S4 runs contracts; fake linking and `deliver` examples arrive
-   with links between mods (step 2).
+   with links between mods (step 2). Step 10: a mod that imports
+   `watane:host/manage` manages mods: fake its reads under the key
+   `watane:host/manage`, and check its reductions and requests with
+   `manages`. Each import of it is a grant that the participant approves;
+   a request only asks the person, and its answer comes later through
+   `request(id)` and the page message `{"type":"catalog"}`. Anyone who may
+   call the mod (its page, an agent, another mod) uses that grant, so
+   read `watane:host/caller` where it matters.
 10. **Building on another mod**: `watane-dev add <mod folder> --json`, then
    copy the needed lines of `result.imports` or `result.subscriptions`
    into the world.
@@ -1156,7 +1163,7 @@ Each is one JSON object. Unknown fields are errors.
 
 | Field | Meaning |
 |---|---|
-| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. A fake of a function that an imported interface does not have is `test.contract_file`, naming the function, the interface and its functions (read from the built component's imports). |
+| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. Step 10: the key may also be `watane:host/manage`, the management interface of the host (host 6.10); with no fake its reads return `[]` and `pending`, and its reductions and requests succeed (a request with the ids `r1`, `r2`, ... in call order). A fake of a function that an imported interface does not have is `test.contract_file`, naming the function, the interface and its functions (read from the built component's imports). |
 | `steps` | Required, at least one. Run in order, on one host, so state carries from step to step. |
 | `call` | An export function as `watane.js` names it (`<iface>.<fn>`). Runs as the page. |
 | `deliver` | Instead of `call`: a subscription export (`<iface>.<fn>`, the short name of the provider's interface), called as the host calls it for an event. Step 9: for a collect, its `returns` checks the mod's own answer. |
@@ -1165,6 +1172,7 @@ Each is one JSON object. Unknown fields are errors.
 | `fails` | `true`: the call must fail. A string: the call must fail, and `"<code>: <message>"` of the error must contain it (`"not_granted"`, `"trap"`, a word of a panic). |
 | neither | The call must succeed; any value. |
 | `emits` | Optional. The call must send exactly these events, in this order. `event` is `<iface>.<fn>` for an interface of the own package, or `mods:<slug>/<iface>.<fn>`. `args` is an object by parameter name. A failed call sends none. |
+| `manages` | Optional (step 10). The call must make exactly these reductions and requests of `watane:host/manage`, in this order: `[{"fn": "disable", "args": {"local": "weather"}}]`, with `fn` the WIT function name and `args` by parameter name; reads are not listed. A failed call makes none. It is `watane_host::Outcome.manages` (host 2.6), compared with `json_eq`. |
 
 Exactly one of `call` and `deliver`; at most one of `returns` and `fails`.
 Values use the JSON encoding of host `TECHNICAL.md` 6.9. Two values are
@@ -2160,6 +2168,7 @@ rules belong to 15.1.
 | DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
 | DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
 | DEV-S-52 | `contract::ac_collect_fake_and_answer` | integration: the `menu` and `item` folders of the scenario, on the real `Harness` |
+| DEV-S-53 | `contract::ac_manage_fake_and_records` (integration, on host's prebuilt `manager` fixture and the real `Harness`); `contract::tests::manages_mismatch_report` (unit, `run_steps` with a closure) | integration and unit: the literal steps of the scenario |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2351,6 +2360,7 @@ Carol's. The raw URL itself appears only as text (`raw`,
 | 10 (step 6) | `share`: 10.4.1 `publish --push`; the codes and result of 2.2, 2.4; `fake-gh`; the fake-watane site files (15.4); template `AGENTS.md` lines for `publish --push` and asking the person for `gh auth login` | pkg stage 8 (`repository`); the maker's git and gh | `fake-gh`, local bare remotes (15.4) | S-41 to S-46 pass; with the app, J3 on a local remote (`ac2_j3_github`) |
 | 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result; the GitHub fork of 10.4.1 step 3 and `publish.fork_unavailable` | stage 10 | as stage 10 | S-47 to S-51 pass; J5 on a local remote (`ac2_j5_github`) |
 | 12 (step 9) | collect fakes and answers in contract tests (8.1); template `AGENTS.md` lines: an own-interface function with a `list` result is a collect, and how to fake it and answer one | host stage 10: collect fakes in `Harness` | none; the stage waits for host | S-52 passes; dev's part of J9 |
+| 13 (step 10) | the `watane:host/manage` fake key and the `manages` step field (8.1), with `manages` in the step failure report as `emits` is; the template `AGENTS.md` lines of section 9 for a manager; `check` copies the new `HOST_WIT` (4.1, 5.1) | host stage 11: manage fakes and `Outcome.manages` in `Harness` | none; the stage waits for host | S-53 passes; dev's part of J10 |
 
 ## 17. Questions for spec/
 

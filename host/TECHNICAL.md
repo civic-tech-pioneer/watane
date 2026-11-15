@@ -353,9 +353,12 @@ impl Harness {
     pub fn deliver(&self, function: &str, args: Value) -> Result<Outcome, CallError>;
 }
 #[derive(Debug, Clone, PartialEq)]
-pub struct Outcome { pub value: Value, pub events: Vec<EventRecord> }
+pub struct Outcome { pub value: Value, pub events: Vec<EventRecord>, pub manages: Vec<ManageRecord> /* step 10 */ }
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventRecord { pub interface: InterfaceName, pub function: String, pub args: Value /* object by name */ }
+/// Step 10: a reduction or request of `watane:host/manage` (6.10), e.g. "disable", {"local":"weather"}.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManageRecord { pub function: String, pub args: Value /* object by name */ }
 ```
 
 `Harness` is `Send`; `call` can run on any thread. Each `open` creates a
@@ -374,6 +377,10 @@ under the same rules as `call`. A fake returns its JSON converted to the
 import's result type. A conversion mismatch is `trap` naming the function.
 A function with no fake fails with `trap`, "no fake for
 <interface>.<function>". The network import will deny every request.
+
+Step 10: the import `watane:host/manage` is faked as 6.10 says, under
+the `Fakes` key `watane:host/manage`; its reductions and requests are
+recorded in `Outcome.manages`.
 
 Step 9: a collect of the mod under test returns the JSON of its fake as
 the whole joined list, converted like a call fake; with no fake it returns
@@ -568,6 +575,9 @@ Install checks the generation again before committing (Q24).
 - `grant` and `revoke`: only for a grant in `mod.grants()`, else
   `not_declared`; they set `granted`. The app calls them in process after
   the participant acted, so the host asks nothing.
+- Step 10: a manager's `disable` and `withdraw` (6.10) call `disable` and
+  `revoke` here, so the same rules hold; it reaches `enable`, `grant` and
+  `remove` only through a request that the app decides.
 
 ### 4.5 Binds (step 5)
 
@@ -647,6 +657,7 @@ component against `mod.world()`. Allowed imports:
   `wasi:sockets` interfaces at `0.2.x`;
 - `wasi:http/*@0.2.x`, only if `world().http`;
 - `watane:host/state@0.1.0` only if `world().storage`; `watane:host/caller@0.1.0`;
+  `watane:host/manage@0.1.0` only if `world().manage` (step 10);
 - an interface in `world().events` whose functions each return nothing
   (an event) or a `list` (a collect, step 9; pkg 4.5);
 - an interface in `world().calls`.
@@ -711,9 +722,54 @@ interface state {
 interface caller {
   who: func() -> string;
 }
+
+/// Step 10: the management of mods (W35). Importing it is the grant
+/// `manage`. Reads and reductions act when the call succeeds; anything
+/// more is a request that the participant decides in the consent view.
+/// A mod is named by its local name.
+interface manage {
+  /// A grant as pkg names it. `provider` is "<publisher key>/<slug>" or "local/<slug>".
+  record provided { %interface: string, provider: string }
+  variant grant { storage, http(string), call(provided), subscribe(provided), manage }
+  record grant-state { grant: grant, granted: bool }
+  enum link-kind { call, subscribe }
+  /// `provider` is the local name of the linked mod; none while unbound.
+  record link { kind: link-kind, %interface: string, provider: option<string>, provider-interface: option<string> }
+  /// Identities: the consumer, the provider that deps.json names, the picked mod.
+  record bind { consumer: string, provider: string, to: string }
+  record mod-info {
+    local: string, identity: string, slug: string, name: string, summary: string,
+    version: string, publisher: option<string>, release: option<string>, origin: option<string>,
+    enabled: bool, has-page: bool, has-logic: bool,
+    grants: list<grant-state>, links: list<link>, binds: list<bind>, error: option<string>,
+  }
+  /// `code`: bad_request, no_mod, not_declared, request_open or refused.
+  record failure { code: string, message: string }
+  variant request-state { pending, approved, denied, failed(string) }
+
+  /// Every installed mod, by local name.
+  mods: func() -> list<mod-info>;
+  /// Make things do less, at once.
+  disable: func(local: string) -> result<_, failure>;
+  withdraw: func(local: string, grant: grant) -> result<_, failure>;
+  close-page: func(local: string) -> result<_, failure>;
+  /// Ask the participant. Each returns the id of the request.
+  request-install: func(release: string, link: option<string>) -> result<string, failure>;
+  request-update: func(local: string) -> result<string, failure>;
+  request-enable: func(local: string) -> result<string, failure>;
+  request-grant: func(local: string, grant: grant) -> result<string, failure>;
+  request-remove: func(local: string, delete-data: bool) -> result<string, failure>;
+  /// The state of a request of this mod; none for an unknown id.
+  request: func(id: string) -> option<request-state>;
+}
 ```
 
-`delete` is a proposal to spec §4 (section 18, Q4).
+`delete` is a proposal to spec §4 (section 18, Q4). `manage` (step 10,
+S73) is 6.10. It joins the package at `0.1.0`: an interface added to a
+package that mods already copy changes no import of an existing mod,
+and pkg accepts only `watane:host@0.1.0` (pkg 4.7). A mod that imports
+`manage` on a host without it is refused at its plan by pkg (rule
+`import`), so it never half-runs.
 
 The linker of a mod is built once per registry and kept as an
 `InstancePre`. It holds:
@@ -724,6 +780,7 @@ The linker of a mod is built once per registry and kept as an
 | `wasi:http/*` | `wasmtime_wasi_http::p2::add_only_http_to_linker_sync`, hooks of 6.8 |
 | `watane:host/state` | the state transaction; each function first checks the `Storage` grant, else `not_granted` ("<local> has no grant for watane:host/state") |
 | `watane:host/caller` | the caller string of the store |
+| `watane:host/manage` (step 10) | `func_new` for each function of 6.10; each first checks the `Manage` grant, else `not_granted`; in a `Harness`, the fakes of 6.10 |
 | outlet | `func_new`: an event function appends the event to the store's outbox (section 9); a collect function runs the collect (9.4) |
 | in a `Harness`, a collect | `func_new`: the fake, or the empty list (2.6) |
 | call import | `func_new`: nested call (6.6) |
@@ -854,6 +911,103 @@ WIT type text (for `FunctionInfo` and descriptions): `u32`, `string`,
 `list<u32>`, `option<string>`, `tuple<u8, string>`,
 `result<u32, string>` (`_` for no payload), `record { a: u32, b: string }`,
 `variant { a, b(u32) }`, `enum { a, b }`, `flags { a, b }`.
+
+### 6.10 Manage (step 10)
+
+The interface `watane:host/manage` (6.4) is the grant `Manage` (W35,
+pkg 5.1). A mod that imports it is a **manager**. Its functions follow the
+direction of authority: reads and reductions act at once, because a
+hostile manager can then only make things do less; every addition is a
+**request** that the app decides in the consent view (F-INST-9 to 11).
+
+**Grant check.** Each function first checks, from the current catalog,
+that the calling mod holds `Manage` granted and is enabled; else the call
+traps with `not_granted` ("<local> has no grant for
+watane:host/manage"), as `state` does (6.4). A manager has a logic part:
+a page cannot import anything (pkg 4.6).
+
+**Names.** A function names a mod by its local name (3.2) and a grant by
+the WIT `grant` variant, which maps one to one to pkg's `Grant`
+(`provider` is the identity text of pkg's `Provider`, 4.1). A name that
+does not parse is the failure `bad_request`.
+
+| Function | Kind | Does | Failures (`failure.code`) |
+|---|---|---|---|
+| `mods` | read | the `mod-info` of every installed mod, in local-name order, from `Host::mods` (2.4); the manager itself included | none |
+| `disable(local)` | reduction | `Host::disable` (4.4), after `Confirm::reduced` (12.1); a disabled mod stays disabled (ok) | `no_mod` |
+| `withdraw(local, grant)` | reduction | `Host::revoke` (4.4), after `Confirm::reduced`; an ungranted grant stays ungranted (ok) | `no_mod`, `not_declared` |
+| `close-page(local)` | reduction | `Confirm::reduced` with `ClosePage`: the app closes the mod's window, if one is open; the host itself has nothing to close | `no_mod` |
+| `request-install(release, link)` | request | asks the app to install the release (`Ask::Install`) | `bad_request`, `request_open`, `refused` |
+| `request-update(local)` | request | asks the app to install the update that it offers for the mod (`Ask::Update`) | `no_mod`, `request_open`, `refused` |
+| `request-enable(local)` | request | asks to enable a disabled mod (`Ask::Enable`) | `no_mod`, `bad_request` (enabled), `request_open`, `refused` |
+| `request-grant(local, grant)` | request | asks to give a declared, ungranted grant (`Ask::Grant`) | `no_mod`, `not_declared`, `bad_request` (granted), `request_open`, `refused` |
+| `request-remove(local, delete-data)` | request | asks to remove the mod, and with `delete-data` its state (`Ask::Remove`) | `no_mod`, `request_open`, `refused` |
+| `request(id)` | read | the state of a request of this manager; `none` for an id it never got, or that a failed call made | none |
+
+`release` is a `ReleaseRef` text; `link` is the link text of the
+channel or index that lists it, or `none`. A removal is a request with or
+without `delete-data`, and so is `enable`: section 18 Q28 and Q29 hold the
+human's choice, and both answers keep this interface.
+
+**When effects happen.** A reduction or a request is not applied inside
+the call. Like an event (9.1), it goes to the store's outbox in order, and
+joins the chain effects only when the manager's invoke succeeds; a failed
+call reduces nothing and asks nothing. After the invoke that started the
+chain returns (a top-level call, a tool call, or one delivery of 9.2), and
+before the chain's events are delivered, the host applies the chain's
+manage effects in order. Before each one it checks again that the manager
+holds `Manage` and is enabled, and drops the effect if not (Q24's rule).
+A read inside the call sees the catalog as it is at that moment, not the
+effects queued before it. A `request(id)` for an id that this call queued
+returns `pending`.
+
+**Requests.** A request id is 32 lowercase hex characters from 16 random
+bytes; the host returns it at once and the request starts when its effect
+is applied. In a preview, or a participant home without an app, every
+`request-*` fails with `refused` ("a preview has no consent view" or "no
+app is attached to decide the request") and queues nothing. Then:
+
+1. At most one request of a manager is pending. A second fails with
+   `request_open` ("<local> already has a request open: <id>"), checked
+   at the call against pending and queued requests.
+2. The host builds `ManageRequest { id, by, ask }` and runs
+   `Confirm::manage` on the tokio runtime it serves on (8.1). The future
+   resolves to `ManageOutcome`; the request becomes `approved`, `denied`
+   or `failed(<message>)`.
+3. When the manager loses `Manage` (withdraw, disable or remove of the
+   manager, by anyone), the host drops the futures of its pending
+   requests, which removes their consent requests (app 6.1: a dropped
+   `ask` leaves the queue); each becomes `denied`.
+4. The host keeps the 32 newest finished requests of each manager, in
+   memory only. A restart forgets them; a pending request ends `denied`
+   with the app (W19).
+
+For an install or an update that the app runs for a request, it calls
+`Host::install(plan, Requester::Mod(by))`. With that requester the host
+checks at step 1 of 4.3, and again before the commit, that `by` holds
+`Manage` and is enabled (else `refused`), and calls `Confirm::install` for
+every plan, also one that needs no confirmation (12.1). So an update with
+no new grant still reaches the consent view when a manager asked for it.
+
+**The catalog message.** After each catalog write (install, update,
+enable, disable, remove, grant, revoke, bind) and each change of a request
+state, the host sends `{"type":"catalog"}` (8.4) to the pages of every
+enabled mod that holds `Manage` granted. A manager page re-reads through
+its own logic.
+
+**Who reaches a manager.** The grant is the manager's, whoever calls it:
+its page, an agent with a toolset that names its functions, a mod with a
+call grant to it, or a delivery. The host does not narrow this; a manager
+reads `watane:host/caller` when it cares (dev's template says so). A
+request still needs the participant in the consent view (F-AGENT-4).
+
+**In a harness** (2.6), the manage import is linked to fakes:
+`mods` and `request` return the file's fake for
+`watane:host/manage`, else `[]` and `pending`; every reduction returns
+`ok` and every request `ok("r1")`, `ok("r2")`, ... in call order, unless
+the file fakes it. Each reduction and request is recorded in
+`Outcome.manages` as a `ManageRecord`, in call order; reads are not
+recorded. A failed call records none.
 
 ## 7. State
 
@@ -990,7 +1144,8 @@ page runs as a top-level view, never in a frame.
 - Response: `Content-Type: text/event-stream`, the headers of 8.3. Each
   message is `data: <json>\n\n`. Every 15 s without a message, the server
   sends `: ping\n\n`.
-- Messages: `{"type":"changed"}`, `{"type":"reload"}`, and
+- Messages: `{"type":"changed"}`, `{"type":"reload"}`, from step 10
+  `{"type":"catalog"}` to the pages of a manager (6.10), and
   `{"type":"event","from":"<emitter local>","interface":"<full outlet name>","function":"<name>","args":{...}}`
   with `args` by parameter name in the encoding of 6.9. A page gets only
   events emitted by its own mod, never events received from another mod.
@@ -1230,19 +1385,44 @@ Released packages do not come over the local API: the app hands them to
 ```rust
 pub trait Confirm: Send + Sync + 'static {
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>>;
+    /// Step 10 (6.10): a request of a manager. The app decides it in the consent view and acts.
+    /// Default: `Failed("this app takes no requests of mods")`.
+    fn manage(&self, request: ManageRequest) -> Pin<Box<dyn Future<Output = ManageOutcome> + Send>> { .. }
+    /// Step 10 (6.10): a manager makes things do less; called before the host acts. Must not block.
+    /// Default: nothing.
+    fn reduced(&self, by: &LocalName, reduction: &Reduction) {}
 }
 pub struct InstallRequest { pub entries: Vec<PlanEntry>, pub requester: Requester }
-pub enum Requester { App, LocalApi }
+pub enum Requester { App, LocalApi, Mod(LocalName) /* step 10: the manager that asked (6.10) */ }
 pub enum Answer {
     /// Install; leave these grants ungranted (by plan entry local name).
     Approve { withhold: Vec<(LocalName, Grant)> },
     Deny,
 }
+
+// Step 10 (6.10). Debug, Clone, PartialEq.
+pub struct ManageRequest { pub id: RequestId, pub by: LocalName, pub ask: Ask }
+pub struct RequestId(String);   // 32 lowercase hex; Display, as_str()
+pub enum Ask {
+    Install { release: ReleaseRef, link: Option<String> },
+    Update(LocalName),
+    Enable(LocalName),
+    Grant { local: LocalName, grant: Grant },
+    Remove { local: LocalName, delete_data: bool },
+}
+pub enum ManageOutcome { Approved, Denied, Failed(String) }
+pub enum Reduction { Disable(LocalName), Withdraw { local: LocalName, grant: Grant }, ClosePage(LocalName) }
 ```
+
+The default bodies keep an earlier `Confirm` compiling; a host whose app
+uses them refuses nothing it did before and answers every request
+`failed`.
 
 `Plan::needs_confirmation()` is true in a participant home when an entry
 is `New`, or is an `Update` with a non-empty `new_grants`, or (step 5) has
-binds that differ from the installed ones (4.5). Then:
+binds that differ from the installed ones (4.5). Step 10: `install` with
+`Requester::Mod(_)` asks the app for every plan that has an entry other
+than `Unchanged`, whatever `needs_confirmation` says (6.10). Then:
 
 | Home | Behaviour |
 |---|---|
@@ -1316,6 +1496,7 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]` and puts the state key `asked`; `clicked` puts the state key `clicked` |
 | `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key, burns a fixed loop of about 19.5M fuel and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
+| `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1339,6 +1520,7 @@ run on the preview install path.
 | `tests/hostile.rs` | `/call` with a subscription function → 404 (`ac12_s11_page_cannot_call_a_subscription_function`); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (`ac8_s12a_storage_after_revoke_cannot_read_old_state`); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
 | `tests/binds.rs` | S33 to S35: signed picks, persistence, bind-only updates, removal, validation, preview matching and local API rejection | literal binds, links, JSON, caller and confirmation count |
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
+| `tests/manage.rs` (stage 11) | S40 to S47 with `manager`, `counter`, `shelf`, `recs` in a participant home whose `Confirm` fake records `reduced`, `manage` and `install` calls and answers `manage` from a script; the harness rows of 6.10; `manager` refused at plan when the world lacks `manage` but the component imports it (5.3) | literal `mod-info` JSON; `installed.json` parsed as plain JSON; the fake's recorded calls; request ids matched by the regex `^[0-9a-f]{32}$`; page-bus messages read from `/events` of a served manager |
 | `tests/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
 ## 14. Security properties
@@ -1361,6 +1543,11 @@ run on the preview install path.
 | State is private | one table per identity; host functions touch only the calling mod's table (7) | runtime |
 | A collect asks only granted subscribers, and does not name them | the set of 9.2 step 4, read from the current catalog at each collect; the answer list carries no source (9.4) | S36 |
 | A collect cannot deadlock | collect links are cycle edges (4.2 step 8) | S38 |
+| A manager only reduces on its own | reads and the three reductions are the only acting functions; each addition is an `Ask` that only the app decides; a manager-started install always asks (6.10, 12.1) | S41 to S44 |
+| A manager acts only while it holds the grant | the grant check at each function and again before each effect; pending requests dropped when it loses the grant (6.10) | S45 |
+| A failed manager call changes nothing | manage effects join the chain only on the manager's success (6.10) | S46 |
+| A manager cannot flood the consent view | one pending request per manager (6.10) | S44 |
+| A manager reaches no identity, signature or consent answer | `watane:host/manage` has no such function; the host never signs; only the app answers `Confirm` (W35) | review rule |
 | A network grant is narrow | HTTPS only, exact host list (6.8) | S27 |
 | A preview never holds participant data | mode fixed in `home.json`; one host per home (3.1) | S2, S3 |
 | No path escapes `ui/` | path rules and canonical prefix (8.3) | pages |
@@ -1515,6 +1702,9 @@ is added.
 | 8 Releases | `Source::Release`, section 5.2 | `log`: `Entry`, `Log` (tests); `pkg`: `Release` | none; the stage waits | S31, S32 pass; J3 with `dist` and `app` |
 | 9 Binds (step 5) | `Bind`, `plan_with`, 4.5, `binds` in `installed.json`; the preview rule of 4.2 step 7 | stage 8 | none | S33 to S35 pass (`tests/binds.rs`); J5 with `dev`, `dist` and `app` |
 | 10 Collect (step 9) | 9.4; the outlet row of 6.4; collect edges in 4.2 step 8; the 5.3 rule; collect fakes in `Harness` (2.6); fixtures `menu`, `item-*` | stage 5; `pkg` stage 9 (`World::collects`) | none; the stage waits for pkg | S36 to S39 pass (`tests/collect.rs`); J9 with `dev` and `app` |
+| 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/manage.rs`); J10 with `dev` and `app` |
+
+Step 10 is done when J10 passes with `dev` and `app` (app 17).
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -1527,6 +1717,8 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` | Existing items, nothing added: toolset UI = `mods()` + `functions(local)` (no subscription export), entries `<local>:<interface>.<function>`; give back a withheld grant = app's consent view, then `grant` (4.4); "replaces" = `Change::Update`; "derived from" = `InstalledMod.origin` |
 | `app` | the page origin `http://<local>.localhost:<port>/` to load as a top-level view, on `127.0.0.1` and `::1` (8.1); CSP `frame-ancestors 'none'`; close a mod's view on disable or remove; `<home>/app/` reserved (3.1); `extra_api` routes set their own body limit (8.1) |
 | `dist` (through `app`) | `Source::Release { package: Package, entry: Entry }` for `plan`, as `Fetched` gives them; `MissingProvider.release` (a `ReleaseRef`) to fetch; `InstalledMod.release` (a `ReleaseRef`) to compare with updates and withdrawals; `<home>/dist/` and `<home>/log/` reserved (3.1) |
+| `app` (step 10) | `Confirm::{manage, reduced}`, `ManageRequest`, `RequestId`, `Ask`, `ManageOutcome`, `Reduction`, `Requester::Mod` (12.1); install with `Requester::Mod(by)` for a manager's install and update (6.10) |
+| `dev` (step 10) | the manage fakes of 6.10 under the `Fakes` key `watane:host/manage`; `Outcome.manages`, `ManageRecord` (2.6); `HOST_WIT` with `manage` |
 | `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
 
 ## 17. Needs from other subsystems
@@ -1541,7 +1733,7 @@ PackageId, PublisherKey /* from_bytes([u8; 32]) */, ReleaseRef, Provider, Grant 
 Mod::read(dir) -> Result<Mod, ModError>;  mod.check_component() -> Result<(), ModError>;
 mod.{slug(), version(), name(), summary(), http_hosts(), origin() /* Option<&ReleaseRef> */, world(), grants()};
 mod.logic() -> Option<PathBuf>; mod.page() -> Option<PathBuf>;   // a part exists when Some
-World { exports, events, calls, subscriptions: Vec<InterfaceName>, storage: bool, http: bool }
+World { exports, events, collects, calls, subscriptions: Vec<InterfaceName>, storage: bool, http: bool, manage: bool /* step 10 */ }
 pack(dir, false) -> Result<Package, PackageError>;
 package.{id() -> PackageId, unpack(dest) -> Result<Mod, PackageError>};
 RELEASE_KIND; Release::decode(&[u8]) -> Result<Release, ReleaseError>;
@@ -1556,8 +1748,8 @@ or `Log::append`) with `author()`, `kind()`, `body()`; `PublicKey::as_bytes()`,
 whose `Display` is pkg's `PublisherKey` text; `Log::{open, append, identity}`
 in tests (13.2).
 
-From `app`: an implementation of `Confirm`, and routes for `dist` under
-`/api/`. From `dist`: nothing directly.
+From `app`: an implementation of `Confirm` (from step 10 with `manage`
+and `reduced`, app 17), and routes for `dist` under `/api/`. From `dist`: nothing directly.
 
 ## 18. Questions for spec/
 
@@ -1654,3 +1846,46 @@ Each answer below is used in this file.
   its publisher and slug form the saved identity.
 - S45: `HostError::AmbiguousProvider` has `consumer`, `provider` and `candidates` (distinct, from 2 mods up); 2.2 now shows this shape.
 - S48: messages name a publisher by its 10-character fingerprint, not the full key; `candidates` are in natural order; the `ac5_extra_api...` test sends 403/421/404 with a small body and checks 413 over a raw socket (the guards still do not drain a refused body).
+
+- **Q27 (S73, step 10)** Decided here: the manage functions name a mod
+  by local name and a grant by a WIT variant that maps to pkg's `Grant`;
+  reductions and requests apply when the manager's call succeeds, as
+  events do; requests live in memory; one pending request per manager;
+  the app, not the host, acts on an approved `enable`, `grant` and
+  `remove`, as for its own buttons; a manager-started install always asks.
+  A standalone pick of a provider is not a function: a pick arises inside
+  an install request, through the app's pick view (app 9.7) with the
+  manager named. A separate `request-pick` can join later as an added
+  function.
+
+Open for the human (S73). Each one is built so that either answer keeps
+the interface of 6.10; the answer changes only which consent the app shows
+or whether one is shown.
+
+- **Q28** A removal that keeps the data. W35 lists "a removal that
+  deletes data" as a request and does not list removal among the direct
+  reductions. (a) Every removal is a request (built). (b) A removal that
+  keeps the data is a direct reduction. Recommended: (a); a removal
+  drops the package and its grants, which only a new consent brings back.
+  Cost to undo (a) to (b): the app skips one consent; no interface or
+  format changes. (b) to (a) later breaks managers that rely on it.
+- **Q29** Enable. Turning a disabled mod back on makes things do more,
+  so it is a request (built: `request-enable`). (b) Direct for a mod that
+  this manager disabled itself, which needs a record of who disabled it.
+  (c) Direct always. Recommended: (a); revisit if shells find it heavy.
+  Cost to undo: (b) adds an in-memory or `installed.json` field; (c)
+  drops a consent. Neither changes the WIT.
+- **Q30** Install from a channel that the home does not read yet. A link
+  would make the app fetch a URL that the manager chose, which is a path
+  to a host that no grant names. (a) Only a release that the home can
+  fetch through the channels and bases it already reads (built; the app
+  refuses others, app 17.3). (b) Any link, after a first consent "Desk
+  asks to read <link>". Recommended: (a). Cost to undo: (b) adds one
+  consent kind in the app; `request-install` keeps its arguments.
+- **Q31** Open a page. A shell launches mods, but W35 does not list it.
+  (a) Not in this step (built). (b) A direct `open-page(local)`: the app
+  opens or focuses the mod window, and never while a consent request is
+  open (app 5.1). Recommended: (b), in the slice that builds app stage J,
+  if the human agrees: it gives no authority, only a window of a mod the
+  participant installed. Cost: one added function in `manage` and one
+  `Reduction`-like hook; existing managers are unaffected.

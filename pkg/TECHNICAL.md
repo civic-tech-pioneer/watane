@@ -228,6 +228,7 @@ rule `wit`. Type items are allowed and ignored.
 |---|---|---|---|
 | import | `watane:host/state@0.1.0` | private storage | `Storage` |
 | import | `watane:host/caller@0.1.0` | the caller | none |
+| import | `watane:host/manage@0.1.0` (step 10) | the management of mods (W35; host 6.10); `World::manage` | `Manage` |
 | import | other `watane:*` | — | rule `import` |
 | import | `wasi:{cli,clocks,filesystem,io,random,sockets}/*@0.2.x` | base WASI, linked to nothing | none |
 | import | `wasi:http/outgoing-handler@0.2.x` | network | one `Http { host }` for each host of `[http] hosts` |
@@ -380,22 +381,26 @@ pub enum Grant {
     Http { host: HttpHost },
     Call { interface: InterfaceName, provider: Provider },
     Subscribe { interface: InterfaceName, provider: Provider },
+    Manage,                                       // step 10 (W35): import watane:host/manage
 }
 ```
 
 - Invariant of `Call` and `Subscribe`: `interface.namespace() == "mods"`
   and `interface.package() == provider.slug`. `Deserialize` checks it
   (through a private `RawGrant`).
-- Order: `Storage`, `Http`, `Call`, `Subscribe`; then host or interface
-  text; then publisher, with local first.
+- Order: `Storage`, `Http`, `Call`, `Subscribe`, `Manage`; then host or
+  interface text; then publisher, with local first. `Manage` is last, so
+  every grant list that a release of an earlier step carries keeps its
+  order and its bytes.
 - JSON form, one per kind:
   `{"kind":"storage"}`,
   `{"kind":"http","host":"api.openlibrary.org"}`,
   `{"kind":"call","interface":"mods:reading-list/books@0.1.0","provider":{"slug":"reading-list","publisher":null}}`,
-  `{"kind":"subscribe","interface":"mods:reading-list/events@0.1.0","provider":{"slug":"reading-list","publisher":"yryo…yryo"}}`.
+  `{"kind":"subscribe","interface":"mods:reading-list/events@0.1.0","provider":{"slug":"reading-list","publisher":"yryo…yryo"}}`,
+  `{"kind":"manage"}` (step 10).
 - Text form (`Display`, for logs and errors, not consent words):
   `storage`, `http <host>`, `call <interface> from <provider>`,
-  `subscribe <interface> from <provider>`.
+  `subscribe <interface> from <provider>`, `manage` (step 10).
 - (step 4) `Grant::same_authority(&self, other) -> bool`: equal after
   removing the `@<version>` of the interface. `host` uses it for F-INST-7.
 
@@ -601,6 +606,7 @@ release = [ 1, slug: tstr, version: tstr, name: tstr, summary: tstr,
 grant   = [0] / [1, host: tstr]
         / [2, interface: tstr, publisher: bstr .size 32 / null]
         / [3, interface: tstr, publisher: bstr .size 32 / null]
+        / [4]                                    ; step 10: Manage
 ```
 
 `Release::decode(bytes)` refuses: more than `MAX_RELEASE_BYTES`; anything
@@ -609,7 +615,8 @@ section 3 or 4.2; `offers`, `events` or `grants` not strictly ascending; an
 offer or event whose package is not `mods:<slug>@<version>` of the
 release; a grant whose interface is not `mods:` of another slug; a `null`
 publisher in a grant (`ReleaseError::LocalProvider`); more than 32 offers,
-32 events or 81 grants; bytes that differ from `encode` of the result
+32 events or 82 grants (1 storage, 16 hosts, 32 calls, 32
+subscriptions and, from step 10, 1 manage); bytes that differ from `encode` of the result
 (`ReleaseError::NotCanonical`, which also covers trailing bytes,
 indefinite lengths and long heads).
 
@@ -647,6 +654,9 @@ K/reading-list]` with K = 32 × `0x01`:
 8303781e6d6f64733a72656164696e672d6c6973742f6576656e747340302e312e30
 58200101010101010101010101010101010101010101010101010101010101010101
 ```
+
+Step 10: the grants `[storage, manage]` encode as `82 8100 8104`
+(`828100 8104` without spaces: an array of 2, `[0]`, `[4]`).
 
 Origin `K/reading-list@0.1.0`:
 `835820` + 32 × `01` + `6c72656164696e672d6c69737465302e312e30`.
@@ -708,6 +718,7 @@ pub struct World {                                // each list sorted, no duplic
     pub subscriptions: Vec<InterfaceName>,
     pub storage: bool,
     pub http: bool,
+    pub manage: bool,                             // step 10: imports watane:host/manage (4.5)
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Deps(/* BTreeMap<Slug, Option<PublisherKey>> */);
@@ -867,6 +878,7 @@ expected value.
 | `zbase32` | key text of 32 × `0x00` is 52 × `y`; of 32 × `0x01` is A25; the RFC 8032 key of log §4.1 | Python of this spec; log §4.1 |
 | `compatible` | the table of 5.2 | the table |
 | `mod_toml`, `deps_json` | schema, limits, unknown keys (A8), canonical write | literal texts |
+| `grant_manage` (step 10) | A30: the world of A30 gives `World::manage` true and grants `[storage, manage]`; `{"kind":"manage"}` and the text `manage` both ways; `Manage` sorts after a `Subscribe`; `same_authority(Manage, Manage)`; A31: the release of a mod with `[storage, manage]` encodes its grants as `828100 8104` and decodes back; a release whose grants hold `[4]` before a `[3, ...]` is refused as not ascending | the table of 4.5; literal JSON, text and hex written by hand |
 | `mod_toml_main` (W36) | A28, A29: `main = true` with a page gives `Mod::main()` true; absent gives false; `main = "yes"` and `main = true` without `ui/index.html` give the exact messages of 4.2 | literal texts |
 | `mod_toml_repository` (step 6) | accepted: `https://github.com/alice/reading-list`, `https://git.example.org:8443/a/b-c.d_e~f%20`, `https://h`, a 256-byte URL; refused, with the exact message of 4.2: `http://github.com/a/b`, `https://user@github.com/a/b`, `https://user:pw@h/x`, `https://`, `https:///a`, a 257-byte URL, `https://h/a b`, `https://h/a?b=c`, `https://h/#x`, a non-string value; `Mod::repository()` gives the text back; a package of a mod with `repository` unpacks and reads it back | literal texts |
 | `grants` | A1, A2, A3; ordering of 5.1; JSON forms of 5.1 | the table of 4.5 and the literals of 5.1 |
@@ -920,6 +932,7 @@ fmt --check` green.
 | 8 (step 6) | `repository` in `meta.rs` (4.2), `Mod::repository` | `mod_toml_repository` passes | dev `publish --push`, `new --from` (step 6) |
 | 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
 | 10 (W36) | `main` in `meta.rs` (4.2), `Mod::main` | `mod_toml_main` passes (A28, A29) | app stage I |
+| 11 (step 10) | `Grant::Manage` (5.1), `World::manage` and the 4.5 row in `world.rs`, the grant `[4]` and the limit 82 in `release.rs` (7.2) | `grant_manage` passes (A30, A31); every earlier golden byte unchanged | host stage 11, dev stage 13, app stage J |
 
 `Grant::same_authority` (step 4) is one function; build it with stage 3 or
 when step 4 starts.
@@ -1000,3 +1013,12 @@ Each answer below is the one that this specification uses.
     links are refused before omission. J2 logic fixtures commit independently
     generated components; the on-disk hello is exactly 6.5 and 7.3. Malformed
     release contexts appear once. Public signatures and byte formats stay fixed.
+
+20. **The grant `Manage` in a release body** (S73, step 10). W35 makes
+    `Manage` a grant kind, and a release body carries its grants (7.1), so
+    it is encoded `[4]`. A home built before step 10 refuses such a
+    release as a bad release body, and names it: it cannot install that
+    mod, which it could not run anyway. Every release without `Manage`
+    keeps its bytes, and the body format stays `1`. The other way, a body
+    that leaves `Manage` out, would make F-INST-7's "no new grant" check
+    blind to it. Decided; the cost to undo is a new body format.
