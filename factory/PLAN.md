@@ -599,7 +599,19 @@ is a step-7-style check, after S55.
   is reached that the options did not turn on (`no_default_services`). Touches: net, the workspace
   `Cargo.lock`. Cloud; the product owner runs `cargo hakari` on merge. After S67 (both own net).
   Delivered (3527962, merged rebased with its hakari commit 3659eee): two of Alice's machines on different networks fail with "no direct path; choose a relay or turn on the DHT" and connect once both choose her server's relay; machines find each other at stored addresses and at addresses passed on in `devices` answers. net's tests: 121 s to 39 s (the cause was a 1200-entry fixture chain, not close). New dependencies: iroh-relay (server), iroh-mdns-address-lookup and iroh-mainline-address-lookup =0.6.1. Decisions: node Q1 built literally (`book.json` decides on/relays/dht; a fresh home stays off until `set_options`); mDNS only when on and not on loopback; the relay server is plain HTTP and admits only trusted machines (W32), `Net::relay_url()`; at most 4 passed-on addresses per machine, own machines only; a connect that runs out its deadline is `Unreachable`. Verified on the Mac: hakari clean, net and node green with ignored (67 s), app builds. For node 2 (node's documents): the relay URL is `http://<addr>/`, not https; the DHT consent text must say LAN addresses are published too; `watane-node --relay` needs a fixed port; with a relay chosen and the DHT off, the cause still names both.
-- Then node 2 after S68, node 3 after node 2, and app G after node 2 and 3; J8 closes the
+- [~] **S70 Alice publishes on her laptop and her server keeps it; a light laptop searches and
+  installs through it (node 2).** Branch `slice/s70`. Builds node stage 2 (node/TECHNICAL.md 9, row
+  2): `told` and `need` in the wrappers, `installed`, `search`, `join`, `own_hints`,
+  `confirm_own_hint`, `words.rs`, on net N1 to N4 as built. Outcome: node scenarios S4 to S9 pass
+  (node FUNCTIONAL), each as a test `s<n>_...`, between homes on 127.0.0.1 in one process tree.
+  Folds in S68's notes on node's documents: the relay URL is `http://<addr>/` (`Net::relay_url()`);
+  the DHT consent text (node 7) says local network addresses are published too; `watane-node --relay`
+  takes a fixed port (node 3 builds it; write it into the spec now); with a relay chosen and the DHT
+  off, net's cause names only what is missing (a one-line net fix is allowed). And S64's two open
+  questions, decided by the product owner: a `Kept` ingest that stores nothing (a gap) removes its
+  `kept` record (dist 5.12); `DistHoldings::set` a second time is an error, not a silent keep.
+  Touches: node, dist (the kept record), net (that one cause text). Cloud.
+- Then node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
 ### Step 9: Extension points (J9)
@@ -662,7 +674,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | done (S61) |
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
 | node | 1 holder | 8 | done (S64) |
-| node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
+| node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open (S70) |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
 | app | G own machines (J8) | 8 | open |
 | pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
@@ -915,6 +927,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S64 (2026-11-15): a `Kept` ingest that fails with a gap and stores nothing removes its `kept`
+  record, since nothing is kept; `DistHoldings::set` a second time is an error. Built in S70.
+- S53 (2026-11-15): with the publish-under-an-org question open, S53 ran J5 up to Carol's publish and
+  left the fork to fake-gh (option b), so no public flag was added before the human answers.
 - S59 (2026-11-15): accepted the slice's own reading that none of its choices is hard to revert. Two
   come closest and are named for the human. `kept` is a new field in follows.json with a serde
   default and the version stays 1, as step 4 did it: older homes ignore it, so undoing it costs
