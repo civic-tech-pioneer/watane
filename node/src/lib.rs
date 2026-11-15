@@ -106,3 +106,12 @@ impl Node {
         self.net.close();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn node_is_send_and_sync() {
+        fn check<T: Send + Sync>() {}
+        check::<super::Node>();
+    }
+}

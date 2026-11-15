@@ -8,7 +8,7 @@ use watane_node::{Machine, Node, NodeError, Options};
 fn s1_keyless_open_holds_no_identity() {
     let home = tempfile::tempdir().unwrap();
     let node = Node::open_keyless(home.path(), Options::default()).unwrap();
-    assert!(home.path().join("log").is_dir());
+    assert!(home.path().join("log/channels.db").is_file());
     assert!(!home.path().join("log/identity.key").exists());
     assert!(matches!(
         node.publish(package("1.0.0")),
@@ -42,10 +42,13 @@ fn s1_refuses_host_home_and_home_with_identity() {
     drop(Node::open(keyed.path(), Approve::new(), Options::default()).unwrap());
     let key_file = keyed.path().join("log/identity.key");
     let before = fs::read(&key_file).unwrap();
-    assert!(matches!(
-        Node::open_keyless(keyed.path(), Options::default()),
-        Err(NodeError::Dist(_))
-    ));
+    // dist maps log's `HasIdentity` to `DistError::Log`; log's error type is not re-exported.
+    match Node::open_keyless(keyed.path(), Options::default()) {
+        Err(NodeError::Dist(DistError::Log(e))) => {
+            assert!(format!("{e:?}").starts_with("HasIdentity"), "{e:?}")
+        }
+        other => panic!("expected log's HasIdentity, got {:?}", other.err()),
+    }
     assert_eq!(fs::read(&key_file).unwrap(), before);
 }
 
