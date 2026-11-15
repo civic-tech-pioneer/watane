@@ -4,12 +4,15 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-use wit_parser::{Resolve, SourceMap, UnresolvedPackageGroup, WorldItem, WorldKey};
+use wit_parser::{
+    Resolve, SourceMap, Type, TypeDefKind, UnresolvedPackageGroup, WorldItem, WorldKey,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct World {
     pub exports: Vec<InterfaceName>,
     pub events: Vec<InterfaceName>,
+    pub collects: Vec<InterfaceName>,
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
     pub storage: bool,
@@ -38,6 +41,19 @@ fn violation(v: &mut Vec<Violation>, rule: Rule, file: &str, message: impl Into<
         file: file.into(),
         message: message.into(),
     });
+}
+
+fn is_list(resolve: &Resolve, t: &Type) -> bool {
+    let mut t = *t;
+    // Follow `type x = y` aliases; the chain is finite because WIT forbids cycles.
+    while let Type::Id(id) = t {
+        match &resolve.types[id].kind {
+            TypeDefKind::List(_) => return true,
+            TypeDefKind::Type(next) => t = *next,
+            _ => return false,
+        }
+    }
+    false
 }
 
 // This scan runs before handing any WIT to the parser. Comments may nest.
@@ -339,6 +355,7 @@ pub(crate) fn read(
     let mut world = World {
         exports: vec![],
         events: vec![],
+        collects: vec![],
         calls: vec![],
         subscriptions: vec![],
         storage: false,
@@ -377,7 +394,28 @@ pub(crate) fn read(
             let (ns, pkg) = (interface.namespace(), interface.package());
             if ns == "mods" {
                 match (import, pkg == slug.as_str()) {
-                    (true, true) => world.events.push(interface),
+                    (true, true) => {
+                        let mut collect = false;
+                        for (fname, f) in &resolve.interfaces[*id].functions {
+                            match &f.result {
+                                None => {}
+                                Some(t) if is_list(&resolve, t) => collect = true,
+                                Some(_) => violation(
+                                    violations,
+                                    Rule::Import,
+                                    "wit/world.wit",
+                                    format!(
+                                        "{}.{fname}: a function of an own interface that the world imports returns nothing (an event) or a list (a collect)",
+                                        interface.interface()
+                                    ),
+                                ),
+                            }
+                        }
+                        if collect {
+                            world.collects.push(interface.clone());
+                        }
+                        world.events.push(interface);
+                    }
                     (true, false) => world.calls.push(interface),
                     (false, true) => world.exports.push(interface),
                     (false, false) => world.subscriptions.push(interface),
@@ -422,6 +460,7 @@ pub(crate) fn read(
     for list in [
         &mut world.exports,
         &mut world.events,
+        &mut world.collects,
         &mut world.calls,
         &mut world.subscriptions,
     ] {

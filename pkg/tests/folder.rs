@@ -23,6 +23,7 @@ fn ac4_hello_page_only() {
         &World {
             exports: vec![],
             events: vec![],
+            collects: vec![],
             calls: vec![],
             subscriptions: vec![],
             storage: false,
