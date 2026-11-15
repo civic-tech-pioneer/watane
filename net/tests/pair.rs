@@ -98,6 +98,13 @@ fn s3_bad_codes_and_a_no_change_nothing() {
     let unchanged = |what: &str| {
         assert_eq!(laptop.net.devices().unwrap(), before, "{what}");
         assert!(joiner.net.devices().is_none(), "{what}");
+        // a join that failed keeps no address of the anchor (5.5)
+        let book = fs::read(joiner.dir.path().join("net/book.json")).unwrap();
+        let book: serde_json::Value = serde_json::from_slice(&book).unwrap();
+        assert!(
+            book["addrs"].as_object().is_none_or(|m| m.is_empty()),
+            "{what}: {book}"
+        );
     };
 
     // the code is spent on arrival: a second use while the participant has
@@ -412,6 +419,8 @@ fn ac1_a_joined_machine_reaches_the_anchor_after_a_reopen() {
     assert_eq!(addrs.keys().collect::<Vec<_>>(), [&anchor.key.to_string()]);
     let stored = addrs[&anchor.key.to_string()].as_array().unwrap();
     assert!((1..=4).contains(&stored.len()), "{stored:?}");
+    let answered: std::net::SocketAddr = stored[0].as_str().unwrap().parse().unwrap();
+    assert!(anchor.net.addrs().contains(&answered), "{answered}");
 
     let net = open_on(&dir.path().join("net"), holdings, options(None));
     let hello = net.hello(&anchor.key).unwrap();
