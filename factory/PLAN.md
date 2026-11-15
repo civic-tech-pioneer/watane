@@ -516,7 +516,7 @@ is a step-7-style check, after S55.
   net is on, so the count is not vacuous. Then net 37/37 `--include-ignored`, fmt and clippy clean,
   host 153/153 (the cloud cannot bind `::1`; one earlier run had 1 failure under S61's load and
   passed twice since, test not captured), and the workspace builds with the app.
-- [~] **S61 A home can be a replica: it reads, verifies and stores with no identity (log L6, dist
+- [x] **S61 A home can be a replica: it reads, verifies and stores with no identity (log L6, dist
   S8).** Branch `slice/s61`. Builds log L6 (log/TECHNICAL.md 5.5 and the L6 row of 9:
   `Log::open_keyless`, `identity() -> Option<PublicKey>`, `drop_identity`, `channels`, `NoIdentity`,
   `HasIdentity`) and dist S8 (dist/TECHNICAL.md 5.12 and the S8 row of 8: `Dist::open_keyless`,
@@ -534,6 +534,7 @@ is a step-7-style check, after S55.
   Option), possibly host and dev. Needs the Mac: the app cannot build in the cloud, and J2 to J5 must
   stay green. S60 is building net in the cloud at the same time and owns the workspace Cargo.toml
   and Cargo.lock: add no dependency.
+  Delivered (d1d0ba0, merged through S64 at ccf206d): a home can be a replica that opens with no identity, holds another participant's channel and refuses to sign (`NoIdentity`, 409 `no_identity`). Stopped once on a full disk. Verified on the Mac: log, dist, net, pkg, host, dev, app and J2 to J5 green, except dev's scenario map (main's step 9 spec, below). Stage G leftovers from user-sim: `Core::indexes` fails keyless; `choose_index` reports `NoIdentity` after it worked; `IdentityInUse` text says 'replaced'.
 - [x] **S62 Alice pairs her server with a code, and only her own machines are served (net N2).**
   Branch `slice/s62`. Builds net N2 (net/TECHNICAL.md 5.3 to 5.5 and the N2 row of 9): the signed
   device list with expiry, pairing by code (`answer_join` with the short key confirmed), classes,
@@ -555,13 +556,14 @@ is a step-7-style check, after S55.
   `s<n>_...`; a forged hint, a changed byte, another author's entry and a package with the wrong
   hash change nothing in the holder. Touches: net only (src, tests, TECHNICAL, FUNCTIONAL); adds
   no dependency (iroh-blobs and iroh-gossip are pinned since N1). Cloud.
-- [~] **S64 A home holds another participant's channel through the holder (node 1).**
+- [x] **S64 A home holds another participant's channel through the holder (node 1).**
   Branch `slice/s64`. Builds node stage 1 (node/TECHNICAL.md 9, row 1): the `node` crate as a
   workspace member, `DistHoldings` and `convert.rs`, `Node::open`, `open_keyless`, `dist`, `net`,
   `machine`, `close`, and the wrappers with `net` off. Outcome: node scenarios S1, S2 and S3 pass
   (node FUNCTIONAL), each as a test; a keyless node opens and holds a channel it was given. Touches:
   node (new), the workspace `Cargo.toml` members line and `Cargo.lock`; not net (S63 owns it): a
   gap in net's API goes to the product owner as a question, not a change. Cloud.
+  Delivered (ccf206d): the `node` crate opens a keyless home or an app home, and `DistHoldings` answers net's `Holdings` from what dist stored; a keyless node holds a channel it was given. dist re-exports `Grant`, `InterfaceName`, `Provider` so node depends only on dist and net. Verified on the Mac: hakari verify clean, node and dist green with ignored, app and host green (host's one flaky test passed 3 of 3 on rerun). Open for node 2: a `Kept` ingest that fails on a gap leaves its `kept` record; `DistHoldings::set` twice keeps the first.
 - Then, sketched just in time as each lands: net N4 (takes node Q6 and the rest of Q5) after S63,
   node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
@@ -586,9 +588,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | open (S63) |
 | net | N4 light machines, restore, reach | 8 | open |
-| log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open (S61) |
-| dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | open (S61) |
-| node | 1 holder | 8 | open (S64) |
+| log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | done (S61) |
+| dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
+| node | 1 holder | 8 | done (S64) |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
 | app | G own machines (J8) | 8 | open |
@@ -797,11 +799,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S57: delivered 2026-11-14 and merged; routine `trig_019eZQGSqCu2ziUPVNcDiXD8` finished, branch removed.
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
 - S59: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S61: `585e3daf` (sessionId `585e3daf-6cf8-4f99-be6e-144904360f44`, resumed after the disk filled; first run `f08e7a50`), worktree `.claude/worktrees/s61` (local: the app). Delivered; merging.
+- S61: `585e3daf` (sessionId `585e3daf-6cf8-4f99-be6e-144904360f44`, resumed after the disk filled; first run `f08e7a50`), worktree `.claude/worktrees/s61` (local: the app). Delivered 2026-11-15 and merged through S64; worktree, its target and branches removed.
 - S60: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S62: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S63: cloud routine `trig_01QqG6y7XnvSQ7DiNeiy67jR` (handed out 2026-11-15), branch `slice/s63`.
-- S64: cloud routine `trig_01RVY7TRDQuF4SUPBGmqvsYJ` (handed out 2026-11-15), branch `slice/s64`.
+- S64: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -1305,6 +1307,11 @@ The human may veto each one.
   of its own.
 - S61: a resumed local foreman that rebased could not force-push, so it pushed
   `slice/s61-rebased`. The product owner merges the local branch and deletes both remote names.
+- Main is red since 51e0dfb (step 9 spec): dev's `ac5_scenario_map_covers_every_scenario_and_names_existing_tests`
+  wants `contract::ac_collect_fake_and_answer`, which step 9 builds. Every verification shows it
+  until then; it is not a slice's failure.
+- S64: no cargo-hakari in the cloud image. The product owner runs `cargo hakari generate`,
+  `manage-deps` and `verify` on the Mac when a cloud slice adds a crate or dependency.
 
 ## Digest
 
