@@ -11,12 +11,14 @@ name = "watane_node"
 watane-dist = { path = "../dist" }
 watane-net = { path = "../net" }
 thiserror = "2.0"
+tokio = { version = "1", features = ["rt", "signal"] }   # the program waits for SIGINT and SIGTERM
+url = "2.5"                # the program parses a relay URL, as net's options hold it
+serde_json = "1.0"         # the program reads the switches of net/book.json for status and relay/dht
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
 tempfile = "3.27"
 tiny_http = "0.12"
-serde_json = "1.0"
 watane-pkg = { path = "../pkg" }   # tests only: pack Alice's fixture mod, as her own tools would
 
 [lints.rust]

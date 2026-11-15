@@ -8471,6 +8471,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tiny_http",
+ "tokio",
+ "url",
  "watane-dist",
  "watane-net",
  "watane-pkg",

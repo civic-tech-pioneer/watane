@@ -5,10 +5,10 @@ How `node` does what `FUNCTIONAL.md` says. Requirements are cited as
 `dist 5.12`, `net 3.1`. Section 14 lists the decisions made here, section
 13 the questions left open.
 
-Stages 1 and 2 (section 9) are built: the crate is a workspace member with
+Stages 1 to 3 (section 9) are built: the crate is a workspace member with
 `Node`, `DistHoldings`, `convert.rs`, the wrappers with `told` and `need`,
-`installed`, `search`, `join`, the restore hints and `words.rs`. Stage 3 (the
-program, section 6) is not. Where the code differs from the text below, the
+`installed`, `search`, `join`, the restore hints and `words.rs`, and the program
+`watane-node` (section 6, `src/bin/watane-node.rs`). Where the code differs from the text below, the
 text says so.
 
 ## 1. Crate
@@ -20,7 +20,7 @@ text says so.
 | Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
 | Threads | No runtime of its own. The library API blocks, like `dist`'s and `net`'s: call it from a blocking thread, never from inside a tokio runtime (`net` 1). `net` calls the holder of section 4 from its blocking threads; no holder method calls `net` or reads from a web host (RV-06). The program runs one thread that prints `net`'s events and waits for a signal on the main thread. |
 | Network | None of its own. `net` makes every connection between machines; `dist` every read from a web host. |
-| Opens | Nothing directly: `Dist` opens `<home>/log/` and `<home>/dist/`, `Net` opens `<home>/net/`. The program reads only whether `<home>/home.json` exists (6.1). |
+| Opens | Nothing directly: `Dist` opens `<home>/log/` and `<home>/dist/`, `Net` opens `<home>/net/`. The program reads only whether `<home>/home.json` exists and the `relays` and `dht` of `<home>/net/book.json`, which `net` has no call to read (6.1). |
 
 ```text
 node/
@@ -48,12 +48,13 @@ Inner modules are private. Only `lib.rs` exports.
 watane-dist = { path = "../dist" }   # the holder; log and pkg types come through its re-exports
 watane-net = { path = "../net" }     # Net, Holdings and the types of net 3
 thiserror = "2.0"
-signal-hook = "0.3"                  # the program (stage 3); not yet in Cargo.toml
+tokio = { version = "1", features = ["rt", "signal"] }   # the program: a small runtime on the main thread that only waits for SIGINT or SIGTERM
+url = "2.5"                          # the program: a relay URL, as net's options hold it
+serde_json = "1.0"                   # the program: reads the switches of net/book.json (6.1)
 
 [dev-dependencies]
 tempfile = "3.27"
 tiny_http = "0.12"                   # a web host for S2 and S5, as dist's tests use it
-serde_json = "1.0"                   # tests read follows.json
 watane-pkg = { path = "../pkg" }     # tests only: pack Alice's fixture mod, as her own tools would
 ```
 
@@ -387,13 +388,13 @@ identity. Arguments are parsed by hand, as `watane` does.
   light>, node <short key>` (and `relay on <addr>; add http://<addr>/ to
   the relays of your other machines` with `--relay`; `Net::relay_url()` gives that URL, `http`, not `https`). `--relay` takes a fixed `addr:port`: port 0 is refused (exit 2), because the other machines store the relay's URL. One thread prints
   each `net` event (6.2); the main thread waits for SIGINT or SIGTERM
-  (`signal-hook`), then `node.close()` and exit 0. `net` is on only while
+  (tokio's `signal` on a runtime of the main thread that does nothing else; no node or net call runs inside it), then `node.close()` and exit 0. `net` is on only while
   `join` or `run` runs.
 - **status**: no network. Node key, machine, anchor, device list (seq,
   expiry, each machine), relays, DHT on or off, the number of held
   channels and of missing packages.
 - **relay add**, **dht on**: print the consent text of section 7. With
-  `--yes`, or a `y` answer on a terminal, store it with `net.set_options`;
+  `--yes`, or a line `y` or `yes` on standard input, store it with `net.set_options`;
   else change nothing and exit 1 with `not changed`. **relay remove**,
   **dht off** need no question: they only take something away.
 
@@ -537,3 +538,6 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-6 | An install from a remote hit with no link gives the channel a `kept` record on a replica. | Updates keep coming through the full machines, as a follow does through a web host (DD-24); it is net Q2's answer. |
 | NO-7 | The consent texts live in `node`, used by the app and the program. | One text per choice, wherever it is made (W32). |
 | NO-8 | Only a replica keeps: on the anchor, a `Kept` pull is ingested as `Asked`, with no record. | The anchor's held set comes only from the participant's own acts there (follow, index, install), so an unfollow on the anchor takes effect and the anchor does not collect what the light machines follow. Undo: cheap. |
+| NO-9 | The program reads `relays` and `dht` from `net/book.json` itself, to keep them when it changes the other switch and to print them in `status`. | `net` has no call that gives the switches back; adding one is `net`'s change. Undo: cheap (replace by that call). |
+| NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
+| NO-11 | `join` stores no address of the anchor beyond what `net` keeps; a home that joined finds its machines by mDNS, the relay or the DHT of its choice. | `net`'s business (5.2); a test of the program gives the home the address in `book.json`, as a home that had reached the anchor would have. |
