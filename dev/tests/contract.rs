@@ -355,3 +355,94 @@ fn ac3_each_contract_file_starts_from_fresh_state() {
     assert!(problems.is_empty(), "{problems:?}");
     assert_eq!((report.files, report.passed, report.failed), (2, 4, 0));
 }
+
+fn copy_fixture(name: &str, to: &std::path::Path) {
+    fn copy(from: &std::path::Path, to: &std::path::Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let destination = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &destination);
+            } else {
+                fs::copy(entry.path(), destination).unwrap();
+            }
+        }
+    }
+    copy(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name),
+        to,
+    );
+}
+
+fn test_in(dir: &std::path::Path, contract: Value) -> (i32, Value) {
+    fs::create_dir_all(dir.join("tests")).unwrap();
+    fs::write(dir.join("tests/c.json"), contract.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(dir)
+        .args(["test", "--json"])
+        .env("WATANE_DEV_CACHE", support::cache())
+        .env_remove("WATANE_DEV_UNIT_SECONDS")
+        .output()
+        .unwrap();
+    let v = serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+        panic!(
+            "{e}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    (output.status.code().unwrap(), v)
+}
+
+#[test]
+fn ac_collect_fake_and_answer() {
+    let temp = tempfile::tempdir().unwrap();
+    let (menu, item) = (temp.path().join("menu"), temp.path().join("item"));
+    copy_fixture("menu", &menu);
+    copy_fixture("item", &item);
+    for (dir, contract) in [
+        (&menu, json!({"steps":[{"call":"api.items","returns":[]}]})),
+        (
+            &menu,
+            json!({"fakes":{"mods:menu/menu":{"ask":["x","y"]}},
+                   "steps":[{"call":"api.items","returns":["x","y"]}]}),
+        ),
+        (
+            &item,
+            json!({"steps":[{"deliver":"menu.ask","returns":["a"]}]}),
+        ),
+    ] {
+        let (code, v) = test_in(dir, contract);
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(v["result"]["contract"]["passed"], 1, "{v}");
+        assert_eq!(v["result"]["contract"]["failed"], 0, "{v}");
+    }
+}
+
+#[test]
+fn ac2_own_outlet_fake_key_is_accepted_and_at_is_refused() {
+    let temp = tempfile::tempdir().unwrap();
+    let menu = temp.path().join("menu");
+    copy_fixture("menu", &menu);
+    fs::create_dir_all(menu.join("tests")).unwrap();
+    let path = menu.join("tests/c.json");
+    let slug: watane_pkg::Slug = "menu".parse().unwrap();
+    fs::write(
+        &path,
+        r#"{"fakes":{"mods:menu/menu":{"ask":["x"]}},"steps":[{"call":"api.items","returns":["x"]}]}"#,
+    )
+    .unwrap();
+    let (report, problems) = watane_dev::contract::contract_tests(&menu, &slug).unwrap();
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(report.passed, 1);
+    fs::write(
+        &path,
+        r#"{"fakes":{"mods:menu/menu@0.1.0":{}},"steps":[{"call":"api.items"}]}"#,
+    )
+    .unwrap();
+    let (_, problems) = watane_dev::contract::contract_tests(&menu, &slug).unwrap();
+    assert_eq!(problems[0].code.as_str(), "test.contract_file");
+}

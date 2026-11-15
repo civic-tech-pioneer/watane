@@ -129,6 +129,8 @@ A `deliver` step invokes a subscription as `<provider iface>.<fn>`, with `args` 
  "steps": [{"deliver": "events.added", "args": {"title": "Emma"}}]}
 ```
 
+An own-interface function with a `list` result is a collect (the mods granted to answer it are joined). Fake it under
+`mods:<slug>/<outlet>` with the whole list (no fake gives `[]`); to answer one, `deliver` `<outlet>.<fn>` and check `returns`.
 Serve runs all tests before starting or updating the preview.
 
 ## Results

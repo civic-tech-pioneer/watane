@@ -29,3 +29,9 @@ rebuild, run `watane-dev new ratings --dir /tmp/ratings`, then
 `watane-dev test --dir /tmp/ratings --json` and copy `mod.toml`, `wit/`, `ui/`
 and `logic.wasm` into `ratings/`. It exports `api.get`, `api.add` and
 `changes.counted`; all expectations are the literal template contract.
+
+# Collect fixtures (S65-3)
+
+`menu/` (own outlet `menu` with `ask: func() -> list<string>`, world `shell`) and `item/`
+(exports `mods:menu/menu`, `ask` returns `["a"]`) are copies of the host's `menu` and `item-a`
+fixtures with their committed `logic.wasm`; rebuild them from `../../host/tests/fixtures/build.sh`.
