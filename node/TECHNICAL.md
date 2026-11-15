@@ -20,7 +20,7 @@ text says so.
 | Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
 | Threads | No runtime of its own. The library API blocks, like `dist`'s and `net`'s: call it from a blocking thread, never from inside a tokio runtime (`net` 1). `net` calls the holder of section 4 from its blocking threads; no holder method calls `net` or reads from a web host (RV-06). The program runs one thread that prints `net`'s events and waits for a signal on the main thread. |
 | Network | None of its own. `net` makes every connection between machines; `dist` every read from a web host. |
-| Opens | Nothing directly: `Dist` opens `<home>/log/` and `<home>/dist/`, `Net` opens `<home>/net/`. The program reads only whether `<home>/home.json` exists and the `relays` and `dht` of `<home>/net/book.json`, which `net` has no call to read (6.1). |
+| Opens | Nothing directly: `Dist` opens `<home>/log/` and `<home>/dist/`, `Net` opens `<home>/net/`. The program reads only whether `<home>/home.json` exists, and the `relays` and `dht` through `Net::options()` (6.1). |
 
 ```text
 node/
@@ -50,7 +50,6 @@ watane-net = { path = "../net" }     # Net, Holdings and the types of net 3
 thiserror = "2.0"
 tokio = { version = "1", features = ["rt", "signal"] }   # the program: a small runtime on the main thread that only waits for SIGINT or SIGTERM
 url = "2.5"                          # the program: a relay URL, as net's options hold it
-serde_json = "1.0"                   # the program: reads the switches of net/book.json (6.1)
 
 [dev-dependencies]
 tempfile = "3.27"
@@ -523,7 +522,7 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | Subsystem | Gap |
 |---|---|
 | `dist` | `InterfaceQuery` has no accessor for its name, so `search` cannot turn a query with an interface into a `net` query (4.3). It sends the remote query with no interface and lets `search_stored` apply the interface (5.4 step 4): correct, but the remote machine may return hits that are then dropped. |
-| `net` | A hint is acted on with the machine that delivered it (net 5.7), and iroh-gossip's `delivered_from` is the neighbor that relayed the message, not the machine that told it. In a topic of three machines the hint often reaches a machine through another replica that has not pulled the head yet (seen in S7: the light machine got the server's relay of the laptop's hint, asked the server, which still had the old head, and pulled nothing). The head then waits for the next sync (on connect, or 10 minutes). In about 1 run in 5 of `tests/light.rs` the tests of S6 and S7 reconnect (`set_options` off and on, which syncs) after 3 to 5 s without the entry. Fixed in S72 (net 5.7): the delivering machine is asked again every 250 ms, up to 5 s, until its head reaches the hint's seq. |
+| `net` | A hint is acted on with the machine that delivered it (net 5.7), and iroh-gossip's `delivered_from` is the neighbor that relayed the message, not the machine that told it. In a topic of three machines the hint often reaches a machine through another replica that has not pulled the head yet (seen in S7: the light machine got the server's relay of the laptop's hint, asked the server, which still had the old head, and pulled nothing). The head then waits for the next sync (on connect, or 10 minutes). In about 1 run in 5 of `tests/light.rs` the tests of S6 and S7 reconnect (`set_options` off and on, which syncs) after 3 to 5 s without the entry. Fixed in S72 (net 5.7): the delivering machine is asked again every 250 ms, up to 5 s, until its head reaches the hint's seq. The reconnect workaround of `tests/light.rs` is removed. |
 
 ## 13. Questions
 
@@ -548,7 +547,6 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-6 | An install from a remote hit with no link gives the channel a `kept` record on a replica. | Updates keep coming through the full machines, as a follow does through a web host (DD-24); it is net Q2's answer. |
 | NO-7 | The consent texts live in `node`, used by the app and the program. | One text per choice, wherever it is made (W32). |
 | NO-8 | Only a replica keeps: on the anchor, a `Kept` pull is ingested as `Asked`, with no record. | The anchor's held set comes only from the participant's own acts there (follow, index, install), so an unfollow on the anchor takes effect and the anchor does not collect what the light machines follow. Undo: cheap. |
-| NO-9 | The program reads `relays` and `dht` from `net/book.json` itself, to keep them when it changes the other switch and to print them in `status`. | `net` has no call that gives the switches back; adding one is `net`'s change. Undo: cheap (replace by that call). |
+| NO-9 | The program reads `relays` and `dht` with `Net::options()`, to keep them when it changes the other switch and to print them in `status`. | `net` keeps them from `book.json` at open (net 5.1) and gives them back. Undo: cheap. |
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
-| NO-11 | `join` stores no address of the anchor beyond what `net` keeps; a home that joined finds its machines by mDNS, the relay or the DHT of its choice. | `net`'s business (5.2); a test of the program gives the home the address in `book.json`, as a home that had reached the anchor would have. |
 | NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |

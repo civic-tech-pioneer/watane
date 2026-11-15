@@ -422,13 +422,6 @@ fn s13_run_prints_one_refused_line_for_a_machine_that_sends_a_bad_entry() {
     let dir = tempfile::tempdir().unwrap();
     let anchor = app(dir.path());
     let (server_home, _) = paired(&anchor);
-    // no mDNS on loopback: the server is told where its anchor is, as a home that had
-    // reached it would have stored
-    let path = server_home.path().join("net/book.json");
-    let mut stored = book(server_home.path());
-    stored["addrs"][key_of(&anchor).to_string()] =
-        anchor.net().addrs().iter().map(|a| a.to_string()).collect();
-    std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
     let mut prog = Prog::start(server_home.path(), &["run", "--bind", LO]);
     prog.line(10, |l| l.starts_with("running as full, node "));
 

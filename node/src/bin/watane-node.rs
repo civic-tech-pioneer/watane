@@ -240,37 +240,18 @@ fn failed(text: impl Into<String>) -> Fail {
     Fail::Failed(text.into())
 }
 
-/// What `book.json` keeps of the switches that this program changes.
+/// The switches that this program changes, as `net` keeps them.
 struct Switches {
     relays: Vec<url::Url>,
     dht: bool,
 }
 
-fn switches(home: &Path) -> Result<Switches, Fail> {
-    let path = home.join("net/book.json");
-    let bad = || failed(format!("{} is not a book of switches", path.display()));
-    let book: serde_json::Value = match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| bad())?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::Value::Null,
-        Err(e) => return Err(failed(format!("{}: {e}", path.display()))),
-    };
-    let relays = book["relays"]
-        .as_array()
-        .map(|list| {
-            list.iter()
-                .map(|v| {
-                    v.as_str()
-                        .and_then(|t| url::Url::parse(t).ok())
-                        .ok_or_else(bad)
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-    Ok(Switches {
-        relays,
-        dht: book["dht"].as_bool().unwrap_or(false),
-    })
+fn switches(node: &Node) -> Switches {
+    let o = node.net().options();
+    Switches {
+        relays: o.relays,
+        dht: o.dht,
+    }
 }
 
 /// A node home with net off: no command but `join` and `run` makes contact (Q1).
@@ -281,12 +262,11 @@ fn open(home: &Path) -> Result<Node, Fail> {
 
 fn set(
     node: &Node,
-    home: &Path,
     on: bool,
     relay: Option<SocketAddr>,
     bind: Option<SocketAddr>,
 ) -> Result<(), Fail> {
-    let s = switches(home)?;
+    let s = switches(node);
     Ok(node.net().set_options(watane_node::net::Options {
         on,
         relays: s.relays,
@@ -321,7 +301,7 @@ fn join(home: &Path, code: &str, replace: bool, bind: Option<SocketAddr>) -> Res
         .map_err(|e: <PairCode as std::str::FromStr>::Err| failed(chain(&e)))?;
     let node = open(home)?;
     let wait = signals()?;
-    set(&node, home, true, None, bind)?;
+    set(&node, true, None, bind)?;
     out(&format!("this machine: {}", node.net().node_key().short()));
     out("waiting for your answer on the anchor");
     let (tx, rx) = std::sync::mpsc::channel();
@@ -338,13 +318,13 @@ fn join(home: &Path, code: &str, replace: bool, bind: Option<SocketAddr>) -> Res
             Ok(Told::Joined(result)) => result,
             _ => {
                 // the join thread still waits for the anchor: leave without it
-                let _ = set(&node, home, false, None, None);
+                let _ = set(&node, false, None, None);
                 eprintln!("watane-node: interrupted");
                 std::process::exit(1);
             }
         }
     });
-    let _ = set(&node, home, false, None, None);
+    let _ = set(&node, false, None, None);
     let list = result?;
     out(&format!(
         "joined as {}; machines: {}",
@@ -399,7 +379,7 @@ fn run(home: &Path, relay: Option<SocketAddr>, bind: Option<SocketAddr>) -> Resu
     }
     let wait = signals()?;
     let events = node.net().events();
-    set(&node, home, true, relay, bind)?;
+    set(&node, true, relay, bind)?;
     std::thread::spawn(move || {
         while let Ok(event) = events.recv() {
             if let Some(text) = line(&event) {
@@ -414,7 +394,7 @@ fn run(home: &Path, relay: Option<SocketAddr>, bind: Option<SocketAddr>) -> Resu
     ));
     if let Some(addr) = relay {
         let Some(url) = node.net().relay_url() else {
-            let _ = set(&node, home, false, None, None);
+            let _ = set(&node, false, None, None);
             return Err(failed(format!("the relay on {addr} did not start")));
         };
         out(&format!(
@@ -422,14 +402,14 @@ fn run(home: &Path, relay: Option<SocketAddr>, bind: Option<SocketAddr>) -> Resu
         ));
     }
     wait();
-    let _ = set(&node, home, false, None, None);
+    let _ = set(&node, false, None, None);
     node.close();
     Ok(())
 }
 
 fn status(home: &Path) -> Result<(), Fail> {
     let node = open(home)?;
-    let s = switches(home)?;
+    let s = switches(&node);
     let key = node.net().node_key();
     out(&format!("node {key}"));
     out(&format!(
@@ -505,7 +485,7 @@ fn consent(text: &str, yes: bool) -> bool {
 
 fn store(home: &Path, relays: Option<Vec<url::Url>>, dht: Option<bool>) -> Result<(), Fail> {
     let node = open(home)?;
-    let s = switches(home)?;
+    let s = switches(&node);
     node.net().set_options(watane_node::net::Options {
         on: false,
         relays: relays.unwrap_or(s.relays),
@@ -532,8 +512,9 @@ fn dispatch(args: Args) -> Result<(), Fail> {
         Cmd::Status => status(home),
         Cmd::RelayAdd { url, yes } => {
             let url = relay_url(&url)?;
-            open(home)?.close(); // a host home is refused before any question
-            let mut relays = switches(home)?.relays;
+            let node = open(home)?; // a host home is refused before any question
+            let mut relays = switches(&node).relays;
+            node.close();
             if !consent(&words::relay_add(url.as_str()), yes) {
                 return Err(failed("not changed"));
             }
@@ -544,7 +525,9 @@ fn dispatch(args: Args) -> Result<(), Fail> {
         }
         Cmd::RelayRemove { url } => {
             let url = relay_url(&url)?;
-            let mut relays = switches(home)?.relays;
+            let node = open(home)?;
+            let mut relays = switches(&node).relays;
+            node.close();
             relays.retain(|r| *r != url);
             store(home, Some(relays), None)
         }

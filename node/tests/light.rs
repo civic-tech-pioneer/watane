@@ -42,32 +42,17 @@ fn world() -> World {
     }
 }
 
-/// Waits until the server holds the release's entry and package. A workaround for a net
-/// gap (node TECHNICAL 12): net acts on a hint with the machine that relayed it over
-/// gossip, which may not hold the head yet, and then nothing is pulled until the next
-/// sync. Then the server reconnects, which syncs (net 5.6, on connect), as its 10-minute
-/// sync would. Remove it, and the one in S7, once net pulls from the machine that told.
+/// Waits until the server holds the release's entry and package.
 fn keeps(w: &World, p: &watane_dist::Published) -> bool {
     let alice = w.laptop.dist().identity().unwrap();
     let want = Some((p.entry.seq(), p.entry.id()));
-    let held = || {
+    wait_for(15, || {
         head(&w.server, &alice) == want
             && w.server
                 .dist()
                 .package_file(&p.info.release.package)
                 .is_some()
-    };
-    if wait_for(3, held) {
-        return true;
-    }
-    reconnect(&w.server, &w.laptop);
-    wait_for(12, held)
-}
-
-fn reconnect(node: &Node, peer: &Node) {
-    node.net().set_options(Default::default()).unwrap();
-    node.net().set_options(net_opts()).unwrap();
-    introduce(node, peer);
+    })
 }
 
 #[test]
@@ -235,11 +220,5 @@ fn s7_the_installed_mod_gets_the_next_release_through_the_server() {
             .unwrap()
             .is_some_and(|r| r.release.version == version)
     };
-    if !wait_for(5, offered) {
-        // the net gap of `keeps`: the machines reconnect and sync
-        reconnect(&w.server, &w.laptop);
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        reconnect(&w.light, &w.server);
-        assert!(wait_for(12, offered), "the light home offers 0.2.0");
-    }
+    assert!(wait_for(15, offered), "the light home offers 0.2.0");
 }
