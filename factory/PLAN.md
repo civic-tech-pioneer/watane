@@ -466,7 +466,7 @@ J8 runs on one machine: net's test plan binds every node to loopback with mDNS o
 7), so the journey's server and laptops are homes on the Mac. Running it on real separate machines
 is a step-7-style check, after S55.
 
-- [~] **S59 Step 8 is designed down to its last subsystem (design slice).** Writes `node/VISION.md`,
+- [x] **S59 Step 8 is designed down to its last subsystem (design slice).** Delivered 2026-11-15 (cloud, `5e02495`, merged). Writes `node/VISION.md`,
   `node/FUNCTIONAL.md` and `node/TECHNICAL.md`, with a build plan: the crate that joins `dist` and
   `net` (neither knows the other), `Holdings` over a `Dist` handle, the `told`, `need` and
   `need_blob` calls, and the `watane-node` program (a keyless home, full or light, relay by flag).
@@ -479,6 +479,19 @@ is a step-7-style check, after S55.
   `Stage coverage` here gets one row each. No code. Touches: new `node/`, dist, log, app, net
   (Q2, Q3 closed). Cloud: documents only. A reviewed design merges; a choice that is hard to revert
   goes to the human as change, alternatives and consequences.
+  Delivered. Documents only (15 files, +1293); no code, so no implementer and no user-sim. Validator
+  RETURN in round 1 (7 items, all fixed), PASS in round 2. New stages, in build order: log L6
+  Keyless, dist S8 (one slice with L6, since both change `identity()`), node 1 Holder (needs L6, S8,
+  net N1 and N2), node 2 Machines (needs net N4), node 3 Program (`watane-node`), app G Own machines
+  (needs node 2 and 3; J8 in app/tests/j8.rs). Checked by the product owner before merging: docs
+  only, the two Q2/Q3 rows its only net/TECHNICAL edit, the doc-reading app tests green (static_config
+  5, linux_runner 3, lib 77), and every net call node relies on (`told`, `need`, `need_blob`,
+  `answer_join`, `Holdings`) present in net's API, `open_keyless` and `drop_identity` agreeing
+  between log and dist. Four net gaps are left as questions in node/TECHNICAL.md 13, because the
+  brief forbade S59 to edit net beyond Q2 and Q3: Q1 and Q4 belong to N1 (`Options.on` and
+  book.json; `Options` and `Limits` derive Clone, Debug, Default), Q3 to N3 (gossip hints on a light
+  machine only for channels in `heads(None)`), Q5 and Q6 to N2 and N4 (prefer a full replica over
+  the anchor; a cap of 32 channels per query). Whichever net slice comes next takes each one.
 - [~] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Creates the `net`
   crate and adds it to the workspace: the node key, the pairing code text, the wire codecs and their
   limits in bytes, `hello`, `heads`, `entries` and `fork` between two local nodes, and the 4.3
@@ -488,10 +501,10 @@ is a step-7-style check, after S55.
   net/TECHNICAL.md 12 before N3. Outcome: scenario S1 and `heads` and `entries` between two trusted
   test nodes pass; S13 runs from here on. Touches: new `net/` crate, workspace `Cargo.toml`. Cloud:
   bind `127.0.0.1`, not `::1` (the cloud has no IPv6 loopback); no test reaches the internet.
-- Then, sketched just in time as each lands: net N2 (device list, pairing, classes, allowances and
-  budgets), N3 (sync, gossip hints, blobs), N4 (light machines, restore, reach: mDNS, addresses,
-  relay, the DHT switch); the `log` and `dist` keyless opens and holder methods; `node` and
-  `watane-node`; the app's views; and J8, which closes the step.
+- Then, sketched just in time as each lands. Two lines run side by side: net N2, N3, N4 in turn;
+  and log L6 with dist S8 as one slice, which needs nothing from net and can start now. node 1 joins
+  them after N2, node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
+  step.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -513,7 +526,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | net | N2 device list, pairing, classes, allowances | 8 | open |
 | net | N3 sync, gossip hints, blobs | 8 | open |
 | net | N4 light machines, restore, reach | 8 | open |
-| node, log, dist, app | step 8 stages | 8 | not yet named: S59 writes them |
+| log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open |
+| dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | open |
+| node | 1 holder | 8 | open |
+| node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
+| node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
+| app | G own machines (J8) | 8 | open |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
@@ -718,7 +736,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S56: delivered 2026-11-14 and merged; routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` finished, branch removed.
 - S57: delivered 2026-11-14 and merged; routine `trig_019eZQGSqCu2ziUPVNcDiXD8` finished, branch removed.
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
-- S59: cloud routine `trig_0166dMK2WuQviWZytu8vwVVd` (running, handed out 2026-11-15), branch `slice/s59`.
+- S59: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S60: cloud routine `trig_01M5extWhubXi1jcvW9VAoyd` (running, handed out 2026-11-15), branch `slice/s60`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
@@ -748,6 +766,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S59 (2026-11-15): accepted the slice's own reading that none of its choices is hard to revert. Two
+  come closest and are named for the human. `kept` is a new field in follows.json with a serde
+  default and the version stays 1, as step 4 did it: older homes ignore it, so undoing it costs
+  nothing. `Log::drop_identity` deletes a key, but only one that has signed nothing, before an app
+  home joins as a replica (NODE-F-12): nothing published ever named that key. Both are on disk only;
+  neither is carried in a published channel or on the wire.
 - S43: `share::fork` takes the ReleaseRef (a `Package` has none; dev TECHNICAL 12 corrected); the
   clone gets the `http.lowSpeed` limits; `publish.fork_unavailable` names `<uo>/<un>`; a rerun
   after a declined first push reports `created: false, forked: false`, because `mod.toml` already
@@ -955,6 +979,10 @@ The human may veto each one.
 
 ## Friction
 
+- S59: the product owner's brief fenced S59 out of net/TECHNICAL.md except Q2 and Q3, to keep it off
+  S60's lines. So four net gaps it found went into node's documents as questions instead of being
+  fixed in net. Fence by section, but let a design slice add a question row to the subsystem it
+  found the gap in.
 - S56, S57: both delivered by 11:30 UTC and sat unmerged for about eight hours. The product owner
   started `factory/watch-cloud.sh` with `s56` and `s57`, and its `--grep` was case-sensitive against
   `DELIVERED S56`. Fixed (`-i`) in `3a39a6f`.
