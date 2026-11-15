@@ -15,8 +15,8 @@ use watane_node::{
 };
 
 const USAGE: &str = "usage:
-  watane-node --home <dir> join [--replace] <code>
-  watane-node --home <dir> run [--relay <addr:port>]
+  watane-node --home <dir> join [--replace] [--bind <addr:port>] <code>
+  watane-node --home <dir> run [--relay <addr:port>] [--bind <addr:port>]
   watane-node --home <dir> status
   watane-node --home <dir> relay add <url> [--yes]
   watane-node --home <dir> relay remove <url>
@@ -26,12 +26,26 @@ WATANE_NODE_HOME stands in for --home.";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Cmd {
-    Join { code: String, replace: bool },
-    Run { relay: Option<SocketAddr> },
+    Join {
+        code: String,
+        replace: bool,
+        bind: Option<SocketAddr>,
+    },
+    Run {
+        relay: Option<SocketAddr>,
+        bind: Option<SocketAddr>,
+    },
     Status,
-    RelayAdd { url: String, yes: bool },
-    RelayRemove { url: String },
-    DhtOn { yes: bool },
+    RelayAdd {
+        url: String,
+        yes: bool,
+    },
+    RelayRemove {
+        url: String,
+    },
+    DhtOn {
+        yes: bool,
+    },
     DhtOff,
 }
 
@@ -45,6 +59,7 @@ struct Args {
 fn parse(args: &[String], env_home: Option<String>) -> Result<Args, String> {
     let mut home = None;
     let mut relay = None;
+    let mut bind = None;
     let (mut yes, mut replace) = (false, false);
     let mut words = Vec::new();
     let mut it = args.iter();
@@ -64,6 +79,13 @@ fn parse(args: &[String], env_home: Option<String>) -> Result<Args, String> {
                     );
                 }
                 relay = Some(addr);
+            }
+            "--bind" => {
+                let text = it.next().ok_or("--bind needs addr:port")?;
+                bind = Some(
+                    text.parse::<SocketAddr>()
+                        .map_err(|_| format!("--bind needs addr:port, not {text}"))?,
+                );
             }
             "--yes" => yes = true,
             "--replace" => replace = true,
@@ -86,37 +108,53 @@ fn parse(args: &[String], env_home: Option<String>) -> Result<Args, String> {
         ["join", code] => {
             allow(!yes && relay.is_none(), "--yes and --relay")?;
             Cmd::Join {
+                bind,
                 code: (*code).to_owned(),
                 replace,
             }
         }
         ["run"] => {
             allow(!yes && !replace, "--yes and --replace")?;
-            Cmd::Run { relay }
+            Cmd::Run { relay, bind }
         }
         ["status"] => {
-            allow(!yes && !replace && relay.is_none(), "a flag")?;
+            allow(
+                !yes && !replace && relay.is_none() && bind.is_none(),
+                "a flag",
+            )?;
             Cmd::Status
         }
         ["relay", "add", url] => {
-            allow(!replace && relay.is_none(), "--replace and --relay")?;
+            allow(
+                !replace && relay.is_none() && bind.is_none(),
+                "--replace and --relay",
+            )?;
             Cmd::RelayAdd {
                 url: (*url).to_owned(),
                 yes,
             }
         }
         ["relay", "remove", url] => {
-            allow(!yes && !replace && relay.is_none(), "a flag")?;
+            allow(
+                !yes && !replace && relay.is_none() && bind.is_none(),
+                "a flag",
+            )?;
             Cmd::RelayRemove {
                 url: (*url).to_owned(),
             }
         }
         ["dht", "on"] => {
-            allow(!replace && relay.is_none(), "--replace and --relay")?;
+            allow(
+                !replace && relay.is_none() && bind.is_none(),
+                "--replace and --relay",
+            )?;
             Cmd::DhtOn { yes }
         }
         ["dht", "off"] => {
-            allow(!yes && !replace && relay.is_none(), "a flag")?;
+            allow(
+                !yes && !replace && relay.is_none() && bind.is_none(),
+                "a flag",
+            )?;
             Cmd::DhtOff
         }
         [] => return Err("no command".into()),
@@ -241,13 +279,20 @@ fn open(home: &Path) -> Result<Node, Fail> {
     Ok(Node::open_keyless(home, Options::default())?)
 }
 
-fn set(node: &Node, home: &Path, on: bool, relay: Option<SocketAddr>) -> Result<(), Fail> {
+fn set(
+    node: &Node,
+    home: &Path,
+    on: bool,
+    relay: Option<SocketAddr>,
+    bind: Option<SocketAddr>,
+) -> Result<(), Fail> {
     let s = switches(home)?;
     Ok(node.net().set_options(watane_node::net::Options {
         on,
         relays: s.relays,
         dht: s.dht,
         relay_server: relay,
+        bind,
         ..Default::default()
     })?)
 }
@@ -265,16 +310,41 @@ fn own_role(node: &Node) -> &'static str {
     }
 }
 
-fn join(home: &Path, code: &str, replace: bool) -> Result<(), Fail> {
+enum Told {
+    Signal,
+    Joined(Result<DeviceList, NodeError>),
+}
+
+fn join(home: &Path, code: &str, replace: bool, bind: Option<SocketAddr>) -> Result<(), Fail> {
     let code: PairCode = code
         .parse()
         .map_err(|e: <PairCode as std::str::FromStr>::Err| failed(chain(&e)))?;
     let node = open(home)?;
-    set(&node, home, true, None)?;
+    let wait = signals()?;
+    set(&node, home, true, None, bind)?;
     out(&format!("this machine: {}", node.net().node_key().short()));
     out("waiting for your answer on the anchor");
-    let result = node.join(&code, replace);
-    let _ = set(&node, home, false, None);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let signalled = tx.clone();
+    std::thread::spawn(move || {
+        wait();
+        let _ = signalled.send(Told::Signal);
+    });
+    let result = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let _ = tx.send(Told::Joined(node.join(&code, replace)));
+        });
+        match rx.recv() {
+            Ok(Told::Joined(result)) => result,
+            _ => {
+                // the join thread still waits for the anchor: leave without it
+                let _ = set(&node, home, false, None, None);
+                eprintln!("watane-node: interrupted");
+                std::process::exit(1);
+            }
+        }
+    });
+    let _ = set(&node, home, false, None, None);
     let list = result?;
     out(&format!(
         "joined as {}; machines: {}",
@@ -314,7 +384,7 @@ fn signals() -> Result<impl FnOnce(), Fail> {
     })
 }
 
-fn run(home: &Path, relay: Option<SocketAddr>) -> Result<(), Fail> {
+fn run(home: &Path, relay: Option<SocketAddr>, bind: Option<SocketAddr>) -> Result<(), Fail> {
     let node = open(home)?;
     match node.machine() {
         Machine::Alone => {
@@ -329,7 +399,7 @@ fn run(home: &Path, relay: Option<SocketAddr>) -> Result<(), Fail> {
     }
     let wait = signals()?;
     let events = node.net().events();
-    set(&node, home, true, relay)?;
+    set(&node, home, true, relay, bind)?;
     std::thread::spawn(move || {
         while let Ok(event) = events.recv() {
             if let Some(text) = line(&event) {
@@ -344,7 +414,7 @@ fn run(home: &Path, relay: Option<SocketAddr>) -> Result<(), Fail> {
     ));
     if let Some(addr) = relay {
         let Some(url) = node.net().relay_url() else {
-            let _ = set(&node, home, false, None);
+            let _ = set(&node, home, false, None, None);
             return Err(failed(format!("the relay on {addr} did not start")));
         };
         out(&format!(
@@ -352,7 +422,7 @@ fn run(home: &Path, relay: Option<SocketAddr>) -> Result<(), Fail> {
         ));
     }
     wait();
-    let _ = set(&node, home, false, None);
+    let _ = set(&node, home, false, None, None);
     node.close();
     Ok(())
 }
@@ -453,8 +523,12 @@ fn relay_url(text: &str) -> Result<url::Url, Fail> {
 fn dispatch(args: Args) -> Result<(), Fail> {
     let home = args.home.as_path();
     match args.cmd {
-        Cmd::Join { code, replace } => join(home, &code, replace),
-        Cmd::Run { relay } => run(home, relay),
+        Cmd::Join {
+            code,
+            replace,
+            bind,
+        } => join(home, &code, replace, bind),
+        Cmd::Run { relay, bind } => run(home, relay, bind),
         Cmd::Status => status(home),
         Cmd::RelayAdd { url, yes } => {
             let url = relay_url(&url)?;
@@ -525,21 +599,45 @@ mod tests {
             cmd("--home h join abc"),
             Cmd::Join {
                 code: "abc".into(),
-                replace: false
+                replace: false,
+                bind: None
             }
         );
         assert_eq!(
             cmd("--home h join --replace abc"),
             Cmd::Join {
                 code: "abc".into(),
-                replace: true
+                replace: true,
+                bind: None
             }
         );
-        assert_eq!(cmd("--home h run"), Cmd::Run { relay: None });
+        assert_eq!(
+            cmd("--home h run"),
+            Cmd::Run {
+                relay: None,
+                bind: None
+            }
+        );
         assert_eq!(
             cmd("--home h run --relay 127.0.0.1:7000"),
             Cmd::Run {
-                relay: Some(addr())
+                relay: Some(addr()),
+                bind: None
+            }
+        );
+        assert_eq!(
+            cmd("--home h run --bind 127.0.0.1:0"),
+            Cmd::Run {
+                relay: None,
+                bind: Some("127.0.0.1:0".parse().unwrap())
+            }
+        );
+        assert_eq!(
+            cmd("--home h join --bind 127.0.0.1:0 abc"),
+            Cmd::Join {
+                code: "abc".into(),
+                replace: false,
+                bind: Some("127.0.0.1:0".parse().unwrap())
             }
         );
         assert_eq!(cmd("--home h status"), Cmd::Status);
@@ -590,6 +688,10 @@ mod tests {
             "--home h run --relay 127.0.0.1:0",
             "--home h run --relay nonsense",
             "--home h run --relay",
+            "--home h run --bind",
+            "--home h run --bind nonsense",
+            "--home h status --bind 127.0.0.1:0",
+            "--home h dht off --bind 127.0.0.1:0",
             "--home h status --bogus",
             "--home h",
             "--home h join",

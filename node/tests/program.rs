@@ -18,6 +18,9 @@ use watane_net::{
 };
 use watane_node::{Node, words};
 
+/// The program binds loopback only, which keeps mDNS off (node TECHNICAL 10).
+const LO: &str = "127.0.0.1:0";
+
 fn command(home: &Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_watane-node"));
     c.env_remove("WATANE_NODE_HOME").arg("--home").arg(home);
@@ -133,7 +136,7 @@ impl Drop for Prog {
 fn join_with(anchor: &Node, home: &Path, role: Role, yes: bool) -> (Prog, NodeKey) {
     let events = anchor.net().events();
     let code = anchor.net().pair_code(role).unwrap().to_string();
-    let prog = Prog::start(home, &["join", &code]);
+    let prog = Prog::start(home, &["join", "--bind", LO, &code]);
     let node = loop {
         if let Event::JoinAsked { node, role: r } =
             events.recv_timeout(Duration::from_secs(15)).unwrap()
@@ -234,7 +237,10 @@ fn s11_run_relay_serves_a_relay_and_two_homes_connect_through_it() {
 
     let port = free_port();
     let relay_arg = format!("127.0.0.1:{port}");
-    let mut prog = Prog::start(server_home.path(), &["run", "--relay", &relay_arg]);
+    let mut prog = Prog::start(
+        server_home.path(),
+        &["run", "--bind", LO, "--relay", &relay_arg],
+    );
     prog.line(10, |l| {
         l == format!("running as full, node {}", server_key.short())
     });
@@ -423,7 +429,7 @@ fn s13_run_prints_one_refused_line_for_a_machine_that_sends_a_bad_entry() {
     stored["addrs"][key_of(&anchor).to_string()] =
         anchor.net().addrs().iter().map(|a| a.to_string()).collect();
     std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
-    let mut prog = Prog::start(server_home.path(), &["run"]);
+    let mut prog = Prog::start(server_home.path(), &["run", "--bind", LO]);
     prog.line(10, |l| l.starts_with("running as full, node "));
 
     // a machine that holds another participant's channel and lies about its entries
@@ -554,7 +560,7 @@ fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_
     has("packages missing 0".into());
 
     for signal in ["TERM", "INT"] {
-        let mut prog = Prog::start(home.path(), &["run"]);
+        let mut prog = Prog::start(home.path(), &["run", "--bind", LO]);
         prog.line(10, |l| {
             l == format!("running as full, node {}", key.short())
         });
@@ -563,4 +569,25 @@ fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_
         assert_eq!(prog.code(10), 0, "{signal}");
         assert_eq!(book(home.path())["on"], false, "{signal}");
     }
+}
+
+#[test]
+fn s10_a_signal_during_join_ends_it_with_net_off() {
+    let dirs = [tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
+    let anchor = app(dirs[0].path());
+    // the anchor is asked and never answers
+    let events = anchor.net().events();
+    let code = anchor.net().pair_code(Role::Full).unwrap().to_string();
+    let mut prog = Prog::start(dirs[1].path(), &["join", "--bind", LO, &code]);
+    prog.line(10, |l| l == "waiting for your answer on the anchor");
+    loop {
+        if let Event::JoinAsked { .. } = events.recv_timeout(Duration::from_secs(15)).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(book(dirs[1].path())["on"], true);
+    prog.signal("INT");
+    assert_eq!(prog.code(10), 1);
+    assert_eq!(prog.stderr().trim(), "watane-node: interrupted");
+    assert_eq!(book(dirs[1].path())["on"], false);
 }

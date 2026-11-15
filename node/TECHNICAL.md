@@ -358,8 +358,8 @@ not forked, so a hint that this home did not verify confirms nothing.
 ### 6.1 Commands
 
 ```text
-watane-node --home <dir> join [--replace] <code>    NODE-F-15
-watane-node --home <dir> run [--relay <addr:port>]  NODE-F-14, NODE-F-16
+watane-node --home <dir> join [--replace] [--bind <addr:port>] <code>    NODE-F-15
+watane-node --home <dir> run [--relay <addr:port>] [--bind <addr:port>]  NODE-F-14, NODE-F-16
 watane-node --home <dir> status
 watane-node --home <dir> relay add <url> [--yes]    NODE-F-17
 watane-node --home <dir> relay remove <url>
@@ -382,6 +382,8 @@ identity. Arguments are parsed by hand, as `watane` does.
   `waiting for your answer on the anchor`; `node.join(code, replace)`;
   print `joined as <full|light>; machines: <short key> <role>, ...`. A
   `Declined` exits 1 with `watane-node: declined`.
+  The signals are registered before net turns on; `node.join` runs on a scoped thread and the main thread waits for its result or for SIGINT or SIGTERM. On a signal it turns net off (persisted, outside the signal runtime) and exits 1 with `watane-node: interrupted`.
+  `--bind <addr:port>` (also on `run`) is net's `Options.bind`: the address to bind; the default is net's (`0.0.0.0:0`), and a loopback address keeps mDNS off (10).
 - **run**: `Node::open_keyless`. `Alone` exits 1 with `not paired: run
   watane-node join <code> first`; `Removed` exits 1 with `this machine was
   removed from your machines: run watane-node join --replace <code>` (it
@@ -544,3 +546,4 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-9 | The program reads `relays` and `dht` from `net/book.json` itself, to keep them when it changes the other switch and to print them in `status`. | `net` has no call that gives the switches back; adding one is `net`'s change. Undo: cheap (replace by that call). |
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
 | NO-11 | `join` stores no address of the anchor beyond what `net` keeps; a home that joined finds its machines by mDNS, the relay or the DHT of its choice. | `net`'s business (5.2); a test of the program gives the home the address in `book.json`, as a home that had reached the anchor would have. |
+| NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |
