@@ -343,7 +343,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
   IP literal is skipped) against a base that is neither. After S53.
-- [ ] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
+- [~] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
   chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
   derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
   `organization=<owner>` when the owner is not the `gh` login; without `--owner`, as today. fake-gh
