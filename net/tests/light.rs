@@ -86,9 +86,9 @@ fn shared() -> std::sync::MutexGuard<'static, Shared> {
             let id = server.holdings.add_blob(&package);
             server.holdings.set_hits(vec![hit_of(chan(x), &cx)]);
             third.holdings.set_hits(vec![hit_of(chan(w), &cw)]);
-            pair_into(&anchor, &server, Role::Full);
-            pair_into(&anchor, &third, Role::Full);
-            pair_into(&anchor, &light, Role::Light);
+            pair_unsettled(&anchor, &server, Role::Full, false);
+            pair_unsettled(&anchor, &third, Role::Full, false);
+            pair_unsettled(&anchor, &light, Role::Light, false);
             // the server reaches the third machine (a server that forwarded a
             // query would ask it) and takes none of its channels
             server
@@ -209,7 +209,7 @@ fn s8_without_the_server_the_light_laptop_asks_the_anchor() {
     let server = node(holding(&[], false), None);
     let light = node(MemHoldings::empty(), Some(quick()));
     laptop.holdings.set_hits(vec![hit_of(chan(y), &cy)]);
-    pair_into(&laptop, &server, Role::Full);
+    pair_unsettled(&laptop, &server, Role::Full, false);
     pair_into(&laptop, &light, Role::Light);
     introduce(&light, &server);
     server.net.clone().close();
@@ -275,7 +275,7 @@ fn s12_a_restored_laptop_learns_its_head_as_a_hint() {
     let ca = chain(alice, 4);
     let old = node(holding(&[], true), None);
     let server = node(holding(&[(chan(alice), ca.clone())], false), None);
-    pair_into(&old, &server, Role::Full);
+    pair_unsettled(&old, &server, Role::Full, false);
     // the new laptop: a fresh home, its holder is the anchor and holds nothing
     let new = node(holding(&[], true), None);
     pair_with(&new, &server, Role::Full, true);
@@ -391,4 +391,33 @@ fn ac12_every_error_that_names_a_node_has_its_short_key() {
     for e in errors {
         assert!(e.to_string().contains(&short), "{e}");
     }
+}
+
+/// AC5: a page the holder does not take is an error, not `Ok`.
+#[test]
+fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
+    let x = [81u8; 32];
+    let cx = chain(x, 3);
+    let laptop = node(holding(&[(chan(x), cx.clone())], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&laptop, &light, Role::Light);
+    light
+        .holdings
+        .not_wanted
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    match light.net.need(&chan(x)) {
+        Err(NetError::Unreachable { node, cause }) => {
+            assert_eq!(node, laptop.key);
+            assert!(cause.contains("not wanted"), "{cause}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(light.holdings.raws(&chan(x)).is_empty());
+    // the holder takes it again: the same call is Ok
+    light
+        .holdings
+        .not_wanted
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    light.net.need(&chan(x)).unwrap();
+    assert_eq!(light.holdings.raws(&chan(x)), raws(&cx));
 }

@@ -2,7 +2,7 @@
 //! machine, `need`, `need_blob`, `query` and `own_heads`.
 
 use crate::{
-    BlobId, Core, DeviceList, HeadInfo, Hit, Net, NetError, Query, Role, blobs, client,
+    BlobId, Core, DeviceList, HeadInfo, Hit, Ingested, Net, NetError, Query, Role, blobs, client,
     key::NodeKey, lock, sync,
 };
 use std::{
@@ -79,15 +79,16 @@ impl Core {
 }
 
 /// Pull `channel` from `node` as an asked channel (5.9): `heads`, then
-/// `entries` from the holder's seq + 1.
+/// `entries` from the holder's seq + 1. `Some`: the holder did not take a
+/// page, and why.
 async fn need_from(
     core: &std::sync::Arc<Core>,
     node: &NodeKey,
     channel: &PublicKey,
-) -> Result<(), NetError> {
+) -> Result<Option<Ingested>, NetError> {
     let remote = client::heads_async(core, node, &[*channel]).await?;
     let Some((_, Some(head))) = remote.into_iter().next() else {
-        return Ok(());
+        return Ok(None);
     };
     let key = *channel;
     let own: Option<HeadInfo> = sync::holder(core, move |h| h.heads(Some(&[key])))
@@ -118,7 +119,26 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
     net.runtime()?.block_on(async move {
         for node in core.full_machines() {
             match need_from(&core, &node, &channel).await {
-                Ok(()) => return Ok(()),
+                Ok(None) => return Ok(()),
+                // the holder did not take what the machine gave: asking
+                // another machine would not change that
+                Ok(Some(Ingested::Compromised)) => {
+                    let cause = format!("channel {channel} is compromised");
+                    core.refuse(&node, cause.clone());
+                    return Err(NetError::BadObject { node, cause });
+                }
+                Ok(Some(why)) => {
+                    return Err(NetError::Unreachable {
+                        node,
+                        cause: format!(
+                            "the holder did not take channel {channel}: {}",
+                            match why {
+                                Ingested::Failed(cause) => cause,
+                                _ => "not wanted".to_owned(),
+                            }
+                        ),
+                    });
+                }
                 Err(e) => {
                     if let Some(e) = judge(&core, &node, e) {
                         return Err(e);
@@ -228,10 +248,17 @@ async fn pull_hits(core: &std::sync::Arc<Core>, node: &NodeKey, hits: &[Hit]) {
         .collect();
     let granted = lock(&core.pulls).take(Instant::now(), lacking.len());
     for channel in lacking.into_iter().take(granted) {
-        if let Err(e) = need_from(core, node, &channel).await
-            && judge(core, node, e).is_some()
-        {
-            return;
+        match need_from(core, node, &channel).await {
+            Ok(Some(Ingested::Compromised)) => {
+                core.refuse(node, format!("channel {channel} is compromised"));
+                return;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if judge(core, node, e).is_some() {
+                    return;
+                }
+            }
         }
     }
 }

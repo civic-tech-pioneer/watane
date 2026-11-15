@@ -599,7 +599,11 @@ a full machine.
 - `need(channel)`: ask the chosen machine `heads` for the channel, then
   `entries` from the holder's seq + 1 in pages to its head (ND-14 on each
   page), `Asked`; a forked head as 5.6 step 3; `Pulled` once. `Ok` when the
-  holder's head is the remote's or the remote has nothing newer. A bad
+  holder's head is the remote's or the remote has nothing newer. A page the
+  holder does not take gives an error, not `Ok`: `Compromised` is
+  `BadObject` (with 5.6's drop and `Refused`), `NotWanted` and `Failed` are
+  `Unreachable { node, cause }` with the holder's cause; no other machine is
+  asked then. A bad
   object is `BadObject`, with 5.6's drop and `Refused`. A full machine may
   call it too (it asks another full machine).
 - `need_blob(id, size)`: fetch as 5.8 (a package over `limits.blob` is

@@ -487,13 +487,15 @@ pub(crate) async fn pull(
     channel: &PublicKey,
     remote: HeadInfo,
     own: Option<HeadInfo>,
-) -> Result<(), NetError> {
+) -> Result<Option<Ingested>, NetError> {
     let why = match role {
         Role::Full => Why::Kept,
         Role::Light => Why::Asked,
     };
     let limits = core.limits();
     let mut stored = None;
+    // what stopped the channel, when the holder did not take a page
+    let mut stopped = None;
     let mut from = own.map_or(0, |h| h.seq + 1);
     if own.is_none_or(|h| remote.seq > h.seq) {
         while from <= remote.seq {
@@ -511,7 +513,14 @@ pub(crate) async fn pull(
                 }
                 // not wanted, compromised, failed, or a head that did not
                 // move: this channel stops
-                _ => break,
+                Ingested::Stored(_) => {
+                    stopped = Some(Ingested::Failed("the head did not move".into()));
+                    break;
+                }
+                other => {
+                    stopped = Some(other);
+                    break;
+                }
             }
         }
     }
@@ -534,7 +543,7 @@ pub(crate) async fn pull(
         })
         .await?;
     }
-    Ok(())
+    Ok(stopped)
 }
 
 /// 5.6 step 4.

@@ -525,6 +525,19 @@ pub fn pair_with(
     role: Role,
     replace: bool,
 ) -> watane_net::DeviceList {
+    let list = pair_unsettled(anchor, joiner, role, replace);
+    settle(&[anchor, joiner]);
+    list
+}
+
+/// `pair_with` without the final settle, for a test that settles once after
+/// several pairings.
+pub fn pair_unsettled(
+    anchor: &Node,
+    joiner: &Node,
+    role: Role,
+    replace: bool,
+) -> watane_net::DeviceList {
     let (ea, ej) = (anchor.net.events(), joiner.net.events());
     let code = anchor.net.pair_code(role).unwrap();
     let list = try_pair(anchor, joiner, code, replace, Some(true)).unwrap();
@@ -539,7 +552,6 @@ pub fn pair_with(
             }
         }
     }
-    settle(&[anchor, joiner]);
     list
 }
 
