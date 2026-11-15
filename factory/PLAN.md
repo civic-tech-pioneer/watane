@@ -588,7 +588,7 @@ is a step-7-style check, after S55.
   Outcome: net S8, S12 and the query part of S9 pass as tests `s<n>_...`. Touches: net only. No new
   dependency. Cloud. Reach (mDNS, relay, DHT) is S68.
   Delivered (d750ed5, merged as edae082): Alice's light laptop searches through her server and installs from it, same bytes; a restored laptop learns its head as a hint and pulls nothing until she confirms. The anchor syncs as a light machine (node Q5); a cap of 32 pulled channels per 5 s across all queries of a Net (node Q6); `query` answers trusted callers only, at most 200 hits. user-sim rejected once (iroh's words for a package not served), fixed with `regress_s67.rs`. Verified on the Mac: net green in 78 s, node green with ignored, app builds.
-- [ ] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
+- [~] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
   Branch `slice/s68`. Builds reach (net/TECHNICAL.md 5.10): mDNS, stored addresses, addresses from
   `devices` answers, the relay of `relays`, the DHT switch, `Unreachable` with NET-F-28's cause, and
   `relay_server` (iroh-relay, pinned `=1.4.1` as net 2 says). First task: bring net's default test
