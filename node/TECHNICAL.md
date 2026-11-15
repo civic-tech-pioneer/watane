@@ -382,8 +382,13 @@ identity. Arguments are parsed by hand, as `watane` does.
   `waiting for your answer on the anchor`; `node.join(code, replace)`;
   print `joined as <full|light>; machines: <short key> <role>, ...`. A
   `Declined` exits 1 with `watane-node: declined`.
-  The signals are registered before net turns on; `node.join` runs on a scoped thread and the main thread waits for its result or for SIGINT or SIGTERM. On a signal it turns net off (persisted, outside the signal runtime) and exits 1 with `watane-node: interrupted`.
-  `--bind <addr:port>` (also on `run`) is net's `Options.bind`: the address to bind; the default is net's (`0.0.0.0:0`), and a loopback address keeps mDNS off (10).
+  The signals are registered before net turns on; `node.join` runs on a
+  scoped thread and the main thread waits for its result or for SIGINT or
+  SIGTERM. On a signal it turns net off (persisted, outside the signal
+  runtime) and exits 1 with `watane-node: interrupted`.
+  `--bind <addr:port>` (also on `run`) is net's `Options.bind`, the address
+  to bind; the default is net's (`0.0.0.0:0`), and a loopback address keeps
+  mDNS off (10, NO-12).
 - **run**: `Node::open_keyless`. `Alone` exits 1 with `not paired: run
   watane-node join <code> first`; `Removed` exits 1 with `this machine was
   removed from your machines: run watane-node join --replace <code>` (it

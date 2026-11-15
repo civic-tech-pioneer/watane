@@ -127,7 +127,7 @@ fn parse(args: &[String], env_home: Option<String>) -> Result<Args, String> {
         ["relay", "add", url] => {
             allow(
                 !replace && relay.is_none() && bind.is_none(),
-                "--replace and --relay",
+                "--replace, --relay and --bind",
             )?;
             Cmd::RelayAdd {
                 url: (*url).to_owned(),
@@ -146,7 +146,7 @@ fn parse(args: &[String], env_home: Option<String>) -> Result<Args, String> {
         ["dht", "on"] => {
             allow(
                 !replace && relay.is_none() && bind.is_none(),
-                "--replace and --relay",
+                "--replace, --relay and --bind",
             )?;
             Cmd::DhtOn { yes }
         }
