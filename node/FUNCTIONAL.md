@@ -92,4 +92,4 @@ to loopback and mDNS off (`net/TECHNICAL.md` 7).
 | S10 | `watane-node join <code>` prints the server's short key and waits; after the anchor says yes it prints the device list; after a no it exits 1 with `declined`. | 15 |
 | S11 | `watane-node run --relay 127.0.0.1:<p>` runs a relay; two homes with only that relay connect through it. | 16 |
 | S12 | `watane-node dht on` with no answer on its standard input changes nothing; `dht on --yes` prints the consent text and turns it on. | 17 |
-| S13 | A machine sends a changed byte to the server; `watane-node run` prints one line with the cause and that machine's short key. | 18 |
+| S13 | A machine sends a bad object to the server (an entry that is not of the channel it claims; net's own tests send changed bytes); `watane-node run` prints one line with the cause and that machine's short key. | 18 |

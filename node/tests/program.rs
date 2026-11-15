@@ -477,7 +477,7 @@ fn s13_run_prints_one_refused_line_for_a_machine_that_sends_a_bad_entry() {
 }
 
 #[test]
-fn s14_run_needs_a_pairing_and_a_home_of_its_own() {
+fn program_run_needs_a_pairing_and_a_home_of_its_own() {
     let dir = tempfile::tempdir().unwrap();
     let done = run_end(dir.path(), &["run"]);
     assert_eq!(done.code, 1);
@@ -495,6 +495,7 @@ fn s14_run_needs_a_pairing_and_a_home_of_its_own() {
         &["dht", "off"],
         &["dht", "on", "--yes"],
         &["relay", "remove", "http://127.0.0.1:9/"],
+        &["relay", "add", "http://127.0.0.1:9/"],
     ] {
         let done = run_end(host.path(), args);
         assert_eq!(done.code, 1, "{args:?}");
@@ -508,7 +509,7 @@ fn s14_run_needs_a_pairing_and_a_home_of_its_own() {
 }
 
 #[test]
-fn s14_bad_arguments_exit_2_with_the_usage_and_the_environment_stands_in_for_home() {
+fn program_bad_arguments_exit_2_with_the_usage_and_the_environment_stands_in_for_home() {
     let dir = tempfile::tempdir().unwrap();
     for args in [&["bogus"][..], &["status", "--wat"], &["join"], &[]] {
         let done = run_end(dir.path(), args);
@@ -531,7 +532,7 @@ fn s14_bad_arguments_exit_2_with_the_usage_and_the_environment_stands_in_for_hom
 }
 
 #[test]
-fn s15_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_stands() {
+fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_stands() {
     let dir = tempfile::tempdir().unwrap();
     let anchor = app(dir.path());
     let (home, key) = paired(&anchor);

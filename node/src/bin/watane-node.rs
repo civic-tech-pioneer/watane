@@ -171,7 +171,7 @@ fn chain(error: &dyn Error) -> String {
     let mut next = error.source();
     while let Some(cause) = next {
         let cause_text = cause.to_string();
-        if !text.split(": ").any(|part| part == cause_text) && !text.contains(&cause_text) {
+        if !text.contains(&cause_text) {
             text = format!("{text}: {cause_text}");
         }
         next = cause.source();
@@ -343,10 +343,10 @@ fn run(home: &Path, relay: Option<SocketAddr>) -> Result<(), Fail> {
         node.net().node_key().short()
     ));
     if let Some(addr) = relay {
-        let url = node
-            .net()
-            .relay_url()
-            .ok_or_else(|| failed(format!("the relay on {addr} did not start")))?;
+        let Some(url) = node.net().relay_url() else {
+            let _ = set(&node, home, false, None);
+            return Err(failed(format!("the relay on {addr} did not start")));
+        };
         out(&format!(
             "relay on {addr}; add {url} to the relays of your other machines"
         ));
@@ -458,6 +458,7 @@ fn dispatch(args: Args) -> Result<(), Fail> {
         Cmd::Status => status(home),
         Cmd::RelayAdd { url, yes } => {
             let url = relay_url(&url)?;
+            open(home)?.close(); // a host home is refused before any question
             let mut relays = switches(home)?.relays;
             if !consent(&words::relay_add(url.as_str()), yes) {
                 return Err(failed("not changed"));

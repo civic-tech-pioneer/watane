@@ -383,7 +383,10 @@ identity. Arguments are parsed by hand, as `watane` does.
   print `joined as <full|light>; machines: <short key> <role>, ...`. A
   `Declined` exits 1 with `watane-node: declined`.
 - **run**: `Node::open_keyless`. `Alone` exits 1 with `not paired: run
-  watane-node join <code> first`. `options.net.relay_server` from
+  watane-node join <code> first`; `Removed` exits 1 with `this machine was
+  removed from your machines: run watane-node join --replace <code>` (it
+  still stores the old anchor, so a plain `join` is `HasAnchor`).
+  `options.net.relay_server` from
   `--relay`. `net.set_options` with `on: true`; print `running as <full|
   light>, node <short key>` (and `relay on <addr>; add http://<addr>/ to
   the relays of your other machines` with `--relay`; `Net::relay_url()` gives that URL, `http`, not `https`). `--relay` takes a fixed `addr:port`: port 0 is refused (exit 2), because the other machines store the relay's URL. One thread prints
