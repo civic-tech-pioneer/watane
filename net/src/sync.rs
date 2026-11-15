@@ -462,7 +462,8 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
                             let core = core.clone();
                             tokio::spawn(async move {
                                 tokio::time::sleep(HINT_RETRY).await;
-                                request(&core, node, Want::Hint(channel, seq, id, tries + 1));
+                                let next = next_machine(&core, node);
+                                request(&core, next, Want::Hint(channel, seq, id, tries + 1));
                             });
                         }
                         Ok(_) => {}
@@ -542,6 +543,24 @@ pub(crate) enum Hinted {
     /// The delivering machine's head is below the hint's seq and ours is
     /// too: ask it again soon.
     Behind,
+}
+
+/// The machine a waiting hint is asked of next: the one after `node` in the
+/// ring of the trusted machines this machine has a live link to (by key),
+/// `node` itself when it is the only one. The machine that delivered a hint
+/// may be one that never holds the channel (a light machine), so each retry
+/// asks the next machine and the same 20 retries reach every machine (5.7).
+fn next_machine(core: &Core, node: NodeKey) -> NodeKey {
+    let mut ring: Vec<NodeKey> = lock(&core.links)
+        .iter()
+        .filter(|(k, l)| l.conn.close_reason().is_none() && **k != node)
+        .map(|(k, _)| *k)
+        .filter(|k| core.class_of(k) == crate::Class::Trusted && !core.is_dropped(k))
+        .collect();
+    ring.push(node);
+    ring.sort();
+    let at = ring.iter().position(|k| *k == node).unwrap_or(0);
+    ring[(at + 1) % ring.len()]
 }
 
 /// Is a hint asked again after its try number `tries` (0 is the first)?

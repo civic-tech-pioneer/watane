@@ -575,9 +575,13 @@ The machine that delivered a hint is not always the one that told it:
 gossip relays, and a neighbour may relay a hint before it has pulled the
 head itself. The teller is not on the wire and is never taken from a field.
 So when the delivering machine's head is below the hint's seq (or it has
-no head of the channel) and the holder's head is too, the delivering
-machine is asked again 250 ms later, up to 20 times (5 s in all), as it is
-pulling the same head for the same hint. When its head reaches the hint's
+no head of the channel) and the holder's head is too, a machine is asked
+again 250 ms later, up to 20 times (5 s in all), as it is pulling the same
+head for the same hint. The machine asked again is the next one, by node
+key, of the trusted machines this machine has a live link to (the
+delivering machine again when it is the only one): the delivering machine
+may be one that never holds the channel (a light machine), and each machine
+is asked by the same rules, so a forged id or seq is judged as before. When its head reaches the hint's
 seq the pull is as in 5.6 step 2. What it has below the hint's seq is
 pulled on the first and the last try only, so a forged seq does not keep
 a pull open for 5 s. After the 20th retry the hint is dropped (a forged

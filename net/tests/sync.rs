@@ -263,6 +263,60 @@ fn ac2_a_hint_for_a_seq_nobody_reaches_pulls_what_there_is_and_asks_again() {
     assert_eq!(server.holdings.raws(&chan(x)), raws(&entries));
 }
 
+/// S72-5: a hint delivered by a machine that does not hold the channel (a
+/// light machine never will) still ends with the head pulled from another
+/// trusted machine within seconds (5.7). gossip's route is not under a test's
+/// control, so the only machine on the topic that can tell is the light one:
+/// the machine that holds the channel is a fake, off the topic, that serves
+/// the channel only once the hint is out. Today's code asks the light machine
+/// 21 times and drops the hint.
+#[test]
+fn ac1_a_hint_delivered_by_a_machine_that_lacks_the_channel_pulls_from_another() {
+    let x = [62u8; 32];
+    let entries = chain(x, 2);
+    let (cx, head) = (chan(x), entries[1].id());
+    let out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (heads, answer) = (
+        heads_answer_of(&cx, 1, head.as_bytes()),
+        entries_answer_of(&raws(&entries[1..])),
+    );
+    let held = heads_answer_of(&cx, 0, entries[0].id().as_bytes());
+    let told = out.clone();
+    let hellos = Arc::new(AtomicUsize::new(0));
+    let hello = hellos.clone();
+    let fake = fake_machine(
+        [90u8; 32],
+        move |request| match op_of(request) {
+            "hello" => {
+                hello.fetch_add(1, Ordering::SeqCst);
+                Some(hello_answer())
+            }
+            "heads" if told.load(Ordering::SeqCst) => Some(heads.clone()),
+            "heads" => Some(held.clone()),
+            "entries" => Some(answer.clone()),
+            _ => None,
+        },
+        None,
+    );
+    let server = node_trusting(
+        holding(&[(cx, entries[..1].to_vec())], true),
+        vec![fake.key],
+        None,
+    );
+    server.net.add_addrs(&fake.key, &[fake.addr]);
+    let light = node(holding(&[], false), None);
+    pair_into(&server, &light, Role::Light);
+    // the connect sync with the fake is over before the channel is there
+    assert!(wait_for(5, || hellos.load(Ordering::SeqCst) > 0));
+    settle(&[&server, &light]);
+    out.store(true, Ordering::SeqCst);
+    light.net.told(&cx, 1, &head);
+    assert!(
+        wait_for(4, || server.holdings.raws(&cx) == raws(&entries)),
+        "the server did not get the head from the machine that holds it"
+    );
+}
+
 /// S6: the server is offline while Alice publishes twice; it catches up.
 #[test]
 fn s6_the_server_catches_up_after_being_offline() {
