@@ -83,7 +83,7 @@ to loopback and mDNS off (`net/TECHNICAL.md` 7).
 | S1 | A node home is opened: `<home>/log/` has a store and no `identity.key`; publish gives `NoIdentity`. An app home opened through node has an identity, as before. | 1, 14 |
 | S2 | With `net` off, the home of J3's Bob, opened through node, follows Alice from her link and installs her mod, and no UDP socket exists. | 2, 3 |
 | S3 | The holder of a home with Alice's channel answers `heads`, `entries` and `fork` with the stored bytes; a package file is given only for a live release it holds. A changed byte of an entry handed to `ingest` is refused and nothing is stored. | 4, 5 |
-| S4 | The server is paired as full with the laptop. Alice publishes on the laptop. The server holds the entry as a kept channel, and its package, within 5 s; its `follows.json` record says `kept` and nothing else. | 6, 8 |
+| S4 | The server is paired as full with the laptop. Alice publishes on the laptop. The server holds the entry as a kept channel, and its package, within 5 s; its `follows.json` record says `kept` and nothing else. A channel that only the server holds, pulled by the laptop, gives the laptop's `follows.json` no record. | 6, 8 |
 | S5 | While the laptop's dist refreshes from a web host that answers after 20 s, the server reads `heads` from the laptop within 1 s. | 7 |
 | S6 | The second laptop is paired as light. A search for `reading` gives the hit from the server, marked with the server's short key; it installs it, and the package comes from the server. A hit whose channel the server changed is not shown. | 9, 10 |
 | S7 | The installed mod of S6 has no link location. Alice publishes 0.2.0 on the laptop; the second laptop's next refresh offers it. | 11 |

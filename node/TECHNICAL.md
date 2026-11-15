@@ -295,10 +295,11 @@ unused identity loses nothing.
 `Node::open(home, confirm, options)`:
 
 1. `holdings = Arc::new(DistHoldings::empty())`.
-2. `net = Net::open(home/net, holdings.clone(), options.net)` with
-   `options.net.on` true: `net` then takes its own switches (`on`,
-   relays, the DHT) from `book.json` (net 4.5, 5.1, Q1); a new home starts
-   with all of them off.
+2. `net = Net::open(home/net, holdings.clone(), options.net)`, with
+   `options.net` as the caller gives it. The app gives `on` true, so `net`
+   takes its own switches (`on`, relays, the DHT) from `book.json` (net
+   4.5, 5.1, Q1); a new home starts with all of them off. `watane-node`
+   gives `on` false to every command but `join` and `run` (6.1).
 3. A **replica**: `net.devices()` is `Some(list)` and `list.anchor !=
    net.node_key()`.
 4. Replica: `Dist::open_keyless(home, options.dist)`. Else
@@ -487,9 +488,11 @@ Then app stage G (app 12) builds the views on stage 2, and J8
 | # | Question | Answer used here |
 |---|---|---|
 | Q1 | net 3 gives `Net::open` an `Options` with `on`, `relays` and `dht`, and net 5.1 reads the same switches from `book.json`. Which wins at open? | `Options.on` false keeps the endpoint off for that open, whatever `book.json` says. With `Options.on` true, `book.json` decides `on`, the relays and the DHT; a new home's `book.json` has all of them off. `set_options` writes `book.json`. For net N1 to confirm and write into net 3 and 5.1. |
+| Q2 | Does `Net::events()` give one receiver or one per call? | node takes no events itself; the app and the program each call it once, and each needs every later event. |
 | Q3 | net 5.7 runs a pull for any told channel whose seq is above the holder's. On a light machine that pulls every channel any machine tells, as `Asked`, against NET-F-21 and net Q2. | node assumes the net N3 rule: a light machine acts on a hint only for a channel in `holdings.heads(None)`; a full machine for any channel. For net N3 to write into net 5.7 (outside S59's part of net). |
 | Q4 | node 3 derives `Default`, `Clone` and `Debug` on an `Options` that holds `watane_net::Options`. | net's `Options` and `Limits` derive `Clone`, `Debug` and `Default`, with `on` false, `relays` empty, `dht` false, `relay_server` `None` and the limits of net 4.2. For net N1 to write into net 3. |
-| Q2 | Does `Net::events()` give one receiver or one per call? | node takes no events itself; the app and the program each call it once, and each needs every later event. |
+| Q5 | The anchor is `full` in the device list (net 5.5), but keeps only what the participant's acts there chose (NO-8). | NET-F-21 ("a full machine keeps every channel any own machine holds") holds for full replicas only, and a light machine's `query` and `need` (net 5.9) should prefer a full replica over the anchor, whose search does not cover what only the replicas keep. For net N2 and N4 to write into NET-F-21 and 5.9 (outside S59's part of net). |
+| Q6 | A query with an interface is three `net.query` calls (4.3), and net 5.9 pulls at most 32 channels per call. | One participant query may then pull up to 96 channels, against the 32 of PEERS 8.2. For net N4: a cap per caller over 5 s, or a `query` that takes several modes; until then node stops pulling in step 3 once the three calls pulled 32. |
 
 ## 14. Decisions of this subsystem
 

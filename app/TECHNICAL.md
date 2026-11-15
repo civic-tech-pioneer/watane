@@ -93,7 +93,9 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
 4. `Dist::open(home, Arc::new(DistConfirm { broker, parties }), Options::default())`
    (stage C). It creates the identity at the first open, offline
    (APP-F-28). From stage G: `Node::open(home, Arc::new(DistConfirm {
-   broker, parties }), watane_node::Options::default())` in its place; it
+   broker, parties }), options)` in its place, where `options` is
+   `watane_node::Options::default()` with `net.on` true, so that `net`
+   takes its switches from `book.json` (node 5.6, node Q1); it
    opens the home keyless when it is a replica (node 5.6), and
    `Core.dist` is `node.dist().clone()`.
 5. Build Tauri: `tauri_plugin_dialog::init()`, `manage(AppState)`,
