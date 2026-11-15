@@ -62,7 +62,6 @@ pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, 
 }
 impl Dist {
     pub fn set_site_url(&self, url: &str) -> Result<(), DistError> {
-        self.require_identity()?;
         let link = Link::new(self.require_identity()?, url, None)?;
         let mut base = self
             .base
@@ -75,16 +74,12 @@ impl Dist {
         Ok(())
     }
     pub fn own_link(&self, slug: Option<&Slug>) -> Result<Link, DistError> {
-        self.require_identity()?;
+        let key = self.require_identity()?;
         let base = self
             .base
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Link::new(
-            self.require_identity()?,
-            base.as_deref().ok_or(DistError::NoSiteUrl)?,
-            slug,
-        )
+        Link::new(key, base.as_deref().ok_or(DistError::NoSiteUrl)?, slug)
     }
     pub fn export(&self, dir: &Path) -> Result<Exported, DistError> {
         self.require_identity()?;
