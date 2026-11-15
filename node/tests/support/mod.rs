@@ -154,3 +154,101 @@ pub fn sockets() -> usize {
         .filter(|m| m.file_type().is_socket())
         .count()
 }
+
+// ---- homes on loopback with net on (S4 to S9) ----
+
+use watane_net::{DeviceList, Event, NodeKey, Role};
+use watane_node::{Node, Options};
+
+pub fn net_opts() -> watane_net::Options {
+    watane_net::Options {
+        on: true,
+        bind: Some("127.0.0.1:0".parse().unwrap()),
+        ..Default::default()
+    }
+}
+
+pub fn node_opts(dist: watane_dist::Options) -> Options {
+    Options {
+        dist,
+        net: net_opts(),
+    }
+}
+
+/// An app home (anchor unless it joins), net on, loopback, mDNS off.
+pub fn app(dir: &Path) -> Node {
+    app_with(dir, fast())
+}
+pub fn app_with(dir: &Path, dist: watane_dist::Options) -> Node {
+    let node = Node::open(dir, Approve::new(), node_opts(dist)).unwrap();
+    node.net().set_options(net_opts()).unwrap();
+    node
+}
+
+/// A node home (`watane-node`'s open), net on.
+pub fn keyless(dir: &Path) -> Node {
+    let node = Node::open_keyless(dir, node_opts(fast())).unwrap();
+    node.net().set_options(net_opts()).unwrap();
+    node
+}
+
+/// Each knows where the other is.
+pub fn introduce(a: &Node, b: &Node) {
+    a.net().add_addrs(&b.net().node_key(), &b.net().addrs());
+    b.net().add_addrs(&a.net().node_key(), &a.net().addrs());
+}
+
+/// `joiner` joins `anchor` as `role`, the anchor says yes; returns the joiner's list
+/// once both machines see each other.
+pub fn pair(anchor: &Node, joiner: &Node, role: Role, replace: bool) -> DeviceList {
+    let (ea, ej) = (anchor.net().events(), joiner.net().events());
+    let code = anchor.net().pair_code(role).unwrap();
+    let list = std::thread::scope(|s| {
+        let joined = s.spawn(|| joiner.join(&code, replace));
+        loop {
+            if let Event::JoinAsked { node, .. } = ea_recv(&ea) {
+                assert_eq!(node, joiner.net().node_key());
+                anchor.net().answer_join(&node, true);
+                break;
+            }
+        }
+        joined.join().unwrap().unwrap()
+    });
+    introduce(anchor, joiner);
+    for (events, peer) in [(ea, joiner.net().node_key()), (ej, anchor.net().node_key())] {
+        loop {
+            if matches!(ea_recv(&events), Event::PeerUp(k) if k == peer) {
+                break;
+            }
+        }
+    }
+    list
+}
+
+fn ea_recv(events: &std::sync::mpsc::Receiver<Event>) -> Event {
+    events.recv_timeout(Duration::from_secs(15)).unwrap()
+}
+
+pub fn wait_for(secs: u64, mut f: impl FnMut() -> bool) -> bool {
+    let end = std::time::Instant::now() + Duration::from_secs(secs);
+    while std::time::Instant::now() < end {
+        if f() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    f()
+}
+
+pub fn key_of(node: &Node) -> NodeKey {
+    node.net().node_key()
+}
+
+/// The stored head of `channel` in `node`'s dist: `(seq, id)`.
+pub fn head(node: &Node, channel: &PublicKey) -> Option<(u64, watane_dist::EntryId)> {
+    node.dist()
+        .heads(Some(&[*channel]))
+        .unwrap()
+        .into_iter()
+        .find_map(|(_, h)| h.map(|h| (h.seq, h.id)))
+}

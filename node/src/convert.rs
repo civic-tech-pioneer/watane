@@ -71,6 +71,18 @@ pub(crate) fn has_in_mode(release: &Release, mode: &str, name: &str) -> bool {
     }
 }
 
+/// Dist's query as one net query for a remote machine. The interface is left out:
+/// `InterfaceQuery` has no accessor, and `search_stored` applies it again (5.4).
+pub(crate) fn net_query(q: &watane_dist::Query) -> watane_net::Query {
+    watane_net::Query {
+        text: Some(q.text.clone()),
+        publisher: q.publisher,
+        interface: None,
+        origin: q.origin.as_ref().map(|(k, s)| (*k, s.to_string())),
+        limit: 200,
+    }
+}
+
 pub(crate) fn hit(h: &watane_dist::Hit) -> watane_net::Hit {
     watane_net::Hit {
         channel: h.info.channel,

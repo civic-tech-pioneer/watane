@@ -16,4 +16,6 @@ pub enum NodeError {
     HostHome { path: PathBuf },
     #[error("this hint names no head")]
     EmptyHint,
+    #[error("this holder already holds a home")]
+    HolderSet,
 }

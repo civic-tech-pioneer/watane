@@ -20,7 +20,7 @@ fn s3_holder_answers_from_what_dist_stored() {
     bob.fetch(&release.reference).unwrap();
 
     let h = DistHoldings::empty();
-    h.set(bob.dist().clone());
+    h.set(bob.dist().clone()).unwrap();
     let head = expected.last().unwrap();
     let want = Some(watane_net::HeadInfo {
         seq: head.seq(),
@@ -53,7 +53,7 @@ fn s3_keyless_home_ingests_and_stores_only_verified() {
     let dir = tempfile::tempdir().unwrap();
     let node = Node::open_keyless(dir.path(), Options::default()).unwrap();
     let h = DistHoldings::empty();
-    h.set(node.dist().clone());
+    h.set(node.dist().clone()).unwrap();
 
     // a changed byte no longer decodes (the signature covers every byte), so it cannot
     // reach the holder; what can reach it unverified is a list under the wrong channel
@@ -97,7 +97,7 @@ fn s3_keyed_home_is_anchor_and_stores_kept_pull_without_record() {
     let dir = tempfile::tempdir().unwrap();
     let dist = Arc::new(Dist::open(dir.path(), Approve::new(), fast()).unwrap());
     let h = DistHoldings::empty();
-    h.set(dist);
+    h.set(dist).unwrap();
     assert!(h.is_anchor());
     assert_eq!(
         h.ingest(&alice.key, alice.entries(), Why::Kept),

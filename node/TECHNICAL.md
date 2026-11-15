@@ -5,9 +5,11 @@ How `node` does what `FUNCTIONAL.md` says. Requirements are cited as
 `dist 5.12`, `net 3.1`. Section 14 lists the decisions made here, section
 13 the questions left open.
 
-Stage 1 (section 9) is built: the crate is a workspace member with
-`Node`, `DistHoldings`, `convert.rs` and the wrappers with `net` off. Where
-the code differs from the text below, the text says so.
+Stages 1 and 2 (section 9) are built: the crate is a workspace member with
+`Node`, `DistHoldings`, `convert.rs`, the wrappers with `told` and `need`,
+`installed`, `search`, `join`, the restore hints and `words.rs`. Stage 3 (the
+program, section 6) is not. Where the code differs from the text below, the
+text says so.
 
 ## 1. Crate
 
@@ -90,7 +92,7 @@ pub struct Node { /* Arc<Dist>, Net, Arc<DistHoldings> */ }
 pub struct DistHoldings { /* OnceLock<Arc<Dist>> */ }
 impl DistHoldings {
     pub fn empty() -> Self;
-    pub fn set(&self, dist: Arc<Dist>);
+    pub fn set(&self, dist: Arc<Dist>) -> Result<(), NodeError>;   // a second call: HolderSet; the first Dist stays
 }
 
 impl Node {
@@ -151,6 +153,8 @@ pub enum NodeError {
     HostHome { path: PathBuf },
     #[error("this hint names no head")]
     EmptyHint,
+    #[error("this holder already holds a home")]
+    HolderSet,
 }
 ```
 
@@ -182,7 +186,7 @@ read from a web host (NODE-F-7).
 | `store_blob(id, file)` | `dist.store_package(&id, file)`, its error as text |
 | `search(query)` | `dist.search(&q)` with `q` from 4.3, each hit as `net::Hit` (4.3) |
 
-Stage 1: `wanted_blobs(Light)` answers an empty list until `need_blob` exists (stage 2).
+`wanted_blobs(Light)` lists the packages that `need_blob` asked for and that `dist.package_file` still lacks (built in stage 2). A second `set` is `NodeError::HolderSet` and keeps the first `Dist`.
 
 `DistHoldings` is made before the `Dist` exists (5.6) and holds it in a
 `OnceLock`. Until it is set, every method answers as an empty holder:
@@ -375,8 +379,8 @@ identity. Arguments are parsed by hand, as `watane` does.
 - **run**: `Node::open_keyless`. `Alone` exits 1 with `not paired: run
   watane-node join <code> first`. `options.net.relay_server` from
   `--relay`. `net.set_options` with `on: true`; print `running as <full|
-  light>, node <short key>` (and `relay on <addr>; add https://<addr>/ to
-  the relays of your other machines` with `--relay`). One thread prints
+  light>, node <short key>` (and `relay on <addr>; add http://<addr>/ to
+  the relays of your other machines` with `--relay`; `Net::relay_url()` gives that URL, `http`, not `https`). `--relay` takes a fixed `addr:port`: port 0 is refused (exit 2), because the other machines store the relay's URL. One thread prints
   each `net` event (6.2); the main thread waits for SIGINT or SIGTERM
   (`signal-hook`), then `node.close()` and exit 0. `net` is on only while
   `join` or `run` runs.
@@ -424,7 +428,8 @@ pub fn join_asked(node: &NodeKey, role: Role) -> String;   // the anchor's quest
   unless you choose one.`
 - **DHT on**: `Publish this machine's addresses in the Mainline DHT. The
   DHT is a public network that anyone can read. Anyone who knows this
-  machine's key <short> can then see its addresses and when it is online.
+  machine's key <short> can then see its addresses, this machine's local
+  network addresses included, and when it is online.
   Your identity and your other machines are not published. A record
   already published can stay readable for some hours after you turn this
   off.`
@@ -468,12 +473,12 @@ Then app stage G (app 12) builds the views on stage 2, and J8
 
 - No test reaches the internet. Nodes bind to loopback with mDNS off and
   addresses given directly, as `net` 7 says; a relay test starts the relay
-  of `watane-node run --relay 127.0.0.1:0`.
+  of `watane-node run --relay 127.0.0.1:<p>`, with a free port that the test picks.
 - Channels are signed in the test by a keyed `Dist` of another home,
   with an approving `Confirm`; the expected heads, entries and package
   bytes come from that home, not from `watane_node`.
 - S3 calls the `Holdings` methods directly, with no network.
-- S5 uses a `tiny_http` host that answers after 20 s, and times the
+- S5 uses a `tiny_http` host that answers after a delay longer than the test needs (S5 of stage 2 uses 4 s, with dist's `entry_timeout` at 3 s, to keep the test short), and times the
   server's `heads` answer.
 - `program.rs` runs `env!("CARGO_BIN_EXE_watane-node")` and reads its
   stdout and exit code; the anchor is a `Node` in the test process, which
@@ -496,6 +501,13 @@ Then app stage G (app 12) builds the views on stage 2, and J8
 | `log` | nothing directly; stage L6 (`Log::open_keyless`, `drop_identity`, `channels`) through `dist`. |
 | `net` | net 3 as written: `Net::open`, `set_options`, `close`, `node_key`, `devices`, `join`, `told`, `need`, `need_blob`, `query`, `own_heads`, `events`; `Holdings`, `Why`, `Ingested`, `Role`, `Query`, `Hit`, `HeadInfo`, `BlobId`, `NodeKey` (short form), `PairCode` (`FromStr`), `DeviceList`, `Event`, `NetError`, `Options`. |
 | `host` | nothing; node homes are no host homes. The app opens `host` and `node` on one home. |
+
+Gaps found in stage 2 (no code of a sibling was changed):
+
+| Subsystem | Gap |
+|---|---|
+| `dist` | `InterfaceQuery` has no accessor for its name, so `search` cannot turn a query with an interface into a `net` query (4.3). It sends the remote query with no interface and lets `search_stored` apply the interface (5.4 step 4): correct, but the remote machine may return hits that are then dropped. |
+| `net` | In a topic of three machines (anchor, a full and a light replica) a gossip hint of an own statement sometimes does not reach a machine, also when told again (about 1 run in 6 of S6 and S7). A reconnect (`set_options` off and on) syncs it, as the 10-minute sync would. The tests of S6 and S7 reconnect after 3 s without the entry. |
 
 ## 13. Questions
 

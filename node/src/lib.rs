@@ -5,11 +5,14 @@ mod calls;
 mod convert;
 mod error;
 mod holdings;
+mod search;
+pub mod words;
 
 pub use error::NodeError;
 pub use holdings::DistHoldings;
 pub use watane_dist as dist;
 pub use watane_net as net;
+pub use watane_net::{HeadInfo, NodeKey};
 
 use std::{path::Path, sync::Arc};
 use watane_dist::Dist;
@@ -31,11 +34,26 @@ pub enum Machine {
     Removed,
 }
 
+/// A hit of this home's search, with the machines that gave it (5.4).
+#[derive(Clone, Debug)]
+pub struct NodeHit {
+    pub hit: watane_dist::Hit,
+    /// Empty for a hit of this home only.
+    pub from: Vec<watane_net::NodeKey>,
+}
+
+/// A full machine's answer about the own channel's head (net 5.11).
+#[derive(Clone, Debug)]
+pub struct OwnHint {
+    pub node: watane_net::NodeKey,
+    pub head: Option<watane_net::HeadInfo>,
+}
+
 /// One per home. Every method blocks.
 pub struct Node {
     dist: Arc<Dist>,
     net: Net,
-    _holdings: Arc<DistHoldings>,
+    holdings: Arc<DistHoldings>,
 }
 
 impl Node {
@@ -71,11 +89,13 @@ impl Node {
 
     fn done(dist: Dist, net: Net, holdings: Arc<DistHoldings>) -> Node {
         let dist = Arc::new(dist);
-        holdings.set(dist.clone());
+        holdings
+            .set(dist.clone())
+            .expect("a new holder holds no home yet");
         Node {
             dist,
             net,
-            _holdings: holdings,
+            holdings,
         }
     }
 

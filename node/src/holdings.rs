@@ -1,8 +1,10 @@
 //! `DistHoldings`: net's `Holdings` over a `Dist` (TECHNICAL 4.1).
+use crate::NodeError;
 use crate::convert;
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 use watane_dist::{Dist, Entry, PublicKey, Reason};
 use watane_net::{BlobId, HeadInfo, Hit, Holdings, Ingested, Query, Role, Why};
@@ -11,17 +13,35 @@ use watane_net::{BlobId, HeadInfo, Hit, Holdings, Ingested, Query, Role, Why};
 /// the `Dist` exists; until `set`, it answers as an empty holder.
 pub struct DistHoldings {
     dist: OnceLock<Arc<Dist>>,
+    /// Packages that `need_blob` asked for and that are not stored yet (5.3).
+    asked: Mutex<BTreeMap<[u8; 32], u64>>,
 }
 
 impl DistHoldings {
     pub fn empty() -> Self {
         Self {
             dist: OnceLock::new(),
+            asked: Mutex::new(BTreeMap::new()),
         }
     }
 
-    pub fn set(&self, dist: Arc<Dist>) {
-        let _ = self.dist.set(dist);
+    /// A second call is an error and keeps the first `Dist`.
+    pub fn set(&self, dist: Arc<Dist>) -> Result<(), NodeError> {
+        self.dist.set(dist).map_err(|_| NodeError::HolderSet)
+    }
+
+    fn asked(&self) -> std::sync::MutexGuard<'_, BTreeMap<[u8; 32], u64>> {
+        self.asked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(crate) fn ask(&self, id: BlobId, size: u64) {
+        self.asked().insert(id.0, size);
+    }
+
+    pub(crate) fn asked_done(&self, id: &BlobId) {
+        self.asked().remove(&id.0);
     }
 }
 
@@ -79,7 +99,15 @@ impl Holdings for DistHoldings {
                 .into_iter()
                 .map(|(id, size)| (convert::blob_id(&id), size))
                 .collect(),
-            // A light machine asks for packages through `need_blob` (stage 2).
+            (Some(dist), Role::Light) => self
+                .asked()
+                .iter()
+                .filter(|(id, _)| {
+                    dist.package_file(&convert::package_id(&BlobId(**id)))
+                        .is_none()
+                })
+                .map(|(id, size)| (BlobId(*id), *size))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -132,6 +160,37 @@ impl Holdings for DistHoldings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac8_second_set_is_an_error_and_keeps_the_first() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let first = Arc::new(Dist::open_keyless(a.path(), Default::default()).unwrap());
+        let second = Arc::new(Dist::open_keyless(b.path(), Default::default()).unwrap());
+        let h = DistHoldings::empty();
+        h.set(first.clone()).unwrap();
+        assert!(matches!(h.set(second), Err(NodeError::HolderSet)));
+        assert!(Arc::ptr_eq(h.dist.get().unwrap(), &first));
+    }
+
+    #[test]
+    fn ac8_light_wants_what_need_blob_asked_and_the_holder_lacks() {
+        let a = tempfile::tempdir().unwrap();
+        let h = DistHoldings::empty();
+        h.set(Arc::new(
+            Dist::open_keyless(a.path(), Default::default()).unwrap(),
+        ))
+        .unwrap();
+        assert!(h.wanted_blobs(Role::Light).is_empty());
+        h.ask(BlobId([1; 32]), 10);
+        h.ask(BlobId([2; 32]), 20);
+        assert_eq!(
+            h.wanted_blobs(Role::Light),
+            vec![(BlobId([1; 32]), 10), (BlobId([2; 32]), 20)]
+        );
+        h.asked_done(&BlobId([1; 32]));
+        assert_eq!(h.wanted_blobs(Role::Light), vec![(BlobId([2; 32]), 20)]);
+        assert!(h.wanted_blobs(Role::Full).is_empty());
+    }
 
     #[test]
     fn ac4_before_its_dist_is_set_it_answers_as_an_empty_holder() {
