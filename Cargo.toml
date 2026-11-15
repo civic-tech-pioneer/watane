@@ -1,3 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["pkg", "host", "dev", "app", "log", "dist", "net"]
+
+# Line tables keep file:line in backtraces; full debug info made every worktree's target/ ~20% larger.
+[profile.dev]
+debug = "line-tables-only"
