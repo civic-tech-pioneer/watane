@@ -282,6 +282,7 @@ The caller refuses to send a request over its own request limit
 (`TooLarge`) and applies the connect timeout and the deadline to the whole
 call (`Unreachable`, `Timeout`). The callee applies the deadline to the
 holder's work too (`busy`).
+
 **Allowances.** Every peer has an allowance: which protocols and ops it may
 use, and its budget in bytes, connections and streams. An allowance of zero
 for a protocol means the peer may not use it at all. The allowance comes
