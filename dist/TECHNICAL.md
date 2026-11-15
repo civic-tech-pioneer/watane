@@ -77,7 +77,7 @@ only where the own channel names its own entries.
 
 ```rust
 pub use watane_log::{DecodeError, Entry, EntryId, KeyTextError, PublicKey};
-pub use watane_pkg::{Package, PackageError, PackageId, PublisherKey, Release, ReleaseError, ReleaseRef, Slug, Version};
+pub use watane_pkg::{Grant, InterfaceName, Package, PackageError, PackageId, Provider, PublisherKey, Release, ReleaseError, ReleaseRef, Slug, Version};   // Grant, InterfaceName, Provider: for node (S64), which names a release's grants and offers only through dist
 
 /// One per home. Send + Sync; share it as Arc<Dist>. Every method blocks:
 /// call it from a blocking thread, never from inside an async task.

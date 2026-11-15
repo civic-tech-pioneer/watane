@@ -47,18 +47,17 @@ watane-dist = { path = "../dist" }   # the holder; log and pkg types come throug
 watane-net = { path = "../net" }     # Net, Holdings and the types of net 3
 thiserror = "2.0"
 signal-hook = "0.3"                  # the program (stage 3); not yet in Cargo.toml
-watane-pkg = { path = "../pkg" }     # stage 1: `Grant` for the `uses` mode filter of 4.3; dist does not re-export it
 
 [dev-dependencies]
 tempfile = "3.27"
 tiny_http = "0.12"                   # a web host for S2 and S5, as dist's tests use it
+serde_json = "1.0"                   # tests read follows.json
+watane-pkg = { path = "../pkg" }     # tests only: pack Alice's fixture mod, as her own tools would
 ```
 
-No direct dependency on `watane-log`: `dist` re-exports `PublicKey`, `Entry`,
-`EntryId`, `PackageId` and `ReleaseRef` (dist 3). `watane-pkg` is a direct
-dependency only because the mode filter of 4.3 must match `Grant::Call` and
-`Grant::Subscribe`, which dist does not re-export; it adds no crate to the
-build. Dev-dependency `serde_json` reads `follows.json` in tests.
+No direct dependency on `watane-log` or `watane-pkg`: `dist` re-exports
+`PublicKey`, `Entry`, `EntryId`, `PackageId`, `ReleaseRef`, and for the
+mode filter of 4.3 `Grant`, `InterfaceName` and `Provider` (dist 3).
 
 ## 3. Public API
 

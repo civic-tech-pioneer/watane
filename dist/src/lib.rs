@@ -6,7 +6,8 @@ mod error;
 pub use error::DistError;
 pub use watane_log::{DecodeError, Entry, EntryId, KeyTextError};
 pub use watane_pkg::{
-    Package, PackageError, PackageId, PublisherKey, Release, ReleaseError, ReleaseRef, Version,
+    Grant, InterfaceName, Package, PackageError, PackageId, Provider, PublisherKey, Release,
+    ReleaseError, ReleaseRef, Version,
 };
 mod confirm;
 pub use confirm::{Confirm, Decision, Listing, Profile, SignRequest, Statement, Withdraw};
