@@ -309,18 +309,20 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 - [ ] **S50 A person can install watane.** Someone with a clean Mac and no Rust toolchain ends up
   with a working `watane` and `watane-app` from one command, and can run `watane-dev new` straight
   after. Outcome: the install is exercised somewhere that has no cargo, no target folder and no
-  checkout, so the test cannot be a `cargo test` in this repo. Open: whether the app bundle is
-  signed and notarized (Gatekeeper refuses an unsigned one, which puts a frightening dialog between
-  a person and their first use) — the human decides. Touches: a new `install/`, `app`, release
+  checkout, so the test cannot be a `cargo test` in this repo. The human decided (2026-11-15): unsigned, since there is no Apple Developer
+  account; the install tells the person how to get past Gatekeeper, in as few and as calm steps as
+  macOS allows. Touches: a new `install/`, `app`, release
   packaging. Nothing in the repo does any of this today: `app/scripts/` holds only `linux-test.sh`.
 - [x] **S51 Toolsets and tokens are complete in the app (host stage 4).** Folded into S58 and
   delivered with it 2026-11-14: it touches the same `app/src` and `app/ui` files, so it could not
   run beside it.
-- [ ] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
+- [~] **S52 The front tests can be run.** `App::front` waits for an idle human but not for an
   unlocked screen, so the four `front:` tests fail on a locked Mac (`gui_isolation` ac1) instead of
   skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
   run all four once on an unlocked screen and record the result. These four have never run.
-  Needs the Mac and a human at it.
+  Needs the Mac and a human at it: the human allows the screen at weekends and after 18:00 on any
+  day (2026-11-15). Local, branch `slice/s52`. Touches: app/src (the front wait), app/tests/gui_*.
+  S53 owns app/tests j3, j5 and support/dev.rs.
 - [~] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
   account with the real `gh`, in place of `fake-gh`. `fake-gh` was written from the same spec as the
   code it serves, so this is the slice most likely to find something. Keep `fake-gh` for the fast
@@ -867,13 +869,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
   own. None of the three can run in a cloud foreman as it stands, because each needs a credential
   or a device that belongs to the human.
-- S50 (2026-11-14): is the app bundle signed and notarized? Options: (a) signed and notarized with
-  an Apple Developer account, so a person's first run is an ordinary one; (b) unsigned, and the
-  install tells the person how to get past Gatekeeper. Recommendation: (a) if the account exists,
-  because (b) puts a frightening dialog between a person and their first use of watane, which is
-  exactly the moment the vision is being judged. Cost to undo: (a) a yearly fee and a secret the
-  build needs; (b) nothing, but it is in every person's way.
-
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
   the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
