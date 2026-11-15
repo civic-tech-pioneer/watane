@@ -51,22 +51,58 @@ pub(crate) async fn request_on(
     }
 }
 
-/// A new connection to `node` on `alpn`, at the addresses `net` knows.
+/// The IP address `connection` runs over: the selected path when it is one,
+/// else any. A path through a relay has none.
+pub(crate) fn ip_of(connection: &Connection) -> Option<std::net::SocketAddr> {
+    let paths = connection.paths();
+    let mut any = None;
+    for path in paths.iter() {
+        if let TransportAddr::Ip(addr) = path.remote_addr() {
+            if path.is_selected() {
+                return Some(*addr);
+            }
+            any.get_or_insert(*addr);
+        }
+    }
+    any
+}
+
+/// A new connection to `node` on `alpn`, at the addresses `net` knows and
+/// through the relays the participant chose. A trusted machine's address that
+/// worked is kept (4.5).
 pub(crate) async fn connect(
     core: &Core,
     node: &NodeKey,
     alpn: &[u8],
 ) -> Result<Connection, NetError> {
-    let limits = core.limits();
+    connect_within(core, node, alpn, core.limits().connect_timeout).await
+}
+
+pub(crate) async fn connect_within(
+    core: &Core,
+    node: &NodeKey,
+    alpn: &[u8],
+    within: Duration,
+) -> Result<Connection, NetError> {
     let endpoint = lock(&core.endpoint).clone().ok_or(NetError::Off)?;
     let unreachable = |cause: String| NetError::Unreachable { node: *node, cause };
     let id = iroh::EndpointId::from_bytes(node.as_bytes())
         .map_err(|e| unreachable(format!("not a node key: {e}")))?;
-    let addr = EndpointAddr::from_parts(id, core.addrs_of(node).into_iter().map(TransportAddr::Ip));
-    tokio::time::timeout(limits.connect_timeout, endpoint.connect(addr, alpn))
+    let addr = EndpointAddr::from_parts(
+        id,
+        core.addrs_of(node)
+            .into_iter()
+            .map(TransportAddr::Ip)
+            .chain(core.relay_urls().into_iter().map(TransportAddr::Relay)),
+    );
+    let connection = tokio::time::timeout(within, endpoint.connect(addr, alpn))
         .await
-        .map_err(|_| unreachable("the connection took too long".into()))?
-        .map_err(|e| unreachable(e.to_string()))
+        .map_err(|_| unreachable(core.no_path_cause()))?
+        .map_err(|_| unreachable(core.no_path_cause()))?;
+    if let Some(addr) = ip_of(&connection) {
+        core.learn_addr(node, addr);
+    }
+    Ok(connection)
 }
 
 /// One request on one stream: of the kept connection to `node` when there
@@ -87,6 +123,9 @@ pub(crate) async fn call_async(
     if lock(&core.endpoint).is_none() {
         return Err(NetError::Off);
     }
+    // set while a new connection is being made: a deadline that ends it is a
+    // machine that cannot be reached
+    let connecting = std::sync::atomic::AtomicBool::new(false);
     let work = async {
         if let Some(link) = core.link_of(node) {
             match request_on(&link, node, &bytes, cap).await {
@@ -94,14 +133,24 @@ pub(crate) async fn call_async(
                 other => return other,
             }
         }
-        let connection = connect(core, node, wire::ALPN).await?;
+        connecting.store(true, std::sync::atomic::Ordering::Relaxed);
+        let connection =
+            connect_within(core, node, wire::ALPN, limits.connect_timeout.min(deadline)).await?;
+        connecting.store(false, std::sync::atomic::Ordering::Relaxed);
         let result = request_on(&connection, node, &bytes, cap).await;
         connection.close(0u32.into(), b"done");
         result
     };
-    let answer = tokio::time::timeout(deadline, work)
-        .await
-        .map_err(|_| NetError::Timeout { node: *node })??;
+    let answer = tokio::time::timeout(deadline, work).await.map_err(|_| {
+        if connecting.load(std::sync::atomic::Ordering::Relaxed) {
+            NetError::Unreachable {
+                node: *node,
+                cause: core.no_path_cause(),
+            }
+        } else {
+            NetError::Timeout { node: *node }
+        }
+    })??;
     core.seen(node);
     Ok(answer)
 }

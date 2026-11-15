@@ -108,18 +108,19 @@ fn shared() -> Fixture {
             let server = node(holding(&[(chan(x), cx.clone())], false), None);
             let third = node(holding(&[(chan(w), cw.clone())], false), None);
             let light = node(MemHoldings::empty(), None);
+            // the server reaches the third machine (a server that forwarded a
+            // query would ask it) and takes none of its channels; the anchor
+            // passes the addresses on (5.10), so this holds from the start
+            server
+                .holdings
+                .not_wanted
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             let id = server.holdings.add_blob(&package);
             server.holdings.set_hits(vec![hit_of(chan(x), &cx)]);
             third.holdings.set_hits(vec![hit_of(chan(w), &cw)]);
             pair_unsettled(&anchor, &server, Role::Full, false);
             pair_unsettled(&anchor, &third, Role::Full, false);
             pair_unsettled(&anchor, &light, Role::Light, false);
-            // the server reaches the third machine (a server that forwarded a
-            // query would ask it) and takes none of its channels
-            server
-                .holdings
-                .not_wanted
-                .store(true, std::sync::atomic::Ordering::SeqCst);
             introduce(&server, &third);
             introduce(&light, &server);
             settle(&[&anchor, &server, &third, &light]);

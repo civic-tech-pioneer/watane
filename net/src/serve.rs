@@ -150,12 +150,25 @@ async fn respond(core: &Arc<Core>, caller: NodeKey, class: Class, request: Reque
         Request::Pair { secret } => return pairing::handle_pair(core, caller, secret).await,
         Request::Devices { seq } => {
             // a higher seq than ours: answer, then pull the list ourselves
-            let (own, bytes) = {
+            let (own, bytes, others) = {
                 let state = lock(&core.state);
-                (state.list.as_ref().map(|l| l.seq), state.bytes.clone())
+                let others: Vec<_> = state.list.as_ref().map_or_else(Vec::new, |l| {
+                    l.devices
+                        .iter()
+                        .map(|(k, _)| *k)
+                        .filter(|k| *k != caller && *k != core.key)
+                        .collect()
+                });
+                (
+                    state.list.as_ref().map(|l| l.seq),
+                    state.bytes.clone(),
+                    others,
+                )
             };
+            // where this machine knows the others of the list (5.10)
+            let addrs: Vec<_> = others.into_iter().map(|k| (k, core.addrs_of(&k))).collect();
             let newer = own.filter(|own| *own > seq).map(|_| bytes.as_slice());
-            let answer = wire::devices_answer(newer);
+            let answer = wire::devices_answer(newer, &addrs);
             if own.is_some_and(|own| seq > own) {
                 tokio::spawn(pairing::pull(core.clone(), caller));
             }

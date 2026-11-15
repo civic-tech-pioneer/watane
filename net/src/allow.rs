@@ -240,6 +240,14 @@ impl<P: ProtocolHandler> ProtocolHandler for Gate<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lo() -> std::net::SocketAddr {
+        "127.0.0.1:0".parse().unwrap()
+    }
+
+    fn lo_services() -> crate::reach::Services {
+        crate::reach::services(true, &[], false, Some(lo()))
+    }
     use crate::{
         BlobId, DeviceList, HeadInfo, Hit, Holdings, Ingested, Net, Options, Query, Role, Why,
     };
@@ -315,7 +323,7 @@ mod tests {
         let _: DeviceList = core.devices().unwrap();
 
         let calls = Arc::new(AtomicUsize::new(0));
-        let server = crate::endpoint_builder(&[20u8; 32], Some("127.0.0.1:0".parse().unwrap()))
+        let server = crate::endpoint_builder(&[20u8; 32], Some(lo()), &lo_services())
             .unwrap()
             .bind()
             .await
@@ -329,7 +337,7 @@ mod tests {
             .spawn();
 
         for (seed, passes) in [(22u8, false), (21u8, true)] {
-            let ep = crate::endpoint_builder(&[seed; 32], Some("127.0.0.1:0".parse().unwrap()))
+            let ep = crate::endpoint_builder(&[seed; 32], Some(lo()), &lo_services())
                 .unwrap()
                 .bind()
                 .await

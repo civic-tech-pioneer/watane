@@ -35,7 +35,7 @@ net/
     sync.rs       kept connections, the keeper, pulls (5.2, 5.6)
     gossip.rs     the own-machines topic, the hint codec and rule (5.7)
     blobs.rs      the iroh-blobs store, the serve hook, fetch (5.8)
-    reach.rs      address book, mDNS, relays, the DHT switch (5.10)
+    reach.rs      services by configuration, the switches and addresses of book.json, the cause of a failed dial, the relay server (5.10)
   tests/
     support/mod.rs   MemHoldings (an in-memory holder), signed fixture entries, local nodes
     node.rs  pair.rs  serve.rs  sync.rs  light.rs  reach.rs  restore.rs
@@ -55,6 +55,9 @@ watane-log = { path = "../log" }   # PublicKey, Entry, EntryId: decode and verif
 iroh = "=1.4.1"                    # QUIC dialed by Ed25519 key, hole punching, relays, mDNS, pkarr
 iroh-blobs = "=0.105.0"            # BLAKE3 verified streaming
 iroh-gossip = "=0.102.0"           # HyParView and Plumtree
+iroh-relay = { version = "=1.4.1", features = ["server"] }  # the relay server of `relay_server` (5.10); a product option, so a normal dependency
+iroh-mdns-address-lookup = "=0.6.1"    # mDNS on the local network (5.10)
+iroh-mainline-address-lookup = "=0.6.1" # the Mainline DHT, when `dht` is on (5.10)
 tokio = { version = "1.54", features = ["rt-multi-thread", "sync", "time", "macros"] }
 ed25519-dalek = "3.0"              # node-key signatures of 4.3, as log uses it
 blake3 = "1.8"
@@ -69,7 +72,6 @@ thiserror = "2.0"
 [dev-dependencies]
 tempfile = "3.27"
 ed25519-compact = "2.6"            # oracle for the vectors of 4.3
-# iroh-relay = "=1.4.1"          # a relay in the test, for S11: added at N4; N1 needs none
 ```
 
 Why iroh: it dials a node by its Ed25519 key, punches holes through NATs,
@@ -106,13 +108,14 @@ pub struct Net { /* Send + Sync; cheap to clone */ }
 
 impl Net {
     pub fn open(home_net: &Path, holdings: Arc<dyn Holdings>, options: Options) -> Result<Net, NetError>;
-    pub fn set_options(&self, options: Options) -> Result<(), NetError>; // on/off, relays, dht
-    pub fn close(self);
+    pub fn set_options(&self, options: Options) -> Result<(), NetError>; // on/off, relays, dht: written to book.json (5.1)
+    pub fn close(self);                                                  // writes no switch: a closed node reopens as it was
+    pub fn relay_url(&self) -> Option<url::Url>;                         // `http://<bound addr>/` while the relay server runs, else None
 
     pub fn node_key(&self) -> NodeKey;
     pub fn class_of(&self, node: &NodeKey) -> Class;
     pub fn addrs(&self) -> Vec<std::net::SocketAddr>;                        // bound local addresses; empty while off
-    pub fn add_addrs(&self, node: &NodeKey, addrs: &[std::net::SocketAddr]); // where to dial a node (N4: the address book)
+    pub fn add_addrs(&self, node: &NodeKey, addrs: &[std::net::SocketAddr]); // where to dial a node, after the stored ones (4.5)
 
     // the callers of `watane/1` (N1): each checks the answer before it returns it (4.2, NET-F-23)
     pub fn hello(&self, node: &NodeKey) -> Result<Hello, NetError>;
@@ -378,7 +381,7 @@ file, fsync, rename.
 ```text
 <home>/net/
   node.key     the 32-byte seed of the node key; the rules of log's key file (log 4.7)
-  book.json    the switches, relays, last good addresses, last time the anchor was reached
+  book.json    the switches, relays, last good addresses (at most 4 a machine), last time the anchor was reached
   devices      the newest verified device list (4.3), as bytes
   anchor       on a replica: the anchor's node key (52 characters)
   blobs/       iroh-blobs' store: the packages being moved (5.8)
@@ -395,7 +398,12 @@ file, fsync, rename.
 }
 ```
 
-Measurements and gossip state live in memory only.
+`on`, `relays` and `dht` are the participant's switches: `set_options` writes
+all three (temp, fsync, rename, the other fields kept) and `close` writes none.
+`addrs` holds, under the node key in text form, the addresses where a machine
+of the device list last answered or called, newest first, at most 4; only
+machines of the list have an entry. Measurements and gossip state live in
+memory only.
 
 ## 5. Behaviour
 
@@ -404,14 +412,24 @@ Measurements and gossip state live in memory only.
 Create `<home>/net/` and the node key if missing (NET-F-1). Read the
 files of 4.5; a bad file is `Corrupt`. With `on` false, stop there: no
 socket (NET-F-3). Otherwise start the iroh endpoint with the node key,
-the three ALPNs, mDNS, the relays of `book.json` (or none), the DHT only
-when `dht` is true, and the relay server when `relay_server` is set.
+the three ALPNs, the relays of `book.json` (or none), the DHT only
+when `dht` is true, mDNS when the bind address is not loopback, and the relay
+server when `relay_server` is set. `reach::services(on, relays, dht, bind)`
+decides the services from the effective switches: mDNS when on and the bind
+address is not loopback (a loopback node has no local network); exactly the
+relays chosen (`RelayMode::Custom`, else `Disabled`: no default relay); the
+DHT lookup (publish and resolve) exactly when `dht`. No port mapping, no
+probes, no n0 DNS or pkarr relay, and no proxy from the environment.
 
 Which switches win at open (node Q1): `Options.on` false keeps the
 endpoint off for that open, whatever `book.json` says. With `Options.on`
 true, `book.json` decides `on`, the relays and the DHT; a new home's
-`book.json` has all of them off. `set_options` writes `book.json`. Until
-N4 builds `book.json`, `Options` alone decides (N1).
+`book.json` has all of them off, so a fresh home opened with `on: true` stays
+off until `set_options` turns it on. `set_options` writes `on`, `relays` and
+`dht` to `book.json`; `close` writes nothing. `limits`, `bind` and
+`relay_server` come from `Options` only. A change of `relays`, `dht`, `bind`
+or `relay_server` while on rebuilds the endpoint (a running relay server of
+the same address keeps running).
 
 ### 5.2 Connect and hello
 
@@ -622,12 +640,28 @@ the holder reads from link locations as today.
 In this order (PEERS 8.1): mDNS on the local network; the `addrs` of
 `book.json`; addresses passed on in `devices` answers; the hints of a code;
 a relay of `relays`; the DHT when `dht` is on. A machine stores each
-address that worked. With no relay and no DHT, a failure to connect across
-networks is `Unreachable` with the cause "no direct path; choose a relay or
-turn on the DHT" (NET-F-28).
+address that worked: after a connection to, or from, a machine of the list,
+the IP address it ran over goes first into `book.json` `addrs` (at most 4),
+and at open these are the first known addresses (`add_addrs` adds after
+them). A `devices` answer passes on the callee's addresses of the other
+machines of its list (at most 32 machines, 4 each); the caller checks them (a
+machine of its list, each text a socket address, else `BadObject`) and adds
+them after the ones it knows. The dial adds the chosen relays to the address
+it dials, so two machines that share a relay meet there.
+
+With no relay and no DHT, a failure to connect across networks is
+`Unreachable` with the cause "no direct path; choose a relay or turn on the
+DHT" (NET-F-28); the error and the keeper's `Event::Unreachable` (once for a
+machine until it connects again; the event's cause starts "node <short>: ")
+carry it. With a relay or the DHT on the cause says that no known address,
+relay or DHT lookup answered. A dial gives up within the request deadline.
 
 `watane-node` with `relay_server` runs iroh-relay for the participant's own
-machines; the participant adds its URL to `relays` on the others.
+machines (`iroh_relay::server`, HTTP and no TLS: the relay forwards only QUIC
+that is encrypted end to end, and a relay on an IP has no certificate a client
+would accept; no QUIC address discovery, no metrics server, no ACME), while
+net is on. `Net::relay_url()` is `http://<bound address>/` (with port 0 the
+bound port); the participant adds exactly this URL to `relays` on the others.
 
 ### 5.11 Restore
 
@@ -699,7 +733,7 @@ N1 notes (built):
   `NetReportConfig::minimal()` (no HTTPS or captive-portal probes) and one
   IP socket at `Options::bind`. A node dials the addresses of `add_addrs`
   and nothing else. `Options::relays`, `dht` and `relay_server` exist and N1
-  ignores them until N4. iroh-gossip adds its own in-memory address lookup
+  ignores them until N4 (wired in part 2, below). iroh-gossip adds its own in-memory address lookup
   to an endpoint at spawn (N3); that is no network service.
 - `Net::open` makes no runtime and no socket while `on` is false; the
   runtime is made on the first turn-on. `set_options` with `on` false
@@ -832,6 +866,35 @@ N4 part 1 notes (built, S67):
   and the blobs hook are aborted first, the router is told to stop at once and
   ends by itself on the runtime if the wait runs out.
 
+N4 part 2 notes (built, S68):
+
+- Services by configuration (5.1): `reach::services` is a pure function,
+  unit tested for each case; the endpoint builder applies it. mDNS is off on
+  a loopback bind, so no test builds an endpoint with mDNS or the DHT on:
+  they are tested by configuration only. The DHT lookup publishes unfiltered
+  (the participant chose it, and a machine with no relay is found only by its
+  addresses); the lookup's default would publish a relay address only.
+- The book rules (4.5, 5.1): `open` takes `on`, relays and DHT from
+  `book.json` when `Options.on` is true; `set_options` writes them and
+  `close` does not. `book.json` is written through `reach::update_book`
+  (one lock, the other fields kept), also for `anchor_seen`. Test helpers
+  open a home and then call `set_options`.
+- The relay server (5.10) is HTTP; `relay_url` is `http://<addr>/`. node's
+  text says `https://<addr>/` (a question for node).
+- The cause (5.10, `reach::no_path_cause`), the deadline: a dial gives up at
+  `min(connect_timeout, deadline)`; a call whose deadline ends while it is
+  connecting is `Unreachable`, not `Timeout`.
+- Stored addresses are written when a connection to a machine of the list is
+  made or accepted, with the address of the selected IP path (none for a
+  relay path), and only when they change.
+- `devices` answers carry addresses (4.2); `pairing::take_answer` checks and
+  adds them. They are asked for when the list changes (a push, a pull), not
+  at every connect.
+- Tests: `tests/reach.rs` (S11 with an in-process relay on 127.0.0.1, the
+  redial from the book, the addresses of a `devices` answer), unit tests in
+  `reach.rs` (services, cause, book), `lib.rs` (the switch rules,
+  `no_default_services`) and `wire.rs` (the codec).
+
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.
 
@@ -882,5 +945,7 @@ closes the step.
 | ND-15 | `pair` takes the secret only; the role is the code's, kept on the anchor (N2). | The code text holds no role; a role the joiner names could only be checked against the code's. Undo: a new op. |
 | ND-16 | Budgets in `Limits`, not on the wire; byte budgets polled from `Connection::stats()` in `Gate`, around every protocol (N2). | One place enforces every protocol's allowance, including the ones `net` does not parse (net Q1). |
 | ND-17 | Expiry is reset by any authenticated contact with the anchor, either way. | Otherwise an expired machine would refuse the anchor that comes to renew it. |
+| ND-18 | The relay server speaks HTTP, and `relay_url` is `http://<addr>/`; clients dial the relays of `relays` for any machine they dial. | A relay on an IP has no certificate a client would accept, and the relay sees only QUIC that is encrypted end to end. The participant adds one relay URL to all her machines, so it is the other side's relay too (S68). |
+| ND-19 | With the DHT on, a machine publishes its addresses unfiltered. | The participant chose the DHT; with no relay, an address filter that publishes relay addresses only would publish nothing (S68). |
 | ND-13 | One connection per call in N1 and N2. From N3 an own machine keeps one connection to each other own machine, calls `hello` on it and syncs; a call to a machine with no kept connection still opens a connection for itself. | Sync, hints and `PeerUp`/`PeerDown` need a standing connection (5.2). |
 | ND-14 | A caller checks what it can without the holder: each entry decodes, is of the channel's author, starts at `from`, chains (`prev` is the id before) and is at most `limit` (at most 1000) in number; a `heads` answer holds each channel once and, when asked for some, exactly those; a `fork` pair is two entries of the channel at one seq with two ids. Anything else is `BadObject`. | NET-F-23, NET-F-24. The callee passes on what its holder returns, so a faulty holder shows at the caller. |

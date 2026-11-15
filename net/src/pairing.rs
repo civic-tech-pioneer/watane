@@ -95,7 +95,7 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, NetError> {
 }
 
 /// `book.json` as found, or the defaults of 4.5 for a new one.
-fn read_book(dir: &Path) -> Result<serde_json::Value, NetError> {
+pub(crate) fn read_book(dir: &Path) -> Result<serde_json::Value, NetError> {
     let path = dir.join("book.json");
     match read_optional(&path)? {
         None => Ok(serde_json::json!({
@@ -115,10 +115,7 @@ fn read_book(dir: &Path) -> Result<serde_json::Value, NetError> {
 }
 
 fn write_anchor_seen(dir: &Path, ms: u64) -> Result<(), NetError> {
-    let mut book = read_book(dir)?;
-    book["anchor_seen"] = ms.into();
-    let text = serde_json::to_vec_pretty(&book).map_err(|e| corrupt(dir, e.to_string()))?;
-    write_atomic(dir, "book.json", &text)
+    crate::reach::update_book(dir, |book| book["anchor_seen"] = ms.into())
 }
 
 /// Read `devices`, `anchor` and `book.json`; a bad file is `Corrupt`.
@@ -393,14 +390,17 @@ pub(crate) async fn push(core: Arc<Core>, list: DeviceList, skip: Option<NodeKey
         let (core, node, seq) = (core.clone(), *node, list.seq);
         tokio::spawn(async move {
             let limits = core.limits();
-            let _ = client::call_async(
+            if let Ok(answer) = client::call_async(
                 &core,
                 &node,
                 &Request::Devices { seq },
                 wire::LIST_ANSWER,
                 limits.deadline,
             )
-            .await;
+            .await
+            {
+                take_answer(&core, &node, &answer);
+            }
         });
     }
 }
@@ -421,8 +421,38 @@ pub(crate) async fn pull(core: Arc<Core>, from: NodeKey) {
     else {
         return;
     };
-    if let Ok(Some(bytes)) = wire::parse_devices(&answer) {
+    take_answer(&core, &from, &answer);
+}
+
+/// What a `devices` answer of `from` gives: a newer list when it is the
+/// anchor's, and addresses of other machines of the list, after the ones
+/// known (5.10). A bad answer drops the machine for the session.
+fn take_answer(core: &Core, from: &NodeKey, answer: &[u8]) {
+    let parsed = match wire::parse_devices(answer) {
+        Ok(parsed) => parsed,
+        Err(wire::AnswerError::Bad(cause)) => return core.refuse(from, cause),
+        Err(_) => return,
+    };
+    if let Some(bytes) = parsed.list {
         let _ = core.accept_list(bytes);
+    }
+    let listed = |node: &NodeKey| {
+        core.devices()
+            .is_some_and(|l| l.devices.iter().any(|(k, _)| k == node))
+    };
+    if let Some((node, _)) = parsed.addrs.iter().find(|(node, _)| !listed(node)) {
+        return core.refuse(
+            from,
+            format!(
+                "an address of {}, which is not an own machine",
+                node.short()
+            ),
+        );
+    }
+    for (node, addrs) in &parsed.addrs {
+        if *node != core.key {
+            core.remember(node, addrs, false);
+        }
     }
 }
 

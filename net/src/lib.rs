@@ -12,6 +12,7 @@ mod gossip;
 mod key;
 mod light;
 mod pairing;
+mod reach;
 mod serve;
 mod sync;
 mod ticket;
@@ -26,6 +27,7 @@ pub use wire::{Hello, Limits};
 
 use iroh::{
     Endpoint, NetReportConfig, RelayMode,
+    address_lookup::AddrFilter,
     endpoint::{PortmapperConfig, presets},
     protocol::Router,
 };
@@ -144,11 +146,11 @@ pub trait Holdings: Send + Sync + 'static {
 pub struct Options {
     /// false: no socket at all (NET-F-3).
     pub on: bool,
-    /// Chosen by the participant. Not wired before N4.
+    /// Chosen by the participant; empty by default.
     pub relays: Vec<url::Url>,
-    /// Not wired before N4.
+    /// Publish and look up addresses in the Mainline DHT; false by default.
     pub dht: bool,
-    /// `watane-node` only (NET-F-29). Not wired before N4.
+    /// `watane-node` only (NET-F-29): run iroh-relay here while on.
     pub relay_server: Option<SocketAddr>,
     pub limits: Limits,
     /// The address to bind; default `0.0.0.0:0`.
@@ -164,6 +166,8 @@ pub(crate) struct Core {
     pub(crate) holdings: Arc<dyn Holdings>,
     options: Mutex<Options>,
     addrs: Mutex<HashMap<NodeKey, Vec<SocketAddr>>>,
+    /// The addresses of `book.json`: where each machine was last reached.
+    pub(crate) stored: Mutex<HashMap<NodeKey, Vec<SocketAddr>>>,
     /// The newest verified device list and the last contact with its anchor.
     pub(crate) state: Mutex<pairing::DevState>,
     pub(crate) codes: Mutex<Vec<pairing::PendingCode>>,
@@ -197,6 +201,20 @@ impl Core {
     pub(crate) fn emit(&self, event: Event) {
         lock(&self.subscribers).retain(|tx| tx.send(event.clone()).is_ok());
     }
+    /// The relays the participant chose, as iroh names them.
+    pub(crate) fn relay_urls(&self) -> Vec<iroh::RelayUrl> {
+        lock(&self.options)
+            .relays
+            .iter()
+            .cloned()
+            .map(iroh::RelayUrl::from)
+            .collect()
+    }
+    /// Why a dial failed (5.10).
+    pub(crate) fn no_path_cause(&self) -> String {
+        let options = lock(&self.options);
+        reach::no_path_cause(!options.relays.is_empty(), options.dht)
+    }
     pub(crate) fn addrs_of(&self, node: &NodeKey) -> Vec<SocketAddr> {
         lock(&self.addrs).get(node).cloned().unwrap_or_default()
     }
@@ -226,7 +244,11 @@ impl Core {
         {
             lookup.add_endpoint_info(iroh::EndpointAddr::from_parts(
                 id,
-                all.into_iter().map(iroh::TransportAddr::Ip),
+                all.into_iter().map(iroh::TransportAddr::Ip).chain(
+                    self.relay_urls()
+                        .into_iter()
+                        .map(iroh::TransportAddr::Relay),
+                ),
             ));
         }
     }
@@ -235,6 +257,9 @@ impl Core {
 struct Running {
     router: Router,
     bind: Option<SocketAddr>,
+    services: reach::Services,
+    /// The relay server and the address it was asked to bind.
+    relay: Option<(SocketAddr, iroh_relay::server::Server)>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -253,22 +278,46 @@ pub struct Net {
     shared: Arc<Shared>,
 }
 
-/// The builder of every endpoint of `net`: no relay, no address lookup, no
-/// port mapping, no probes (AGENTS rule 6; relays and the DHT arrive in N4).
+/// The builder of every endpoint of `net`: no default relay, no address
+/// lookup beyond what `services` names, no port mapping, no probes (AGENTS
+/// rule 6), and no proxy from the environment.
 fn endpoint_builder(
     seed: &[u8; 32],
     bind: Option<SocketAddr>,
+    services: &reach::Services,
 ) -> Result<iroh::endpoint::Builder, String> {
     let bind = bind.unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
-    Endpoint::builder(presets::Minimal)
+    let relay_mode = if services.relays.is_empty() {
+        RelayMode::Disabled
+    } else {
+        RelayMode::Custom(
+            services
+                .relays
+                .iter()
+                .cloned()
+                .map(iroh::RelayUrl::from)
+                .collect(),
+        )
+    };
+    let mut builder = Endpoint::builder(presets::Minimal)
         .secret_key(iroh::SecretKey::from_bytes(seed))
-        .relay_mode(RelayMode::Disabled)
+        .relay_mode(relay_mode)
         .clear_address_lookup()
         .portmapper_config(PortmapperConfig::Disabled)
         .net_report_config(NetReportConfig::minimal())
-        .clear_ip_transports()
-        .bind_addr(bind)
-        .map_err(|e| e.to_string())
+        .clear_ip_transports();
+    if services.mdns {
+        builder = builder.address_lookup(iroh_mdns_address_lookup::MdnsAddressLookup::builder());
+    }
+    if services.dht {
+        // the participant chose the DHT: the machines find each other by it
+        // at the addresses they publish, not through a relay alone
+        builder = builder.address_lookup(
+            iroh_mainline_address_lookup::DhtAddressLookup::builder()
+                .addr_filter(AddrFilter::unfiltered()),
+        );
+    }
+    builder.bind_addr(bind).map_err(|e| e.to_string())
 }
 
 impl Net {
@@ -278,6 +327,14 @@ impl Net {
         options: Options,
     ) -> Result<Net, NetError> {
         let seed = key::open(home_net)?;
+        let state = pairing::load(home_net)?;
+        let book = reach::load_switches(home_net)?;
+        let stored = reach::load_addrs(home_net, |node| {
+            state
+                .list
+                .as_ref()
+                .is_some_and(|l| l.devices.iter().any(|(k, _)| k == node))
+        })?;
         let net = Net {
             core: Arc::new(Core {
                 dir: home_net.to_owned(),
@@ -285,8 +342,9 @@ impl Net {
                 seed,
                 holdings,
                 options: Mutex::new(Options::default()),
-                addrs: Mutex::new(HashMap::new()),
-                state: Mutex::new(pairing::load(home_net)?),
+                addrs: Mutex::new(stored.clone()),
+                stored: Mutex::new(stored),
+                state: Mutex::new(state),
                 codes: Mutex::new(Vec::new()),
                 joins: Mutex::new(HashMap::new()),
                 subscribers: Mutex::new(Vec::new()),
@@ -305,7 +363,15 @@ impl Net {
                 running: Mutex::new(None),
             }),
         };
-        net.set_options(options)?;
+        // `Options.on` false keeps the endpoint off; otherwise the book decides
+        // the switches (5.1, node Q1)
+        let effective = Options {
+            on: options.on && book.on,
+            relays: book.relays,
+            dht: book.dht,
+            ..options
+        };
+        net.apply(effective, false)?;
         Ok(net)
     }
 
@@ -325,16 +391,29 @@ impl Net {
         Ok(self.shared.runtime.get_or_init(|| rt))
     }
 
+    /// Turn on or off, choose the relays and the DHT; `on`, `relays` and `dht`
+    /// are kept in `book.json` (5.1).
     pub fn set_options(&self, options: Options) -> Result<(), NetError> {
+        self.apply(options, true)
+    }
+
+    fn apply(&self, options: Options, persist: bool) -> Result<(), NetError> {
         let mut running = lock(&self.shared.running);
+        if persist {
+            reach::write_switches(&self.core.dir, options.on, &options.relays, options.dht)?;
+        }
         *lock(&self.core.options) = options.clone();
+        let services = reach::services(options.on, &options.relays, options.dht, options.bind);
         if let Some(current) = running.as_ref()
             && options.on
             && current.bind == options.bind
+            && current.services == services
+            && current.relay.as_ref().map(|r| r.0) == options.relay_server
         {
             return Ok(());
         }
-        if let Some(current) = running.take() {
+        let mut relay = None;
+        if let Some(mut current) = running.take() {
             *lock(&self.core.endpoint) = None;
             *lock(&self.core.gossip) = None;
             *lock(&self.core.lookup) = None;
@@ -342,6 +421,7 @@ impl Net {
                 task.abort();
             }
             self.core.close_links();
+            relay = current.relay.take();
             // The router and the endpoint are told to stop at once; the wait for
             // the other side's goodbyes is bounded, and what is left of it ends
             // by itself on the runtime.
@@ -349,11 +429,35 @@ impl Net {
                 tokio::time::timeout(CLOSE_WAIT, current.router.shutdown()).await
             });
         }
+        // a relay server of the same address keeps running across a rebuild
+        if let Some((addr, server)) = relay.take() {
+            if options.on && options.relay_server == Some(addr) {
+                relay = Some((addr, server));
+            } else {
+                let _ = self
+                    .runtime()?
+                    .block_on(async { tokio::time::timeout(CLOSE_WAIT, server.shutdown()).await });
+            }
+        }
         if options.on {
+            if relay.is_none()
+                && let Some(addr) = options.relay_server
+            {
+                let server =
+                    self.runtime()?
+                        .block_on(reach::start_relay(addr))
+                        .map_err(|cause| NetError::Io {
+                            path: self.core.dir.clone(),
+                            cause,
+                        })?;
+                relay = Some((addr, server));
+            }
             let builder =
-                endpoint_builder(&self.core.seed, options.bind).map_err(|cause| NetError::Io {
-                    path: self.core.dir.clone(),
-                    cause,
+                endpoint_builder(&self.core.seed, options.bind, &services).map_err(|cause| {
+                    NetError::Io {
+                        path: self.core.dir.clone(),
+                        cause,
+                    }
                 })?;
             let core = self.core.clone();
             let blobs_dir = self.core.dir.join("blobs");
@@ -402,17 +506,29 @@ impl Net {
             *running = Some(Running {
                 router,
                 bind: options.bind,
+                services,
+                relay,
                 tasks,
             });
         }
         Ok(())
     }
 
-    /// Stops all contact; the node key stays.
+    /// Stops all contact; the node key stays. The switches of `book.json`
+    /// stay as they were, so a closed node reopens as it was.
     pub fn close(self) {
         let mut options = lock(&self.core.options).clone();
         options.on = false;
-        let _ = self.set_options(options);
+        let _ = self.apply(options, false);
+    }
+
+    /// `http://<address>/` of the relay server while it runs (5.10).
+    pub fn relay_url(&self) -> Option<url::Url> {
+        lock(&self.shared.running)
+            .as_ref()
+            .and_then(|r| r.relay.as_ref())
+            .and_then(|(_, server)| server.http_addr())
+            .map(reach::relay_url_of)
     }
 
     pub fn node_key(&self) -> NodeKey {
@@ -622,23 +738,27 @@ mod tests {
         }
     }
 
-    /// AC9: the endpoint has no relay and no address lookup.
+    fn on(relays: Vec<url::Url>) -> Options {
+        Options {
+            on: true,
+            relays,
+            bind: Some("127.0.0.1:0".parse().unwrap()),
+            ..Options::default()
+        }
+    }
+
+    /// AC9: the endpoint has no relay and no address lookup; AC3: a relay
+    /// only when the participant chose it.
     #[test]
     fn no_default_services() {
         let dir = tempfile::tempdir().unwrap();
-        let net = Net::open(
-            &dir.path().join("net"),
-            Arc::new(Nothing),
-            Options {
-                on: true,
-                bind: Some("127.0.0.1:0".parse().unwrap()),
-                ..Options::default()
-            },
-        )
-        .unwrap();
+        let net = Net::open(&dir.path().join("net"), Arc::new(Nothing), on(vec![])).unwrap();
+        // a new home opens with every switch off (5.1)
+        assert!(net.endpoint().is_none());
+        net.set_options(on(vec![])).unwrap();
         let endpoint = net.endpoint().expect("on");
         // in memory only: ours (addresses given by the owner) and the one
-        // iroh-gossip adds; neither reaches the network
+        // iroh-gossip adds; neither reaches the network. No mDNS, no DHT.
         assert_eq!(endpoint.address_lookup().unwrap().len(), 2);
         assert_eq!(endpoint.addr().relay_urls().count(), 0);
         assert!(
@@ -647,6 +767,59 @@ mod tests {
                 .iter()
                 .all(|a| a.ip().is_loopback())
         );
+        assert!(net.relay_url().is_none());
+        // a relay of `relays` is the only relay, and the DHT stays off
+        let relay: url::Url = "http://127.0.0.1:9/".parse().unwrap();
+        net.set_options(on(vec![relay.clone()])).unwrap();
+        let endpoint = net.endpoint().expect("on");
+        assert_eq!(endpoint.address_lookup().unwrap().len(), 2);
+        let urls: Vec<_> = endpoint
+            .addr()
+            .relay_urls()
+            .map(|u| url::Url::from(u.clone()))
+            .collect();
+        assert!(
+            urls.len() <= 1 && urls.iter().all(|u| *u == relay),
+            "{urls:?}"
+        );
         net.close();
+    }
+
+    /// AC2: `Options.on` false keeps it off, whatever the book says; a new
+    /// home opened on stays off; `close` writes no switch; `set_options`
+    /// writes all three; the book decides at the next open.
+    #[test]
+    fn ac2_the_book_decides_the_switches() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("net");
+        let book = || -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(home.join("book.json")).unwrap()).unwrap()
+        };
+        let relay: url::Url = "http://127.0.0.1:9/".parse().unwrap();
+        let net = Net::open(&home, Arc::new(Nothing), on(vec![])).unwrap();
+        assert!(net.addrs().is_empty(), "a fresh home stays off");
+        net.set_options(on(vec![relay.clone()])).unwrap();
+        assert_eq!(net.addrs().len(), 1);
+        let kept = book();
+        assert_eq!(kept["on"], true);
+        assert_eq!(kept["dht"], false);
+        assert_eq!(kept["relays"], serde_json::json!([relay.as_str()]));
+        // close writes nothing: the node reopens as it was
+        net.close();
+        assert_eq!(book(), kept);
+        let again = Net::open(&home, Arc::new(Nothing), on(vec![])).unwrap();
+        assert_eq!(again.addrs().len(), 1, "the book said on");
+        assert_eq!(again.endpoint().unwrap().address_lookup().unwrap().len(), 2);
+        again.close();
+        // `Options.on` false keeps it off, and the book still says on
+        let off = Net::open(&home, Arc::new(Nothing), Options::default()).unwrap();
+        assert!(off.addrs().is_empty());
+        assert_eq!(book(), kept);
+        // turning it off with set_options is written
+        off.set_options(Options::default()).unwrap();
+        assert_eq!(book()["on"], false);
+        assert_eq!(book()["relays"], serde_json::json!([]));
+        let after = Net::open(&home, Arc::new(Nothing), on(vec![])).unwrap();
+        assert!(after.addrs().is_empty());
     }
 }

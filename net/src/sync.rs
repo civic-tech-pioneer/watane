@@ -55,6 +55,8 @@ pub(crate) struct Dial {
     busy: bool,
     next: Instant,
     backoff: Duration,
+    /// `Event::Unreachable` was told, and the machine has not connected since.
+    reported: bool,
 }
 
 /// What a sync of one machine is asked to do.
@@ -117,8 +119,32 @@ impl Core {
     }
 
     /// Remember an address where `node` was reached, first in line.
+    /// Only for a machine of the device list; the book keeps at most four,
+    /// newest first (4.5).
     pub(crate) fn learn_addr(&self, node: &NodeKey, addr: std::net::SocketAddr) {
+        let listed = lock(&self.state)
+            .list
+            .as_ref()
+            .is_some_and(|l| l.devices.iter().any(|(k, _)| k == node));
+        if !listed || *node == self.key {
+            return;
+        }
         self.remember(node, &[addr], true);
+        let changed = {
+            let mut stored = lock(&self.stored);
+            let list = stored.entry(*node).or_default();
+            if list.first() == Some(&addr) {
+                None
+            } else {
+                list.retain(|a| *a != addr);
+                list.insert(0, addr);
+                list.truncate(crate::reach::MAX_ADDRS);
+                Some(list.clone())
+            }
+        };
+        if let Some(list) = changed {
+            let _ = crate::reach::write_addrs(&self.dir, node, &list);
+        }
     }
 }
 
@@ -158,6 +184,9 @@ fn tick(core: &Arc<Core>) {
             continue;
         }
         if core.link_of(node).is_some() {
+            if let Some(d) = lock(&core.dials).get_mut(node) {
+                d.reported = false;
+            }
             let due = {
                 let syncs = lock(&core.syncs);
                 syncs
@@ -194,6 +223,7 @@ fn maybe_dial(core: &Arc<Core>, node: NodeKey) {
             busy: false,
             next: Instant::now(),
             backoff: REDIAL_MIN,
+            reported: false,
         });
         if dial.busy || Instant::now() < dial.next {
             return;
@@ -207,24 +237,46 @@ fn maybe_dial(core: &Arc<Core>, node: NodeKey) {
     }
     let core = core.clone();
     tokio::spawn(async move {
-        let up = dial(&core, node).await;
-        let mut dials = lock(&core.dials);
-        if let Some(d) = dials.get_mut(&node) {
-            d.busy = false;
-            if up {
-                d.backoff = REDIAL_MIN;
-            } else {
-                d.backoff = (d.backoff * 2).min(REDIAL_MAX);
+        let outcome = dial(&core, node).await;
+        let up = matches!(outcome, Ok(true));
+        let report = {
+            let mut dials = lock(&core.dials);
+            let mut report = false;
+            if let Some(d) = dials.get_mut(&node) {
+                d.busy = false;
+                if up {
+                    d.backoff = REDIAL_MIN;
+                    d.reported = false;
+                } else {
+                    d.backoff = (d.backoff * 2).min(REDIAL_MAX);
+                    report = outcome.is_err() && !d.reported;
+                    d.reported |= report;
+                }
+                d.next = Instant::now() + d.backoff;
             }
-            d.next = Instant::now() + d.backoff;
+            report
+        };
+        // once for a machine, until it connects again
+        if let (true, Err(cause)) = (report, outcome) {
+            core.emit(Event::Unreachable {
+                node,
+                cause: format!("node {}: {cause}", node.short()),
+            });
         }
     });
 }
 
-/// Connect to `node` and keep the connection. `true`: a connection is kept.
-async fn dial(core: &Arc<Core>, node: NodeKey) -> bool {
-    let Ok(conn) = client::connect(core, &node, crate::wire::ALPN).await else {
-        return false;
+/// Connect to `node` and keep the connection. `Ok(true)`: a connection is
+/// kept; `Err`: no path to the machine, and why.
+async fn dial(core: &Arc<Core>, node: NodeKey) -> Result<bool, String> {
+    let within = {
+        let limits = core.limits();
+        limits.connect_timeout.min(limits.deadline)
+    };
+    let conn = match client::connect_within(core, &node, crate::wire::ALPN, within).await {
+        Ok(conn) => conn,
+        Err(NetError::Unreachable { cause, .. }) => return Err(cause),
+        Err(_) => return Ok(false),
     };
     // the machine may call us on the connection we dialed
     let serve = Serve { core: core.clone() };
@@ -233,7 +285,7 @@ async fn dial(core: &Arc<Core>, node: NodeKey) -> bool {
         use iroh::protocol::ProtocolHandler;
         let _ = serve.accept(for_serve).await;
     });
-    adopt(core.clone(), node, conn, core.key).await
+    Ok(adopt(core.clone(), node, conn, core.key).await)
 }
 
 /// Keep `conn` as the connection to `node` when it is the one to keep: call
@@ -341,11 +393,7 @@ fn wins(core: &Core, node: &NodeKey, initiator: NodeKey) -> bool {
 
 /// The address a trusted machine called from is where to reach it.
 fn learn_from(core: &Core, node: &NodeKey, conn: &Connection) {
-    let addr = conn.paths().iter().find_map(|p| match p.remote_addr() {
-        iroh::TransportAddr::Ip(addr) => Some(*addr),
-        _ => None,
-    });
-    if let Some(addr) = addr {
+    if let Some(addr) = client::ip_of(conn) {
         core.learn_addr(node, addr);
     }
 }

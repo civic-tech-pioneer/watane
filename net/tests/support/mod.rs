@@ -506,6 +506,18 @@ pub fn lo() -> SocketAddr {
     "127.0.0.1:0".parse().unwrap()
 }
 
+/// Open a home and turn net on as `options` say: a new home opens with the
+/// switches off (5.1), so `set_options` follows `open`.
+pub fn open_on(
+    net_dir: &std::path::Path,
+    holdings: Arc<MemHoldings>,
+    options: watane_net::Options,
+) -> watane_net::Net {
+    let net = watane_net::Net::open(net_dir, holdings, options.clone()).unwrap();
+    net.set_options(options).unwrap();
+    net
+}
+
 pub struct Node {
     pub dir: tempfile::TempDir,
     pub net: watane_net::Net,
@@ -516,8 +528,7 @@ pub struct Node {
 /// A node on loopback, on, paired with nobody.
 pub fn node(holdings: Arc<MemHoldings>, limits: Option<watane_net::Limits>) -> Node {
     let dir = tempfile::tempdir().unwrap();
-    let net =
-        watane_net::Net::open(&dir.path().join("net"), holdings.clone(), options(limits)).unwrap();
+    let net = open_on(&dir.path().join("net"), holdings.clone(), options(limits));
     let key = net.node_key();
     Node {
         dir,
@@ -566,7 +577,7 @@ pub fn node_trusting(
         devices,
     };
     std::fs::write(net_dir.join("devices"), list.sign(&seed).unwrap()).unwrap();
-    let net = watane_net::Net::open(&net_dir, holdings.clone(), options(limits)).unwrap();
+    let net = open_on(&net_dir, holdings.clone(), options(limits));
     Node {
         dir,
         net,

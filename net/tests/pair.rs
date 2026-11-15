@@ -372,7 +372,7 @@ fn s10_a_machine_that_has_not_seen_the_anchor_stops_trusting_the_others() {
         ),
     )
     .unwrap();
-    let net = watane_net::Net::open(&net_dir, holdings, options(None)).unwrap();
+    let net = open_on(&net_dir, holdings, options(None));
     let addr = net.addrs()[0];
 
     assert_eq!(net.class_of(&second), Class::Unknown);

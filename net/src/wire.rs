@@ -4,6 +4,7 @@ use crate::{
     HeadInfo, Hit, Query,
     cbor::{self, Item, Reader},
     error::Code,
+    key::NodeKey,
 };
 use std::time::Duration;
 use watane_log::{Entry, EntryId, MAX_ENTRY, PublicKey};
@@ -407,15 +408,37 @@ pub(crate) fn hello_answer(limits: &Limits, devices_seq: Option<u64>) -> Vec<u8>
     out
 }
 
-/// `devices`: one item `[list or null, addrs]`; N2 passes on no addresses.
-pub(crate) fn devices_answer(list: Option<&[u8]>) -> Vec<u8> {
+/// Machines whose addresses a `devices` answer carries, at most.
+pub(crate) const DEVICES_ADDRS_MACHINES: usize = 32;
+/// Addresses of one machine in a `devices` answer, at most.
+pub(crate) const DEVICES_ADDRS_PER_MACHINE: usize = 4;
+
+/// `devices`: one item `[list or null, addrs: [[node, [text]]]]`.
+pub(crate) fn devices_answer(
+    list: Option<&[u8]>,
+    addrs: &[(NodeKey, Vec<std::net::SocketAddr>)],
+) -> Vec<u8> {
     let mut out = ok();
     cbor::array(2, &mut out);
     match list {
         Some(list) => cbor::bytes(list, &mut out),
         None => cbor::null(&mut out),
     }
-    cbor::array(0, &mut out);
+    let machines: Vec<_> = addrs
+        .iter()
+        .filter(|(_, a)| !a.is_empty())
+        .take(DEVICES_ADDRS_MACHINES)
+        .collect();
+    cbor::array(machines.len(), &mut out);
+    for (node, addrs) in machines {
+        cbor::array(2, &mut out);
+        cbor::bytes(node.as_bytes(), &mut out);
+        let addrs = &addrs[..addrs.len().min(DEVICES_ADDRS_PER_MACHINE)];
+        cbor::array(addrs.len(), &mut out);
+        for addr in addrs {
+            cbor::text(&addr.to_string(), &mut out);
+        }
+    }
     out
 }
 
@@ -671,17 +694,56 @@ pub(crate) fn parse_fork(bytes: &[u8]) -> Result<Option<RawPair<'_>>, AnswerErro
     }
 }
 
-/// The list of a `devices` answer, when it holds one.
-pub(crate) fn parse_devices(bytes: &[u8]) -> Result<Option<&[u8]>, AnswerError> {
+/// A `devices` answer: the list when it holds one, and the addresses of
+/// other machines.
+pub(crate) struct DevicesAnswer<'a> {
+    pub(crate) list: Option<&'a [u8]>,
+    pub(crate) addrs: Vec<(NodeKey, Vec<std::net::SocketAddr>)>,
+}
+
+/// Decode a `devices` answer: at most 32 machines of at most 4 addresses,
+/// each a socket address in text. Whether a machine is in the caller's list
+/// is for the caller (`BadObject` too).
+pub(crate) fn parse_devices(bytes: &[u8]) -> Result<DevicesAnswer<'_>, AnswerError> {
     let items = items(bytes)?;
     let [Item::Array(fields)] = items.as_slice() else {
         return bad("not a devices answer");
     };
-    match fields.as_slice() {
-        [Item::Null, Item::Array(_)] => Ok(None),
-        [Item::Bytes(list), Item::Array(_)] => Ok(Some(list)),
-        _ => bad("not a devices answer"),
+    let (list, machines) = match fields.as_slice() {
+        [Item::Null, Item::Array(m)] => (None, m),
+        [Item::Bytes(list), Item::Array(m)] => (Some(*list), m),
+        _ => return bad("not a devices answer"),
+    };
+    if machines.len() > DEVICES_ADDRS_MACHINES {
+        return bad("a devices answer names too many machines");
     }
+    let mut addrs = Vec::with_capacity(machines.len());
+    for machine in machines {
+        let Item::Array(pair) = machine else {
+            return bad("an address entry is not an array");
+        };
+        let [Item::Bytes(node), Item::Array(texts)] = pair.as_slice() else {
+            return bad("an address entry is not [node, [text]]");
+        };
+        let Some(node) = <[u8; 32]>::try_from(*node).ok().map(NodeKey::from_bytes) else {
+            return bad("an address entry's node is not 32 bytes");
+        };
+        if texts.len() > DEVICES_ADDRS_PER_MACHINE {
+            return bad("a machine has too many addresses");
+        }
+        let mut list_of = Vec::with_capacity(texts.len());
+        for text in texts {
+            let Item::Text(text) = text else {
+                return bad("an address is not text");
+            };
+            let Ok(addr) = text.parse::<std::net::SocketAddr>() else {
+                return bad("an address is not a socket address");
+            };
+            list_of.push(addr);
+        }
+        addrs.push((node, list_of));
+    }
+    Ok(DevicesAnswer { list, addrs })
 }
 
 pub(crate) fn parse_pair(bytes: &[u8]) -> Result<&[u8], AnswerError> {
@@ -723,6 +785,104 @@ mod tests {
             k = k.wrapping_add(1);
             y[2] = k;
         }
+    }
+
+    fn sock(text: &str) -> std::net::SocketAddr {
+        text.parse().unwrap()
+    }
+
+    /// AC5: a `devices` answer round trips, with and without a list.
+    #[test]
+    fn ac5_a_devices_answer_round_trips() {
+        let a = NodeKey::from_bytes([1; 32]);
+        let b = NodeKey::from_bytes([2; 32]);
+        let addrs = vec![
+            (a, vec![sock("10.0.0.1:4433"), sock("[2001:db8::1]:9")]),
+            (b, vec![sock("127.0.0.1:1")]),
+        ];
+        for list in [None, Some(&b"list"[..])] {
+            let bytes = devices_answer(list, &addrs);
+            let got = parse_devices(&bytes).unwrap();
+            assert_eq!(got.list, list);
+            assert_eq!(got.addrs, addrs);
+        }
+        // a machine with no address is left out, and at most 4 and 32 go out
+        let many: Vec<_> = (0..40u8)
+            .map(|n| {
+                let addrs = (0..6).map(|p| sock(&format!("10.0.0.{n}:{}", 1000 + p)));
+                (NodeKey::from_bytes([n; 32]), addrs.collect::<Vec<_>>())
+            })
+            .chain([(NodeKey::from_bytes([99; 32]), vec![])])
+            .collect();
+        let bytes = devices_answer(None, &many);
+        let got = parse_devices(&bytes).unwrap();
+        assert_eq!(got.addrs.len(), 32);
+        assert!(got.addrs.iter().all(|(_, a)| a.len() == 4));
+        let bytes = devices_answer(None, &[]);
+        assert!(parse_devices(&bytes).unwrap().addrs.is_empty());
+    }
+
+    /// AC5: each shape the caller refuses.
+    #[test]
+    fn ac5_a_devices_answer_is_checked() {
+        fn answer(addrs: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+            let mut out = ok();
+            cbor::array(2, &mut out);
+            cbor::null(&mut out);
+            addrs(&mut out);
+            out
+        }
+        fn machine(node: &[u8], texts: &[&str], out: &mut Vec<u8>) {
+            cbor::array(2, out);
+            cbor::bytes(node, out);
+            cbor::array(texts.len(), out);
+            for t in texts {
+                cbor::text(t, out);
+            }
+        }
+        let refused = |bytes: Vec<u8>| matches!(parse_devices(&bytes), Err(AnswerError::Bad(_)));
+        // the node is not 32 bytes
+        assert!(refused(answer(|o| {
+            cbor::array(1, o);
+            machine(&[1; 31], &["10.0.0.1:1"], o);
+        })));
+        // an address that is not a socket address
+        for text in ["not an address", "10.0.0.1", "10.0.0.1:99999", ""] {
+            assert!(refused(answer(|o| {
+                cbor::array(1, o);
+                machine(&[1; 32], &[text], o);
+            })));
+        }
+        // five addresses of one machine
+        assert!(refused(answer(|o| {
+            cbor::array(1, o);
+            machine(&[1; 32], &["10.0.0.1:1"; 5], o);
+        })));
+        // thirty-three machines
+        assert!(refused(answer(|o| {
+            cbor::array(33, o);
+            for n in 0..33u8 {
+                machine(&[n; 32], &["10.0.0.1:1"], o);
+            }
+        })));
+        // an address that is not text, an entry of the wrong shape, no list of entries
+        assert!(refused(answer(|o| {
+            cbor::array(1, o);
+            cbor::array(2, o);
+            cbor::bytes(&[1; 32], o);
+            cbor::array(1, o);
+            cbor::uint(1, o);
+        })));
+        assert!(refused(answer(|o| {
+            cbor::array(1, o);
+            cbor::uint(1, o);
+        })));
+        assert!(refused(answer(|o| cbor::uint(1, o))));
+        // one field only
+        let mut one = ok();
+        cbor::array(1, &mut one);
+        cbor::null(&mut one);
+        assert!(refused(one));
     }
 
     fn full() -> Query {
