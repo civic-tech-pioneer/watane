@@ -181,6 +181,19 @@ pub(crate) fn join(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceLi
         })
         .collect();
     net.add_addrs(&code.anchor, &hints);
+    *lock(&core.joining) = Some((code.anchor, None));
+    let result = join_with(net, code, replace);
+    let reached = lock(&core.joining).take().and_then(|(_, at)| at);
+    let list = result?;
+    // the anchor is listed now: keep where it answered (4.5)
+    if let Some(addr) = reached {
+        core.learn_addr(&code.anchor, addr);
+    }
+    Ok(list)
+}
+
+fn join_with(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceList, NetError> {
+    let core = net.core();
     let answer = call_for(
         net,
         &code.anchor,

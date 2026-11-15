@@ -165,6 +165,8 @@ pub(crate) struct Core {
     pub(crate) key: NodeKey,
     pub(crate) holdings: Arc<dyn Holdings>,
     options: Mutex<Options>,
+    /// The anchor of a join in progress and where it answered.
+    pub(crate) joining: Mutex<Option<(NodeKey, Option<SocketAddr>)>>,
     addrs: Mutex<HashMap<NodeKey, Vec<SocketAddr>>>,
     /// The addresses of `book.json`: where each machine was last reached.
     pub(crate) stored: Mutex<HashMap<NodeKey, Vec<SocketAddr>>>,
@@ -342,6 +344,7 @@ impl Net {
                 seed,
                 holdings,
                 options: Mutex::new(Options::default()),
+                joining: Mutex::new(None),
                 addrs: Mutex::new(stored.clone()),
                 stored: Mutex::new(stored),
                 state: Mutex::new(state),
@@ -389,6 +392,12 @@ impl Net {
                 cause: e.to_string(),
             })?;
         Ok(self.shared.runtime.get_or_init(|| rt))
+    }
+
+    /// The switches as last given: what open was given merged with
+    /// `book.json`, or what `set_options` stored.
+    pub fn options(&self) -> Options {
+        lock(&self.core.options).clone()
     }
 
     /// Turn on or off, choose the relays and the DHT; `on`, `relays` and `dht`

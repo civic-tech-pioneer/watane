@@ -127,7 +127,17 @@ impl Core {
             .list
             .as_ref()
             .is_some_and(|l| l.devices.iter().any(|(k, _)| k == node));
-        if !listed || *node == self.key {
+        if *node == self.key {
+            return;
+        }
+        if !listed {
+            // a join in progress: keep where its anchor answered, until the
+            // list is installed (5.5)
+            if let Some((anchor, at)) = lock(&self.joining).as_mut()
+                && anchor == node
+            {
+                *at = Some(addr);
+            }
             return;
         }
         self.remember(node, &[addr], true);

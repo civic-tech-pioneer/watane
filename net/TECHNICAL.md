@@ -109,6 +109,7 @@ pub struct Net { /* Send + Sync; cheap to clone */ }
 impl Net {
     pub fn open(home_net: &Path, holdings: Arc<dyn Holdings>, options: Options) -> Result<Net, NetError>;
     pub fn set_options(&self, options: Options) -> Result<(), NetError>; // on/off, relays, dht: written to book.json (5.1)
+    pub fn options(&self) -> Options;                                    // the switches as open merged them with book.json, or as set_options last stored them
     pub fn close(self);                                                  // writes no switch: a closed node reopens as it was
     pub fn relay_url(&self) -> Option<url::Url>;                         // `http://<bound addr>/` while the relay server runs, else None
 
@@ -495,7 +496,9 @@ On the anchor (`holdings.is_anchor()`):
 On the joining machine, `join(code, replace)`: refuse with `HasAnchor`
 when an anchor is stored and `replace` is false. Dial the code's key with
 its hints, call `pair`, verify the list (signed by that key, names this
-node), and store it and `anchor`. With `replace`, the new anchor's list
+node), and store it and `anchor`, and store the address at which the anchor
+answered as `learn_addr` would for a listed machine (4.5), so a reopened home
+reaches it with no hint; nothing is stored for other machines. With `replace`, the new anchor's list
 replaces the old one whatever its seq.
 
 A machine stores a list from any node only when its stored anchor signed

@@ -390,3 +390,70 @@ fn s10_a_machine_that_has_not_seen_the_anchor_stops_trusting_the_others() {
         serde_json::from_slice(&fs::read(net_dir.join("book.json")).unwrap()).unwrap();
     assert!(book["anchor_seen"].as_u64().unwrap() >= now);
 }
+
+/// S72-4 AC1, AC2: a join keeps the address at which the anchor answered,
+/// so a reopened home reaches it with no hint, mDNS, relay or DHT.
+#[test]
+fn ac1_a_joined_machine_reaches_the_anchor_after_a_reopen() {
+    let fx = fixture();
+    let anchor = node(MemHoldings::anchor(fx), None);
+    let joiner = node(MemHoldings::new(fx), None);
+    let code = anchor.net.pair_code(Role::Full).unwrap();
+    try_pair(&anchor, &joiner, code, false, Some(true)).unwrap();
+
+    let Node {
+        dir, net, holdings, ..
+    } = joiner;
+    net.close();
+    // only the anchor's address is stored, at most four (AC2)
+    let book: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.path().join("net/book.json")).unwrap()).unwrap();
+    let addrs = book["addrs"].as_object().unwrap();
+    assert_eq!(addrs.keys().collect::<Vec<_>>(), [&anchor.key.to_string()]);
+    let stored = addrs[&anchor.key.to_string()].as_array().unwrap();
+    assert!((1..=4).contains(&stored.len()), "{stored:?}");
+
+    let net = open_on(&dir.path().join("net"), holdings, options(None));
+    let hello = net.hello(&anchor.key).unwrap();
+    assert!(hello.devices_seq.is_some());
+}
+
+/// S72-4 AC3: `options` is what open was given merged with `book.json`, then
+/// what `set_options` stored.
+#[test]
+fn ac3_options_gives_the_switches_as_last_stored() {
+    let fx = fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("net");
+    let h = MemHoldings::new(fx);
+    let off = watane_net::Net::open(&home, h.clone(), watane_net::Options::default()).unwrap();
+    assert!(!off.options().on);
+    let relay: url::Url = "http://127.0.0.1:9/".parse().unwrap();
+    let wanted = watane_net::Options {
+        relays: vec![relay.clone()],
+        dht: false,
+        ..options(None)
+    };
+    off.set_options(wanted).unwrap();
+    let now = off.options();
+    assert!(now.on);
+    assert_eq!(now.relays, vec![relay.clone()]);
+    off.close();
+
+    // reopened: the book's relays and switches; `on` false at open wins
+    let again = watane_net::Net::open(&home, h.clone(), options(None)).unwrap();
+    assert_eq!(again.options().relays, vec![relay.clone()]);
+    assert!(again.options().on);
+    again.close();
+    let refused = watane_net::Net::open(
+        &home,
+        h,
+        watane_net::Options {
+            on: false,
+            ..options(None)
+        },
+    )
+    .unwrap();
+    assert!(!refused.options().on);
+    assert_eq!(refused.options().relays, vec![relay]);
+}
