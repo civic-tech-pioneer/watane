@@ -605,7 +605,7 @@ is a step-7-style check, after S55.
 The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and
 node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 4.
 
-- [~] **S65 A shell mod collects the commands of the mods granted to answer it (pkg 9, host 10, dev 12).**
+- [x] **S65 A shell mod collects the commands of the mods granted to answer it (pkg 9, host 10, dev 12).**
   Branch `slice/s65`. Builds pkg stage 9 (the outlet-function rule and `World::collects`, A26 and
   A27), host stage 10 (the collect of 9.4, the outlet row of 6.4, collect edges in the cycle check
   of 4.2 step 8, the 5.3 rule, collect fakes in `Harness`, the fixtures `menu` and `item-*`), and dev
@@ -616,6 +616,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   Touches: pkg, host, dev (src, tests, fixtures, their TECHNICAL where a decision lands). Not app:
   the grant words and J9 are S66. Cloud. The human has uncommitted edits in pkg/FUNCTIONAL.md and
   pkg/TECHNICAL.md: change those two only where the slice must, and say so in the report.
+  Delivered (1462015, merged as 7d58990): a shell mod calls a collect on its own outlet and gets the joined answers of the mods granted to subscribe, in local-name order, without learning who answered; a maker's agent fakes a collect in `watane-dev test` and checks an answer with `deliver`. Dev's scenario map is green again. Decisions: a failed answer's fuel stays spent (else N failing subscribers spend N budgets; host 9.4); the fixture world is `shell` (wit refuses a world named like its outlet); dev needed no src change. Verified on the Mac: pkg, host (with the ~90 server tests the cloud cannot run), dev, app and J2 to J5 green; dev's `ac10_endless_test_stops_with_exact_message_within_deadline` failed once under load (7.0 s) and passed on rerun. For S66 from user-sim: the template should say to rename the world when an outlet is named like the slug (the guide is at its 150-line cap); a misspelled fake function is silently ignored; `check --json` lists a collect outlet under `events`; `add`'s next hint does not say that exporting the outlet answers a collect.
 - Then S66 (local, the app): app stage H, the step 9 text of the subscription row, and
   `app/tests/j9.rs`; J9 closes step 9.
 
@@ -645,9 +646,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
 | app | G own machines (J8) | 8 | open |
-| pkg | 9 outlet functions, `World::collects` | 9 | open (S65) |
-| host | 10 collect | 9 | open (S65) |
-| dev | 12 collect fakes and answers | 9 | open (S65) |
+| pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
+| host | 10 collect | 9 | done (S65) |
+| dev | 12 collect fakes and answers | 9 | done (S65) |
 | app | H extension points (J9) | 9 | open |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
@@ -862,7 +863,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S53: `68b6f713` (sessionId `68b6f713-8425-4db7-aba5-eb1b449a1320`), worktree `.claude/worktrees/s53` (local: the token).
 - S52: `e94a9b4e` (sessionId `e94a9b4e-fe58-4627-a92e-734ec694d848`), worktree `.claude/worktrees/s52` (local: the screen).
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S65: cloud routine `trig_01HioaxGuynVqqGks4MwPT61` (handed out 2026-11-15), branch `slice/s65`.
+- S65: delivered 2026-11-15 and merged; routine finished, branch removed.
+- S68: cloud routine `trig_013JJnNTKKEGsEfXdzPKJka6` (handed out 2026-11-15), branch `slice/s68`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -1368,7 +1370,7 @@ The human may veto each one.
   of its own.
 - S61: a resumed local foreman that rebased could not force-push, so it pushed
   `slice/s61-rebased`. The product owner merges the local branch and deletes both remote names.
-- Main is red since 51e0dfb (step 9 spec): dev's `ac5_scenario_map_covers_every_scenario_and_names_existing_tests`
+- Main was red from 51e0dfb (step 9 spec) to S65: dev's `ac5_scenario_map_covers_every_scenario_and_names_existing_tests`
   wants `contract::ac_collect_fake_and_answer`, which step 9 builds. Every verification shows it
   until then; it is not a slice's failure.
 - S64: no cargo-hakari in the cloud image. The product owner runs `cargo hakari generate`,
@@ -1378,6 +1380,10 @@ The human may veto each one.
 - S63: net's default test run takes about 113 s of the 120 s limit (pairing settles about 1 s each).
 - S67: telling "the server does not have this package" from "its copy failed its check" needs a
   wire answer; both read the same today.
+- S65: the cloud has no IPv6 loopback and host's server binds 127.0.0.1 and ::1, so about 90 host and
+  dev server tests run only on the Mac. A v4-only bind option for tests would let the cloud run them.
+- S65: host fixture builds are not byte-reproducible; rebuild only new fixtures.
+- S65 (merge): dev's `ac10_endless...` deadline test fails under load (two local foremen building).
 
 ## Digest
 
