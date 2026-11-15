@@ -617,8 +617,25 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   the grant words and J9 are S66. Cloud. The human has uncommitted edits in pkg/FUNCTIONAL.md and
   pkg/TECHNICAL.md: change those two only where the slice must, and say so in the report.
   Delivered (1462015, merged as 7d58990): a shell mod calls a collect on its own outlet and gets the joined answers of the mods granted to subscribe, in local-name order, without learning who answered; a maker's agent fakes a collect in `watane-dev test` and checks an answer with `deliver`. Dev's scenario map is green again. Decisions: a failed answer's fuel stays spent (else N failing subscribers spend N budgets; host 9.4); the fixture world is `shell` (wit refuses a world named like its outlet); dev needed no src change. Verified on the Mac: pkg, host (with the ~90 server tests the cloud cannot run), dev, app and J2 to J5 green; dev's `ac10_endless_test_stops_with_exact_message_within_deadline` failed once under load (7.0 s) and passed on rerun. For S66 from user-sim: the template should say to rename the world when an outlet is named like the slug (the guide is at its 150-line cap); a misspelled fake function is silently ignored; `check --json` lists a collect outlet under `events`; `add`'s next hint does not say that exporting the outlet answers a collect.
-- Then S66 (local, the app): app stage H, the step 9 text of the subscription row, and
-  `app/tests/j9.rs`; J9 closes step 9.
+- [ ] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
+  Builds app stage H (app/TECHNICAL.md 12, row H): the step 9 text of the subscription row in
+  `app/src/words.rs` ("Receive the {interface} events of {provider} and answer its requests"), and
+  `app/tests/j9.rs` with host's fixtures `menu` and `item-*`. Outcome: J9 passes as spec/FUNCTIONAL
+  writes it (the plan shows the answer grant; the shell shows both commands without learning who gave
+  which; a failing command mod is left out; a withdrawn grant removes its command at the next
+  collect; a command mod that also calls the shell is refused at the plan, naming the cycle); J2 to
+  J5 still pass. Touches: app/src/words.rs, app/tests/j9.rs, app/TECHNICAL.md. Local (the app).
+  After S52 and S53: both change app/tests/support and app/TECHNICAL.md.
+- [~] **S69 A maker's agent is told how collects work (dev, S65's leftovers).** Branch `slice/s69`.
+  From S65's user-sim: (1) the template `AGENTS.md` says to keep `world <slug>`; an outlet named like
+  the slug then fails with "duplicate item named <slug>" and the fix text does not help: say to
+  rename the world, in the guide (at its 150-line cap: make room) and in that error's fix; (2) a
+  misspelled fake function in a contract file is silently ignored: refuse it, naming the function and
+  the outlet's functions; (3) `check --json` lists a collect outlet under `events` only: add
+  `collects` beside it (additive); (4) `add`'s next hint says that exporting an outlet is how a mod
+  answers its events and collects. Outcome: a maker's agent that writes S65's `menu` and `item` from
+  `watane-dev new` gets each of the four right on the first try. Touches: dev only (src, template,
+  tests, TECHNICAL). Not `share.rs` or the publish CLI (the `--owner` question is open). Cloud.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
