@@ -544,9 +544,26 @@ is a step-7-style check, after S55.
   `Limits` derive Clone, Debug and Default) and the N2 part of Q5 (a light machine prefers a full
   replica over the anchor), each answered in net's documents. Touches: net only. Cloud.
   Delivered (ea231f3): one implementer run and a validator pass, plus S62-fix1 from user-sim (a hello pulls a newer device list from a trusted node; pairing codes trim whitespace). Verified on the Mac: workspace build, net all green including ignored, host green.
-- Then, sketched just in time as each lands: net N3 and N4 in turn on one line, and node 1 once S61
-  and S62 are both in. node 1 joins
-  them after N2, node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
+- [~] **S63 Alice publishes on the laptop, and her server has it within seconds (net N3).**
+  Branch `slice/s63`. Builds net N3 (net/TECHNICAL.md 5.6 to 5.8 and the N3 row of 9): sync on
+  connect, on a hint and every 10 minutes, over kept connections (ND-13 said N3 keeps them); hints on
+  the own iroh-gossip topic; packages over iroh-blobs added by reference, with the size cap and
+  `store_blob`. Takes node/TECHNICAL.md 13 Q3 into net 5.7: a light machine acts on a hint only for a
+  channel in `holdings.heads(None)`, a full machine for any. The holder is a fake in
+  `net/tests/support` (node 1 builds the real one); the `Holdings` trait of 3.1 does not change.
+  Outcome: scenarios S5, S6, S7 and the rest of S9 pass (net FUNCTIONAL 3), each as a test
+  `s<n>_...`; a forged hint, a changed byte, another author's entry and a package with the wrong
+  hash change nothing in the holder. Touches: net only (src, tests, TECHNICAL, FUNCTIONAL); adds
+  no dependency (iroh-blobs and iroh-gossip are pinned since N1). Cloud.
+- [~] **S64 A home holds another participant's channel through the holder (node 1).**
+  Branch `slice/s64`. Builds node stage 1 (node/TECHNICAL.md 9, row 1): the `node` crate as a
+  workspace member, `DistHoldings` and `convert.rs`, `Node::open`, `open_keyless`, `dist`, `net`,
+  `machine`, `close`, and the wrappers with `net` off. Outcome: node scenarios S1, S2 and S3 pass
+  (node FUNCTIONAL), each as a test; a keyless node opens and holds a channel it was given. Touches:
+  node (new), the workspace `Cargo.toml` members line and `Cargo.lock`; not net (S63 owns it): a
+  gap in net's API goes to the product owner as a question, not a change. Cloud.
+- Then, sketched just in time as each lands: net N4 (takes node Q6 and the rest of Q5) after S63,
+  node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
@@ -567,11 +584,11 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 |---|---|---|---|
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
-| net | N3 sync, gossip hints, blobs | 8 | open |
+| net | N3 sync, gossip hints, blobs | 8 | open (S63) |
 | net | N4 light machines, restore, reach | 8 | open |
 | log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open (S61) |
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | open (S61) |
-| node | 1 holder | 8 | open |
+| node | 1 holder | 8 | open (S64) |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
 | app | G own machines (J8) | 8 | open |
@@ -780,9 +797,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S57: delivered 2026-11-14 and merged; routine `trig_019eZQGSqCu2ziUPVNcDiXD8` finished, branch removed.
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
 - S59: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S61: `f08e7a50` (sessionId `f08e7a50-9121-4b3b-9a63-05939c67abf9`), worktree `.claude/worktrees/s61` (local: the app).
+- S61: `585e3daf` (sessionId `585e3daf-6cf8-4f99-be6e-144904360f44`, resumed after the disk filled; first run `f08e7a50`), worktree `.claude/worktrees/s61` (local: the app). Delivered; merging.
 - S60: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S62: cloud routine `trig_01LUVepvpzSGCACyfz2fR2Fo` (running, handed out 2026-11-15), branch `slice/s62`.
+- S62: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
