@@ -124,10 +124,9 @@ pub struct Fixture {
     pub absent: PublicKey,
     pub chains: BTreeMap<PublicKey, Vec<Entry>>,
     pub fork: (Entry, Entry),
-    _dirs: Vec<tempfile::TempDir>,
 }
 
-fn log_chain(count: u64, body: &[u8]) -> (PublicKey, Vec<Entry>, [u8; 32], tempfile::TempDir) {
+fn log_chain(count: u64, body: &[u8]) -> (PublicKey, Vec<Entry>, [u8; 32]) {
     let dir = tempfile::tempdir().unwrap();
     let logdir = dir.path().join("log");
     let log = Log::open(&logdir).unwrap();
@@ -142,7 +141,7 @@ fn log_chain(count: u64, body: &[u8]) -> (PublicKey, Vec<Entry>, [u8; 32], tempf
         .try_into()
         .unwrap();
     drop(log);
-    (me, entries, seed, dir)
+    (me, entries, seed)
 }
 
 /// Signed once per test binary: appending to a log syncs to disk.
@@ -152,9 +151,9 @@ pub fn fixture() -> &'static Fixture {
 }
 
 fn make_fixture() -> Fixture {
-    let (c1, e1, _, d1) = log_chain(5, b"one");
-    let (c2, e2, _, d2) = log_chain(3, b"two");
-    let (cf, ef, seed, d3) = log_chain(3, b"forked");
+    let (c1, e1, _) = log_chain(5, b"one");
+    let (c2, e2, _) = log_chain(3, b"two");
+    let (cf, ef, seed) = log_chain(3, b"forked");
     // a second entry at seq 1, signed by the same author: the fork
     let other = Entry::decode(&entry_bytes(
         seed,
@@ -166,7 +165,7 @@ fn make_fixture() -> Fixture {
     ))
     .unwrap();
     assert_ne!(other.id(), ef[1].id());
-    let (cbig, ebig, _, d4) = log_chain(70, &vec![7u8; 60_000]);
+    let (cbig, ebig, _) = log_chain(70, &vec![7u8; 60_000]);
     let seed1200 = [9u8; 32];
     let c1200 = PublicKey::from_bytes(&public_of(seed1200)).unwrap();
     let e1200 = chain(seed1200, 1200);
@@ -186,7 +185,6 @@ fn make_fixture() -> Fixture {
         absent,
         fork: (ef[1].clone(), other),
         chains,
-        _dirs: vec![d1, d2, d3, d4],
     }
 }
 
