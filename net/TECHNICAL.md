@@ -5,8 +5,7 @@ How `net` does what `FUNCTIONAL.md` says, for stage D1 of `spec/PEERS.md`
 architecture as PEERS sections. Section 13 lists the decisions made here;
 section 12 the questions left for the step 8 design slice.
 
-No crate exists yet: stage N1 (section 9) creates it and adds it to the
-workspace.
+Stage N1 (section 9) created the crate and added it to the workspace.
 
 ## 1. Crate
 
@@ -27,7 +26,9 @@ net/
     error.rs      NetError, the wire error codes (4.2)
     key.rs        NodeKey, the node key file (4.5)
     ticket.rs     Ticket, PairCode: parse and format (4.1)
-    wire.rs       requests, answers, CBOR codecs, limits (4.2)
+    wire.rs       requests, answers, limits, the codecs of 4.2 (N1: hello, heads, entries, fork)
+    cbor.rs       the strict CBOR reader and the writer helpers that wire.rs and devices.rs share
+    client.rs     the caller of watane/1: send, read within the byte limit and deadline, check the answer (5.2, NET-F-23)
     devices.rs    DeviceList: encode, sign, verify (4.3); pairing (5.5)
     serve.rs      the handler of `watane/1`; the wrappers of the iroh-blobs and iroh-gossip handlers (5.4)
     allow.rs      allowances: what each peer may use, and its byte, connection and stream budget (4.2)
@@ -42,15 +43,16 @@ Inner modules are private. Only `lib.rs` exports.
 
 ## 2. Dependencies
 
-Versions as on crates.io on 2026-11-14. Stage N1 pins the exact set that
-compiles together and records it here.
+Versions as on crates.io on 2026-11-14. Stage N1 pinned the three iroh
+crates to the exact releases that resolve together (2026-11-15). The
+versions of the others are the minimum; `Cargo.lock` holds the rest.
 
 ```toml
 [dependencies]
 watane-log = { path = "../log" }   # PublicKey, Entry, EntryId: decode and verify only
-iroh = "1.4"                       # QUIC dialed by Ed25519 key, hole punching, relays, mDNS, pkarr
-iroh-blobs = "*"                   # BLAKE3 verified streaming; N1 pins the release that matches iroh 1.4
-iroh-gossip = "*"                  # HyParView and Plumtree; N1 pins the release that matches iroh 1.4
+iroh = "=1.4.1"                    # QUIC dialed by Ed25519 key, hole punching, relays, mDNS, pkarr
+iroh-blobs = "=0.105.0"            # BLAKE3 verified streaming
+iroh-gossip = "=0.102.0"           # HyParView and Plumtree
 tokio = { version = "1.54", features = ["rt-multi-thread", "sync", "time", "macros"] }
 ed25519-dalek = "3.0"              # node-key signatures of 4.3, as log uses it
 blake3 = "1.8"
@@ -65,7 +67,7 @@ thiserror = "2.0"
 [dev-dependencies]
 tempfile = "3.27"
 ed25519-compact = "2.6"            # oracle for the vectors of 4.3
-iroh-relay = "1.4"                 # a relay in the test, for S11
+# iroh-relay = "=1.4.1"          # a relay in the test, for S11: added at N4; N1 needs none
 ```
 
 Why iroh: it dials a node by its Ed25519 key, punches holes through NATs,
@@ -94,6 +96,8 @@ pub struct Options {
     pub dht: bool,                    // publish and look up addresses in the Mainline DHT; false by default
     pub relay_server: Option<std::net::SocketAddr>, // watane-node only: run iroh-relay here (NET-F-29)
     pub limits: Limits,               // section 4.2 defaults
+    pub bind: Option<std::net::SocketAddr>, // where to bind; default 0.0.0.0:0
+    pub trusted: Vec<NodeKey>,        // N1 only: the nodes class_of rates Trusted (plus the own node), standing in for the device list; N2 removes it
 }
 
 pub struct Net { /* Send + Sync; cheap to clone */ }
@@ -105,6 +109,14 @@ impl Net {
 
     pub fn node_key(&self) -> NodeKey;
     pub fn class_of(&self, node: &NodeKey) -> Class;
+    pub fn addrs(&self) -> Vec<std::net::SocketAddr>;                        // bound local addresses; empty while off
+    pub fn add_addrs(&self, node: &NodeKey, addrs: &[std::net::SocketAddr]); // where to dial a node (N4: the address book)
+
+    // the callers of `watane/1` (N1): each checks the answer before it returns it (4.2, NET-F-23)
+    pub fn hello(&self, node: &NodeKey) -> Result<Hello, NetError>;
+    pub fn heads_of(&self, node: &NodeKey, channels: &[PublicKey]) -> Result<Vec<(PublicKey, Option<HeadInfo>)>, NetError>;
+    pub fn entries_of(&self, node: &NodeKey, channel: &PublicKey, from: u64, limit: u64) -> Result<Vec<Entry>, NetError>;
+    pub fn fork_of(&self, node: &NodeKey, channel: &PublicKey) -> Result<Option<(Entry, Entry)>, NetError>;
 
     // own machines (5.5)
     pub fn pair_code(&self, role: Role) -> Result<PairCode, NetError>;      // anchor only
@@ -124,6 +136,7 @@ impl Net {
     pub fn events(&self) -> std::sync::mpsc::Receiver<Event>;
 }
 
+pub struct Hello { pub version: u64, pub ops: Vec<String>, pub limits: Limits, pub devices_seq: Option<u64> }
 pub struct DeviceList { pub anchor: NodeKey, pub seq: u64, pub time: u64,
                         pub expires_days: u32, pub devices: Vec<(NodeKey, Role)> }
 pub struct HeadInfo { pub seq: u64, pub id: EntryId, pub forked: bool }
@@ -176,13 +189,16 @@ pub enum NetError {
     NotAnchor,                                      // pair_code, remove_device on a replica
     NoFullMachine,                                  // need, query on a light machine with no full one reachable
     BadCode, CodeSpent, Declined,                   // pairing (NET-F-8)
+    BadList { cause: String },                      // a device list that does not decode or verify (4.3)
     HasAnchor,                                      // join without replace (NET-F-9)
     Corrupt { path: PathBuf, cause: String },       // a file of <home>/net/
     Io { path: PathBuf, cause: String },
 }
 ```
 
-Every message names the node in its short form (NET-F-32).
+Every message names the node in its short form (NET-F-32). `Unreachable`
+also covers a connection that failed or broke, with the cause. A `Corrupt`
+`node.key` is a wrong length, a mode that lets others in, or a link.
 
 ## 4. Formats
 
@@ -212,10 +228,10 @@ connection only (PEERS 4.3).
 
 | Op | Args | Answer after `"ok"` | Who may call |
 |---|---|---|---|
-| `hello` | `version: uint` | `[version, ops: [text], limits: [uint], devices_seq: uint or null]` | anyone; `devices_seq` only for trusted |
+| `hello` | `version: uint` | one item `[version, ops: [text], limits: [uint], devices_seq: uint or null]` | anyone; `devices_seq` only for trusted |
 | `heads` | `[channel: bytes(32)]`; empty: all | then one item per channel: `[channel, seq, id: bytes(32), forked: bool]` or `[channel, null]` | trusted |
 | `entries` | `channel, from: uint, limit: uint` | then one item per entry: `bytes`, at most 4 MiB in all | trusted |
-| `fork` | `channel` | `[a: bytes, b: bytes]` or `null` | trusted |
+| `fork` | `channel` | one item: `[a: bytes, b: bytes]` or `null` | trusted |
 | `query` | `query` (4.4) | `[hits: [hit]]` | trusted |
 | `devices` | `seq: uint` | `[list: bytes or null, addrs: [[node: bytes(32), [text]]]]` | trusted |
 | `pair` | `secret: bytes(16), role: uint` | `[list: bytes]`, after the participant's answer | anyone with a valid code |
@@ -223,11 +239,34 @@ connection only (PEERS 4.3).
 The other two ALPNs are iroh-blobs' and iroh-gossip's own. `serve.rs`
 accepts a connection on them only from a trusted node (5.4).
 
+"After `ok`" means: the first item is exactly `["ok"]`, and the items listed
+follow it as items of the sequence. A callee never sends more than the answer
+byte limit of the op, framing included; a caller reads at most that, and a
+longer stream is `TooLarge`. The callee checks, in this order (5.4): the
+request length (`too_large`, before it decodes), the encoding
+(`bad_request`), an op it does not have (`unknown_op`, also the ops of later
+stages and made-up ones), the class (`not_allowed`), then the op. A request
+decodes only when it is the deterministic encoding of an array `[op, args...]`
+with the args of the table: the reader accepts the shortest form of
+unsigned integers, definite byte strings, text, arrays, null and booleans, and
+nothing else. A caller of `heads` with a non-empty list expects exactly
+those channels back, each once.
+
 Error codes: `not_allowed`, `over_budget`, `too_large`, `bad_request`,
 `unknown_op`, `not_found`, `busy`, `bad_code`, `declined`. An unknown op is
 `unknown_op`, so older nodes stay compatible. A change to an op is a new op.
 
-**Limits** (`Limits`, defaults):
+**Limits** (`Limits`, defaults). `hello` gives them as `limits: [uint]` in
+the order of this table, 10 items: request, answer of `entries`, entries
+per answer, entry size, blob size, hits per answer, connect timeout (ms),
+request deadline (ms), `pair` deadline (ms), blob deadline (ms).
+
+**Answer byte limits** (the whole stream, CBOR framing included):
+`hello` 1 KiB; `heads` 1 MiB; `entries` 4 MiB (`Limits::answer_entries`;
+the callee gives the holder `max_bytes` = that minus 4 bytes for `["ok"]`
+and 5 per entry asked for, and cuts what the holder returns to fit); `fork`
+2 × `MAX_ENTRY` + 64. The error item is at most about 220 bytes and always
+fits.
 
 | Limit | Default |
 |---|---|
@@ -238,6 +277,11 @@ Error codes: `not_allowed`, `over_budget`, `too_large`, `bad_request`,
 | hits per answer | 200 |
 | connect timeout | 10 s |
 | request deadline | 5 s; `pair` 10 min; a blob 120 s |
+
+The caller refuses to send a request over its own request limit
+(`TooLarge`) and applies the connect timeout and the deadline to the whole
+call (`Unreachable`, `Timeout`). The callee applies the deadline to the
+holder's work too (`busy`).
 **Allowances.** Every peer has an allowance: which protocols and ops it may
 use, and its budget in bytes, connections and streams. An allowance of zero
 for a protocol means the peer may not use it at all. The allowance comes
@@ -273,8 +317,16 @@ QUIC handshake and, when the DHT is on, the pkarr record of its addresses.
 are milliseconds since the Unix epoch. Later stages add the heads file
 (`watane/heads/1`, D4) as a second form, and no other.
 
-Stage N1 adds golden vectors made with `ed25519-compact` from the seed of
-RFC 8032 test 1, as `log` 4.4 does.
+Stage N1 added golden vectors made with `ed25519-compact` from the seed of
+RFC 8032 test 1, as `log` 4.4 does: `tests/vectors.rs` holds the bytes of a
+list of the anchor (full) and a second key (light), seq 1, time
+1767225600000, expires 0, built by hand, and its signature from the oracle.
+The signed bytes are the prefix (with its zero byte), then the CBOR array of
+the five unsigned items (`85 ...`), as `log` does for entries; the object
+is the array of six (`86 ...`). In N1 the code has no list behaviour:
+`DeviceList::sign(&seed)` (the anchor's seed, refusing a list that is not
+sorted or lacks the anchor) and `DeviceList::verify(bytes)` (strict
+decode, the same checks, `verify_strict`); neither signs anything else.
 
 ### 4.4 Query and hit
 
@@ -348,7 +400,10 @@ allowance for its ALPN, the peer's budget (`over_budget`), decode
 the connection with its remote node key; `net` wraps the iroh-blobs and
 iroh-gossip handlers, so a connection whose allowance for that protocol is
 zero is closed before they see it, and their bytes count against the
-budget. Reads answer only what the holder holds; `net` never fetches for a
+budget. The budget of a protocol that iroh-blobs or iroh-gossip serves cannot be
+counted in the handler: the wrapper polls `Connection::stats()` while the
+inner handler runs (N2 builds it) and closes the connection when its bytes
+exceed the peer's budget. Reads answer only what the holder holds; `net` never fetches for a
 caller and never forwards (NET-F-17).
 
 ### 5.5 Pairing and the device list
@@ -517,6 +572,27 @@ participant's home. The step 8 design slice writes `node`'s own documents.
 | N3 | sync, gossip hints, blobs | S5, S6, S7, S9 |
 | N4 | light machines, restore, reach (mDNS, addresses, relay, the DHT switch) | S8, S11, S12 |
 
+N1 notes (built):
+
+- N1 builds the endpoint with `presets::Minimal`, `RelayMode::Disabled`,
+  `clear_address_lookup`, `PortmapperConfig::Disabled`,
+  `NetReportConfig::minimal()` (no HTTPS or captive-portal probes) and one
+  IP socket at `Options::bind`. A node dials the addresses of `add_addrs`
+  and nothing else. `Options::relays`, `dht` and `relay_server` exist and N1
+  ignores them until N4. iroh-gossip adds its own in-memory address lookup
+  to an endpoint at spawn (N3); that is no network service.
+- `Net::open` makes no runtime and no socket while `on` is false; the
+  runtime is made on the first turn-on. `set_options` with `on` false
+  shuts the router and the endpoint down.
+- A trusted node is one of `Options::trusted` (and the own node). N2
+  replaces it with the device list.
+- The pairing code text (4.1) is built and parsed (`PairCode`, `Hint`);
+  nothing uses it before N2. `Ticket` is D2.
+- Tests: `node.rs` (S1), `code.rs`, `vectors.rs`, `serve.rs` (hello, heads,
+  entries, fork, unknown caller, ops of later stages, limits), `faults.rs`
+  (the caller's checks, deadlines), `keyfile.rs`, `q1.rs`, and
+  `no_default_services` in `lib.rs`.
+
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.
 
@@ -541,7 +617,7 @@ closes the step.
 
 | # | Question | Proposal |
 |---|---|---|
-| Q1 | 5.4 and 5.8 rest on two library features: adding a file to the iroh-blobs store by reference, and wrapping a protocol handler in iroh's router. Both are expected; neither is checked against the releases N1 pins. | N1 checks both against the pinned releases; if either is gone, N1 records the replacement here before N3. |
+| Q1 | 5.4 and 5.8 rest on two library features: adding a file to the iroh-blobs store by reference, and wrapping a protocol handler in iroh's router. | Answered by N1 against iroh 1.4.1, iroh-blobs 0.105.0 and iroh-gossip 0.102.0: both are present. `ImportMode::TryReference` (`api::blobs::AddPathOptions`) leaves a 1 MiB file out of the store (`q1a_blobs_by_reference_keep_no_second_copy`; the store's redb file is preallocated at about 1 MiB whatever it holds, so the test measures growth and the `data/` directory, and a `Copy` import as the control). A wrapper `Gate<P: ProtocolHandler>` that checks `Connection::remote_id()` before it calls the inner `accept`, and forwards `shutdown`, works around `BlobsProtocol` and around `Gossip`, both in one `Router`; a refused node's download fails and the inner handler is not called (`q1b_a_wrapper_admits_a_connection_by_its_remote_key`). |
 | Q2 | What does a light machine keep after a search pulled a channel? | **Decided (S59).** `Asked` channels stay in the store with no record, like a channel read for a provider today (`dist` 5.11): not held, so not in `heads(None)`, not synced and not refreshed (`dist` 5.12, DD-38). A search shows one only when `node` verified the remote hit against it (`node` 5.4). An install from such a hit gives the channel a `kept` record on the replica, so it stays current through the full machines (`node` 5.3, NO-6). `Log::forget` cleans up at D5. |
 | Q3 | How does the app show own machines and their freshness? | **Decided (S59), `app/TECHNICAL.md` 9.8 (stage G).** A machines view with each machine's short key, role, this machine and anchor marks, online or last seen (`PeerUp`, `PeerDown`), and the last pull from it (`Pulled`), kept in memory from `events()`; refusals and unreachable machines with their causes. No heads count: it needs no new op, and the last pull says how current a machine keeps this one. The join question, the relay and the DHT switch go through the app's consent view with the texts of `node` 7. |
 
@@ -560,3 +636,6 @@ closes the step.
 | ND-9 | Nothing reachable by default: no relay, no DHT. | V4, W32; decided by the human (proposal Q2). |
 | ND-10 | Device list expiry is a setting; 0, the default, never expires. | Decided by the human (proposal Q14). |
 | ND-11 | Limits in bytes and connections; one shared pool for unknown callers. | Keys are free; a count of requests says nothing about cost. |
+| ND-12 | N1: `Options::trusted` lists the trusted nodes, and `Options::bind` chooses the bind address (default `0.0.0.0:0`). N2 removes `trusted`. | Two local nodes need a class before the device list exists; tests bind to loopback only. |
+| ND-13 | One connection per call in N1; no `hello` on connect, no kept connection. | The simplest thing that works between two nodes; N3 keeps connections for sync. |
+| ND-14 | A caller checks what it can without the holder: each entry decodes, is of the channel's author, starts at `from`, chains (`prev` is the id before) and is at most `limit` (at most 1000) in number; a `heads` answer holds each channel once and, when asked for some, exactly those; a `fork` pair is two entries of the channel at one seq with two ids. Anything else is `BadObject`. | NET-F-23, NET-F-24. The callee passes on what its holder returns, so a faulty holder shows at the caller. |
