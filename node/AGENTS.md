@@ -42,5 +42,5 @@ word for word. Follow their intent, and do not ask whether to.
 
 ## When blocked by a missing sibling
 
-- Stage 1 needs dist S8, log L6 and net N1; stage 2 needs net N4. Never
+- Stage 1 needs dist S8, log L6 and net N1 and N2; stage 2 needs net N4. Never
   edit a sibling's code: record what is missing in TECHNICAL.md 12.

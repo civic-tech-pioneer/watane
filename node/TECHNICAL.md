@@ -2,8 +2,8 @@
 
 How `node` does what `FUNCTIONAL.md` says. Requirements are cited as
 `NODE-F-<n>`; `net`'s as `NET-F-<n>`; sections of a sibling as
-`dist 5.12`, `net 3.1`. Section 13 lists the decisions made here, section
-12 the questions left open.
+`dist 5.12`, `net 3.1`. Section 14 lists the decisions made here, section
+13 the questions left open.
 
 No crate exists yet: stage 1 (section 9) creates it and adds it to the
 workspace.
@@ -432,7 +432,7 @@ for the participant: the home holds no participant key.
 
 | Stage | Build | Needs | Done when |
 |---|---|---|---|
-| 1 Holder | crate and workspace member; `DistHoldings`, `convert.rs`; `Node::open`, `open_keyless`, `dist`, `net`, `machine`, `close`; the wrappers with `net` off | dist S8, log L6 (keyless open, holder methods); net N1 (`Net`, `Holdings`, `Options`) | S1, S2, S3 |
+| 1 Holder | crate and workspace member; `DistHoldings`, `convert.rs`; `Node::open`, `open_keyless`, `dist`, `net`, `machine`, `close`; the wrappers with `net` off | dist S8, log L6 (keyless open, holder methods); net N1 (`Net`, `Holdings`, `Options`) and N2 (`devices`, for `machine` and the open of 5.6) | S1, S2, S3 |
 | 2 Machines | `told` and `need` in the wrappers, `installed`, `search`, `join`, `own_hints`, `confirm_own_hint`; `words.rs` | net N4 (light machines, restore, reach) | S4 to S9 |
 | 3 Program | `watane-node`: join, run, status, relay, dht; the output of 6.2 | stage 2; net N4 (relay server) | S10 to S13 |
 

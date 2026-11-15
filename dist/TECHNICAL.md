@@ -338,7 +338,7 @@ pub struct Hit {
     pub status: Status,                      // of the publisher's channel
     pub checked_at: Option<u64>,             // last_success of the publisher's channel; None for the own channel
     pub unchecked_since: Option<u64>,        // Some(last_success) when the last read of that channel failed (DIST-F-42)
-    pub via: Vec<Via>,                       // why it is in the search set; Own, Followed, then Index in key order
+    pub via: Vec<Via>,                       // why it is in the search set; Own, Followed, then Index in key order, then Kept (step 8)
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Via {
@@ -1178,6 +1178,18 @@ removal rule of 4.4 keeps every kept record.
   replaced by each slug of each given channel that has an entry, record
   or not; steps 2 to 6 unchanged; `via` is empty; `link` is the record's
   front base when there is one, else `None`.
+
+**Reads of a channel with no web host.** A kept-only record has no base,
+and an `Asked` channel has no record. For either:
+- `fetch` and `fetch_for`: when 5.11 step 4 finds no base (or, for a
+  kept-only record, at 5.7 step 4) and the stored view already holds the
+  release, the fetch goes on from the stored entries, as 5.11 step 4 does
+  after a failed read: the cached package (5.7 step 3) is used, and with
+  none the answer is `NotFollowed { channel, local_only: false }`.
+  `Fetched.link` is `None`. This is how a light machine installs a hit
+  that `node` pulled from a full machine (`node` 5.3, A46).
+- a hit (5.10) and `search_stored` of a kept-only record have `link`
+  `None`, so "Install a hit" follows nothing.
 
 A "live release of a stored channel" is found through every stored
 channel (`log.channels()`, log 5.5); dist may keep an index from package

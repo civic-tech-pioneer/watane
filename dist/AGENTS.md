@@ -27,6 +27,7 @@
    only by changing section 4 first.
 7. No async runtime, no thread, no timer, no listening socket. Step 5
    is designed (section 11, stage S7); build it only in that stage.
+   Step 8 (5.12, stage S8) likewise: the holder methods take no read lock.
 
 ## Reading the specs
 
