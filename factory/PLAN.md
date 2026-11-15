@@ -342,7 +342,11 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 - [ ] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
-  IP literal is skipped) against a base that is neither. After S53.
+  IP literal is skipped) against a base that is neither. The human chose (2026-11-15) GitHub Pages in
+  `minmax-fund`, with the same token and rules as S53 (only `watane-j-<random>` repositories the test
+  creates and deletes; the token never in output). Pages can take minutes to serve a first build:
+  the test waits with a deadline and says so when it runs out. Local (the token), behind the
+  `real-github` app feature. After S71: it publishes the channel with `--owner minmax-fund`.
 - [~] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
   chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
   derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
@@ -929,7 +933,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 ## Waiting on the human
 
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
-  (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54 needs somewhere to serve a channel for real
+  (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
   own. None of the three can run in a cloud foreman as it stands, because each needs a credential
   or a device that belongs to the human.
