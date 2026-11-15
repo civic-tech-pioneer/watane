@@ -302,6 +302,89 @@ fn ac4_idle_time_parses_ioreg_nanoseconds() {
 }
 
 #[test]
+fn ac1_screen_locked_parses_ioreg_sessions() {
+    assert_eq!(
+        driver::screen_locked(
+            r#""IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes,"CGSSessionScreenIsLocked"=Yes})"#
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        driver::screen_locked(r#""IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes})"#),
+        Some(false)
+    );
+    assert_eq!(driver::screen_locked("+-o Root"), None);
+}
+
+#[test]
+fn ac2_front_skips_locked_and_rejects_unknown_ioreg() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    if std::env::var_os("S52_IOREG_CHILD").is_some() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(driver::App::front(home.path(), &[]).is_none());
+        return;
+    }
+    for scenario in ["locked", "poll", "unknown"] {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("ioreg");
+        fs::write(
+            &script,
+            r#"#!/bin/sh
+if [ "$1" = "-c" ]; then
+    echo '"HIDIdleTime" = 0'
+elif [ "$S52_IOREG_SCENARIO" = unknown ]; then
+    echo '+-o Root'
+elif [ "$S52_IOREG_SCENARIO" = poll ] && [ ! -f "$S52_IOREG_COUNT" ]; then
+    touch "$S52_IOREG_COUNT"
+    echo '"IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes})'
+else
+    echo '"IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes,"CGSSessionScreenIsLocked"=Yes})'
+fi
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "ac2_front_skips_locked_and_rejects_unknown_ioreg",
+                "--nocapture",
+            ])
+            .env("PATH", path)
+            .env("S52_IOREG_CHILD", "1")
+            .env("S52_IOREG_SCENARIO", scenario)
+            .env("S52_IOREG_COUNT", dir.path().join("count"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if scenario == "unknown" {
+            assert!(!output.status.success());
+            assert!(
+                stderr.contains("ioreg output has no console session"),
+                "{stderr}"
+            );
+        } else {
+            assert!(output.status.success(), "{stderr}");
+            assert_eq!(
+                stderr
+                    .matches("front test skipped: the screen is locked (CGSSessionScreenIsLocked)")
+                    .count(),
+                1,
+                "{stderr}"
+            );
+            if scenario == "locked" {
+                assert!(!stderr.contains("waiting for you"), "{stderr}");
+            }
+        }
+    }
+}
+
+#[test]
 fn ac3_screen_assertions_require_front_constructor_and_ignore() {
     for file in ["gui_shell.rs", "gui_isolation.rs"] {
         let source = fs::read_to_string(

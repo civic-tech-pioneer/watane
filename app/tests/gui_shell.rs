@@ -199,7 +199,9 @@ fn ac3_closing_consent_denies_and_destroys_it() {
 fn ac4_approve_delay_and_deny_focus() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let app = App::front(home.path(), &[]);
+    let Some(app) = App::front(home.path(), &[]) else {
+        return;
+    };
     let ask = app.ask(install("Books"));
     consent(&app);
     until(&app, "consent", "document.hasFocus()");
@@ -460,7 +462,9 @@ fn ac2_background_screen_is_visible_without_focus() {
 fn ac3_reopening_an_open_mod_focuses_it() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let app = App::front(home.path(), &[]);
+    let Some(app) = App::front(home.path(), &[]) else {
+        return;
+    };
     install_books(&app, "Books", false);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     app.eval(
@@ -496,7 +500,9 @@ fn ac3_reopening_an_open_mod_focuses_it() {
 fn ac3_consent_takes_focus() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let app = App::front(home.path(), &[("WATANE_DRIVER_SCREEN", "hidden")]);
+    let Some(app) = App::front(home.path(), &[("WATANE_DRIVER_SCREEN", "hidden")]) else {
+        return;
+    };
     assert_eq!(app.screen(), json!({"mode":"front","accessory":false}));
     let ask = app.ask(install("Books"));
     consent(&app);

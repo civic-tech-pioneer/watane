@@ -58,10 +58,39 @@ pub fn idle_time(output: &str) -> Option<Duration> {
             .flatten()
     })
 }
-fn wait_for_idle() {
-    eprintln!("waiting for you to step away");
+pub fn screen_locked(output: &str) -> Option<bool> {
+    let (_, sessions) = output.split_once("\"IOConsoleUsers\"")?;
+    if sessions.contains("\"CGSSessionScreenIsLocked\"=Yes") {
+        Some(true)
+    } else if sessions.contains("\"kCGSSessionOnConsoleKey\"=Yes") {
+        Some(false)
+    } else {
+        None
+    }
+}
+fn wait_for_idle() -> bool {
+    let mut waiting = false;
     let deadline = Instant::now() + Duration::from_secs(600);
     loop {
+        let output = Command::new("ioreg")
+            .args(["-n", "Root", "-d1"])
+            .output()
+            .expect("front tests cannot read screen lock state: failed to run ioreg -n Root -d1");
+        assert!(
+            output.status.success(),
+            "front tests cannot read screen lock state: ioreg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if screen_locked(&String::from_utf8_lossy(&output.stdout)).expect(
+            "front tests cannot read screen lock state: ioreg output has no console session",
+        ) {
+            eprintln!("front test skipped: the screen is locked (CGSSessionScreenIsLocked)");
+            return false;
+        }
+        if !waiting {
+            eprintln!("waiting for you to step away");
+            waiting = true;
+        }
         assert!(
             Instant::now() < deadline,
             "front tests waited 10 minutes for at least 30 seconds of human idle time (ioreg HIDIdleTime)"
@@ -79,7 +108,7 @@ fn wait_for_idle() {
             "front tests cannot read human idle time: ioreg output has no valid HIDIdleTime in ns",
         );
         if idle >= Duration::from_secs(30) {
-            return;
+            return true;
         }
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -92,9 +121,11 @@ impl App {
     pub fn background(home: &Path, env: &[(&str, &str)]) -> App {
         Self::spawn(home, env, "background", 0)
     }
-    pub fn front(home: &Path, env: &[(&str, &str)]) -> App {
-        wait_for_idle();
-        Self::spawn(home, env, "front", 0)
+    pub fn front(home: &Path, env: &[(&str, &str)]) -> Option<App> {
+        if !wait_for_idle() {
+            return None;
+        }
+        Some(Self::spawn(home, env, "front", 0))
     }
     pub fn start_port(home: &Path, port: u16) -> App {
         Self::spawn(home, &[], "hidden", port)

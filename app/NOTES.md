@@ -429,3 +429,8 @@
 - Acceptance run (user-sim, after rebase on main): both real journeys and
   both fake journeys (`ac2_j3_github`, `ac2_j5_github`) passed; no
   `watane-j-*` repository left; the token never appeared in output.
+
+## S52 front tests
+
+- S52: Front tests now pass early on a locked screen with one explicit stderr skip line; unknown ioreg session state still panics, and focus assertions remain unchanged. All four real front tests passed locked with one skip line each; build/default tests (112), clippy and fmt pass. In the Codex sandbox the full driver suite fails before API consent-window readiness with the macOS hiservices XPC error; natively it passes (validator). No dependencies added.
+- S52 front run (app, foreman, 2026-11-15 20:14-20:20, macOS 27, unlocked, terminal in front): all four front tests pass for real (gui_isolation ac1 in 310 s, most of it waiting for 30 s of idle time; gui_shell ac3_consent_takes_focus, ac3_reopening_an_open_mod_focuses_it, ac4_approve_delay_and_deny_focus in 32 s). First run of these four. On a locked screen each skips with one visible stderr line.

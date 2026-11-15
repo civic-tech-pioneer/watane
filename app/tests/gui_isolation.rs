@@ -80,7 +80,9 @@ fn ac1_consent_stays_above_hostile_and_takes_focus() {
     );
     let home = tempfile::tempdir().unwrap();
     let listener = Listener::start();
-    let app = App::front(home.path(), &[]);
+    let Some(app) = App::front(home.path(), &[]) else {
+        return;
+    };
     install_hostile(&app, &listener);
     until(&app, "main", "document.body.dataset.ready === 'true'");
     open(&app);

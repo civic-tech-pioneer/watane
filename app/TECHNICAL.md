@@ -1237,7 +1237,10 @@ human idle time from `ioreg -c IOHIDSystem`'s `HIDIdleTime` nanoseconds,
 prints `waiting for you to step away` once to stderr, and panics after
 10 minutes instead of skipping. Idle parsing is pure and unit-tested in
 `support_selftest`. The foreman runs front tests explicitly; ordinary
-`cargo test --features driver` never runs them.
+`cargo test --features driver` never runs them. Front checks
+`ioreg -n Root -d1` before spawning and on every idle poll, and on a locked
+screen passes early with the stderr line
+`front test skipped: the screen is locked (CGSSessionScreenIsLocked)`.
 
 The hidden shell probe checks page loads, native eval, an 800 ms timer's
 latency, visibility, focus and the actual Accessory policy. Isolation tests
