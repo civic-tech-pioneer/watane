@@ -152,7 +152,11 @@ async fn respond(core: &Arc<Core>, caller: NodeKey, class: Class, request: Reque
             // a higher seq than ours: answer, then pull the list ourselves
             let (own, bytes, others) = {
                 let state = lock(&core.state);
-                let others: Vec<_> = state.list.as_ref().map_or_else(Vec::new, |l| {
+                // a list older than the caller's may name machines the
+                // caller removed: then pass on none, or an honest machine
+                // would be dropped for it (5.10)
+                let current = state.list.as_ref().filter(|l| l.seq >= seq);
+                let others: Vec<_> = current.map_or_else(Vec::new, |l| {
                     l.devices
                         .iter()
                         .map(|(k, _)| *k)

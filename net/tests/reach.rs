@@ -202,3 +202,33 @@ fn ac5_machines_learn_each_others_addresses_from_a_devices_answer() {
     );
     assert!(b.net.hello(&c.key).is_ok());
 }
+
+/// A machine whose list is older than the caller's passes on no address: the
+/// anchor that removed a machine is not told where the removed one is by an
+/// honest machine that has not pulled the new list yet, and drops nobody.
+#[test]
+fn a_callee_with_an_older_list_passes_on_no_address() {
+    let anchor = node(MemHoldings::custom(Default::default(), None, true), None);
+    let (b, c) = (
+        node(MemHoldings::empty(), None),
+        node(MemHoldings::empty(), None),
+    );
+    pair_into(&anchor, &b, Role::Full);
+    pair_into(&anchor, &c, Role::Full);
+    let b_events = b.net.events();
+    anchor.net.set_role(&c.key, Role::Light).unwrap();
+    assert!(peer_up(&b_events, c.key, 10), "b knows where c is");
+    let events = anchor.net.events();
+    let seq = anchor.net.remove_device(&c.key).unwrap().seq;
+    assert!(wait_for(5, || b
+        .net
+        .devices()
+        .is_some_and(|l| l.seq == seq)));
+    while let Ok(event) = events.recv_timeout(Duration::from_millis(500)) {
+        assert!(
+            !matches!(&event, Event::Refused { node, .. } if *node == b.key),
+            "{event:?}"
+        );
+    }
+    assert!(anchor.net.hello(&b.key).is_ok());
+}

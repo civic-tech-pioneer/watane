@@ -689,4 +689,29 @@ mod tests {
             Err(NetError::NotAnchor)
         ));
     }
+
+    /// AC5: the addresses of a `devices` answer are checked against the list
+    /// as it stands after a newer list of the same answer is taken; a machine
+    /// of no list drops the callee.
+    #[test]
+    fn ac5_a_devices_answer_names_only_machines_of_the_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let (net, seed, anchor) = replica(dir.path());
+        let (me, core) = (net.node_key(), net.core());
+        let at: std::net::SocketAddr = "10.0.0.7:4433".parse().unwrap();
+        // a machine just paired, in the newer list the answer carries
+        let (fresh, _) = key(3);
+        let (_, bytes) = list(&seed, 6, &[me, fresh]);
+        let answer = wire::devices_answer(Some(&bytes), &[(fresh, vec![at])]);
+        take_answer(core, &anchor, &answer);
+        assert!(!core.is_dropped(&anchor));
+        assert_eq!(net.devices().unwrap().seq, 6);
+        assert_eq!(core.addrs_of(&fresh), vec![at]);
+        // a machine of no list
+        let (stranger, _) = key(4);
+        let answer = wire::devices_answer(None, &[(stranger, vec![at])]);
+        take_answer(core, &anchor, &answer);
+        assert!(core.is_dropped(&anchor));
+        assert!(core.addrs_of(&stranger).is_empty());
+    }
 }

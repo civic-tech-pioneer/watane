@@ -644,9 +644,11 @@ address that worked: after a connection to, or from, a machine of the list,
 the IP address it ran over goes first into `book.json` `addrs` (at most 4),
 and at open these are the first known addresses (`add_addrs` adds after
 them). A `devices` answer passes on the callee's addresses of the other
-machines of its list (at most 32 machines, 4 each); the caller checks them (a
-machine of its list, each text a socket address, else `BadObject`) and adds
-them after the ones it knows. The dial adds the chosen relays to the address
+machines of its list (at most 32 machines, 4 each), and none when its list
+is older than the caller's `seq` (it may name a machine the caller removed);
+the caller checks them against its list after taking a newer list of the same
+answer (a machine of its list, each text a socket address, else `BadObject`)
+and adds them after the ones it knows. The dial adds the chosen relays to the address
 it dials, so two machines that share a relay meet there.
 
 With no relay and no DHT, a failure to connect across networks is
