@@ -655,8 +655,10 @@ With no relay and no DHT, a failure to connect across networks is
 `Unreachable` with the cause "no direct path; choose a relay or turn on the
 DHT" (NET-F-28); the error and the keeper's `Event::Unreachable` (once for a
 machine until it connects again; the event's cause starts "node <short>: ")
-carry it. With a relay or the DHT on the cause says that no known address,
-relay or DHT lookup answered. A dial gives up within the request deadline.
+carry it. With only a relay chosen the cause is "no direct path and no answer
+through the relay; turn on the DHT"; with only the DHT on, "no direct path and
+no answer through the DHT; choose a relay"; with both, "the machine did not
+answer at any known address, by the relay or by the DHT". A dial gives up within the request deadline.
 
 `watane-node` with `relay_server` runs iroh-relay for the participant's own
 machines (`iroh_relay::server`, HTTP and no TLS: the relay forwards only QUIC

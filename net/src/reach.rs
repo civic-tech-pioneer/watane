@@ -51,11 +51,15 @@ pub(crate) fn services(
 /// Why a dial failed (NET-F-28, NET-F-32): with no relay and no DHT chosen
 /// the participant is told what to choose.
 pub(crate) fn no_path_cause(relays: bool, dht: bool) -> String {
-    if relays || dht {
-        "the machine did not answer at any known address, by the relay or by the DHT".to_owned()
-    } else {
-        "no direct path; choose a relay or turn on the DHT".to_owned()
+    match (relays, dht) {
+        (false, false) => "no direct path; choose a relay or turn on the DHT",
+        (true, false) => "no direct path and no answer through the relay; turn on the DHT",
+        (false, true) => "no direct path and no answer through the DHT; choose a relay",
+        (true, true) => {
+            "the machine did not answer at any known address, by the relay or by the DHT"
+        }
     }
+    .to_owned()
 }
 
 /// The switches of `book.json`: `on`, `relays`, `dht`.
@@ -264,16 +268,25 @@ mod tests {
         assert_eq!((s.mdns, s.relays.len(), s.dht), (false, 0, false));
     }
 
-    /// AC7: only with neither a relay nor the DHT does the cause say what to choose.
+    /// AC7: the cause names only what the participant has not yet chosen.
     #[test]
     fn ac7_the_cause_follows_what_is_chosen() {
         assert_eq!(
             no_path_cause(false, false),
             "no direct path; choose a relay or turn on the DHT"
         );
-        for (relays, dht) in [(true, false), (false, true), (true, true)] {
-            assert!(!no_path_cause(relays, dht).contains("choose a relay"));
-        }
+        assert_eq!(
+            no_path_cause(true, false),
+            "no direct path and no answer through the relay; turn on the DHT"
+        );
+        assert_eq!(
+            no_path_cause(false, true),
+            "no direct path and no answer through the DHT; choose a relay"
+        );
+        assert_eq!(
+            no_path_cause(true, true),
+            "the machine did not answer at any known address, by the relay or by the DHT"
+        );
     }
 
     /// AC4: the stored addresses round trip, at most four per machine, only
