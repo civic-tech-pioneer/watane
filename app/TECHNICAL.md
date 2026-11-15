@@ -1240,7 +1240,8 @@ prints `waiting for you to step away` once to stderr, and panics after
 `cargo test --features driver` never runs them. Front checks
 `ioreg -n Root -d1` before spawning and on every idle poll, and on a locked
 screen passes early with the stderr line
-`front test skipped: the screen is locked (CGSSessionScreenIsLocked)`.
+`front test skipped: the screen is locked (CGSSessionScreenIsLocked)`,
+visible even without `--nocapture`.
 
 The hidden shell probe checks page loads, native eval, an 800 ms timer's
 latency, visibility, focus and the actual Accessory policy. Isolation tests

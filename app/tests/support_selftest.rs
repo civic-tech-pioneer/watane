@@ -353,8 +353,9 @@ fi
             .args([
                 "--exact",
                 "ac2_front_skips_locked_and_rejects_unknown_ioreg",
-                "--nocapture",
             ])
+            // Keep panic diagnostics on stderr; successful skips must bypass capture.
+            .args((scenario == "unknown").then_some("--nocapture"))
             .env("PATH", path)
             .env("S52_IOREG_CHILD", "1")
             .env("S52_IOREG_SCENARIO", scenario)

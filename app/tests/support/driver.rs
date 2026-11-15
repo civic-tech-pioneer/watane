@@ -84,7 +84,13 @@ fn wait_for_idle() -> bool {
         if screen_locked(&String::from_utf8_lossy(&output.stdout)).expect(
             "front tests cannot read screen lock state: ioreg output has no console session",
         ) {
-            eprintln!("front test skipped: the screen is locked (CGSSessionScreenIsLocked)");
+            // Bypass libtest capture so a successful skip stays visible.
+            #[allow(clippy::explicit_write)]
+            writeln!(
+                std::io::stderr(),
+                "front test skipped: the screen is locked (CGSSessionScreenIsLocked)"
+            )
+            .unwrap();
             return false;
         }
         if !waiting {
