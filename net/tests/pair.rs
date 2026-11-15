@@ -100,7 +100,27 @@ fn s3_bad_codes_and_a_no_change_nothing() {
         assert!(joiner.net.devices().is_none(), "{what}");
     };
 
+    // the code is spent on arrival: a second use while the participant has
+    // not answered yet is refused
+    let events = laptop.net.events();
+    let net = joiner.net.clone();
+    let first = code.clone();
+    let pending = std::thread::spawn(move || net.join(&first, false));
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap(),
+        Event::JoinAsked { .. }
+    ));
+    let other = node(MemHoldings::new(fx), None);
+    let r = other.net.join(&code, false);
+    assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
+    assert!(other.net.devices().is_none());
+    laptop.net.answer_join(&joiner.key, false);
+    let r = pending.join().unwrap();
+    assert!(matches!(r, Err(NetError::Declined)), "{r:?}");
+    unchanged("no");
+
     // a no, and then a second use of the spent code
+    let code = laptop.net.pair_code(Role::Full).unwrap();
     let r = try_pair(&laptop, &joiner, code.clone(), false, Some(false));
     assert!(matches!(r, Err(NetError::Declined)), "{r:?}");
     unchanged("no");
@@ -350,7 +370,7 @@ fn s10_a_machine_that_has_not_seen_the_anchor_stops_trusting_the_others() {
 
     assert_eq!(net.class_of(&second), Class::Unknown);
     let heads = array(&[text("heads"), array(&[])]);
-    let (code, _) = answer_err_of(raw_call(second_seed, &key, addr, &heads));
+    let (code, _) = answer_err(&raw_call(second_seed, &key, addr, &heads));
     assert_eq!(code, "not_allowed");
 
     // the anchor calls: the expiry starts again, either way (ND-17)
@@ -362,8 +382,4 @@ fn s10_a_machine_that_has_not_seen_the_anchor_stops_trusting_the_others() {
     let book: serde_json::Value =
         serde_json::from_slice(&fs::read(net_dir.join("book.json")).unwrap()).unwrap();
     assert!(book["anchor_seen"].as_u64().unwrap() >= now);
-}
-
-fn answer_err_of(answer: Vec<u8>) -> (String, String) {
-    answer_err(&answer)
 }

@@ -523,13 +523,15 @@ mod tests {
             assert!(!core.accept_list(&bytes).unwrap());
             assert_eq!(net.devices().unwrap(), before);
         }
-        // a list that another key signed, naming the anchor: it does not verify
+        // a list naming the anchor whose signature another key made: it does
+        // not verify
         let (_, other_seed) = key(2);
-        let (_, mut forged) = list(&other_seed, 9, &[me]);
-        let (_, good) = list(&seed, 9, &[me]);
+        let (_, mut forged) = list(&seed, 9, &[me]);
+        let (_, other) = list(&other_seed, 9, &[me]);
         let n = forged.len();
-        forged[n - 64..].copy_from_slice(&good[good.len() - 64..]);
+        forged[n - 64..].copy_from_slice(&other[other.len() - 64..]);
         assert!(core.accept_list(&forged).is_err());
+        assert_eq!(net.devices().unwrap(), before);
         // a list that does not name the stored anchor
         let (_, bytes) = list(&other_seed, 9, &[me]);
         assert!(matches!(
@@ -587,6 +589,37 @@ mod tests {
             Net::open(&net_dir, Arc::new(Holder(false)), Options::default()),
             Err(NetError::Corrupt { .. })
         ));
+    }
+
+    /// 5.5: the anchor's list never expires for the anchor, whatever
+    /// `anchor_seen` says; the same list expires on a replica.
+    #[test]
+    fn the_anchor_never_expires_for_itself() {
+        let (other, _) = key(3);
+        let stale = |seed: &[u8; 32]| {
+            let anchor = crate::key::public_of(seed);
+            let mut devices = vec![(anchor, Role::Full), (other, Role::Light)];
+            devices.sort_by_key(|(k, _)| *k);
+            DeviceList {
+                anchor,
+                seq: 2,
+                time: now_ms() - 2 * DAY_MS,
+                expires_days: 1,
+                devices,
+            }
+            .sign(seed)
+            .unwrap()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let seed = *open(dir.path(), true).core().seed;
+        fs::write(dir.path().join("net/devices"), stale(&seed)).unwrap();
+        assert_eq!(open(dir.path(), true).class_of(&other), Class::Trusted);
+
+        let dir = tempfile::tempdir().unwrap();
+        let (_, anchor_seed) = key(1);
+        drop(open(dir.path(), false));
+        fs::write(dir.path().join("net/devices"), stale(&anchor_seed)).unwrap();
+        assert_eq!(open(dir.path(), false).class_of(&other), Class::Unknown);
     }
 
     #[test]

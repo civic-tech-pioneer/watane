@@ -44,6 +44,21 @@ async fn closed_soon(conn: &Connection) -> bool {
         .is_ok()
 }
 
+/// A `hello` on `conn` is answered `ok` within `secs` seconds (asked every
+/// 300 ms; anything but `ok` or `over_budget` fails at once).
+async fn ok_within(conn: &Connection, secs: u64) -> bool {
+    let end = std::time::Instant::now() + Duration::from_secs(secs);
+    loop {
+        match code_of(ask(conn, &hello_request()).await).as_str() {
+            "ok" => return true,
+            "over_budget" if std::time::Instant::now() < end => {
+                tokio::time::sleep(Duration::from_millis(300)).await
+            }
+            _ => return false,
+        }
+    }
+}
+
 /// A server of `limits` that trusts the key of seed 200, and one that trusts nobody.
 fn servers(limits: Limits) -> (Node, Node) {
     let fx = fixture();
@@ -105,8 +120,9 @@ fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
             assert_eq!(open.holdings.calls(), 0);
         }
 
-        // an unknown connection beyond the pool
-        let (open, trusted) = &pooled;
+        // an unknown connection beyond the pool; a trusted key is not in the
+        // pool, so the same server still serves it
+        let (_, open) = &pooled;
         let mut held = Vec::new();
         let mut eps = Vec::new();
         for seed in 110..114u8 {
@@ -119,9 +135,8 @@ fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
         }
         let fourth = connect(&eps[3], open).await;
         assert!(closed_soon(&fourth).await);
-        // a trusted key is not in the pool
         let ep = endpoint(200).await;
-        let conn = connect(&ep, trusted).await;
+        let conn = connect(&ep, open).await;
         assert_eq!(code_of(ask(&conn, &hello_request()).await), "ok");
         assert_eq!(open.holdings.calls(), 0);
     });
@@ -138,7 +153,10 @@ fn s9_the_byte_budget_of_unknown_peers_empties_and_refills() {
         for (server, seed, spent) in [(&open, 120u8, true), (&trusted, 200u8, false)] {
             let ep = endpoint(seed).await;
             let conn = connect(&ep, server).await;
-            assert_eq!(code_of(ask(&conn, &hello_request()).await), "ok");
+            // the bytes iroh moves after the handshake (MTU probes and the
+            // like) count too: on a bucket this small they may spend it, so
+            // the first hello may wait for a refill
+            assert!(ok_within(&conn, 3).await, "seed {seed}: first hello");
             // about 16 KiB of a request that is no request
             let big = code_of(ask(&conn, &vec![0xff; 16_000]).await);
             // most of it arrived before the stream was accepted: the unknown
@@ -154,8 +172,7 @@ fn s9_the_byte_budget_of_unknown_peers_empties_and_refills() {
                 "seed {seed}"
             );
             if spent {
-                tokio::time::sleep(Duration::from_millis(1600)).await;
-                assert_eq!(code_of(ask(&conn, &hello_request()).await), "ok");
+                assert!(ok_within(&conn, 3).await, "the bucket did not refill");
             }
         }
         assert_eq!(open.holdings.calls(), 0);
