@@ -134,7 +134,7 @@ fn log_chain(count: u64, body: &[u8]) -> (PublicKey, Vec<Entry>, [u8; 32]) {
         log.append("note", &[body, &i.to_be_bytes()].concat())
             .unwrap();
     }
-    let me = log.identity();
+    let me = log.identity().unwrap();
     let entries = log.entries(&me, 0, count as usize).unwrap();
     let seed: [u8; 32] = std::fs::read(logdir.join("identity.key"))
         .unwrap()
