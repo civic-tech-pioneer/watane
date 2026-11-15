@@ -199,12 +199,13 @@ fn s5_alice_publishes_and_the_server_has_it_within_seconds() {
     laptop
         .net
         .told(&chan(x), 50, &watane_log::EntryId::from_bytes([7u8; 32]));
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(stays(500, || server.holdings.ingests.lock().unwrap().len()
+        == ingests));
     laptop.holdings.append(entries[1].clone());
     laptop.net.told(&chan(x), 1, &entries[0].id());
-    std::thread::sleep(Duration::from_secs(2));
+    assert!(stays(500, || server.holdings.ingests.lock().unwrap().len()
+        == ingests));
     assert_eq!(server.holdings.chains()[&chan(x)].len(), 1);
-    assert_eq!(server.holdings.ingests.lock().unwrap().len(), ingests);
     // the true hint still works: the topic was not lost
     laptop.net.told(&chan(x), 1, &entries[1].id());
     assert!(wait_for(5, || server.holdings.chains()[&chan(x)].len() == 2));
@@ -228,8 +229,7 @@ fn s6_the_server_catches_up_after_being_offline() {
     laptop.net.told(&chan(x), 1, &entries[1].id());
     laptop.holdings.append(entries[2].clone());
     laptop.net.told(&chan(x), 2, &entries[2].id());
-    std::thread::sleep(Duration::from_millis(500));
-    assert_eq!(server.holdings.chains()[&chan(x)].len(), 1);
+    assert!(stays(300, || server.holdings.chains()[&chan(x)].len() == 1));
     server.net.set_options(options(None)).unwrap();
     assert!(
         wait_for(5, || server.holdings.chains()[&chan(x)].len() == 3),
@@ -308,71 +308,80 @@ fn s7_bad_objects_are_refused_and_the_machine_dropped() {
         ("bytes that are not the hash", vec![], Some(lie), 100),
         ("more bytes than wanted", vec![], Some(truth), 99),
     ];
-    for (i, (name, entries, blob, wanted)) in cases.into_iter().enumerate() {
-        // the node trusting the fake is the anchor of its own list, which
-        // pulls only channels its holder holds (NET-F-21): it holds the first
-        // entry of the channel the bad entries are offered for
-        let held: Vec<Entry> = if wanted > 0 {
-            vec![]
-        } else {
-            good[..1].to_vec()
-        };
-        let holder = if held.is_empty() {
-            MemHoldings::empty()
-        } else {
-            holding(&[(cx, held.clone())], false)
-        };
-        let answer = entries_answer_of(&entries);
-        let heads = heads.clone();
-        let (n, fake, count) = with_fake(
-            60 + i as u8,
-            holder.clone(),
-            move |op, _| match op {
-                "heads" => Some(if wanted > 0 {
-                    // nothing to pull: the channel is held up to date
-                    entries_answer_of(&[])
+    // the cases are independent machines: run them side by side
+    let (good, heads) = (&good, &heads);
+    std::thread::scope(|scope| {
+        for (i, (name, entries, blob, wanted)) in cases.into_iter().enumerate() {
+            scope.spawn(move || {
+                // the node trusting the fake is the anchor of its own list, which
+                // pulls only channels its holder holds (NET-F-21): it holds the first
+                // entry of the channel the bad entries are offered for
+                let held: Vec<Entry> = if wanted > 0 {
+                    vec![]
                 } else {
-                    heads.clone()
-                }),
-                "entries" => Some(answer.clone()),
-                _ => None,
-            },
-            blob,
-        );
-        if wanted > 0 {
-            holder.want_blob(small_id, wanted);
+                    good[..1].to_vec()
+                };
+                let holder = if held.is_empty() {
+                    MemHoldings::empty()
+                } else {
+                    holding(&[(cx, held.clone())], false)
+                };
+                let answer = entries_answer_of(&entries);
+                let heads = heads.clone();
+                let (n, fake, count) = with_fake(
+                    60 + i as u8,
+                    holder.clone(),
+                    move |op, _| match op {
+                        "heads" => Some(if wanted > 0 {
+                            // nothing to pull: the channel is held up to date
+                            entries_answer_of(&[])
+                        } else {
+                            heads.clone()
+                        }),
+                        "entries" => Some(answer.clone()),
+                        _ => None,
+                    },
+                    blob,
+                );
+                if wanted > 0 {
+                    holder.want_blob(small_id, wanted);
+                }
+                let events = n.net.events();
+                // the node dials the fake from the next tick on; it was told the address
+                let cause = refused(&events, &fake.key);
+                assert!(cause.is_some(), "{name}: not refused");
+                let cause = cause.unwrap();
+                // NET-F-32: the cause names the machine by its short key
+                assert!(cause.contains(&fake.key.short()), "{name}: {cause}");
+                if name == "bytes that are not the hash" {
+                    // in watane's words, not iroh's
+                    assert_eq!(
+                        cause,
+                        format!(
+                            "package {} from {} does not match its hash",
+                            hex(&small_id.0[..4]),
+                            fake.key.short()
+                        ),
+                    );
+                }
+                assert!(
+                    raws(&holder.chains().get(&cx).cloned().unwrap_or_default()) == raws(&held)
+                        && holder.ingests.lock().unwrap().is_empty(),
+                    "{name}: the holder was given entries"
+                );
+                assert!(holder.stored_blobs.lock().unwrap().is_empty(), "{name}");
+                // dropped: no further requests reach the fake
+                // (a redial after the shortest backoff, 500 ms plus a tick, would show)
+                std::thread::sleep(Duration::from_millis(150));
+                let seen = count.load(Ordering::SeqCst);
+                assert!(
+                    stays(1100, || count.load(Ordering::SeqCst) == seen),
+                    "{name}: still synced"
+                );
+                assert!(events.try_iter().all(|e| !matches!(e, Event::PeerUp(_))));
+            });
         }
-        let events = n.net.events();
-        // the node dials the fake from the next tick on; it was told the address
-        let cause = refused(&events, &fake.key);
-        assert!(cause.is_some(), "{name}: not refused");
-        let cause = cause.unwrap();
-        // NET-F-32: the cause names the machine by its short key
-        assert!(cause.contains(&fake.key.short()), "{name}: {cause}");
-        if name == "bytes that are not the hash" {
-            // in watane's words, not iroh's
-            assert_eq!(
-                cause,
-                format!(
-                    "package {} from {} does not match its hash",
-                    hex(&small_id.0[..4]),
-                    fake.key.short()
-                ),
-            );
-        }
-        assert!(
-            raws(&holder.chains().get(&cx).cloned().unwrap_or_default()) == raws(&held)
-                && holder.ingests.lock().unwrap().is_empty(),
-            "{name}: the holder was given entries"
-        );
-        assert!(holder.stored_blobs.lock().unwrap().is_empty(), "{name}");
-        // dropped: no further requests reach the fake
-        std::thread::sleep(Duration::from_millis(500));
-        let seen = count.load(Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(1500));
-        assert_eq!(count.load(Ordering::SeqCst), seen, "{name}: still synced");
-        assert!(events.try_iter().all(|e| !matches!(e, Event::PeerUp(_))));
-    }
+    });
 }
 
 /// S9 (a): entries nobody asked for are not stored.
@@ -436,8 +445,10 @@ fn s9_requests_are_answered_from_the_holder_only() {
             .unwrap()
             .is_empty()
     );
-    std::thread::sleep(Duration::from_secs(1));
-    assert_eq!(third.holdings.calls(), before, "a third node was asked");
+    assert!(
+        stays(300, || third.holdings.calls() == before),
+        "a third node was asked"
+    );
 }
 
 /// AC6: an unknown node's blob download and gossip join fail, and its
@@ -511,7 +522,7 @@ fn ac6_unknown_nodes_get_nothing_on_blobs_and_gossip() {
         hint.extend([1u8; 32]);
         let (sender, _rx) = sub.split();
         let _ = sender.broadcast(hint.into()).await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         let _ = router.shutdown().await;
     });
     assert_eq!(target.holdings.calls(), calls, "a hint reached the holder");
@@ -648,4 +659,36 @@ fn ac5_a_package_is_served_by_reference_and_not_once_the_holder_drops_it() {
         let again = iroh_blobs::get::request::get_blob(conn, hash).bytes().await;
         assert!(again.is_err(), "served after the holder dropped it");
     });
+}
+
+/// S68-1 AC2: turning net off (`set_options`) and `close` return within a
+/// second with kept connections open, and the other side sees them end.
+#[test]
+fn ac2_close_and_turn_off_are_fast_with_kept_connections_open() {
+    let x = [61u8; 32];
+    let entries = chain(x, 2);
+    let a = node(holding(&[(chan(x), entries.clone())], true), None);
+    let b = node(MemHoldings::empty(), None);
+    let c = node(MemHoldings::empty(), None);
+    let (ea, eb) = (a.net.events(), b.net.events());
+    pair_into(&a, &b, Role::Full);
+    pair_into(&a, &c, Role::Full);
+    assert_eq!(b.holdings.raws(&chan(x)), raws(&entries));
+    let bound = Duration::from_secs(1);
+
+    let t = std::time::Instant::now();
+    b.net.set_options(off()).unwrap();
+    let turned_off = t.elapsed();
+    assert!(turned_off < bound, "set_options(off) took {turned_off:?}");
+    assert!(b.net.addrs().is_empty());
+    assert!(wait_for(5, || ea
+        .try_iter()
+        .any(|e| matches!(e, Event::PeerDown(k) if k == b.key))));
+
+    drop(c);
+    let t = std::time::Instant::now();
+    a.net.close();
+    let closed = t.elapsed();
+    assert!(closed < bound, "close took {closed:?}");
+    drop(eb);
 }

@@ -67,7 +67,7 @@ fn ac5_hello_from_a_trusted_and_an_unknown_node() {
 
 #[test]
 fn ac5_heads_all_and_some() {
-    let fx = fixture();
+    let fx = fixture_big();
     let (a, b) = pair(fx);
     let all = b.net.heads_of(&a.key, &[]).unwrap();
     let expected: Vec<_> = fx.chains.keys().map(|c| (*c, head(fx, c))).collect();
@@ -97,7 +97,7 @@ fn ac5_entries_in_original_bytes() {
 
 #[test]
 fn ac5_an_answer_over_4_mib_is_cut_to_fit() {
-    let fx = fixture();
+    let fx = fixture_big();
     let (a, b) = pair(fx);
     let got = b.net.entries_of(&a.key, &fx.cbig, 0, 1000).unwrap();
     let all = &fx.chains[&fx.cbig];
@@ -116,7 +116,7 @@ fn ac5_an_answer_over_4_mib_is_cut_to_fit() {
 
 #[test]
 fn ac5_never_more_than_1000_entries() {
-    let fx = fixture();
+    let fx = fixture_big();
     let (a, b) = pair(fx);
     let got = b.net.entries_of(&a.key, &fx.c1200, 0, 5000).unwrap();
     assert_eq!(got.len(), 1000);

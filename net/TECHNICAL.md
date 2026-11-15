@@ -826,6 +826,11 @@ N4 part 1 notes (built, S67):
 - No `Limits` field is new; `hello`'s ops now name `query`.
 - Tests: `tests/light.rs` (S8, S9 query part, S12, the anchor, the causes),
   unit tests in `light.rs` and `wire.rs`.
+- Turning net off (`set_options` with `on` false, `close`) ends every kept
+  connection with an application close code, then waits at most `CLOSE_WAIT`
+  (500 ms, `lib.rs`) for the router and endpoint to finish closing; the keeper
+  and the blobs hook are aborted first, the router is told to stop at once and
+  ends by itself on the runtime if the wait runs out.
 
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.

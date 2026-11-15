@@ -88,7 +88,7 @@ fn s2_server_joins_with_a_code_and_alice_confirms() {
 fn s3_bad_codes_and_a_no_change_nothing() {
     let fx = fixture();
     let quick = Limits {
-        pair_deadline: Duration::from_secs(1),
+        pair_deadline: Duration::from_millis(600),
         ..Limits::default()
     };
     let laptop = node(MemHoldings::anchor(fx), Some(quick));
@@ -137,7 +137,8 @@ fn s3_bad_codes_and_a_no_change_nothing() {
     unchanged("wrong");
 
     // an expired code
-    std::thread::sleep(Duration::from_millis(2000));
+    // the code lives as long as the (shortened) pair deadline
+    std::thread::sleep(Duration::from_millis(650));
     let r = try_pair(&laptop, &joiner, fresh, false, None);
     assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
     unchanged("expired");
@@ -206,7 +207,8 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     let answer = raw_call(seed, &b.key, addr, &hello_request());
     assert_eq!(*answer.last().unwrap(), NULL);
     let mut keys: Vec<[u8; 32]> = fx.chains.keys().map(|k| *k.as_bytes()).collect();
-    keys.push(public_of([9; 32]));
+    keys.push(*fx.c1200.as_bytes());
+    keys.push(*fx.cbig.as_bytes());
     for key in keys {
         assert!(!answer.windows(32).any(|w| w == key), "a key is in hello");
     }

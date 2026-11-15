@@ -68,13 +68,23 @@ pub mod cbor {
     }
 }
 
+/// The key pair of a seed: deriving it costs a scalar multiplication, which
+/// is slow in a debug build, and a chain signs with one seed many times.
+fn keypair(seed: [u8; 32]) -> ed25519_compact::KeyPair {
+    static PAIRS: Mutex<BTreeMap<[u8; 32], ed25519_compact::KeyPair>> = Mutex::new(BTreeMap::new());
+    PAIRS
+        .lock()
+        .unwrap()
+        .entry(seed)
+        .or_insert_with(|| ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)))
+        .clone()
+}
+
 pub fn sign(seed: [u8; 32], msg: &[u8]) -> [u8; 64] {
-    *ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed))
-        .sk
-        .sign(msg, None)
+    *keypair(seed).sk.sign(msg, None)
 }
 pub fn public_of(seed: [u8; 32]) -> [u8; 32] {
-    *ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).pk
+    *keypair(seed).pk
 }
 
 /// A signed entry, by hand.
@@ -104,15 +114,36 @@ pub fn entry_bytes(
     array(&all)
 }
 
-/// A chain of `count` small entries, signed by hand.
+/// A chain of `count` small entries, signed by hand. An entry's id is the
+/// BLAKE3 hash of its bytes, so the chain is signed in a row and decoded (which
+/// verifies each signature, slow in a debug build) on all cores after.
 pub fn chain(seed: [u8; 32], count: u64) -> Vec<Entry> {
-    let mut out: Vec<Entry> = Vec::new();
+    chain_of(seed, count, b"x")
+}
+
+/// `chain` with a body of each entry's own.
+pub fn chain_of(seed: [u8; 32], count: u64, body: &[u8]) -> Vec<Entry> {
+    let mut raws: Vec<Vec<u8>> = Vec::new();
+    let mut prev: Option<[u8; 32]> = None;
     for seq in 0..count {
-        let prev = out.last().map(|e| *e.id().as_bytes());
-        let raw = entry_bytes(seed, seq, prev.as_ref(), seq, "note", b"x");
-        out.push(Entry::decode(&raw).unwrap());
+        let raw = entry_bytes(seed, seq, prev.as_ref(), seq, "note", body);
+        prev = Some(*blake3::hash(&raw).as_bytes());
+        raws.push(raw);
     }
-    out
+    let per = raws.len().div_ceil(4).max(1);
+    std::thread::scope(|scope| {
+        let parts: Vec<_> = raws
+            .chunks(per)
+            .map(|part| {
+                scope.spawn(move || {
+                    part.iter()
+                        .map(|raw| Entry::decode(raw).unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        parts.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    })
 }
 
 pub struct Fixture {
@@ -144,13 +175,36 @@ fn log_chain(count: u64, body: &[u8]) -> (PublicKey, Vec<Entry>, [u8; 32]) {
     (me, entries, seed)
 }
 
-/// Signed once per test binary: appending to a log syncs to disk.
+/// Signed once per test binary: appending to a log syncs to disk. The two
+/// big chains (`cbig`, `c1200`) are in `chains` of `fixture_big` only: they
+/// cost seconds to sign in a debug build, and few tests need them.
 pub fn fixture() -> &'static Fixture {
     static FX: std::sync::OnceLock<Fixture> = std::sync::OnceLock::new();
-    FX.get_or_init(make_fixture)
+    FX.get_or_init(|| make_fixture(false))
 }
 
-fn make_fixture() -> Fixture {
+/// `fixture` with the two big chains.
+pub fn fixture_big() -> &'static Fixture {
+    static FX: std::sync::OnceLock<Fixture> = std::sync::OnceLock::new();
+    FX.get_or_init(|| make_fixture(true))
+}
+
+fn make_fixture(with_big: bool) -> Fixture {
+    // the two long chains take most of the time: build them on their own threads
+    let big = std::thread::spawn(move || {
+        if with_big {
+            chain_of([8u8; 32], 70, &vec![7u8; 60_000])
+        } else {
+            vec![]
+        }
+    });
+    let long = std::thread::spawn(move || {
+        if with_big {
+            chain([9u8; 32], 1200)
+        } else {
+            vec![]
+        }
+    });
     let (c1, e1, _) = log_chain(5, b"one");
     let (c2, e2, _) = log_chain(3, b"two");
     let (cf, ef, seed) = log_chain(3, b"forked");
@@ -165,17 +219,20 @@ fn make_fixture() -> Fixture {
     ))
     .unwrap();
     assert_ne!(other.id(), ef[1].id());
-    let (cbig, ebig, _) = log_chain(70, &vec![7u8; 60_000]);
+    let ebig = big.join().unwrap();
+    let cbig = PublicKey::from_bytes(&public_of([8u8; 32])).unwrap();
     let seed1200 = [9u8; 32];
     let c1200 = PublicKey::from_bytes(&public_of(seed1200)).unwrap();
-    let e1200 = chain(seed1200, 1200);
+    let e1200 = long.join().unwrap();
     let absent = PublicKey::from_bytes(&public_of([3u8; 32])).unwrap();
     let mut chains = BTreeMap::new();
     chains.insert(c1, e1);
     chains.insert(c2, e2);
     chains.insert(cf, ef.clone());
-    chains.insert(cbig, ebig);
-    chains.insert(c1200, e1200);
+    if with_big {
+        chains.insert(cbig, ebig);
+        chains.insert(c1200, e1200);
+    }
     Fixture {
         c1,
         c2,
@@ -563,14 +620,15 @@ pub fn pair_unsettled(
 
 /// Wait until the holders of these nodes have not been called for a while.
 pub fn settle(nodes: &[&Node]) {
+    // quiet: the holders' call counts did not change over 300 ms (6 readings 50 ms apart)
     let mut last: Vec<usize> = vec![];
     let mut same = 0;
-    for _ in 0..100 {
-        std::thread::sleep(Duration::from_millis(300));
+    for _ in 0..600 {
+        std::thread::sleep(Duration::from_millis(50));
         let now: Vec<usize> = nodes.iter().map(|n| n.holdings.calls()).collect();
         if now == last {
             same += 1;
-            if same >= 3 {
+            if same >= 6 {
                 return;
             }
         } else {
@@ -830,6 +888,19 @@ pub fn wait_for(secs: u64, mut f: impl FnMut() -> bool) -> bool {
     while std::time::Instant::now() < end {
         if f() {
             return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    f()
+}
+
+/// A negative check: `f` stays true for `millis` ms, looked at every 50 ms
+/// (the window is what is tested: something that must not happen).
+pub fn stays(millis: u64, mut f: impl FnMut() -> bool) -> bool {
+    let end = std::time::Instant::now() + Duration::from_millis(millis);
+    while std::time::Instant::now() < end {
+        if !f() {
+            return false;
         }
         std::thread::sleep(Duration::from_millis(50));
     }

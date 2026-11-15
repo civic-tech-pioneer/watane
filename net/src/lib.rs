@@ -37,6 +37,9 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+/// How long turning net off waits for the router and endpoint to finish closing.
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
     Unknown,
@@ -338,9 +341,13 @@ impl Net {
             for task in &current.tasks {
                 task.abort();
             }
-            self.runtime()?
-                .block_on(async { current.router.shutdown().await })
-                .ok();
+            self.core.close_links();
+            // The router and the endpoint are told to stop at once; the wait for
+            // the other side's goodbyes is bounded, and what is left of it ends
+            // by itself on the runtime.
+            let _ = self.runtime()?.block_on(async {
+                tokio::time::timeout(CLOSE_WAIT, current.router.shutdown()).await
+            });
         }
         if options.on {
             let builder =

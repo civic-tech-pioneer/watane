@@ -74,6 +74,14 @@ impl Core {
             .map(|l| l.conn.clone())
     }
 
+    /// Turning net off: end every kept connection with an application close
+    /// code, so the other side sees it end (`PeerDown`) at once.
+    pub(crate) fn close_links(&self) {
+        for link in lock(&self.links).values() {
+            link.conn.close(0u32.into(), b"net turned off");
+        }
+    }
+
     pub(crate) fn is_dropped(&self, node: &NodeKey) -> bool {
         lock(&self.dropped).contains(node)
     }
