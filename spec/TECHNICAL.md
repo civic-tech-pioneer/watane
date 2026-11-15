@@ -26,8 +26,8 @@ Each subsystem is one folder beside `spec/`, in one git repository.
 | `app` | Gives the participant a window, and the one place for every approval. | `host`, `dist`; `node` from step 8 | the desktop app | 2 |
 | `log` | Makes statements that others can verify: the identity and the signed channel. | none | none | 3 |
 | `dist` | Moves releases between people: publish, follow, find. | `log`, `pkg` | none | 3, 4 |
-| `net` | Connects machines directly: node keys, classes, the wire, pairing, sync (`PEERS.md`). | `log` | none | 7 |
-| `node` | Joins `dist` and `net`: the holder, the sync loops, the always-on program. | `dist`, `net` | `watane-node` | 7 |
+| `net` | Connects machines directly: node keys, classes, the wire, pairing, sync (`PEERS.md`). | `log` | none | 8 |
+| `node` | Joins `dist` and `net`: the holder, the sync loops, the always-on program. | `dist`, `net` | `watane-node` | 8 |
 
 ```text
 programs     watane-dev        watane        desktop app      watane-node
@@ -286,10 +286,12 @@ J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
 `app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
 repository.
 
-Step 8's architecture is decided (`PEERS.md`, `net/VISION.md`,
-`net/FUNCTIONAL.md`, `net/TECHNICAL.md`; W31 to W33). Its design slice
-writes the rest: the `node` folder, the holder methods and the keyless open
-in `dist` and `log`, and the views in `app`. W31 changes the link parser
+Step 8 is designed (`PEERS.md`, `net/VISION.md`, `net/FUNCTIONAL.md`,
+`net/TECHNICAL.md`; W31 to W33; S59): `node/` (the holder over `dist`, the
+calls to `net`, `watane-node`; node stages 1 to 3), the keyless open in
+`log/TECHNICAL.md` 5.5 (stage L6), the keyless open and the holder methods
+in `dist/TECHNICAL.md` 5.12 (stage S8), and the views in
+`app/TECHNICAL.md` 9.8 (stage G). W31 changes the link parser
 now, before any second scheme is published.
 
 ## 10. Reference material

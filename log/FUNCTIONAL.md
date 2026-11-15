@@ -64,6 +64,17 @@ No new function. `dist` reads the status of each channel that an index
 names (F-FIND-4) and reports a compromised one (J4) through LOG-F-16 and
 LOG-F-19. New statement kinds of an index (W15) need no change in `log`.
 
+## Step 8: Own machines
+
+A replica among the participant's own machines holds no identity (spec
+W33, F-OWN-3).
+
+- **LOG-F-22** When the caller opens a directory with no identity, `log` shall create no key, and shall read, verify and store channels as with an identity. Traces: F-OWN-3, J8.
+- **LOG-F-23** If a directory opened with no identity holds a key file, then `log` shall refuse the open, name the file, and leave it unchanged. Traces: F-OWN-3, F-QUAL-3.
+- **LOG-F-24** While `log` holds no identity, it shall refuse each signature, backup and restore, and name the cause. Traces: F-OWN-3, W33.
+- **LOG-F-25** When the caller deletes an identity that signed no entry, `log` shall remove its key, and hold no identity from then on. If the identity signed an entry, then `log` shall refuse and keep it. Traces: F-OWN-3, F-PUB-7.
+- **LOG-F-26** `log` shall list the authors of every stored channel. Traces: F-OWN-4.
+
 ## Acceptance scenarios
 
 Each scenario is one test. "A fresh directory" is an empty temporary
@@ -108,3 +119,11 @@ directory.
 - **S26** (LOG-F-18, LOG-F-20) Given a stored entry whose bytes the test changes in the database file, when the caller reads the channel, then the read fails with "corrupt store" and names the author and the position.
 - **S27** (LOG-F-14) Given two handles on one directory in two threads that each append 50 entries, then the own channel has positions 0 to 99 with no gap and a valid chain.
 - **S28** (LOG-F-14 to LOG-F-16) Given random sequences of ingest calls of valid entries, gaps, duplicates and forks, then the head, the stored entries and the status equal those of the test's own model of a chain.
+
+### No identity (step 8)
+
+- **S29** (LOG-F-22) Given a fresh directory, when the caller opens it with no identity, then it has mode 0700, a store and no key file; entries 0 to 2 of another author ingest and read back with the same bytes.
+- **S30** (LOG-F-23) Given a directory with a key file, when the caller opens it with no identity, then the open fails and names the key file, whose bytes and mode are unchanged.
+- **S31** (LOG-F-24) Given a directory opened with no identity, when the caller appends, asks for a backup, restores a backup or confirms the own head, then each fails with "holds no identity", and no file changes.
+- **S32** (LOG-F-25) Given an identity with no entry, when the caller deletes it, then the key file is gone, an append fails with "holds no identity", and a reopen with no identity succeeds. Given an identity with one entry, the delete fails with "identity in use" and the key file is unchanged.
+- **S33** (LOG-F-26) Given stored channels of three authors, when the caller lists the channels, then it gives the three keys in key order.

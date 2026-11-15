@@ -542,8 +542,8 @@ closes the step.
 | # | Question | Proposal |
 |---|---|---|
 | Q1 | 5.4 and 5.8 rest on two library features: adding a file to the iroh-blobs store by reference, and wrapping a protocol handler in iroh's router. Both are expected; neither is checked against the releases N1 pins. | N1 checks both against the pinned releases; if either is gone, N1 records the replacement here before N3. |
-| Q2 | What does a light machine keep after a search pulled a channel? | `Asked` channels stay, like a channel read for a hit today (`dist` 5.11, no record); `Log::forget` cleans up at D5. |
-| Q3 | How does the app show own machines and their freshness? | A devices view with each machine's short key, role, last seen, and its heads count; part of the `app` design. |
+| Q2 | What does a light machine keep after a search pulled a channel? | **Decided (S59).** `Asked` channels stay in the store with no record, like a channel read for a provider today (`dist` 5.11): not held, so not in `heads(None)`, not synced and not refreshed (`dist` 5.12, DD-38). A search shows one only when `node` verified the remote hit against it (`node` 5.4). An install from such a hit gives the channel a `kept` record on the replica, so it stays current through the full machines (`node` 5.3, NO-6). `Log::forget` cleans up at D5. |
+| Q3 | How does the app show own machines and their freshness? | **Decided (S59), `app/TECHNICAL.md` 9.8 (stage G).** A machines view with each machine's short key, role, this machine and anchor marks, online or last seen (`PeerUp`, `PeerDown`), and the last pull from it (`Pulled`), kept in memory from `events()`; refusals and unreachable machines with their causes. No heads count: it needs no new op, and the last pull says how current a machine keeps this one. The join question, the relay and the DHT switch go through the app's consent view with the texts of `node` 7. |
 
 ## 13. Decisions of this subsystem
 

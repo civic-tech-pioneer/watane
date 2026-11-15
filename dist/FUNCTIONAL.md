@@ -148,6 +148,21 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
 - **DIST-F-54** When a local program asks for a release by its link, dist shall read the channel without following it or keeping a record. Traces: F-AGENT-4.
 - **DIST-F-53** When the caller searches by origin, dist shall give the mods whose newest live release names a release of that publisher and slug as its origin.
 
+### 2.10 Own machines (step 8)
+
+- **DIST-F-55** When the caller opens a home with no identity, dist shall create none, and shall read, verify, store and search channels as on a home with one; every signature shall then fail and name the cause.
+  Traces: F-OWN-3, W33.
+- **DIST-F-56** dist shall give, from what it stored and with no request, the heads, the entries as their original bytes, the fork proofs and the package files of the channels it holds, and the packages of their live releases that it lacks.
+  Traces: F-OWN-4, PG-3.
+- **DIST-F-57** When the caller hands it entries or a package from an own machine, dist shall verify them as it verifies a web host's, store only what verifies, and keep a channel handed as a full machine's copy, so that a refresh does not drop it.
+  Traces: F-OWN-3, F-OWN-4, V5.
+- **DIST-F-58** No answer of DIST-F-56 or DIST-F-57 shall wait for a read from a web host.
+  Traces: F-OWN-4.
+- **DIST-F-59** After a restore, dist shall confirm the own head from own machines only when it stored and verified exactly the head that the participant picked.
+  Traces: F-APP-6, W18.
+- **DIST-F-60** dist shall delete an identity only when it signed no statement.
+  Traces: F-OWN-3, F-PUB-7.
+
 ## 3. Acceptance scenarios
 
 Each scenario is one test. "Alice" and "Bob" are two homes on one device.
@@ -323,3 +338,37 @@ its own local host.
   (DIST-F-54)
 - **A41 Offline provider.** Given A36 done once, when every host stops,
   then the same `fetch_for` gives the cached package. (DIST-F-50)
+
+### Step 8
+
+- **A42 Keyless home.** Given an empty home, when dist opens it with no
+  identity, then `<home>/log/` has no key file, `identity()` is `None`,
+  and publish, set_name, list, backup and confirm_own each give
+  `NoIdentity` and ask nothing; Bob's follow and fetch of Alice's mod work
+  as in A10 and A11. (DIST-F-55)
+- **A43 Drop an unused identity.** Given a home whose identity signed
+  nothing, when dist drops it, then the key file is gone and publish gives
+  `NoIdentity`. Given one statement, the drop fails with `IdentityInUse`
+  and the key file is unchanged. (DIST-F-60)
+- **A44 Holder answers and ingest.** Given Bob's home holding Alice's
+  channel, then `heads`, `entries` and `fork` give the stored bytes. When a
+  keyless home ingests those entries as `Kept`, then it stores them and
+  its `follows.json` has a record with only `kept`; a refresh and an
+  unfollow keep it; an entry with one changed byte is not stored.
+  (DIST-F-56, DIST-F-57)
+- **A45 Bounded keep.** Given `max_kept` 2 and two kept channels, when a
+  third is ingested as `Kept`, then it gives `NotWanted` and stores
+  nothing; as `Asked`, it is stored with no record and not in `heads(None)`.
+  (DIST-F-57)
+- **A46 Package from a machine.** Given a keyless home that holds Alice's
+  release entry, when it stores the package file from another home, then
+  `fetch` gives it with no request; a file with one changed byte gives
+  `HashMismatch` and no package file. (DIST-F-57)
+- **A47 No wait.** Given a refresh that waits on a host that answers after
+  20 s, when another thread calls `heads(None)`, `entries` and `ingest`,
+  then each returns within 1 s. (DIST-F-58)
+- **A48 Own head from own machines.** Given a restored identity whose own
+  entries 0 to 2 were ingested, when the caller confirms seq 2 with the id
+  of entry 2, then the next statement has seq 3; with another id or seq 1
+  it gives `HeadNotStored` and a statement stays `OwnHeadUnconfirmed`.
+  (DIST-F-59)

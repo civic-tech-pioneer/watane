@@ -80,6 +80,25 @@ preview). Steps 4 and 5 are sketched only, so that no design blocks them.
 - **APP-F-48** When a local program asks for a release by its link, the app shall fetch and verify it and answer with the package, and shall install, grant, sign and follow nothing. A request with both/neither link and release (including both null) answers 400 `bad_request`, `give link or release`. Non-JSON or wrong-shaped bodies answer 400 `bad_request`, `give link or release: <serde cause>`, keeping the rejection body text. A wrong method on an app API route answers 405 `method_not_allowed` in the common JSON error envelope. Traces: F-BUILD-1, F-BUILD-2, F-AGENT-4.
 - **APP-F-49** After it installs a release of a publisher that it does not follow, the app shall follow that publisher's channel. Traces: F-INST-7, F-INST-8, J5.
 
+## Step 8: Own machines
+
+"Own machines" are the participant's machines that `net` connects (spec
+F-OWN). "The anchor" is the home that holds the identity; a "replica"
+holds none (W33). A machine is named by its short key (8 characters).
+
+- **APP-F-50** The app shall open its home through `node`. With own machines off, every function shall work as before. On a replica, the app shall show that this home holds no identity and is a full or light machine of the anchor, offer no publish, backup, restore or own listing, and answer a local publish request with `no_identity`. Traces: F-OWN-1, F-OWN-3, F-QUAL-1.
+- **APP-F-51** Own machines shall be off until the participant turns them on in the main window, after the app showed what turning on does; the participant shall be able to turn them off. Traces: F-OWN-1, W32.
+- **APP-F-52** On the anchor, the participant shall be able to ask for a pairing code for a full or a light machine. The app shall show the code, a copy button and the time it stays valid. Traces: F-OWN-2.
+- **APP-F-53** When a machine presents a code, the consent view shall show the join question with the machine's short key and its role, and the anchor shall pair it only on approve; every other end is a no (W19). Traces: F-OWN-2.
+- **APP-F-54** On a home whose identity signed no statement, the participant shall be able to join own machines with a code. The app shall first say that this home's unused identity, named by its fingerprint, will be deleted, with "cancel" as the default, and shall show this machine's short key while the anchor's answer is pending. A home whose identity signed a statement shall be refused, with the cause. Traces: F-OWN-2, F-OWN-3.
+- **APP-F-55** The app shall show the own machines: each one's short key, role, whether it is this machine or the anchor, whether it is online or when it was last seen, and when this machine last pulled from it. On the anchor, the participant shall be able to remove a machine after a question, change its role, and set the expiry of the list in days (0 for never). Traces: F-OWN-3, F-OWN-4, F-OWN-6.
+- **APP-F-56** The participant shall be able to list, add and remove relays. A relay shall be added only after the consent view showed what a relay can see. Traces: F-OWN-7, W32.
+- **APP-F-57** The participant shall be able to turn the DHT on and off. It shall be turned on only after the consent view showed what the DHT publishes. Traces: F-OWN-7, F-OWN-8, W32.
+- **APP-F-58** The app shall show each refusal of a machine and each machine it cannot reach, with the short key and the cause. When no path exists without a relay or the DHT, the text shall say so. Traces: F-OWN-7, F-QUAL-3.
+- **APP-F-59** On a light machine, a search result that came through another machine shall name that machine, and shall be verified like any other result. Traces: F-OWN-5, F-FIND-4.
+- **APP-F-60** After a restore, the identity view shall show the heads of the own channel that own machines report, each with its machine and position, as claims to pick from. The app shall confirm the own channel only after the participant picks one, and shall offer no pick for a forked head. Traces: F-APP-6, W18.
+- **APP-F-61** No mod and no local program shall reach any function of this step: no local API route and no mod window command turns machines on, pairs, removes, or changes a relay or the DHT. Traces: F-AGENT-4, F-OWN-7.
+
 ## Acceptance scenarios
 
 Each scenario is a test (TECHNICAL.md section 9 names the test).
@@ -234,3 +253,53 @@ names her `ratings` link, then the answer is the package bytes with the
 headers of `Watane-Release` and `Watane-Package`, no consent view opened,
 and Carol is not a followed channel. A link with no slug is 400; with an
 `Origin` header, 403.
+
+**S28 Off by default** (APP-F-50, APP-F-51). Given a new home, when the
+app starts, then the machines view says own machines are off, no UDP
+socket is open, and J3's publish works as before. When the participant
+turns them on, the view first shows the text of `node` 7.
+
+**S29 Pair a full machine** (APP-F-52, APP-F-53, APP-F-55). Given the
+anchor's app with own machines on, when the participant asks for a full
+code and `watane-node join` uses it, then the consent view shows the
+node's short key, the same that the program printed, and "full"; after
+approve, the machines view lists both. When a second machine uses a new
+code and the participant closes the consent view, the list is unchanged.
+
+**S30 Join as light** (APP-F-54, APP-F-50). Given a second app home whose
+identity signed nothing, when the participant enters a light code, then
+the question names that identity's fingerprint; after confirm and the
+anchor's approve, the identity view says this home holds no identity,
+`<home>/log/identity.key` is gone, and `POST /api/publish` answers 409
+`no_identity`. A home that published is refused with the cause, and its
+key is unchanged.
+
+**S31 Manage machines** (APP-F-55). Given S30, when the participant
+removes the light machine on the anchor and confirms, then the full
+machine stops serving it; a role change and an expiry of 1 day show in the
+machines view of every machine.
+
+**S32 Relay and DHT** (APP-F-56, APP-F-57). When the participant adds a
+relay, the consent view shows the relay text; a deny leaves the list
+unchanged, an approve adds it. When the participant turns the DHT on, the
+consent view shows the DHT text; after approve it is on; turning it off
+asks nothing.
+
+**S33 Problems named** (APP-F-58). Given a full machine that serves a
+changed byte, the machines view shows `refused <short key>: <cause>`.
+Given two machines with no path, it shows the cause that names a relay or
+the DHT.
+
+**S34 Results through a machine** (APP-F-59). Given S30 and the full
+machine holding Ivy's index and Alice's channel, when the light machine
+searches `reading`, then the result names the full machine's short key
+and shows "signature verified"; installing it runs the mod.
+
+**S35 Restore from machines** (APP-F-60). Given a restored identity on a
+new home that paired the full machine with `replace`, then the identity
+view lists the full machine's hint with its seq; a publish is refused
+until the participant picks it; then the next release has the next seq.
+
+**S36 No outside path** (APP-F-61). The hostile page's calls of every
+command of stage G are refused; no local API route names machines,
+relays or the DHT.

@@ -1,7 +1,8 @@
 # app: technical specification
 
 How the app does what `FUNCTIONAL.md` says. Steps 2 to 4 are built.
-Step 5 (stage E) is designed (S32) and not built.
+Step 5 (stage E) is designed (S32) and not built. Step 8 (stage G, own
+machines) is designed (S59) in sections 3, 6.2, 7, 8 and 9.8.
 
 ## 1. Crate and layout
 
@@ -26,6 +27,7 @@ app/
   src/commands.rs   the Tauri commands (section 7)
   src/api.rs        the local API routes that need dist (section 8)
   src/mark.rs       the consent mark (section 6.4)
+  src/machines.rs   stage G: the own machines (section 9.8)
   src/driver.rs     test driver, only with feature `driver` (section 10)
   src/fake.rs       stage A only; deleted in stage B (section 12)
   tests/            section 11
@@ -71,7 +73,8 @@ for this crate and record it in `NOTES.md`.
 
 `Cargo.toml` features: `driver = []`. Path dependencies:
 `watane-host = { path = "../host" }` from stage B, `watane-dist = { path =
-"../dist" }` from stage C. No direct dependency on `watane-pkg` or
+"../dist" }` from stage C, `watane-node = { path = "../node" }` from stage
+G (its re-exports give `net`'s types: no direct `watane-net` dependency). No direct dependency on `watane-pkg` or
 `watane-log`: their types come through the re-exports of section 15.
 
 ## 3. Process and startup
@@ -89,7 +92,10 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
 3. Create `<home>/app/` if missing. Read or create the mark (section 6.4).
 4. `Dist::open(home, Arc::new(DistConfirm { broker, parties }), Options::default())`
    (stage C). It creates the identity at the first open, offline
-   (APP-F-28).
+   (APP-F-28). From stage G: `Node::open(home, Arc::new(DistConfirm {
+   broker, parties }), watane_node::Options::default())` in its place; it
+   opens the home keyless when it is a replica (node 5.6), and
+   `Core.dist` is `node.dist().clone()`.
 5. Build Tauri: `tauri_plugin_dialog::init()`, `manage(AppState)`,
    `invoke_handler(generate_handler![<the commands of section 7>])`.
 6. In `setup`:
@@ -98,7 +104,8 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    2. `broker.set_listener(...)`: on each change of the head request, close
       the consent window and, if a request remains, open a new one.
    3. Fill the parties cache (section 9.2). Open the main window.
-   4. Start the refresh loop (stage C, section 9.5).
+   4. Start the refresh loop (stage C, section 9.5). Stage G: start the
+      machines thread (9.8).
    5. With feature `driver`: start the driver.
    If step 2, 3, 4 or 6.1 fails, set `AppState.failed`, skip the other
    steps except opening the main window, and serve nothing (APP-F-2). The
@@ -120,6 +127,8 @@ pub(crate) struct AppState {
 pub(crate) struct Core {
     pub host: Arc<watane_host::Host>,
     pub dist: Arc<watane_dist::Dist>,                // stage C
+    pub node: Arc<watane_node::Node>,                // stage G: every call with a net side (9.8)
+    pub machines: Arc<Machines>,                     // stage G: what the machines view shows (9.8)
     pub broker: Arc<Broker>,
     pub parties: Arc<Parties>,                       // section 9.2
     pub served: std::sync::Mutex<Option<watane_host::Served>>, // port, page_url, mcp_url
@@ -263,7 +272,9 @@ head. `withheld` must be empty for a `Sign` request, and each entry must
 name a grant line of that request, else `UnknownGrant`. Step 5: a `Pick`
 request takes only `Pick` or `Deny`, and `choice` must equal the `choice`
 of one of its candidates (`UnknownChoice`); an `Install` or `Sign` request
-takes only `Approve` or `Deny` (`WrongAnswer`). `deny_all` answers
+takes only `Approve` or `Deny` (`WrongAnswer`). Step 8: a `Join` or
+`Reach` request takes only `Approve` with no `withheld`, or `Deny`
+(`WrongAnswer`). `deny_all` answers
 `Deny` to every open request. A request with no answer 600 s after it was
 queued is answered `Deny` and removed (W19; host refuses at the same time,
 host 12.1).
@@ -278,7 +289,17 @@ pub enum Request {
     Sign { statement: Statement, signer: Party, details: Vec<Detail> },
     /// Step 5 (9.7): the named provider of `consumer` is not available; pick one that fits.
     Pick { consumer: String, provider: String, cause: String, candidates: Vec<Candidate> },
+    /// Step 8 (9.8): a machine presented a pairing code; the anchor asks.
+    Join { node: String, role: Role, text: String },           // node: short key; text: node::words::join_asked
+    /// Step 8 (9.8): a choice that lets someone else's endpoint in (W32).
+    Reach { what: Reach, url: Option<String>, text: String },  // text: node::words::relay_add or dht_on
 }
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role { Full, Light }                                    // step 8
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reach { Relay, Dht }                                    // step 8
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
     pub choice: String,               // ReleaseRef text; the answer names it
@@ -457,13 +478,25 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `index_list` | main | `link` (with a slug), `note` | `null` | D |
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
+| `machines` | main | — | `MachinesView` | G |
+| `machines_on` | main | `on: bool` | `MachinesView` | G |
+| `pair_code` | main | `role: "full" \| "light"` | `{code, expiresAt}` | G |
+| `machine_join` | main | `code`, `replace: bool` | `MachinesView` | G |
+| `machine_remove` | main | `node` (short or full key text) | `MachinesView` | G |
+| `machine_role` | main | `node`, `role` | `MachinesView` | G |
+| `machines_expiry` | main | `days: number` | `MachinesView` | G |
+| `relay_add` | main | `url` | `MachinesView` | G |
+| `relay_remove` | main | `url` | `MachinesView` | G |
+| `dht_set` | main | `on: bool` | `MachinesView` | G |
+| `own_hints` | main | — | `[{node, seq: number \| null, id: string \| null, forked: bool}]` | G |
+| `identity_confirm_hint` | main | `node`, `seq`, `id` | `Status` | G |
 | `consent_get` | consent | — | `ConsentView \| null` | A |
 | `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]`, `choice: string \| null` (step 5: a pick) | `null` | A |
 
 View types:
 
 ```text
-Status     {home, port, mark, error: null | string,
+Status     {home, port, mark, error: null | string,   // identity is null on a replica (stage G)
             identity: null | {name: null | string, fingerprint, ownConfirmed: bool,
                               releases: [{release, version, slug, withdrawn: null | reason}]},
             site: null | {dir, url: null | string, link: null | string}}
@@ -480,6 +513,13 @@ IndexRow   {channel (key text), fingerprint, name: null | string, base: null | s
             you: bool, own: bool, mods: number, included: [Party],
             skipped: [{party: Party, cause: string}],   // dist's IndexView.skipped (S29)
             listings: [{entry, kind: "list" | "include", target (slug with party label, or index party label), note}]}            // own index only: its live listings
+MachinesView {on: bool, node (this machine's short key), machine: "alone" | "anchor" | "full" | "light" | "removed",
+            anchor: null | string (short key), seq: null | number, expiresDays: number,
+            machines: [{node, role: "full" | "light", you: bool, anchor: bool, online: bool,
+                        lastSeen: null | number, lastPull: null | number}],   // ms since the Unix epoch
+            relays: [string], dht: bool, code: null | {code, expiresAt},
+            joining: null | {node, anchor},                                   // a join waits for the anchor
+            problems: [{node, text, at: number}]}                             // newest first, at most 20
 HitView    {release (ReleaseRef), slug, name, summary, version, link (link text) | null,
             publisher: null | Party, verified: bool, status: "ok" | "compromised",
             checkedAt: null | number, uncheckedSince: null | number,   // ms since the Unix epoch
@@ -487,7 +527,8 @@ HitView    {release (ReleaseRef), slug, name, summary, version, link (link text)
                    through: null | Party, note: string}],
             offers: [string], events: [string], uses: [string],     // interface names
             installed: null | string,                                // local name when installed
-            origin: null | string}                                   // step 5: ReleaseRef text, the publisher's claim
+            origin: null | string,                                   // step 5: ReleaseRef text, the publisher's claim
+            from: [string]}                                          // step 8: short keys of the machines it came through
 ```
 
 Behaviour:
@@ -547,6 +588,14 @@ same port behind the same guards (HOST-F-38).
 ```rust
 pub fn router(dist: Option<Arc<watane_dist::Dist>>) -> axum::Router;   // full paths: /api/publish, /api/releases, ...
 ```
+
+From stage G the router owns a node handle instead,
+`router(node: Option<Arc<watane_node::Node>>)`: `/api/publish` calls
+`node.publish` (and `node.list` for its providers), `/api/search`
+`node.search`, `/api/fetch` `node.read_link`, so that own machines learn
+of a new release and a light machine reads through a full one (node 5).
+dist's `NoIdentity` maps to 409 `no_identity` on every route (APP-F-50).
+No route reaches `node.net()` (APP-F-61).
 
 The router owns only a dist handle, not `Core`: host is not served until
 startup succeeds, and this avoids a server/router/Core ownership cycle.
@@ -954,6 +1003,98 @@ install button of a hit (`install_release`), or `Installed` with no install
 button when already installed. The page says `as far as your
 indexes list them` above the list.
 
+### 9.8 Own machines (step 8)
+
+Stage G. The app calls `node` (node 3) for every call with a `net` side
+and `node.dist()` for the rest. `node.net()` is used only by `Core` and
+`machines.rs`; no route of section 8 and no mod reaches it (APP-F-61).
+
+**Calls through node.** In sections 8, 9.1 to 9.7, these calls go to
+`node` in place of `dist`: `set_name`, `publish`, `withdraw`, `list`,
+`include`, `unlist`, `confirm_own`, `follow`, `refresh`,
+`refresh_channel`, `choose_index`, `fetch`, `fetch_for`, `open_link`,
+`read_link` and `search` (`node.search` gives `NodeHit`; `HitView.from`
+is its machines' short keys, APP-F-59). After each install of a fetched
+release (9.4, 9.6, 9.7), `node.installed(&fetched)` (node 5.3). The views
+(`own`, `channel`, `followed`, `indexes`, `latest`) stay on `dist`.
+
+**A replica** (APP-F-50). `Status.identity` is `null` when
+`dist.identity()` is `None`. The identity view then reads `This machine
+holds no identity. It is a <full|light> machine of <anchor short key>.`
+and shows no name, backup, restore, site or own listing controls; the
+commands `identity_*`, `site_set_url`, `release_withdraw`, `index_list`,
+`index_include` and `index_unlist` give `bad_input` with dist's
+`NoIdentity` text.
+
+**The machines thread.** One thread (not a tokio task: `net` blocks)
+takes `node.net().events()` and updates `Machines`:
+
+```rust
+pub(crate) struct Machines { inner: std::sync::Mutex<MachinesState> }
+// MachinesState: last code and its expiry; joining; per node: online, last_seen, last_pull; problems (20)
+```
+
+| Event (net 3) | Effect |
+|---|---|
+| `JoinAsked { node, role }` | `broker.ask_blocking(Request::Join { node: short, role, text: words::join_asked(..) })`; then `net.answer_join(&node, approved)`. No answer in 600 s is `Deny` (6.1), which equals the code's deadline (net 5.5) |
+| `PeerUp(n)`, `PeerDown(n)` | `online`; `last_seen` = now on each |
+| `Pulled { from, .. }` | `last_pull` of `from` = now |
+| `Refused { node, cause }`, `Unreachable { node, cause }` | a problem `refused <short>: <cause>` or `unreachable <short>: <cause>`; the cause of `Unreachable` already names a relay or the DHT when that is what is missing (NET-F-28, APP-F-58) |
+| `DevicesChanged(_)` | nothing: `machines` reads `net.devices()` on each call |
+
+This state is in memory only: a restarted app shows `lastSeen` and
+`lastPull` as `null` until the next event (net Q3: there is no heads count
+per machine; net gives none in D1).
+
+**Commands** (section 7). Each runs in `spawn_blocking` and returns the
+`MachinesView` of after the change; `NetError` and `NodeError` map to
+`CmdError` code `net` with their whole cause chain (13).
+
+- `machines`: `net.devices()`, `net.node_key()`, `node.machine()`, the
+  stored switches, and `Machines`. The page polls it with `status` (7).
+- `machines_on(on)`: the page shows `node::words::net_on()` above the
+  switch, and the switch is the participant's own act in `main`, as a
+  grant give-back is (7, host 4.4): `net.set_options` with `on`.
+- `pair_code(role)`: `net.pair_code(role)`; `NotAnchor` on a replica.
+  The page shows the code text in a read-only field with `Copy` and
+  `Valid until <time>`; it keeps the code only in memory.
+- `machine_join(code, replace)`: `PairCode::from_str` (`bad_input`).
+  When `Status.identity` is set, the page first asks `This home's identity
+  <fingerprint> has signed nothing. Joining your machines deletes it, and
+  this machine then signs nothing. Join?` with `Cancel` (focused) and
+  `Join`. The `replace` box shows only when `machine` is not `alone`. Then
+  `node.join` in `spawn_blocking`; while it waits, `joining` is set, and
+  the view shows `This machine: <short key>. Confirm it on <anchor short
+  key>.` A home that signed gives node's `IdentityInUse` text.
+- `machine_remove(node)`: the page asks `Remove <short key>? It stops
+  being trusted when your machines learn of it.` (`Cancel` focused);
+  `net.remove_device`. `machine_role`: `net.set_role`. `machines_expiry`:
+  `net.set_expiry(days)`; the page reads `Machines stop trusting each other
+  after <n> days without reaching this one. 0: never.` A key in `node`
+  may be the short form: the app matches it against the device list and
+  gives `bad_input` when none or two match.
+- `relay_add(url)`: `url::Url` parse through `tauri::Url` (`bad_input`);
+  `broker.ask(Request::Reach { what: Relay, url, text:
+  node::words::relay_add(url) })`; on approve `net.set_options` with the
+  relay added; a deny gives `refused`. `relay_remove`: no question.
+- `dht_set(on)`: on: `Request::Reach { what: Dht, url: None, text:
+  node::words::dht_on(node_key) }` first, as `relay_add`; off: no question.
+- `own_hints`: `node.own_hints()`, each with the short key. `identity_
+  confirm_hint(node, seq, id)`: the hint of that node with that head from a
+  new `own_hints()` call (`bad_input` when it is gone or forked); then
+  `node.confirm_own_hint` (node 5.7, APP-F-60).
+
+**Restore** (APP-F-60). After a restore (9.1), the identity view adds a
+third way: `From your machines`, the list of `own_hints` with each
+machine's short key and `position <seq>`, a forked one marked `forked`
+with no button, and a button `Use this` per hint. The view says that a
+machine's answer is its claim and that watane checks every statement it
+reads.
+
+**Consent page.** `Join` shows the title `Pair a machine`, the `text`,
+and the short key in large type; `Reach` shows `Use a relay` or `Turn on
+the DHT` and the `text`. Both use the approve gate of 6.3 (APP-F-16).
+
 ## 10. Test driver (feature `driver`)
 
 Only for tests. It adds nothing to any webview: it uses the native
@@ -1063,6 +1204,8 @@ real approval gate. No production security check changes.
 | `tests/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
 | `tests/build_on.rs` (E) | S23 to S27: pick view and bind, no fit, made from and derived list, publish listing a provider, `/api/fetch` | homes of Carol, Dave and Frank made with `watane_dist`; prebuilt fixture components `ratings` (Carol's and Frank's) and `stats`; consent DOM; `<home>/mods/`; `follows.json` |
 | `tests/j5.rs` (E) | J5 on the real programs: Carol's agent runs `watane-dev new ratings --from <Alice link>` against Carol's app; the test then puts the committed `ratings` fixture files over that folder (keeping its `mod.toml` origin) and posts its package to `/api/publish` (consent shows `Made from`); Dave's agent runs `watane-dev add --release <Carol link>` in a copy of the `stats` fixture, and the test posts `stats` to `/api/publish` (release, then the listing of Carol's `ratings`); dev's own `test` with a fake of `ratings` is DEV-S-39, not part of this run; Eve's app installs `stats` from Dave's link and gets Carol's `ratings` first through Dave's listing; with Carol's site stopped and Frank's `ratings` in Eve's index, a fresh home of Eve gets the pick view and binds Frank's | each person's own record of what they published; `wit/world.wit`, `mod.toml` and `deps.json` text; consent DOM; `<home>/mods/` |
+| `tests/machines.rs` (G) | S28 to S36: a `watane-node` home and app homes on loopback, mDNS off; the consent DOM text of `Join` and `Reach`; `MachinesView` from the driver | the short key that `watane-node join` printed; `node::words` texts; `<home>/log/` and `<home>/net/book.json` read with `std::fs` and `serde_json`; the UDP sockets of the process (S28) |
+| `tests/j8.rs` (G) | J8 on the real programs: Alice's laptop app (anchor), `watane-node` (full), a second laptop app (light), a restored laptop app; S29's pairing, a second use of the code refused, a publish that reaches the server within 5 s with no static host, the light machine's search and install of Ivy's listed mod through the server, a changed byte on the server refused and named, the removal, the restore with the server's hint; no relay and no DHT | each person's own record of what they published; `<home>/dist/packages/` byte-equal across homes; `book.json` (`relays` empty, `dht` false) |
 | `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
@@ -1102,6 +1245,7 @@ record it in `NOTES.md` with the old and the new result.
 | C Dist | sections 8.1 and 9; the stage C commands; `DistConfirm`; `tests/api.rs`, `j3.rs` | dist and log step 3; host stage 8 (`Source::Release`) | none: the sign view is tested in A through `ask` | J3 passes; `tests/api.rs` passes |
 | D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
 | E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; the `origin` argument of `search`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass |
+| G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
 A bundle (`cargo tauri build`) is a manual check after stage C: a mod page
@@ -1128,7 +1272,8 @@ pub struct CmdError { pub code: &'static str, pub message: String }
 ```
 
 `CmdError.code` is one of `refused`, `not_found`, `bad_input`,
-`missing_providers`, `unavailable`, `host`, `dist`, `io`. The host's own
+`missing_providers`, `unavailable`, `host`, `dist`, `io`, and from stage G
+`net` (a `NetError` or `NodeError`, 9.8). The host's own
 code replaces `host` when it has one (HOST-F-20). `message` is the whole
 cause chain: start with `{e}` and append each `source()` with `: ` unless
 that cause is already present as a whole `: `-delimited part of the text
@@ -1258,6 +1403,16 @@ Fetched`; the types `Confirm`, `Decision`, `SignRequest`, `Statement`,
 `Link`, `ChannelView`, `Status`, `Outcome`, `Change`, `Fetched`,
 `Published`, `DistError`; the re-exports `PublicKey` (`fingerprint()`),
 `EntryId`, `Entry` (`bytes()`), `Package` (`as_bytes()`), `Release`.
+From **node** (`../node/TECHNICAL.md` 3, 7; stage G): `Node::open`,
+`dist`, `net`, `machine`, the call wrappers of 9.8, `installed`, `search`
+-> `NodeHit`, `join`, `own_hints`, `confirm_own_hint`, `Options`,
+`Machine`, `OwnHint`, `NodeError`, `words::{net_on, dht_on, relay_add,
+join_asked}`; through `node::net`: `Net::set_options`, `pair_code`,
+`answer_join`, `devices`, `remove_device`, `set_role`, `set_expiry`,
+`node_key`, `events`, `NodeKey` (short form), `PairCode`, `Role`,
+`DeviceList`, `Event`, `NetError` (net 3). Through `node::dist`: dist's
+`NoIdentity` and `identity()` as an `Option` (dist S8).
+
 **Asked of dist**: the re-export of `watane_pkg::ReleaseRef`. Step 5:
 `Fetched.link`, `Query.origin`, and `fetch` through provider bases (dist 3,
 5.11).
@@ -1297,3 +1452,13 @@ Each answer is the one this spec uses.
    grant withheld. Answer: the consent view has a checkbox per grant,
    checked at load. F-INST-2 should say that the participant can withhold
    each grant.
+10. **How the app shows own machines** (net Q3, step 8). Answer: the
+    machines view of 9.8: each machine's short key, role, this machine and
+    anchor marks, online or last seen, and the last pull from it, from
+    `net`'s events in memory. No heads count per machine: `net` gives none
+    in D1, and the last pull says how current a machine keeps this one.
+11. **Turning own machines on is no consent request.** W32 asks for a
+    consent per endpoint that someone else runs. Answer: the relay and the
+    DHT go through the consent view (`Request::Reach`); turning on, which
+    reaches only the local network and paired machines, is a switch in
+    `main` under the text of `node` 7, like a grant give-back (host 4.4).

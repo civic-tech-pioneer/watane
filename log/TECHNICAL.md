@@ -105,10 +105,13 @@ pub struct Fork { pub chain: Entry, pub other: Entry }
 
 /// The identity and the channel store of one directory. Send + Sync.
 /// Every method blocks: async callers use `spawn_blocking`.
-pub struct Log { /* Mutex<Inner { dir, signing key, rusqlite::Connection }> */ }
+pub struct Log { /* Mutex<Inner { dir, signing key (an Option from step 8), rusqlite::Connection }> */ }
 impl Log {
     pub fn open(dir: &Path) -> Result<Log, Error>;                 // creates the identity at the first open
-    pub fn identity(&self) -> PublicKey;
+    pub fn open_keyless(dir: &Path) -> Result<Log, Error>;         // step 8: no identity, none created (5.5)
+    pub fn identity(&self) -> Option<PublicKey>;                   // None on a keyless Log (step 8)
+    pub fn drop_identity(&self) -> Result<(), Error>;              // step 8: delete an identity that signed nothing (5.5)
+    pub fn channels(&self) -> Result<Vec<PublicKey>, Error>;       // step 8: every author with a stored entry, key order
     pub fn append(&self, kind: &str, body: &[u8]) -> Result<Entry, Error>;
     pub fn ingest(&self, author: &PublicKey, entries: &[Entry]) -> Result<Ingest, Error>;
     pub fn entries(&self, author: &PublicKey, from_seq: u64, limit: usize) -> Result<Vec<Entry>, Error>;
@@ -119,7 +122,7 @@ impl Log {
     pub fn own_head_confirmed(&self) -> Result<bool, Error>;
     pub fn confirm_own_head(&self) -> Result<(), Error>;
 }
-impl Debug for Log;                        // "Log { identity: <text> }"; never the secret
+impl Debug for Log;                        // "Log { identity: <text> }" or "Log { keyless }"; never the secret
 ```
 
 `Log` holds one `Mutex`. A poisoned mutex is recovered with
@@ -178,6 +181,10 @@ pub enum Error {
     WrongPassphrase,
     #[error("the current identity {0} has signed entries; it cannot be replaced")]
     IdentityInUse(PublicKey),
+    #[error("this home holds no identity; it can read and store channels but never sign")]
+    NoIdentity,                                       // step 8: a keyless Log (5.5)
+    #[error("{path} holds an identity; a home with no identity has no key file")]
+    HasIdentity { path: PathBuf },                    // step 8: open_keyless of a directory with identity.key
 }
 ```
 
@@ -502,6 +509,38 @@ A `Log` reads its key at open and after its own restore. Each directory has
 one `Log` in one process (the app's `dist`); a second `Log` of the same
 directory keeps its old key after a restore.
 
+### 5.5 A home with no identity (step 8)
+
+A replica among the participant's own machines holds no signing key
+(spec W33). Such a `Log` reads, verifies and stores every channel as
+`Log::open` does, and never signs. No format changes: a keyless directory
+is a directory without `identity.key`.
+
+- `open_keyless(dir)`: steps 1 to 3 of `open` (4.7). Then
+  `symlink_metadata(dir/identity.key)`: present in any form is
+  `HasIdentity { path }`, and nothing changes; a key is never deleted or
+  ignored by an open. Then open the store (4.8). No key is created.
+- On a keyless `Log`: `identity()` is `None`; `append`,
+  `export_identity`, `restore_identity`, `confirm_own_head` and
+  `drop_identity` are `NoIdentity`; `own_head_confirmed()` is `Ok(true)`
+  (nothing waits for a confirmation); `ingest`, `entries`, `head`,
+  `status` and `channels` work as on any `Log`. A `meta` row
+  `unconfirmed` is ignored.
+- `drop_identity()`: lock. Keyless: `NoIdentity`. The own channel has an
+  entry: `IdentityInUse`, and nothing changes. Else, in one transaction,
+  delete the `meta` row `unconfirmed` when it names the identity; remove
+  `identity.key` and `sync_all` the directory; zeroize the seed in memory.
+  From then on this `Log` is keyless. A later `Log::open` of the directory
+  creates a new identity (4.7); the caller that wants a keyless home opens
+  it with `open_keyless` (`node` 5.6).
+- `channels()`: `SELECT DISTINCT author FROM entries ORDER BY author`,
+  each through `PublicKey::from_bytes` (a failure is `CorruptStore`).
+  The own channel is in it when it has an entry.
+
+`Log` stays one type: a keyless `Log` is a `Log` whose `Inner` holds no
+key (`Option<SigningKey>`). The caller, `dist`, refuses each signing path
+first (`dist` 5.12); `NoIdentity` here is the second guard.
+
 ## 6. Libraries
 
 The colos prototype `../colos/crates/colos-log` compiled and passed its tests
@@ -604,6 +643,7 @@ The oracle never calls `watane_log` to compute an expected value.
 | `corrupt.rs` | S26 | the test drops the update trigger with its own `rusqlite::Connection`, flips one byte of `raw`, and expects `CorruptStore` on `head`, `entries` and `status` | the test's own SQL |
 | `backup.rs` | S7–S13 | golden vector restores to the RFC 8032 key; export then restore gives the same key; the export decrypts with `argon2` + `chacha20poly1305` called directly in the test; NFC; bounds refused fast (< 50 ms); `IdentityInUse` | golden vector; direct crate calls |
 | `restore_head.rs` | S14 | `OwnHeadUnconfirmed`, ingest of the own entries, confirm, next append at seq 3 with prev = id of entry 2 | entries made by a first `Log` in another directory |
+| `keyless.rs` (L6) | S29–S33 | no key file after `open_keyless`; `HasIdentity` leaves the key file byte-equal; each signing path `NoIdentity`; ingest and reads as on a keyed `Log`; `drop_identity` removes the file and refuses with an entry; `channels` | entries signed by a keyed `Log` of another directory; `std::fs` |
 | `concurrency.rs` | S27 | two `Log`s on one directory, two threads, 50 appends each; then seq 0..99 and every prev link | `cbor::` re-check of each prev with `blake3` |
 | `model.rs` | S28 | proptest: random batches of valid, duplicate, gapped and forked entries of 2 authors | `model::Chain` |
 
@@ -619,6 +659,7 @@ stage ends with `cargo test` and clippy green.
 | L3 Store | `store.rs`, `schema.sql`, `Log::open/append/ingest/entries/head/status` | `append.rs`, `ingest.rs`, `corrupt.rs`, `concurrency.rs`, `model.rs` pass | none | none |
 | L4 Backup | backup format, `export_identity`, `restore_identity`, own-head confirmation | `backup.rs`, `restore_head.rs` pass | none | none |
 | L5 Use | `dist` publishes and follows with `Log`; `host` verifies a release with `Entry::decode` | the tests of `dist` and `host` that use `log` pass, then J3 | `dist`, `host` | none in `log`; `dist` and `host` need no fake of `log` |
+| L6 Keyless (step 8) | 5.5: `open_keyless`, `identity() -> Option<PublicKey>`, `drop_identity`, `channels`; `NoIdentity`, `HasIdentity`; the `Option` in `Inner`. `identity()` changes its type, so L6 lands in the same slice as dist S8, whose task adapts dist's calls | `keyless.rs` (S29 to S33) passes; every test of L1 to L5 passes, with `identity()` unwrapped where it is read | none | none |
 
 Step 4 (find) needs no new stage. If `dist` later needs entries of many
 channels by kind, a schema version 2 adds an index on a `kind` column; the
@@ -632,7 +673,7 @@ channels by kind, a schema version 2 adds an index on a `kind` column; the
 | `EntryId` and its text form (section 4.2) | `dist` | an entry of a channel names another entry of the same channel (the `withdraw` body). Outside its channel, a release is named by `pkg`'s `ReleaseRef` (spec W16). |
 | `Entry::decode`, `Entry` getters, `DecodeError` | `host`, `dist`, `net` (step 8) | `host` checks the release entry that comes with a package (F-INST-6): decode, then `kind() == "release"`, then the body with `pkg`. `net` drops entries that do not decode before the holder sees them; the holder verifies again. |
 | `Entry::bytes` | `dist` | the exact bytes that `dist` writes to the published folder and reads back. |
-| `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore. |
+| `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore; from step 8 the keyless open of a replica (5.5). |
 | `Status`, `Fork`, `Ingest`, `Head` | `dist`, through `dist` to `app` | gap and compromise reports (F-PUB-6, F-PUB-7). |
 | `MAX_KIND`, `MAX_BODY` | `dist`, `pkg` | `pkg` keeps an encoded `Release` body within `MAX_BODY`. |
 
@@ -694,12 +735,14 @@ confirmation after a restore ties the key to the store.
 
 12. **Status read check (log).** Clarified section 5.3: status validates the stored channel entries as well as its fork proof, so S26 cannot report a corrupt channel as healthy.
 
-13. **A home with no identity (step 8, spec W33).** A replica among the
-    participant's own machines must hold no signing key. Proposal for the
-    step 8 design slice: `Log::open_keyless(dir)` opens or creates the
-    store and creates no key; `append`, `export_identity` and
-    `restore_identity` then give `NoIdentity`, and `identity()` has no
-    key to give (its shape is the slice's choice). No format changes.
+13. **A home with no identity (step 8, spec W33).** Decided (S59): stage
+    L6, section 5.5. `Log::open_keyless(dir)` opens or creates the store
+    and creates no key, and refuses a directory with a key file
+    (`HasIdentity`); every signing path gives `NoIdentity`; `identity()`
+    is `Option<PublicKey>`. `drop_identity` deletes a key that signed
+    nothing, so an app home can join as a replica (`node` 5.5), and
+    `channels` lists the stored authors for `dist`'s holder (`dist`
+    5.12). No format changes.
 14. **Forgetting (`PEERS.md` D5).** `Log::forget(key)` removes a channel
     that no reader needs. Not before D5; until then stored channels only
     grow (`dist` Q12).

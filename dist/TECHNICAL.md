@@ -11,7 +11,7 @@ the questions for `spec/`.
 | Package | `watane-dist`, lib `watane_dist`, no binary |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` (needs `File::try_lock`, stable since 1.89) |
 | Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
-| Threads | No thread, no timer, no async runtime. Every call is blocking. |
+| Threads | No thread, no timer, no async runtime. Every call is blocking. From step 8 the holder methods (5.12) are called from `net`'s blocking threads while other calls run: none of them takes the read lock or the own-channel lock, and no lock is held across a request (5.12). |
 | Network | Outgoing HTTP GET only. `dist` never listens and never uploads. |
 
 ```text
@@ -88,9 +88,14 @@ impl Dist {
     /// open, DIST-F-1) and `<home>/dist/`. No network. Fails with Locked when
     /// another Dist holds the home.
     pub fn open(home: &Path, confirm: Arc<dyn Confirm>, options: Options) -> Result<Dist, DistError>;
+    /// Step 8 (5.12): opens a home with no identity (W33) over `Log::open_keyless`.
+    /// It reads, verifies and stores; every signing path gives NoIdentity.
+    pub fn open_keyless(home: &Path, options: Options) -> Result<Dist, DistError>;
 
-    pub fn identity(&self) -> PublicKey;
-    pub fn fingerprint(&self) -> String;                       // PublicKey::fingerprint
+    pub fn identity(&self) -> Option<PublicKey>;               // None on a keyless home (step 8)
+    pub fn fingerprint(&self) -> Option<String>;               // PublicKey::fingerprint
+    /// Step 8: deletes an identity that signed no statement; the home is keyless from then on (5.12).
+    pub fn drop_identity(&self) -> Result<(), DistError>;
     pub fn backup(&self, passphrase: &str) -> Result<Vec<u8>, DistError>;
     /// Replaces the identity with the one in the backup, while the own
     /// channel has no statement (DIST-F-3). Afterwards the own head is
@@ -100,6 +105,9 @@ impl Dist {
     /// the own channel from that link first (DIST-F-3, DIST-F-4). With None,
     /// the participant stated in the app that this identity never published.
     pub fn confirm_own(&self, own: Option<&Link>) -> Result<(), DistError>;
+    /// Step 8: confirms the own head after a restore when the stored own
+    /// head is exactly this one, learned from the participant's machines (5.12).
+    pub fn confirm_own_head(&self, seq: u64, id: &EntryId) -> Result<(), DistError>;
     pub fn own_confirmed(&self) -> Result<bool, DistError>;
 
     // Own statements. Each one asks `confirm` exactly once (section 5.2).
@@ -149,6 +157,35 @@ impl Dist {
 
     // Search (step 4, section 5.10). Reads only stored channels: no network.
     pub fn search(&self, query: &Query) -> Result<Vec<Hit>, DistError>;
+
+    // The holder (step 8, section 5.12): for `node`'s Holdings of net.
+    // No request, no read lock, no own-channel lock.
+    pub fn heads(&self, channels: Option<&[PublicKey]>) -> Result<Vec<(PublicKey, Option<HeadState>)>, DistError>; // None: every held channel
+    pub fn entries(&self, channel: &PublicKey, from: u64, limit: usize, max_bytes: usize) -> Result<Vec<Entry>, DistError>;
+    pub fn fork(&self, channel: &PublicKey) -> Result<Option<(Entry, Entry)>, DistError>;
+    pub fn package_file(&self, id: &PackageId) -> Option<PathBuf>;     // a stored package that a live stored release names
+    pub fn missing_packages(&self) -> Result<Vec<(PackageId, u64)>, DistError>; // live releases of held channels with no package file
+    pub fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, reason: Reason) -> Ingested;
+    pub fn store_package(&self, id: &PackageId, file: &Path) -> Result<(), DistError>;
+    pub fn keep(&self, channel: &PublicKey) -> Result<(), DistError>;  // give a stored channel a kept record
+    /// `search` with the candidates of the given stored channels only, record or not; `via` is empty.
+    pub fn search_stored(&self, query: &Query, channels: &[PublicKey]) -> Result<Vec<Hit>, DistError>;
+}
+
+// The holder (step 8, section 5.12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeadState { pub seq: u64, pub id: EntryId, pub forked: bool }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reason {
+    Kept,    // a full machine's copy of what an own machine holds: a kept record
+    Asked,   // a light machine's need or a remote hit: no record (net Q2)
+}
+#[derive(Debug)]
+pub enum Ingested {
+    Stored(u64),                 // the stored head after the call (also when nothing was new)
+    NotWanted,                   // over max_kept; nothing stored
+    Compromised { seq: u64 },    // now or earlier; the seq of fork.chain
+    Failed(DistError),           // nothing stored by the failing part
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +200,7 @@ pub struct Options {
     pub max_listed_per_index: usize, // default 128 listed channels per chosen index
     pub max_listed_entries: u64,     // default 1_000 entry files per read of a listed channel
     pub listed_local: bool,          // default false; tests set true to list 127.0.0.1 hosts
+    pub max_kept: usize,             // step 8: default 4096 kept records (5.12)
 }
 impl Default for Options { /* the defaults above */ }
 
@@ -226,6 +264,7 @@ pub struct ChannelView {
     pub index: bool,                   // a chosen index (step 4)
     pub listed_by: Vec<PublicKey>,     // chosen indexes whose read set holds it (5.9), key order
     pub listings: Vec<ListingInfo>,    // its own list and include statements, seq order; unlisted ones included
+    pub kept: bool,                    // step 8: a kept record (5.12)
     pub last_attempt: Option<u64>,     // ms since the Unix epoch; None for the own channel
     pub last_success: Option<u64>,     // ms since the Unix epoch; None for the own channel
 }
@@ -308,6 +347,8 @@ pub enum Via {
     /// A chosen index lists it, or its owner published it. `through`: the
     /// included index whose statement or channel it comes from. `note`: of the list statement, or "".
     Index { index: PublicKey, through: Option<PublicKey>, note: String },
+    /// Step 8: a kept channel: an own machine holds it (5.12).
+    Kept,
 }
 
 #[derive(Debug)]
@@ -394,6 +435,12 @@ pub enum DistError {
     AlreadyListed { seq: u64 },              // a live listing of the same mod or index
     NotListed { entry: EntryId },            // unlist: no live own list or include
     NotIndex { channel: PublicKey },         // drop_index of a channel that is no chosen index
+    // Own machines (step 8)
+    NoIdentity,                              // "this home holds no identity; it can read and store channels but never sign"
+    HeadNotStored { seq: u64 },              // confirm_own_head: the stored own head is not that one
+    Gap { channel: PublicKey, seq: u64 },    // ingest: the entries do not follow the stored head
+    NotNamed { id: PackageId },              // store_package: no live stored release names it
+    TooManyKept { max: usize },              // keep: max_kept kept records already
 }
 ```
 
@@ -568,6 +615,14 @@ more. A listed record also has `"bases": [text]`: all distinct bases that
 listings give (5.9), at most 4, default `[]`; its `base` equals the first
 element. The base that serves the highest head moves to the front.
 
+Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
+**kept** record is a channel that an own machine holds (5.12). A record
+whose only reason is `kept` has `"base": ""` and `"bases": []`: no web
+host is known for it, and dist never reads it from one. A record is
+removed only when it is not followed, not chosen, not kept, and no read
+set holds it. A step 4 reader would see a kept-only record as a listed
+one and remove it at the next refresh; nothing else changes.
+
 `site.json`: `{"version":1,"url":"https://alice.example.org/mods/"}`.
 Times are milliseconds since the Unix epoch, from `SystemTime::now()`. A
 missing file is empty. Another `version` or bad JSON is `Corrupt`. Both
@@ -619,6 +674,10 @@ Create `<home>/dist/` (0700) and its `packages/` and `site/`. Take the
 lock, or fail with `Locked`. Remove `tmp/` and create it again (a crash
 can leave a folder there). `Log::open(<home>/log)`. Read `follows.json`
 and `site.json`. Make no request.
+
+`open_keyless(home, options)` (step 8): the same, with
+`Log::open_keyless(<home>/log)` (log 5.5; a key file is `HasIdentity`)
+and no `Confirm`. See 5.12.
 
 ### 5.2 Sign and append (the only path to `Log::append`)
 
@@ -800,11 +859,12 @@ data only.
 An index is a channel, not a second kind of channel (W20). Every channel
 can hold `list`, `include` and `unlist` statements; a channel becomes an
 index for this home only when the participant chooses it. The own channel
-always counts as a chosen index, but has no record: `ChannelView.index` is
+always counts as a chosen index (on a home with an identity; a keyless
+home has no own channel, step 8), but has no record: `ChannelView.index` is
 `false` for it and `drop_index(own)` is `NotIndex`.
 
 **Records.** `follows.json` (4.4) holds one record per channel that is
-followed, chosen, or listed. `followed()` returns only records with
+followed, chosen, listed, or (step 8) kept. `followed()` returns only records with
 `followed: true`. `channel`, `refresh_channel` and `fetch` work for any
 record. `ChannelView.base` is the record's `base`.
 
@@ -924,7 +984,8 @@ so it works offline (F-QUAL-1). It derives each view once.
      (`Via::Index`, `through` the included channel);
    - each mod of a live `list` in the read set of each chosen index
      (`Via::Index`, with the note, `through` for a list of an included
-     channel).
+     channel);
+   - step 8: each slug of each kept channel (`Via::Kept`, 5.12).
 2. **Release.** The candidate's newest release that is not withdrawn
    (DD-7, `latest`) from the stored channel of its publisher. None (no
    record for a publisher that is not the own key, never read, no release
@@ -945,7 +1006,7 @@ so it works offline (F-QUAL-1). It derives each view once.
      `Via::Index` of the candidate, and the interface names of `offers`,
      `events` and grants, joined with `\n`. An empty text matches all.
 4. **Order.** More distinct `Via::Index` indexes first, then `Via::Own` and
-   `Via::Followed` before the others, then the release name
+   `Via::Followed` before the others (`Via::Kept` counts as neither), then the release name
    (lower-cased), then the `ReleaseRef` text. This order uses only the
    participant's own choices (V6); it is no global ranking.
 5. At most 200 hits (the first 200 of the order).
@@ -1025,6 +1086,113 @@ withdrawals of a provider keep coming, as for a hit (5.10). That base is
 the most trusted one that served the channel (step 5); like every follow
 it is read alone afterwards (5.9), and the participant can unfollow it.
 
+### 5.12 Own machines: the keyless home and the holder (step 8)
+
+Designed by S59; built in stage S8. `node` joins `dist` to `net`: it
+implements `net`'s `Holdings` with the methods of this section
+(`node/TECHNICAL.md` 4) and calls the rest of section 3 as the app did.
+`dist` knows nothing of `net`: it gains no thread, no socket and no
+dependency, and every method stays a blocking call (DD-1).
+
+**A home with no identity** (spec W33, DIST-F-55). `open_keyless` opens
+`log` with no key (log 5.5). On such a home:
+- `identity()` and `fingerprint()` are `None`;
+- `set_name`, `publish`, `withdraw`, `list`, `include`, `unlist`,
+  `backup`, `restore`, `confirm_own`, `confirm_own_head`, `own`,
+  `own_confirmed`, `own_link`, `set_site_url` and `export` give
+  `NoIdentity` before they ask `confirm` or touch a file;
+- there is no own channel: no read set and no search has `Via::Own`, and
+  `site/` stays empty;
+- follow, refresh, indexes, search, fetch and the holder methods work as
+  on any home.
+
+`drop_identity()`: lock the own channel; `NoIdentity` on a keyless home;
+the own channel has a statement: the `IdentityInUse` of `log`, shown
+unchanged; else `log.drop_identity()`, remove `site.json`, and empty
+`site/`. The home is keyless from then on; a later `Dist::open` creates a
+new identity (5.1), so the caller that keeps it keyless opens it with
+`open_keyless` (`node` 5.6).
+
+**Held channels.** The own channel (with an identity) and each channel with
+a record: followed, chosen, listed or kept. A channel stored with no
+record (a provider read, a `read_link`, an `Asked` ingest) is not held:
+it is in `<home>/log/`, but no holder method lists it (net Q2).
+
+**The lock rule** (RV-06, DIST-F-58). `read_mutex` serializes the reads
+from web hosts (5.4, 5.7, 5.9, 5.11) and is held across their requests,
+as today. No holder method takes it, nor the own-channel mutex. A holder
+method holds only `log`'s mutex (one SQLite statement or transaction) and
+the `follows` mutex (the in-memory map and one atomic write of
+`follows.json`), never across a request or a call to `Confirm`. Every
+source only raises a stored head (PEERS A2), so a holder `ingest` during a
+web read needs no coordination: the web read's own `log.ingest` reports a
+gap or a duplicate as 5.4 step 5 already handles. A record that a holder
+method adds while a refresh runs is never removed by that refresh: the
+removal rule of 4.4 keeps every kept record.
+
+**The holder methods.** None makes a request.
+
+- `heads(channels)`: for each given channel, or each held channel in key
+  order with `None`: `log.head`, and `forked` from `log.status`. A
+  channel with no entry is `None`.
+- `entries(channel, from, limit, max_bytes)`: `log.entries(channel, from,
+  limit)`, cut before the first entry that would pass `max_bytes` in all
+  (at least one entry when `limit` > 0).
+- `fork(channel)`: `log.status`; `Compromised(fork)` gives `(chain,
+  other)`.
+- `package_file(id)`: `packages/<id>` exists and a live release of a
+  stored channel names it: its path. Else `None`; a withdrawn package is
+  not given (DD-12). Package files are written only after the checks of
+  5.7, so the file is not hashed again here.
+- `missing_packages()`: the package id and size of each live release of
+  each held channel with no `packages/<id>`, by channel key and seq, at
+  most 1024. The own channel's come first.
+- `ingest(channel, entries, reason)` (DIST-F-56, DIST-F-57):
+  1. The channel is compromised: `Compromised`, nothing stored.
+  2. `Kept`, and the channel is not the own one: with no kept record and
+     `max_kept` kept records already, `NotWanted`. Else set `kept: true`
+     on its record (a new record: `base` `""`, `bases` `[]`,
+     `followed_at` now) and write `follows.json`, before step 3, so that
+     no refresh removes it in between.
+  3. `log.ingest(channel, &entries)`; `AuthorMismatch` gives
+     `Failed(Log(..))`, and no record is added in step 2 for a call that
+     fails here.
+  4. A fork: `Compromised { seq }`. A gap with nothing stored and no head:
+     `Failed(Gap { channel, seq })`. Else `Stored(head seq)`.
+  `Asked` adds no record. The own channel never gets a record: its
+  entries are ingested as `log` allows, which is how a restored home
+  learns its own head (log 5.2). `ingest` takes neither lock of 5.2.
+- `store_package(id, file)` (DIST-F-57): the file is at most
+  `max_package` bytes (`PackageTooLarge`); read it; `PackageId::of !=
+  id`: `HashMismatch` (its `url` is the file path); a live release of a
+  stored channel names `id`, else `NotNamed`; then 5.7 steps 6 and 7
+  against that release (`BadPackage`, `PackageMismatch`); write
+  `packages/<id>` as the cache does (temp file, fsync, rename). The file
+  of the caller is left as it is.
+- `keep(channel)`: the channel is not the own one and has an entry
+  stored, else `NotFollowed { channel, local_only: false }`. Then step 2
+  of `ingest`, where `NotWanted` is the error `TooManyKept { max }`. A
+  record that is already kept is `Ok` with no write. The one caller is
+  `node`, after an install on a replica (`node` 5.3).
+- `search_stored(query, channels)`: 5.10 with the candidates of step 1
+  replaced by each slug of each given channel that has an entry, record
+  or not; steps 2 to 6 unchanged; `via` is empty; `link` is the record's
+  front base when there is one, else `None`.
+
+A "live release of a stored channel" is found through every stored
+channel (`log.channels()`, log 5.5); dist may keep an index from package
+id to release in memory, derived like the views (5.6).
+
+**Confirm the own head from own machines** (DIST-F-59).
+`confirm_own_head(seq, id)`: lock the own channel; `NoIdentity`; already
+confirmed: `Ok`, no change; compromised: `Compromised`; the stored own
+head is not `(seq, id)`: `HeadNotStored { seq }`. Then
+`log.confirm_own_head()` and `export(site_dir)`; an export error is
+`SiteNotWritten` after the confirmation (as 5.2 step 6): the head is
+confirmed, and the next export repairs the folder once the packages are
+fetched. `site.json` is not written: no base is known; the participant
+sets the site URL again.
+
 ## 6. Security properties
 
 | Property | Enforcement | Test |
@@ -1053,6 +1221,11 @@ it is read alone afterwards (5.9), and the participant can unfollow it.
 | A provider hint cannot reach the local network or read without bound | the local-address rule and the limits of a listed read (5.9) hold for hint bases and for `read_link`; at most 4 bases per fetch | A37 |
 | A third party cannot crowd out the consumer's hint | hint channels by trust: own, the consumer, followed, chosen, listed; the follow after an install uses the most trusted base that served | A39 |
 | A local program cannot add a follow | `read_link` creates no record; only the participant's own acts follow (open a link, install) | A40 |
+| A replica cannot sign (W33, step 8) | `open_keyless` over `Log::open_keyless`: no key file; every signing path is `NoIdentity` before `confirm`; `log` refuses again | A42 |
+| An own machine cannot store an unverified object (step 8) | `ingest` goes through `log.ingest` (decode, chain, fork); `store_package` runs the hash, package and release checks of 5.7 against a stored live release | A44, A46 |
+| An own machine cannot fill the store without bound (step 8) | `net` pulls only what it asked for; at most `max_kept` kept records | A45 |
+| A web read cannot stall the own machines (step 8) | holder methods never take the read lock and hold no lock across a request | A47 |
+| A hint cannot confirm the own head (step 8) | `confirm_own_head` needs exactly that head stored and verified | A48 |
 | An origin is only a claim (W24) | `Release.origin` is shown as the publisher's claim; dist never treats it as a statement of the origin's publisher | review |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
@@ -1100,6 +1273,10 @@ literal values, `std::fs`, the `blake3` crate, and `watane_log` and
 | `index_*` | A21, A23, A26, A27, A28, A30, A31, A34, A35; `index_base_*`: a followed base wins over a listing's base; `index_own_skipped`: a listing of the own key makes no request | request counts per path; `follows.json` with `serde_json` |
 | `search_*` | A22, A24, A25, A29, A32 | the test's own list of what each home published |
 | `j4_dist` | the dist half of J4 (A33) | values the test created |
+| `keyless_*` (S8) | A42, A43; every signing path of 5.12 is `NoIdentity` with no `confirm` call and no file change | `std::fs`; recorded requests |
+| `holder_*` (S8) | A44, A45, A46, A48; `entries` byte cut; `package_file` of a withdrawn release is `None` | entries and packages of a keyed home made in the test; `blake3::hash`; `follows.json` with `serde_json` |
+| `holder_lock` (S8) | A47 | a `TestHost` in `Stall(20 s)` mode; the test's clock |
+| `kept_*` (S8) | kept records survive refresh, unfollow and `drop_index`; `Via::Kept` hits; `search_stored` gives no `via` | literal expected hits |
 
 Step 4 tests use one `TestHost` per channel (Alice, Ivy, Jay, ...), each
 serving that home's site folder. The index owner's statements are made by
@@ -1132,6 +1309,7 @@ stub in another subsystem's folder.
 | S4 | `http`, `read_channel`, `follow`, `unfollow`, `refresh` | `log`: `ingest`, `status` (L3) | none new | `follow_*`, `refresh_*` pass |
 | S5 | `fetch`, `open_link`, `backup`, `restore`, `confirm_own` | `log`: backup and own-head confirmation (L4) | none new | `fetch_*`, `restore_*`, `j3_dist` pass with the real `../log` and `../pkg` |
 | S7 (step 5) | 5.11: provider bases, `fetch_for`, `read_link`; `Fetched.link`; `Query.origin` | nothing new | none | A36 to A41 pass; the step 3 and 4 tests still pass unchanged |
+| S8 (step 8) | 5.12: `open_keyless`, `identity()` and `fingerprint()` as `Option`, `drop_identity`, `NoIdentity` on every signing path; the holder methods, `HeadState`, `Reason`, `Ingested`; kept records (4.4), `ChannelView.kept`, `Via::Kept`, `Options.max_kept`; `keep`, `search_stored`; `confirm_own_head`; the lock rule. Changed tests: each use of `identity()` and `fingerprint()` reads the `Option` | `log` L6 (`open_keyless`, `drop_identity`, `channels`): built in the same slice, since L6 changes `Log::identity` | none | A42 to A48 pass; every step 3 to 5 test passes |
 | S6 (step 4) | `list`, `include`, `unlist` bodies and rules 9 to 14; `Statement` and `Change` additions; `follows.json` fields; the read set, `choose_index`, `drop_index`, `indexes`, three-pass `refresh`; `search`, `Query`, `Hit` and the marks | nothing new: `log` and `pkg` as for S5 | none | `body_vectors` and `derive_rules` with the step 4 rows, `index_*`, `search_*` and `j4_dist` pass; the step 3 tests still pass unchanged |
 
 J3 itself passes only with `host`, `app` and `dev` (spec/TECHNICAL.md
@@ -1151,6 +1329,13 @@ needs no direct `log` dependency. The uses:
 | `open_link`, `fetch`, `Fetched { package, entry, .. }` | through `app` to `host.plan`: "a package with its release" |
 | the link text of 4.2, the site folder of 4.3 | `watane-dev publish` prints both (through `app`'s local API) |
 
+From step 8, `node` uses section 3 as the app did (the app then calls
+`dist` through `node`, spec T 2), and the holder of 5.12: `open_keyless`,
+`drop_identity`, `confirm_own_head`, `heads`, `entries`, `fork`,
+`package_file`, `missing_packages`, `ingest`, `store_package`, `keep`,
+`search_stored`, `HeadState`, `Reason`, `Ingested`, `Via::Kept` (`node`
+TECHNICAL 4, 12).
+
 ## 10. Needs from other subsystems
 
 Exact signatures assumed: `log/TECHNICAL.md` section 2 and
@@ -1163,7 +1348,9 @@ Exact signatures assumed: `log/TECHNICAL.md` section 2 and
 `Ingest`, `Status`, `Fork`; `Log` (`open`, `identity`, `append`, `ingest`,
 `entries`, `head`, `status`, `export_identity`, `restore_identity`,
 `own_head_confirmed`, `confirm_own_head`); `DecodeError`, `KeyTextError`,
-`Error`. A stub (section 8) copies these signatures from log 2.
+`Error`. Step 8 (log L6, log 5.5): `Log::open_keyless`, `identity() ->
+Option<PublicKey>`, `drop_identity`, `channels`, `Error::NoIdentity`,
+`Error::HasIdentity`. A stub (section 8) copies these signatures from log 2.
 
 `dist` checks compromise and the own-head confirmation before it asks the
 app, so `log`'s `Compromised` and `OwnHeadUnconfirmed` errors on `append`
@@ -1245,7 +1432,7 @@ are `list` and `include` statements of 4.1.
 | Q9 | spec/ (none) | spec/ sets no limit on the size of a package; `pkg` drafts 64 MiB. | 64 MiB everywhere: `pkg` refuses at pack and decode, `dist` at publish and as the body limit of a fetch. Name it in spec §3. |
 | Q11 | spec TECHNICAL §9, W15 | The four open points of step 4 (S26). | Decided in 4.1, 5.9, 5.10 and DD-18 to DD-24; spec W20 to W23 name them. |
 | Q12 | log | A listed channel that no index lists any more leaves its entries in `<home>/log/`; storage grows with every channel ever listed. | Step 4 keeps them (they are small, and a later listing reuses them). A `Log::forget(key)` is a later log stage. |
-| Q13 | spec W33, `PEERS.md` 6.1 | Step 8: a replica must read, verify and store with no identity, and `node` must serve `net` from the store. | For the step 8 design slice: `Dist::open_keyless(home)` over `Log::open_keyless`; `sign_and_append` and the publish paths give `NoIdentity`. The holder methods of `net/TECHNICAL.md` 3.1, a record reason `kept` for what a full machine keeps, and reads that do not hold the store lock across network calls (`net/REVIEW.md` RV-06). `dist` gains no thread and no dependency on `net`. |
+| Q13 | spec W33, `PEERS.md` 6.1 | Step 8: a replica must read, verify and store with no identity, and `node` must serve `net` from the store. | **Decided (S59): stage S8, section 5.12, DD-36 to DD-40.** `open_keyless`, `drop_identity`, `confirm_own_head`; the holder methods; kept records; the lock rule. The proposal was: `Dist::open_keyless(home)` over `Log::open_keyless`; `sign_and_append` and the publish paths give `NoIdentity`. The holder methods of `net/TECHNICAL.md` 3.1, a record reason `kept` for what a full machine keeps, and reads that do not hold the store lock across network calls (`net/REVIEW.md` RV-06). `dist` gains no thread and no dependency on `net`. |
 | Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
@@ -1287,3 +1474,8 @@ are `list` and `include` statements of 4.1.
 | DD-33 | With no record and the package cached, `Fetched.link` is the first provider base in trust order, as on every other cache hit (5.7 step 8, S35); no base is read and no package is requested. | One rule for every cache hit. Undo: cheap. |
 | DD-34 | A provider base ends the reads (5.11 step 3, DD-32) only when, after its read (`Current` or `Behind`), the stored view holds the wanted release; a base that serves without it is a stale mirror and the next base is read. When no base has it but at least one served the channel, the answer is `StaleBases { release, bases }` (the count of bases that served), naming the cause and the next step; `UnknownRelease` stays for a followed or index record whose stored view lacks the release. `unfollow` of a channel with no `followed: true` record is the new `NothingToUnfollow { channel }`, not `NotFollowed`. | A stale mirror ahead in trust order hid a good base behind it; "follow the publisher's link" was no help for a channel Eve never followed. Undo: cheap. |
 | DD-35 | A link's base is a URI of any scheme (W31); `http` and `https` are the only resolvers. Another scheme parses, keeps its listing live, and fails a read with `NoResolver`. | Links are published in `list` and `include` statements and cannot be recalled; a reader that refused a new scheme at parse would mark the statement bad, and its later `unlist` too. Undo: cheap now, costly once a second scheme is published. |
+| DD-36 | A keyless home is a `Dist` like any other, opened with `open_keyless`; every signing path is `NoIdentity`, and `identity()` is an `Option`. | One type and one store for both kinds of home; the type tells each caller that a home may hold no key. Undo: cheap (workspace callers only). |
+| DD-37 | A full machine's copy is a record reason `kept` in `follows.json`, with no base, beside `followed`, `index` and the listed state. | The record already carries the reasons a channel is held; a kept channel must survive refresh and unfollow like the others. Additive: the version stays 1, as in step 4. |
+| DD-38 | An `Asked` ingest makes no record (net Q2); `keep` makes one after an install. | A search hit pulled through a full machine must not grow the held set; an installed mod must keep getting updates (DD-24). |
+| DD-39 | The holder methods take no read lock and no own-channel lock; only `log`'s and `follows`'s, never across a request. | RV-06: a web read must not stall the own machines; every source only raises a head (PEERS A2), so no coordination is needed. |
+| DD-40 | Kept channels are search candidates with `Via::Kept`, which counts as no index in the order. | A full machine answers a light machine's query from what the own machines hold; the order still uses only the participant's choices. |
