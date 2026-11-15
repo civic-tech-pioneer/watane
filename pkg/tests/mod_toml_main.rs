@@ -34,6 +34,20 @@ fn ac2_main_requires_boolean_and_page() {
     expect(no_page.path(), "`main` needs a page (ui/index.html)");
 }
 
+#[test]
+fn main_with_linked_ui_gets_only_the_path_violation() {
+    let dir = with_main("true");
+    let page = tempfile::tempdir().unwrap();
+    fs::rename(dir.path().join("ui"), page.path().join("ui")).unwrap();
+    std::os::unix::fs::symlink(page.path().join("ui"), dir.path().join("ui")).unwrap();
+    let Err(ModError::Invalid(violations)) = Mod::read(dir.path()) else {
+        panic!("a linked ui must be refused");
+    };
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert_eq!(violations[0].rule, Rule::Path);
+    assert_eq!(violations[0].file, "ui");
+}
+
 fn expect(dir: &std::path::Path, message: &str) {
     let Err(ModError::Invalid(violations)) = Mod::read(dir) else {
         panic!("expected a mod.toml violation: {message}");

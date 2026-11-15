@@ -392,6 +392,7 @@ impl Mod {
         let ui = lstat(dir, "ui")?;
         let page = ui.is_some();
         if meta.as_ref().is_some_and(|meta| meta.main)
+            && !ui.is_some_and(|m| m.kind == Kind::Link)
             && !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File)
         {
             add(
