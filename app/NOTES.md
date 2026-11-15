@@ -430,6 +430,31 @@
   both fake journeys (`ac2_j3_github`, `ac2_j5_github`) passed; no
   `watane-j-*` repository left; the token never appeared in output.
 
+## S71 — J5 organisation fork
+
+- Fake J5 now publishes Carol as `carols-club` while her gh login stays
+  `carol`; Alice still uses the default owner. Real J5 reserves Carol's
+  `minmax-fund/watane-j-<random>` mod name instead of pre-creating it, then
+  publishes with `--owner minmax-fund` and checks the GitHub fork parent and
+  `watane` default branch (S53 expected `forked == false`, S71 expects true).
+  Her site still uses a pre-created origin. The committed Ratings component's
+  public export is renamed alongside its WIT package; no mod is compiled.
+- Reservations retain the existing random-name rule and mandatory HTTP 404
+  preflight, and are recorded before creation. Drop uses an included HTTP
+  response for DELETE so an unused reservation's 404 is silent; the prefix
+  guard still applies to every deletion. Local child-process gh stubs cover
+  reservations, creation, cleanup, failed preflights and the deletion guard.
+- Validation in this sandbox: `cargo fmt --check` passes. An existing shared
+  target `watane-dev` binary successfully checks and runs the renamed prebuilt
+  fixture's score contract (one passed, no errors or warnings). Cargo build,
+  default/driver tests, targeted fake J5 and local harness tests, both feature
+  compilation checks and both clippy checks stop before compilation because
+  opening main's `target/debug/.cargo-build-lock` is denied (os error 1).
+  Release/driver also stops at the release target's lock, so its intended
+  compile guard is unverified here. Red/green execution is blocked by that
+  same lock; no alternative target was used. The real GitHub test was not run
+  (no token). No dependency was added and no existing assertion was weakened.
+
 ## S52 front tests
 
 - S52: Front tests now pass early on a locked screen with one explicit stderr skip line; unknown ioreg session state still panics, and focus assertions remain unchanged. All four real front tests passed locked with one skip line each; build/default tests (112), clippy and fmt pass. In the Codex sandbox the full driver suite fails before API consent-window readiness with the macOS hiservices XPC error; natively it passes (validator). No dependencies added.

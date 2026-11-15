@@ -73,7 +73,7 @@ mod real {
             )
         }
 
-        pub fn create(&mut self) -> String {
+        pub fn reserve(&mut self) -> String {
             // Rejection sampling avoids bias and guarantees the first character is a letter.
             let mut suffix = String::new();
             while suffix.len() < 10 {
@@ -99,13 +99,18 @@ mod real {
                 "repository preflight: {}",
                 self.diagnostic(&check)
             );
+            self.repos.push(name.clone());
+            name
+        }
+
+        pub fn create(&mut self) -> String {
+            let name = self.reserve();
             let created = self.run(Command::new("gh").args(["repo", "create", &name, "--public"]));
             assert!(
                 created.status.success(),
                 "create: {}",
                 self.diagnostic(&created)
             );
-            self.repos.push(name.clone());
             name
         }
 
@@ -164,8 +169,22 @@ mod real {
                 assert!(name.starts_with(PREFIX));
                 let mut command = Command::new("gh");
                 self.env(&mut command);
-                match command.args(["repo", "delete", name, "--yes"]).output() {
+                match command
+                    .args([
+                        "api",
+                        "--include",
+                        "--method",
+                        "DELETE",
+                        &format!("repos/{name}"),
+                    ])
+                    .output()
+                {
                     Ok(output) if output.status.success() => {}
+                    Ok(output)
+                        if String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+                            line.starts_with("HTTP/")
+                                && line.split_whitespace().nth(1) == Some("404")
+                        }) => {}
                     Ok(output) => eprintln!(
                         "{}: {}",
                         redact(&self.token, name),
@@ -177,6 +196,127 @@ mod real {
                         redact(&self.token, &error.to_string())
                     ),
                 }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        // Run the harness in a child with its own PATH; never change the test
+        // process's environment or invoke the installed gh.
+        #[test]
+        fn ac2_reserve_create_and_drop_without_network() {
+            for scenario in [
+                "unused", "forked", "create", "exists", "auth", "not-http", "guard",
+            ] {
+                let root = tempfile::tempdir().unwrap();
+                let gh = root.path().join("gh");
+                fs::write(
+                    &gh,
+                    r#"#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$WATANE_GH_STUB_ROOT/calls"
+case "$*" in
+  'api --include repos/'*)
+    case "$WATANE_GH_SCENARIO" in
+      exists) printf 'HTTP/2.0 200 OK\n'; exit 0 ;;
+      auth) printf 'HTTP/2.0 401 Unauthorized\n'; exit 1 ;;
+      not-http) printf '404 is not an HTTP response\n'; exit 1 ;;
+    esac
+    printf 'HTTP/2.0 404 Not Found\n'; exit 1 ;;
+  'repo create '*) touch "$WATANE_GH_STUB_ROOT/created" ;;
+  'api --include --method DELETE repos/'*)
+    if test -e "$WATANE_GH_STUB_ROOT/created"; then
+      rm "$WATANE_GH_STUB_ROOT/created"
+      printf 'HTTP/2.0 204 No Content\n'
+    else
+      printf 'HTTP/2.0 404 Not Found\n'; exit 1
+    fi ;;
+  *) printf 'unexpected gh command\n' >&2; exit 2 ;;
+esac
+"#,
+                )
+                .unwrap();
+                fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+                let path = std::env::join_paths(
+                    std::iter::once(root.path().to_path_buf())
+                        .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+                )
+                .unwrap();
+                let output = Command::new(std::env::current_exe().unwrap())
+                    .args(["ac2_reservation_scenario", "--nocapture"])
+                    .env("PATH", path)
+                    .env("WATANE_GH_STUB_ROOT", root.path())
+                    .env("WATANE_GH_SCENARIO", scenario)
+                    .env_remove("CLAUDE_GH_TOKEN")
+                    .env_remove("GH_TOKEN")
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{scenario}: {output:?}");
+                let calls = fs::read_to_string(root.path().join("calls")).unwrap_or_default();
+                if ["unused", "forked", "create"].contains(&scenario) {
+                    assert!(output.stderr.is_empty(), "{scenario}: {output:?}");
+                    assert_eq!(
+                        calls.matches("--method DELETE").count(),
+                        if scenario == "create" { 1 } else { 2 }
+                    );
+                    assert_eq!(
+                        calls.matches("repo create").count(),
+                        usize::from(scenario == "create")
+                    );
+                    assert!(!root.path().join("created").exists());
+                } else {
+                    assert!(!calls.contains("DELETE"), "{calls}");
+                    assert!(!calls.contains("repo create"), "{calls}");
+                }
+            }
+        }
+
+        #[test]
+        fn ac2_reservation_scenario() {
+            let Ok(scenario) = std::env::var("WATANE_GH_SCENARIO") else {
+                return;
+            };
+            let mut github = RealGithub::with_token("dummy-harness-token".into());
+            if scenario == "guard" {
+                github.repos.push("minmax-fund/do-not-touch".into());
+                assert!(std::panic::catch_unwind(|| drop(github)).is_err());
+            } else if ["exists", "auth", "not-http"].contains(&scenario.as_str()) {
+                assert!(
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| github.reserve()))
+                        .is_err()
+                );
+                assert!(github.repos.is_empty());
+            } else {
+                let name = if scenario == "create" {
+                    github.create()
+                } else {
+                    github.reserve()
+                };
+                let suffix = name.strip_prefix(PREFIX).unwrap();
+                assert_eq!(suffix.len(), 10);
+                assert!(suffix.as_bytes()[0].is_ascii_lowercase());
+                assert!(
+                    suffix
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                );
+                assert_eq!(github.repos.as_slice(), std::slice::from_ref(&name));
+                if scenario != "create" {
+                    let other = github.reserve();
+                    assert_ne!(name, other);
+                }
+                let created =
+                    std::path::PathBuf::from(std::env::var_os("WATANE_GH_STUB_ROOT").unwrap())
+                        .join("created");
+                assert_eq!(created.exists(), scenario == "create");
+                if scenario == "forked" {
+                    fs::write(created, "forked by publish").unwrap();
+                }
+                drop(github);
             }
         }
     }

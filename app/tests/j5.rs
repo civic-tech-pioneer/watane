@@ -481,7 +481,13 @@ fn ac2_j5_github() {
     )
     .unwrap();
     assert!(ratings.join(".git").is_dir());
-    let mut command = github.dev_command(&dev, &carol, &ratings, "carol", &["publish", "--push"]);
+    let mut command = github.dev_command(
+        &dev,
+        &carol,
+        &ratings,
+        "carol",
+        &["publish", "--push", "--owner", "carols-club"],
+    );
     let pending = std::thread::spawn(move || command.output().unwrap());
     consent(&carol);
     contains(
@@ -499,7 +505,12 @@ fn ac2_j5_github() {
         published["result"]["push"]["mod"]["forked"], true,
         "{published}"
     );
-    let fork = root.join("remotes/carol/ratings");
+    assert_eq!(
+        published["result"]["push"]["mod"]["repository"],
+        "https://github.com/carols-club/ratings"
+    );
+    assert!(!root.join("remotes/carol/ratings").exists());
+    let fork = root.join("remotes/carols-club/ratings");
     assert_eq!(
         fs::read_to_string(fork.join("fake-gh-parent"))
             .unwrap()
@@ -550,7 +561,8 @@ fn ac3_j5_real_github() {
     let mut github = RealGithub::new();
     let mod_name = github.create();
     let site_name = github.create();
-    let carol_mod = github.create();
+    let carol_mod = github.reserve();
+    let carol_slug = carol_mod.strip_prefix("minmax-fund/").unwrap();
     let carol_site = github.create();
     let repository = format!("https://github.com/{mod_name}");
     let site_repository = format!("https://github.com/{site_name}");
@@ -705,7 +717,10 @@ fn ac3_j5_real_github() {
         ),
     )
     .unwrap();
-    github.repository(&ratings, &format!("https://github.com/{carol_mod}"));
+    rename_ratings(&ratings, carol_slug);
+    let carol_manifest = watane_host::watane_pkg::Mod::read(&ratings).unwrap();
+    assert_eq!(carol_manifest.slug().as_str(), carol_slug);
+    assert!(carol_manifest.repository().is_none());
     github.site_origin(&carol.home, &carol_site);
     // dev publish runs the contract tests that the agent writes with its logic.
     fs::create_dir(ratings.join("tests")).unwrap();
@@ -715,12 +730,17 @@ fn ac3_j5_real_github() {
     )
     .unwrap();
     assert!(ratings.join(".git").is_dir());
-    let mut command = github.dev_command(&dev, &carol, &ratings, &["publish", "--push"]);
+    let mut command = github.dev_command(
+        &dev,
+        &carol,
+        &ratings,
+        &["publish", "--push", "--owner", "minmax-fund"],
+    );
     let pending = std::thread::spawn(move || command.output().unwrap());
     consent(&carol);
     contains(
         &body(&carol),
-        &["release", "ratings", "Made from", alice_release, "Alice"],
+        &["release", carol_slug, "Made from", alice_release, "Alice"],
     );
     approve(&carol);
     let output = pending.join().unwrap();
@@ -734,9 +754,23 @@ fn ac3_j5_real_github() {
     assert_eq!(published["ok"], true, "{published}");
     assert_eq!(published["warnings"], json!([]), "{published}");
     assert_eq!(
-        published["result"]["push"]["mod"]["forked"], false,
+        published["result"]["push"]["mod"]["forked"], true,
         "{published}"
     );
+    assert_eq!(
+        published["result"]["push"]["mod"]["repository"],
+        format!("https://github.com/{carol_mod}")
+    );
+    let mut command = std::process::Command::new("gh");
+    github.env(&mut command);
+    let output = command
+        .args(["api", &format!("repos/{carol_mod}")])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", github.diagnostic(&output));
+    let fork = github.json(&output);
+    assert_eq!(fork["parent"]["full_name"], mod_name);
+    assert_eq!(fork["default_branch"], "watane");
     let clone = root.join("cloned-carol");
     github.git(&[
         "clone",
@@ -760,4 +794,53 @@ fn ac3_j5_real_github() {
     ]);
     assert!(carol.quit().success());
     assert!(alice.quit().success());
+}
+
+// Rename the committed fixture's public component export, leaving the core
+// implementation and its internal names intact. The exact section guard makes
+// a fixture encoding change fail explicitly; no mod build or new tool is needed.
+fn rename_ratings(dir: &Path, slug: &str) {
+    let wit = dir.join("wit/world.wit");
+    fs::write(
+        &wit,
+        fs::read_to_string(&wit)
+            .unwrap()
+            .replace("mods:ratings@", &format!("mods:{slug}@")),
+    )
+    .unwrap();
+    let wasm = dir.join("logic.wasm");
+    let mut bytes = fs::read(&wasm).unwrap();
+    // Component export section: count, external name, instance index, no type.
+    let old = b"\x0b\x1c\x01\x00\x16mods:ratings/api@0.1.0\x05\x0f\x00";
+    let offsets: Vec<_> = bytes
+        .windows(old.len())
+        .enumerate()
+        .filter_map(|(i, window)| (window == old).then_some(i))
+        .collect();
+    assert_eq!(offsets.len(), 1, "ratings fixture export section changed");
+    let name = format!("mods:{slug}/api@0.1.0");
+    assert!(
+        name.len() + 6 < 128,
+        "fixture section uses single-byte lengths"
+    );
+    let mut export = vec![11, (name.len() + 6) as u8, 1, 0, name.len() as u8];
+    export.extend_from_slice(name.as_bytes());
+    export.extend_from_slice(&[5, 15, 0]);
+    bytes.splice(offsets[0]..offsets[0] + old.len(), export);
+    fs::write(wasm, bytes).unwrap();
+}
+
+#[test]
+fn ac3_reserved_slug_keeps_prebuilt_ratings_contract() {
+    let work = tempfile::tempdir().unwrap();
+    let ratings = work.path().join("ratings");
+    copy_dir(&fixture("ratings"), &ratings);
+    let slug = "watane-j-a012345678";
+    rename_ratings(&ratings, slug);
+    let manifest = watane_host::watane_pkg::Mod::read(&ratings).unwrap();
+    assert_eq!(manifest.slug().as_str(), slug);
+    assert!(manifest.repository().is_none());
+    watane_host::watane_pkg::pack(&ratings, true).unwrap();
+    let harness = watane_host::Harness::open(&ratings, Default::default()).unwrap();
+    assert_eq!(harness.call("api.score", json!({})).unwrap().value, 1);
 }

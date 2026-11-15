@@ -1305,10 +1305,13 @@ record it in `NOTES.md` with the old and the new result.
 `ac3_j3_real_github` and `ac3_j5_real_github`, ignored as
 `real: GitHub minmax-fund`: the `ac2` GitHub stories against real `gh` and
 GitHub, in throwaway `minmax-fund/watane-j-<random>` repositories that
-`tests/support/github.rs` creates (after a 404) and deletes. They need
+`tests/support/github.rs` reserves (after a 404) and deletes. They need
 `CLAUDE_GH_TOKEN`, given to children only as `GH_TOKEN`. Every mod and site
-repository is pre-created, because dev's owner lookup returns the token's
-user, not the org; J5 checks Carol's tagged ancestry, not a GitHub fork.
+repository is pre-created except Carol's derived mod in J5: its reserved
+slug is published with `--push --owner minmax-fund`, without a repository
+in `mod.toml`. J5 checks the GitHub fork's parent, `watane` default branch
+and tagged ancestry. Cleanup ignores an HTTP 404 for an unused reservation;
+every deletion retains the `minmax-fund/watane-j-` prefix guard.
 
 ## 12. Build plan
 
