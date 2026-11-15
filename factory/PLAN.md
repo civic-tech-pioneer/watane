@@ -800,6 +800,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S61: `585e3daf` (sessionId `585e3daf-6cf8-4f99-be6e-144904360f44`, resumed after the disk filled; first run `f08e7a50`), worktree `.claude/worktrees/s61` (local: the app). Delivered; merging.
 - S60: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S62: delivered 2026-11-15 and merged; routine finished, branch removed.
+- S63: cloud routine `trig_01QqG6y7XnvSQ7DiNeiy67jR` (handed out 2026-11-15), branch `slice/s63`.
+- S64: cloud routine `trig_01RVY7TRDQuF4SUPBGmqvsYJ` (handed out 2026-11-15), branch `slice/s64`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
@@ -1295,6 +1297,14 @@ The human may veto each one.
   `support/release.rs` carries an `#[ignore]` test that rewrites the committed fixtures in place, and
   it is compiled into six test binaries, so it races the tests reading those fixtures. Run pkg's
   ignored tests with `--test-threads=1`, or move the regenerator out of the test binaries.
+- S61 (2026-11-15): the Mac's disk filled (161 MiB free) and stopped S61's linker. `target/` had
+  grown to 75 GB: cargo never removes old artifacts, and one fresh build is 7 GB. Since then dev
+  builds keep line tables only (2e17a94), and the merge routine removes the slice worktree's own
+  `target/` after each merge and runs `cargo clean` on main's from time to time (agreed with the
+  human). A slice worktree starts from an APFS clone of main's `target/` (`cp -c -R`), not a build
+  of its own.
+- S61: a resumed local foreman that rebased could not force-push, so it pushed
+  `slice/s61-rebased`. The product owner merges the local branch and deletes both remote names.
 
 ## Digest
 
