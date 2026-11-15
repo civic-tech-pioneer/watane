@@ -88,6 +88,7 @@ imports and exports. There is no second list.
 | export an interface of another package | a subscription to those events and collects of that provider |
 | import an interface of its own package | none: these are the events and collects that the mod sends |
 | import `watane:host/caller` | none: always present |
+| import `watane:host/manage` (step 10) | the management of mods (W35) |
 
 **Events and collects.** A function of an interface that a mod imports from
 its own package is an **event** when it has no result, and a **collect**
@@ -202,6 +203,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Builder | The maker's device from mod source | offline build, locked dependencies from a reviewed allowlist, no build script or procedural macro in the mod; unit tests run as Wasm with no capabilities |
 | Verification | The participant from web hosts and other people | signatures, a hash chain, package hashes; fork detection |
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
+| Manager (step 10) | Mods and the participant from a managing mod | reads and reductions only; each addition and each deletion of data is a request that the consent view decides; no signature, no consent answer, no identity (W35) |
 | Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
@@ -256,6 +258,8 @@ Each one closes a gap of the old specification. Veto any of them.
 | W32 | `net` is off until the participant turns it on. No relay, DHT, bootstrap host or public peer is on by default; each is one choice, named in its consent. A personal node serves strangers nothing in step 8. (step 8) |
 | W33 | A replica holds no participant key: `log` and `dist` open a home with no identity, which can read, verify and store but never sign. Own machines are bound by a device list that the anchor's node key signs, never by a public statement. (step 8) |
 | W34 | **Collect** (step 9): an own-package import whose function returns `list<T>` asks every granted subscriber and returns their answers concatenated, in local-name order; a function with no result stays an event; any other result is refused. It reuses the subscription link and the `Subscribe` grant: no new grant kind, no new file, no new host interface. A collect link is a cycle edge from collector to subscriber; event links stay no edges. A failing subscriber is skipped, not fatal, except when it spends the chain's shared fuel or time; the collector does not learn who answered. Answers carry no source: a collector that must address one answerer later says so in the answer type (for example a command id), and reaches it with an event. |
+| W35 | **Management interface** (step 10): the host offers the management of mods through `watane:host/manage`; importing it is the grant `Manage`, the fifth kind, shown in the plan like any other. What a manager may do follows the direction of authority. It reads (the installed mods, their grants, links and origins) and reduces (disable, withdraw a grant, close a page) directly, because a hostile manager can then only make things do less. It asks for each addition (install, update, give a grant, pick a provider) and for a removal that deletes data; the request goes to the consent view, which decides it as if the participant had started it (F-AGENT-4). It never signs, answers a consent or reaches the identity. The app's own manager is a native view on the same functions. The WIT and the request forms wait until step 10 is next. |
+| W36 | **Main mod**: at start the app opens the main mod, else its manager (F-APP-1, F-APP-7). The choice is the participant's and lives in the app's part of the home; the host knows nothing of it. A mod proposes itself with `main = true` in `mod.toml` (pkg 4.2), and only a mod with a page may; the app takes the proposal at install when no main mod is set. A shell is a mod like any other: there is no application level above mods. |
 
 ## 8. Build order
 
@@ -270,6 +274,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 7 The real world | nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | the journeys pass on real hosts and machines |
 | 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
 | 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
+| 10 Own manager | `pkg` (the `Manage` grant); `host` (`watane:host/manage`, its requests to the confirmation); `dev` (a fake manager in contract tests); `app` (the words of the grant and of each request) | J10 passes |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -317,6 +322,14 @@ collect in `host/TECHNICAL.md` 4.2, 6.4, 6.6 and 9.4; fakes and answers in
 `dev/TECHNICAL.md` 8.1; the grant words in `app/TECHNICAL.md` 4. It needs
 nothing of steps 7 and 8, so it can be built beside them. J9 lives in
 `app/tests/`.
+
+Step 10 is sketched (W35): the authority split and the grant. Its WIT,
+its request forms, the consent words and J10's tests wait until it is
+next.
+
+The main mod (W36) and the manager of the app are not a step: they are
+app stage I (`app/TECHNICAL.md` 5.3, 5.4), with the `main` key in
+`pkg/TECHNICAL.md` 4.2 (pkg stage 10).
 
 ## 10. Reference material
 

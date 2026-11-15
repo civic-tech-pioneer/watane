@@ -105,7 +105,8 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
       api::router(Some(dist.clone()))))` gives the `Served`; keep it in `Core.served`.
    2. `broker.set_listener(...)`: on each change of the head request, close
       the consent window and, if a request remains, open a new one.
-   3. Fill the parties cache (section 9.2). Open the main window.
+   3. Fill the parties cache (section 9.2). Build the menu and open the
+      first window (5.4; stage I). Before stage I: open the main window.
    4. Start the refresh loop (stage C, section 9.5). Stage G: start the
       machines thread (9.8).
    5. With feature `driver`: start the driver.
@@ -116,7 +117,9 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    that same line to stderr once. No server means no `run.json`. Other
    serve failures retain `cause_chain` text.
 7. On `RunEvent::ExitRequested`: `broker.deny_all()`. On `RunEvent::Exit`:
-   `block_on(served.shutdown())`. Closing the main window exits the app.
+   `block_on(served.shutdown())`. Closing the main window exits the app;
+   from stage I, closing the last window other than `consent` does
+   (APP-F-64).
 
 ```rust
 pub(crate) struct AppState {
@@ -139,7 +142,7 @@ pub(crate) struct Core {
 }
 ```
 
-`<home>/app/` belongs to the app; host reserves it. It holds only `mark` (and `fetched/` in
+`<home>/app/` belongs to the app; host reserves it. It holds only `mark`, `main` (stage I, 5.4) (and `fetched/` in
 step 5). dist keeps the site folder in `<home>/dist/site/`.
 
 ## 4. Grant words
@@ -181,7 +184,7 @@ pub fn party(publisher: &str, parties: &Parties) -> Party;
 
 | Label | URL | Content |
 |---|---|---|
-| `main` | `tauri://localhost/index.html` | launcher, details, agents, identity, channels and find |
+| `main` | `tauri://localhost/index.html` | the manager (library, find, updates, details) and, from stage I, settings (identity, site, backup, agents, machines) |
 | `consent` | `tauri://localhost/consent.html` | one request at a time |
 | `mod-<local name>` | `InstalledMod.page` (`Served::page_url`) | one mod page |
 
@@ -232,6 +235,49 @@ answers `Deny` (APP-F-18).
 `tauri://localhost/index.html`, 1000 × 700, title `watane`. One page with
 the views launcher, details, agents (toolsets and tokens) and, from stage C,
 identity and channels, and from stage D, find. It never shows mod content.
+
+From stage I the page has two areas, chosen by the hash `#mods` (default)
+or `#settings`:
+
+- **Mods** (the manager): a header with the tabs `Library`, `Find` and
+  `Updates` (with the count of offers that need the participant), the
+  library filter, `Add mod` (link or folders) and the mark. Library is a
+  grid of `ModView` entries; selecting one shows its details beside the
+  grid: name, version, publisher, summary, its notice, `Open`,
+  `Disable`/`Enable`, `Remove`, `Make main`/`Unset main` (only with a
+  page), the grants with a switch each, the connections (APP-F-66) and,
+  behind a disclosure, origin, page origin and package id. Find holds the
+  search, the chosen indexes and the followed channels. Updates holds the
+  lists of APP-F-69. The window accepts dropped folders (APP-F-20): the
+  `main` window keeps Tauri's drag-and-drop handler, and a drop event's
+  paths go to `install_paths`.
+- **Settings**: identity, site, backup and restore, agents (toolsets and
+  tokens) and own machines, as before.
+
+Connections come from `ModView.links` (section 7): `Uses` is the
+providers of the mod's `call` links, `Adds to` of its `subscribe` links,
+`Used by` and `Extended by` the inverse over all installed mods; only links
+whose grant is granted count. The page derives them; no command is added.
+
+### 5.4 Menu and the main mod (stage I)
+
+`<home>/app/main` holds the local name of the main mod and a newline, or
+is absent. Read it in startup step 6.3; a name that is not installed is
+treated as absent and the file deleted.
+
+- First window: when `main` names an enabled mod with a page,
+  `views::open_mod` for it (5.1) and no main window; otherwise the main
+  window (APP-F-62).
+- After each install of the app (`install_folders`, `install_paths`,
+  `install_link`, `release_install`): when `main` is absent and an
+  installed mod's `Mod::main()` is true (pkg 4.2), write its local name;
+  of several, the first in install order (APP-F-63).
+- `mod_remove` deletes the file when it names the removed mod.
+- The menu (`tauri::menu`): the app submenu holds `About watane`, `Mods…`
+  (`CmdOrCtrl+Shift+M`), `Settings…` (`CmdOrCtrl+,`) and `Quit`. `Mods…`
+  and `Settings…` show and focus `main` (creating it when closed) with
+  the hash `#mods` or `#settings`. No mod window reaches the menu: menu
+  events are handled in Rust only.
 
 ## 6. Consent
 
@@ -453,6 +499,9 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `grant_withdraw` | main | `local`, `key` | `null` | B |
 | `grant_give` | main | `local`, `key` | `null` | B |
 | `install_folders` | main | — | `{installed: [local]}` | B |
+| `install_paths` | main | `paths: [string]` (dropped folders) | `{installed: [local]}` | I |
+| `main_set` | main | `local: string \| null` | `null` | I |
+| `updates_done` | main | — | `[{local, name, from, to, at}]` (`at`: ms since the Unix epoch) | I |
 | `tools_list` | main | — | `[{entry: string, tool: string}]` | B |
 | `toolsets_list` | main | — | `[{name, entries: [string], tools: [string]}]` | B |
 | `toolset_save` | main | `name`, `entries: [string]` | `null` | B |
@@ -507,7 +556,9 @@ ModView    {local, name, slug, version, release: null | string (ReleaseRef),
             package (package id), derivedFrom: null | string (ReleaseRef),
             derivedFromLabel: null | string (display text with publisher claim),
             error: null | string, notice: null | string, offer: null | string (ReleaseRef), offerGrants: [GrantLine],
-            grants: [GrantLine]} // granted false = withdrawn or withheld
+            grants: [GrantLine], // granted false = withdrawn or withheld
+            main: bool, proposesMain: bool,                    // stage I: <home>/app/main, Mod::main()
+            links: [{kind: "call" | "subscribe", provider: string (local), granted: bool}]} // stage I: InstalledMod.links
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string}
 IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
@@ -544,6 +595,12 @@ Behaviour:
   `Source::Folder`s and `host.install(plan, Requester::App).await`; host's
   `missing_providers` and `refused` pass through (APP-F-20, APP-F-21).
 - `mod_disable`, `mod_remove`: `views::close_mod` first, then host.
+- `install_paths` (I): as `install_folders` with the dropped paths in
+  place of the dialog; a path that is not a directory gives `bad_request`.
+- `main_set` (I): `null` deletes `<home>/app/main`; a local name of an
+  installed mod with a page writes it; else `not_found`.
+- `updates_done` (I): the automatic updates of 9.5 that succeeded since
+  start, newest first, at most 50; kept in `Core`, not on disk.
 - `mod_remove`: the page first asks "Delete the data of <name>?" with the
   buttons `Keep data` (focused) and `Delete data`.
 - `grant_withdraw`, `grant_give`: find the `GrantState` of the mod whose
@@ -1208,6 +1265,7 @@ real approval gate. No production security check changes.
 | `tests/j5.rs` (E) | J5 on the real programs: Carol's agent runs `watane-dev new ratings --from <Alice link>` against Carol's app; the test then puts the committed `ratings` fixture files over that folder (keeping its `mod.toml` origin) and posts its package to `/api/publish` (consent shows `Made from`); Dave's agent runs `watane-dev add --release <Carol link>` in a copy of the `stats` fixture, and the test posts `stats` to `/api/publish` (release, then the listing of Carol's `ratings`); dev's own `test` with a fake of `ratings` is DEV-S-39, not part of this run; Eve's app installs `stats` from Dave's link and gets Carol's `ratings` first through Dave's listing; with Carol's site stopped and Frank's `ratings` in Eve's index, a fresh home of Eve gets the pick view and binds Frank's | each person's own record of what they published; `wit/world.wit`, `mod.toml` and `deps.json` text; consent DOM; `<home>/mods/` |
 | `tests/machines.rs` (G) | S28 to S36: a `watane-node` home and app homes on loopback, mDNS off; the consent DOM text of `Join` and `Reach`; `MachinesView` from the driver | the short key that `watane-node join` printed; `node::words` texts; `<home>/log/` and `<home>/net/book.json` read with `std::fs` and `serde_json`; the UDP sockets of the process (S28) |
 | `tests/j8.rs` (G) | J8 on the real programs: Alice's laptop app (anchor), `watane-node` (full), a second laptop app (light), a restored laptop app; S29's pairing, a second use of the code refused, a publish that reaches the server within 5 s with no static host, the light machine's search and install of Ivy's listed mod through the server, a changed byte on the server refused and named, the removal, the restore with the server's hint; no relay and no DHT | each person's own record of what they published; `<home>/dist/packages/` byte-equal across homes; `book.json` (`relays` empty, `dht` false) |
+| `tests/manager.rs` (I) | S37 to S42: the fixture `desk` and `reading-list`, `recommendations`; restarts of one home | the window labels the driver reports; `<home>/app/main` read with `std::fs`; the DOM text of the details and the warning; the literal texts of APP-F-66 |
 | `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
@@ -1248,6 +1306,7 @@ record it in `NOTES.md` with the old and the new result.
 | D Find | Built (S25/S29): APP-F-37 to APP-F-40, APP-F-43 to APP-F-46; sections 8.2, 9.5, 9.6, the release/index/search commands, and the `list`, `include`, `unlist` consent details and titles | dist S6 (index, search); dist refresh/fetch/withdraw and host updates (done) | none: `tests/find.rs` makes the indexes with `watane_dist` | `tests/find.rs` and the whole `tests/j4.rs` (with index) pass; `static_config` lists the new commands |
 | E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; the `origin` argument of `search`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass |
 | G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
+| I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 

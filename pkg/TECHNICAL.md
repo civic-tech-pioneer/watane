@@ -125,6 +125,7 @@ UTF-8 TOML, at most 16 KiB. Unknown keys and tables are refused.
 name = "Reading list"                  # required; 1..=64 chars
 summary = "Keep a list of books."      # required; 1..=280 chars
 repository = "https://github.com/alice/reading-list"   # optional (step 6)
+main = true                            # optional (W36); a boolean; only with ui/
 
 [http]                                 # optional
 hosts = ["api.openlibrary.org"]        # 1..=16 HttpHost, no duplicates
@@ -164,6 +165,15 @@ the first failing check in this order gives the message exactly:
 A value that is not a TOML string fails the second check (S41).
 
 `Mod::repository()` returns the text as written.
+
+`main` (W36, pkg stage 10): the mod proposes itself as the main mod of
+the participant (the view the app opens at start). It is only a proposal:
+the app decides. A TOML boolean; any other value is refused with
+`` `main` must be true or false ``. A mod with `main = true` and no
+`ui/index.html` is refused with `` `main` needs a page (ui/index.html) ``.
+Both are rule `mod-toml`, file `mod.toml`. `Mod::main()` gives the value,
+`false` when the key is absent. The release body does not carry it: the
+app reads it from the installed mod.
 The message for an unknown key `slug` or `version` is: "`<key>` is not a
 mod.toml key: the slug and the version come from the package line of
 wit/world.wit".
@@ -681,6 +691,7 @@ impl Mod {
     pub fn http_hosts(&self) -> &[HttpHost];       // sorted
     pub fn origin(&self) -> Option<&ReleaseRef>;
     pub fn repository(&self) -> Option<&str>;        // step 6, 4.2
+    pub fn main(&self) -> bool;                      // W36, 4.2
     pub fn deps(&self) -> &Deps;
     pub fn world(&self) -> &World;
     pub fn page(&self) -> Option<PathBuf>;        // <dir>/ui
@@ -856,6 +867,7 @@ expected value.
 | `zbase32` | key text of 32 × `0x00` is 52 × `y`; of 32 × `0x01` is A25; the RFC 8032 key of log §4.1 | Python of this spec; log §4.1 |
 | `compatible` | the table of 5.2 | the table |
 | `mod_toml`, `deps_json` | schema, limits, unknown keys (A8), canonical write | literal texts |
+| `mod_toml_main` (W36) | A28, A29: `main = true` with a page gives `Mod::main()` true; absent gives false; `main = "yes"` and `main = true` without `ui/index.html` give the exact messages of 4.2 | literal texts |
 | `mod_toml_repository` (step 6) | accepted: `https://github.com/alice/reading-list`, `https://git.example.org:8443/a/b-c.d_e~f%20`, `https://h`, a 256-byte URL; refused, with the exact message of 4.2: `http://github.com/a/b`, `https://user@github.com/a/b`, `https://user:pw@h/x`, `https://`, `https:///a`, a 257-byte URL, `https://h/a b`, `https://h/a?b=c`, `https://h/#x`, a non-string value; `Mod::repository()` gives the text back; a package of a mod with `repository` unpacks and reads it back | literal texts |
 | `grants` | A1, A2, A3; ordering of 5.1; JSON forms of 5.1 | the table of 4.5 and the literals of 5.1 |
 | `rules` | one fixture for each line of 4.7; `rule` and `file` as expected (A4–A7) | the table of 4.7 |
@@ -907,6 +919,7 @@ fmt --check` green.
 | 7 | `release.rs` (section 7) | `release_*` pass | dist publish and fetch, host verify (J3) |
 | 8 (step 6) | `repository` in `meta.rs` (4.2), `Mod::repository` | `mod_toml_repository` passes | dev `publish --push`, `new --from` (step 6) |
 | 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
+| 10 (W36) | `main` in `meta.rs` (4.2), `Mod::main` | `mod_toml_main` passes (A28, A29) | app stage I |
 
 `Grant::same_authority` (step 4) is one function; build it with stage 3 or
 when step 4 starts.

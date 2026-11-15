@@ -33,7 +33,10 @@ without an operator and without blind trust.
 ## Goals
 
 - **V1 Own environment.** Each person shapes watane into the tool they
-  need. It starts empty and contains only what the person adds.
+  need. It starts empty and contains only what the person adds. It is one
+  environment for each person, not a set of applications: watane manages
+  mods, and the mod that the person makes their main mod is where they
+  start.
 - **V2 Stigmergy.** Every published mod is a trace that other people can
   find, run, compose with and derive from. Work builds on work.
 - **V3 Cheap making.** An agent turns a description of a need into a
@@ -74,6 +77,11 @@ After the first version:
   participant granted to answer it, and get their answers at once: a
   collect. This is what a plugin host needs, a menu or a toolbar for
   example, and it uses the same grants as events.
+- **Own manager (step 10).** Managing mods is a function of the host that
+  a mod can reach through an interface. The manager of the app is one view
+  on it; a mod that the person chooses can be another. A managing mod can
+  look and make things do less on its own, and asks for anything more:
+  the person still approves each addition in the app.
 
 ## Success of the first version
 

@@ -80,6 +80,8 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
   Traces: F-BUILD-1, F-BUILD-4, J5.
 - **PKG-F-26** (step 9) pkg shall tell each function of an interface that a mod imports from its own package as an event (no result) or a collect (a `list` result), and refuse any other result, naming the function.
   Traces: F-RUN-6, F-RUN-9, J9.
+- **PKG-F-27** pkg shall read whether a mod with a page proposes itself as the main mod, and refuse the proposal from a mod with no page.
+  Traces: F-APP-7, J10.
 
 ## Acceptance scenarios
 
@@ -115,3 +117,5 @@ Each scenario is one test. The expected values come from this file or from
 | A25 | the publisher key of 32 bytes `0x01` | it is written as text | `yryonyebyryonyebyryonyebyryonyebyryonyebyryonyebyryo` | PKG-F-15 |
 | A26 | a world that imports its own interface `menu` with `ask: func() -> list<string>` and `clicked: func(id: string)` | it is read | events `[mods:<slug>/menu@<version>]`, collects the same; grants unchanged | PKG-F-26 |
 | A27 | the same world with `ask: func() -> string` | it is read | refused with rule `import`, naming `menu.ask` | PKG-F-26 |
+| A28 | the folder `hello` with `main = true` in `mod.toml` | it is read | `main` is true; without the key it is false | PKG-F-27 |
+| A29 | a folder with `main = true` and no `ui/index.html`, or with `main = "yes"` | it is read | refused with rule `mod-toml` and the messages of `TECHNICAL.md` 4.2 | PKG-F-27 |

@@ -16,6 +16,8 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | grant | One authority that a mod asks for and the participant approves. |
 | host | The program that runs the installed mods together. |
 | app | The desktop application around the host. The participant gives every approval there. |
+| main mod | The mod that the app opens at start. The participant chooses it among the installed mods with a page. |
+| manager | The view where the participant sees, finds, updates and controls the installed mods. The app has one; from step 10 a mod can be another. |
 | maker tools | The watane commands with which a maker and a coding agent create, check, test, preview and publish mods. |
 | coding agent | An agent of the maker's choice, outside watane, that writes the code of mods. |
 | preview | A host that runs a mod for its maker, with no identity and no data of the participant. |
@@ -50,7 +52,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-RUN-4** The host isolates each page from the host and from other pages. A page calls only the logic part of its own mod.
 - **F-RUN-5** A mod calls an interface of another mod only if it declared the call and the participant granted it.
 - **F-RUN-6** The host delivers an event only to the mods that the participant granted the subscription. The sender does not choose or see its subscribers.
-- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, and subscriptions to the events and collects of a named provider.
+- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, subscriptions to the events and collects of a named provider, and (step 10) the management of mods.
 - **F-RUN-8** Each mod has private state. A failed call changes no state.
 - **F-RUN-9** A mod can collect: the host asks each mod that the participant granted the subscription and gives the asking mod all their answers in one list. The asking mod does not choose or see who answered. An answer that fails is left out and does not fail the collect, unless it uses up the time or the fuel of the whole call. (step 9)
 
@@ -64,14 +66,20 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-INST-6** watane installs a package of another participant only after it verified the signature of the release and the digest of the package. (step 3)
 - **F-INST-7** watane installs an update without a question only if the update asks for no new grant.
 - **F-INST-8** When a publisher withdraws an installed version, watane tells the participant and offers the newest version that is not withdrawn. (step 4)
+- **F-INST-9** A mod manages mods only with the grant to manage them. With it, the mod sees the installed mods, their grants and how they connect. (step 10)
+- **F-INST-10** A managing mod can make things do less on its own: disable a mod, withdraw a grant, close a page. (step 10)
+- **F-INST-11** A managing mod only asks for anything more: an install, an update, a grant, a pick of a provider, or a removal that deletes data. The participant decides each request in the consent view, as if they had started it in the app. A managing mod never signs, never answers a consent and never reaches the identity. (step 10)
 
 ### 2.4 App (step 2)
 
-- **F-APP-1** The app starts empty. It shows only the launcher until the participant adds a mod.
+- **F-APP-1** The app starts empty. At start it opens the main mod; with no main mod, it opens the manager.
 - **F-APP-2** At the first start, the app creates the identity of the participant, with no contact to a server. (step 3)
 - **F-APP-3** The app shows the page of each mod in its own view, with the name of the mod and its publisher.
 - **F-APP-4** Each approval happens in a consent view of the app, which no mod can cover or imitate.
 - **F-APP-5** The app shows, for each mod, its version, its publisher, its grants and its origin.
+- **F-APP-7** The participant can make any installed mod with a page the main mod, and can unset it. When none is set, a mod that declares itself a main view becomes the main mod when the participant installs it. The manager is always one menu command away.
+- **F-APP-8** The manager holds only the mods: the installed ones and how they connect, finding new ones, and their updates. The identity, the agents and the own machines are settings of the app, outside the manager.
+- **F-APP-9** The manager shows, for each mod, the mods it calls, the mods it receives events from or answers, and the mods that use it. Before the participant disables or removes a mod that other mods use, the manager names them.
 - **F-APP-6** The participant can save the identity to a backup file and restore it. After a restore, watane signs nothing until the participant has given the link to the own channel, or has stated that the identity never published. (step 3) From step 8, a full own machine may also give the newest own statement; the participant still confirms it.
 
 ### 2.5 Agents (steps 1 and 2)
@@ -138,7 +146,7 @@ preview. The agent reads the list through a toolset of the preview.
 
 ### J2: Use mods together
 
-Alice starts the app for the first time. It shows an empty launcher. She
+Alice starts the app for the first time. It shows an empty manager. She
 installs her reading list and a recommendations mod
 that calls the reading list and subscribes to its events. The plan shows
 both as local, with their grants, and the reading list first. Alice
@@ -200,6 +208,18 @@ when asked; the shell still shows the other command. Alice withdraws one
 mod's grant, and its command is gone at the next collect. A command
 mod that also calls the shell is refused at the plan, which names the
 cycle.
+
+### J10: Manage from a shell
+
+Alice installs Desk, a shell that declares itself a main view and asks to
+manage her mods. The plan shows that grant in words. At the next start the
+app opens Desk, not the manager. Desk lists her mods with their grants and
+connections. From Desk, Alice turns Weather off, and it stops at once.
+From Desk she asks to install Book club: the consent view shows the plan,
+and Desk cannot approve it. Desk asks to remove Notes with its data, and
+the consent view asks Alice. Alice withdraws Desk's grant to manage; Desk
+still runs, and its next request fails. "Mods…" in the app menu opens the
+manager of the app at any time.
 
 ## 4. Later
 
