@@ -115,6 +115,8 @@ impl App {
                 "--port",
                 &port.to_string(),
             ])
+            // The app never needs the real-GitHub token of the S53 journeys.
+            .env_remove("CLAUDE_GH_TOKEN")
             .envs(env.iter().copied())
             .env("WATANE_DRIVER_SCREEN", screen)
             .stdin(Stdio::piped())
