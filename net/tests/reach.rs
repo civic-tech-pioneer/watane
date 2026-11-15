@@ -105,25 +105,35 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
         Some(quick()),
     );
     let second = node(MemHoldings::empty(), Some(quick()));
+    let server_options = || Options {
+        relay_server: Some(lo()),
+        ..options(Some(quick()))
+    };
+    let server = {
+        let dir = tempfile::tempdir().unwrap();
+        let holdings = MemHoldings::empty();
+        let net = open_on(&dir.path().join("net"), holdings.clone(), server_options());
+        let key = net.node_key();
+        Node {
+            dir,
+            net,
+            key,
+            holdings,
+        }
+    };
     pair_into(&laptop, &second, Role::Full);
+    pair_into(&laptop, &server, Role::Full);
 
-    // both go away and come back on new ports: what each stored of the
-    // other is stale, and nothing tells them the new ones
-    let (laptop_home, second_home) = (closed(laptop), closed(second));
-    let laptop = reopened(laptop_home, options(Some(quick())));
-    let second = reopened(second_home, options(Some(quick())));
+    // all three go away and come back on new ports: what each stored of the
+    // others is stale, and nothing tells them the new ones
+    let homes = (closed(laptop), closed(second), closed(server));
+    let laptop = reopened(homes.0, options(Some(quick())));
+    let second = reopened(homes.1, options(Some(quick())));
+    let server = reopened(homes.2, server_options());
+    let server_net = server.net.clone();
     let (laptop_events, second_events) = (laptop.net.events(), second.net.events());
 
     // the server runs a relay for her machines
-    let server_dir = tempfile::tempdir().unwrap();
-    let server_net = open_on(
-        &server_dir.path().join("net"),
-        MemHoldings::empty(),
-        Options {
-            relay_server: Some(lo()),
-            ..options(None)
-        },
-    );
     let relay = server_net.relay_url().expect("the relay runs while on");
     assert_eq!(relay.scheme(), "http");
     assert!(relay.as_str().starts_with("http://127.0.0.1:"));
@@ -178,6 +188,21 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
     assert!(peer_up(&second_events, laptop.key, 10), "second: no PeerUp");
     assert!(laptop.net.hello(&second.key).is_ok());
     assert!(second.net.hello(&laptop.key).is_ok());
+
+    // the relay is for her machines only: a stranger that chose the same
+    // relay is not let in, so it cannot reach the second machine through it
+    let stranger = node(MemHoldings::empty(), Some(quick()));
+    stranger
+        .net
+        .set_options(Options {
+            relays: vec![relay.clone()],
+            ..options(Some(quick()))
+        })
+        .unwrap();
+    assert!(matches!(
+        stranger.net.hello(&second.key),
+        Err(NetError::Unreachable { .. })
+    ));
 
     // the switches are in the book
     assert_eq!(book(&laptop)["relays"], serde_json::json!([relay.as_str()]));

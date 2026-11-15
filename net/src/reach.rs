@@ -188,12 +188,43 @@ pub(crate) fn relay_url_of(addr: SocketAddr) -> url::Url {
     url::Url::parse(&format!("http://{addr}/")).expect("an address makes a URL")
 }
 
-/// Start the relay for the participant's machines: HTTP, no TLS (the relay
-/// forwards only QUIC that is encrypted end to end), no QUIC address
+/// Who may use the relay: the machines of the newest device list on the
+/// serving node (expiry included), nobody else (NET-F-29).
+struct OwnMachines(std::sync::Arc<crate::Core>);
+
+impl std::fmt::Debug for OwnMachines {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OwnMachines")
+    }
+}
+
+impl iroh_relay::server::AccessControl for OwnMachines {
+    async fn on_connect(
+        &self,
+        request: &iroh_relay::server::ClientRequest,
+    ) -> iroh_relay::server::Access {
+        let node = NodeKey::from_bytes(*request.endpoint_id().as_bytes());
+        if self.0.class_of(&node) == crate::Class::Trusted {
+            iroh_relay::server::Access::Allow
+        } else {
+            iroh_relay::server::Access::Deny {
+                reason: Some("not an own machine".into()),
+            }
+        }
+    }
+}
+
+/// Start the relay for the participant's own machines: HTTP, no TLS (the
+/// relay forwards only QUIC that is encrypted end to end), no QUIC address
 /// discovery, no metrics server, no ACME.
-pub(crate) async fn start_relay(addr: SocketAddr) -> Result<iroh_relay::server::Server, String> {
+pub(crate) async fn start_relay(
+    addr: SocketAddr,
+    core: std::sync::Arc<crate::Core>,
+) -> Result<iroh_relay::server::Server, String> {
+    let mut relay = iroh_relay::server::RelayConfig::new(addr);
+    relay.access = std::sync::Arc::new(OwnMachines(core));
     let mut config = iroh_relay::server::ServerConfig::default();
-    config.relay = Some(iroh_relay::server::RelayConfig::new(addr));
+    config.relay = Some(relay);
     iroh_relay::server::Server::spawn(config)
         .await
         .map_err(|e| format!("the relay server could not start on {addr}: {e}"))

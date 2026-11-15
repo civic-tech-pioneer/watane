@@ -443,13 +443,13 @@ impl Net {
             if relay.is_none()
                 && let Some(addr) = options.relay_server
             {
-                let server =
-                    self.runtime()?
-                        .block_on(reach::start_relay(addr))
-                        .map_err(|cause| NetError::Io {
-                            path: self.core.dir.clone(),
-                            cause,
-                        })?;
+                let server = self
+                    .runtime()?
+                    .block_on(reach::start_relay(addr, self.core.clone()))
+                    .map_err(|cause| NetError::Io {
+                        path: self.core.dir.clone(),
+                        cause,
+                    })?;
                 relay = Some((addr, server));
             }
             let builder =

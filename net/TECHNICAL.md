@@ -664,6 +664,10 @@ that is encrypted end to end, and a relay on an IP has no certificate a client
 would accept; no QUIC address discovery, no metrics server, no ACME), while
 net is on. `Net::relay_url()` is `http://<bound address>/` (with port 0 the
 bound port); the participant adds exactly this URL to `relays` on the others.
+The relay admits only the machines of the newest device list of the serving
+node (`class_of` is `Trusted`, so the list's expiry applies); any other
+endpoint is denied (an `iroh_relay::server::AccessControl`), so the server
+must be one of her machines, paired like the others.
 
 ### 5.11 Restore
 
@@ -881,6 +885,8 @@ N4 part 2 notes (built, S68):
   `close` does not. `book.json` is written through `reach::update_book`
   (one lock, the other fields kept), also for `anchor_seen`. Test helpers
   open a home and then call `set_options`.
+- The relay server (5.10) admits own machines only (W32, NET-F-29); S11 pairs the
+  server, and a stranger on the same relay is refused.
 - The relay server (5.10) is HTTP; `relay_url` is `http://<addr>/`. node's
   text says `https://<addr>/` (a question for node).
 - The cause (5.10, `reach::no_path_cause`), the deadline: a dial gives up at
