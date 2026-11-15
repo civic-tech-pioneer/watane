@@ -15,3 +15,6 @@ pub mod dev;
 #[cfg(feature = "real-github")]
 #[allow(dead_code)]
 pub mod github;
+
+#[allow(dead_code)]
+pub mod node;

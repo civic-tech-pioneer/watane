@@ -14,6 +14,7 @@ real-github = ["driver"]
 tauri-build = "=2.7.4"
 
 [dependencies]
+watane-node = { path = "../node" }
 watane-host = { path = "../host" }
 watane-dist = { path = "../dist" }
 axum = "0.8"

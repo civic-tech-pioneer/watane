@@ -42,6 +42,18 @@
     "allow-install-release",
     "allow-index-list",
     "allow-index-include",
-    "allow-index-unlist"
+    "allow-index-unlist",
+    "allow-machines",
+    "allow-machines-on",
+    "allow-pair-code",
+    "allow-machine-join",
+    "allow-machine-remove",
+    "allow-machine-role",
+    "allow-machines-expiry",
+    "allow-relay-add",
+    "allow-relay-remove",
+    "allow-dht-set",
+    "allow-own-hints",
+    "allow-identity-confirm-hint"
   ]
 }

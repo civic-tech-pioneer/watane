@@ -255,9 +255,17 @@ or `#settings`:
   tokens) and own machines, as before.
 
 Settings groups controls into `identity`, `site`, `backup` and `agents`,
-retaining the established input and button ids. Until stage G is built,
-its `machines` section explicitly reads
-unavailable; stage I adds no machine command.
+retaining the established input and button ids. Stage G fills `#machines`
+only under Settings. Its controls retain `#machines-on`, `#pair-full`,
+`#pair-light`, read-only `#pair-code`, `#join-code`, `#join-replace`, and
+`#join`. Additional ids are `#net-on-text`, `#machine-info`, `#pair-copy`,
+`#pair-expiry`, `#join-replace-label`, `#joining`, `#join-question`,
+`#join-cancel`, `#join-confirm`, `#machine-list`, `#machines-expiry`,
+`#save-expiry`, `#relay-url`, `#relay-add`, `#relay-list`, `#dht-on`,
+`#machine-problems`, `#machine-remove-question`, `#machine-remove-cancel`,
+and `#machine-remove-confirm`. Replica controls are hidden in
+`#identity-controls`; restored-head choices are in `#own-hints`.
+Stage I itself adds no machine command.
 The manager tabs use `#mods` (Library), `#find`, and `#updates`;
 `#settings` selects Settings. The library filter matches every entered word
 against the name and publisher and can select published or local mods.
@@ -1080,6 +1088,23 @@ indexes list them` above the list.
 Stage G. The app calls `node` (node 3) for every call with a `net` side
 and `node.dist()` for the rest. `node.net()` is used only by `Core` and
 `machines.rs`; no route of section 8 and no mod reaches it (APP-F-61).
+
+S75 implementation decisions: the app opens `Node` with `net.on = true`
+to read the persisted switches; a new book still leaves it off. Driver
+builds accept `WATANE_DRIVER_NET_BIND=127.0.0.1:0`; net disables mDNS for
+loopback binds. Normal builds ignore that environment variable.
+`tests/support/node.rs` exports `watane_node_bin() -> PathBuf` and
+`NodeProc::{spawn, line, until, exited, stderr}`; `spawn(home, "join"|"run",
+args)` always supplies `--bind 127.0.0.1:0`. The helper locates this
+workspace's executable through Cargo artifact messages and kills and
+reaps the child on drop. Its cold-build scenario is marked slow.
+
+The running app's router uses `router_node` with the shared node. The
+existing public `api::router(Option<Arc<Dist>>)` remains for the existing
+standalone HTTP contract tests, using the same handlers without a network
+owner. Neither router has a machines route or accesses `node.net()`.
+Search's `from` holds short keys in both views; the HTTP result keeps its
+existing fields (in particular no `verified`; the UI HitView has it).
 
 **Calls through node.** In sections 8, 9.1 to 9.7, these calls go to
 `node` in place of `dist`: `set_name`, `publish`, `withdraw`, `list`,

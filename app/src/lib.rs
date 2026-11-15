@@ -9,6 +9,7 @@ mod core;
 #[cfg(feature = "driver")]
 mod driver;
 mod find;
+mod machines;
 mod main_mod;
 pub mod mark;
 mod views;
@@ -95,6 +96,31 @@ impl From<std::io::Error> for CmdError {
         Self::new("io", cause_chain(&e))
     }
 }
+impl From<watane_node::NodeError> for CmdError {
+    fn from(error: watane_node::NodeError) -> Self {
+        Self::new("net", cause_chain(&error))
+    }
+}
+impl From<watane_node::net::NetError> for CmdError {
+    fn from(error: watane_node::net::NetError) -> Self {
+        Self::new("net", cause_chain(&error))
+    }
+}
+fn node_options(dist: watane_dist::Options) -> watane_node::Options {
+    let mut options = watane_node::Options {
+        dist,
+        ..Default::default()
+    };
+    options.net.on = true; // The persisted book decides whether to start an endpoint.
+    #[cfg(feature = "driver")]
+    {
+        options.net.bind = std::env::var("WATANE_DRIVER_NET_BIND")
+            .ok()
+            .and_then(|v| v.parse().ok());
+    }
+    options
+}
+
 pub struct Config {
     pub home: PathBuf,
     pub port: u16,
@@ -203,9 +229,14 @@ pub fn run(config: Config) -> Result<(), AppError> {
         });
         tauri::async_runtime::block_on(async move {
             tauri::async_runtime::spawn_blocking(move || {
-                let dist = Arc::new(watane_dist::Dist::open(&home, confirm.clone(), options)?);
+                let node = Arc::new(watane_node::Node::open(
+                    &home,
+                    confirm.clone(),
+                    node_options(options),
+                )?);
+                let dist = node.dist().clone();
                 let _ = confirm.dist.set(Arc::downgrade(&dist));
-                Ok::<_, watane_dist::DistError>(dist)
+                Ok::<_, watane_node::NodeError>(node)
             })
             .await
         })
@@ -279,6 +310,18 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::index_list,
             commands::index_include,
             commands::index_unlist,
+            commands::machines,
+            commands::machines_on,
+            commands::pair_code,
+            commands::machine_join,
+            commands::machine_remove,
+            commands::machine_role,
+            commands::machines_expiry,
+            commands::relay_add,
+            commands::relay_remove,
+            commands::dht_set,
+            commands::own_hints,
+            commands::identity_confirm_hint,
             commands::consent_get,
             commands::consent_answer
         ])
@@ -290,14 +333,15 @@ pub fn run(config: Config) -> Result<(), AppError> {
             let h = app.handle().clone();
             let state = h.state::<AppState>();
             if state.failed.get().is_none()
-                && let (Ok(host), Ok(dist)) = (host, dist)
+                && let (Ok(host), Ok(node)) = (host, dist)
             {
                 'startup: {
                     let core = match core::Core::new(
                         h.clone(),
                         host.clone(),
-                        dist.clone(),
+                        node.clone(),
                         parties.clone(),
+                        state.broker.clone(),
                     ) {
                         Ok(core) => Arc::new(core),
                         Err(error) => {
@@ -310,10 +354,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
                         tauri::async_runtime::spawn_blocking(move || initial.channels()).await
                     });
                     match result {
-                        Ok(Ok(_)) => match tauri::async_runtime::block_on(host.serve(
-                            config.port,
-                            api::router_with_parties(Some(dist), parties.clone()),
-                        )) {
+                        Ok(Ok(_)) => match tauri::async_runtime::block_on(
+                            host.serve(config.port, api::router_node(Some(node), parties.clone())),
+                        ) {
                             Ok(served) => {
                                 *core.served.lock().unwrap() = Some(served);
                                 let _ = state.core.set(core.clone());

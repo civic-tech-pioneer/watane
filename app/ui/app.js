@@ -1,4 +1,5 @@
 import { call } from './ipc.js';
+import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers} from './manager.js';
 import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes } from './words.js';
 const launcher = document.querySelector('#launcher');
@@ -189,7 +190,8 @@ function refresh() {
     const status = await call('status');
     if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
     $('.mark').textContent = status.mark;
-    identityView(status);
+    const machines = await machinesView(status);
+    identityView(status, machines);
     await channelsView();
     await findView();
     const mods = await call('mods_list');
@@ -205,10 +207,13 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) read
 setInterval(() => { if (!document.hidden) readRefresh().catch(showError); }, 2000);
 readRefresh().catch(showError);
 
-let lastReleases = '';
-function identityView(status) {
+let lastReleases = '', canSign = false;
+function identityView(status, machines) {
   const id = status.identity, site = status.site;
-  $('#identity-info').textContent = id ? `${id.name || 'No profile name'} (${id.fingerprint})` : 'Identity unavailable';
+  canSign = !!id;
+  $('#identity-info').textContent = id ? `${id.name || 'No profile name'} (${id.fingerprint})` : machines.anchor ? `This machine holds no identity. It is a ${machines.machine} machine of ${machines.anchor}.` : 'This machine holds no identity. It has not joined your machines.';
+  $('#identity-controls').hidden = !id;
+  $('#site').hidden = !id;
   $('#confirm-own').hidden = !id || id.ownConfirmed;
   $('#site-dir').textContent = site ? `Site folder: ${site.dir}${site.url ? ' · ' + site.url : ''}` : '';
   $('#own-link').textContent = site?.link || '';
@@ -232,7 +237,7 @@ let lastChannels = '';
 async function channelsView() {
   const channels = await call('channels_list');
   const mods = await Promise.all(channels.map(channel => call('search', {text: '', publisher: channel.channel, interface: null})));
-  const signature = JSON.stringify([channels, mods]); if (signature === lastChannels) return;
+  const signature = JSON.stringify([channels, mods, canSign]); if (signature === lastChannels) return;
   lastChannels = signature; $('#channels').replaceChildren();
   for (const [i, channel] of channels.entries()) {
     const row = element('div', `${partyLabel(channel)} · ${channel.base || ''} · ${channel.status}${channel.cause ? ': ' + channel.cause : ''} `, $('#channels'));
@@ -241,6 +246,7 @@ async function channelsView() {
     if (!channel.base) continue;
     const link = `watane:${channel.channel}@${channel.base}`;
     button(row, 'Use as index', 'use-index', () => action('index_choose', {link}));
+    if (!canSign) continue;
     const note = noteInput(row, 'Note for including this channel', 'include-note');
     button(row, 'Include in my index', 'include-index', () => action('index_include', {link, note: note.value}));
     for (const mod of mods[i]) {
@@ -291,6 +297,7 @@ async function findView() {
     element('p', hit.summary, row);
     if (hit.publisher) element('p', partyLabel(hit.publisher), row);
     element('p', hit.status === 'compromised' ? 'compromised' : (hit.verified ? 'signature verified' : hit.status), row);
+    if (hit.from?.length) element('p', `From your machines: ${hit.from.join(', ')}`, row);
     for (const via of viaLabels(hit.via)) element('p', via, row);
     if (hit.checked) element('p', hit.checked, row, 'checked');
     for (const [label, values] of [['Offers', hit.offers], ['Events', hit.events], ['Uses', hit.uses]]) {
@@ -376,3 +383,5 @@ async function updatesView(mods) {
 
 
 window.wataneDropped = paths => action('install_paths', {paths}).catch(showError);
+
+setupMachines({action, showError});

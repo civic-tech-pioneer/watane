@@ -16,6 +16,55 @@ fn error(status: StatusCode, code: &'static str, message: impl Into<String>) -> 
     )
         .into_response()
 }
+
+#[derive(Clone)]
+struct Home {
+    dist: Arc<Dist>,
+    node: Option<Arc<watane_node::Node>>,
+}
+impl std::ops::Deref for Home {
+    type Target = Dist;
+    fn deref(&self) -> &Dist {
+        &self.dist
+    }
+}
+impl Home {
+    fn publish(&self, bytes: Vec<u8>) -> Result<watane_dist::Published, DistError> {
+        match &self.node {
+            Some(n) => n.publish(bytes),
+            None => self.dist.publish(bytes),
+        }
+    }
+    fn list(&self, link: &watane_dist::Link, note: &str) -> Result<watane_dist::Entry, DistError> {
+        match &self.node {
+            Some(n) => n.list(link, note),
+            None => self.dist.list(link, note),
+        }
+    }
+    fn read_link(&self, link: &watane_dist::Link) -> Result<watane_dist::Fetched, DistError> {
+        match &self.node {
+            Some(n) => n.read_link(link),
+            None => self.dist.read_link(link),
+        }
+    }
+    fn fetch(&self, release: &watane_dist::ReleaseRef) -> Result<watane_dist::Fetched, DistError> {
+        match &self.node {
+            Some(n) => n.fetch(release),
+            None => self.dist.fetch(release),
+        }
+    }
+    fn search(&self, query: &watane_dist::Query) -> Result<Vec<watane_node::NodeHit>, DistError> {
+        match &self.node {
+            Some(n) => n.search(query),
+            None => Ok(self
+                .dist
+                .search(query)?
+                .into_iter()
+                .map(|hit| watane_node::NodeHit { hit, from: vec![] })
+                .collect()),
+        }
+    }
+}
 pub fn router(dist: Option<Arc<Dist>>) -> Router {
     router_with_parties(dist, Arc::new(crate::words::Parties::new()))
 }
@@ -23,6 +72,21 @@ pub(crate) fn router_with_parties(
     dist: Option<Arc<Dist>>,
     parties: Arc<crate::words::Parties>,
 ) -> Router {
+    routes(dist.map(|dist| Home { dist, node: None }), parties)
+}
+pub(crate) fn router_node(
+    node: Option<Arc<watane_node::Node>>,
+    parties: Arc<crate::words::Parties>,
+) -> Router {
+    routes(
+        node.map(|node| Home {
+            dist: node.dist().clone(),
+            node: Some(node),
+        }),
+        parties,
+    )
+}
+fn routes(dist: Option<Home>, parties: Arc<crate::words::Parties>) -> Router {
     Router::new()
         .route(
             "/api/publish",
@@ -61,7 +125,7 @@ fn wrong_method(method: &'static str) -> Response {
         .insert("allow", method.parse().expect("static method"));
     response
 }
-async fn releases(State(dist): State<Option<Arc<Dist>>>) -> Response {
+async fn releases(State(dist): State<Option<Home>>) -> Response {
     let Some(dist) = dist else {
         return error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -109,7 +173,7 @@ async fn releases(State(dist): State<Option<Arc<Dist>>>) -> Response {
 }
 
 async fn publish(
-    State(dist): State<Option<Arc<Dist>>>,
+    State(dist): State<Option<Home>>,
     headers: HeaderMap,
     bytes: Result<Bytes, BytesRejection>,
 ) -> Response {
@@ -224,7 +288,7 @@ fn provider_links(headers: &HeaderMap) -> Result<Vec<watane_dist::Link>, String>
 }
 
 fn publish_providers(
-    dist: &Dist,
+    dist: &Home,
     release: &watane_dist::Release,
     links: &[watane_dist::Link],
 ) -> Vec<serde_json::Value> {
@@ -301,7 +365,7 @@ enum FetchTarget {
     Release(watane_dist::ReleaseRef),
 }
 async fn fetch(
-    State(dist): State<Option<Arc<Dist>>>,
+    State(dist): State<Option<Home>>,
     Extension(parties): Extension<Arc<crate::words::Parties>>,
     query: Result<Json<FetchQuery>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -373,7 +437,7 @@ async fn fetch(
 }
 
 async fn search(
-    State(dist): State<Option<Arc<Dist>>>,
+    State(dist): State<Option<Home>>,
     query: Result<Json<crate::find::SearchQuery>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Some(dist) = dist else {
@@ -392,7 +456,7 @@ async fn search(
     };
     match tauri::async_runtime::spawn_blocking(move || {
         let hits = dist.search(&query)?;
-        Ok::<_, DistError>(serde_json::json!({"indexes":dist.indexes()?.len(), "results":hits.iter().map(crate::find::api_result).collect::<Vec<_>>()}))
+        Ok::<_, DistError>(serde_json::json!({"indexes":dist.indexes()?.len(), "results":hits.iter().map(crate::find::node_api_result).collect::<Vec<_>>()}))
     }).await {
         Ok(Ok(body)) => Json(body).into_response(),
         Ok(Err(e @ DistError::NoIdentity)) => {

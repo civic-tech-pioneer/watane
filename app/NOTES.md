@@ -566,3 +566,50 @@
   The foreman's real GitHub J3 on b12b373 passed in 89 s; that run's edge
   answered `S54 missing base: not found`, so the 5xx branch is still unproven
   against the real host.
+## S75 — app stage G (validation incomplete in this sandbox)
+
+- The running home opens through `watane_node::Node`. Network-facing reads,
+  signatures and post-install retention use its wrappers; the existing dist
+  handle supplies views. The running router owns the same node and exposes
+  no machines, pairing, relay, DHT or net route. The old standalone
+  `api::router(Option<Arc<Dist>>)` remains for unchanged HTTP contract tests.
+- Settings now has the own-machines controls, code copy/expiry, identity-loss
+  and removal questions with Cancel focused, relay/DHT consent, device
+  status and problems, replica identity text, and verified restore hints.
+  `Join` and `Reach` accept only plain approval or denial through the broker.
+- Fixed the keyless parties/index views and the post-choose `NoIdentity`
+  failure. Node owns `IdentityInUse`; its text now says "has signed at least
+  one statement", and its specification and regression test agree.
+- New dependency: `watane-node` (workspace path), required to coordinate
+  distribution with own machines. `workspace-hack/Cargo.toml` and the lockfile
+  were regenerated with hakari; no other dependency was added.
+- Changed test fact: the hostile fixture now tries 12 more commands. Its
+  report grows from 120 to 132 attacks and its recorded invokes from 105 to
+  117. `gui_isolation` and the standalone JS harness (`support_selftest`)
+  retain their exact-count and refusal assertions at those larger counts.
+  `support_selftest.rs` is an unlisted file needed to keep that oracle true.
+- Test-first observations: the new consent test initially failed because
+  `join` was not a Request variant; the keyless read initially failed with
+  `NoIdentity`; the expanded capability literal failed against the old main
+  capability; node's singular statement text test failed against the old
+  plural. Those regressions now pass. The window scenarios could not reach
+  their acceptance assertions, so a complete acceptance red/green cycle
+  could not be established here.
+- Validation: `cargo build -p watane-app` succeeds (the linker reports a
+  compact-unwind size warning). `cargo test -p watane-app --features driver
+  --no-run` succeeds. Clippy with all targets, driver, and `-D warnings`,
+  `cargo fmt --check`, JS syntax checks, and `cargo hakari generate --diff`
+  are clean. `cargo build -p watane-app --release --features driver` fails
+  at the required "driver feature is only for debug test builds" guard.
+  Node's `ac10_identity_in_use_is_true_after_one_statement` passes.
+- Environment failures, retained as failures: the full default and driver
+  suites fail the new real-pairing broker test because iroh reports
+  `Failed to create netmon monitor`. The dedicated machines suite reports
+  1 pass (route boundary), 9 failures before app startup: macOS refuses
+  `com.apple.hiservices-xpcservice` and the driver cannot become ready.
+  The earlier full driver run also failed the existing API window test at
+  that same startup boundary. No `front:` test was run. A focused run of
+  the unit, HTTP API, static configuration and JS harness suites, explicitly
+  filtering only that real-network broker test, passes 120 tests. This is
+  partial evidence, not a substitute for the full suite or S28–S36 on a
+  macOS GUI session with network-monitor access. `tests/j8.rs` is untouched.

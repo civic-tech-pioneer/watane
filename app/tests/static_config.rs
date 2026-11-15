@@ -48,6 +48,18 @@ fn ac8_static_security_configuration() {
         "index_list",
         "index_include",
         "index_unlist",
+        "machines",
+        "machines_on",
+        "pair_code",
+        "machine_join",
+        "machine_remove",
+        "machine_role",
+        "machines_expiry",
+        "relay_add",
+        "relay_remove",
+        "dht_set",
+        "own_hints",
+        "identity_confirm_hint",
     ];
     let consent = ["consent_get", "consent_answer"];
     let mut files: Vec<_> = std::fs::read_dir(root().join("capabilities"))
@@ -125,6 +137,18 @@ fn ac8_static_security_configuration() {
             "index_list",
             "index_include",
             "index_unlist",
+            "machines",
+            "machines_on",
+            "pair_code",
+            "machine_join",
+            "machine_remove",
+            "machine_role",
+            "machines_expiry",
+            "relay_add",
+            "relay_remove",
+            "dht_set",
+            "own_hints",
+            "identity_confirm_hint",
             "consent_get",
             "consent_answer"
         ]

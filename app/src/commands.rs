@@ -364,7 +364,7 @@ pub(crate) async fn identity_set_name(
     record(&webview, "identity_set_name");
     let core = core(&state)?.clone();
     blocking(move || {
-        core.dist.set_name(&name)?;
+        core.node.set_name(&name)?;
         core.channels()?;
         Ok(())
     })
@@ -489,10 +489,10 @@ pub(crate) async fn identity_confirm_own(
     link: Option<String>,
 ) -> Result<Value, CmdError> {
     record(&webview, "identity_confirm_own");
-    let dist = core(&state)?.dist.clone();
+    let node = core(&state)?.node.clone();
     blocking(move || {
         let link = link.map(|s| s.parse::<watane_dist::Link>()).transpose()?;
-        dist.confirm_own(link.as_ref())?;
+        node.confirm_own(link.as_ref())?;
         Ok(())
     })
     .await?;
@@ -580,9 +580,9 @@ pub(crate) async fn release_withdraw(
 ) -> Result<(), CmdError> {
     record(&webview, "release_withdraw");
     let release = parse_release(&release)?;
-    let dist = core(&state)?.dist.clone();
+    let node = core(&state)?.node.clone();
     blocking(move || {
-        dist.withdraw(&release, &reason).map_err(withdraw_error)?;
+        node.withdraw(&release, &reason).map_err(withdraw_error)?;
         Ok(())
     })
     .await
@@ -834,7 +834,7 @@ pub(crate) async fn index_list(
     let link = parse_link(&link)?;
     let core = core(&state)?.clone();
     blocking(move || {
-        core.dist.list(&link, &note).map_err(index_error)?;
+        core.node.list(&link, &note).map_err(index_error)?;
         core.channels()?;
         Ok(())
     })
@@ -851,7 +851,7 @@ pub(crate) async fn index_include(
     let link = parse_link(&link)?;
     let core = core(&state)?.clone();
     blocking(move || {
-        core.dist.include(&link, &note).map_err(|e| match e {
+        core.node.include(&link, &note).map_err(|e| match e {
             watane_dist::DistError::AlreadyListed { .. } => {
                 CmdError::new("dist", crate::words::already_listed(true))
             }
@@ -872,7 +872,7 @@ pub(crate) async fn index_unlist(
     let entry = parse_entry(&entry)?;
     let core = core(&state)?.clone();
     blocking(move || {
-        core.dist.unlist(&entry)?;
+        core.node.unlist(&entry)?;
         core.channels()?;
         Ok(())
     })
@@ -921,4 +921,139 @@ pub(crate) fn updates_done(
 ) -> Result<Vec<crate::core::UpdateDone>, CmdError> {
     record(&webview, "updates_done");
     Ok(core(&state)?.updates_done())
+}
+
+#[tauri::command]
+pub(crate) async fn machines(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, CmdError> {
+    record(&webview, "machines");
+    let core = core(&state)?.clone();
+    blocking(move || Ok(core.machines_view())).await
+}
+
+#[tauri::command]
+pub(crate) async fn machines_on(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    on: bool,
+) -> Result<Value, CmdError> {
+    record(&webview, "machines_on");
+    let core = core(&state)?.clone();
+    blocking(move || core.machines_on(on)).await
+}
+
+#[tauri::command]
+pub(crate) async fn pair_code(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    role: crate::consent::Role,
+) -> Result<Value, CmdError> {
+    record(&webview, "pair_code");
+    let core = core(&state)?.clone();
+    blocking(move || core.pair_code(role)).await
+}
+
+#[tauri::command]
+pub(crate) async fn machine_join(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    code: String,
+    replace: bool,
+) -> Result<Value, CmdError> {
+    record(&webview, "machine_join");
+    let core = core(&state)?.clone();
+    blocking(move || core.machine_join(&code, replace)).await
+}
+
+#[tauri::command]
+pub(crate) async fn machine_remove(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    node: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "machine_remove");
+    let core = core(&state)?.clone();
+    blocking(move || core.machine_remove(&node)).await
+}
+
+#[tauri::command]
+pub(crate) async fn machine_role(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    node: String,
+    role: crate::consent::Role,
+) -> Result<Value, CmdError> {
+    record(&webview, "machine_role");
+    let core = core(&state)?.clone();
+    blocking(move || core.machine_role(&node, role)).await
+}
+
+#[tauri::command]
+pub(crate) async fn machines_expiry(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    days: u32,
+) -> Result<Value, CmdError> {
+    record(&webview, "machines_expiry");
+    let core = core(&state)?.clone();
+    blocking(move || core.machines_expiry(days)).await
+}
+
+#[tauri::command]
+pub(crate) async fn relay_add(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "relay_add");
+    let core = core(&state)?.clone();
+    blocking(move || core.relay(&url, true)).await
+}
+
+#[tauri::command]
+pub(crate) async fn relay_remove(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "relay_remove");
+    let core = core(&state)?.clone();
+    blocking(move || core.relay(&url, false)).await
+}
+
+#[tauri::command]
+pub(crate) async fn dht_set(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    on: bool,
+) -> Result<Value, CmdError> {
+    record(&webview, "dht_set");
+    let core = core(&state)?.clone();
+    blocking(move || core.dht_set(on)).await
+}
+
+#[tauri::command]
+pub(crate) async fn own_hints(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, CmdError> {
+    record(&webview, "own_hints");
+    let core = core(&state)?.clone();
+    blocking(move || Ok(core.own_hints())).await
+}
+
+#[tauri::command]
+pub(crate) async fn identity_confirm_hint(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    node: String,
+    seq: u64,
+    id: String,
+) -> Result<Value, CmdError> {
+    record(&webview, "identity_confirm_hint");
+    let core = core(&state)?.clone();
+    blocking(move || core.identity_confirm_hint(&node, seq, &id)).await?;
+    status(webview, state).await
 }

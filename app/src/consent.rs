@@ -29,6 +29,16 @@ pub enum ConsentError {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
+    Join {
+        node: String,
+        role: Role,
+        text: String,
+    },
+    Reach {
+        what: Reach,
+        url: Option<String>,
+        text: String,
+    },
     Pick {
         consumer: String,
         provider: String,
@@ -44,6 +54,18 @@ pub enum Request {
         signer: Party,
         details: Vec<Detail>,
     },
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Full,
+    Light,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reach {
+    Relay,
+    Dht,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
@@ -124,6 +146,9 @@ impl Request {
         match (self, choice) {
             (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
             (Self::Pick { .. }, _) | (_, Some(_)) => Err(ConsentError::WrongAnswer),
+            (Self::Join { .. } | Self::Reach { .. }, None) if !withheld.is_empty() => {
+                Err(ConsentError::WrongAnswer)
+            }
             (_, None) => Ok(Answer::Approve { withheld }),
         }
     }
@@ -250,6 +275,11 @@ impl Broker {
                         return Err(ConsentError::UnknownChoice(choice.clone()));
                     }
                 }
+                (Request::Join { .. } | Request::Reach { .. }, Answer::Approve { withheld })
+                    if !withheld.is_empty() =>
+                {
+                    return Err(ConsentError::WrongAnswer);
+                }
                 (_, Answer::Deny) => {}
                 (Request::Pick { .. }, _) | (_, Answer::Pick { .. }) => {
                     return Err(ConsentError::WrongAnswer);
@@ -262,7 +292,10 @@ impl Broker {
                         Request::Install { mods, .. } => mods.iter().any(|m| {
                             m.local == grant.local && m.grants.iter().any(|g| g.key == grant.key)
                         }),
-                        Request::Sign { .. } | Request::Pick { .. } => false,
+                        Request::Sign { .. }
+                        | Request::Pick { .. }
+                        | Request::Join { .. }
+                        | Request::Reach { .. } => false,
                     };
                     if !known {
                         return Err(ConsentError::UnknownGrant(format!(
@@ -852,5 +885,190 @@ mod stage_c_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod machines_tests {
+    use super::*;
+    #[test]
+    fn ac10_join_and_reach_only_take_plain_approval_or_deny() {
+        for request in [
+            serde_json::json!({"kind":"join","node":"short","role":"full","text":"join"}),
+            serde_json::json!({"kind":"reach","what":"relay","url":"https://example.org/","text":"reach"}),
+        ] {
+            let request: Request = serde_json::from_value(request).unwrap();
+            assert_eq!(
+                request.answer(true, None, vec![]).unwrap(),
+                Answer::Approve { withheld: vec![] }
+            );
+            assert_eq!(request.answer(false, None, vec![]).unwrap(), Answer::Deny);
+            assert!(matches!(
+                request.answer(true, Some("x".into()), vec![]),
+                Err(ConsentError::WrongAnswer)
+            ));
+            assert!(matches!(
+                request.answer(
+                    true,
+                    None,
+                    vec![Withheld {
+                        local: "x".into(),
+                        key: "y".into()
+                    }]
+                ),
+                Err(ConsentError::WrongAnswer)
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod machines_broker_tests {
+    use super::*;
+    #[tokio::test]
+    async fn ac10_broker_rejects_wrong_join_and_reach_answers_without_consuming_request() {
+        for request in [
+            Request::Join {
+                node: "short".into(),
+                role: Role::Full,
+                text: "join".into(),
+            },
+            Request::Reach {
+                what: Reach::Dht,
+                url: None,
+                text: "DHT".into(),
+            },
+        ] {
+            for allowed in [Answer::Approve { withheld: vec![] }, Answer::Deny] {
+                let broker = Broker::new();
+                let worker = broker.clone();
+                let request = request.clone();
+                let waiting = tokio::spawn(async move { worker.ask(request).await });
+                while broker.current().is_none() {
+                    tokio::task::yield_now().await;
+                }
+                let (id, _) = broker.current().unwrap();
+                for answer in [
+                    Answer::Pick { choice: "x".into() },
+                    Answer::Approve {
+                        withheld: vec![Withheld {
+                            local: "x".into(),
+                            key: "y".into(),
+                        }],
+                    },
+                ] {
+                    assert!(matches!(
+                        broker.answer(&id, answer),
+                        Err(ConsentError::WrongAnswer)
+                    ));
+                    assert_eq!(broker.current().unwrap().0, id);
+                }
+                broker.answer(&id, allowed.clone()).unwrap();
+                assert_eq!(waiting.await.unwrap(), allowed);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod machines_pairing_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    struct Approve;
+    impl watane_dist::Confirm for Approve {
+        fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+            watane_dist::Decision::Approve
+        }
+    }
+    fn open(home: &std::path::Path) -> Arc<watane_node::Node> {
+        let node = Arc::new(
+            watane_node::Node::open(
+                home,
+                Arc::new(Approve),
+                watane_node::Options {
+                    net: watane_node::net::Options {
+                        bind: Some("127.0.0.1:0".parse().unwrap()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        let mut options = node.net().options();
+        options.on = true;
+        node.net().set_options(options).unwrap();
+        node
+    }
+    #[test]
+    fn ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let anchor = open(home.path());
+        let broker = Broker::new();
+        let _machines = crate::machines::Machines::start(&anchor, broker.clone());
+        let mut used = None;
+        for approve in [true, false] {
+            let replica_home = tempfile::tempdir().unwrap();
+            let replica = open(replica_home.path());
+            let code = anchor
+                .net()
+                .pair_code(watane_node::net::Role::Full)
+                .unwrap();
+            let before = anchor.net().devices();
+            let worker = replica.clone();
+            let copy = code.clone();
+            let joining = std::thread::spawn(move || worker.join(&copy, false));
+            let end = Instant::now() + Duration::from_secs(10);
+            let (id, request) = loop {
+                if let Some(current) = broker.current() {
+                    break current;
+                }
+                assert!(Instant::now() < end, "join never reached broker");
+                std::thread::yield_now();
+            };
+            let Request::Join { node, role, text } = request else {
+                panic!("join request");
+            };
+            assert_eq!(node, replica.net().node_key().short());
+            assert_eq!(role, Role::Full);
+            assert_eq!(
+                text,
+                watane_node::words::join_asked(
+                    &replica.net().node_key(),
+                    watane_node::net::Role::Full
+                )
+            );
+            assert_eq!(anchor.net().devices(), before);
+            broker
+                .answer(
+                    &id,
+                    if approve {
+                        Answer::Approve { withheld: vec![] }
+                    } else {
+                        Answer::Deny
+                    },
+                )
+                .unwrap();
+            let result = joining.join().unwrap();
+            if approve {
+                assert_eq!(result.unwrap(), anchor.net().devices().unwrap());
+                assert_eq!(replica.net().devices(), anchor.net().devices());
+                assert!(replica.dist().identity().is_none());
+                assert!(!replica_home.path().join("log/identity.key").exists());
+                used = Some(code);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(watane_node::NodeError::Net(
+                        watane_node::net::NetError::Declined
+                    ))
+                ));
+                assert_eq!(anchor.net().devices(), before);
+            }
+        }
+        let other_home = tempfile::tempdir().unwrap();
+        let other = open(other_home.path());
+        assert!(other.join(&used.unwrap(), false).is_err());
+        assert!(broker.current().is_none());
     }
 }

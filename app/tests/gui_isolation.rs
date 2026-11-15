@@ -159,7 +159,7 @@ fn ac2_hostile_attacks_are_refused_without_side_effects() {
     open(&app);
     let report = report(&app);
     let attacks = report["attacks"].as_array().unwrap();
-    assert_eq!(attacks.len(), 120, "incomplete hostile report: {report}");
+    assert_eq!(attacks.len(), 132, "incomplete hostile report: {report}");
     let names: std::collections::HashSet<_> = attacks
         .iter()
         .map(|a| a["name"].as_str().unwrap())

@@ -18,12 +18,12 @@
 <section id="updates" hidden><h1>Updates</h1><div id="update-offers"></div><h2>Channels that could not be read</h2><div id="update-channels"></div><h2>Installed without a question</h2><div id="update-done"></div></section>
 </div>
 <div id="settings" data-area="settings" hidden><section id="distribution">
-<section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="releases"></div><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>
+<section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="identity-controls"><div id="releases"></div><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>
 <details id="backup"><summary>Back up or restore identity</summary>
 <label>Passphrase <input id="passphrase" type="password" autocomplete="new-password"></label><label>Repeat passphrase for backup <input id="passphrase-repeat" type="password" autocomplete="new-password"></label>
-<button id="identity-backup">Save backup</button><button id="identity-restore">Restore backup</button></details>
+<button id="identity-backup">Save backup</button><button id="identity-restore">Restore backup</button></details></div>
 <div id="confirm-own" hidden><p>Confirm your restored identity before signing. A wrong “never published” answer forks your channel.</p>
-<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button id="confirm-identity">Confirm identity</button></div>
+<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button id="confirm-identity">Confirm identity</button><h3>From your machines</h3><p>A machine’s answer is its claim. watane checks every statement it reads.</p><div id="own-hints"></div></div>
 </section><section id="site"><h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button id="set-site">Set site URL</button>
 <p id="own-link"></p><button id="copy-link">Copy link</button></section>
 </section>
@@ -32,7 +32,18 @@
 <label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button id="issue-token">Issue token</button>
 <dialog id="token-dialog"><p>Copy this token now. It is shown only here.</p><pre id="token-secret"></pre><p id="mcp-url"></p><button id="copy-token">Copy token</button><button id="close-token">Done</button></dialog><div id="tokens"></div>
 </section>
-<section id="machines"><h2>Own machines</h2><p>Unavailable: own machines are not built in this app yet.</p></section></div>
+<section id="machines"><h2>Own machines</h2>
+<p id="net-on-text">Connect your own machines. This machine will announce itself on your local network and connect to the machines that you pair. It publishes nothing on the internet, and uses no relay and no DHT unless you choose one.</p>
+<label><input id="machines-on" type="checkbox">Connect own machines</label><p id="machine-info"></p>
+<button id="pair-full">Pair a full machine</button><button id="pair-light">Pair a light machine</button>
+<label>Pairing code <input id="pair-code" readonly></label><button id="pair-copy">Copy</button><p id="pair-expiry"></p>
+<label>Join with a code <input id="join-code"></label><label id="join-replace-label"><input id="join-replace" type="checkbox">Replace this machine’s pairing</label><button id="join">Join</button><p id="joining"></p>
+<dialog id="join-question"><p></p><button id="join-cancel" autofocus>Cancel</button><button id="join-confirm">Join</button></dialog>
+<div id="machine-list"></div><label>List expiry in days <input id="machines-expiry" type="number" min="0" value="0"></label><p>Machines stop trusting each other after this many days without reaching this one. 0: never.</p><button id="save-expiry">Set expiry</button>
+<label>Relay URL <input id="relay-url" type="url"></label><button id="relay-add">Add relay</button><div id="relay-list"></div>
+<label><input id="dht-on" type="checkbox">Use the DHT</label><div id="machine-problems" aria-live="polite"></div>
+<dialog id="machine-remove-question"><p></p><button id="machine-remove-cancel" autofocus>Cancel</button><button id="machine-remove-confirm">Remove</button></dialog>
+</section></div>
 <dialog id="dependency-dialog"><p></p><button id="dependency-cancel" autofocus>Cancel</button><button id="dependency-continue">Continue</button></dialog>
 <dialog id="remove-dialog"><p></p><button id="keep-data" autofocus>Keep data</button><button id="delete-data">Delete data</button></dialog>
 <p id="error" role="alert"></p><script type="module" src="app.js"></script></body></html>

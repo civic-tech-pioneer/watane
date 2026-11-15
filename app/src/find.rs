@@ -150,6 +150,21 @@ pub(crate) fn hit_view(
     view
 }
 
+pub(crate) fn node_api_result(hit: &watane_node::NodeHit) -> Value {
+    let mut view = api_result(&hit.hit);
+    view["from"] = json!(hit.from.iter().map(|key| key.short()).collect::<Vec<_>>());
+    view
+}
+pub(crate) fn node_hit_view(
+    hit: &watane_node::NodeHit,
+    installed: &[watane_host::InstalledMod],
+    parties: &Parties,
+) -> Value {
+    let mut view = hit_view(&hit.hit, installed, parties);
+    view["from"] = json!(hit.from.iter().map(|key| key.short()).collect::<Vec<_>>());
+    view
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

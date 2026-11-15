@@ -120,7 +120,6 @@ crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", d
 curve25519-dalek = { version = "5", features = ["rand_core", "serde"] }
 data-encoding = { version = "2" }
 derive_more = { version = "2", features = ["add", "add_assign", "debug", "deref", "deref_mut", "display", "from", "from_str", "into", "into_iterator", "try_from", "try_into"] }
-derive_more-impl = { version = "2", features = ["add", "add_assign", "debug", "deref", "deref_mut", "display", "from", "from_str", "into", "into_iterator", "try_from", "try_into"] }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["std"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid", "rand_core"] }
 displaydoc = { version = "0.2" }
@@ -220,14 +219,12 @@ libc = { version = "0.2" }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "xdp"] }
 rustix = { version = "1", features = ["event", "fs", "mm", "net", "param", "process", "termios", "thread", "time"] }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
-syn-dff4ba8e3ae991db = { package = "syn", version = "1", features = ["full", "visit-mut"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
 
 [target.aarch64-apple-darwin.dependencies]
 bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
 block2 = { version = "0.6" }
-core-foundation-sys = { version = "0.8" }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
 futures-channel = { version = "0.3", features = ["sink"] }
@@ -245,7 +242,6 @@ tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header
 [target.aarch64-apple-darwin.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
 block2 = { version = "0.6" }
-core-foundation-sys = { version = "0.8" }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
 futures-channel = { version = "0.3", features = ["sink"] }
