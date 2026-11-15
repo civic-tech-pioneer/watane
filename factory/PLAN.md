@@ -622,7 +622,15 @@ is a step-7-style check, after S55.
   `kept` record (dist 5.12); `DistHoldings::set` a second time is an error, not a silent keep.
   Touches: node, dist (the kept record), net (that one cause text). Cloud.
   Delivered (796c074, merged rebased): Alice publishes on her laptop and her server keeps entry and package within about 250 ms on loopback; a light laptop searches through the server (hits marked with its key), installs from it and gets the next release through it; an unused app home joins as a replica and drops its key; a restored identity takes its head only when Alice picks the server's hint. Decisions: net's Unreachable cause names only what is missing; a failed Kept ingest takes back only the kept mark it added; `DistHoldings::set` twice is `NodeError::HolderSet`; node's search sends one remote query with interface null (dist's `InterfaceQuery` has no accessor), so remote budgets are spent on any interface; S5 uses a 4 s host delay. Verified on the Mac: hakari clean, node, dist, net, log with ignored, host and app green. Found, not fixed (net 5.7): a gossip hint is acted on with the neighbour that relayed it, which may not hold the head yet, so about 1 in 10 updates on a three-machine topic waits for the 10-minute sync; node/tests/light.rs reconnects as a commented workaround. user-sim notes: 'own head 1 is not stored' reads wrong for a hint with the right seq and another id; `IdentityInUse` says 'signed statements' after one; an anchor never asks its full machines on fetch, follow or search (NODE-F-9), so it cannot search what only the server holds.
-- Then node 3 after node 2, and app G after node 2 and 3; J8 closes the
+- [~] **S72 Alice runs her server as a program (node 3), and a hint reaches the right machine.**
+  Branch `slice/s72`. Builds node stage 3 (node/TECHNICAL.md 6 and 9, row 3): `watane-node` with
+  `join`, `run`, `status`, `relay` (a fixed port; port 0 refused) and `dht`, and the output of 6.2.
+  Fixes S70's net finding (net 5.7): a gossip hint pulls from the machine that told it, or retries once
+  the relaying neighbour holds the seq, so an update does not wait for the 10-minute sync; remove
+  node/tests/light.rs's reconnect workaround. Outcome: node scenarios S10 to S13 pass on the real
+  `watane-node` binary between homes on 127.0.0.1; the three-machine hint test passes 20 of 20 runs
+  without the workaround. Touches: node (the bin, tests, docs), net (5.7 and its test). Cloud.
+- Then app G after S72; J8 closes the
   step.
 
 ### Step 9: Extension points (J9)
@@ -642,7 +650,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   the grant words and J9 are S66. Cloud. The human has uncommitted edits in pkg/FUNCTIONAL.md and
   pkg/TECHNICAL.md: change those two only where the slice must, and say so in the report.
   Delivered (1462015, merged as 7d58990): a shell mod calls a collect on its own outlet and gets the joined answers of the mods granted to subscribe, in local-name order, without learning who answered; a maker's agent fakes a collect in `watane-dev test` and checks an answer with `deliver`. Dev's scenario map is green again. Decisions: a failed answer's fuel stays spent (else N failing subscribers spend N budgets; host 9.4); the fixture world is `shell` (wit refuses a world named like its outlet); dev needed no src change. Verified on the Mac: pkg, host (with the ~90 server tests the cloud cannot run), dev, app and J2 to J5 green; dev's `ac10_endless_test_stops_with_exact_message_within_deadline` failed once under load (7.0 s) and passed on rerun. For S66 from user-sim: the template should say to rename the world when an outlet is named like the slug (the guide is at its 150-line cap); a misspelled fake function is silently ignored; `check --json` lists a collect outlet under `events`; `add`'s next hint does not say that exporting the outlet answers a collect.
-- [ ] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
+- [~] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
   Builds app stage H (app/TECHNICAL.md 12, row H): the step 9 text of the subscription row in
   `app/src/words.rs` ("Receive the {interface} events of {provider} and answer its requests"), and
   `app/tests/j9.rs` with host's fixtures `menu` and `item-*`. Outcome: J9 passes as spec/FUNCTIONAL
@@ -650,7 +658,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   which; a failing command mod is left out; a withdrawn grant removes its command at the next
   collect; a command mod that also calls the shell is refused at the plan, naming the cycle); J2 to
   J5 still pass. Touches: app/src/words.rs, app/tests/j9.rs, app/TECHNICAL.md. Local (the app).
-  After S52 and S53: both change app/tests/support and app/TECHNICAL.md.
+  S71 (local) owns dev/ and app/tests/j5.rs.
 - [x] **S69 A maker's agent is told how collects work (dev, S65's leftovers).** Branch `slice/s69`.
   From S65's user-sim: (1) the template `AGENTS.md` says to keep `world <slug>`; an outlet named like
   the slug then fails with "duplicate item named <slug>" and the fix text does not help: say to
@@ -686,7 +694,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
 | node | 1 holder | 8 | done (S64) |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | done (S70) |
-| node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
+| node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open (S72) |
 | app | G own machines (J8) | 8 | open |
 | pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
 | host | 10 collect | 9 | done (S65) |
