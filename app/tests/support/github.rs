@@ -147,35 +147,46 @@ mod real {
 
         pub fn wait_served(&self, url: &str, expect: &[u8], deadline: Duration) {
             assert!(url.starts_with("https://"), "Pages fetch must use HTTPS");
-            let client = reqwest::blocking::Client::builder()
+            let client: ureq::Agent = ureq::Agent::config_builder()
                 .https_only(true)
+                .http_status_as_error(false)
                 .build()
-                .unwrap();
+                .into();
             let started = Instant::now();
             let mut last_status = None;
+            let mut last_error = None;
             while let Some(remaining) = deadline.checked_sub(started.elapsed()) {
                 if remaining.is_zero() {
                     break;
                 }
-                if let Ok(response) = client
+                match client
                     .get(url)
-                    .timeout(remaining.min(Duration::from_secs(10)))
-                    .send()
+                    .config()
+                    .timeout_global(Some(remaining.min(Duration::from_secs(10))))
+                    .build()
+                    .call()
                 {
-                    let status = response.status();
-                    last_status = Some(status);
-                    if status == reqwest::StatusCode::OK
-                        && response.bytes().is_ok_and(|body| body.as_ref() == expect)
-                    {
-                        return;
+                    Ok(mut response) => {
+                        let status = response.status();
+                        last_status = Some(status);
+                        if status == ureq::http::StatusCode::OK {
+                            match response.body_mut().read_to_vec() {
+                                Ok(body) if body == expect => return,
+                                Ok(_) => {}
+                                Err(error) => {
+                                    last_error = Some(redact(&self.token, &error.to_string()))
+                                }
+                            }
+                        }
                     }
+                    Err(error) => last_error = Some(redact(&self.token, &error.to_string())),
                 }
                 std::thread::sleep(
                     Duration::from_secs(10).min(deadline.saturating_sub(started.elapsed())),
                 );
             }
             panic!(
-                "Pages did not serve {} within {deadline:?}; last status: {last_status:?}; waited {:?}",
+                "Pages did not serve {} within {deadline:?}; last status: {last_status:?}; last error: {last_error:?}; waited {:?}",
                 redact(&self.token, url),
                 started.elapsed()
             );

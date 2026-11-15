@@ -561,6 +561,52 @@ mod github_harness {
         }
         assert!(started.elapsed() < Duration::from_secs(2));
     }
+    #[test]
+    fn ac2_pages_wait_reports_client_error_and_attempts_tls() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!(
+            "https://{}/unused-secret/head",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        // Plain HTTP on an HTTPS connection must cause a TLS error.
+                        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                        return true;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            return false;
+                        }
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(error) => panic!("local listener: {error}"),
+                }
+            }
+        });
+        let github = RealGithub::with_token("unused-secret".into());
+        let started = Instant::now();
+        let panic = std::panic::catch_unwind(|| {
+            github.wait_served(&url, b"head", Duration::from_millis(100));
+        })
+        .unwrap_err();
+        let connected = server.join().unwrap();
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(
+            message.contains("last status: None; last error: Some("),
+            "{message}"
+        );
+        assert!(!message.contains("unused-secret"), "{message}");
+        assert!(message.contains("[token]"), "{message}");
+        assert!(connected, "HTTPS client never connected: {message}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
     // Run the harness in a child with its own PATH; never change the test
     // process's environment or invoke the installed gh.
     #[test]

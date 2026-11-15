@@ -34,6 +34,8 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
 
+ureq = "3" # Real Pages harness: HTTPS with the same rustls client as dist.
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # Driver-only: let popup attempts reach the native deny hook, as on macOS.
 webkit2gtk = { version = "=2.0.2", optional = true }

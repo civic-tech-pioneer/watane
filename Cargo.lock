@@ -8347,6 +8347,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
+ "ureq",
  "watane-dist",
  "watane-host",
  "webkit2gtk",
