@@ -3,14 +3,14 @@
 //! (NET-F-23, NET-F-24).
 
 use crate::{
-    Class, Core, DeviceList, HeadInfo, Net, NetError,
+    Core, DeviceList, HeadInfo, Net, NetError,
     error::Code,
     key::NodeKey,
     lock,
     ticket::{Hint, PairCode},
     wire::{self, AnswerError, Hello, Request},
 };
-use iroh::{EndpointAddr, TransportAddr};
+use iroh::{EndpointAddr, TransportAddr, endpoint::Connection};
 use std::{collections::HashSet, time::Duration};
 use watane_log::{Entry, MAX_SEQ, PublicKey};
 
@@ -28,8 +28,50 @@ fn answer_error(node: &NodeKey, e: AnswerError) -> NetError {
     }
 }
 
-/// One request on one stream of one new connection. Returns the answer's
-/// bytes. Any answer from the anchor renews the expiry (ND-17).
+/// One request on one stream of `connection`. Returns the answer's bytes.
+pub(crate) async fn request_on(
+    connection: &Connection,
+    node: &NodeKey,
+    bytes: &[u8],
+    cap: usize,
+) -> Result<Vec<u8>, NetError> {
+    let unreachable = |cause: String| NetError::Unreachable { node: *node, cause };
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|e| unreachable(e.to_string()))?;
+    send.write_all(bytes)
+        .await
+        .map_err(|e| unreachable(e.to_string()))?;
+    send.finish().map_err(|e| unreachable(e.to_string()))?;
+    match recv.read_to_end(cap).await {
+        Ok(answer) => Ok(answer),
+        Err(iroh::endpoint::ReadToEndError::TooLong) => Err(NetError::TooLarge { node: *node }),
+        Err(e) => Err(unreachable(e.to_string())),
+    }
+}
+
+/// A new connection to `node` on `alpn`, at the addresses `net` knows.
+pub(crate) async fn connect(
+    core: &Core,
+    node: &NodeKey,
+    alpn: &[u8],
+) -> Result<Connection, NetError> {
+    let limits = core.limits();
+    let endpoint = lock(&core.endpoint).clone().ok_or(NetError::Off)?;
+    let unreachable = |cause: String| NetError::Unreachable { node: *node, cause };
+    let id = iroh::EndpointId::from_bytes(node.as_bytes())
+        .map_err(|e| unreachable(format!("not a node key: {e}")))?;
+    let addr = EndpointAddr::from_parts(id, core.addrs_of(node).into_iter().map(TransportAddr::Ip));
+    tokio::time::timeout(limits.connect_timeout, endpoint.connect(addr, alpn))
+        .await
+        .map_err(|_| unreachable("the connection took too long".into()))?
+        .map_err(|e| unreachable(e.to_string()))
+}
+
+/// One request on one stream: of the kept connection to `node` when there
+/// is one, else of a new connection that is closed after. Any answer from
+/// the anchor renews the expiry (ND-17).
 pub(crate) async fn call_async(
     core: &Core,
     node: &NodeKey,
@@ -42,35 +84,18 @@ pub(crate) async fn call_async(
     if bytes.len() > limits.request {
         return Err(NetError::TooLarge { node: *node });
     }
-    let endpoint = lock(&core.endpoint).clone().ok_or(NetError::Off)?;
-    let unreachable = |cause: String| NetError::Unreachable { node: *node, cause };
-    let id = iroh::EndpointId::from_bytes(node.as_bytes())
-        .map_err(|e| unreachable(format!("not a node key: {e}")))?;
-    let addr = EndpointAddr::from_parts(id, core.addrs_of(node).into_iter().map(TransportAddr::Ip));
+    if lock(&core.endpoint).is_none() {
+        return Err(NetError::Off);
+    }
     let work = async {
-        let connection =
-            tokio::time::timeout(limits.connect_timeout, endpoint.connect(addr, wire::ALPN))
-                .await
-                .map_err(|_| unreachable("the connection took too long".into()))?
-                .map_err(|e| unreachable(e.to_string()))?;
-        let result = async {
-            let (mut send, mut recv) = connection
-                .open_bi()
-                .await
-                .map_err(|e| unreachable(e.to_string()))?;
-            send.write_all(&bytes)
-                .await
-                .map_err(|e| unreachable(e.to_string()))?;
-            send.finish().map_err(|e| unreachable(e.to_string()))?;
-            match recv.read_to_end(cap).await {
-                Ok(answer) => Ok(answer),
-                Err(iroh::endpoint::ReadToEndError::TooLong) => {
-                    Err(NetError::TooLarge { node: *node })
-                }
-                Err(e) => Err(unreachable(e.to_string())),
+        if let Some(link) = core.link_of(node) {
+            match request_on(&link, node, &bytes, cap).await {
+                Err(NetError::Unreachable { .. }) => {}
+                other => return other,
             }
         }
-        .await;
+        let connection = connect(core, node, wire::ALPN).await?;
+        let result = request_on(&connection, node, &bytes, cap).await;
         connection.close(0u32.into(), b"done");
         result
     };
@@ -90,10 +115,6 @@ fn call_for(
 ) -> Result<Vec<u8>, NetError> {
     let runtime = net.runtime()?;
     runtime.block_on(call_async(net.core(), node, request, cap, deadline))
-}
-
-fn call(net: &Net, node: &NodeKey, request: &Request, cap: usize) -> Result<Vec<u8>, NetError> {
-    call_for(net, node, request, cap, net.core().limits().deadline)
 }
 
 /// Join the anchor of `code` (5.5).
@@ -141,25 +162,50 @@ pub(crate) fn join(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceLi
 }
 
 pub(crate) fn hello(net: &Net, node: &NodeKey) -> Result<Hello, NetError> {
-    let answer = call(
-        net,
-        node,
-        &Request::Hello {
-            version: wire::VERSION,
-        },
-        wire::HELLO_ANSWER,
-    )?;
+    net.runtime()?
+        .block_on(hello_async(&net.core.clone(), node, None))
+}
+
+/// `hello` on `connection` (a new kept connection) or, with none, as any
+/// call. A trusted node with a higher list: ask for it (5.2); a failed pull
+/// changes nothing.
+pub(crate) async fn hello_async(
+    core: &std::sync::Arc<Core>,
+    node: &NodeKey,
+    connection: Option<&Connection>,
+) -> Result<Hello, NetError> {
+    let request = Request::Hello {
+        version: wire::VERSION,
+    };
+    let answer = match connection {
+        Some(connection) => {
+            let limits = core.limits();
+            let bytes = request.encode();
+            let work = request_on(connection, node, &bytes, wire::HELLO_ANSWER);
+            let answer = tokio::time::timeout(limits.deadline, work)
+                .await
+                .map_err(|_| NetError::Timeout { node: *node })??;
+            core.seen(node);
+            answer
+        }
+        None => {
+            call_async(
+                core,
+                node,
+                &request,
+                wire::HELLO_ANSWER,
+                core.limits().deadline,
+            )
+            .await?
+        }
+    };
     let hello = wire::parse_hello(&answer).map_err(|e| answer_error(node, e))?;
-    // a trusted node with a higher list: ask for it (5.2); a failed pull
-    // changes nothing
-    let core = net.core();
     let own = core.devices().map(|l| l.seq);
     if let (Some(own), Some(theirs)) = (own, hello.devices_seq)
         && theirs > own
-        && core.class_of(node) == Class::Trusted
-        && let Ok(runtime) = net.runtime()
+        && core.class_of(node) == crate::Class::Trusted
     {
-        runtime.block_on(crate::pairing::pull(net.core.clone(), *node));
+        crate::pairing::pull(core.clone(), *node).await;
     }
     Ok(hello)
 }
@@ -169,14 +215,25 @@ pub(crate) fn heads(
     node: &NodeKey,
     asked: &[PublicKey],
 ) -> Result<Vec<(PublicKey, Option<HeadInfo>)>, NetError> {
-    let answer = call(
-        net,
+    net.runtime()?
+        .block_on(heads_async(net.core(), node, asked))
+}
+
+pub(crate) async fn heads_async(
+    core: &Core,
+    node: &NodeKey,
+    asked: &[PublicKey],
+) -> Result<Vec<(PublicKey, Option<HeadInfo>)>, NetError> {
+    let answer = call_async(
+        core,
         node,
         &Request::Heads {
             channels: asked.to_vec(),
         },
         wire::HEADS_ANSWER,
-    )?;
+        core.limits().deadline,
+    )
+    .await?;
     let items = wire::parse_heads(&answer).map_err(|e| answer_error(node, e))?;
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(items.len());
@@ -218,9 +275,20 @@ pub(crate) fn entries(
     from: u64,
     limit: u64,
 ) -> Result<Vec<Entry>, NetError> {
-    let limits = net.core().limits();
-    let answer = call(
-        net,
+    net.runtime()?
+        .block_on(entries_async(net.core(), node, channel, from, limit))
+}
+
+pub(crate) async fn entries_async(
+    core: &Core,
+    node: &NodeKey,
+    channel: &PublicKey,
+    from: u64,
+    limit: u64,
+) -> Result<Vec<Entry>, NetError> {
+    let limits = core.limits();
+    let answer = call_async(
+        core,
         node,
         &Request::Entries {
             channel: *channel,
@@ -228,7 +296,9 @@ pub(crate) fn entries(
             limit,
         },
         limits.answer_entries,
-    )?;
+        limits.deadline,
+    )
+    .await?;
     let raw = wire::parse_entries(&answer).map_err(|e| answer_error(node, e))?;
     let most = limit.min(limits.max_entries as u64);
     if raw.len() as u64 > most {
@@ -274,12 +344,23 @@ pub(crate) fn fork(
     node: &NodeKey,
     channel: &PublicKey,
 ) -> Result<Option<(Entry, Entry)>, NetError> {
-    let answer = call(
-        net,
+    net.runtime()?
+        .block_on(fork_async(net.core(), node, channel))
+}
+
+pub(crate) async fn fork_async(
+    core: &Core,
+    node: &NodeKey,
+    channel: &PublicKey,
+) -> Result<Option<(Entry, Entry)>, NetError> {
+    let answer = call_async(
+        core,
         node,
         &Request::Fork { channel: *channel },
         wire::FORK_ANSWER,
-    )?;
+        core.limits().deadline,
+    )
+    .await?;
     let Some((a, b)) = wire::parse_fork(&answer).map_err(|e| answer_error(node, e))? else {
         return Ok(None);
     };

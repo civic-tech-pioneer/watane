@@ -197,60 +197,132 @@ pub struct Faults {
     pub delay: Option<Duration>,
 }
 
-/// A holder in memory. It counts the calls it gets.
+/// A holder in memory. It counts the calls it gets. Its chains and packages
+/// change as `ingest` and `store_blob` are called, so they sit behind locks.
 pub struct MemHoldings {
-    pub chains: BTreeMap<PublicKey, Vec<Entry>>,
+    chains: Mutex<BTreeMap<PublicKey, Vec<Entry>>>,
     pub fork: Option<(PublicKey, (Entry, Entry))>,
     pub calls: AtomicUsize,
     pub faults: Mutex<Faults>,
     /// This home holds the participant key.
     pub anchor: bool,
+    /// Every `ingest` call with entries: channel, how many, why.
+    pub ingests: Mutex<Vec<(PublicKey, usize, Why)>>,
+    /// Every `store_blob` call.
+    pub stored_blobs: Mutex<Vec<BlobId>>,
+    /// The packages this holder holds: id to the file `blob(id)` gives.
+    files: Mutex<HashMap<[u8; 32], std::path::PathBuf>>,
+    /// The packages a test wants: `wanted_blobs` lists those not yet stored.
+    wanted: Mutex<Vec<(BlobId, u64)>>,
+    /// The bytes `store_blob` took.
+    taken: Mutex<HashMap<[u8; 32], Vec<u8>>>,
+    /// `ingest` answers `NotWanted` while set.
+    pub not_wanted: std::sync::atomic::AtomicBool,
+    /// How many `entries` calls came for each channel.
+    pub entries_calls: AtomicUsize,
+    dir: tempfile::TempDir,
 }
 
 impl MemHoldings {
-    pub fn empty() -> Arc<MemHoldings> {
+    fn make(
+        chains: BTreeMap<PublicKey, Vec<Entry>>,
+        fork: Option<(PublicKey, (Entry, Entry))>,
+        anchor: bool,
+    ) -> Arc<MemHoldings> {
         Arc::new(MemHoldings {
-            chains: BTreeMap::new(),
-            fork: None,
+            chains: Mutex::new(chains),
+            fork,
             calls: AtomicUsize::new(0),
             faults: Mutex::new(Faults::default()),
-            anchor: false,
+            anchor,
+            ingests: Mutex::new(Vec::new()),
+            stored_blobs: Mutex::new(Vec::new()),
+            files: Mutex::new(HashMap::new()),
+            wanted: Mutex::new(Vec::new()),
+            taken: Mutex::new(HashMap::new()),
+            not_wanted: std::sync::atomic::AtomicBool::new(false),
+            entries_calls: AtomicUsize::new(0),
+            dir: tempfile::tempdir().unwrap(),
         })
     }
+    /// A holder with these chains (and a forked channel), anchor or not.
+    pub fn custom(
+        chains: BTreeMap<PublicKey, Vec<Entry>>,
+        fork: Option<(PublicKey, (Entry, Entry))>,
+        anchor: bool,
+    ) -> Arc<MemHoldings> {
+        Self::make(chains, fork, anchor)
+    }
+    pub fn empty() -> Arc<MemHoldings> {
+        Self::make(BTreeMap::new(), None, false)
+    }
     pub fn new(fx: &Fixture) -> Arc<MemHoldings> {
-        Arc::new(MemHoldings {
-            chains: fx.chains.clone(),
-            fork: Some((fx.cf, fx.fork.clone())),
-            calls: AtomicUsize::new(0),
-            faults: Mutex::new(Faults::default()),
-            anchor: false,
-        })
+        Self::make(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), false)
     }
     /// The same, in a home that holds the participant key.
     pub fn anchor(fx: &Fixture) -> Arc<MemHoldings> {
-        Arc::new(MemHoldings {
-            chains: fx.chains.clone(),
-            fork: Some((fx.cf, fx.fork.clone())),
-            calls: AtomicUsize::new(0),
-            faults: Mutex::new(Faults::default()),
-            anchor: true,
-        })
+        Self::make(fx.chains.clone(), Some((fx.cf, fx.fork.clone())), true)
     }
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
+    }
+    /// A copy of the chains now held.
+    pub fn chains(&self) -> BTreeMap<PublicKey, Vec<Entry>> {
+        self.chains.lock().unwrap().clone()
+    }
+    /// The raw bytes of every entry of a channel held.
+    pub fn raws(&self, c: &PublicKey) -> Vec<Vec<u8>> {
+        self.chains()
+            .get(c)
+            .map(|v| v.iter().map(|e| e.bytes().to_vec()).collect())
+            .unwrap_or_default()
+    }
+    /// An own append: the entry goes on the end of its channel's chain.
+    pub fn append(&self, entry: Entry) {
+        self.chains
+            .lock()
+            .unwrap()
+            .entry(entry.author())
+            .or_default()
+            .push(entry);
+    }
+    /// A package this holder holds and a live release names: `blob(id)`
+    /// gives its file and `wanted_blobs` of others lists it when they ask
+    /// through `want_blob`.
+    pub fn add_blob(&self, bytes: &[u8]) -> BlobId {
+        let id = BlobId(*blake3::hash(bytes).as_bytes());
+        let path = self.dir.path().join(format!("{}.pkg", hex(&id.0)));
+        std::fs::write(&path, bytes).unwrap();
+        self.files.lock().unwrap().insert(id.0, path);
+        id
+    }
+    /// A package this holder wants (`wanted_blobs` lists it until stored).
+    pub fn want_blob(&self, id: BlobId, size: u64) {
+        self.wanted.lock().unwrap().push((id, size));
+    }
+    pub fn taken_blob(&self, id: &BlobId) -> Option<Vec<u8>> {
+        self.taken.lock().unwrap().get(&id.0).cloned()
+    }
+    pub fn ingested_entries(&self) -> usize {
+        self.ingests.lock().unwrap().iter().map(|(_, n, _)| n).sum()
     }
     fn enter(&self) -> Option<Duration> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.faults.lock().unwrap().delay
     }
     pub fn head_of(&self, c: &PublicKey) -> Option<HeadInfo> {
-        let last = self.chains.get(c)?.last()?;
+        let chains = self.chains.lock().unwrap();
+        let last = chains.get(c)?.last()?;
         Some(HeadInfo {
             seq: last.seq(),
             id: last.id(),
             forked: self.fork.as_ref().is_some_and(|(k, _)| k == c),
         })
     }
+}
+
+pub fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 impl Holdings for MemHoldings {
@@ -265,7 +337,10 @@ impl Holdings for MemHoldings {
             return h;
         }
         match channels {
-            None => self.chains.keys().map(|c| (*c, self.head_of(c))).collect(),
+            None => {
+                let keys: Vec<_> = self.chains.lock().unwrap().keys().copied().collect();
+                keys.iter().map(|c| (*c, self.head_of(c))).collect()
+            }
             Some(list) => list.iter().map(|c| (*c, self.head_of(c))).collect(),
         }
     }
@@ -276,6 +351,7 @@ impl Holdings for MemHoldings {
         limit: usize,
         max_bytes: usize,
     ) -> Vec<Entry> {
+        self.entries_calls.fetch_add(1, Ordering::SeqCst);
         if let Some(d) = self.enter() {
             std::thread::sleep(d);
         }
@@ -284,7 +360,8 @@ impl Holdings for MemHoldings {
         }
         let mut total = 0;
         let mut out = Vec::new();
-        for e in self.chains.get(channel).into_iter().flatten() {
+        let chains = self.chains.lock().unwrap();
+        for e in chains.get(channel).into_iter().flatten() {
             if e.seq() < from {
                 continue;
             }
@@ -308,16 +385,48 @@ impl Holdings for MemHoldings {
             .filter(|(k, _)| k == channel)
             .map(|(_, p)| p.clone())
     }
-    fn blob(&self, _: &BlobId) -> Option<std::path::PathBuf> {
-        None
+    fn blob(&self, id: &BlobId) -> Option<std::path::PathBuf> {
+        self.files.lock().unwrap().get(&id.0).cloned()
     }
     fn wanted_blobs(&self, _: Role) -> Vec<(BlobId, u64)> {
-        Vec::new()
+        let taken = self.taken.lock().unwrap();
+        self.wanted
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| !taken.contains_key(&id.0))
+            .cloned()
+            .collect()
     }
-    fn ingest(&self, _: &PublicKey, _: Vec<Entry>, _: Why) -> Ingested {
-        Ingested::NotWanted
+    fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, why: Why) -> Ingested {
+        self.ingests
+            .lock()
+            .unwrap()
+            .push((*channel, entries.len(), why));
+        if self.not_wanted.load(Ordering::SeqCst) {
+            return Ingested::NotWanted;
+        }
+        let mut chains = self.chains.lock().unwrap();
+        let chain = chains.entry(*channel).or_default();
+        for e in entries {
+            let ok = e.author() == *channel
+                && e.seq() == chain.len() as u64
+                && e.prev() == chain.last().map(|l| l.id());
+            if !ok {
+                // a second entry at a seq already held is a fork: not chained
+                if chain.get(e.seq() as usize).is_some() {
+                    continue;
+                }
+                return Ingested::Failed("out of order".into());
+            }
+            chain.push(e);
+        }
+        Ingested::Stored(chain.len() as u64 - 1)
     }
-    fn store_blob(&self, _: &BlobId, _: &Path) -> Result<(), String> {
+    fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String> {
+        let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+        self.stored_blobs.lock().unwrap().push(*id);
+        self.taken.lock().unwrap().insert(id.0, bytes);
         Ok(())
     }
     fn search(&self, _: &Query) -> Vec<Hit> {
@@ -401,11 +510,42 @@ pub fn node_trusting(
 /// Pair `joiner` to `anchor` as `role` through the code, the join question
 /// and its answer. Both learn each other's addresses.
 pub fn pair_into(anchor: &Node, joiner: &Node, role: Role) -> watane_net::DeviceList {
+    let (ea, ej) = (anchor.net.events(), joiner.net.events());
     let code = anchor.net.pair_code(role).unwrap();
     let list = try_pair(anchor, joiner, code, false, Some(true)).unwrap();
     anchor.net.add_addrs(&joiner.key, &joiner.net.addrs());
     joiner.net.add_addrs(&anchor.key, &anchor.net.addrs());
+    // the machines connect and sync now: wait until that has settled
+    for (events, peer) in [(ea, joiner.key), (ej, anchor.key)] {
+        loop {
+            match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+                watane_net::Event::PeerUp(k) if k == peer => break,
+                _ => {}
+            }
+        }
+    }
+    settle(&[anchor, joiner]);
     list
+}
+
+/// Wait until the holders of these nodes have not been called for a while.
+pub fn settle(nodes: &[&Node]) {
+    let mut last: Vec<usize> = vec![];
+    let mut same = 0;
+    for _ in 0..100 {
+        std::thread::sleep(Duration::from_millis(300));
+        let now: Vec<usize> = nodes.iter().map(|n| n.holdings.calls()).collect();
+        if now == last {
+            same += 1;
+            if same >= 3 {
+                return;
+            }
+        } else {
+            same = 0;
+            last = now;
+        }
+    }
+    panic!("the holders never settled");
 }
 
 /// Two paired nodes: A the anchor, B a full machine, each trusting the other
@@ -479,11 +619,21 @@ pub fn fake_callee(
     seed: [u8; 32],
     reply: impl Fn(&[u8]) -> Option<Vec<u8>> + Send + Sync + 'static,
 ) -> Fake {
+    fake_machine(seed, reply, None)
+}
+
+/// A callee of `watane/1` that also answers every request on iroh-blobs'
+/// ALPN with `blob` (raw bytes: the size header and data of a small blob).
+pub fn fake_machine(
+    seed: [u8; 32],
+    reply: impl Fn(&[u8]) -> Option<Vec<u8>> + Send + Sync + 'static,
+    blob: Option<Vec<u8>>,
+) -> Fake {
     let rt = runtime();
     let reply = Arc::new(reply);
     let (ep, addr) = rt.block_on(async {
         let ep = builder(seed)
-            .alpns(vec![b"watane/1".to_vec()])
+            .alpns(vec![b"watane/1".to_vec(), iroh_blobs::ALPN.to_vec()])
             .bind()
             .await
             .unwrap();
@@ -494,9 +644,22 @@ pub fn fake_callee(
     rt.spawn(async move {
         while let Some(incoming) = accept.accept().await {
             let reply = reply.clone();
+            let blob = blob.clone();
             tokio::spawn(async move {
                 let Ok(conn) = incoming.await else { return };
                 let mut held = Vec::new();
+                if conn.alpn() == iroh_blobs::ALPN {
+                    while let Ok((mut send, mut recv)) = conn.accept_bi().await {
+                        let mut buf = [0u8; 4096];
+                        let _ = recv.read(&mut buf).await;
+                        if let Some(bytes) = &blob {
+                            let _ = send.write_all(bytes).await;
+                            let _ = send.finish();
+                        }
+                        held.push(send);
+                    }
+                    return;
+                }
                 while let Ok((mut send, mut recv)) = conn.accept_bi().await {
                     let Ok(request) = recv.read_to_end(1 << 20).await else {
                         return;
@@ -516,6 +679,62 @@ pub fn fake_callee(
         addr,
         _rt: rt,
     }
+}
+
+/// A hello answer, by hand: version 1, the ops, ten limits, no list seq.
+pub fn hello_answer() -> Vec<u8> {
+    use cbor::*;
+    let ops: Vec<Vec<u8>> = ["hello", "heads", "entries", "fork", "devices", "pair"]
+        .iter()
+        .map(|o| text(o))
+        .collect();
+    let limits: Vec<Vec<u8>> = [
+        262144u64, 4194304, 1000, 65536, 67108864, 200, 10000, 5000, 600000, 120000,
+    ]
+    .iter()
+    .map(|n| uint(*n))
+    .collect();
+    concat(&[
+        array(&[text("ok")]),
+        array(&[uint(1), array(&ops), array(&limits), vec![NULL]]),
+    ])
+}
+
+/// A heads answer with one channel, by hand.
+pub fn heads_answer_of(channel: &PublicKey, seq: u64, id: &[u8; 32]) -> Vec<u8> {
+    use cbor::*;
+    concat(&[
+        array(&[text("ok")]),
+        array(&[bytes(channel.as_bytes()), uint(seq), bytes(id), vec![FALSE]]),
+    ])
+}
+
+/// An entries answer, by hand.
+pub fn entries_answer_of(entries: &[Vec<u8>]) -> Vec<u8> {
+    use cbor::*;
+    let mut items = vec![array(&[text("ok")])];
+    items.extend(entries.iter().map(|e| bytes(e)));
+    concat(&items)
+}
+
+/// What op a request names (its first text), by hand.
+pub fn op_of(request: &[u8]) -> &'static str {
+    for op in ["hello", "heads", "entries", "fork", "devices"] {
+        if request
+            .windows(op.len())
+            .take(12)
+            .any(|w| w == op.as_bytes())
+        {
+            return match op {
+                "hello" => "hello",
+                "heads" => "heads",
+                "entries" => "entries",
+                "fork" => "fork",
+                _ => "devices",
+            };
+        }
+    }
+    "other"
 }
 
 pub fn map_of<K: std::hash::Hash + Eq, V>(

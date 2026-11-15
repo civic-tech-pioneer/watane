@@ -3,13 +3,16 @@
 //! list). See `TECHNICAL.md`.
 
 mod allow;
+mod blobs;
 mod cbor;
 mod client;
 mod devices;
 mod error;
+mod gossip;
 mod key;
 mod pairing;
 mod serve;
+mod sync;
 mod ticket;
 mod wire;
 
@@ -26,7 +29,7 @@ use iroh::{
     protocol::Router,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
@@ -88,8 +91,8 @@ pub struct Hit {
     pub entry: EntryId,
 }
 
-/// What `net` tells its owner (TECHNICAL 3). N2 emits `JoinAsked` and
-/// `DevicesChanged`.
+/// What `net` tells its owner (TECHNICAL 3). N3 emits `Pulled`, `Refused`,
+/// `PeerUp` and `PeerDown` beside N2's `JoinAsked` and `DevicesChanged`.
 #[derive(Debug, Clone)]
 pub enum Event {
     /// The app shows the short key and asks.
@@ -166,6 +169,15 @@ pub(crate) struct Core {
     pub(crate) pool: Arc<allow::Pool>,
     /// The running endpoint, for the calls a handler makes.
     pub(crate) endpoint: Mutex<Option<Endpoint>>,
+    /// The kept connections, one per own machine (5.2).
+    pub(crate) links: Mutex<HashMap<NodeKey, sync::Link>>,
+    pub(crate) syncs: Mutex<HashMap<NodeKey, sync::Slot>>,
+    pub(crate) dials: Mutex<HashMap<NodeKey, sync::Dial>>,
+    /// Machines that sent a bad object, for the life of this `Net` (5.6).
+    pub(crate) dropped: Mutex<HashSet<NodeKey>>,
+    /// Where gossip looks for a node.
+    lookup: Mutex<Option<iroh::address_lookup::memory::MemoryLookup>>,
+    pub(crate) gossip: Mutex<Option<gossip::Hub>>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -182,11 +194,42 @@ impl Core {
     pub(crate) fn addrs_of(&self, node: &NodeKey) -> Vec<SocketAddr> {
         lock(&self.addrs).get(node).cloned().unwrap_or_default()
     }
+    /// Add addresses of a node, at the front when `first`.
+    pub(crate) fn remember(&self, node: &NodeKey, addrs: &[SocketAddr], first: bool) {
+        let all = {
+            let mut book = lock(&self.addrs);
+            let list = book.entry(*node).or_default();
+            for addr in addrs {
+                if let Some(at) = list.iter().position(|a| a == addr) {
+                    if first {
+                        list.remove(at);
+                    } else {
+                        continue;
+                    }
+                }
+                if first {
+                    list.insert(0, *addr);
+                } else {
+                    list.push(*addr);
+                }
+            }
+            list.clone()
+        };
+        if let Some(lookup) = lock(&self.lookup).as_ref()
+            && let Ok(id) = iroh::EndpointId::from_bytes(node.as_bytes())
+        {
+            lookup.add_endpoint_info(iroh::EndpointAddr::from_parts(
+                id,
+                all.into_iter().map(iroh::TransportAddr::Ip),
+            ));
+        }
+    }
 }
 
 struct Running {
     router: Router,
     bind: Option<SocketAddr>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 struct Shared {
@@ -243,6 +286,12 @@ impl Net {
                 subscribers: Mutex::new(Vec::new()),
                 pool: Arc::new(allow::Pool::default()),
                 endpoint: Mutex::new(None),
+                links: Mutex::new(HashMap::new()),
+                syncs: Mutex::new(HashMap::new()),
+                dials: Mutex::new(HashMap::new()),
+                dropped: Mutex::new(HashSet::new()),
+                lookup: Mutex::new(None),
+                gossip: Mutex::new(None),
             }),
             shared: Arc::new(Shared {
                 runtime: OnceLock::new(),
@@ -280,6 +329,11 @@ impl Net {
         }
         if let Some(current) = running.take() {
             *lock(&self.core.endpoint) = None;
+            *lock(&self.core.gossip) = None;
+            *lock(&self.core.lookup) = None;
+            for task in &current.tasks {
+                task.abort();
+            }
             self.runtime()?
                 .block_on(async { current.router.shutdown().await })
                 .ok();
@@ -291,25 +345,53 @@ impl Net {
                     cause,
                 })?;
             let core = self.core.clone();
-            let router = self
+            let blobs_dir = self.core.dir.join("blobs");
+            let (router, tasks) = self
                 .runtime()?
                 .block_on(async move {
                     let endpoint = builder.bind().await.map_err(|e| e.to_string())?;
+                    let lookup = iroh::address_lookup::memory::MemoryLookup::new();
+                    if let Ok(services) = endpoint.address_lookup() {
+                        services.add(lookup.clone());
+                    }
+                    *lock(&core.lookup) = Some(lookup);
+                    let known = lock(&core.addrs).clone();
+                    for (node, addrs) in known {
+                        core.remember(&node, &addrs, false);
+                    }
+                    let gossip = iroh_gossip::Gossip::builder().spawn(endpoint.clone());
+                    *lock(&core.gossip) = Some(gossip::Hub::new(gossip.clone()));
+                    let (store, events, hook) = blobs::open(core.clone(), &blobs_dir).await?;
+                    let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
                     let serve = serve::Serve { core: core.clone() };
-                    Ok::<_, String>(
-                        Router::builder(endpoint)
-                            .accept(wire::ALPN, allow::Gate::new(core, serve, wire::ALPN))
-                            .spawn(),
-                    )
+                    let router = Router::builder(endpoint)
+                        .accept(
+                            wire::ALPN,
+                            allow::Gate::new(core.clone(), serve, wire::ALPN),
+                        )
+                        .accept(
+                            iroh_blobs::ALPN,
+                            allow::Gate::new(core.clone(), blobs, iroh_blobs::ALPN),
+                        )
+                        .accept(
+                            iroh_gossip::ALPN,
+                            allow::Gate::new(core.clone(), gossip, iroh_gossip::ALPN),
+                        )
+                        .spawn();
+                    *lock(&core.endpoint) = Some(router.endpoint().clone());
+                    lock(&core.syncs).clear();
+                    lock(&core.dials).clear();
+                    let keeper = tokio::spawn(sync::keeper(core));
+                    Ok::<_, String>((router, vec![hook, keeper]))
                 })
                 .map_err(|cause| NetError::Io {
                     path: self.core.dir.clone(),
                     cause,
                 })?;
-            *lock(&self.core.endpoint) = Some(router.endpoint().clone());
             *running = Some(Running {
                 router,
                 bind: options.bind,
+                tasks,
             });
         }
         Ok(())
@@ -340,12 +422,15 @@ impl Net {
 
     /// Where to dial a node (N4: the address book).
     pub fn add_addrs(&self, node: &NodeKey, addrs: &[SocketAddr]) {
-        let mut book = lock(&self.core.addrs);
-        let list = book.entry(*node).or_default();
-        for addr in addrs {
-            if !list.contains(addr) {
-                list.push(*addr);
-            }
+        self.core.remember(node, addrs, false);
+    }
+
+    /// A new head here (after an own append or an ingest that raised a head):
+    /// tell the other own machines, which read it within seconds (5.7).
+    pub fn told(&self, channel: &PublicKey, seq: u64, id: &EntryId) {
+        if let Some(runtime) = self.shared.runtime.get() {
+            let message = gossip::encode_hint(channel, seq, id);
+            runtime.spawn(gossip::broadcast(self.core.clone(), message));
         }
     }
 
@@ -517,7 +602,9 @@ mod tests {
         )
         .unwrap();
         let endpoint = net.endpoint().expect("on");
-        assert!(endpoint.address_lookup().unwrap().is_empty());
+        // in memory only: ours (addresses given by the owner) and the one
+        // iroh-gossip adds; neither reaches the network
+        assert_eq!(endpoint.address_lookup().unwrap().len(), 2);
         assert_eq!(endpoint.addr().relay_urls().count(), 0);
         assert!(
             endpoint

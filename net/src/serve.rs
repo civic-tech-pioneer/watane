@@ -30,6 +30,15 @@ impl ProtocolHandler for Serve {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         // The caller's key is the transport's (NET-F-4), never a field.
         let caller = NodeKey::from_bytes(*connection.remote_id().as_bytes());
+        // a trusted machine that called us: keep the connection (5.2)
+        if connection.side().is_server() && self.core.class_of(&caller) == Class::Trusted {
+            tokio::spawn(crate::sync::adopt(
+                self.core.clone(),
+                caller,
+                connection.clone(),
+                caller,
+            ));
+        }
         while let Ok((send, recv)) = connection.accept_bi().await {
             let core = self.core.clone();
             let class = core.class_of(&caller);

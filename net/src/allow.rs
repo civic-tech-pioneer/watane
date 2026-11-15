@@ -16,9 +16,13 @@ use std::{
 const POLL: Duration = Duration::from_millis(100);
 
 /// Does a peer of this class have any allowance for the protocol? An
-/// unknown peer has `watane/1` (its ops are limited in `serve`), nothing else.
+/// unknown peer has `watane/1` (its ops are limited in `serve`), and none for
+/// iroh-blobs or iroh-gossip or anything else; a trusted peer has all three.
 pub(crate) fn allowed(class: Class, alpn: &[u8]) -> bool {
-    class == Class::Trusted || alpn == wire::ALPN
+    match class {
+        Class::Trusted => true,
+        Class::Unknown => alpn == wire::ALPN,
+    }
 }
 
 struct Conn {
@@ -336,6 +340,17 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), usize::from(passes));
         }
         router.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn an_unknown_peer_has_watane_only_a_trusted_one_has_the_other_protocols() {
+        for alpn in [wire::ALPN, iroh_blobs::ALPN, iroh_gossip::ALPN] {
+            assert!(allowed(Class::Trusted, alpn));
+        }
+        assert!(allowed(Class::Unknown, wire::ALPN));
+        assert!(!allowed(Class::Unknown, iroh_blobs::ALPN));
+        assert!(!allowed(Class::Unknown, iroh_gossip::ALPN));
+        assert!(!allowed(Class::Unknown, b"something/else"));
     }
 
     #[test]

@@ -32,7 +32,9 @@ net/
     devices.rs    DeviceList: encode, sign, verify (4.3); pairing (5.5)
     serve.rs      the handler of `watane/1`; the wrappers of the iroh-blobs and iroh-gossip handlers (5.4)
     allow.rs      allowances: what each peer may use, and its byte, connection and stream budget (4.2)
-    sync.rs       heads, pulls, the gossip topic, blobs (5.6 to 5.8)
+    sync.rs       kept connections, the keeper, pulls (5.2, 5.6)
+    gossip.rs     the own-machines topic, the hint codec and rule (5.7)
+    blobs.rs      the iroh-blobs store, the serve hook, fetch (5.8)
     reach.rs      address book, mDNS, relays, the DHT switch (5.10)
   tests/
     support/mod.rs   MemHoldings (an in-memory holder), signed fixture entries, local nodes
@@ -285,6 +287,7 @@ fits.
 | hits per answer | 200 |
 | connect timeout | 10 s |
 | request deadline | 5 s; `pair` 10 min; a blob 120 s |
+| sync interval | 10 min (`Limits::sync_interval`, not sent by `hello`) |
 
 The caller refuses to send a request over its own request limit
 (`TooLarge`) and applies the connect timeout and the deadline to the whole
@@ -405,8 +408,14 @@ N4 builds `book.json`, `Options` alone decides (N1).
 ### 5.2 Connect and hello
 
 The node key of the other side comes from the QUIC handshake (NET-F-4).
-A node calls `hello` on each new connection and keeps the answer for the
-connection. A trusted caller with a lower `devices_seq` is sent the newer
+A node keeps one connection to each own machine whose address it knows
+(`add_addrs`, the hints of a code, or an address the machine called from),
+calls `hello` on it, and syncs (5.6). Other calls use that connection, and
+a new one only when none is kept. When it ends the node redials with a
+bounded backoff (0.5 s, doubling to 5 s); it never dials an unknown node. Of
+two connections to one machine the one the smaller key opened is kept (a
+connection made within 2 s of the kept one may replace it; a later one never
+does). A node keeps the answer of `hello` for the connection. A trusted caller with a lower `devices_seq` is sent the newer
 list (`devices`); a node that sees a higher one asks for it.
 
 ### 5.3 Classes
@@ -501,7 +510,18 @@ For each own machine that is online, on connect, on a hint (5.7), and every
 4. Then fetch the packages of `holdings.wanted_blobs(role)` (5.8).
 
 `net` never takes entries it did not ask for (NET-F-22). One sync per pair
-of machines runs at a time.
+of machines runs at a time; what is asked while one runs is done after it.
+A page is asked for at most `max_entries` entries up to the other's seq, and
+each page passes ND-14 before the holder sees it. A page whose `ingest` is
+anything but `Stored` up to its last entry stops that channel. `Pulled` is
+emitted once per channel, with the head the holder stored. A `forked`
+channel the holder does not yet know as forked gets `fork`, and each of the
+two entries is ingested on its own. A machine that sends a bad object
+(`BadObject`: an entry, a head list, a package) is reported with
+`Event::Refused` and dropped for the session: it gets no connection, no
+sync, and its hints are ignored, until this `Net` is opened again (a turn-off
+and on does not clear it). Its connection is closed; what it asks of this
+machine is still answered.
 
 ### 5.7 Hints over gossip
 
@@ -509,9 +529,17 @@ Every own machine joins one iroh-gossip topic: `BLAKE3("watane/own/1\0" ‖
 anchor node key)`, bootstrapped from the reachable machines of the device
 list. `told(channel, seq, id)` broadcasts `[channel, seq, id]` (CBOR, 72
 bytes). The holder's caller (`node`) calls `told` after an own append and
-after an ingest that raised a head. A received message is a hint: when its
-seq is above the holder's, run step 2 of 5.6 for that channel with the
-machine that delivered it, else drop it (NET-F-20). Only peers whose
+after an ingest that raised a head. A received message is a hint: when it
+decodes exactly (a message of any other shape is dropped), comes from a
+trusted machine, and its seq is above the holder's head for that channel,
+run step 2 of 5.6 for that channel with the machine that delivered it, else
+drop it (NET-F-20). The rule by role (answers node Q3): a full machine acts
+on a hint for any channel; a light machine only for a channel in
+`holdings.heads(None)`, so a hint never makes it hold a channel it does
+not. Acting asks the sender for the channel's head first: when the head's
+seq is the hint's and its id is not, the hint was forged and nothing is
+pulled; when it is not above the holder's, nothing is pulled. The seq and id
+of a hint are never trusted. Only peers whose
 allowance includes the topic can connect on the gossip ALPN, so a stranger
 cannot join it.
 
@@ -527,10 +555,12 @@ which is what a reference needs.
   gives for the held live releases, and removes the reference when the
   holder no longer gives it (a withdrawn package, `dist` DD-12). Only peers
   whose allowance includes the package can fetch it.
-- **Fetch:** for each `(id, size)` wanted, download by hash from an own
-  machine that holds it, verified by iroh-blobs as it streams; refuse more
-  than `size` bytes; export to a temp file; `holdings.store_blob`; then
-  replace the store's copy by a reference to the holder's file.
+- **Fetch:** for each `(id, size)` wanted, download by hash from the own
+  machine being synced, verified by iroh-blobs as it streams; the verified
+  size must be `size` (and at most `limits.blob`), else the package is a bad
+  object; write to a temp file under `<home>/net/`; check BLAKE3 and size
+  again; `holdings.store_blob`; the temp file is removed in every case. The
+  fetch does not use the store, so it keeps no second copy.
 
 ### 5.9 A light machine
 
@@ -675,6 +705,52 @@ N2 notes (built):
   connection holds one of the two connections of its key until the idle
   timeout, so a test uses a new key for each call.
 
+N3 notes (built):
+
+- Kept connections (5.2): `sync.rs` runs a keeper task while on, ticking every
+  250 ms. For each trusted machine of the list it redials when no connection is
+  kept and an address is known (the machine of the larger key waits 1 s after it
+  first knows the address, so that two dials rarely cross), and asks for a
+  sync when the last full one is older than `Limits::sync_interval` (default
+  10 min; a field `hello` does not send, so a test can shorten it). A connection
+  that a trusted machine opened is kept the same way (`Serve::accept` hands it
+  over) and its address is learned (first in line). Before it is kept a
+  connection answers `hello`; `PeerUp` follows, then the sync; `PeerDown`
+  when it ends. The machine that dialed also serves the streams the other
+  opens on it.
+- Gossip (5.7): `gossip.rs` joins the topic when the list names an anchor and
+  rejoins when the list's seq changes, with the machines whose address is
+  known as bootstrap, and joins machines that become reachable later. An
+  in-memory address lookup (`MemoryLookup`) feeds `add_addrs` and learned
+  addresses to gossip; with iroh-gossip's own it makes two in-memory
+  services on the endpoint, still no network service (`no_default_services`).
+  `told` waits up to 20 s for a neighbor on the topic and then broadcasts the
+  hint; a hint lost before that is covered by the sync on connect and the timer.
+  The CBOR of a hint is 70 to 72 bytes by the size of the seq.
+- Blobs (5.8): the iroh-blobs store is opened in `<home>/net/blobs/` (0700)
+  when net turns on. The ids net may serve are learned on request: the
+  provider events of iroh-blobs are intercepted for `get` and `get_many`; for
+  each hash `holdings.blob` must give a path, which is added by reference
+  (`ImportMode::TryReference`) under the tag `package-<hex>`; the hash of
+  that file must be the one asked. A hash the holder does not give (any more)
+  is refused and its tag deleted (the store's garbage collector is not public
+  in iroh-blobs 0.105, so the tree data of a withdrawn package stays until the
+  store is rebuilt; nothing is served from it). Push and observe requests
+  are off. A fetch asks the verified size first (a lie about the size fails
+  the proof), then the blob; it holds at most `size` (at most 64 MiB) bytes in
+  memory before the temp file.
+- Tests: `sync.rs` (S5, S6, S7, S9, the timer, light and fork rules, the gate
+  around blobs and gossip, junk on the topic), unit tests in `gossip.rs` (hint
+  bytes, topic id, hint rule) and `allow.rs` (the allowances by ALPN).
+  `MemHoldings` keeps its chains and packages behind locks; `pair_into` now
+  waits for `PeerUp` on both machines and for the holders to go quiet.
+- S9 split: unasked entries and the answer from the holder only are here;
+  "a light machine's query reaches the server and no third node" waits for
+  `query` in N4.
+- `n0-future` (already in the lock file through iroh) is a dependency of this
+  crate only to read the gossip receiver, which is a `Stream`; iroh-gossip
+  re-exports nothing to name that trait.
+
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.
 
@@ -704,6 +780,7 @@ closes the step.
 | Q4 | (node Q4) Do `Options` and `Limits` derive `Clone`, `Debug` and `Default`? | **Answered (S62).** Yes, both, since N1; `Default` is `on` false, no relays, `dht` false, no relay server, no bind, and the limits and budgets of 4.2 (section 3). |
 | Q5 | (node Q5, the N2 part) The anchor is `full` in the device list, but keeps only what the participant's acts there chose (node NO-8). Which machine is a full machine for NET-F-21 and for a light machine's `query` and `need`? | **Answered for N2 (S62).** The list keeps the anchor as `full` (4.3 unchanged; it is the role a lost anchor's restore needs). NET-F-21's "keep everything" binds full replicas only, not the anchor. A light machine asks a full replica first and the anchor only when no full replica is reachable; N4 builds that choice in 5.9. |
 | Q3 | How does the app show own machines and their freshness? | **Decided (S59), `app/TECHNICAL.md` 9.8 (stage G).** A machines view with each machine's short key, role, this machine and anchor marks, online or last seen (`PeerUp`, `PeerDown`), and the last pull from it (`Pulled`), kept in memory from `events()`; refusals and unreachable machines with their causes. No heads count: it needs no new op, and the last pull says how current a machine keeps this one. The join question, the relay and the DHT switch go through the app's consent view with the texts of `node` 7. |
+| Q6 | (node Q3) Does a hint make a light machine pull any channel any machine tells? | **Answered (N3).** No: a full machine acts for any channel; a light machine only for a channel in `holdings.heads(None)` (5.7). |
 
 ## 13. Decisions of this subsystem
 
@@ -724,5 +801,5 @@ closes the step.
 | ND-15 | `pair` takes the secret only; the role is the code's, kept on the anchor (N2). | The code text holds no role; a role the joiner names could only be checked against the code's. Undo: a new op. |
 | ND-16 | Budgets in `Limits`, not on the wire; byte budgets polled from `Connection::stats()` in `Gate`, around every protocol (N2). | One place enforces every protocol's allowance, including the ones `net` does not parse (net Q1). |
 | ND-17 | Expiry is reset by any authenticated contact with the anchor, either way. | Otherwise an expired machine would refuse the anchor that comes to renew it. |
-| ND-13 | One connection per call in N1; no `hello` on connect, no kept connection. | The simplest thing that works between two nodes; N3 keeps connections for sync. |
+| ND-13 | One connection per call in N1 and N2. From N3 an own machine keeps one connection to each other own machine, calls `hello` on it and syncs; a call to a machine with no kept connection still opens a connection for itself. | Sync, hints and `PeerUp`/`PeerDown` need a standing connection (5.2). |
 | ND-14 | A caller checks what it can without the holder: each entry decodes, is of the channel's author, starts at `from`, chains (`prev` is the id before) and is at most `limit` (at most 1000) in number; a `heads` answer holds each channel once and, when asked for some, exactly those; a `fork` pair is two entries of the channel at one seq with two ids. Anything else is `BadObject`. | NET-F-23, NET-F-24. The callee passes on what its holder returns, so a faulty holder shows at the caller. |

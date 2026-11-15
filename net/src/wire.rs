@@ -55,6 +55,9 @@ pub struct Limits {
     pub unknown_conns: usize,
     /// Bytes per second, in and out, for all unknown keys together: 65536.
     pub unknown_bytes_per_sec: u64,
+    /// How often an own machine is synced again whatever happened: 10 minutes
+    /// (NET-F-18). `hello` does not send it.
+    pub sync_interval: Duration,
 }
 
 impl Default for Limits {
@@ -74,6 +77,7 @@ impl Default for Limits {
             unknown_streams_per_peer: 2,
             unknown_conns: 16,
             unknown_bytes_per_sec: 65536,
+            sync_interval: Duration::from_secs(600),
         }
     }
 }

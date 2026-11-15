@@ -256,9 +256,10 @@ fn ac4_the_caller_refuses_to_send_a_request_over_its_limit() {
             PublicKey::from_bytes(&public_of(seed)).unwrap()
         })
         .collect();
+    let before = a.holdings.calls();
     match b.net.heads_of(&a.key, &many) {
         Err(NetError::TooLarge { node }) => assert_eq!(node, a.key),
         other => panic!("{other:?}"),
     }
-    assert_eq!(a.holdings.calls(), 0);
+    assert_eq!(a.holdings.calls(), before);
 }
