@@ -8156,6 +8156,7 @@ dependencies = [
  "iroh-blobs",
  "iroh-gossip",
  "minicbor",
+ "n0-future",
  "serde",
  "serde_json",
  "tempfile",

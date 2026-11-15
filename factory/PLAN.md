@@ -545,7 +545,7 @@ is a step-7-style check, after S55.
   `Limits` derive Clone, Debug and Default) and the N2 part of Q5 (a light machine prefers a full
   replica over the anchor), each answered in net's documents. Touches: net only. Cloud.
   Delivered (ea231f3): one implementer run and a validator pass, plus S62-fix1 from user-sim (a hello pulls a newer device list from a trusted node; pairing codes trim whitespace). Verified on the Mac: workspace build, net all green including ignored, host green.
-- [~] **S63 Alice publishes on the laptop, and her server has it within seconds (net N3).**
+- [x] **S63 Alice publishes on the laptop, and her server has it within seconds (net N3).**
   Branch `slice/s63`. Builds net N3 (net/TECHNICAL.md 5.6 to 5.8 and the N3 row of 9): sync on
   connect, on a hint and every 10 minutes, over kept connections (ND-13 said N3 keeps them); hints on
   the own iroh-gossip topic; packages over iroh-blobs added by reference, with the size cap and
@@ -556,6 +556,7 @@ is a step-7-style check, after S55.
   `s<n>_...`; a forged hint, a changed byte, another author's entry and a package with the wrong
   hash change nothing in the holder. Touches: net only (src, tests, TECHNICAL, FUNCTIONAL); adds
   no dependency (iroh-blobs and iroh-gossip are pinned since N1). Cloud.
+  Delivered (d24cf4c): Alice publishes on the laptop and her server has the entry and its package, same bytes, in about 60 ms on loopback; an offline server catches up when it is back. net gains `n0-future` (already in the lock through iroh) to name gossip's Stream, and `Limits::sync_interval`. Blobs are added by reference on request; a fetch holds at most `size` bytes in memory. Node Q3 is in net 5.7. A dropped machine stays dropped for the life of the Net. The query part of S9 moved to N4 (S67). Verified on the Mac: hakari clean, net and node green with ignored, host green, app builds.
 - [x] **S64 A home holds another participant's channel through the holder (node 1).**
   Branch `slice/s64`. Builds node stage 1 (node/TECHNICAL.md 9, row 1): the `node` crate as a
   workspace member, `DistHoldings` and `convert.rs`, `Node::open`, `open_keyless`, `dist`, `net`,
@@ -564,8 +565,23 @@ is a step-7-style check, after S55.
   node (new), the workspace `Cargo.toml` members line and `Cargo.lock`; not net (S63 owns it): a
   gap in net's API goes to the product owner as a question, not a change. Cloud.
   Delivered (ccf206d): the `node` crate opens a keyless home or an app home, and `DistHoldings` answers net's `Holdings` from what dist stored; a keyless node holds a channel it was given. dist re-exports `Grant`, `InterfaceName`, `Provider` so node depends only on dist and net. Verified on the Mac: hakari verify clean, node and dist green with ignored, app and host green (host's one flaky test passed 3 of 3 on rerun). Open for node 2: a `Kept` ingest that fails on a gap leaves its `kept` record; `DistHoldings::set` twice keeps the first.
-- Then, sketched just in time as each lands: net N4 (takes node Q6 and the rest of Q5) after S63,
-  node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
+- [~] **S67 Alice's light laptop searches and installs through her server (net N4, part 1).**
+  Branch `slice/s67`. Builds the light-machine and restore half of net N4 (net/TECHNICAL.md 5.9 and
+  5.11): `query` with its 32-channel cap, `need`, `need_blob`, `NoFullMachine`, `own_heads`. Takes
+  node Q5 (a light machine's `query` and `need` prefer a full replica over the anchor; NET-F-21
+  holds for full replicas only) and Q6 (a cap per caller over 5 s, so one participant query pulls at
+  most 32 channels), each written into net's documents. Also the query part of S9 that S63 moved
+  here, and S63's user-sim follow-ups: a package over `limits.blob` gives an event with its cause
+  (NET-F-32); the wrong-hash cause in watane's words; a `Refused` cause names the short key.
+  Outcome: net S8, S12 and the query part of S9 pass as tests `s<n>_...`. Touches: net only. No new
+  dependency. Cloud. Reach (mDNS, relay, DHT) is S68.
+- [ ] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
+  Branch `slice/s68`. Builds reach (net/TECHNICAL.md 5.10): mDNS, stored addresses, addresses from
+  `devices` answers, the relay of `relays`, the DHT switch, `Unreachable` with NET-F-28's cause, and
+  `relay_server` (iroh-relay, pinned `=1.4.1` as net 2 says). Outcome: net S11 passes; no service
+  is reached that the options did not turn on (`no_default_services`). Touches: net, the workspace
+  `Cargo.lock`. Cloud; the product owner runs `cargo hakari` on merge. After S67 (both own net).
+- Then node 2 after S68, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
 ### Step 9: Extension points (J9)
@@ -605,8 +621,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 |---|---|---|---|
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
-| net | N3 sync, gossip hints, blobs | 8 | open (S63) |
-| net | N4 light machines, restore, reach | 8 | open |
+| net | N3 sync, gossip hints, blobs | 8 | done (S63) |
+| net | N4 light machines, restore, reach | 8 | open (S67, S68) |
 | log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | done (S61) |
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
 | node | 1 holder | 8 | done (S64) |
@@ -825,7 +841,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S61: `585e3daf` (sessionId `585e3daf-6cf8-4f99-be6e-144904360f44`, resumed after the disk filled; first run `f08e7a50`), worktree `.claude/worktrees/s61` (local: the app). Delivered 2026-11-15 and merged through S64; worktree, its target and branches removed.
 - S60: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S62: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S63: cloud routine `trig_01QqG6y7XnvSQ7DiNeiy67jR` (handed out 2026-11-15), branch `slice/s63`.
+- S63: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S65: cloud routine `trig_01HioaxGuynVqqGks4MwPT61` (handed out 2026-11-15), branch `slice/s65`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
@@ -1336,6 +1352,9 @@ The human may veto each one.
   until then; it is not a slice's failure.
 - S64: no cargo-hakari in the cloud image. The product owner runs `cargo hakari generate`,
   `manage-deps` and `verify` on the Mac when a cloud slice adds a crate or dependency.
+- S63: the brief said both "add no dependency" and "do not touch Cargo.lock"; naming gossip's Stream
+  needed one line in each. A brief that forbids the lock says what to do when the lock must change.
+- S63: net's default test run takes about 113 s of the 120 s limit (pairing settles about 1 s each).
 
 ## Digest
 
