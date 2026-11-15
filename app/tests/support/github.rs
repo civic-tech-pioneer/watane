@@ -12,6 +12,7 @@ mod real {
         fs,
         path::Path,
         process::{Command, Output},
+        time::{Duration, Instant},
     };
 
     pub const PREFIX: &str = "minmax-fund/watane-j-";
@@ -112,6 +113,72 @@ mod real {
                 self.diagnostic(&created)
             );
             name
+        }
+
+        pub fn pages(&self, name: &str) -> String {
+            assert!(
+                name.starts_with(PREFIX),
+                "Pages repository outside journey prefix"
+            );
+            assert!(
+                self.repos.iter().any(|repo| repo == name),
+                "Pages repository was not reserved"
+            );
+            let output = self.run(Command::new("gh").args([
+                "api",
+                "--method",
+                "POST",
+                &format!("repos/{name}/pages"),
+                "-f",
+                "source[branch]=main",
+                "-f",
+                "source[path]=/",
+            ]));
+            assert!(
+                output.status.success(),
+                "Pages: {}",
+                self.diagnostic(&output)
+            );
+            let answer = self.json(&output);
+            let url = answer["html_url"].as_str().expect("Pages html_url");
+            assert!(url.starts_with("https://"), "Pages URL must use HTTPS");
+            format!("{}/", url.trim_end_matches('/'))
+        }
+
+        pub fn wait_served(&self, url: &str, expect: &[u8], deadline: Duration) {
+            assert!(url.starts_with("https://"), "Pages fetch must use HTTPS");
+            let client = reqwest::blocking::Client::builder()
+                .https_only(true)
+                .build()
+                .unwrap();
+            let started = Instant::now();
+            let mut last_status = None;
+            while let Some(remaining) = deadline.checked_sub(started.elapsed()) {
+                if remaining.is_zero() {
+                    break;
+                }
+                if let Ok(response) = client
+                    .get(url)
+                    .timeout(remaining.min(Duration::from_secs(10)))
+                    .send()
+                {
+                    let status = response.status();
+                    last_status = Some(status);
+                    if status == reqwest::StatusCode::OK
+                        && response.bytes().is_ok_and(|body| body.as_ref() == expect)
+                    {
+                        return;
+                    }
+                }
+                std::thread::sleep(
+                    Duration::from_secs(10).min(deadline.saturating_sub(started.elapsed())),
+                );
+            }
+            panic!(
+                "Pages did not serve {} within {deadline:?}; last status: {last_status:?}; waited {:?}",
+                redact(&self.token, url),
+                started.elapsed()
+            );
         }
 
         pub fn dev_command(&self, dev: &Path, app: &App, dir: &Path, args: &[&str]) -> Command {

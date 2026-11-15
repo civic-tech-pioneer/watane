@@ -282,8 +282,15 @@ fn ac2_j3_github() {
 #[test]
 #[ignore = "real: GitHub minmax-fund"]
 fn ac3_j3_real_github() {
+    use std::time::{Duration, Instant};
     use support::{dev::workspace_dev, github::RealGithub};
+    use watane_dist::Link;
 
+    assert_ne!(
+        std::env::var("WATANE_DRIVER_LISTED_LOCAL").as_deref(),
+        Ok("1"),
+        "S54 requires the default listed-local guard"
+    );
     let dev = workspace_dev();
     let work = tempfile::tempdir().unwrap();
     let root = work.path().canonicalize().unwrap();
@@ -341,16 +348,22 @@ fn ac3_j3_real_github() {
         release
     );
 
-    // AC3: serve only a fresh clone of the pushed site, then ask dev for its link.
-    let clone = root.join("served-site");
-    github.git(&["clone", "-b", "main", &site_remote, clone.to_str().unwrap()]);
-    assert!(
-        !github
-            .git(&["-C", clone.to_str().unwrap(), "show", "main:head"])
-            .is_empty()
+    // S54 AC1-3: Pages must serve exactly the head pushed to main.
+    let base = github.pages(&site_name);
+    assert_eq!(
+        base,
+        format!(
+            "https://minmax-fund.github.io/{}/",
+            site_name.split('/').nth(1).unwrap()
+        )
     );
-    let site = Site::serve(clone);
-    invoke(&alice, "site_set_url", json!({"url":site.base}));
+    let clone = root.join("pushed-site");
+    github.git(&["clone", "-b", "main", &site_remote, clone.to_str().unwrap()]);
+    // `head` is binary CBOR: read the checkout of main without text decoding.
+    let head = std::fs::read(clone.join("head")).unwrap();
+    assert!(!head.is_empty());
+    github.wait_served(&format!("{base}head"), &head, Duration::from_secs(600));
+    invoke(&alice, "site_set_url", json!({"url":base}));
     let output = command().output().unwrap();
     let retry = github.json(&output);
     assert_eq!(
@@ -366,13 +379,10 @@ fn ac3_j3_real_github() {
     );
     assert_eq!(retry["result"]["release"], release);
     let link = retry["result"]["link"].as_str().unwrap();
-    assert!(
-        link.contains(&site.base),
-        "{link} does not name {}",
-        site.base
-    );
+    let alice_link: Link = link.parse().unwrap();
+    assert_eq!(alice_link.base(), base);
 
-    // AC4: Bob has a fresh identity and installs the bytes from the clone.
+    // S54 AC3: Bob installs from Pages over TLS.
     let bob_home = root.join("bob");
     let bob = App::start(&bob_home, &[]);
     begin(&bob, "install_link", json!({"link":link}));
@@ -398,6 +408,72 @@ fn ac3_j3_real_github() {
             .unwrap()
             .contains("Reading")
     );
+    // S54 AC5: forget the known base so open_link reads the changed base.
+    // A followed channel would refresh its recorded base instead of this link's.
+    invoke(
+        &bob,
+        "channel_unfollow",
+        json!({"channel":alice_link.channel().to_string()}),
+    );
+    let missing_base = format!("{base}missing-{}/", site_name.split('/').nth(1).unwrap());
+    let missing = Link::new(alice_link.channel(), &missing_base, alice_link.slug()).unwrap();
+    let started = Instant::now();
+    begin(&bob, "install_link", json!({"link":missing.to_string()}));
+    let failed = finish(&bob);
+    assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
+    assert_eq!(failed["error"]["code"], "dist", "{failed}");
+    let message = failed["error"]["message"].as_str().unwrap();
+    assert!(message.contains("not found"), "{message}");
+    assert!(
+        message.contains(&format!("{missing_base}head")),
+        "{message}"
+    );
+    assert_eq!(
+        invoke(&bob, "mods_list", json!({}))
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // S54 AC4: only Ivy is chosen; Alice is neither chosen nor followed.
+    let ivy_home = root.join("ivy");
+    let ivy = dist(&ivy_home);
+    ivy.set_name("Ivy").unwrap();
+    ivy.list(&alice_link, "Books from Alice").unwrap();
+    let ivy_site = Site::serve(ivy.site_dir());
+    ivy.set_site_url(&ivy_site.base).unwrap();
+    choose(&bob, &ivy.own_link(None).unwrap().to_string());
+    search_reading(&bob);
+    let results = bob.eval("main", "document.querySelector('#results').textContent");
+    for field in ["reading-list", "Alice", "listed by Ivy"] {
+        assert!(results.as_str().unwrap().contains(field), "{results}");
+    }
+    assert_eq!(
+        bob.eval(
+            "main",
+            "document.querySelector('#results [data-release]').dataset.release"
+        ),
+        release
+    );
+    let row = format!("[data-index='{}']", ivy.identity().unwrap());
+    let index = bob.eval(
+        "main",
+        &format!("document.querySelector({}).textContent", json!(row)),
+    );
+    let index = index.as_str().unwrap();
+    assert!(!index.contains("local address"), "{index}");
+    assert!(
+        !index.contains(&alice_link.channel().fingerprint()),
+        "{index}"
+    );
+    let follows: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bob_home.join("dist/follows.json")).unwrap())
+            .unwrap();
+    let alice_record = &follows["channels"][alice_link.channel().to_string()];
+    assert_eq!(alice_record["followed"], false);
+    assert_eq!(alice_record["index"], false);
+
     assert!(bob.quit().success());
     assert!(alice.quit().success());
 }

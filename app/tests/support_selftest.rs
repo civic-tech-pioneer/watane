@@ -519,15 +519,64 @@ fn ac1_real_github_child_environment_and_site_origin_without_network() {
 #[cfg(feature = "real-github")]
 mod github_harness {
     use super::github::{PREFIX, RealGithub};
-    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        process::Command,
+        time::{Duration, Instant},
+    };
 
+    #[test]
+    fn ac2_pages_wait_requires_https_and_reports_deadline() {
+        let github = RealGithub::with_token("unused-secret".into());
+        let panic = std::panic::catch_unwind(|| {
+            github.wait_served("http://127.0.0.1/head", b"head", Duration::ZERO);
+        })
+        .unwrap_err();
+        assert!(
+            panic
+                .downcast_ref::<String>()
+                .is_some_and(|s| s.contains("HTTPS"))
+                || panic
+                    .downcast_ref::<&str>()
+                    .is_some_and(|s| s.contains("HTTPS"))
+        );
+        let started = Instant::now();
+        let panic = std::panic::catch_unwind(|| {
+            github.wait_served(
+                "https://127.0.0.1:0/head",
+                b"head",
+                Duration::from_millis(20),
+            );
+        })
+        .unwrap_err();
+        let message = panic.downcast_ref::<String>().unwrap();
+        for text in [
+            "Pages did not serve https://127.0.0.1:0/head",
+            "within",
+            "last status",
+            "waited",
+        ] {
+            assert!(message.contains(text), "{message}");
+        }
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
     // Run the harness in a child with its own PATH; never change the test
     // process's environment or invoke the installed gh.
     #[test]
     fn ac2_reserve_create_and_drop_without_network() {
-        for scenario in [
+        run_scenarios(&[
             "unused", "forked", "create", "exists", "auth", "not-http", "guard",
-        ] {
+        ]);
+    }
+
+    #[test]
+    fn ac1_pages_setup_and_guards_without_network() {
+        run_scenarios(&["pages", "pages-http", "pages-guard", "pages-unreserved"]);
+    }
+
+    fn run_scenarios(scenarios: &[&str]) {
+        for &scenario in scenarios {
             let root = tempfile::tempdir().unwrap();
             let gh = root.path().join("gh");
             fs::write(
@@ -543,6 +592,12 @@ case "$WATANE_GH_SCENARIO" in
   not-http) printf '404 is not an HTTP response\n'; exit 1 ;;
 esac
 printf 'HTTP/2.0 404 Not Found\n'; exit 1 ;;
+  'api --method POST repos/'*)
+if test "$WATANE_GH_SCENARIO" = pages-http; then
+  printf '{"html_url":"http://minmax-fund.github.io/watane-j-stub/"}'
+else
+  printf '{"html_url":"https://minmax-fund.github.io/watane-j-stub///"}'
+fi ;;
   'repo create '*) touch "$WATANE_GH_STUB_ROOT/created" ;;
   'api --include --method DELETE repos/'*)
 if test -e "$WATANE_GH_STUB_ROOT/created"; then
@@ -573,11 +628,31 @@ esac
                 .unwrap();
             assert!(output.status.success(), "{scenario}: {output:?}");
             let calls = fs::read_to_string(root.path().join("calls")).unwrap_or_default();
-            if ["unused", "forked", "create"].contains(&scenario) {
-                assert!(output.stderr.is_empty(), "{scenario}: {output:?}");
+            if ["pages", "pages-http"].contains(&scenario) {
+                let post = calls
+                    .lines()
+                    .find(|line| line.contains("--method POST"))
+                    .unwrap();
+                assert!(
+                    post.starts_with("api --method POST repos/minmax-fund/watane-j-"),
+                    "{post}"
+                );
+                assert!(
+                    post.ends_with("/pages -f source[branch]=main -f source[path]=/"),
+                    "{post}"
+                );
+            }
+            if ["unused", "forked", "create", "pages", "pages-http"].contains(&scenario) {
+                if scenario != "pages-http" {
+                    assert!(output.stderr.is_empty(), "{scenario}: {output:?}");
+                }
                 assert_eq!(
                     calls.matches("--method DELETE").count(),
-                    if scenario == "create" { 1 } else { 2 }
+                    if ["create", "pages", "pages-http"].contains(&scenario) {
+                        1
+                    } else {
+                        2
+                    }
                 );
                 assert_eq!(
                     calls.matches("repo create").count(),
@@ -587,6 +662,7 @@ esac
             } else {
                 assert!(!calls.contains("DELETE"), "{calls}");
                 assert!(!calls.contains("repo create"), "{calls}");
+                assert!(!calls.contains("--method POST"), "{calls}");
             }
         }
     }
@@ -597,7 +673,14 @@ esac
             return;
         };
         let mut github = RealGithub::with_token("dummy-harness-token".into());
-        if scenario == "guard" {
+        if ["pages-guard", "pages-unreserved"].contains(&scenario.as_str()) {
+            let name = if scenario == "pages-guard" {
+                "minmax-fund/do-not-touch"
+            } else {
+                "minmax-fund/watane-j-unreserved"
+            };
+            assert!(std::panic::catch_unwind(|| github.pages(name)).is_err());
+        } else if scenario == "guard" {
             github.repos.push("minmax-fund/do-not-touch".into());
             assert!(std::panic::catch_unwind(|| drop(github)).is_err());
         } else if ["exists", "auth", "not-http"].contains(&scenario.as_str()) {
@@ -612,6 +695,19 @@ esac
             } else {
                 github.reserve()
             };
+            if scenario.starts_with("pages") {
+                let result = std::panic::catch_unwind(|| github.pages(&name));
+                if scenario == "pages-http" {
+                    assert!(result.is_err());
+                } else {
+                    assert_eq!(
+                        result.unwrap(),
+                        "https://minmax-fund.github.io/watane-j-stub/"
+                    );
+                }
+                drop(github);
+                return;
+            }
             let suffix = name.strip_prefix(PREFIX).unwrap();
             assert_eq!(suffix.len(), 10);
             assert!(suffix.as_bytes()[0].is_ascii_lowercase());
@@ -635,4 +731,45 @@ esac
             drop(github);
         }
     }
+}
+
+#[test]
+fn ac5_missing_base_reports_http_not_found_after_install_fetch() {
+    struct Approve;
+    impl watane_dist::Confirm for Approve {
+        fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+            watane_dist::Decision::Approve
+        }
+    }
+    let alice_home = tempfile::tempdir().unwrap();
+    let bob_home = tempfile::tempdir().unwrap();
+    let open = |home: &Path| {
+        watane_dist::Dist::open(home, std::sync::Arc::new(Approve), Default::default()).unwrap()
+    };
+    let alice = open(alice_home.path());
+    let site = Pages::start(&alice_home.path().join("dist"));
+    let base = site.url("site");
+    alice.set_site_url(&base).unwrap();
+    let package = watane_host::watane_pkg::pack(&fixtures().join("reading-list"), false).unwrap();
+    let link = alice
+        .publish(package.as_bytes().to_vec())
+        .unwrap()
+        .link
+        .unwrap();
+    let bob = open(bob_home.path());
+    bob.open_link(&link).unwrap();
+    // A followed channel uses its stored base rather than the new link.
+    bob.unfollow(&link.channel()).unwrap();
+    let missing_base = format!("{base}missing-unpublished/");
+    let missing = watane_dist::Link::new(link.channel(), &missing_base, link.slug()).unwrap();
+    let started = std::time::Instant::now();
+    let error = bob.open_link(&missing).expect_err("missing base must fail");
+    assert!(
+        matches!(&error, watane_dist::DistError::NotFound { url } if url == &format!("{missing_base}head")),
+        "{error:?}"
+    );
+    let error = watane_app::CmdError::from(error);
+    assert_eq!(error.code, "dist");
+    assert_eq!(error.message, format!("not found: {missing_base}head"));
+    assert!(started.elapsed() < Duration::from_secs(60));
 }

@@ -498,22 +498,24 @@
 
 ## S54 real static host
 
-- Blocked before implementation by AC5: a link retains the same channel and
-  base and changes only its slug, but `Dist::open_link` resolves that slug
-  against the verified channel and returns `NoRelease` before fetching a
-  package (`dist/src/fetch.rs`, `open_link`). Links contain no version or
-  package path. The app's `Core::plan_link` calls this method; both
-  `NoRelease` and HTTP `NotFound` map to app code `dist`, but only the latter
-  names a URL and says `not found`.
-- A temporary local probe `ac5_changed_slug_returns_cdn_not_found` published
-  the prebuilt Reading list, installed it through `Dist::open_link` in Bob's
-  independent home, then opened a link with the same key and base and slug
-  `never-published`. `cargo test -p watane-app --features driver --test
-  s54_probe -- --nocapture` failed its `NotFound` assertion with
-  `NoRelease { ..., slug: Slug("never-published") }` and message
-  `channel <fingerprint> has no release of never-published`. The probe was
-  removed after collecting this evidence; existing tests are unchanged.
-- Per the task's stop rule, no dist, dev or journey behavior was changed.
-  AC5 needs a revised fixture (a missing resource that dist actually requests)
-  or an explicitly authorized dist change. No GitHub request or real journey
-  was run, so Pages first-serve time, content types and 404 body are unobserved.
+- Real J3 enables GitHub Pages on the reserved site repository's `main` root
+  and waits up to ten minutes for its binary `head` to equal the fresh clone.
+  Alice has no loopback server. Ivy remains a chosen loopback index and lists
+  Alice's public HTTPS base with the default local-address guard unchanged.
+- The missing-path check keeps Alice's key and slug, changes the base to an
+  unpublished subdirectory, and requires app code `dist`, `not found`, and
+  that subdirectory's `head` URL within 60 seconds, with one installed mod.
+  Bob first unfollows Alice: an existing follow would reuse its recorded
+  base. The local fixture probe covers this behavior and error mapping.
+- Local gh stubs check Pages POST arguments, repository guards, HTTPS and
+  trailing-slash normalization. No dependency added. No token or real test
+  was used; Pages first-serve time, content types and CDN 404 body await the
+  foreman's real run.
+- Validation: `cargo build`, default tests, test compilations with `driver` and
+  `driver,real-github`, both clippy feature combinations and
+  fmt passed. All 19 harness self-tests passed with `real-github` enabled.
+  Release with `driver` failed as required (`the driver feature is only for
+  debug test builds`). The unchanged fake J3 and the driver suite failed at
+  app readiness with `com.apple.hiservices-xpcservice` connection invalid,
+  before their GUI assertions; no test was weakened. Native GUI validation
+  and the real Pages journey remain for the foreman.
