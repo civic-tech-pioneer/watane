@@ -202,8 +202,7 @@ impl Dist {
                 }),
             }
         })();
-        let failed = matches!(result, Err(_) | Ok(Ingested::Failed(_)));
-        if let (Some(had), true) = (added, failed) {
+        if let (Some(had), true) = (added, result.is_err()) {
             self.take_back_kept(channel, had);
         }
         result.unwrap_or_else(Ingested::Failed)
@@ -219,7 +218,8 @@ impl Dist {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut next = records.clone();
         match next.get_mut(channel) {
-            Some(r) if had => r.kept = false,
+            // A follow between step 2 and here keeps the record, not the mark.
+            Some(r) if had || r.followed => r.kept = false,
             Some(r) if !r.followed => {
                 next.remove(channel);
             }

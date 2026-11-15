@@ -439,20 +439,19 @@ fn ac1_ac2_ac3_failed_kept_ingest_leaves_no_record() {
         |h: &std::path::Path| follows_keys(h).is_none_or(|c| c.get(key.to_string()).is_none());
     assert!(none(h.path()));
     assert!(!d.heads(None).unwrap().iter().any(|(k, _)| *k == key));
-    // AC2: a changed byte
-    let bad = Entry::decode(&{
-        let mut b = all[0].bytes().to_vec();
-        b[10] ^= 1;
-        b
-    });
-    if let Ok(bad) = bad {
-        assert!(!matches!(
-            d.ingest(&key, vec![bad], Reason::Kept),
-            Ingested::Stored(_)
-        ));
-        assert!(none(h.path()));
-    }
-    // AC3: an existing kept record stays as it was
+    // AC2: a changed byte never reaches the log as an Entry (decode checks the
+    // signature), so the log-refused path is the same take-back as an ingest
+    // that stores nothing: an empty list.
+    let mut changed = all[0].bytes().to_vec();
+    changed[10] ^= 1;
+    assert!(Entry::decode(&changed).is_err());
+    assert!(matches!(
+        d.ingest(&key, Vec::new(), Reason::Kept),
+        Ingested::Failed(_)
+    ));
+    assert!(none(h.path()));
+    assert!(!d.heads(None).unwrap().iter().any(|(k, _)| *k == key));
+    // A kept record with a head is not touched by a gap (it stores nothing).
     assert!(matches!(
         d.ingest(&key, all[..1].to_vec(), Reason::Kept),
         Ingested::Stored(0)
@@ -466,4 +465,44 @@ fn ac1_ac2_ac3_failed_kept_ingest_leaves_no_record() {
         before,
         std::fs::read(h.path().join("dist/follows.json")).unwrap()
     );
+}
+
+#[test]
+fn ac3_failed_kept_ingest_leaves_earlier_record_as_it_was() {
+    let a = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    alice.set_name("A").unwrap();
+    alice.set_name("B").unwrap();
+    let key = alice.identity().unwrap();
+    let gap = entries(&alice, 1)[1].clone();
+    for (followed, kept) in [(false, true), (true, false), (true, true)] {
+        let record = serde_json::json!({
+            "base": if followed { "http://127.0.0.1:9/" } else { "" },
+            "followed": followed,
+            "index": false,
+            "kept": kept,
+            "bases": [],
+            "followed_at": 1,
+            "last_attempt": 0,
+            "last_success": null,
+        });
+        let h = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(h.path().join("dist")).unwrap();
+        std::fs::write(
+            h.path().join("dist/follows.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1,
+                "channels": { key.to_string(): record.clone() },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
+        assert!(matches!(
+            d.ingest(&key, vec![gap.clone()], Reason::Kept),
+            Ingested::Failed(DistError::Gap { .. })
+        ));
+        assert_eq!(follows_keys(h.path()).unwrap()[key.to_string()], record);
+        assert_eq!(d.channel(&key).unwrap().kept, kept);
+    }
 }
