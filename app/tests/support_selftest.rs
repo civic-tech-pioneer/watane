@@ -823,3 +823,25 @@ fn ac5_missing_base_reports_http_not_found_after_install_fetch() {
     assert_eq!(error.message, format!("not found: {missing_base}head"));
     assert!(started.elapsed() < Duration::from_secs(60));
 }
+
+/// S54 acceptance, real run 2026-11-16: right after `wait_served` saw Alice's `head`,
+/// Pages answered `HTTP 503` (not the CDN's 404) for the never-published
+/// `<base>missing-<r>/head`, so Bob saw "HTTP 503 from ..." and the real J3 failed at
+/// AC5. A minute later the same URL gave 404. The journey must not assume the CDN
+/// answers a miss with 404 the moment `head` is served: it has to see the 404 for the
+/// missing URL (with a deadline) before Bob's install is expected to say `not found`.
+#[test]
+fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
+    let app = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = fs::read_to_string(app.join("tests/j3.rs")).unwrap();
+    let start = source.find("fn ac3_j3_real_github()").unwrap();
+    let journey = &source[start..];
+    let install = journey
+        .find("begin(&bob, \"install_link\", json!({\"link\":missing")
+        .unwrap();
+    assert!(
+        journey[..install].contains("{missing_base}head"),
+        "ac3_j3_real_github installs the missing link without first waiting for Pages to \
+         answer 404 for {{missing_base}}head; Pages answered 503 there in a real run"
+    );
+}
