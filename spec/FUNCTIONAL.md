@@ -26,6 +26,9 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | release | A statement in a channel that publishes one package. |
 | mod repository | A public git repository with the source of one mod. The mod names it. |
 | index | A channel that lists mods, also of other participants, and that a participant chose to search. |
+| own machine | A machine of the participant, paired with the home that holds the identity. It holds no identity of its own. (step 8) |
+| full machine | An own machine that keeps everything that any own machine holds. (step 8) |
+| light machine | An own machine that keeps only what it uses, and asks a full machine for the rest. (step 8) |
 
 ## 2. Requirements
 
@@ -67,7 +70,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-APP-3** The app shows the page of each mod in its own view, with the name of the mod and its publisher.
 - **F-APP-4** Each approval happens in a consent view of the app, which no mod can cover or imitate.
 - **F-APP-5** The app shows, for each mod, its version, its publisher, its grants and its origin.
-- **F-APP-6** The participant can save the identity to a backup file and restore it. After a restore, watane signs nothing until the participant has given the link to the own channel, or has stated that the identity never published. (step 3)
+- **F-APP-6** The participant can save the identity to a backup file and restore it. After a restore, watane signs nothing until the participant has given the link to the own channel, or has stated that the identity never published. (step 3) From step 8, a full own machine may also give the newest own statement; the participant still confirms it.
 
 ### 2.5 Agents (steps 1 and 2)
 
@@ -101,9 +104,20 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-BUILD-3** When no mod of the named provider is available, watane shows other mods whose interface fits, and binds one only after the participant picks it.
 - **F-BUILD-4** watane shows the mods that derive from a mod, as far as the chosen indexes list them.
 
-### 2.9 Quality
+### 2.9 Own machines (step 8)
 
-- **F-QUAL-1** Every function works offline, except reading a channel or an index from its web host.
+- **F-OWN-1** watane connects to other machines only after the participant turned this on. With it off, every other function works as before.
+- **F-OWN-2** The participant pairs a machine with a one-time code from the home that holds the identity. The home shows the new machine's short key, and pairs it only after the participant confirms. A code is valid for 10 minutes and for one use.
+- **F-OWN-3** A paired machine holds no identity and signs no statement. Each machine is full or light, as the participant chose.
+- **F-OWN-4** Own machines keep each other current directly: a new statement or package on one reaches the others that keep it, with no static host between them. A machine that was offline catches up when it comes back.
+- **F-OWN-5** A light machine searches and installs through a full machine, and verifies every result itself (F-FIND-4).
+- **F-OWN-6** The participant can remove a machine. The other machines stop trusting it once they learn of the removal. The participant can also set the list of machines to expire after a number of days; by default it never expires.
+- **F-OWN-7** No endpoint that someone else runs is used unless the participant chose it: not a relay, not the DHT. Where the machines cannot reach each other without one, watane says so.
+- **F-OWN-8** watane publishes nothing that ties the participant to a machine or an address, unless the participant turned on a function that names it, such as the DHT.
+
+### 2.10 Quality
+
+- **F-QUAL-1** Every function works offline, except reading a channel or an index from its web host, and reaching another machine (step 8).
 - **F-QUAL-2** watane runs on macOS first and on Linux second.
 - **F-QUAL-3** watane never hides a failed verification. It names the cause.
 
@@ -159,6 +173,21 @@ of it. Eve installs Dave's mod, and watane installs Carol's mod first. Where
 Carol's mod is not available, watane shows another mod whose interface
 fits, and binds it after Eve picks it.
 
+### J8: Own machines
+
+Alice turns on her own machines in the app. She runs `watane-node` on a
+home server on her network and pairs it as a full machine with a code;
+the app shows the server's short key, and she confirms. A second use of
+the code is refused. She publishes a release on her laptop; the server
+has it within seconds, with no static host. She pairs a second laptop as
+a light machine; it finds and installs Ivy's listed mod through the
+server, and verifies it. The server serves a changed byte, and the
+second laptop refuses it and names the server. Alice removes the second
+laptop; the server stops serving it. Alice restores her identity on a new
+laptop, pairs the server again, and the new laptop learns her newest
+statement from it; she confirms it before she publishes. No relay and no
+DHT was used.
+
 ## 4. Later
 
 These are not in the first version (see `VISION.md`):
@@ -166,7 +195,7 @@ These are not in the first version (see `VISION.md`):
 - audits, auditors and trust policies;
 - a tool grant for each agent, a confirmation setting for each tool, and a
   record of tool calls;
-- direct transfer between devices, and helper services;
+- direct transfer between friends and strangers, and helper services (`PEERS.md` 10);
 - the factory, and statements between participants;
 - recovery of a lost identity without a backup;
 - finding mods through the search of a code host, such as a GitHub topic.

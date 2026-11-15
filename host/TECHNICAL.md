@@ -389,9 +389,10 @@ A function with no fake fails with `trap`, "no fake for
   state/state.redb the private state of every mod (section 7)
   staging/         plan scratch; emptied at open
   log/ dist/ app/  reserved for `log` (opened only by `dist`), `dist` and `app`
+  net/             reserved for `net` (step 8, ../net/TECHNICAL.md 4.5)
 ```
 
-`host` never reads or writes the three reserved names, and never creates
+`host` never reads or writes the four reserved names, and never creates
 another name. A preview home has none of them (W5).
 
 `default_home()`: `$WATANE_HOME` if set and not empty, else

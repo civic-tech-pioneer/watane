@@ -10,8 +10,11 @@ goes to a foreman session. You alone edit `factory/PLAN.md`, on `main`. After ev
 `main`, `git push origin main`: cloud foremen start from `origin/main`.
 
 Priority of truth: `spec/VISION.md` > `spec/FUNCTIONAL.md` > `spec/TECHNICAL.md` > a subsystem's
-`VISION`/`FUNCTIONAL`/`TECHNICAL` > code. The order of work is VISION's steps 1 to 5; a step is
-done when its journey (J1 to J5) passes on the real programs and every stage of that step in
+`VISION`/`FUNCTIONAL`/`TECHNICAL` > code. The order of work is VISION's steps, in their order,
+and every step, milestone or slice that is added to `spec/` or `PLAN.md` while you run: re-read
+`spec/VISION.md` and `PLAN.md` after each delivery and fold in what is new, in its place in the
+order (a newly added step that needs a design gets a design slice first). A step is done when its
+journey (J1, J2, ...) passes on the real programs and every stage of that step in
 `Stage coverage` (`PLAN.md`) is `done`, or moved to a later step by a deputy decision.
 
 ## 1. The loop

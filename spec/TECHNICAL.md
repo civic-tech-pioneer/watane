@@ -23,14 +23,17 @@ Each subsystem is one folder beside `spec/`, in one git repository.
 | `pkg` | Defines what a mod and a package are. | none | none | 1 |
 | `host` | Runs the installed mods together and guards every authority. | `pkg`, `log` | `watane` | 1, 2 |
 | `dev` | Lets a maker and a coding agent make a mod. | `pkg`, `host` | `watane-dev` | 1 |
-| `app` | Gives the participant a window, and the one place for every approval. | `host`, `dist` | the desktop app | 2 |
+| `app` | Gives the participant a window, and the one place for every approval. | `host`, `dist`; `node` from step 8 | the desktop app | 2 |
 | `log` | Makes statements that others can verify: the identity and the signed channel. | none | none | 3 |
 | `dist` | Moves releases between people: publish, follow, find. | `log`, `pkg` | none | 3, 4 |
+| `net` | Connects machines directly: node keys, classes, the wire, pairing, sync (`PEERS.md`). | `log` | none | 7 |
+| `node` | Joins `dist` and `net`: the holder, the sync loops, the always-on program. | `dist`, `net` | `watane-node` | 7 |
 
 ```text
-programs     watane-dev        watane        desktop app
-subsystems   dev ──▶ host ◀── app ──▶ dist
-base         pkg (used by dev, host, dist)      log (used by host, dist)
+programs     watane-dev        watane        desktop app      watane-node
+subsystems   dev ──▶ host ◀── app ──▶ node ──▶ dist
+                                       └─────▶ net
+base         pkg (used by dev, host, dist)      log (used by host, dist; net: types only)
 ```
 
 Rules:
@@ -42,6 +45,9 @@ Rules:
 - `dev` never signs. The host and the app never compile a mod.
 - `log` is opened only by `dist`. `dist` passes the backup and the restore
   of the identity through to `app`.
+- `dist` and `net` do not know each other. `net` defines the holder trait;
+  `node` implements it over `dist` and runs the loops between them (step 8).
+  `app` reaches `dist` and `net` through `node` from step 8.
 - The inner modules of a subsystem are its own business (its `TECHNICAL.md`).
 - Each subsystem is one crate `watane-<name>` at the root of its folder.
   The root `Cargo.toml` is a workspace: a subsystem's crate becomes a member
@@ -156,7 +162,7 @@ uses the home of the participant, which holds the identity. A preview uses
 a home of its own, with no identity and no data of the participant.
 
 **Homes.** The home layout is `host`'s. It reserves `log/` for `log`,
-`dist/` for `dist` and `app/` for `app`; a preview home has none of them.
+`dist/` for `dist`, `app/` for `app` and `net/` for `net`; a preview home has none of them.
 
 **The local API** is HTTP on the loopback interface of a running host. The
 host listens on `127.0.0.1` and `::1` with one port, because macOS looks up
@@ -180,6 +186,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Builder | The maker's device from mod source | offline build, locked dependencies from a reviewed allowlist, no build script or procedural macro in the mod; unit tests run as Wasm with no capabilities |
 | Verification | The participant from web hosts and other people | signatures, a hash chain, package hashes; fork detection |
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
+| Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
 - another program of the same user. It can read the files of the home, and
@@ -188,7 +195,10 @@ Not protected in the first version:
 - a fault in Wasmtime: all mods run in the host process (decision W7);
 - a web host that withholds new statements. It can delay, but not forge;
 - one identity on two devices. The two would fork the channel, so the
-  first version supports one device for each identity.
+  first version supports one device for each identity. Step 8 keeps that
+  rule: own machines hold no identity (W33);
+- a compromised own machine, within its trust: it can withhold, and lie
+  about completeness, until the participant removes it (`PEERS.md` 12).
 
 ## 7. Decisions of this fresh start
 
@@ -196,7 +206,7 @@ Each one closes a gap of the old specification. Veto any of them.
 
 | # | Decision |
 |---|---|
-| W1 | Six subsystems. `host` is one subsystem; its inner modules need no cross-subsystem contract. |
+| W1 | Six subsystems (eight from step 8: `net`, `node`). `host` is one subsystem; its inner modules need no cross-subsystem contract. |
 | W2 | The WIT world is the contract. `mod.toml` holds only what WIT cannot say. Grants come from the world. |
 | W3 | An installed mod has one model: a verified folder in the home. A mod has at most one logic part. |
 | W4 | A local mod installs unsigned and is marked local. |
@@ -205,10 +215,10 @@ Each one closes a gap of the old specification. Veto any of them.
 | W7 | All mods run in the host process, in the Wasmtime sandbox. One process for each mod is a later hardening. |
 | W8 | Pages are served only on the origins of the host, also inside the app. |
 | W9 | An ungranted import is a stub that fails at the call, not a failure to load the mod. |
-| W10 | Distribution is static files first. Direct transfer between devices comes later. |
+| W10 | Distribution is static files first. Direct transfer between own machines comes in step 8; between friends and strangers later (`PEERS.md` 10). |
 | W11 | The first version has no trust policy. Safety is signatures, hashes, fork detection, isolation and consent. |
 | W12 | An agent has a toolset and a token, and the confirmation floor holds. Finer tool controls come later. |
-| W13 | Only `dist` signs, and only after a confirmation in the app. A publish needs the running app. |
+| W13 | Only `dist` signs with the participant key, and only after a confirmation in the app. A publish needs the running app. `net` signs only with its own node key, and only the forms of `net/TECHNICAL.md` 4.3. |
 | W14 | `deps.json` pins the publisher of each provider. |
 | W15 | The statement kinds are `profile`, `release` and `withdraw`. Step 4 adds the kinds of an index: `list` (a mod), `include` (another index) and `unlist` (dist 4.1). |
 | W16 | A release is named `<publisher key>/<slug>@<version>` outside its channel. |
@@ -226,6 +236,9 @@ Each one closes a gap of the old specification. Veto any of them.
 | W28 | The mods that derive from a mod are a search over the channels already read, filtered by origin publisher and slug (dist 5.10); no new statement. (step 5, S32) |
 | W29 | A mod with source has its own git repository; `mod.toml` `repository` names it, so the signed package carries the link. Packages stay in the channel's site folder: `dist`, `log` and the release body do not change. A fork on GitHub is never a trust fact: the origin is still the signed `[origin]` (W24). A derived mod's folder is a git clone of its origin's repository at the release's tag, used only when it holds the verified source; at its first `publish --push` its repository becomes a GitHub fork of the origin's where GitHub allows it, else a new repository with that public history (dev 10.4). (step 6) |
 | W30 | GitHub is the default host, not a requirement (V4). `watane-dev publish --push` runs the maker's own `git` and `gh`; watane holds no account and no token (F-MAKE-6). The default base of the link is the raw URL of the site repository (`https://raw.githubusercontent.com/<owner>/<repo>/<branch>/`); GitHub Pages or any other static host also works, because the base is only where to read. Without `--push`, publish writes the folder as before; a maker on another host pushes it with their own git. (step 6) |
+| W31 | A link names a channel by key and a **location**: a URI, read by the resolver of its scheme (`dist` 4.2). `http` and `https` are the only resolvers now; a node resolver comes with `PEERS.md` stage D3, and others (a purl, a content address) when a step needs them. A link whose scheme has no resolver here still parses: the listing stays live, and a read from it fails with the scheme named. So a later scheme never breaks an older reader's view of an index. |
+| W32 | `net` is off until the participant turns it on. No relay, DHT, bootstrap host or public peer is on by default; each is one choice, named in its consent. A personal node serves strangers nothing in step 8. (step 8) |
+| W33 | A replica holds no participant key: `log` and `dist` open a home with no identity, which can read, verify and store but never sign. Own machines are bound by a device list that the anchor's node key signs, never by a public statement. (step 8) |
 
 ## 8. Build order
 
@@ -237,6 +250,8 @@ Each one closes a gap of the old specification. Veto any of them.
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
 | 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
 | 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
+| 7 The real world | nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | the journeys pass on real hosts and machines |
+| 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -269,7 +284,13 @@ repository per GitHub repository, git's own `insteadOf` rewrite of
 `https://github.com/`, and `fake-gh` on `PATH` stand in (dev 15.4); J3 and
 J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
 `app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
-repository. Nothing waits now.
+repository.
+
+Step 8's architecture is decided (`PEERS.md`, `net/VISION.md`,
+`net/FUNCTIONAL.md`, `net/TECHNICAL.md`; W31 to W33). Its design slice
+writes the rest: the `node` folder, the holder methods and the keyless open
+in `dist` and `log`, and the views in `app`. W31 changes the link parser
+now, before any second scheme is published.
 
 ## 10. Reference material
 

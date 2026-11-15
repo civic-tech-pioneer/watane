@@ -63,6 +63,14 @@ later step needs waits until that step is next.
 6. **Factory (later).** A set of mods that steers coding agents and changes
    itself. It runs in the same host and is not part of the substrate.
 
+After the first version:
+
+- **Own machines (step 8).** A person's machines keep each other current
+  directly, with no static host between them and no endpoint that someone
+  else runs. Friends, strangers and public peers come later (`PEERS.md`
+  10). Step 7 is the build plan's own "real world" step
+  (`factory/PLAN.md`).
+
 ## Success of the first version
 
 The first version is steps 1 to 5. It succeeds when these things happen
@@ -81,7 +89,8 @@ with no server that a participant must trust:
 
 - Audits and trust policies (V6). The first version gives signatures,
   isolation and consent.
-- Direct transfer between devices, without a static host.
+- Direct transfer between devices, without a static host: between own
+  machines in step 8, between friends and strangers after it.
 - The factory (step 6), and the statements of V7.
 - Private channels, and live sessions of several people.
 

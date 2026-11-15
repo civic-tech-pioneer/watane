@@ -13,6 +13,10 @@ own `VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md` and `AGENTS.md`.
 3. [TECHNICAL.md](TECHNICAL.md): the subsystems, what flows between them, and the security model.
 4. `../<subsystem>/`: the same three documents for one subsystem, and `AGENTS.md` for the agent that builds it.
 
+[PEERS.md](PEERS.md): the peer model and the data plane (unknown, public,
+friendly and trusted peers). Step 8 builds its first stage; the rest is a
+sketch.
+
 | Subsystem | Reason to exist |
 |---|---|
 | [pkg](../pkg/VISION.md) | Defines what a mod and a package are. |
@@ -21,6 +25,8 @@ own `VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md` and `AGENTS.md`.
 | [app](../app/VISION.md) | Gives the participant a window, and the one place for every approval. |
 | [log](../log/VISION.md) | Makes statements that others can verify. |
 | [dist](../dist/VISION.md) | Moves releases between people. |
+| [net](../net/VISION.md) | Connects machines directly, by the class of each peer ([PEERS.md](PEERS.md), step 8). |
+| node | Joins `dist` and `net`, and runs `watane-node` (step 8; its folder comes with the step's design slice). |
 
 ## Rules
 
@@ -31,7 +37,8 @@ own `VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md` and `AGENTS.md`.
    subsystems. A signature is only in the `TECHNICAL.md` of the subsystem that owns it.
    Another subsystem cites it and never redefines it.
 3. **Design one step ahead of the code.** Steps 1 to 5 are designed
-   (step 4: S26; step 5: S32). A later step gets only what keeps it open,
-   marked as such, not a guess.
+   (step 4: S26; step 5: S32). Step 8's architecture is decided
+   (`PEERS.md`, `../net/`); its design slice completes it. A later step
+   gets only what keeps it open, marked as such, not a guess.
 4. **A step is done when its journey passes** on the real programs.
 5. **`../colos` is reference.** Code is written new here.

@@ -628,9 +628,9 @@ channels by kind, a schema version 2 adds an index on a `kind` column; the
 
 | Item | For | Use |
 |---|---|---|
-| `PublicKey` and its text form (section 4.1) | `pkg`, `host`, `dist`, `app`, `dev` | the publisher of a mod, `deps.json`, links, display. `pkg` stores the text only (it has no dependency on `log`). |
+| `PublicKey` and its text form (section 4.1) | `pkg`, `host`, `dist`, `app`, `dev`, `net` (step 8) | the publisher of a mod, `deps.json`, links, display. `pkg` stores the text only (it has no dependency on `log`). |
 | `EntryId` and its text form (section 4.2) | `dist` | an entry of a channel names another entry of the same channel (the `withdraw` body). Outside its channel, a release is named by `pkg`'s `ReleaseRef` (spec W16). |
-| `Entry::decode`, `Entry` getters, `DecodeError` | `host`, `dist` | `host` checks the release entry that comes with a package (F-INST-6): decode, then `kind() == "release"`, then the body with `pkg`. |
+| `Entry::decode`, `Entry` getters, `DecodeError` | `host`, `dist`, `net` (step 8) | `host` checks the release entry that comes with a package (F-INST-6): decode, then `kind() == "release"`, then the body with `pkg`. `net` drops entries that do not decode before the holder sees them; the holder verifies again. |
 | `Entry::bytes` | `dist` | the exact bytes that `dist` writes to the published folder and reads back. |
 | `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore. |
 | `Status`, `Fork`, `Ingest`, `Head` | `dist`, through `dist` to `app` | gap and compromise reports (F-PUB-6, F-PUB-7). |
@@ -693,3 +693,13 @@ confirmation after a restore ties the key to the store.
 11. **Exposed diagnostic (log).** Include "exposed" in `Error::Exposed` so the message names the refusal required by S2.
 
 12. **Status read check (log).** Clarified section 5.3: status validates the stored channel entries as well as its fork proof, so S26 cannot report a corrupt channel as healthy.
+
+13. **A home with no identity (step 8, spec W33).** A replica among the
+    participant's own machines must hold no signing key. Proposal for the
+    step 8 design slice: `Log::open_keyless(dir)` opens or creates the
+    store and creates no key; `append`, `export_identity` and
+    `restore_identity` then give `NoIdentity`, and `identity()` has no
+    key to give (its shape is the slice's choice). No format changes.
+14. **Forgetting (`PEERS.md` D5).** `Log::forget(key)` removes a channel
+    that no reader needs. Not before D5; until then stored channels only
+    grow (`dist` Q12).

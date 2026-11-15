@@ -361,6 +361,7 @@ pub enum DistError {
     NoSiteUrl,
     // Links and channels
     BadLink { cause: &'static str },
+    NoResolver { scheme: String },              // W31: no resolver for this scheme here
     BadUrl { url: String, cause: &'static str },
     OwnChannel,
     NotOwnLink { found: PublicKey },   // confirm_own: "this link is not your channel" (DD-16)
@@ -472,7 +473,7 @@ come only from the publisher's own channel (DD-18).
 ```abnf
 link  = "watane:" key "@" base [ "#" slug ]
 key   = 52zbase32          ; the text form of log::PublicKey
-base  = absolute-URL       ; scheme http or https, with a host; no userinfo, no query, no fragment
+base  = absolute-URI       ; the location (W31): any scheme; no userinfo, no query, no fragment
 slug  = <the Slug text of pkg/TECHNICAL.md 3>   ; read with Slug::from_str
 ```
 
@@ -487,6 +488,17 @@ Example: `watane:47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy@https://al
 Without a slug, a link names a channel. With a slug, it names the newest
 release of that mod that is not withdrawn (`Dist::latest`). The key in the
 link is the identity: the base is only where to read.
+
+**Resolvers (W31).** The base is a location, read by the resolver of its
+scheme. The resolvers are `http` and `https` (4.5), with a host and the
+`/` rule above. A base with another scheme parses when `url::Url` reads it
+and it formats back to the same text; its listing is live (4.1), and a read
+from it fails with `NoResolver { scheme }`, which counts as a failed base
+(5.9, 5.11). `follow`, `choose_index` and `open_link` of such a link give
+the same error and leave nothing behind (DD-10). A later resolver (a node,
+`PEERS.md` D3) is a new row here; the formats do not change. This rule
+lands before any second scheme is published, so older readers never mark
+a listing bad because of its scheme (DD-35).
 
 ### 4.3 Site folder
 
@@ -1233,6 +1245,7 @@ are `list` and `include` statements of 4.1.
 | Q9 | spec/ (none) | spec/ sets no limit on the size of a package; `pkg` drafts 64 MiB. | 64 MiB everywhere: `pkg` refuses at pack and decode, `dist` at publish and as the body limit of a fetch. Name it in spec §3. |
 | Q11 | spec TECHNICAL §9, W15 | The four open points of step 4 (S26). | Decided in 4.1, 5.9, 5.10 and DD-18 to DD-24; spec W20 to W23 name them. |
 | Q12 | log | A listed channel that no index lists any more leaves its entries in `<home>/log/`; storage grows with every channel ever listed. | Step 4 keeps them (they are small, and a later listing reuses them). A `Log::forget(key)` is a later log stage. |
+| Q13 | spec W33, `PEERS.md` 6.1 | Step 8: a replica must read, verify and store with no identity, and `node` must serve `net` from the store. | For the step 8 design slice: `Dist::open_keyless(home)` over `Log::open_keyless`; `sign_and_append` and the publish paths give `NoIdentity`. The holder methods of `net/TECHNICAL.md` 3.1, a record reason `kept` for what a full machine keeps, and reads that do not hold the store lock across network calls (`net/REVIEW.md` RV-06). `dist` gains no thread and no dependency on `net`. |
 | Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
@@ -1273,3 +1286,4 @@ are `list` and `include` statements of 4.1.
 | DD-32 | Provider hint bases (5.11 step 3, "from each base") are read in trust order until the first gives `Current` or `Behind` and the stored view then holds the wanted release (DD-34); later bases get no request. A failing base still falls through. | A fetch stops contacting further hosts once one serves. Undo: cheap. |
 | DD-33 | With no record and the package cached, `Fetched.link` is the first provider base in trust order, as on every other cache hit (5.7 step 8, S35); no base is read and no package is requested. | One rule for every cache hit. Undo: cheap. |
 | DD-34 | A provider base ends the reads (5.11 step 3, DD-32) only when, after its read (`Current` or `Behind`), the stored view holds the wanted release; a base that serves without it is a stale mirror and the next base is read. When no base has it but at least one served the channel, the answer is `StaleBases { release, bases }` (the count of bases that served), naming the cause and the next step; `UnknownRelease` stays for a followed or index record whose stored view lacks the release. `unfollow` of a channel with no `followed: true` record is the new `NothingToUnfollow { channel }`, not `NotFollowed`. | A stale mirror ahead in trust order hid a good base behind it; "follow the publisher's link" was no help for a channel Eve never followed. Undo: cheap. |
+| DD-35 | A link's base is a URI of any scheme (W31); `http` and `https` are the only resolvers. Another scheme parses, keeps its listing live, and fails a read with `NoResolver`. | Links are published in `list` and `include` statements and cannot be recalled; a reader that refused a new scheme at parse would mark the statement bad, and its later `unlist` too. Undo: cheap now, costly once a second scheme is published. |
