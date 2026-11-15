@@ -77,7 +77,7 @@ sketches the later stages; a later step writes their requirements.
   Traces: F-OWN-4.
 - **NET-F-20** net shall treat a told head as a hint: it changes nothing until the entries it names arrive and verify.
   Traces: PEERS A2.
-- **NET-F-21** A full machine shall keep every channel and every package of a live release that any own machine holds. A light machine shall keep what its holder asks for.
+- **NET-F-21** A full machine other than the anchor shall keep every channel and every package of a live release that any own machine holds. A light machine, and the anchor, shall keep what its holder asks for. A light machine shall ask a full machine other than the anchor first.
   Traces: F-OWN-3, PEERS 3.
 - **NET-F-22** net shall pull only: it shall never take entries or packages that it did not ask for.
   Traces: PEERS 6.2.

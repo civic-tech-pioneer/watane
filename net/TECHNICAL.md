@@ -90,14 +90,14 @@ pub struct BlobId(pub [u8; 32]);            // a BLAKE3 hash
 pub enum Class { Unknown, Trusted }          // D2 adds Friendly, D4 Public
 pub enum Role { Light, Full }
 
+#[derive(Clone, Debug, Default)]      // node Q4; Limits derives the same, its Default is 4.2's
 pub struct Options {
     pub on: bool,                     // false: no socket at all (NET-F-3)
     pub relays: Vec<url::Url>,        // chosen by the participant; empty by default
     pub dht: bool,                    // publish and look up addresses in the Mainline DHT; false by default
     pub relay_server: Option<std::net::SocketAddr>, // watane-node only: run iroh-relay here (NET-F-29)
-    pub limits: Limits,               // section 4.2 defaults
+    pub limits: Limits,               // section 4.2 defaults, budgets included
     pub bind: Option<std::net::SocketAddr>, // where to bind; default 0.0.0.0:0
-    pub trusted: Vec<NodeKey>,        // N1 only: the nodes class_of rates Trusted (plus the own node), standing in for the device list; N2 removes it
 }
 
 pub struct Net { /* Send + Sync; cheap to clone */ }
@@ -234,7 +234,7 @@ connection only (PEERS 4.3).
 | `fork` | `channel` | one item: `[a: bytes, b: bytes]` or `null` | trusted |
 | `query` | `query` (4.4) | `[hits: [hit]]` | trusted |
 | `devices` | `seq: uint` | `[list: bytes or null, addrs: [[node: bytes(32), [text]]]]` | trusted |
-| `pair` | `secret: bytes(16), role: uint` | `[list: bytes]`, after the participant's answer | anyone with a valid code |
+| `pair` | `secret: bytes(16)` | `[list: bytes]`, after the participant's answer | anyone (the code decides) |
 
 The other two ALPNs are iroh-blobs' and iroh-gossip's own. `serve.rs`
 accepts a connection on them only from a trusted node (5.4).
@@ -251,6 +251,13 @@ with the args of the table: the reader accepts the shortest form of
 unsigned integers, definite byte strings, text, arrays, null and booleans, and
 nothing else. A caller of `heads` with a non-empty list expects exactly
 those channels back, each once.
+
+The role of a joiner is the role its code was made for, kept on the anchor;
+the joiner does not name one (decided in N2: the code text of 4.1 holds no
+role, so the joiner cannot know it). `devices` with a `seq` higher than the
+callee's own tells the callee that the caller holds a newer list: the callee
+answers, then asks the caller `devices` itself (5.5), so a list still moves
+by pull only.
 
 Error codes: `not_allowed`, `over_budget`, `too_large`, `bad_request`,
 `unknown_op`, `not_found`, `busy`, `bad_code`, `declined`. An unknown op is
@@ -296,7 +303,16 @@ class check: a class only chooses an allowance.
 | unknown | `hello`, `pair` | none | none | 2 connections and 2 streams each; 16 connections and 64 KiB/s in and out for all unknown peers together |
 
 Budgets are checked before any work (PEERS A6). Unknown peers share one
-pool, so free keys starve only each other.
+pool, so free keys starve only each other. The budget numbers are fields
+of `Limits` that `hello` does not send: `unknown_conns_per_peer` 2,
+`unknown_streams_per_peer` 2 (open at once), `unknown_conns` 16 (open at
+once, all unknown peers), `unknown_bytes_per_sec` 65536 (in and out
+together, all unknown peers: a bucket of that many bytes that refills at
+that rate; a peer of the pool is over budget while the bucket is empty).
+A connection over a connection budget is closed at once; a stream over a
+stream budget or the byte budget is answered `over_budget`. Bytes are the
+connection's UDP payload bytes in and out from `Connection::stats()`,
+polled while the connection lives (5.4).
 
 ### 4.3 Signed objects
 
@@ -400,6 +416,16 @@ node is trusted. Measurements never change a class.
 
 ### 5.4 Serving
 
+Every protocol handler sits in `Gate` (allow.rs): it takes the remote node
+key from the connection, rates it (5.3), and checks the peer's allowance for
+the connection's ALPN and its connection budget before the inner handler
+sees the connection; it counts the connection's bytes (polled from
+`Connection::stats()` about every 100 ms while the inner handler runs)
+against the peer's byte budget, and closes the connection when the budget
+is spent on a protocol that cannot answer `over_budget` (iroh-blobs,
+iroh-gossip). N2 builds `Gate` around `watane/1`; N3 puts the iroh-blobs
+and iroh-gossip handlers in it.
+
 Every connection and request goes through, in order: the peer's
 allowance for its ALPN, the peer's budget (`over_budget`), decode
 (`bad_request`), size (`too_large`), the allowance for the op
@@ -433,11 +459,24 @@ On the anchor (`holdings.is_anchor()`):
 On the joining machine, `join(code, replace)`: refuse with `HasAnchor`
 when an anchor is stored and `replace` is false. Dial the code's key with
 its hints, call `pair`, verify the list (signed by that key, names this
-node), and store it and `anchor`.
+node), and store it and `anchor`. With `replace`, the new anchor's list
+replaces the old one whatever its seq.
 
 A machine stores a list from any node only when its stored anchor signed
 it, it verifies, and its seq is higher (NET-F-11). Each time this machine
-reaches the anchor, it writes `anchor_seen`. With `expires` > 0, other
+reaches the anchor, it writes `anchor_seen`: a call to the anchor that got
+an answer, or a connection from the anchor (its key comes from the
+handshake, NET-F-4), so the anchor can always reach an expired machine and
+renew it. N2 writes `anchor_seen` into `book.json` and keeps any other field
+there as it found it; a new `book.json` has the defaults of 4.5. A list or
+`anchor` file that does not verify at open is `Corrupt`.
+
+Who signs: the home whose holder `is_anchor()`. Its list's anchor is its own
+node key, it stores no `anchor` file, and its list never expires for it.
+A replica rates the anchor like any other machine of its list.
+
+`events()` gives a new receiver on each call; every receiver gets every
+later event (node Q2). A receiver that was dropped is forgotten. With `expires` > 0, other
 machines stop being trusted when now is later than
 `max(list.time, anchor_seen) + expires days` (NET-F-12); the anchor itself
 never expires for itself.
@@ -626,6 +665,8 @@ closes the step.
 |---|---|---|
 | Q1 | 5.4 and 5.8 rest on two library features: adding a file to the iroh-blobs store by reference, and wrapping a protocol handler in iroh's router. | Answered by N1 against iroh 1.4.1, iroh-blobs 0.105.0 and iroh-gossip 0.102.0: both are present. `ImportMode::TryReference` (`api::blobs::AddPathOptions`) leaves a 1 MiB file out of the store (`q1a_blobs_by_reference_keep_no_second_copy`; the store's redb file is preallocated at about 1 MiB whatever it holds, so the test measures growth and the `data/` directory, and a `Copy` import as the control). A wrapper `Gate<P: ProtocolHandler>` that checks `Connection::remote_id()` before it calls the inner `accept`, and forwards `shutdown`, works around `BlobsProtocol` and around `Gossip`, both in one `Router`; a refused node's download fails and the inner handler is not called (`q1b_a_wrapper_admits_a_connection_by_its_remote_key`). |
 | Q2 | What does a light machine keep after a search pulled a channel? | **Decided (S59).** `Asked` channels stay in the store with no record, like a channel read for a provider today (`dist` 5.11): not held, so not in `heads(None)`, not synced and not refreshed (`dist` 5.12, DD-38). A search shows one only when `node` verified the remote hit against it (`node` 5.4). An install from such a hit gives the channel a `kept` record on the replica, so it stays current through the full machines (`node` 5.3, NO-6). `Log::forget` cleans up at D5. |
+| Q4 | (node Q4) Do `Options` and `Limits` derive `Clone`, `Debug` and `Default`? | **Answered (S62).** Yes, both, since N1; `Default` is `on` false, no relays, `dht` false, no relay server, no bind, and the limits and budgets of 4.2 (section 3). |
+| Q5 | (node Q5, the N2 part) The anchor is `full` in the device list, but keeps only what the participant's acts there chose (node NO-8). Which machine is a full machine for NET-F-21 and for a light machine's `query` and `need`? | **Answered for N2 (S62).** The list keeps the anchor as `full` (4.3 unchanged; it is the role a lost anchor's restore needs). NET-F-21's "keep everything" binds full replicas only, not the anchor. A light machine asks a full replica first and the anchor only when no full replica is reachable; N4 builds that choice in 5.9. |
 | Q3 | How does the app show own machines and their freshness? | **Decided (S59), `app/TECHNICAL.md` 9.8 (stage G).** A machines view with each machine's short key, role, this machine and anchor marks, online or last seen (`PeerUp`, `PeerDown`), and the last pull from it (`Pulled`), kept in memory from `events()`; refusals and unreachable machines with their causes. No heads count: it needs no new op, and the last pull says how current a machine keeps this one. The join question, the relay and the DHT switch go through the app's consent view with the texts of `node` 7. |
 
 ## 13. Decisions of this subsystem
@@ -643,6 +684,9 @@ closes the step.
 | ND-9 | Nothing reachable by default: no relay, no DHT. | V4, W32; decided by the human (proposal Q2). |
 | ND-10 | Device list expiry is a setting; 0, the default, never expires. | Decided by the human (proposal Q14). |
 | ND-11 | Limits in bytes and connections; one shared pool for unknown callers. | Keys are free; a count of requests says nothing about cost. |
-| ND-12 | N1: `Options::trusted` lists the trusted nodes, and `Options::bind` chooses the bind address (default `0.0.0.0:0`). N2 removes `trusted`. | Two local nodes need a class before the device list exists; tests bind to loopback only. |
+| ND-12 | `Options::bind` chooses the bind address (default `0.0.0.0:0`). N1's `Options::trusted` stand-in is gone since N2: the device list alone decides the class. | Tests bind to loopback only. |
+| ND-15 | `pair` takes the secret only; the role is the code's, kept on the anchor (N2). | The code text holds no role; a role the joiner names could only be checked against the code's. Undo: a new op. |
+| ND-16 | Budgets in `Limits`, not on the wire; byte budgets polled from `Connection::stats()` in `Gate`, around every protocol (N2). | One place enforces every protocol's allowance, including the ones `net` does not parse (net Q1). |
+| ND-17 | Expiry is reset by any authenticated contact with the anchor, either way. | Otherwise an expired machine would refuse the anchor that comes to renew it. |
 | ND-13 | One connection per call in N1; no `hello` on connect, no kept connection. | The simplest thing that works between two nodes; N3 keeps connections for sync. |
 | ND-14 | A caller checks what it can without the holder: each entry decodes, is of the channel's author, starts at `from`, chains (`prev` is the id before) and is at most `limit` (at most 1000) in number; a `heads` answer holds each channel once and, when asked for some, exactly those; a `fork` pair is two entries of the channel at one seq with two ids. Anything else is `BadObject`. | NET-F-23, NET-F-24. The callee passes on what its holder returns, so a faulty holder shows at the caller. |
