@@ -5,8 +5,9 @@ How `node` does what `FUNCTIONAL.md` says. Requirements are cited as
 `dist 5.12`, `net 3.1`. Section 14 lists the decisions made here, section
 13 the questions left open.
 
-No crate exists yet: stage 1 (section 9) creates it and adds it to the
-workspace.
+Stage 1 (section 9) is built: the crate is a workspace member with
+`Node`, `DistHoldings`, `convert.rs` and the wrappers with `net` off. Where
+the code differs from the text below, the text says so.
 
 ## 1. Crate
 
@@ -45,15 +46,19 @@ Inner modules are private. Only `lib.rs` exports.
 watane-dist = { path = "../dist" }   # the holder; log and pkg types come through its re-exports
 watane-net = { path = "../net" }     # Net, Holdings and the types of net 3
 thiserror = "2.0"
-signal-hook = "0.3"                  # the program: wait for SIGINT and SIGTERM without a runtime
+signal-hook = "0.3"                  # the program (stage 3); not yet in Cargo.toml
+watane-pkg = { path = "../pkg" }     # stage 1: `Grant` for the `uses` mode filter of 4.3; dist does not re-export it
 
 [dev-dependencies]
 tempfile = "3.27"
 tiny_http = "0.12"                   # a web host for S2 and S5, as dist's tests use it
 ```
 
-No direct dependency on `watane-log` or `watane-pkg`: `dist` re-exports
-`PublicKey`, `Entry`, `EntryId`, `PackageId` and `ReleaseRef` (dist 3).
+No direct dependency on `watane-log`: `dist` re-exports `PublicKey`, `Entry`,
+`EntryId`, `PackageId` and `ReleaseRef` (dist 3). `watane-pkg` is a direct
+dependency only because the mode filter of 4.3 must match `Grant::Call` and
+`Grant::Subscribe`, which dist does not re-export; it adds no crate to the
+build. Dev-dependency `serde_json` reads `follows.json` in tests.
 
 ## 3. Public API
 
@@ -79,6 +84,15 @@ pub enum Machine {
 
 /// One per home. Send + Sync; share it as Arc<Node>. Every method blocks.
 pub struct Node { /* Arc<Dist>, Net, Arc<DistHoldings> */ }
+
+/// `net`'s `Holdings` over a `Dist` (4.1). Public so that tests call the
+/// holder directly; `Node` makes its own. `empty()` answers as an empty
+/// holder until `set` gives it the `Dist`.
+pub struct DistHoldings { /* OnceLock<Arc<Dist>> */ }
+impl DistHoldings {
+    pub fn empty() -> Self;
+    pub fn set(&self, dist: Arc<Dist>);
+}
 
 impl Node {
     /// The app's open (5.6): a replica opens keyless, any other home with its identity.
@@ -169,6 +183,8 @@ read from a web host (NODE-F-7).
 | `store_blob(id, file)` | `dist.store_package(&id, file)`, its error as text |
 | `search(query)` | `dist.search(&q)` with `q` from 4.3, each hit as `net::Hit` (4.3) |
 
+Stage 1: `wanted_blobs(Light)` answers an empty list until `need_blob` exists (stage 2).
+
 `DistHoldings` is made before the `Dist` exists (5.6) and holds it in a
 `OnceLock`. Until it is set, every method answers as an empty holder:
 `false`, no heads, no entries, `Failed("the home is opening")`. An empty
@@ -201,8 +217,7 @@ an install keeps it (5.3).
 - **Hit.** dist's `Hit` to net's: `[channel, seq, entry]` from
   `hit.info.channel`, `hit.info.seq` and `hit.info.entry`.
 - **Package ids.** net's `BlobId` and pkg's `PackageId` are both the plain
-  BLAKE3 hash. node converts through the 64-character text form
-  (`PackageId::from_str`), since pkg gives no constructor from bytes.
+  BLAKE3 hash. node converts with `PackageId::from_bytes` and `as_bytes`.
 
 ## 5. Behaviour
 

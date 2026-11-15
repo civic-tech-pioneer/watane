@@ -8168,6 +8168,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "watane-node"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tiny_http",
+ "watane-dist",
+ "watane-net",
+ "watane-pkg",
+ "workspace-hack",
+]
+
+[[package]]
 name = "watane-pkg"
 version = "0.1.0"
 dependencies = [
