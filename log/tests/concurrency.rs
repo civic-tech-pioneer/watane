@@ -19,7 +19,7 @@ fn ac4_concurrent_appends_form_one_chain() {
         t.join().unwrap();
     }
     let l = Log::open(d.path()).unwrap();
-    let es = l.entries(&l.identity(), 0, 101).unwrap();
+    let es = l.entries(&l.identity().unwrap(), 0, 101).unwrap();
     assert_eq!(es.len(), 100);
     let mut prev = None;
     for (seq, e) in es.iter().enumerate() {

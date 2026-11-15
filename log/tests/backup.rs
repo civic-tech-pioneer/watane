@@ -32,10 +32,13 @@ fn ac6_backup_roundtrip_and_independent_decryption() {
     let restored = Log::open(dest.path()).unwrap();
     assert_eq!(
         restored.restore_identity(&raw, "correct horse").unwrap(),
-        l.identity()
+        l.identity().unwrap()
     );
     drop(restored);
-    assert_eq!(Log::open(dest.path()).unwrap().identity(), l.identity());
+    assert_eq!(
+        Log::open(dest.path()).unwrap().identity().unwrap(),
+        l.identity().unwrap()
+    );
 }
 #[test]
 fn ac6_golden_nfc_and_unused_identity_replacement() {
@@ -52,9 +55,12 @@ fn ac6_golden_nfc_and_unused_identity_replacement() {
     let r = Log::open(dest.path()).unwrap();
     assert_eq!(
         r.restore_identity(&backup, "e\u{301}").unwrap(),
-        l.identity()
+        l.identity().unwrap()
     );
-    assert_eq!(r.restore_identity(&backup, "é").unwrap(), l.identity());
+    assert_eq!(
+        r.restore_identity(&backup, "é").unwrap(),
+        l.identity().unwrap()
+    );
 }
 #[test]
 fn ac6_failures_keep_identity_and_reject_bounds_fast() {
@@ -110,11 +116,11 @@ fn ac6_failures_keep_identity_and_reject_bounds_fast() {
         before
     );
     l.append("a", b"").unwrap();
-    let identity = l.identity();
+    let identity = l.identity().unwrap();
     assert!(
         matches!(l.restore_identity(&backup,"correct horse"),Err(Error::IdentityInUse(a)) if a==identity)
     );
-    assert_eq!(l.identity(), identity);
+    assert_eq!(l.identity().unwrap(), identity);
     assert_eq!(
         std::fs::read(d.path().join("identity.key")).unwrap(),
         before

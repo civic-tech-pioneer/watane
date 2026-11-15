@@ -25,7 +25,7 @@ fn ac1_appends_and_limits() {
             .unwrap();
         prev = Some(*blake3::hash(e.bytes()).as_bytes());
     }
-    let head = log.head(&log.identity()).unwrap();
+    let head = log.head(&log.identity().unwrap()).unwrap();
     for kind in ["a".repeat(33), "Upper".into()] {
         assert!(matches!(log.append(&kind, b""), Err(Error::Kind(_))));
     }
@@ -33,5 +33,5 @@ fn ac1_appends_and_limits() {
         log.append("a", &vec![0; 65537]),
         Err(Error::BodyTooLarge(65537))
     ));
-    assert_eq!(log.head(&log.identity()).unwrap(), head);
+    assert_eq!(log.head(&log.identity().unwrap()).unwrap(), head);
 }

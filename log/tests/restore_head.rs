@@ -14,7 +14,7 @@ fn ac7_restore_requires_own_head_confirmation() {
     let l = Log::open(dest.path()).unwrap();
     assert!(!l.own_head_confirmed().unwrap());
     assert!(matches!(l.append("a", b""), Err(Error::OwnHeadUnconfirmed)));
-    l.ingest(&l.identity(), &entries).unwrap();
+    l.ingest(&l.identity().unwrap(), &entries).unwrap();
     l.confirm_own_head().unwrap();
     assert!(l.own_head_confirmed().unwrap());
     let e = l.append("a", b"").unwrap();

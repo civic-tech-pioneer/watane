@@ -16,10 +16,13 @@ fn ac1_create_and_reopen_identity() {
     assert_eq!(mode(&dir), 0o700);
     assert_eq!(mode(&path), 0o600);
     assert_eq!(fs::read(&path).unwrap().len(), 32);
-    assert_eq!(Log::open(&dir).unwrap().identity(), log.identity());
+    assert_eq!(
+        Log::open(&dir).unwrap().identity().unwrap(),
+        log.identity().unwrap()
+    );
     assert_eq!(
         format!("{log:?}"),
-        format!("Log {{ identity: {} }}", log.identity())
+        format!("Log {{ identity: {} }}", log.identity().unwrap())
     );
 }
 #[test]
@@ -71,7 +74,7 @@ fn ac3_identity_from_rfc_seed() {
     let path = temp.path().join("identity.key");
     fs::write(&path, oracle::SEED).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
-    let key = Log::open(temp.path()).unwrap().identity();
+    let key = Log::open(temp.path()).unwrap().identity().unwrap();
     assert_eq!(key.as_bytes(), &oracle::PUBLIC);
     assert_eq!(key.to_string(), oracle::zbase32(&oracle::PUBLIC));
 }

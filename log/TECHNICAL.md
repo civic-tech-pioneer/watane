@@ -534,7 +534,9 @@ is a directory without `identity.key`.
   creates a new identity (4.7); the caller that wants a keyless home opens
   it with `open_keyless` (`node` 5.6).
 - `channels()`: `SELECT DISTINCT author FROM entries ORDER BY author`,
-  each through `PublicKey::from_bytes` (a failure is `CorruptStore`).
+  each through `PublicKey::from_bytes`. A wrong length or invalid key is
+  `Storage` with "corrupt store: invalid channel author" and the cause:
+  `CorruptStore` requires a valid `PublicKey`, which this row cannot supply.
   The own channel is in it when it has an entry.
 
 `Log` stays one type: a keyless `Log` is a `Log` whose `Inner` holds no
@@ -643,7 +645,7 @@ The oracle never calls `watane_log` to compute an expected value.
 | `corrupt.rs` | S26 | the test drops the update trigger with its own `rusqlite::Connection`, flips one byte of `raw`, and expects `CorruptStore` on `head`, `entries` and `status` | the test's own SQL |
 | `backup.rs` | S7–S13 | golden vector restores to the RFC 8032 key; export then restore gives the same key; the export decrypts with `argon2` + `chacha20poly1305` called directly in the test; NFC; bounds refused fast (< 50 ms); `IdentityInUse` | golden vector; direct crate calls |
 | `restore_head.rs` | S14 | `OwnHeadUnconfirmed`, ingest of the own entries, confirm, next append at seq 3 with prev = id of entry 2 | entries made by a first `Log` in another directory |
-| `keyless.rs` (L6) | S29–S33 | no key file after `open_keyless`; `HasIdentity` leaves the key file byte-equal; each signing path `NoIdentity`; ingest and reads as on a keyed `Log`; `drop_identity` removes the file and refuses with an entry; `channels` | entries signed by a keyed `Log` of another directory; `std::fs` |
+| `keyless.rs` (L6) | S29–S33 | no key file after `open_keyless`; `HasIdentity` leaves the key file byte-equal; each signing path `NoIdentity`; ingest and reads as on a keyed `Log`; `drop_identity` removes the file and refuses with an entry; `channels` | entries built by hand and signed with `ed25519-compact`; `std::fs` |
 | `concurrency.rs` | S27 | two `Log`s on one directory, two threads, 50 appends each; then seq 0..99 and every prev link | `cbor::` re-check of each prev with `blake3` |
 | `model.rs` | S28 | proptest: random batches of valid, duplicate, gapped and forked entries of 2 authors | `model::Chain` |
 
@@ -746,3 +748,8 @@ confirmation after a restore ties the key to the store.
 14. **Forgetting (`PEERS.md` D5).** `Log::forget(key)` removes a channel
     that no reader needs. Not before D5; until then stored channels only
     grow (`dist` Q12).
+15. **Invalid stored authors (L6).** `channels` cannot report an invalid
+    key through `CorruptStore { author: PublicKey, .. }`. It uses `Storage`
+    with an explicit corrupt-store diagnostic instead. The public error
+    shape stays unchanged. The L6 oracle uses section 8.1, not another
+    `Log`, so it checks the reader independently of the writer.

@@ -113,6 +113,19 @@ pub(crate) fn head(db: &Connection, author: &PublicKey) -> Result<Option<Entry>,
     let mut rows = stmt.query([author.as_bytes()])?;
     rows.next()?.map(|r| row(author, r)).transpose()
 }
+pub(crate) fn channels(db: &Connection) -> Result<Vec<PublicKey>, Error> {
+    let mut stmt = db.prepare("SELECT DISTINCT author FROM entries ORDER BY author")?;
+    let mut rows = stmt.query([])?;
+    let mut authors = vec![];
+    while let Some(row) = rows.next()? {
+        let bytes: Vec<u8> = row.get(0)?;
+        let invalid =
+            |cause| Error::Storage(format!("corrupt store: invalid channel author: {cause}"));
+        let bytes: [u8; 32] = bytes.try_into().map_err(|_| invalid("expected 32 bytes"))?;
+        authors.push(PublicKey::from_bytes(&bytes).map_err(|_| invalid("invalid public key"))?);
+    }
+    Ok(authors)
+}
 pub(crate) fn at(db: &Connection, author: &PublicKey, seq: u64) -> Result<Option<Entry>, Error> {
     Ok(entries(db, author, seq, 1)?
         .into_iter()

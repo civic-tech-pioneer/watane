@@ -85,6 +85,10 @@ pub enum Error {
     WrongPassphrase,
     #[error("the current identity {0} has signed entries; it cannot be replaced")]
     IdentityInUse(PublicKey),
+    #[error("this home holds no identity; it can read and store channels but never sign")]
+    NoIdentity,
+    #[error("{path} holds an identity; a home with no identity has no key file")]
+    HasIdentity { path: PathBuf },
 }
 pub struct Log {
     inner: std::sync::Mutex<Inner>,
@@ -95,19 +99,33 @@ impl Log {
         let db = store::open(dir)?;
         Ok(Self {
             inner: std::sync::Mutex::new(Inner {
-                key,
+                key: Some(key),
                 db,
                 dir: dir.to_owned(),
             }),
         })
     }
-    pub fn identity(&self) -> PublicKey {
+    pub fn open_keyless(dir: &Path) -> Result<Self, Error> {
+        identity::open_keyless(dir)?;
+        let db = store::open(dir)?;
+        Ok(Self {
+            inner: std::sync::Mutex::new(Inner {
+                key: None,
+                db,
+                dir: dir.to_owned(),
+            }),
+        })
+    }
+    pub fn identity(&self) -> Option<PublicKey> {
         self.lock().identity()
     }
 }
 impl fmt::Debug for Log {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Log {{ identity: {} }}", self.identity())
+        match self.identity() {
+            Some(key) => write!(f, "Log {{ identity: {key} }}"),
+            None => f.write_str("Log { keyless }"),
+        }
     }
 }
 
@@ -133,13 +151,15 @@ pub struct Fork {
     pub other: Entry,
 }
 struct Inner {
-    key: SigningKey,
+    key: Option<SigningKey>,
     db: rusqlite::Connection,
     dir: PathBuf,
 }
 impl Inner {
-    fn identity(&self) -> PublicKey {
-        PublicKey::from_bytes(self.key.verifying_key().as_bytes()).expect("generated public key")
+    fn identity(&self) -> Option<PublicKey> {
+        self.key.as_ref().map(|key| {
+            PublicKey::from_bytes(key.verifying_key().as_bytes()).expect("generated public key")
+        })
     }
 }
 impl Log {
@@ -149,14 +169,15 @@ impl Log {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     pub fn append(&self, kind: &str, body: &[u8]) -> Result<Entry, Error> {
+        let mut inner = self.lock();
+        let Inner { key, db, .. } = &mut *inner;
+        let key = key.as_ref().ok_or(Error::NoIdentity)?;
         if !entry::valid_kind(kind) {
             return Err(Error::Kind(kind.to_owned()));
         }
         if body.len() > MAX_BODY {
             return Err(Error::BodyTooLarge(body.len()));
         }
-        let mut inner = self.lock();
-        let Inner { key, db, .. } = &mut *inner;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         store::append(tx, key, kind, body)
     }
@@ -195,24 +216,36 @@ impl Log {
     }
     pub fn own_head_confirmed(&self) -> Result<bool, Error> {
         let inner = self.lock();
-        store::confirmed(&inner.db, &inner.identity())
+        match inner.identity() {
+            Some(author) => store::confirmed(&inner.db, &author),
+            None => Ok(true),
+        }
     }
     pub fn confirm_own_head(&self) -> Result<(), Error> {
-        self.lock()
+        let inner = self.lock();
+        inner.key.as_ref().ok_or(Error::NoIdentity)?;
+        inner
             .db
             .execute("DELETE FROM meta WHERE key='unconfirmed'", [])?;
         Ok(())
     }
     pub fn export_identity(&self, passphrase: &str) -> Result<Vec<u8>, Error> {
-        let seed = zeroize::Zeroizing::new(self.lock().key.to_bytes());
+        let seed = zeroize::Zeroizing::new(
+            self.lock()
+                .key
+                .as_ref()
+                .ok_or(Error::NoIdentity)?
+                .to_bytes(),
+        );
         identity::export(&seed, passphrase)
     }
     pub fn restore_identity(&self, backup: &[u8], passphrase: &str) -> Result<PublicKey, Error> {
+        self.lock().key.as_ref().ok_or(Error::NoIdentity)?;
         let key = identity::decrypt(backup, passphrase)?;
         let public =
             PublicKey::from_bytes(key.verifying_key().as_bytes()).expect("generated public key");
         let mut inner = self.lock();
-        let current = inner.identity();
+        let current = inner.identity().ok_or(Error::NoIdentity)?;
         if public == current {
             return Ok(public);
         }
@@ -225,8 +258,39 @@ impl Log {
         tx.execute("INSERT INTO meta(key,value) VALUES ('unconfirmed',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[public.as_bytes()])?;
         tx.commit()?;
         identity::replace(&inner.dir, &key)?;
-        inner.key = key;
+        inner.key = Some(key);
         Ok(public)
+    }
+    pub fn drop_identity(&self) -> Result<(), Error> {
+        let mut inner = self.lock();
+        let author = inner.identity().ok_or(Error::NoIdentity)?;
+        if store::head(&inner.db, &author)?.is_some() {
+            return Err(Error::IdentityInUse(author));
+        }
+        let Inner { key, db, dir } = &mut *inner;
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if store::head(&tx, &author)?.is_some() {
+            return Err(Error::IdentityInUse(author));
+        }
+        tx.execute(
+            "DELETE FROM meta WHERE key='unconfirmed' AND value=?1",
+            [author.as_bytes()],
+        )?;
+        let path = dir.join("identity.key");
+        std::fs::remove_file(&path).map_err(|source| Error::Io { path, source })?;
+        // SigningKey zeroizes on drop. Stop signing even if the following sync fails.
+        *key = None;
+        std::fs::File::open(&*dir)
+            .and_then(|f| f.sync_all())
+            .map_err(|source| Error::Io {
+                path: dir.clone(),
+                source,
+            })?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn channels(&self) -> Result<Vec<PublicKey>, Error> {
+        store::channels(&self.lock().db)
     }
 }
 impl From<rusqlite::Error> for Error {

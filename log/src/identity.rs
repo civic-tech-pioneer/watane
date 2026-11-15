@@ -60,7 +60,7 @@ fn read(path: &Path) -> Result<SigningKey, Error> {
     }
     Ok(SigningKey::from_bytes(&seed))
 }
-pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
+pub(crate) fn prepare_dir(dir: &Path) -> Result<(), Error> {
     if dir.as_os_str().is_empty() {
         return Err(Error::EmptyPath);
     }
@@ -73,7 +73,19 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
         Err(e) => return Err(io_error(dir, e)),
         _ => {}
     }
-    check(dir, true)?;
+    check(dir, true)
+}
+pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
+    prepare_dir(dir)?;
+    let path = dir.join("identity.key");
+    match fs::symlink_metadata(&path) {
+        Ok(_) => Err(Error::HasIdentity { path }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(io_error(&path, e)),
+    }
+}
+pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
+    prepare_dir(dir)?;
     let path = dir.join("identity.key");
     match fs::symlink_metadata(&path) {
         Ok(_) => return read(&path),
