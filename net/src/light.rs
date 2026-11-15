@@ -121,12 +121,9 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
             match need_from(&core, &node, &channel).await {
                 Ok(None) => return Ok(()),
                 // the holder did not take what the machine gave: asking
-                // another machine would not change that
-                Ok(Some(Ingested::Compromised)) => {
-                    let cause = format!("channel {channel} is compromised");
-                    core.refuse(&node, cause.clone());
-                    return Err(NetError::BadObject { node, cause });
-                }
+                // another machine would not change that. Not a bad object:
+                // a compromised channel is the author's fork (dist: "now or
+                // earlier"), not the machine's lie, so it is not dropped.
                 Ok(Some(why)) => {
                     return Err(NetError::Unreachable {
                         node,
@@ -134,6 +131,7 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
                             "the holder did not take channel {channel}: {}",
                             match why {
                                 Ingested::Failed(cause) => cause,
+                                Ingested::Compromised => "compromised".to_owned(),
                                 _ => "not wanted".to_owned(),
                             }
                         ),
@@ -248,17 +246,10 @@ async fn pull_hits(core: &std::sync::Arc<Core>, node: &NodeKey, hits: &[Hit]) {
         .collect();
     let granted = lock(&core.pulls).take(Instant::now(), lacking.len());
     for channel in lacking.into_iter().take(granted) {
-        match need_from(core, node, &channel).await {
-            Ok(Some(Ingested::Compromised)) => {
-                core.refuse(node, format!("channel {channel} is compromised"));
-                return;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                if judge(core, node, e).is_some() {
-                    return;
-                }
-            }
+        if let Err(e) = need_from(core, node, &channel).await
+            && judge(core, node, e).is_some()
+        {
+            return;
         }
     }
 }

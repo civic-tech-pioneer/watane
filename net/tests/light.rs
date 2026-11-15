@@ -71,10 +71,35 @@ struct Shared {
     id: BlobId,
 }
 
-fn shared() -> std::sync::MutexGuard<'static, Shared> {
-    static SHARED: std::sync::OnceLock<std::sync::Mutex<Shared>> = std::sync::OnceLock::new();
-    SHARED
-        .get_or_init(|| {
+/// The fixture and how many of its `USERS` tests are done: the last one
+/// drops it, so that its folders are removed (a static is never dropped).
+static SHARED: std::sync::Mutex<(Option<Shared>, usize)> = std::sync::Mutex::new((None, 0));
+const USERS: usize = 2;
+
+struct Fixture(std::sync::MutexGuard<'static, (Option<Shared>, usize)>);
+
+impl std::ops::Deref for Fixture {
+    type Target = Shared;
+    fn deref(&self) -> &Shared {
+        self.0.0.as_ref().expect("the fixture was dropped")
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.0.1 += 1;
+        if self.0.1 == USERS {
+            self.0.0 = None;
+        }
+    }
+}
+
+fn shared() -> Fixture {
+    let mut guard = SHARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if guard.0.is_none() {
+        guard.0 = Some({
             let (x, w) = ([71u8; 32], [76u8; 32]);
             let (cx, cw) = (chain(x, 3), chain(w, 2));
             let package = vec![5u8; 3000];
@@ -98,7 +123,7 @@ fn shared() -> std::sync::MutexGuard<'static, Shared> {
             introduce(&server, &third);
             introduce(&light, &server);
             settle(&[&anchor, &server, &third, &light]);
-            std::sync::Mutex::new(Shared {
+            Shared {
                 anchor,
                 server,
                 third,
@@ -107,10 +132,10 @@ fn shared() -> std::sync::MutexGuard<'static, Shared> {
                 cw,
                 package,
                 id,
-            })
-        })
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+            }
+        });
+    }
+    Fixture(guard)
 }
 
 /// S8: Alice's second laptop (light) searches and installs through the
@@ -413,10 +438,33 @@ fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
         other => panic!("{other:?}"),
     }
     assert!(light.holdings.raws(&chan(x)).is_empty());
-    // the holder takes it again: the same call is Ok
+    // a compromised channel is the author's fork, not the machine's lie:
+    // an error, and the machine is not dropped
     light
         .holdings
         .not_wanted
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    light
+        .holdings
+        .compromised
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let events = light.net.events();
+    match light.net.need(&chan(x)) {
+        Err(NetError::Unreachable { node, cause }) => {
+            assert_eq!(node, laptop.key);
+            assert!(cause.contains("compromised"), "{cause}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        events
+            .try_iter()
+            .all(|e| !matches!(e, watane_net::Event::Refused { .. }))
+    );
+    // the holder takes it again: the same call is Ok, from the same machine
+    light
+        .holdings
+        .compromised
         .store(false, std::sync::atomic::Ordering::SeqCst);
     light.net.need(&chan(x)).unwrap();
     assert_eq!(light.holdings.raws(&chan(x)), raws(&cx));

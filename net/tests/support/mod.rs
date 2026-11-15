@@ -218,6 +218,8 @@ pub struct MemHoldings {
     taken: Mutex<HashMap<[u8; 32], Vec<u8>>>,
     /// `ingest` answers `NotWanted` while set.
     pub not_wanted: std::sync::atomic::AtomicBool,
+    /// `ingest` answers `Compromised` while set.
+    pub compromised: std::sync::atomic::AtomicBool,
     /// What `search` answers, whatever the query.
     pub hits: Mutex<Vec<Hit>>,
     /// How many `entries` calls came for each channel.
@@ -244,6 +246,7 @@ impl MemHoldings {
             wanted: Mutex::new(Vec::new()),
             taken: Mutex::new(HashMap::new()),
             not_wanted: std::sync::atomic::AtomicBool::new(false),
+            compromised: std::sync::atomic::AtomicBool::new(false),
             hits: Mutex::new(Vec::new()),
             entries_calls: AtomicUsize::new(0),
             dir: tempfile::tempdir().unwrap(),
@@ -409,6 +412,9 @@ impl Holdings for MemHoldings {
             .push((*channel, entries.len(), why));
         if self.not_wanted.load(Ordering::SeqCst) {
             return Ingested::NotWanted;
+        }
+        if self.compromised.load(Ordering::SeqCst) {
+            return Ingested::Compromised;
         }
         let mut chains = self.chains.lock().unwrap();
         let chain = chains.entry(*channel).or_default();
