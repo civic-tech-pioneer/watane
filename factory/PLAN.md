@@ -323,7 +323,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Needs the Mac and a human at it: the human allows the screen at weekends and after 18:00 on any
   day (2026-11-15). Local, branch `slice/s52`. Touches: app/src (the front wait), app/tests/gui_*.
   S53 owns app/tests j3, j5 and support/dev.rs.
-- [~] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
+- [x] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
   account with the real `gh`, in place of `fake-gh`. `fake-gh` was written from the same spec as the
   code it serves, so this is the slice most likely to find something. Keep `fake-gh` for the fast
   suite; the real run is a separate, ignored target. Branch `slice/s53`, local (the token lives on
@@ -337,6 +337,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   that keeps the fast suite honest. Touches: app/tests (j3, j5, support), dev/src/bin/fake-gh.rs.
   S65 owns the rest of dev/ (src, tests) until it merges: a fix needed in dev/src goes to the product
   owner as a question.
+  Delivered (8fa245b, merged rebased): J3 and J5 pass against real GitHub in `minmax-fund` with the real `gh` (`cargo test -p watane-app --features driver,real-github --test j3 --test j5 -- --ignored real_github`, with `CLAUDE_GH_TOKEN`). Behind the `real-github` app feature, so no cloud run reaches GitHub; test processes drop the token. No difference from fake-gh came up apart from publishing under an org (Waiting on the human); Carol's fork is not exercised. Verified on the Mac: hakari clean, app and J2 to J5 green, both real journeys green (77 s, 73 s), the org left with only OpenMLOps.
 - [ ] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
@@ -877,7 +878,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S62: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S63: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S67: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S53: `68b6f713` (sessionId `68b6f713-8425-4db7-aba5-eb1b449a1320`), worktree `.claude/worktrees/s53` (local: the token).
+- S53: delivered 2026-11-15 and merged; foreman exited, worktree, its target and branch removed.
 - S52: `e94a9b4e` (sessionId `e94a9b4e-fe58-4627-a92e-734ec694d848`), worktree `.claude/worktrees/s52` (local: the screen).
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S65: delivered 2026-11-15 and merged; routine finished, branch removed.
@@ -1402,6 +1403,11 @@ The human may veto each one.
   dev server tests run only on the Mac. A v4-only bind option for tests would let the cloud run them.
 - S65: host fixture builds are not byte-reproducible; rebuild only new fixtures.
 - S65 (merge): dev's `ac10_endless...` deadline test fails under load (two local foremen building).
+- S53: Codex filters TOKEN env vars, so every credentialed run falls to the foreman.
+- S68 (merge): the product owner gave a verification its own `CARGO_TARGET_DIR` beside main's and
+  filled the disk again (two local foremen' cloned targets diverge as they rebuild: 40+ GB each).
+  Verify one slice at a time in main's `target/`, never a second target; clean a slice worktree's
+  `target/` as soon as its foreman delivers.
 
 ## Digest
 
