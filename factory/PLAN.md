@@ -568,6 +568,25 @@ is a step-7-style check, after S55.
   node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
+### Step 9: Extension points (J9)
+
+The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and
+node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 4.
+
+- [~] **S65 A shell mod collects the commands of the mods granted to answer it (pkg 9, host 10, dev 12).**
+  Branch `slice/s65`. Builds pkg stage 9 (the outlet-function rule and `World::collects`, A26 and
+  A27), host stage 10 (the collect of 9.4, the outlet row of 6.4, collect edges in the cycle check
+  of 4.2 step 8, the 5.3 rule, collect fakes in `Harness`, the fixtures `menu` and `item-*`), and dev
+  stage 12 (collect fakes and `deliver` answers in contract tests, the template `AGENTS.md` lines).
+  Outcome: host S36 to S39 pass (`host/tests/collect.rs`); pkg A26 and A27 pass; DEV-S-52 passes as
+  `contract::ac_collect_fake_and_answer`, which turns dev's scenario map green on main; a maker's
+  agent running `watane test` on `menu` with and without a fake sees the lists of DEV-S-52.
+  Touches: pkg, host, dev (src, tests, fixtures, their TECHNICAL where a decision lands). Not app:
+  the grant words and J9 are S66. Cloud. The human has uncommitted edits in pkg/FUNCTIONAL.md and
+  pkg/TECHNICAL.md: change those two only where the slice must, and say so in the report.
+- Then S66 (local, the app): app stage H, the step 9 text of the subscription row, and
+  `app/tests/j9.rs`; J9 closes step 9.
+
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
@@ -594,6 +613,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
 | app | G own machines (J8) | 8 | open |
+| pkg | 9 outlet functions, `World::collects` | 9 | open (S65) |
+| host | 10 collect | 9 | open (S65) |
+| dev | 12 collect fakes and answers | 9 | open (S65) |
+| app | H extension points (J9) | 9 | open |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
@@ -811,10 +834,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- Step 9 (2026-11-15): the spec for collects (51e0dfb) is on main, and dev's scenario map is red
-  until step 9 builds `contract::ac_collect_fake_and_answer`. Start step 9 beside step 8? (a) Yes:
-  its files (host, pkg, dev, app stage H) are disjoint from net and node, so it costs step 8
-  nothing; undo is stopping the slice. (b) No, after J8: main stays red until then. Recommended: (a).
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53 needs a GitHub account and token for a throwaway org, so the journeys can run against a
   real repository instead of `fake-gh`. (b) S54 needs somewhere to serve a channel for real
