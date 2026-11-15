@@ -166,7 +166,7 @@ fn mod_problems_for_slug(
                     .and_then(|rest| rest.split('`').next())
                     && file.ends_with("world.wit")
                 {
-                    format!("An interface of the mod is named like the world `{name}`: rename the world in wit/world.wit (for example `world {name}-mod`). The package line keeps the slug, and the world name is free")
+                    format!("Two items of wit/world.wit are named `{name}`. If they are the world and an interface, rename the world in wit/world.wit (for example `world {name}-mod`): the package line keeps the slug, and the world name is free. Otherwise rename one of them")
                 } else if matches!(file.as_str(), "deps.json" | ".watane-dev.json")
                     || Path::new(&file).starts_with("wit/deps")
                 {

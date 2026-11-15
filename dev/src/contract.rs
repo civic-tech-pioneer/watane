@@ -321,6 +321,8 @@ pub fn contract_tests(
     paths.sort();
     let mut report = ContractReport::default();
     let mut errors = vec![];
+    // Compiled once, and only when a file has fakes to check.
+    let mut imported = None;
     for path in paths {
         report.files += 1;
         let file = format!("tests/{}", path.file_name().unwrap().to_string_lossy());
@@ -342,7 +344,13 @@ pub fn contract_tests(
                 continue;
             }
         };
-        if let Some(message) = unknown_fake(&file, &contract.fakes, &imported_functions(dir)) {
+        if !contract.fakes.is_empty()
+            && let Some(message) = unknown_fake(
+                &file,
+                &contract.fakes,
+                imported.get_or_insert_with(|| imported_functions(dir)),
+            )
+        {
             errors.push(
                 Problem::new(Code::TestContractFile, message)
                     .at(&file, None, None)
