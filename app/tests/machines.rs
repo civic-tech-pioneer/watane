@@ -95,7 +95,7 @@ fn ac1_s28_off_by_default_and_publish() {
 }
 
 #[test]
-#[ignore = "slow: builds workspace watane-node and pairs its real process"]
+#[ignore = "slow: only it proves the watane-node CLI side of S29: its printed short key, `status`, and exit 1 `declined` (builds watane-node)"]
 fn ac2_s29_pair_full_deny_and_spent_code() {
     let home = tempfile::tempdir().unwrap();
     let full = tempfile::tempdir().unwrap();
@@ -291,7 +291,11 @@ fn ac5_s32_relay_dht_consent_and_persistence() {
     approve(&app);
     assert!(finish(&app).get("error").is_none());
     assert_eq!(machines(&app)["relays"], json!([url]));
-    invoke(&app, "relay_remove", json!({"url":url}));
+    assert_eq!(
+        invoke(&app, "relay_remove", json!({"url":url}))["relays"],
+        json!([])
+    );
+    assert!(!app.windows().iter().any(|w| w["label"] == "consent"));
     begin(&app, "dht_set", json!({"on":true}));
     ready_consent(&app, "Turn on the DHT");
     assert!(

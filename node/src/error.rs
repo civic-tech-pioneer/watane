@@ -24,7 +24,13 @@ pub enum NodeError {
 mod tests {
     #[test]
     fn ac10_identity_in_use_is_true_after_one_statement() {
-        let text = super::NodeError::IdentityInUse { fingerprint: "Alice".into() }.to_string();
-        assert_eq!(text,"this home's identity Alice has signed at least one statement; a home that joins your machines holds no identity");
+        let text = super::NodeError::IdentityInUse {
+            fingerprint: "Alice".into(),
+        }
+        .to_string();
+        assert_eq!(
+            text,
+            "this home's identity Alice has signed at least one statement; a home that joins your machines holds no identity"
+        );
     }
 }
