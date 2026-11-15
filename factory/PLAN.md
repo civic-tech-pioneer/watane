@@ -589,7 +589,7 @@ is a step-7-style check, after S55.
   Outcome: net S8, S12 and the query part of S9 pass as tests `s<n>_...`. Touches: net only. No new
   dependency. Cloud. Reach (mDNS, relay, DHT) is S68.
   Delivered (d750ed5, merged as edae082): Alice's light laptop searches through her server and installs from it, same bytes; a restored laptop learns its head as a hint and pulls nothing until she confirms. The anchor syncs as a light machine (node Q5); a cap of 32 pulled channels per 5 s across all queries of a Net (node Q6); `query` answers trusted callers only, at most 200 hits. user-sim rejected once (iroh's words for a package not served), fixed with `regress_s67.rs`. Verified on the Mac: net green in 78 s, node green with ignored, app builds.
-- [~] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
+- [x] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
   Branch `slice/s68`. Builds reach (net/TECHNICAL.md 5.10): mDNS, stored addresses, addresses from
   `devices` answers, the relay of `relays`, the DHT switch, `Unreachable` with NET-F-28's cause, and
   `relay_server` (iroh-relay, pinned `=1.4.1` as net 2 says). First task: bring net's default test
@@ -598,6 +598,7 @@ is a step-7-style check, after S55.
   connections. Outcome: net S11 passes; no service
   is reached that the options did not turn on (`no_default_services`). Touches: net, the workspace
   `Cargo.lock`. Cloud; the product owner runs `cargo hakari` on merge. After S67 (both own net).
+  Delivered (3527962, merged rebased with its hakari commit 3659eee): two of Alice's machines on different networks fail with "no direct path; choose a relay or turn on the DHT" and connect once both choose her server's relay; machines find each other at stored addresses and at addresses passed on in `devices` answers. net's tests: 121 s to 39 s (the cause was a 1200-entry fixture chain, not close). New dependencies: iroh-relay (server), iroh-mdns-address-lookup and iroh-mainline-address-lookup =0.6.1. Decisions: node Q1 built literally (`book.json` decides on/relays/dht; a fresh home stays off until `set_options`); mDNS only when on and not on loopback; the relay server is plain HTTP and admits only trusted machines (W32), `Net::relay_url()`; at most 4 passed-on addresses per machine, own machines only; a connect that runs out its deadline is `Unreachable`. Verified on the Mac: hakari clean, net and node green with ignored (67 s), app builds. For node 2 (node's documents): the relay URL is `http://<addr>/`, not https; the DHT consent text must say LAN addresses are published too; `watane-node --relay` needs a fixed port; with a relay chosen and the DHT off, the cause still names both.
 - Then node 2 after S68, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
@@ -657,7 +658,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | done (S63) |
-| net | N4 light machines, restore, reach | 8 | open (S67, S68) |
+| net | N4 light machines, restore, reach | 8 | done (S67, S68) |
 | log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | done (S61) |
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
 | node | 1 holder | 8 | done (S64) |
@@ -882,7 +883,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S52: `e94a9b4e` (sessionId `e94a9b4e-fe58-4627-a92e-734ec694d848`), worktree `.claude/worktrees/s52` (local: the screen).
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S65: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S68: cloud routine `trig_013JJnNTKKEGsEfXdzPKJka6` (handed out 2026-11-15), branch `slice/s68`.
+- S68: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S69: cloud routine `trig_01BmBHENwzLjoHREaA7V68F1` (handed out 2026-11-15), branch `slice/s69`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
