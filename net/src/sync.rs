@@ -447,8 +447,8 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
             } else {
                 let mut result = Ok(());
                 for (channel, (seq, id, tries)) in hints {
-                    match sync_channel(&core, &node, &channel, seq, id).await {
-                        Ok(Hinted::Behind) if tries < HINT_RETRIES => {
+                    match sync_channel(&core, &node, &channel, seq, id, tries).await {
+                        Ok(hinted) if again(&hinted, tries) => {
                             let core = core.clone();
                             tokio::spawn(async move {
                                 tokio::time::sleep(HINT_RETRY).await;
@@ -534,6 +534,13 @@ pub(crate) enum Hinted {
     Behind,
 }
 
+/// Is a hint asked again after its try number `tries` (0 is the first)?
+/// Only while the delivering machine is behind, and at most `HINT_RETRIES`
+/// times.
+fn again(hinted: &Hinted, tries: u32) -> bool {
+    *hinted == Hinted::Behind && tries < HINT_RETRIES
+}
+
 /// Is a hint still waiting for the machine that delivered it? It is when
 /// that machine's head is below the hint's seq and this machine's is too.
 pub(crate) fn waits_for(remote: Option<HeadInfo>, own: Option<HeadInfo>, seq: u64) -> bool {
@@ -547,6 +554,7 @@ async fn sync_channel(
     channel: &PublicKey,
     seq: u64,
     id: [u8; 32],
+    tries: u32,
 ) -> Result<Hinted, NetError> {
     let role = role_of(core).await;
     let remote = client::heads_async(core, node, &[*channel]).await?;
@@ -564,19 +572,20 @@ async fn sync_channel(
         .into_iter()
         .next()
         .and_then(|(_, h)| h);
-    // the deliverer has not got the hint's seq: pull nothing, ask it again
-    // soon, while this machine lacks it too
-    let Some(head) = head.filter(|h| h.seq >= seq) else {
-        return Ok(if waits_for(head, own_head, seq) {
-            Hinted::Behind
-        } else {
-            Hinted::Done
-        });
+    // the deliverer has not got the hint's seq while this machine lacks it
+    // too: ask it again soon; what it has is pulled on the first and the
+    // last try only (a forged seq does not keep a pull open for 5 s)
+    let behind = waits_for(head, own_head, seq);
+    let Some(head) = head else {
+        return Ok(if behind { Hinted::Behind } else { Hinted::Done });
     };
+    if behind && tries > 0 && tries < HINT_RETRIES {
+        return Ok(Hinted::Behind);
+    }
     pull(core, node, role, channel, head, own_head).await?;
     // a new head may name a package
     fetch_wanted(core, node, role).await?;
-    Ok(Hinted::Done)
+    Ok(if behind { Hinted::Behind } else { Hinted::Done })
 }
 
 /// Step 2 and 3 for one channel: read from `own seq + 1` to the other's seq
@@ -697,7 +706,11 @@ mod tests {
     }
 
     #[test]
-    fn the_retry_window_is_five_seconds() {
-        assert_eq!(HINT_RETRY * HINT_RETRIES, Duration::from_secs(5));
+    fn a_hint_whose_deliverer_stays_behind_is_asked_21_times_over_5_s() {
+        // the first try, then one every 250 ms while behind
+        let tries = 1 + (0..100).take_while(|&t| again(&Hinted::Behind, t)).count();
+        assert_eq!(tries, 21);
+        assert_eq!(HINT_RETRY * (tries as u32 - 1), Duration::from_millis(5000));
+        assert!(!again(&Hinted::Done, 0));
     }
 }

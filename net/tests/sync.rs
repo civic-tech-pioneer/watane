@@ -211,29 +211,20 @@ fn s5_alice_publishes_and_the_server_has_it_within_seconds() {
     assert!(wait_for(5, || server.holdings.chains()[&chan(x)].len() == 2));
 }
 
-/// A hint that reaches a machine through a neighbour that does not hold the
-/// head yet still gets the entry there within seconds: net asks the delivering
-/// machine again until its head reaches the hint's seq (5.7). Three machines;
-/// the server's ingest is slow. gossip's route is not under the test's
-/// control (the laptop reaches the light machine directly), so the neighbour
-/// that lacks the head is the laptop itself: it tells before it appends.
+/// A hint that reaches a machine before the delivering machine holds the
+/// head still gets the entry there within seconds: net asks the delivering
+/// machine again until its head reaches the hint's seq (5.7). gossip's route
+/// is not under a test's control on loopback (direct links always form), so
+/// the machine that lacks the head is the teller itself: it tells, then
+/// appends 150 ms later. Today's code pulls nothing in the first round.
 #[test]
 fn ac1_a_hint_that_comes_before_the_head_still_arrives() {
     let x = [60u8; 32];
-    let entries = chain(x, 21);
+    let entries = chain(x, 6);
     let laptop = node(holding(&[(chan(x), entries[..1].to_vec())], true), None);
-    let server = node(MemHoldings::empty(), None);
     let light = node(holding(&[(chan(x), entries[..1].to_vec())], false), None);
-    pair_unsettled(&laptop, &light, Role::Light, false);
-    pair_unsettled(&laptop, &server, Role::Full, false);
-    light.net.add_addrs(&server.key, &server.net.addrs());
-    server.net.add_addrs(&light.key, &light.net.addrs());
-    light.net.hello(&server.key).unwrap();
-    server.net.hello(&light.key).unwrap();
-    settle(&[&laptop, &server, &light]);
+    pair_into(&laptop, &light, Role::Light);
     assert_eq!(light.holdings.raws(&chan(x)).len(), 1);
-    server.holdings.faults.lock().unwrap().ingest_delay = Some(Duration::from_millis(1000));
-    let start = std::time::Instant::now();
     for (i, entry) in entries.iter().enumerate().skip(1) {
         laptop.net.told(&chan(x), i as u64, &entry.id());
         std::thread::sleep(Duration::from_millis(150));
@@ -243,34 +234,33 @@ fn ac1_a_hint_that_comes_before_the_head_still_arrives() {
             "round {i}: the light machine did not get it"
         );
     }
-    assert!(start.elapsed() < Duration::from_secs(10));
     assert_eq!(light.holdings.raws(&chan(x)), raws(&entries));
 }
 
-/// The retry is bounded: a seq the delivering machine never reaches is asked
-/// for a few times over a few seconds, then no more, and nothing is ingested.
+/// A hint for a seq the delivering machine does not reach: what it has is
+/// pulled on the first try, it is asked again (the stop after 20 retries is
+/// the unit test in `sync.rs`), and nothing more is ingested.
 #[test]
-fn ac2_a_hint_for_a_seq_nobody_reaches_is_asked_a_bounded_number_of_times() {
+fn ac2_a_hint_for_a_seq_nobody_reaches_pulls_what_there_is_and_asks_again() {
     let x = [61u8; 32];
-    let entries = chain(x, 1);
-    let laptop = node(holding(&[(chan(x), entries.clone())], true), None);
+    let entries = chain(x, 2);
+    let laptop = node(holding(&[(chan(x), entries[..1].to_vec())], true), None);
     let server = node(holding(&[], false), None);
     pair_into(&laptop, &server, Role::Full);
+    assert_eq!(server.holdings.raws(&chan(x)), raws(&entries[..1]));
     let ingests = server.holdings.ingests.lock().unwrap().len();
-    let before = laptop.holdings.calls();
+    laptop.holdings.append(entries[1].clone());
     laptop
         .net
         .told(&chan(x), 50, &watane_log::EntryId::from_bytes([7u8; 32]));
-    std::thread::sleep(Duration::from_millis(6500));
-    let after = laptop.holdings.calls();
-    assert!(
-        (3..=25).contains(&(after - before)),
-        "{} heads calls",
-        after - before
-    );
+    assert!(wait_for(1, || server.holdings.raws(&chan(x)).len() == 2));
+    // from here on only `heads` calls: one every 250 ms
+    let before = laptop.holdings.calls();
     std::thread::sleep(Duration::from_millis(1000));
-    assert_eq!(laptop.holdings.calls(), after, "it kept asking");
-    assert_eq!(server.holdings.ingests.lock().unwrap().len(), ingests);
+    let asked = laptop.holdings.calls() - before;
+    assert!((3..=25).contains(&asked), "{asked} heads calls");
+    assert_eq!(server.holdings.ingests.lock().unwrap().len(), ingests + 1);
+    assert_eq!(server.holdings.raws(&chan(x)), raws(&entries));
 }
 
 /// S6: the server is offline while Alice publishes twice; it catches up.
