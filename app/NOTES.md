@@ -444,16 +444,9 @@
   response for DELETE so an unused reservation's 404 is silent; the prefix
   guard still applies to every deletion. Local child-process gh stubs cover
   reservations, creation, cleanup, failed preflights and the deletion guard.
-- Validation in this sandbox: `cargo fmt --check` passes. An existing shared
-  target `watane-dev` binary successfully checks and runs the renamed prebuilt
-  fixture's score contract (one passed, no errors or warnings). Cargo build,
-  default/driver tests, targeted fake J5 and local harness tests, both feature
-  compilation checks and both clippy checks stop before compilation because
-  opening main's `target/debug/.cargo-build-lock` is denied (os error 1).
-  Release/driver also stops at the release target's lock, so its intended
-  compile guard is unverified here. Red/green execution is blocked by that
-  same lock; no alternative target was used. The real GitHub test was not run
-  (no token). No dependency was added and no existing assertion was weakened.
+- Validation: the harness self-tests live in `support_selftest.rs` (run with
+  `--features real-github`), so they run once, not in every test binary.
+  Fake J5, both clippy runs and the real J5 (foreman, minmax-fund) passed.
 
 ## S52 front tests
 
