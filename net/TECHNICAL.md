@@ -213,7 +213,8 @@ secret  = 26zbase32            ; 16 random bytes
 ```
 
 At most 8 hints and 1024 bytes in all. A hint is used for the first
-connection only (PEERS 4.3).
+connection only (PEERS 4.3). Leading and trailing ASCII whitespace of a pasted
+code is trimmed; whitespace inside it is a bad code.
 
 ### 4.2 Wire
 
@@ -663,8 +664,10 @@ N2 notes (built):
   higher seq in the request makes the callee pull from the caller. A new list
   is pushed this way to every other machine whose address is known
   (`add_addrs`, and the hints of a code for the anchor); N2 learns no address
-  from a connection, and sends no list on `hello` (N3 syncs a machine that was
-  offline).
+  from a connection. `hello` sends no list, but a caller that sees a higher
+  `devices_seq` of a trusted node asks that node for it and stores it under
+  5.5 (a failed pull changes nothing and does not fail `hello`); N3 still syncs
+  a machine that was offline on connect.
 - Tests: `pair.rs` (S2, S3, S4, S10), `budget.rs` (S9), unit tests in
   `allow.rs` and `pairing.rs` (AC7, AC9, storage). Raw or fake callers are
   made trusted with `support::node_trusting`, which signs a list with the

@@ -41,6 +41,7 @@ impl fmt::Display for PairCode {
 impl FromStr for PairCode {
     type Err = NetError;
     fn from_str(text: &str) -> Result<Self, NetError> {
+        let text = text.trim_matches(|c: char| c.is_ascii_whitespace());
         if text.len() > MAX_TEXT {
             return Err(NetError::BadCode);
         }

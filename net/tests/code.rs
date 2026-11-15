@@ -136,3 +136,18 @@ fn ac3_refused() {
     bad(&format!("{};addr=", base()));
     bad(&format!("{};addr=not-an-address", base()));
 }
+
+#[test]
+fn ac2_surrounding_whitespace_is_trimmed_inside_is_not() {
+    let want: PairCode = base().parse().unwrap();
+    for text in [
+        format!("{}\n", base()),
+        format!(" \t{}\r\n", base()),
+        format!("\n{}", base()),
+    ] {
+        assert_eq!(text.parse::<PairCode>().unwrap(), want, "{text:?}");
+    }
+    bad(&format!("watane-pair:{}: {}", key_text(), secret_text()));
+    bad(&format!("{}\n;addr=10.0.0.1:1", base()));
+    bad(&format!("{} ;addr=10.0.0.1:1", base()));
+}

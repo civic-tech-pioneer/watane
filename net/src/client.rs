@@ -3,7 +3,7 @@
 //! (NET-F-23, NET-F-24).
 
 use crate::{
-    Core, DeviceList, HeadInfo, Net, NetError,
+    Class, Core, DeviceList, HeadInfo, Net, NetError,
     error::Code,
     key::NodeKey,
     lock,
@@ -149,7 +149,19 @@ pub(crate) fn hello(net: &Net, node: &NodeKey) -> Result<Hello, NetError> {
         },
         wire::HELLO_ANSWER,
     )?;
-    wire::parse_hello(&answer).map_err(|e| answer_error(node, e))
+    let hello = wire::parse_hello(&answer).map_err(|e| answer_error(node, e))?;
+    // a trusted node with a higher list: ask for it (5.2); a failed pull
+    // changes nothing
+    let core = net.core();
+    let own = core.devices().map(|l| l.seq);
+    if let (Some(own), Some(theirs)) = (own, hello.devices_seq)
+        && theirs > own
+        && core.class_of(node) == Class::Trusted
+        && let Ok(runtime) = net.runtime()
+    {
+        runtime.block_on(crate::pairing::pull(net.core.clone(), *node));
+    }
+    Ok(hello)
 }
 
 pub(crate) fn heads(
