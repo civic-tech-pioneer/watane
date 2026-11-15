@@ -2,11 +2,13 @@
 //! pairing code text, the wire of `watane/1`, the signed form of the device
 //! list). See `TECHNICAL.md`.
 
+mod allow;
 mod cbor;
 mod client;
 mod devices;
 mod error;
 mod key;
+mod pairing;
 mod serve;
 mod ticket;
 mod wire;
@@ -27,7 +29,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, OnceLock},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
 };
 use zeroize::Zeroizing;
 
@@ -86,6 +88,34 @@ pub struct Hit {
     pub entry: EntryId,
 }
 
+/// What `net` tells its owner (TECHNICAL 3). N2 emits `JoinAsked` and
+/// `DevicesChanged`.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// The app shows the short key and asks.
+    JoinAsked {
+        node: NodeKey,
+        role: Role,
+    },
+    DevicesChanged(DeviceList),
+    Pulled {
+        channel: PublicKey,
+        seq: u64,
+        from: NodeKey,
+    },
+    /// A bad object (NET-F-24).
+    Refused {
+        node: NodeKey,
+        cause: String,
+    },
+    Unreachable {
+        node: NodeKey,
+        cause: String,
+    },
+    PeerUp(NodeKey),
+    PeerDown(NodeKey),
+}
+
 /// The holder: the code that holds the channels and packages (TECHNICAL 3.1).
 /// `net` calls it only from blocking threads. Stage N1 calls `heads`,
 /// `entries` and `fork`.
@@ -114,9 +144,6 @@ pub struct Options {
     /// `watane-node` only (NET-F-29). Not wired before N4.
     pub relay_server: Option<SocketAddr>,
     pub limits: Limits,
-    /// N1 only: the nodes that `class_of` rates `Trusted`, standing in for the
-    /// device list. N2 removes it.
-    pub trusted: Vec<NodeKey>,
     /// The address to bind; default `0.0.0.0:0`.
     pub bind: Option<SocketAddr>,
 }
@@ -130,9 +157,18 @@ pub(crate) struct Core {
     pub(crate) holdings: Arc<dyn Holdings>,
     options: Mutex<Options>,
     addrs: Mutex<HashMap<NodeKey, Vec<SocketAddr>>>,
+    /// The newest verified device list and the last contact with its anchor.
+    pub(crate) state: Mutex<pairing::DevState>,
+    pub(crate) codes: Mutex<Vec<pairing::PendingCode>>,
+    pub(crate) joins: Mutex<HashMap<NodeKey, tokio::sync::oneshot::Sender<bool>>>,
+    subscribers: Mutex<Vec<mpsc::Sender<Event>>>,
+    /// The budget of the unknown peers (4.2).
+    pub(crate) pool: Arc<allow::Pool>,
+    /// The running endpoint, for the calls a handler makes.
+    pub(crate) endpoint: Mutex<Option<Endpoint>>,
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
@@ -140,12 +176,8 @@ impl Core {
     pub(crate) fn limits(&self) -> Limits {
         lock(&self.options).limits.clone()
     }
-    pub(crate) fn class_of(&self, node: &NodeKey) -> Class {
-        if *node == self.key || lock(&self.options).trusted.contains(node) {
-            Class::Trusted
-        } else {
-            Class::Unknown
-        }
+    pub(crate) fn emit(&self, event: Event) {
+        lock(&self.subscribers).retain(|tx| tx.send(event.clone()).is_ok());
     }
     pub(crate) fn addrs_of(&self, node: &NodeKey) -> Vec<SocketAddr> {
         lock(&self.addrs).get(node).cloned().unwrap_or_default()
@@ -205,6 +237,12 @@ impl Net {
                 holdings,
                 options: Mutex::new(Options::default()),
                 addrs: Mutex::new(HashMap::new()),
+                state: Mutex::new(pairing::load(home_net)?),
+                codes: Mutex::new(Vec::new()),
+                joins: Mutex::new(HashMap::new()),
+                subscribers: Mutex::new(Vec::new()),
+                pool: Arc::new(allow::Pool::default()),
+                endpoint: Mutex::new(None),
             }),
             shared: Arc::new(Shared {
                 runtime: OnceLock::new(),
@@ -241,6 +279,7 @@ impl Net {
             return Ok(());
         }
         if let Some(current) = running.take() {
+            *lock(&self.core.endpoint) = None;
             self.runtime()?
                 .block_on(async { current.router.shutdown().await })
                 .ok();
@@ -256,9 +295,10 @@ impl Net {
                 .runtime()?
                 .block_on(async move {
                     let endpoint = builder.bind().await.map_err(|e| e.to_string())?;
+                    let serve = serve::Serve { core: core.clone() };
                     Ok::<_, String>(
                         Router::builder(endpoint)
-                            .accept(wire::ALPN, serve::Serve { core })
+                            .accept(wire::ALPN, allow::Gate::new(core, serve, wire::ALPN))
                             .spawn(),
                     )
                 })
@@ -266,6 +306,7 @@ impl Net {
                     path: self.core.dir.clone(),
                     cause,
                 })?;
+            *lock(&self.core.endpoint) = Some(router.endpoint().clone());
             *running = Some(Running {
                 router,
                 bind: options.bind,
@@ -338,6 +379,84 @@ impl Net {
         client::fork(self, node, channel)
     }
 
+    /// The code an anchor gives to a machine that joins with `role` (5.5).
+    pub fn pair_code(&self, role: Role) -> Result<PairCode, NetError> {
+        self.core.new_code(role)
+    }
+
+    /// The participant's answer to `Event::JoinAsked`.
+    pub fn answer_join(&self, node: &NodeKey, yes: bool) {
+        self.core.answer_join(node, yes);
+    }
+
+    /// Join the anchor of `code`; `replace` takes the new anchor's list
+    /// whatever this machine holds.
+    pub fn join(&self, code: &PairCode, replace: bool) -> Result<DeviceList, NetError> {
+        client::join(self, code, replace)
+    }
+
+    /// The newest verified device list, when this machine has one.
+    pub fn devices(&self) -> Option<DeviceList> {
+        self.core.devices()
+    }
+
+    pub fn remove_device(&self, node: &NodeKey) -> Result<DeviceList, NetError> {
+        let node = *node;
+        self.change(move |list| {
+            let before = list.devices.len();
+            list.devices.retain(|(k, _)| *k != node);
+            if list.devices.len() == before {
+                return Err(NetError::BadList {
+                    cause: format!("node {} is not a device", node.short()),
+                });
+            }
+            Ok(())
+        })
+    }
+
+    pub fn set_role(&self, node: &NodeKey, role: Role) -> Result<DeviceList, NetError> {
+        let node = *node;
+        self.change(
+            move |list| match list.devices.iter_mut().find(|(k, _)| *k == node) {
+                Some(device) => {
+                    device.1 = role;
+                    Ok(())
+                }
+                None => Err(NetError::BadList {
+                    cause: format!("node {} is not a device", node.short()),
+                }),
+            },
+        )
+    }
+
+    /// Days; 0 for never.
+    pub fn set_expiry(&self, days: u32) -> Result<DeviceList, NetError> {
+        self.change(move |list| {
+            list.expires_days = days;
+            Ok(())
+        })
+    }
+
+    /// Every receiver gets every later event (node Q2).
+    pub fn events(&self) -> mpsc::Receiver<Event> {
+        let (tx, rx) = mpsc::channel();
+        lock(&self.core.subscribers).push(tx);
+        rx
+    }
+
+    /// Sign the next list and tell the other own machines.
+    fn change(
+        &self,
+        f: impl FnOnce(&mut DeviceList) -> Result<(), NetError>,
+    ) -> Result<DeviceList, NetError> {
+        let (list, _) = self.core.sign_next(f)?;
+        if let Some(runtime) = self.shared.runtime.get() {
+            runtime.spawn(pairing::push(self.core.clone(), list.clone(), None));
+        }
+        Ok(list)
+    }
+
+    #[cfg(test)]
     pub(crate) fn endpoint(&self) -> Option<Endpoint> {
         lock(&self.shared.running)
             .as_ref()

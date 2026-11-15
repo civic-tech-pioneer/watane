@@ -3,12 +3,15 @@
 //! (NET-F-23, NET-F-24).
 
 use crate::{
-    HeadInfo, Net, NetError,
+    Core, DeviceList, HeadInfo, Net, NetError,
+    error::Code,
     key::NodeKey,
+    lock,
+    ticket::{Hint, PairCode},
     wire::{self, AnswerError, Hello, Request},
 };
 use iroh::{EndpointAddr, TransportAddr};
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 use watane_log::{Entry, MAX_SEQ, PublicKey};
 
 fn bad_object(node: &NodeKey, cause: impl Into<String>) -> NetError {
@@ -25,21 +28,25 @@ fn answer_error(node: &NodeKey, e: AnswerError) -> NetError {
     }
 }
 
-/// One request on one stream of one new connection. Returns the answer's bytes.
-fn call(net: &Net, node: &NodeKey, request: &Request, cap: usize) -> Result<Vec<u8>, NetError> {
-    let limits = net.core().limits();
+/// One request on one stream of one new connection. Returns the answer's
+/// bytes. Any answer from the anchor renews the expiry (ND-17).
+pub(crate) async fn call_async(
+    core: &Core,
+    node: &NodeKey,
+    request: &Request,
+    cap: usize,
+    deadline: Duration,
+) -> Result<Vec<u8>, NetError> {
+    let limits = core.limits();
     let bytes = request.encode();
     if bytes.len() > limits.request {
         return Err(NetError::TooLarge { node: *node });
     }
-    let endpoint = net.endpoint().ok_or(NetError::Off)?;
+    let endpoint = lock(&core.endpoint).clone().ok_or(NetError::Off)?;
     let unreachable = |cause: String| NetError::Unreachable { node: *node, cause };
     let id = iroh::EndpointId::from_bytes(node.as_bytes())
         .map_err(|e| unreachable(format!("not a node key: {e}")))?;
-    let addr = EndpointAddr::from_parts(
-        id,
-        net.core().addrs_of(node).into_iter().map(TransportAddr::Ip),
-    );
+    let addr = EndpointAddr::from_parts(id, core.addrs_of(node).into_iter().map(TransportAddr::Ip));
     let work = async {
         let connection =
             tokio::time::timeout(limits.connect_timeout, endpoint.connect(addr, wire::ALPN))
@@ -67,10 +74,70 @@ fn call(net: &Net, node: &NodeKey, request: &Request, cap: usize) -> Result<Vec<
         connection.close(0u32.into(), b"done");
         result
     };
+    let answer = tokio::time::timeout(deadline, work)
+        .await
+        .map_err(|_| NetError::Timeout { node: *node })??;
+    core.seen(node);
+    Ok(answer)
+}
+
+fn call_for(
+    net: &Net,
+    node: &NodeKey,
+    request: &Request,
+    cap: usize,
+    deadline: Duration,
+) -> Result<Vec<u8>, NetError> {
     let runtime = net.runtime()?;
-    runtime
-        .block_on(async { tokio::time::timeout(limits.deadline, work).await })
-        .map_err(|_| NetError::Timeout { node: *node })?
+    runtime.block_on(call_async(net.core(), node, request, cap, deadline))
+}
+
+fn call(net: &Net, node: &NodeKey, request: &Request, cap: usize) -> Result<Vec<u8>, NetError> {
+    call_for(net, node, request, cap, net.core().limits().deadline)
+}
+
+/// Join the anchor of `code` (5.5).
+pub(crate) fn join(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceList, NetError> {
+    let core = net.core();
+    if !replace && core.devices().is_some() {
+        return Err(NetError::HasAnchor);
+    }
+    let hints: Vec<_> = code
+        .hints
+        .iter()
+        .filter_map(|h| match h {
+            Hint::Addr(a) => Some(*a),
+            Hint::Relay(_) => None,
+        })
+        .collect();
+    net.add_addrs(&code.anchor, &hints);
+    let answer = call_for(
+        net,
+        &code.anchor,
+        &Request::Pair {
+            secret: code.secret,
+        },
+        wire::LIST_ANSWER,
+        core.limits().pair_deadline,
+    )?;
+    let bytes = wire::parse_pair(&answer).map_err(|e| match e {
+        AnswerError::Refused(Code::BadCode) => NetError::BadCode,
+        AnswerError::Refused(Code::Declined) => NetError::Declined,
+        other => answer_error(&code.anchor, other),
+    })?;
+    let list = DeviceList::verify(bytes)?;
+    if list.anchor != code.anchor {
+        return Err(NetError::BadList {
+            cause: "the list is not signed by the key of the code".into(),
+        });
+    }
+    if !list.devices.iter().any(|(k, _)| *k == core.key) {
+        return Err(NetError::BadList {
+            cause: "the list does not name this machine".into(),
+        });
+    }
+    core.install(bytes, list.clone(), replace)?;
+    Ok(list)
 }
 
 pub(crate) fn hello(net: &Net, node: &NodeKey) -> Result<Hello, NetError> {

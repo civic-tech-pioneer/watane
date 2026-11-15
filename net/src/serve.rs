@@ -6,13 +6,14 @@ use crate::{
     Class, Core, HeadInfo,
     error::Code,
     key::NodeKey,
+    lock, pairing,
     wire::{self, Request},
 };
 use iroh::{
     endpoint::{Connection, RecvStream, SendStream},
     protocol::{AcceptError, ProtocolHandler},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use watane_log::{Entry, PublicKey};
 
 pub(crate) struct Serve {
@@ -31,60 +32,143 @@ impl ProtocolHandler for Serve {
         let caller = NodeKey::from_bytes(*connection.remote_id().as_bytes());
         while let Ok((send, recv)) = connection.accept_bi().await {
             let core = self.core.clone();
-            tokio::spawn(async move { stream(core, caller, send, recv).await });
+            let class = core.class_of(&caller);
+            // an unknown caller's streams and bytes are budgeted (4.2)
+            let budget = if class == Class::Trusted {
+                Some(None)
+            } else {
+                let limits = core.limits();
+                core.pool.poll(&connection, &limits);
+                core.pool.stream(caller, &limits).map(Some)
+            };
+            tokio::spawn(async move {
+                match budget {
+                    Some(guard) => {
+                        stream(core, caller, class, send, recv).await;
+                        drop(guard);
+                    }
+                    None => {
+                        let answer = wire::err_answer(
+                            Code::OverBudget,
+                            &format!("node {} is over its budget", caller.short()),
+                        );
+                        reply(core.limits().deadline, send, recv, answer).await;
+                    }
+                }
+            });
         }
         Ok(())
     }
 }
 
-async fn stream(core: Arc<Core>, caller: NodeKey, mut send: SendStream, recv: RecvStream) {
-    let limits = core.limits();
-    let answer = match tokio::time::timeout(limits.deadline, answer(&core, caller, recv)).await {
-        Ok(Some(answer)) => answer,
-        Ok(None) => return,
-        Err(_) => wire::err_answer(Code::Busy, "the request took longer than its deadline"),
-    };
+/// Write the answer and keep the connection until the caller has taken it.
+async fn reply(deadline: Duration, mut send: SendStream, _recv: RecvStream, answer: Vec<u8>) {
     if send.write_all(&answer).await.is_ok() && send.finish().is_ok() {
-        // keep the connection until the caller has taken the answer
-        let _ = send.stopped().await;
+        let _ = tokio::time::timeout(deadline, send.stopped()).await;
     }
 }
 
-async fn answer(core: &Arc<Core>, caller: NodeKey, mut recv: RecvStream) -> Option<Vec<u8>> {
+async fn stream(
+    core: Arc<Core>,
+    caller: NodeKey,
+    class: Class,
+    send: SendStream,
+    mut recv: RecvStream,
+) {
+    let limits = core.limits();
+    let read = tokio::time::timeout(
+        limits.deadline,
+        read_request(&core, caller, class, &mut recv),
+    );
+    let request = match read.await {
+        Ok(Ok(request)) => request,
+        Ok(Err(Some(answer))) => return reply(limits.deadline, send, recv, answer).await,
+        Ok(Err(None)) => return,
+        Err(_) => {
+            let answer = wire::err_answer(Code::Busy, "the request took longer than its deadline");
+            return reply(limits.deadline, send, recv, answer).await;
+        }
+    };
+    // `pair` waits for the participant: its own deadline, and a second for
+    // its own timeout to answer first
+    let deadline = if matches!(request, Request::Pair { .. }) {
+        limits.pair_deadline + Duration::from_secs(1)
+    } else {
+        limits.deadline
+    };
+    let answer = match tokio::time::timeout(deadline, respond(&core, caller, class, request)).await
+    {
+        Ok(answer) => answer,
+        Err(_) => wire::err_answer(Code::Busy, "the request took longer than its deadline"),
+    };
+    reply(limits.deadline, send, recv, answer).await;
+}
+
+/// The request, or the answer that refuses it (`None`: nothing to answer).
+async fn read_request(
+    core: &Arc<Core>,
+    caller: NodeKey,
+    class: Class,
+    recv: &mut RecvStream,
+) -> Result<Request, Option<Vec<u8>>> {
     let limits = core.limits();
     // the byte limit comes first, before any decoding
     let bytes = match recv.read_to_end(limits.request).await {
         Ok(bytes) => bytes,
         Err(iroh::endpoint::ReadToEndError::TooLong) => {
-            return Some(wire::err_answer(
+            return Err(Some(wire::err_answer(
                 Code::TooLarge,
                 &format!("a request is at most {} bytes", limits.request),
-            ));
+            )));
         }
-        Err(_) => return None,
+        Err(_) => return Err(None),
     };
-    let request = match Request::decode(&bytes) {
-        Ok(request) => request,
-        Err(code) => return Some(wire::err_answer(code, "the request does not decode")),
-    };
-    if !matches!(request, Request::Hello { .. }) && core.class_of(&caller) != Class::Trusted {
-        return Some(wire::err_answer(
+    let request = Request::decode(&bytes)
+        .map_err(|code| Some(wire::err_answer(code, "the request does not decode")))?;
+    // an unknown caller has `hello` and `pair` only (4.2)
+    let open = matches!(request, Request::Hello { .. } | Request::Pair { .. });
+    if !open && class != Class::Trusted {
+        return Err(Some(wire::err_answer(
             Code::NotAllowed,
             &format!("node {} may not call {}", caller.short(), request.op()),
-        ));
+        )));
     }
-    let core = core.clone();
-    let work = tokio::task::spawn_blocking(move || run(&core, request));
-    Some(
-        work.await
-            .unwrap_or_else(|_| wire::err_answer(Code::Busy, "the holder failed")),
-    )
+    Ok(request)
 }
 
-fn run(core: &Core, request: Request) -> Vec<u8> {
+async fn respond(core: &Arc<Core>, caller: NodeKey, class: Class, request: Request) -> Vec<u8> {
+    match request {
+        Request::Pair { secret } => return pairing::handle_pair(core, caller, secret).await,
+        Request::Devices { seq } => {
+            // a higher seq than ours: answer, then pull the list ourselves
+            let (own, bytes) = {
+                let state = lock(&core.state);
+                (state.list.as_ref().map(|l| l.seq), state.bytes.clone())
+            };
+            let newer = own.filter(|own| *own > seq).map(|_| bytes.as_slice());
+            let answer = wire::devices_answer(newer);
+            if own.is_some_and(|own| seq > own) {
+                tokio::spawn(pairing::pull(core.clone(), caller));
+            }
+            return answer;
+        }
+        _ => {}
+    }
+    let core = core.clone();
+    let work = tokio::task::spawn_blocking(move || run(&core, class, request));
+    work.await
+        .unwrap_or_else(|_| wire::err_answer(Code::Busy, "the holder failed"))
+}
+
+fn run(core: &Core, class: Class, request: Request) -> Vec<u8> {
     let limits = core.limits();
     match request {
-        Request::Hello { .. } => wire::hello_answer(&limits),
+        Request::Hello { .. } => {
+            let seq = (class == Class::Trusted)
+                .then(|| core.devices().map(|l| l.seq))
+                .flatten();
+            wire::hello_answer(&limits, seq)
+        }
         Request::Heads { channels } => {
             let heads: Vec<(PublicKey, Option<HeadInfo>)> = if channels.is_empty() {
                 core.holdings.heads(None)
@@ -133,5 +217,6 @@ fn run(core: &Core, request: Request) -> Vec<u8> {
             }
             answer
         }
+        Request::Devices { .. } | Request::Pair { .. } => unreachable!("answered in respond"),
     }
 }

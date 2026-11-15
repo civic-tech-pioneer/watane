@@ -33,12 +33,19 @@ fn refused(r: Result<impl std::fmt::Debug, NetError>, node: &NodeKey, code: Code
 fn ac5_hello_from_a_trusted_and_an_unknown_node() {
     let fx = fixture();
     let (a, b) = pair(fx);
-    let c = node(MemHoldings::new(fx), vec![], None);
+    let c = node(MemHoldings::new(fx), None);
     c.net.add_addrs(&a.key, &a.net.addrs());
-    for hello in [b.net.hello(&a.key).unwrap(), c.net.hello(&a.key).unwrap()] {
+    let seq = a.net.devices().unwrap().seq;
+    for (hello, expected) in [
+        (b.net.hello(&a.key).unwrap(), Some(seq)),
+        (c.net.hello(&a.key).unwrap(), None),
+    ] {
+        assert_eq!(hello.devices_seq, expected);
         assert_eq!(hello.version, 1);
-        assert_eq!(hello.ops, ["hello", "heads", "entries", "fork"]);
-        assert_eq!(hello.devices_seq, None);
+        assert_eq!(
+            hello.ops,
+            ["hello", "heads", "entries", "fork", "devices", "pair"]
+        );
         let l = hello.limits;
         assert_eq!(l.request, 262_144);
         assert_eq!(l.answer_entries, 4_194_304);
@@ -128,7 +135,7 @@ fn ac5_fork() {
 fn ac5_an_unknown_node_gets_hello_only() {
     let fx = fixture();
     let (a, _b) = pair(fx);
-    let c = node(MemHoldings::new(fx), vec![], None);
+    let c = node(MemHoldings::new(fx), None);
     c.net.add_addrs(&a.key, &a.net.addrs());
     let before = a.holdings.calls();
     refused(c.net.heads_of(&a.key, &[]), &a.key, Code::NotAllowed);
@@ -146,14 +153,22 @@ fn ac5_an_unknown_node_gets_hello_only() {
 fn ac5_later_and_made_up_ops_are_unknown_op() {
     let fx = fixture();
     let seed = [5u8; 32];
-    let a = node(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
+    let a = node_trusting(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
     let addr = a.net.addrs()[0];
     use cbor::*;
-    for op in ["query", "devices", "pair", "frobnicate"] {
+    for op in ["query", "frobnicate"] {
         let req = array(&[text(op), uint(1)]);
         let answer = raw_call(seed, &a.key, addr, &req);
         assert_eq!(err_code(&answer), "unknown_op", "{op}");
     }
+    // `devices` and `pair` exist now: a wrong argument is a bad request
+    let req = array(&[text("pair"), uint(1)]);
+    assert_eq!(err_code(&raw_call(seed, &a.key, addr, &req)), "bad_request");
+    let req = array(&[text("devices"), bytes(&[1])]);
+    assert_eq!(err_code(&raw_call(seed, &a.key, addr, &req)), "bad_request");
+    let req = array(&[text("devices"), uint(0)]);
+    let answer = raw_call(seed, &a.key, addr, &req);
+    assert_eq!(answer[..4], array(&[text("ok")])[..]);
 }
 
 /// The answer `["err", code, message]` has this code.
@@ -170,7 +185,7 @@ fn err_code(answer: &[u8]) -> String {
 fn ac4_the_callee_refuses_a_request_over_its_limit_before_decoding() {
     let fx = fixture();
     let seed = [6u8; 32];
-    let a = node(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
+    let a = node_trusting(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
     let addr = a.net.addrs()[0];
     // not even CBOR, and one byte over 256 KiB
     let answer = raw_call(seed, &a.key, addr, &vec![0xff; 256 * 1024 + 1]);
@@ -186,7 +201,7 @@ fn ac4_the_callee_refuses_what_is_not_a_request() {
     use cbor::*;
     let fx = fixture();
     let seed = [7u8; 32];
-    let a = node(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
+    let a = node_trusting(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
     let addr = a.net.addrs()[0];
     let c1 = bytes(fx.c1.as_bytes());
     let good = array(&[text("fork"), c1.clone()]);

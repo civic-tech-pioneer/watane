@@ -639,6 +639,39 @@ N1 notes (built):
   (the caller's checks, deadlines), `keyfile.rs`, `q1.rs`, and
   `no_default_services` in `lib.rs`.
 
+N2 notes (built):
+
+- `allow.rs`: `Gate<P>` wraps `Serve` for `watane/1`. It renews `anchor_seen`
+  when the peer is the anchor (ND-17), rates the peer, closes a connection
+  whose class has no allowance for its ALPN or that is over a connection
+  budget, and polls `Connection::stats()` every 100 ms for an unknown peer.
+  Streams of an unknown peer are counted in `Serve`, which polls the
+  connection's bytes first, so a stream over the stream or byte budget gets
+  `over_budget`. The byte bucket may run into debt of one second's worth, so a
+  burst keeps an unknown peer out for a while; bytes of the handshake (before
+  the Gate counts the connection) are not charged. A request of 16 KiB on a
+  4 KiB/s bucket may itself be refused, because most of it has arrived by the
+  time its stream is accepted.
+- `pairing.rs`: the stored list (`devices`, `anchor`, `anchor_seen` in
+  `book.json`, every write temp, fsync, rename, 0600), codes, `sign_next`
+  (one function signs every new list), `accept_list` (forward only, the
+  stored anchor's only), `join`'s `install`. The code lives as long as
+  `pair_deadline` of the anchor at the time it was made; the same limit is
+  the wait for `answer_join`. `pair` has its own stream deadline,
+  `pair_deadline` plus a second.
+- `devices(seq)` answers the list only when the callee's seq is higher; a
+  higher seq in the request makes the callee pull from the caller. A new list
+  is pushed this way to every other machine whose address is known
+  (`add_addrs`, and the hints of a code for the anchor); N2 learns no address
+  from a connection, and sends no list on `hello` (N3 syncs a machine that was
+  offline).
+- Tests: `pair.rs` (S2, S3, S4, S10), `budget.rs` (S9), unit tests in
+  `allow.rs` and `pairing.rs` (AC7, AC9, storage). Raw or fake callers are
+  made trusted with `support::node_trusting`, which signs a list with the
+  node's own key before it opens. A raw client that does not close its
+  connection holds one of the two connections of its key until the idle
+  timeout, so a test uses a new key for each call.
+
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.
 

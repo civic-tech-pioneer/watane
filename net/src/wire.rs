@@ -10,13 +10,15 @@ use watane_log::{Entry, EntryId, MAX_ENTRY, PublicKey};
 
 pub(crate) const ALPN: &[u8] = b"watane/1";
 pub(crate) const VERSION: u64 = 1;
-/// The ops of stage N1, in the order `hello` lists them.
-pub(crate) const OPS: [&str; 4] = ["hello", "heads", "entries", "fork"];
+/// The ops of stage N2, in the order `hello` lists them.
+pub(crate) const OPS: [&str; 6] = ["hello", "heads", "entries", "fork", "devices", "pair"];
 
 /// Answer byte limits of each op: the whole stream, CBOR framing included.
 pub(crate) const HELLO_ANSWER: usize = 1024;
 pub(crate) const HEADS_ANSWER: usize = 1 << 20;
 pub(crate) const FORK_ANSWER: usize = 2 * MAX_ENTRY + 64;
+/// The answers of `devices` and `pair`: a device list and little else.
+pub(crate) const LIST_ANSWER: usize = 1 << 20;
 /// The longest `err` item the caller reads (inside the cap of its op).
 pub(crate) const ERR_MESSAGE: usize = 200;
 
@@ -44,6 +46,15 @@ pub struct Limits {
     pub pair_deadline: Duration,
     /// The deadline of a blob: 120 s.
     pub blob_deadline: Duration,
+    /// Budgets of unknown peers (4.2 "Budgets"); `hello` does not send them.
+    /// Connections one unknown key may hold open: 2.
+    pub unknown_conns_per_peer: usize,
+    /// Streams one unknown key may have open at once: 2.
+    pub unknown_streams_per_peer: usize,
+    /// Connections all unknown keys together may hold open: 16.
+    pub unknown_conns: usize,
+    /// Bytes per second, in and out, for all unknown keys together: 65536.
+    pub unknown_bytes_per_sec: u64,
 }
 
 impl Default for Limits {
@@ -59,6 +70,10 @@ impl Default for Limits {
             deadline: Duration::from_secs(5),
             pair_deadline: Duration::from_secs(600),
             blob_deadline: Duration::from_secs(120),
+            unknown_conns_per_peer: 2,
+            unknown_streams_per_peer: 2,
+            unknown_conns: 16,
+            unknown_bytes_per_sec: 65536,
         }
     }
 }
@@ -102,6 +117,7 @@ impl Limits {
             deadline: Duration::from_millis(deadline),
             pair_deadline: Duration::from_millis(pair),
             blob_deadline: Duration::from_millis(blob_deadline),
+            ..Limits::default()
         })
     }
 }
@@ -133,6 +149,12 @@ pub(crate) enum Request {
     Fork {
         channel: PublicKey,
     },
+    Devices {
+        seq: u64,
+    },
+    Pair {
+        secret: [u8; 16],
+    },
 }
 
 impl Request {
@@ -142,6 +164,8 @@ impl Request {
             Request::Heads { .. } => "heads",
             Request::Entries { .. } => "entries",
             Request::Fork { .. } => "fork",
+            Request::Devices { .. } => "devices",
+            Request::Pair { .. } => "pair",
         }
     }
 
@@ -176,6 +200,16 @@ impl Request {
                 cbor::array(2, &mut out);
                 cbor::text("fork", &mut out);
                 cbor::bytes(channel.as_bytes(), &mut out);
+            }
+            Request::Devices { seq } => {
+                cbor::array(2, &mut out);
+                cbor::text("devices", &mut out);
+                cbor::uint(*seq, &mut out);
+            }
+            Request::Pair { secret } => {
+                cbor::array(2, &mut out);
+                cbor::text("pair", &mut out);
+                cbor::bytes(secret, &mut out);
             }
         }
         out
@@ -219,7 +253,13 @@ impl Request {
             ("fork", [c]) => Ok(Request::Fork {
                 channel: channel(c).ok_or(Code::BadRequest)?,
             }),
-            ("hello" | "heads" | "entries" | "fork", _) => Err(Code::BadRequest),
+            ("devices", [Item::Uint(seq)]) => Ok(Request::Devices { seq: *seq }),
+            ("pair", [Item::Bytes(secret)]) => Ok(Request::Pair {
+                secret: <[u8; 16]>::try_from(*secret).map_err(|_| Code::BadRequest)?,
+            }),
+            ("hello" | "heads" | "entries" | "fork" | "devices" | "pair", _) => {
+                Err(Code::BadRequest)
+            }
             _ => Err(Code::UnknownOp),
         }
     }
@@ -248,7 +288,7 @@ pub(crate) fn err_answer(code: Code, message: &str) -> Vec<u8> {
     out
 }
 
-pub(crate) fn hello_answer(limits: &Limits) -> Vec<u8> {
+pub(crate) fn hello_answer(limits: &Limits, devices_seq: Option<u64>) -> Vec<u8> {
     let mut out = ok();
     cbor::array(4, &mut out);
     cbor::uint(VERSION, &mut out);
@@ -261,7 +301,30 @@ pub(crate) fn hello_answer(limits: &Limits) -> Vec<u8> {
     for n in wire {
         cbor::uint(n, &mut out);
     }
-    cbor::null(&mut out); // devices_seq: no device list before N2
+    match devices_seq {
+        Some(seq) => cbor::uint(seq, &mut out),
+        None => cbor::null(&mut out),
+    }
+    out
+}
+
+/// `devices`: one item `[list or null, addrs]`; N2 passes on no addresses.
+pub(crate) fn devices_answer(list: Option<&[u8]>) -> Vec<u8> {
+    let mut out = ok();
+    cbor::array(2, &mut out);
+    match list {
+        Some(list) => cbor::bytes(list, &mut out),
+        None => cbor::null(&mut out),
+    }
+    cbor::array(0, &mut out);
+    out
+}
+
+/// `pair`: one item `[list]`.
+pub(crate) fn pair_answer(list: &[u8]) -> Vec<u8> {
+    let mut out = ok();
+    cbor::array(1, &mut out);
+    cbor::bytes(list, &mut out);
     out
 }
 
@@ -464,6 +527,30 @@ pub(crate) fn parse_fork(bytes: &[u8]) -> Result<Option<RawPair<'_>>, AnswerErro
             _ => bad("a fork answer is not two byte strings"),
         },
         _ => bad("not a fork answer"),
+    }
+}
+
+/// The list of a `devices` answer, when it holds one.
+pub(crate) fn parse_devices(bytes: &[u8]) -> Result<Option<&[u8]>, AnswerError> {
+    let items = items(bytes)?;
+    let [Item::Array(fields)] = items.as_slice() else {
+        return bad("not a devices answer");
+    };
+    match fields.as_slice() {
+        [Item::Null, Item::Array(_)] => Ok(None),
+        [Item::Bytes(list), Item::Array(_)] => Ok(Some(list)),
+        _ => bad("not a devices answer"),
+    }
+}
+
+pub(crate) fn parse_pair(bytes: &[u8]) -> Result<&[u8], AnswerError> {
+    let items = items(bytes)?;
+    match items.as_slice() {
+        [Item::Array(fields)] => match fields.as_slice() {
+            [Item::Bytes(list)] => Ok(list),
+            _ => bad("not a pair answer"),
+        },
+        _ => bad("not a pair answer"),
     }
 }
 

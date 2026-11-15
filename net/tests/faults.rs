@@ -99,7 +99,7 @@ fn ac6_an_entry_with_a_changed_byte_does_not_decode() {
         changed[at] ^= 1;
         let answer = cbor::concat(&[cbor::array(&[cbor::text("ok")]), cbor::bytes(&changed)]);
         let fake = fake_callee([8u8; 32], move |_| Some(answer.clone()));
-        let b = node(MemHoldings::new(fx), vec![fake.key], None);
+        let b = node_trusting(MemHoldings::new(fx), vec![fake.key], None);
         b.net.add_addrs(&fake.key, &[fake.addr]);
         bad_object(b.net.entries_of(&fake.key, &fx.c1, 0, 10), &fake.key);
     }
@@ -113,7 +113,7 @@ fn ac6_more_entries_than_limit_is_refused() {
     items.extend(c1[..3].iter().map(|e| cbor::bytes(e.bytes())));
     let answer = cbor::concat(&items);
     let fake = fake_callee([8u8; 32], move |_| Some(answer.clone()));
-    let b = node(MemHoldings::new(fx), vec![fake.key], None);
+    let b = node_trusting(MemHoldings::new(fx), vec![fake.key], None);
     b.net.add_addrs(&fake.key, &[fake.addr]);
     bad_object(b.net.entries_of(&fake.key, &fx.c1, 0, 2), &fake.key);
     assert_eq!(b.net.entries_of(&fake.key, &fx.c1, 0, 3).unwrap().len(), 3);
@@ -124,7 +124,7 @@ fn ac6_an_answer_over_its_byte_limit_is_too_large_and_not_read_past() {
     let fx = fixture();
     // a hello answer is at most 1 KiB; this callee sends 2 MiB of garbage
     let fake = fake_callee([8u8; 32], |_| Some(vec![0u8; 2 << 20]));
-    let b = node(MemHoldings::new(fx), vec![fake.key], None);
+    let b = node_trusting(MemHoldings::new(fx), vec![fake.key], None);
     b.net.add_addrs(&fake.key, &[fake.addr]);
     match b.net.hello(&fake.key) {
         Err(NetError::TooLarge { node }) => assert_eq!(node, fake.key),
@@ -151,10 +151,8 @@ fn ac6_a_callee_that_does_not_answer_in_time_is_a_timeout() {
         deadline: Duration::from_millis(300),
         ..Limits::default()
     };
-    let a = node(MemHoldings::new(fx), vec![], None);
-    let b = node(MemHoldings::new(fx), vec![a.key], Some(limits));
-    a.net.set_options(options(vec![b.key], None)).unwrap();
-    b.net.add_addrs(&a.key, &a.net.addrs());
+    let (a, b) = pair(fx);
+    b.net.set_options(options(Some(limits))).unwrap();
     a.holdings.faults.lock().unwrap().delay = Some(Duration::from_secs(2));
     let started = std::time::Instant::now();
     match b.net.heads_of(&a.key, &[]) {
@@ -180,7 +178,7 @@ fn ac6_a_callee_that_does_not_answer_in_time_is_a_timeout() {
 #[test]
 fn ac6_a_node_that_cannot_be_reached_is_named() {
     let fx = fixture();
-    let b = node(MemHoldings::new(fx), vec![], None);
+    let b = node(MemHoldings::new(fx), None);
     let nowhere = node_key_of_seed([2u8; 32]);
     match b.net.hello(&nowhere) {
         Err(e @ NetError::Unreachable { .. }) => assert!(e.to_string().contains(&nowhere.short())),

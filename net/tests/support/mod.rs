@@ -203,6 +203,8 @@ pub struct MemHoldings {
     pub fork: Option<(PublicKey, (Entry, Entry))>,
     pub calls: AtomicUsize,
     pub faults: Mutex<Faults>,
+    /// This home holds the participant key.
+    pub anchor: bool,
 }
 
 impl MemHoldings {
@@ -212,6 +214,7 @@ impl MemHoldings {
             fork: None,
             calls: AtomicUsize::new(0),
             faults: Mutex::new(Faults::default()),
+            anchor: false,
         })
     }
     pub fn new(fx: &Fixture) -> Arc<MemHoldings> {
@@ -220,6 +223,17 @@ impl MemHoldings {
             fork: Some((fx.cf, fx.fork.clone())),
             calls: AtomicUsize::new(0),
             faults: Mutex::new(Faults::default()),
+            anchor: false,
+        })
+    }
+    /// The same, in a home that holds the participant key.
+    pub fn anchor(fx: &Fixture) -> Arc<MemHoldings> {
+        Arc::new(MemHoldings {
+            chains: fx.chains.clone(),
+            fork: Some((fx.cf, fx.fork.clone())),
+            calls: AtomicUsize::new(0),
+            faults: Mutex::new(Faults::default()),
+            anchor: true,
         })
     }
     pub fn calls(&self) -> usize {
@@ -241,7 +255,7 @@ impl MemHoldings {
 
 impl Holdings for MemHoldings {
     fn is_anchor(&self) -> bool {
-        false
+        self.anchor
     }
     fn heads(&self, channels: Option<&[PublicKey]>) -> Vec<(PublicKey, Option<HeadInfo>)> {
         if let Some(d) = self.enter() {
@@ -322,19 +336,11 @@ pub struct Node {
     pub holdings: Arc<MemHoldings>,
 }
 
-/// A node on loopback, on, with the given trusted nodes.
-pub fn node(
-    holdings: Arc<MemHoldings>,
-    trusted: Vec<NodeKey>,
-    limits: Option<watane_net::Limits>,
-) -> Node {
+/// A node on loopback, on, paired with nobody.
+pub fn node(holdings: Arc<MemHoldings>, limits: Option<watane_net::Limits>) -> Node {
     let dir = tempfile::tempdir().unwrap();
-    let net = watane_net::Net::open(
-        &dir.path().join("net"),
-        holdings.clone(),
-        options(trusted, limits),
-    )
-    .unwrap();
+    let net =
+        watane_net::Net::open(&dir.path().join("net"), holdings.clone(), options(limits)).unwrap();
     let key = net.node_key();
     Node {
         dir,
@@ -344,54 +350,71 @@ pub fn node(
     }
 }
 
-pub fn options(trusted: Vec<NodeKey>, limits: Option<watane_net::Limits>) -> watane_net::Options {
+pub fn options(limits: Option<watane_net::Limits>) -> watane_net::Options {
     watane_net::Options {
         on: true,
         bind: Some(lo()),
-        trusted,
         limits: limits.unwrap_or_default(),
         ..watane_net::Options::default()
     }
 }
 
-/// Two nodes: B trusts A and A trusts B, and B knows where A is.
+/// A node on loopback whose own device list (signed with its node key, as
+/// its anchor) holds `trusted` as full machines. For callers that are raw
+/// endpoints or fakes, which cannot pair.
+pub fn node_trusting(
+    holdings: Arc<MemHoldings>,
+    trusted: Vec<NodeKey>,
+    limits: Option<watane_net::Limits>,
+) -> Node {
+    let dir = tempfile::tempdir().unwrap();
+    let net_dir = dir.path().join("net");
+    let key = {
+        let net = watane_net::Net::open(&net_dir, holdings.clone(), watane_net::Options::default())
+            .unwrap();
+        net.node_key()
+    };
+    let seed: [u8; 32] = std::fs::read(net_dir.join("node.key"))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let mut devices: Vec<_> = trusted.into_iter().map(|k| (k, Role::Full)).collect();
+    devices.push((key, Role::Full));
+    devices.sort_by_key(|(k, _)| *k);
+    let list = watane_net::DeviceList {
+        anchor: key,
+        seq: 1,
+        time: 1,
+        expires_days: 0,
+        devices,
+    };
+    std::fs::write(net_dir.join("devices"), list.sign(&seed).unwrap()).unwrap();
+    let net = watane_net::Net::open(&net_dir, holdings.clone(), options(limits)).unwrap();
+    Node {
+        dir,
+        net,
+        key,
+        holdings,
+    }
+}
+
+/// Pair `joiner` to `anchor` as `role` through the code, the join question
+/// and its answer. Both learn each other's addresses.
+pub fn pair_into(anchor: &Node, joiner: &Node, role: Role) -> watane_net::DeviceList {
+    let code = anchor.net.pair_code(role).unwrap();
+    let list = try_pair(anchor, joiner, code, false, Some(true)).unwrap();
+    anchor.net.add_addrs(&joiner.key, &joiner.net.addrs());
+    joiner.net.add_addrs(&anchor.key, &anchor.net.addrs());
+    list
+}
+
+/// Two paired nodes: A the anchor, B a full machine, each trusting the other
+/// through the device list, each knowing where the other is.
 pub fn pair(fx: &Fixture) -> (Node, Node) {
-    let a_dir = tempfile::tempdir().unwrap();
-    let b_dir = tempfile::tempdir().unwrap();
-    // keys first: a node's key exists once its net directory is opened
-    let a_hold = MemHoldings::new(fx);
-    let b_hold = MemHoldings::new(fx);
-    let a = watane_net::Net::open(
-        &a_dir.path().join("net"),
-        a_hold.clone(),
-        options(vec![], None),
-    )
-    .unwrap();
-    let b = watane_net::Net::open(
-        &b_dir.path().join("net"),
-        b_hold.clone(),
-        options(vec![], None),
-    )
-    .unwrap();
-    let (ak, bk) = (a.node_key(), b.node_key());
-    a.set_options(options(vec![bk], None)).unwrap();
-    b.set_options(options(vec![ak], None)).unwrap();
-    b.add_addrs(&ak, &a.addrs());
-    a.add_addrs(&bk, &b.addrs());
-    (
-        Node {
-            dir: a_dir,
-            net: a,
-            key: ak,
-            holdings: a_hold,
-        },
-        Node {
-            dir: b_dir,
-            net: b,
-            key: bk,
-            holdings: b_hold,
-        },
-    )
+    let a = node(MemHoldings::anchor(fx), None);
+    let b = node(MemHoldings::new(fx), None);
+    pair_into(&a, &b, Role::Full);
+    (a, b)
 }
 
 // ---- raw QUIC: a client and a fake callee that speak bytes only ----
@@ -499,4 +522,70 @@ pub fn map_of<K: std::hash::Hash + Eq, V>(
     items: impl IntoIterator<Item = (K, V)>,
 ) -> HashMap<K, V> {
     items.into_iter().collect()
+}
+
+/// `(code, message)` of an `["err", code, message]` answer, parsed by hand;
+/// `None` for any other answer.
+pub fn err_of(answer: &[u8]) -> Option<(String, String)> {
+    fn text(b: &[u8]) -> Option<(String, &[u8])> {
+        let (len, rest) = match *b.first()? {
+            h @ 0x60..=0x77 => ((h & 31) as usize, &b[1..]),
+            0x78 => (*b.get(1)? as usize, &b[2..]),
+            _ => return None,
+        };
+        let s = String::from_utf8(rest.get(..len)?.to_vec()).ok()?;
+        Some((s, &rest[len..]))
+    }
+    let rest = answer.strip_prefix(&[0x83])?;
+    let (kind, rest) = text(rest)?;
+    if kind != "err" {
+        return None;
+    }
+    let (code, rest) = text(rest)?;
+    let (message, _) = text(rest)?;
+    Some((code, message))
+}
+
+/// A hello request, by hand.
+pub fn hello_request() -> Vec<u8> {
+    cbor::array(&[cbor::text("hello"), cbor::uint(1)])
+}
+
+/// Join `joiner` to `anchor` with `code`. `answer` is what the participant
+/// says to the join question; `None`: nothing.
+pub fn try_pair(
+    anchor: &Node,
+    joiner: &Node,
+    code: watane_net::PairCode,
+    replace: bool,
+    answer: Option<bool>,
+) -> Result<watane_net::DeviceList, watane_net::NetError> {
+    let events = anchor.net.events();
+    let net = joiner.net.clone();
+    let thread = std::thread::spawn(move || net.join(&code, replace));
+    if let Some(yes) = answer {
+        loop {
+            match events.recv_timeout(Duration::from_secs(10)).unwrap() {
+                watane_net::Event::JoinAsked { node, .. } => {
+                    assert_eq!(node, joiner.key);
+                    anchor.net.answer_join(&node, yes);
+                    break;
+                }
+                _ => continue,
+            }
+        }
+    }
+    thread.join().unwrap()
+}
+
+/// Wait until `f` holds, for at most `secs` seconds.
+pub fn wait_for(secs: u64, mut f: impl FnMut() -> bool) -> bool {
+    let end = std::time::Instant::now() + Duration::from_secs(secs);
+    while std::time::Instant::now() < end {
+        if f() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    f()
 }
