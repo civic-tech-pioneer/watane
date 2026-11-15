@@ -34,4 +34,5 @@ and `logic.wasm` into `ratings/`. It exports `api.get`, `api.add` and
 
 `menu/` (own outlet `menu` with `ask: func() -> list<string>`, world `shell`) and `item/`
 (exports `mods:menu/menu`, `ask` returns `["a"]`) are copies of the host's `menu` and `item-a`
-fixtures with their committed `logic.wasm`; rebuild them from `../../host/tests/fixtures/build.sh`.
+fixtures with their committed `logic.wasm` (`item` renamed from `item-a` in `mod.toml` and
+`wit/world.wit`; the component names no own package); rebuild them from `../../host/tests/fixtures/build.sh`.

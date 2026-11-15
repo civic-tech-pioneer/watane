@@ -420,6 +420,17 @@ fn ac_collect_fake_and_answer() {
         assert_eq!(v["result"]["contract"]["passed"], 1, "{v}");
         assert_eq!(v["result"]["contract"]["failed"], 0, "{v}");
     }
+    // The answer is checked, not only that the deliver ran.
+    let (code, v) = test_in(
+        &item,
+        json!({"steps":[{"deliver":"menu.ask","returns":["b"]}]}),
+    );
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(
+        v["result"]["contract"]["failures"][0]["got"],
+        json!(["a"]),
+        "{v}"
+    );
 }
 
 #[test]

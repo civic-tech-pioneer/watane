@@ -1,2 +1,2 @@
-package mods:item-a@0.1.0;
-world item-a { import watane:host/state@0.1.0; export mods:menu/menu@0.1.0; }
+package mods:item@0.1.0;
+world item { import watane:host/state@0.1.0; export mods:menu/menu@0.1.0; }

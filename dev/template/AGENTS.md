@@ -108,9 +108,8 @@ If it asks before each call, the person allows the server's tools.
 
 Unit tests run as WebAssembly with no files, no environment and no host imports: test pure functions there. A panic ends the whole unit test run;
 tests after it are counted in not_run. Fix the failure and run test again.
-Keep at least one tests/*.json file for a logic part. Each contract file
-starts with fresh state. Steps call an exported function and assert its
-return value or failure; emits checks the events in order. For example:
+Keep at least one tests/*.json file for a logic part. Each contract file starts with fresh state.
+Steps call an exported function and assert its return value or failure; emits checks the events in order. For example:
 
 ```json
 {"steps": [{"call": "api.add", "returns": 1,
@@ -129,8 +128,8 @@ A `deliver` step invokes a subscription as `<provider iface>.<fn>`, with `args` 
  "steps": [{"deliver": "events.added", "args": {"title": "Emma"}}]}
 ```
 
-An own-interface function with a `list` result is a collect (the mods granted to answer it are joined). Fake it under
-`mods:<slug>/<outlet>` with the whole list (no fake gives `[]`); to answer one, `deliver` `<outlet>.<fn>` and check `returns`.
+An own-interface function with a `list` result is a collect: the answers of the mods granted to answer it, joined. Fake it
+under `mods:<slug>/<outlet>` with the whole list (no fake gives `[]`); answer one with `deliver` `<outlet>.<fn>` and `returns`.
 Serve runs all tests before starting or updating the preview.
 
 ## Results
