@@ -92,6 +92,9 @@ async fn releases(State(dist): State<Option<Arc<Dist>>>) -> Response {
     .await
     {
         Ok(Ok(releases)) => Json(serde_json::json!({"releases": releases})).into_response(),
+        Ok(Err(e @ DistError::NoIdentity)) => {
+            error(StatusCode::CONFLICT, "no_identity", e.to_string())
+        }
         Ok(Err(e)) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "unavailable",
@@ -159,6 +162,7 @@ async fn publish(
         Ok(Ok(body)) => Json(body).into_response(),
         Ok(Err(e)) => {
             let (status, code) = match &e {
+                DistError::NoIdentity => (StatusCode::CONFLICT, "no_identity"),
                 DistError::Refused => (StatusCode::FORBIDDEN, "refused"),
                 DistError::VersionExists { .. } => (StatusCode::CONFLICT, "version_exists"),
                 DistError::Package(_) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_package"),
@@ -236,7 +240,11 @@ fn publish_providers(
         let Some(publisher) = &provider.publisher else {
             continue;
         };
-        if publisher.as_bytes() == dist.identity().as_bytes() || !seen.insert(provider.clone()) {
+        if dist
+            .identity()
+            .is_some_and(|key| publisher.as_bytes() == key.as_bytes())
+            || !seen.insert(provider.clone())
+        {
             continue;
         }
         let matches = |link: &watane_dist::Link| {
@@ -348,6 +356,7 @@ async fn fetch(
             .into_response(),
         Ok(Err(e)) => {
             let (status, code) = match &e {
+                DistError::NoIdentity => (StatusCode::CONFLICT, "no_identity"),
                 DistError::NoRelease { .. }
                 | DistError::Withdrawn { .. }
                 | DistError::Compromised { .. } => (StatusCode::CONFLICT, "fetch_refused"),
@@ -386,6 +395,9 @@ async fn search(
         Ok::<_, DistError>(serde_json::json!({"indexes":dist.indexes()?.len(), "results":hits.iter().map(crate::find::api_result).collect::<Vec<_>>()}))
     }).await {
         Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(e @ DistError::NoIdentity)) => {
+            error(StatusCode::CONFLICT, "no_identity", e.to_string())
+        }
         Ok(Err(e @ DistError::BadQuery { .. })) => {
             error(StatusCode::BAD_REQUEST, "bad_request", crate::cause_chain(&e))
         }
@@ -453,6 +465,25 @@ mod tests {
         (status, headers, body)
     }
     #[tokio::test]
+    async fn ac3_no_identity_api_is_conflict_with_dist_text() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = Arc::new(Dist::open_keyless(home.path(), Default::default()).unwrap());
+        let app = router(Some(dist));
+        for (method, path, bytes) in [
+            (Method::GET, "/api/releases", vec![]),
+            (Method::POST, "/api/publish", package()),
+        ] {
+            let (status, _, body) = request(app.clone(), method, path, bytes).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{path}: {body}");
+            assert_eq!(
+                body,
+                json!({"error":{
+                    "code":"no_identity", "message":DistError::NoIdentity.to_string()
+                }})
+            );
+        }
+    }
+    #[tokio::test]
     async fn ac1_fetch_fills_the_shared_parties_cache() {
         let home = tempfile::tempdir().unwrap();
         let dist = open(&home);
@@ -471,7 +502,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let party = crate::words::party(&dist.identity().to_string(), &parties);
+        let party = crate::words::party(&dist.identity().unwrap().to_string(), &parties);
         assert_eq!(party.name.as_deref(), Some("Carol"));
         assert!(party.you);
     }
@@ -532,7 +563,7 @@ mod tests {
         dist.set_site_url("https://example.com/bob/").unwrap();
         let (status, _, body) = request(app, Method::GET, "/api/releases", vec![]).await;
         assert_eq!(status, StatusCode::OK);
-        let key = dist.identity();
+        let key = dist.identity().unwrap();
         assert_eq!(
             body["releases"][0]["link"],
             format!("watane:{key}@https://example.com/bob/#reading-list")

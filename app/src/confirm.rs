@@ -489,7 +489,7 @@ mod tests {
         for known in [false, true] {
             let parties = Parties::new();
             if known {
-                parties.insert(dist.identity().to_string(), "Alice".into());
+                parties.insert(dist.identity().unwrap().to_string(), "Alice".into());
             }
             let consent::Request::Install { mods, .. } =
                 request_view(&request, &parties, Some(&host))
@@ -497,9 +497,9 @@ mod tests {
                 panic!()
             };
             let label = if known {
-                format!("Alice ({})", dist.fingerprint())
+                format!("Alice ({})", dist.fingerprint().unwrap())
             } else {
-                dist.fingerprint()
+                dist.fingerprint().unwrap()
             };
             assert_eq!(
                 mods[0].origin.as_ref().unwrap(),

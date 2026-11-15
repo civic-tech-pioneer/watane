@@ -72,10 +72,12 @@ fn via(hit: &Hit, parties: Option<&Parties>) -> Vec<Value> {
         Some(parties) => json!(words::party(&key.to_string(), parties)),
         None => json!(key.to_string()),
     };
-    hit.via.iter().map(|v| match v {
-        Via::Own => json!({"kind":"own"}),
-        Via::Followed => json!({"kind":"followed"}),
-        Via::Index { index, through, note } => json!({"kind":"index", "index":party(index), "through":through.as_ref().map(party), "note":note}),
+    hit.via.iter().filter_map(|v| match v {
+        Via::Own => Some(json!({"kind":"own"})),
+        Via::Followed => Some(json!({"kind":"followed"})),
+        Via::Index { index, through, note } => Some(json!({"kind":"index", "index":party(index), "through":through.as_ref().map(party), "note":note})),
+        // The app does not keep channels yet; their provenance view is stage G.
+        Via::Kept => None,
     }).collect()
 }
 pub(crate) fn api_result(hit: &Hit) -> Value {

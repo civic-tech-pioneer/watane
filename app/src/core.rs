@@ -453,23 +453,38 @@ fn resolve_plan<S, P>(
     ))
 }
 
+fn dist_status(
+    dist: &watane_dist::Dist,
+) -> Result<(serde_json::Value, serde_json::Value), CmdError> {
+    if dist.identity().is_none() {
+        return Ok((serde_json::Value::Null, serde_json::Value::Null));
+    }
+    let own = dist.own()?;
+    let link = if own.base.is_some() {
+        Some(dist.own_link(None)?.to_string())
+    } else {
+        None
+    };
+    Ok((
+        serde_json::json!({"name":own.name,"fingerprint":dist.fingerprint(),"ownConfirmed":dist.own_confirmed()?,"releases":own_releases(&own)}),
+        serde_json::json!({"dir":dist.site_dir(),"url":own.base,"link":link}),
+    ))
+}
+
 impl Core {
     pub fn status(&self) -> Result<(serde_json::Value, serde_json::Value), CmdError> {
-        let own = self.dist.own()?;
-        let link = if own.base.is_some() {
-            Some(self.dist.own_link(None)?.to_string())
-        } else {
-            None
-        };
-        Ok((
-            serde_json::json!({"name":own.name,"fingerprint":self.dist.fingerprint(),"ownConfirmed":self.dist.own_confirmed()?,"releases":own_releases(&own)}),
-            serde_json::json!({"dir":self.dist.site_dir(),"url":own.base,"link":link}),
-        ))
+        dist_status(&self.dist)
     }
+
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
         let followed = self.dist.followed()?;
         self.parties.remember(&party_views(&self.dist)?);
-        self.parties.set_own(self.dist.identity().to_string());
+        self.parties.set_own(
+            self.dist
+                .identity()
+                .ok_or(watane_dist::DistError::NoIdentity)?
+                .to_string(),
+        );
         let failures = self.failures.lock().unwrap();
         Ok(followed
             .iter()
@@ -758,6 +773,14 @@ impl Core {
 mod tests {
     use super::*;
     #[test]
+    fn ac4_keyless_status_has_null_identity_without_panicking() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = watane_dist::Dist::open_keyless(home.path(), Default::default()).unwrap();
+        let (identity, site) = dist_status(&dist).unwrap();
+        let status = serde_json::json!({"identity":identity,"site":site});
+        assert!(status["identity"].is_null());
+    }
+    #[test]
     fn ac7_saved_toolsets_derive_function_and_interface_names_without_mods() {
         let entries = vec![
             "missing:books.list".to_string(),
@@ -981,6 +1004,7 @@ mod stage_d_tests {
             status: Status::Ok,
             followed: true,
             index: false,
+            kept: false,
             listed_by: vec![],
             listings: vec![],
             last_attempt: None,
@@ -1538,7 +1562,11 @@ pub(crate) fn cache_channels(
     parties: &Parties,
     keys: impl IntoIterator<Item = watane_dist::PublicKey>,
 ) -> Result<(), watane_dist::DistError> {
-    parties.set_own(dist.identity().to_string());
+    parties.set_own(
+        dist.identity()
+            .ok_or(watane_dist::DistError::NoIdentity)?
+            .to_string(),
+    );
     let mut pending: Vec<_> = keys.into_iter().collect();
     let mut seen = std::collections::BTreeSet::new();
     while let Some(key) = pending.pop() {
@@ -1602,7 +1630,7 @@ pub(crate) fn choose_index(
     text: &str,
 ) -> Result<Vec<watane_dist::RefreshReport>, CmdError> {
     let link = crate::commands::parse_link(text)?;
-    if link.channel() == dist.identity() {
+    if Some(link.channel()) == dist.identity() {
         return Err(CmdError::new("bad_input", words::OWN_INDEX));
     }
     dist.choose_index(&link).map_err(|e| {
@@ -1658,7 +1686,12 @@ fn index_rows(
 impl Core {
     pub fn indexes(&self) -> Result<Vec<serde_json::Value>, CmdError> {
         self.parties.remember(&party_views(&self.dist)?);
-        self.parties.set_own(self.dist.identity().to_string());
+        self.parties.set_own(
+            self.dist
+                .identity()
+                .ok_or(watane_dist::DistError::NoIdentity)?
+                .to_string(),
+        );
         let own = self.dist.own()?;
         let failures = self.failures.lock().unwrap();
         Ok(index_rows(
@@ -1680,7 +1713,12 @@ impl Core {
     }
     pub fn search(&self, query: &watane_dist::Query) -> Result<Vec<serde_json::Value>, CmdError> {
         self.parties.remember(&party_views(&self.dist)?);
-        self.parties.set_own(self.dist.identity().to_string());
+        self.parties.set_own(
+            self.dist
+                .identity()
+                .ok_or(watane_dist::DistError::NoIdentity)?
+                .to_string(),
+        );
         let installed = self.host.mods();
         let hits = self.dist.search(query)?;
         cache_channels(
@@ -1787,14 +1825,14 @@ mod find_integration_tests {
         reader
             .read_link(ivy_release.link.as_ref().unwrap())
             .unwrap();
-        let wrong = Link::new(alice.identity(), &ivy_site.base, None).unwrap();
+        let wrong = Link::new(alice.identity().unwrap(), &ivy_site.base, None).unwrap();
         let error = follow_channel(&reader, &Parties::new(), &wrong).unwrap_err();
         assert_eq!(error.code, "dist");
         assert!(
             error.message.contains(&format!(
                 "serves Ivy ({}), not Alice ({})",
-                ivy.fingerprint(),
-                alice.fingerprint()
+                ivy.fingerprint().unwrap(),
+                alice.fingerprint().unwrap()
             )),
             "{}",
             error.message
@@ -1823,9 +1861,10 @@ mod find_integration_tests {
         );
         let error = choose_index(&unknown, &link).unwrap_err();
         assert!(
-            error
-                .message
-                .starts_with(&format!("Could not read {}: ", publisher.fingerprint())),
+            error.message.starts_with(&format!(
+                "Could not read {}: ",
+                publisher.fingerprint().unwrap()
+            )),
             "{}",
             error.message
         );
@@ -1843,16 +1882,16 @@ mod find_integration_tests {
         reader.read_link(published.link.as_ref().unwrap()).unwrap();
         assert!(reader.followed().unwrap().is_empty());
         let parties = Parties::new();
-        cache_channels(&reader, &parties, [alice.identity()]).unwrap();
+        cache_channels(&reader, &parties, [alice.identity().unwrap()]).unwrap();
         assert_eq!(
-            words::party(&alice.identity().to_string(), &parties)
+            words::party(&alice.identity().unwrap().to_string(), &parties)
                 .name
                 .as_deref(),
             Some("Alice")
         );
         parties.remember(&party_views(&reader).unwrap());
         assert_eq!(
-            words::party(&alice.identity().to_string(), &parties)
+            words::party(&alice.identity().unwrap().to_string(), &parties)
                 .name
                 .as_deref(),
             Some("Alice")
@@ -1880,7 +1919,10 @@ mod find_integration_tests {
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
         let fetched = fetch_release(&carol, reference, published.link.as_ref()).unwrap();
-        assert_eq!(carol.followed().unwrap()[0].channel, alice.identity());
+        assert_eq!(
+            carol.followed().unwrap()[0].channel,
+            alice.identity().unwrap()
+        );
         let plan = host
             .plan(vec![watane_host::Source::Release {
                 package: fetched.package,
@@ -1934,13 +1976,13 @@ mod find_integration_tests {
         let parties = Parties::new();
         parties.remember(&party_views(&carol).unwrap());
         assert_eq!(
-            words::party(&ivy.identity().to_string(), &parties)
+            words::party(&ivy.identity().unwrap().to_string(), &parties)
                 .name
                 .as_deref(),
             Some("Ivy")
         );
         assert_eq!(
-            words::party(&alice.identity().to_string(), &parties)
+            words::party(&alice.identity().unwrap().to_string(), &parties)
                 .name
                 .as_deref(),
             Some("Alice")
@@ -1959,7 +2001,7 @@ mod find_integration_tests {
         let api = crate::find::api_result(&hit);
         assert_eq!(
             api["via"],
-            serde_json::json!([{"kind":"index","index":ivy.identity().to_string(),"through":null,"note":"Books"}])
+            serde_json::json!([{"kind":"index","index":ivy.identity().unwrap().to_string(),"through":null,"note":"Books"}])
         );
         assert!(api["publisher"]["key"].is_string());
     }

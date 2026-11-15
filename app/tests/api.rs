@@ -242,7 +242,7 @@ async fn ac2_search_http_rows_and_own_release_shape() {
     let router = watane_app::api::router(Some(dist.clone()));
     for query in [
         json!({"text":"reading"}),
-        json!({"text":"", "publisher":dist.identity().to_string(), "interface":"mods:reading-list/books"}),
+        json!({"text":"", "publisher":dist.identity().unwrap().to_string(), "interface":"mods:reading-list/books"}),
     ] {
         let (status, body) = search(router.clone(), serde_json::to_vec(&query).unwrap()).await;
         assert_eq!(status, 200, "{body}");
@@ -251,7 +251,7 @@ async fn ac2_search_http_rows_and_own_release_shape() {
         assert_eq!(result["release"], published.info.reference.to_string());
         assert_eq!(
             result["publisher"],
-            json!({"key":dist.identity().to_string(),"name":"Alice","fingerprint":dist.fingerprint()})
+            json!({"key":dist.identity().unwrap().to_string(),"name":"Alice","fingerprint":dist.fingerprint().unwrap()})
         );
         assert_eq!(result["link"], Value::Null);
         assert_eq!(result["via"], json!([{"kind":"own"}]));
@@ -468,7 +468,7 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
     let allowed = open(allowed_home.path(), Recording::new(true), true);
     allowed.follow(&link).unwrap();
     carol.withdraw(&published.info.reference, "broken").unwrap();
-    allowed.refresh_channel(&carol.identity()).unwrap();
+    allowed.refresh_channel(&carol.identity().unwrap()).unwrap();
     let (status, _, bytes) = fetch(
         Some(allowed),
         json!({"release":published.info.reference.to_string()}),
@@ -517,7 +517,7 @@ async fn ac4_publish_lists_provider_after_release_and_denial_keeps_release() {
         let (status, _, bytes) = api_request(
             Some(dave.clone()),
             "/api/publish",
-            api_support::consumer(&carol.identity()),
+            api_support::consumer(&carol.identity().unwrap()),
             Some(&link.to_string()),
         )
         .await;
@@ -525,7 +525,7 @@ async fn ac4_publish_lists_provider_after_release_and_denial_keeps_release() {
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
             body["providers"],
-            json!([{"provider":format!("{}/reading-list", carol.identity()), "listed":approve}])
+            json!([{"provider":format!("{}/reading-list", carol.identity().unwrap()), "listed":approve}])
         );
         let requests = confirm.requests.lock().unwrap();
         assert_eq!(
@@ -562,7 +562,7 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
     let site = Site::serve(carol.site_dir()).await;
     carol.set_site_url(&site.base).unwrap();
     let link = carol.publish(package()).unwrap().link.unwrap();
-    let consumer = api_support::consumer(&carol.identity());
+    let consumer = api_support::consumer(&carol.identity().unwrap());
     for header in [
         "bad".to_owned(),
         carol.own_link(None).unwrap().to_string(),
@@ -611,11 +611,11 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
             ivy.set_site_url(&ivy_site.base).unwrap();
             ivy.list(&link, "third party").unwrap();
             dave.choose_index(&ivy.own_link(None).unwrap()).unwrap();
-            assert!(!dave.channel(&carol.identity()).unwrap().followed);
+            assert!(!dave.channel(&carol.identity().unwrap()).unwrap().followed);
         }
         confirm.requests.lock().unwrap().clear();
         let unrelated = watane_dist::Link::new(
-            carol.identity(),
+            carol.identity().unwrap(),
             &site.base,
             Some(&"other".parse().unwrap()),
         )
@@ -637,7 +637,7 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
         let listed = matches!(case, "header" | "followed" | "listed");
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap()["providers"],
-            json!([{"provider":format!("{}/reading-list", carol.identity()), "listed":listed}])
+            json!([{"provider":format!("{}/reading-list", carol.identity().unwrap()), "listed":listed}])
         );
         let requests = confirm.requests.lock().unwrap();
         assert_eq!(
@@ -676,7 +676,7 @@ async fn ac5_publish_own_provider_needs_no_listing() {
     let (status, _, bytes) = api_request(
         Some(dist.clone()),
         "/api/publish",
-        api_support::consumer(&dist.identity()),
+        api_support::consumer(&dist.identity().unwrap()),
         None,
     )
     .await;

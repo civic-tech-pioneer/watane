@@ -130,7 +130,7 @@ mod windows {
                 .publish(
                     "stats",
                     "Stats",
-                    Some(&carol.dist.identity().to_string()),
+                    Some(&carol.dist.identity().unwrap().to_string()),
                     None,
                 )
                 .link
@@ -231,7 +231,7 @@ mod windows {
         approve(&app);
         assert!(finish(&app).get("error").is_none());
         runs(&app);
-        followed(first.path(), &f.carol.dist.identity().to_string());
+        followed(first.path(), &f.carol.dist.identity().unwrap().to_string());
         assert!(app.quit().success());
         let picked = f.eve();
         let denied = f.eve();
@@ -242,7 +242,7 @@ mod windows {
                 .followed()
                 .unwrap()
                 .iter()
-                .all(|v| v.channel != f.frank.dist.identity())
+                .all(|v| v.channel != f.frank.dist.identity().unwrap())
         );
         drop(stored);
         let app = start(picked.path());
@@ -252,7 +252,7 @@ mod windows {
         for value in [
             "ratings by Carol",
             "is not available",
-            &format!("by Frank ({})", f.frank.dist.fingerprint()),
+            &format!("by Frank ({})", f.frank.dist.fingerprint().unwrap()),
             f.carol.link().base(),
         ] {
             assert!(text.contains(value), "{text}");
@@ -284,7 +284,7 @@ mod windows {
             text.contains("of ratings by Frank") && text.contains("in place of ratings by Carol"),
             "{text}"
         );
-        followed(picked.path(), &f.frank.dist.identity().to_string());
+        followed(picked.path(), &f.frank.dist.identity().unwrap().to_string());
         assert!(app.quit().success());
         let app = start(denied.path());
         begin_link(&app, &f.stats);

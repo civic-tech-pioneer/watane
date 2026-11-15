@@ -88,8 +88,8 @@ fn ac1_find_add_index() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     f.add(&app);
-    let row = format!("[data-index='{}']", f.ivy.identity());
-    for value in ["Ivy", &f.ivy.fingerprint(), "1 mod", "ok"] {
+    let row = format!("[data-index='{}']", f.ivy.identity().unwrap());
+    for value in ["Ivy", &f.ivy.fingerprint().unwrap(), "1 mod", "ok"] {
         contains(&app, &row, value);
     }
     assert!(
@@ -131,7 +131,7 @@ fn ac1_find_search_install() {
         "0.1.0",
         "Keep books",
         "Alice",
-        &f.alice.fingerprint(),
+        &f.alice.fingerprint().unwrap(),
         "signature verified",
         "listed by Ivy",
         NOTE,
@@ -153,7 +153,7 @@ fn ac1_find_search_install() {
         serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
             .unwrap();
     assert_eq!(
-        follows["channels"][f.alice.identity().to_string()]["followed"],
+        follows["channels"][f.alice.identity().unwrap().to_string()]["followed"],
         false
     );
     app.eval(
@@ -171,7 +171,7 @@ fn ac1_find_search_install() {
         serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
             .unwrap();
     assert_eq!(
-        follows["channels"][f.alice.identity().to_string()]["followed"],
+        follows["channels"][f.alice.identity().unwrap().to_string()]["followed"],
         true
     );
     open(&app, "reading-list");
@@ -193,7 +193,7 @@ fn ac1_find_stale_mark() {
     let follows: Value =
         serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
             .unwrap();
-    let checked = follows["channels"][f.alice.identity().to_string()]["last_success"]
+    let checked = follows["channels"][f.alice.identity().unwrap().to_string()]["last_success"]
         .as_u64()
         .unwrap();
     drop(f.alice_site.take());
@@ -240,7 +240,7 @@ fn ac2_find_skipped_channel_and_cause() {
     skipped.publish(update_package("0.1.0", false)).unwrap();
     let site = Site::serve(skipped.site_dir());
     let link = Link::new(
-        skipped.identity(),
+        skipped.identity().unwrap(),
         &site.base,
         Some(&"reading-list".parse().unwrap()),
     )
@@ -249,8 +249,8 @@ fn ac2_find_skipped_channel_and_cause() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     f.add(&app);
-    let row = format!("[data-index='{}']", f.ivy.identity());
-    contains(&app, &row, &skipped.fingerprint());
+    let row = format!("[data-index='{}']", f.ivy.identity().unwrap());
+    contains(&app, &row, &skipped.fingerprint().unwrap());
     contains(&app, &row, "local address");
     assert!(app.quit().success());
 }
@@ -279,7 +279,7 @@ fn ac1_find_list_in_my_index() {
     );
     let plan = app.eval("consent", "document.body.textContent");
     for value in [
-        &format!("{}/reading-list", f.alice.identity()),
+        &format!("{}/reading-list", f.alice.identity().unwrap()),
         f.alice_link.base(),
         NOTE,
     ] {
@@ -356,7 +356,7 @@ fn ac1_find_list_in_my_index() {
     );
     contains(
         &app,
-        &format!("#indexes [data-index='{}']", f.alice.identity()),
+        &format!("#indexes [data-index='{}']", f.alice.identity().unwrap()),
         "Alice",
     );
     assert!(app.quit().success());

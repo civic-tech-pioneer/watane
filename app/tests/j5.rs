@@ -266,7 +266,7 @@ fn ac1_journey_j5() {
                 .to_vec(),
         )
         .unwrap();
-    let frank_key = frank.identity().to_string();
+    let frank_key = frank.identity().unwrap().to_string();
     let (fresh, _fresh_site, _) = participant(fresh_home.path(), "Eve");
     // This fresh home has never fetched Carol's package. Keep her channel
     // metadata only so the failed provider can still be named in the pick.

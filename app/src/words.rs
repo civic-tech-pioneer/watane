@@ -247,12 +247,12 @@ mod tests {
         )
         .unwrap();
         dist.set_name("Frank").unwrap();
-        let view = dist.channel(&dist.identity()).unwrap();
+        let view = dist.channel(&dist.identity().unwrap()).unwrap();
         assert!(!view.followed);
         let parties = Parties::new();
         parties.remember(&[view]);
-        let label = party_label(&party(&dist.identity().to_string(), &parties));
-        assert_eq!(label, format!("Frank ({})", dist.fingerprint()));
+        let label = party_label(&party(&dist.identity().unwrap().to_string(), &parties));
+        assert_eq!(label, format!("Frank ({})", dist.fingerprint().unwrap()));
     }
     #[test]
     fn ac5_index_errors_are_plain_and_name_the_index() {

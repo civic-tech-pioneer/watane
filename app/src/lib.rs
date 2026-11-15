@@ -81,7 +81,12 @@ impl From<watane_dist::DistError> for CmdError {
             }
             _ => cause_chain(&e),
         };
-        Self::new("dist", message)
+        let code = if matches!(e, watane_dist::DistError::NoIdentity) {
+            "bad_input"
+        } else {
+            "dist"
+        };
+        Self::new(code, message)
     }
 }
 impl From<std::io::Error> for CmdError {
@@ -395,6 +400,48 @@ mod tests {
         );
         let other = watane_host::HostError::AlreadyServing;
         assert_eq!(super::serve_error(&other), super::cause_chain(&other));
+    }
+    #[test]
+    fn ac5_production_identity_reads_do_not_unwrap_or_expect() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in std::fs::read_dir(src).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let mut test_attribute = false;
+            let mut test_module = false;
+            let mut production = String::new();
+            for line in source.lines() {
+                if test_attribute && line.starts_with("mod ") {
+                    test_module = true;
+                }
+                if !test_module {
+                    production.extend(line.chars().filter(|c| !c.is_whitespace()));
+                } else if line == "}" {
+                    test_module = false;
+                }
+                test_attribute = line == "#[cfg(test)]";
+            }
+            for method in ["identity", "fingerprint"] {
+                for panic in ["unwrap", "expect"] {
+                    assert!(
+                        !production.contains(&format!(".{method}().{panic}(")),
+                        "{}: {method}().{panic}() in production",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn ac3_no_identity_command_is_bad_input_with_dist_text() {
+        let error = watane_dist::DistError::NoIdentity;
+        let text = error.to_string();
+        let mapped = super::CmdError::from(error);
+        assert_eq!(mapped.code, "bad_input");
+        assert_eq!(mapped.message, text);
     }
     #[test]
     fn ac3_duplicate_version_omits_sequence() {
