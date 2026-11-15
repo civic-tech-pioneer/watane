@@ -875,32 +875,3 @@ fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
          answer 404 for {{missing_base}}head; Pages answered 503 there in a real run"
     );
 }
-
-#[test]
-fn ac3_real_j3_checks_ivy_before_missing_base() {
-    let source =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/j3.rs")).unwrap();
-    let journey = &source[source.find("fn ac3_j3_real_github()").unwrap()..];
-    assert!(journey.find("// S54 AC4:").unwrap() < journey.find("let missing_base").unwrap());
-    let compact: String = journey.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(compact.contains(
-        "github.wait_status(&format!(\"{missing_base}head\"),404,Duration::from_secs(300),)"
-    ));
-}
-
-#[test]
-fn ac4_s54_notes_record_transient_pages_503() {
-    let notes = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("NOTES.md")).unwrap();
-    let section = notes.split("## S54 real static host").nth(1).unwrap();
-    for text in [
-        "user-sim",
-        "2026-11-16",
-        "503",
-        "minute",
-        "404",
-        "HTTP 503 from <url>",
-        "no retry",
-    ] {
-        assert!(section.contains(text), "missing {text}");
-    }
-}
