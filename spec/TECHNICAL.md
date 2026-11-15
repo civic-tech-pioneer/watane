@@ -332,12 +332,15 @@ take effect, the request table, the `catalog` page message, `Confirm::
 and its release encoding in `pkg/TECHNICAL.md` 4.5, 5.1 and 7.2 (pkg stage
 11); the manage fake and `manages` in `dev/TECHNICAL.md` 8.1 (dev stage
 13); the words, the consent requests and J10's tests in `app/TECHNICAL.md`
-17 (app stage J). J10 lives in `app/tests/j10.rs`. Four choices are open
+17 (app stage J). J10 lives in `app/tests/j10.rs`. Six choices are open
 for the human, each built so that either answer keeps the interface
-(`host/TECHNICAL.md` 18, Q28 to Q31): whether a removal that keeps the
+(`host/TECHNICAL.md` 18, Q28 to Q33): whether a removal that keeps the
 data, and an enable, are requests (built: yes); whether a manager may
-install from a channel the home does not read (built: no); and whether a
-manager may open a page (built: no).
+install from a channel the home does not read (built: no); whether a
+manager may open a page (built: no); how to stop a manager that asks
+again after each deny (built: only by withdrawing `Manage`); and whether
+only a manager's own page may drive its grant (built: no, like every
+grant).
 
 The main mod (W36) and the manager of the app are not a step: they are
 app stage I (`app/TECHNICAL.md` 5.3, 5.4), with the `main` key in

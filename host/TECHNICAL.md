@@ -1897,3 +1897,19 @@ or whether one is shown.
   if the human agrees: it gives no authority, only a window of a mod the
   participant installed. Cost: one added function in `manage` and one
   `Reduction`-like hook; existing managers are unaffected.
+- **Q32** Asking again after a deny. One request is open at a time, but a
+  manager may ask again at once; only withdrawing `Manage` stops it, the
+  same bound that a local program has over `/api/install`. (a) No more
+  (built). (b) The consent view offers "Deny and stop asks from <mod>",
+  which withdraws `Manage`. (c) A pause of 60 s after a deny. Recommended:
+  (b), in app stage J; it reuses `revoke`. Cost: one button and words in
+  the app; the interface of 6.10 does not change.
+- **Q33** Who uses a manager's grant. Any party that may call the manager
+  (its page, an agent whose toolset names its functions, a mod with a call
+  grant to it, a delivery) acts with its grant, as for every grant of a
+  provider (6.10). (a) The host does not narrow it (built); the manager
+  reads `watane:host/caller`, and the toolset view lists its functions.
+  (b) The host allows manage functions only in a chain started by the
+  manager's own page. Recommended: (a) for now, with the toolset view
+  naming a manager's functions as such. Cost to undo: (b) is one check at
+  each function in 6.10, but breaks a manager that an agent drives.
