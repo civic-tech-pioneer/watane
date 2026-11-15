@@ -978,9 +978,10 @@ app is attached to decide the request") and queues nothing. Then:
 1. At most one request of a manager is pending. A second fails with
    `request_open` ("<local> already has a request open: <id>"), checked
    at the call against pending and queued requests.
-2. The host builds `ManageRequest { id, by, ask }` and runs
-   `Confirm::manage` on the tokio runtime it serves on (8.1). The future
-   resolves to `ManageOutcome`; the request becomes `approved`, `denied`
+2. The host builds `ManageRequest { id, by, ask }`, calls
+   `Confirm::manage` when the effect is applied, and polls the future on
+   its own thread with a small tokio runtime, so a request needs no
+   served host. The future resolves to `ManageOutcome`; the request becomes `approved`, `denied`
    or `failed(<message>)`.
 3. When the manager loses `Manage` (withdraw, disable or remove of the
    manager, by anyone), the host drops the futures of its pending
@@ -1009,10 +1010,15 @@ call grant to it, or a delivery. The host does not narrow this; a manager
 reads `watane:host/caller` when it cares (dev's template says so). A
 request still needs the participant in the consent view (F-AGENT-4).
 
+The refusal of a preview or of a home without an app comes before every
+other check of a `request-*`, so a preview answers `refused` even for an
+enabled mod.
+
 **In a harness** (2.6), the manage import is linked to fakes:
 `mods` and `request` return the file's fake for
 `watane:host/manage`, else `[]` and `pending`; every reduction returns
-`ok` and every request `ok("r1")`, `ok("r2")`, ... in call order, unless
+`ok` and every request `ok("r1")`, `ok("r2")`, ... in call order across
+the calls of one harness (a failed call takes no number), unless
 the file fakes it. Each reduction and request is recorded in
 `Outcome.manages` as a `ManageRecord`, in call order; reads are not
 recorded. A failed call records none.

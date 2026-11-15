@@ -401,6 +401,7 @@ impl Host {
         next.relink(self.home(), self.is_preview())?;
         next.save(self.home())?;
         *catalog = next;
+        drop(catalog);
         std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))?;
         if delete_data {
             self.state.delete(&identity)?;
