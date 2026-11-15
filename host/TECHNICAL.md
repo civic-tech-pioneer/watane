@@ -1311,8 +1311,8 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `cyc-a`, `cyc-b` | each imports an interface that the other exports |
 | `net` | `[http] hosts = ["example.org"]`; export `api { get: func(url: string) -> result<u16, string>; }` |
 | `empty` | `mod.toml` and an empty world; no part |
-| `menu` (step 9) | outlet `menu { ask: func() -> list<string>; clicked: func(id: string); }`; export `api { items: func() -> list<string>; ping: func() -> string; }`, where `items` returns `ask()` |
-| `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]`; `clicked` does nothing |
+| `menu` (step 9) | outlet `menu { ask: func() -> list<string>; clicked: func(id: string); }`; export `api { items: func() -> list<string>; ping: func() -> string; click: func(id: string); }`, where `items` returns `ask()` and `click` calls `clicked`; its world is named `shell`, because the outlet already has the name `menu` |
+| `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]` and puts the state key `asked`; `clicked` puts the state key `clicked` |
 | `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 

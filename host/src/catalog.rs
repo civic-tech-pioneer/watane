@@ -555,7 +555,7 @@ impl Catalog {
             }
         }
         let missing = bind(&mut next, &worlds, &seen, harness, preview, true)?;
-        let order = provider_order(&next)?;
+        let order = provider_order(&next, &worlds)?;
         next.sort_by_key(|m| order.iter().position(|n| n == &m.local).unwrap());
         for Prepared(_, installed, _, _) in &mut prepared {
             let resolved = next.iter().find(|m| m.local == installed.local).unwrap();
@@ -739,7 +739,7 @@ impl Catalog {
             preview,
             false,
         )?;
-        provider_order(&self.mods)?;
+        provider_order(&self.mods, &worlds)?;
         Ok(())
     }
     pub fn save(&mut self, home: &Path) -> Result<(), HostError> {
@@ -901,10 +901,14 @@ fn ambiguous(
     }
 }
 
-fn provider_order(mods: &[InstalledMod]) -> Result<Vec<LocalName>, HostError> {
+fn provider_order(
+    mods: &[InstalledMod],
+    worlds: &BTreeMap<LocalName, watane_pkg::World>,
+) -> Result<Vec<LocalName>, HostError> {
     fn visit(
         local: &LocalName,
         mods: &[InstalledMod],
+        worlds: &BTreeMap<LocalName, watane_pkg::World>,
         path: &mut Vec<LocalName>,
         done: &mut BTreeSet<LocalName>,
     ) -> Result<(), HostError> {
@@ -933,10 +937,24 @@ fn provider_order(mods: &[InstalledMod]) -> Result<Vec<LocalName>, HostError> {
             .filter(|l| matches!(l.kind, LinkKind::Call))
             .filter_map(|l| l.provider.as_ref())
             .collect();
+        // A collect calls into the subscriber, so it is an edge too (4.2 step 8).
+        let collects = worlds.get(local).map(|w| &w.collects[..]).unwrap_or(&[]);
+        providers.extend(mods.iter().filter_map(|s| {
+            s.links
+                .iter()
+                .any(|l| {
+                    matches!(l.kind, LinkKind::Subscribe)
+                        && l.provider.as_ref() == Some(local)
+                        && l.provider_interface
+                            .as_ref()
+                            .is_some_and(|i| collects.contains(i))
+                })
+                .then_some(&s.local)
+        }));
         providers.sort();
         providers.dedup();
         for p in providers {
-            visit(p, mods, path, done)?;
+            visit(p, mods, worlds, path, done)?;
         }
         path.pop();
         done.insert(local.clone());
@@ -946,7 +964,7 @@ fn provider_order(mods: &[InstalledMod]) -> Result<Vec<LocalName>, HostError> {
     names.sort();
     let mut done = BTreeSet::new();
     for n in names {
-        visit(n, mods, &mut Vec::new(), &mut done)?;
+        visit(n, mods, worlds, &mut Vec::new(), &mut done)?;
     }
     // Call edges must be acyclic. Subscription edges only prefer providers
     // first; a subscription cycle cannot impose a total dependency order.

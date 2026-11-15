@@ -1,0 +1,4 @@
+package mods:menu@0.1.0;
+interface menu { ask: func() -> list<string>; clicked: func(id: string); }
+interface api { items: func() -> list<string>; ping: func() -> string; click: func(id: string); }
+world shell { import menu; export api; }

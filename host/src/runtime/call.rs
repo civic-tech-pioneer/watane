@@ -207,6 +207,81 @@ impl Invocation {
         )
     }
 
+    /// A collect of the collector's own outlet (9.4): the joined answers.
+    pub(super) fn collect(
+        &self,
+        interface: &InterfaceName,
+        function: &str,
+        args: Value,
+        mut fuel: u64,
+    ) -> Result<(Value, u64), CallError> {
+        if let Some(fakes) = &self.chain.fakes {
+            let key = format!(
+                "{}:{}/{}",
+                interface.namespace(),
+                interface.package(),
+                interface.interface()
+            );
+            let value = fakes
+                .get(&key)
+                .and_then(|functions| functions.get(function))
+                .cloned()
+                .unwrap_or_else(|| Value::Array(Vec::new()));
+            return Ok((value, fuel));
+        }
+        let current = self.chain.host.catalog.lock().unwrap().clone();
+        let mut subscribers: Vec<_> = current
+            .mods
+            .iter()
+            .filter(|m| m.enabled && m.error.is_none())
+            .collect();
+        subscribers.sort_by(|a, b| a.local.cmp(&b.local));
+        let mut answers = Vec::new();
+        for m in subscribers {
+            for link in m.links.iter().filter(|l| {
+                matches!(l.kind, LinkKind::Subscribe)
+                    && l.provider.as_ref() == Some(&self.local)
+                    && l.provider_interface.as_ref() == Some(interface)
+            }) {
+                if !m.grants.iter().any(|g| g.granted && matches!(&g.grant, Grant::Subscribe { interface, .. } if interface == &link.interface)) {
+                    continue;
+                }
+                let nested = Self {
+                    chain: self.chain.clone(),
+                    local: m.local.clone(),
+                    depth: self.depth.saturating_add(1),
+                    hop: self.hop,
+                };
+                match nested.invoke(
+                    &Caller::Mod(self.local.clone()),
+                    &format!("{}.{function}", link.interface),
+                    args.clone(),
+                    fuel,
+                    true,
+                ) {
+                    Ok((Value::Array(list), left)) => {
+                        fuel = left;
+                        answers.extend(list);
+                    }
+                    Ok(_) => eprintln!(
+                        "watane: collect {interface}.{function} of {} from {} failed: not a list",
+                        self.local, m.local
+                    ),
+                    Err(error)
+                        if matches!(error.code, CallCode::Limit(Limit::Time | Limit::Fuel)) =>
+                    {
+                        return Err(error);
+                    }
+                    Err(error) => eprintln!(
+                        "watane: collect {interface}.{function} of {} from {} failed: {:?}: {}",
+                        self.local, m.local, error.code, error.message
+                    ),
+                }
+            }
+        }
+        Ok((Value::Array(answers), fuel))
+    }
+
     fn invoke(
         &self,
         caller: &Caller,
@@ -267,7 +342,7 @@ impl Invocation {
             if let Caller::Mod(other) = caller {
                 // Selection can precede a wait for this mod's lock. Check
                 // authority again before invoking the selected export.
-                let authorized = if subscription && chain.publish {
+                let authorized = if subscription && (chain.publish || self.depth > 0) {
                     current.mods.iter().any(|p| &p.local == other && p.enabled)
                         && active.links.iter().any(|link| {
                             matches!(link.kind, LinkKind::Subscribe)

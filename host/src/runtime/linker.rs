@@ -63,10 +63,37 @@ pub(super) fn linker(
         for (name, item) in instance.exports(engine) {
             if let ComponentItem::ComponentFunc(func) = item.ty {
                 if func.results().len() != 0 {
-                    return Err(HostError::Internal(format!(
-                        "outlet {outlet}.{name} must return nothing"
-                    ))
-                    .into());
+                    // A collect (9.4); pkg checked that its result is a list.
+                    let collect_interface = outlet.clone();
+                    let collect_function = name.to_owned();
+                    interface.func_new(name, move |mut ctx, ty, values, results| {
+                        let args = ty
+                            .params()
+                            .zip(values)
+                            .map(|((name, _), value)| {
+                                Ok((name.to_owned(), super::json::encode(value)?))
+                            })
+                            .collect::<Result<serde_json::Map<_, _>, CallError>>()?;
+                        let invocation = ctx.data().invocation.clone();
+                        let fuel = ctx.get_fuel()?;
+                        let (value, fuel) = invocation.collect(
+                            &collect_interface,
+                            &collect_function,
+                            args.into(),
+                            fuel,
+                        )?;
+                        ctx.set_fuel(fuel)?;
+                        for (ty, result) in ty.results().zip(results) {
+                            *result = super::json::decode(&ty, &value, "$").map_err(|error| {
+                                CallError::new(
+                                    crate::CallCode::Trap,
+                                    format!("{collect_interface}.{collect_function}: {error}"),
+                                )
+                            })?;
+                        }
+                        Ok(())
+                    })?;
+                    continue;
                 }
                 let event_interface = outlet.to_string();
                 let event_function = name.to_owned();

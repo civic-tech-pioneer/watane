@@ -1,0 +1,2 @@
+package mods:item-bad@0.1.0;
+world item-bad { import watane:host/state@0.1.0; export mods:menu/menu@0.1.0; }

@@ -1,0 +1,2 @@
+package mods:item-spin@0.1.0;
+world item-spin {  export mods:menu/menu@0.1.0; }

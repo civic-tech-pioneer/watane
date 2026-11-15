@@ -1,0 +1,2 @@
+package mods:item-back@0.1.0;
+world item-back { import mods:menu/api@0.1.0; export mods:menu/menu@0.1.0; }
