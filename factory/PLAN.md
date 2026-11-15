@@ -458,15 +458,15 @@ The design landed on main as `7be1bfe` (2026-11-15), the review's questions deci
 keyless open (log/TECHNICAL 12 item 13), and the app's views for own machines (net Q3). So step 8
 starts with a design slice, and net's N1, which needs none of those, runs beside it.
 
-Open for the human: VISION says each step works before the next starts, but nothing in D1 needs
-real GitHub or a real static host, and step 7 is blocked on the human anyway. The product owner
-recommends starting S59 and S60 now, beside step 7. Neither is handed out until the human answers.
+Decided by the human 2026-11-15: step 8 runs beside step 7. VISION says each step works before the
+next starts, but nothing in D1 needs real GitHub or a real static host, and step 7 waits on the
+human for its credentials and machines. S59 and S60 started the same day.
 
 J8 runs on one machine: net's test plan binds every node to loopback with mDNS off (net/TECHNICAL
 7), so the journey's server and laptops are homes on the Mac. Running it on real separate machines
 is a step-7-style check, after S55.
 
-- [ ] **S59 Step 8 is designed down to its last subsystem (design slice).** Writes `node/VISION.md`,
+- [~] **S59 Step 8 is designed down to its last subsystem (design slice).** Writes `node/VISION.md`,
   `node/FUNCTIONAL.md` and `node/TECHNICAL.md`, with a build plan: the crate that joins `dist` and
   `net` (neither knows the other), `Holdings` over a `Dist` handle, the `told`, `need` and
   `need_blob` calls, and the `watane-node` program (a keyless home, full or light, relay by flag).
@@ -479,7 +479,7 @@ is a step-7-style check, after S55.
   `Stage coverage` here gets one row each. No code. Touches: new `node/`, dist, log, app, net
   (Q2, Q3 closed). Cloud: documents only. A reviewed design merges; a choice that is hard to revert
   goes to the human as change, alternatives and consequences.
-- [ ] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Creates the `net`
+- [~] **S60 Two machines exchange heads and entries over `watane/1` (net N1).** Creates the `net`
   crate and adds it to the workspace: the node key, the pairing code text, the wire codecs and their
   limits in bytes, `hello`, `heads`, `entries` and `fork` between two local nodes, and the 4.3
   golden vectors made with `ed25519-compact`. Pins iroh, iroh-blobs and iroh-gossip, and answers
@@ -718,6 +718,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S56: delivered 2026-11-14 and merged; routine `trig_01Gcw9f5gMY9qgT77QLVyPgf` finished, branch removed.
 - S57: delivered 2026-11-14 and merged; routine `trig_019eZQGSqCu2ziUPVNcDiXD8` finished, branch removed.
 - S58: delivered 2026-11-14 and merged; foreman exited, worktree and branch removed.
+- S59: cloud routine `trig_0166dMK2WuQviWZytu8vwVVd` (running, handed out 2026-11-15), branch `slice/s59`.
+- S60: cloud routine `trig_01M5extWhubXi1jcvW9VAoyd` (running, handed out 2026-11-15), branch `slice/s60`.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
 - S38: `e17c0e09` (sessionId `e17c0e09-86d9-424b-975a-e69ca8147d77`), worktree `.claude/worktrees/s38` (stopped, removed).
