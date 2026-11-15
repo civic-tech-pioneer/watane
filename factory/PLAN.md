@@ -866,6 +866,16 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- S53 (2026-11-15): `watane-dev publish --push` cannot publish under a GitHub org. It takes the
+  owner from `gh api user` (the person's login), and forks without `organization`, which a token
+  scoped to an org refuses (403). Found on real GitHub in `minmax-fund`. Options: (a) a flag
+  `publish --push --owner <account>`: derived repos become `<owner>/<slug>` and
+  `<owner>/watane-channel`, and the fork adds `organization=<owner>`; fake-gh checks it. (b) No change;
+  J5's fork stays proven only against fake-gh. (c) dev takes the owner from the site's git origin when
+  there is one: no flag, but implicit, and a person with no channel yet still gets the wrong account.
+  Recommended: (a), as its own slice after S65 (which owns dev/src). Cost to undo: (a) a public flag
+  that agents read, so removing it breaks them; (b) none, but anyone publishing under an org hits
+  the bug. Meanwhile S53 runs J5 up to Carol's publish (option b).
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
