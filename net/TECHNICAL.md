@@ -379,6 +379,12 @@ socket (NET-F-3). Otherwise start the iroh endpoint with the node key,
 the three ALPNs, mDNS, the relays of `book.json` (or none), the DHT only
 when `dht` is true, and the relay server when `relay_server` is set.
 
+Which switches win at open (node Q1): `Options.on` false keeps the
+endpoint off for that open, whatever `book.json` says. With `Options.on`
+true, `book.json` decides `on`, the relays and the DHT; a new home's
+`book.json` has all of them off. `set_options` writes `book.json`. Until
+N4 builds `book.json`, `Options` alone decides (N1).
+
 ### 5.2 Connect and hello
 
 The node key of the other side comes from the QUIC handshake (NET-F-4).
