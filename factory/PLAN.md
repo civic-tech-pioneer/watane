@@ -690,7 +690,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
 `Manage`; its WIT, request forms, consent words and J10's tests wait for a design slice
 (spec/TECHNICAL 9). The main mod (W36) is not a step: pkg stage 10 and app stage I, buildable now.
 
-- [~] **S73 Step 10 designed: the management interface (W35).** Branch `slice/s73`. A design slice:
+- [x] **S73 Step 10 designed: the management interface (W35).** Branch `slice/s73`. A design slice:
   `watane:host/manage` in WIT (what a managing mod sees: installed mods, grants, links; what it does
   alone: disable, withdraw a grant, close a page; what it only asks for: install, update, grant, a pick
   of a provider, a removal that deletes data), how a request reaches the consent view and how its
@@ -700,6 +700,13 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   either decided in the documents or listed for the human with options. Touches: spec/TECHNICAL.md,
   spec/FUNCTIONAL.md (J10 only), pkg, host, dev TECHNICAL and FUNCTIONAL; app/TECHNICAL.md only in a
   new section at its end (S74 edits app/TECHNICAL 5.3 and 5.4). Docs only. Cloud.
+  Delivered (merged as 1153b15): step 10 can be built from the documents. host 6.4 (the WIT of `watane:host/manage`), 6.10 (reads; three reductions: disable, withdraw, close-page; requests: install, update, enable, grant, remove, each an id with `request(id)`; effects wait in the outbox and the grant is checked again before each; one open request per manager), 12.1 (`Confirm::{manage, reduced}`, `Requester::Mod`); pkg 4.5, 5.1, 7.2 (`Grant::Manage`, CBOR `[4]`, grant limit 82); dev 8.1 (a manage fake, `manages`); app 17 (words, consents, S43 to S48, j10.rs; APP-F-70 to 75 sit in 17.1 until S74 merges). Build rows: pkg 11, host 11, dev 13, app J. Validator PASS in round 1. Six questions for the human (host/TECHNICAL 18, Q28 to Q33), each built so either answer keeps the WIT.
+- [ ] **S76 A mod manages Alice's mods, and asks for anything more (pkg 11, host 11, dev 13).**
+  Branch `slice/s76`. Builds the rows S73 wrote: pkg 11 (`Grant::Manage`, `World::manage`), host 11
+  (`watane:host/manage`, host 6.10 and 12.1; S40 to S47), dev 13 (the manage fake, DEV-S-53).
+  Outcome: host S40 to S47 and DEV-S-53 pass; every earlier suite passes. Built as designed (the
+  options marked "built" in Q28 to Q33); a change from the human's answers comes as its own task.
+  Touches: pkg, host, dev. Cloud. After S71 (dev).
 - [~] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
   pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
   5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
@@ -740,6 +747,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | host | 10 collect | 9 | done (S65) |
 | dev | 12 collect fakes and answers | 9 | done (S65) |
 | app | H extension points (J9) | 9 | done (S66) |
+| pkg | 10 `main` in `mod.toml` | 10 | open (S74) |
+| app | I main mod and manager | 10 | open (S74) |
+| pkg | 11 `Grant::Manage` | 10 | open |
+| host | 11 `watane:host/manage` | 10 | open |
+| dev | 13 manage fake | 10 | open |
+| app | J manage requests, J10 | 10 | open |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
@@ -970,6 +983,16 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- Step 10 (2026-11-15, from S73; host/TECHNICAL 18). Each is designed so either answer keeps the
+  WIT; the design builds the first option. Q28 a removal that keeps the data: (a) a request, (b) a
+  direct reduction; rec. (a). Q29 enable: (a) a request, (b) direct only for a mod this manager
+  disabled, (c) direct always; rec. (a). Q30 install from a channel the home does not read: (a) only
+  releases readable through channels the home already reads, (b) any link after a first consent;
+  rec. (a): (b) lets a manager make the app fetch a URL no grant names. Q31 open-page: (a) none, (b)
+  a direct open-page that opens no window while a consent is open; rec. (b). Q32 a manager asking
+  again after each deny: (a) only withdrawing Manage stops it, (b) a "Deny and stop asks" button that
+  withdraws Manage, (c) a 60 s pause; rec. (b). Q33 who may call a manager uses its grant: (a) as for
+  every grant, (b) only the manager's own page; rec. (a): (b) breaks agent-driven managers.
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
