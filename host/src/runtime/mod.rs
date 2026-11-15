@@ -22,6 +22,7 @@ pub(crate) struct Ctx {
     stderr: wasmtime_wasi::p2::pipe::MemoryOutputPipe,
     deadline: Instant,
     outbox: Vec<crate::bus::Emission>,
+    manages: Vec<crate::manage::Effect>,
     invocation: call::Invocation,
 }
 #[derive(Clone, Debug)]
@@ -82,6 +83,7 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
         let allowed = base
             || name == "watane:host/caller@0.1.0"
             || (name == "watane:host/state@0.1.0" && m.world().storage)
+            || (name == crate::manage::MANAGE && m.world().manage)
             || m.world()
                 .events
                 .iter()

@@ -20,6 +20,7 @@ use tokio_stream::{
 type Message = (LocalName, Arc<str>);
 pub(crate) const CLOSE: &str = "";
 pub(crate) const CHANGED: &str = r#"{"type":"changed"}"#;
+pub(crate) const CATALOG: &str = r#"{"type":"catalog"}"#;
 pub(crate) const RELOAD: &str = r#"{"type":"reload"}"#;
 
 pub(crate) struct Emission {

@@ -763,7 +763,7 @@ fn declares(m: &InstalledMod, provider: &Provider) -> bool {
     })
 }
 
-fn parse_identity(identity: &str) -> Option<Provider> {
+pub(crate) fn parse_identity(identity: &str) -> Option<Provider> {
     let (publisher, slug) = identity.split_once('/')?;
     Some(Provider {
         slug: slug.parse().ok()?,

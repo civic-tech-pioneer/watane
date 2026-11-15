@@ -44,6 +44,10 @@ path = "tests/binds.rs"
 name = "collect"
 path = "tests/collect.rs"
 
+[[test]]
+name = "manage"
+path = "tests/manage.rs"
+
 [dependencies]
 watane-pkg = { path = "../pkg" }
 watane-log = { path = "../log" }

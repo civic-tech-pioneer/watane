@@ -15,6 +15,14 @@ pub type Fakes = BTreeMap<String, BTreeMap<String, Value>>;
 pub struct Outcome {
     pub value: Value,
     pub events: Vec<EventRecord>,
+    /// Step 10: the reductions and requests of `watane:host/manage` (6.10).
+    pub manages: Vec<ManageRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManageRecord {
+    pub function: String,
+    pub args: Value,
 }
 
 #[derive(Debug, Clone, PartialEq)]

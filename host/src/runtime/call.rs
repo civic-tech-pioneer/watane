@@ -14,6 +14,7 @@ use watane_pkg::{Grant, InterfaceName};
 #[derive(Default)]
 struct Effects {
     events: Vec<(LocalName, EventRecord, u8)>,
+    manages: Vec<crate::manage::Effect>,
 }
 struct Chain {
     host: Arc<Host>,
@@ -110,10 +111,28 @@ pub(crate) fn run(
         .iter()
         .map(|(_, event, _)| event.clone())
         .collect();
+    let manages = effects.manages;
+    let records = if chain.fakes.is_some() {
+        if result.is_ok() {
+            let requests = manages
+                .iter()
+                .filter(|e| matches!(e.action, crate::manage::Action::Fake { request: true }))
+                .count();
+            host.manage_serial.fetch_add(requests, Ordering::AcqRel);
+        }
+        manages.iter().map(|e| e.record.clone()).collect()
+    } else {
+        host.apply_manage(manages);
+        Vec::new()
+    };
     if publish {
         host.events.finish(host, &chain);
     }
-    result.map(|(value, _)| Outcome { value, events })
+    result.map(|(value, _)| Outcome {
+        value,
+        events,
+        manages: records,
+    })
 }
 
 impl Invocation {
@@ -132,6 +151,30 @@ impl Invocation {
                 format!("{} has no grant for watane:host/state", self.local),
             ))
         }
+    }
+    /// A function of `watane:host/manage` called by this invocation's mod (6.10).
+    pub(super) fn manage(
+        &self,
+        queued: &mut Vec<crate::manage::Effect>,
+        function: &str,
+        args: Value,
+    ) -> Result<Value, CallError> {
+        let serial = self.chain.host.manage_serial.load(Ordering::Acquire);
+        let fake = self.chain.fakes.as_ref().map(|fakes| {
+            (
+                fakes.get("watane:host/manage").cloned().unwrap_or_default(),
+                serial,
+            )
+        });
+        let chain = self.chain.effects.lock().unwrap().manages.clone();
+        self.chain.host.manage_call(
+            &self.local,
+            fake.as_ref().map(|(fakes, serial)| (fakes, *serial)),
+            queued,
+            &chain,
+            function,
+            args,
+        )
     }
     pub(super) fn nested(
         &self,
@@ -433,8 +476,10 @@ impl Invocation {
                 })
             })
             .collect::<Result<Vec<_>, CallError>>()?;
+        let manages = ctx.manages;
         let changed = ctx.state.commit()?;
         let mut effects = chain.effects.lock().unwrap();
+        effects.manages.extend(manages);
         if chain.publish {
             // Enqueue before releasing the mod lock; no invocation waits here.
             host.events.enqueue(self, &events, changed);
@@ -674,6 +719,9 @@ fn process(delivery: &Delivery) {
                 host.limits.fuel,
                 true,
             );
+            // The effects of a delivery apply after its invoke (6.10).
+            let manages = std::mem::take(&mut subscriber.effects.lock().unwrap().manages);
+            host.apply_manage(manages);
             // Nested calls have also released their locks before these events run.
             host.events.ready(&subscriber);
             if let Err(error) = result {

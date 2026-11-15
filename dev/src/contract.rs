@@ -444,6 +444,7 @@ mod tests {
                     Ok(Outcome {
                         value: Value::Null,
                         events: vec![],
+                        manages: vec![],
                     })
                 } else {
                     assert!(matches!(target, Target::Call(name) if name == "api.received"));
@@ -451,6 +452,7 @@ mod tests {
                     Ok(Outcome {
                         value: json!(["Emma"]),
                         events: vec![],
+                        manages: vec![],
                     })
                 }
             },
@@ -482,6 +484,7 @@ mod tests {
                             function: "received".into(),
                             args,
                         }],
+                        manages: vec![],
                     })
                 },
             );
@@ -514,6 +517,7 @@ mod tests {
                 Ok(Outcome {
                     value: file.fakes["mods:reading-list/books"]["all"].clone(),
                     events: vec![],
+                    manages: vec![],
                 })
             },
         );
@@ -616,6 +620,7 @@ mod tests {
                         json!(1)
                     },
                     events: vec![],
+                    manages: vec![],
                 })
             },
         );
@@ -656,6 +661,7 @@ mod tests {
                         Ok(Outcome {
                             value: json!(1),
                             events: vec![],
+                            manages: vec![],
                         })
                     } else {
                         Err(CallError {
@@ -717,6 +723,7 @@ mod tests {
                                 args: json!({"count":count}),
                             })
                             .collect(),
+                        manages: vec![],
                     })
                 });
             assert_eq!(passed, u32::from(passes), "{failures:?}");
@@ -797,6 +804,7 @@ mod tests {
                             function: "counted".into(),
                             args: json!({"count":1}),
                         }],
+                        manages: vec![],
                     })
                 });
             assert_eq!(passed, u32::from(passes));

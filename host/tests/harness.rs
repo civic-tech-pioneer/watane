@@ -15,7 +15,8 @@ fn ac1_counter_returns_values_and_exact_events_for_each_call() {
         harness.call("api.get", json!({})).unwrap(),
         Outcome {
             value: json!(0),
-            events: vec![]
+            events: vec![],
+            manages: vec![]
         }
     );
     assert_eq!(
@@ -27,6 +28,7 @@ fn ac1_counter_returns_values_and_exact_events_for_each_call() {
                 function: "counted".into(),
                 args: json!({"count":1}),
             }],
+            manages: vec![]
         }
     );
     assert_eq!(
@@ -38,6 +40,7 @@ fn ac1_counter_returns_values_and_exact_events_for_each_call() {
                 function: "counted".into(),
                 args: json!({"count":2}),
             }],
+            manages: vec![]
         }
     );
     assert_eq!(
@@ -45,6 +48,7 @@ fn ac1_counter_returns_values_and_exact_events_for_each_call() {
         Outcome {
             value: json!("page"),
             events: vec![],
+            manages: vec![]
         }
     );
 }
@@ -75,6 +79,7 @@ fn ac3_failed_call_rolls_back_state_and_events_and_unknown_function_fails() {
         Outcome {
             value: json!(1),
             events: vec![],
+            manages: vec![]
         }
     );
     assert_eq!(
@@ -86,6 +91,7 @@ fn ac3_failed_call_rolls_back_state_and_events_and_unknown_function_fails() {
                 function: "counted".into(),
                 args: json!({"count":2}),
             }],
+            manages: vec![]
         }
     );
     let error = harness.call("api.unknown", json!({})).unwrap_err();
@@ -101,6 +107,7 @@ fn ac4_echo_accepts_named_and_positional_arguments() {
             Outcome {
                 value: json!("hello"),
                 events: vec![],
+                manages: vec![]
             }
         );
     }
@@ -161,7 +168,8 @@ fn ac9_s11_fake_import_returns_typed_value_and_records_emission() {
                 interface: "mods:recs/events@0.1.0".parse().unwrap(),
                 function: "suggested".into(),
                 args: json!({"title":"Dune"})
-            }]
+            }],
+            manages: vec![]
         }
     );
     let harness = Harness::open(&fixture("recs"), Fakes::new()).unwrap();
@@ -187,7 +195,8 @@ fn ac10_s11_deliver_accepts_only_subscription_functions() {
             .unwrap(),
         Outcome {
             value: json!(null),
-            events: vec![]
+            events: vec![],
+            manages: vec![]
         }
     );
     assert_eq!(
@@ -231,7 +240,8 @@ fn ac10_s11_delivery_records_its_outbox_and_commits_state() {
                 interface: "mods:loop-a/events@0.1.0".parse().unwrap(),
                 function: "ping".into(),
                 args: json!({"n":2})
-            }]
+            }],
+            manages: vec![]
         }
     );
     assert_eq!(

@@ -6,9 +6,13 @@ mod bus;
 mod catalog;
 mod confirm;
 mod error;
-pub use confirm::{Answer, Confirm, InstallRequest, Requester};
+pub use confirm::{
+    Answer, Ask, Confirm, InstallRequest, ManageOutcome, ManageRequest, Reduction, RequestId,
+    Requester,
+};
 mod harness;
 mod home;
+mod manage;
 mod pages;
 mod runtime;
 mod server;
@@ -22,7 +26,7 @@ pub use catalog::{
     Source,
 };
 pub use error::{CallCode, CallError, HostError, Limit, VerifyCheck};
-pub use harness::{EventRecord, Fakes, Harness, Outcome};
+pub use harness::{EventRecord, Fakes, Harness, ManageRecord, Outcome};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
 pub use server::Served;
@@ -75,6 +79,9 @@ pub struct Host {
     weak: std::sync::Weak<Host>,
     events: runtime::call::Deliveries,
     fakes: Mutex<Option<Fakes>>,
+    requests: Mutex<manage::Requests>,
+    /// Harness only: the fake requests answered so far (6.10).
+    manage_serial: std::sync::atomic::AtomicUsize,
 }
 
 impl Host {
@@ -88,6 +95,8 @@ impl Host {
             weak: weak.clone(),
             events: runtime::call::Deliveries::default(),
             fakes: Mutex::new(None),
+            requests: Mutex::new(manage::Requests::default()),
+            manage_serial: std::sync::atomic::AtomicUsize::new(0),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
             state,
@@ -206,7 +215,24 @@ impl Host {
         requester: Requester,
     ) -> Result<Vec<InstalledMod>, HostError> {
         self.catalog.lock().unwrap().validate(&plan, self.home())?;
-        let withhold = if plan.needs_confirmation() {
+        // Step 10 (6.10): a manager's install is always asked.
+        let manager = match &requester {
+            Requester::Mod(by) => {
+                if !self.is_manager(by) {
+                    return Err(HostError::Refused(format!("{by} holds no grant to manage")));
+                }
+                Some(by.clone())
+            }
+            _ => None,
+        };
+        let asks = plan.needs_confirmation()
+            || manager.is_some()
+                && !self.is_preview()
+                && plan
+                    .entries()
+                    .iter()
+                    .any(|e| !matches!(e.change, Change::Unchanged));
+        let withhold = if asks {
             let Mode::Home { app: Some(app) } = &self.home.mode else {
                 return Err(HostError::Refused(
                     "no app is attached to confirm the install".into(),
@@ -230,6 +256,11 @@ impl Host {
         } else {
             vec![]
         };
+        if let Some(by) = &manager
+            && !self.is_manager(by)
+        {
+            return Err(HostError::Refused(format!("{by} lost its grant to manage")));
+        }
         self.commit_plan(
             plan,
             &withhold,
@@ -256,6 +287,7 @@ impl Host {
         for local in updates {
             self.bus.send(&local, bus::RELOAD);
         }
+        self.catalog_written();
         Ok(installed
             .into_iter()
             .map(|m| self.mod_view(m, port))
@@ -299,6 +331,7 @@ impl Host {
             Ok(())
         })?;
         self.bus.send(local, bus::RELOAD);
+        self.catalog_written();
         Ok(())
     }
     pub fn disable(&self, local: &LocalName) -> Result<(), HostError> {
@@ -307,6 +340,7 @@ impl Host {
             Ok(())
         })?;
         self.bus.send(local, bus::CLOSE);
+        self.catalog_written();
         Ok(())
     }
     fn set_grant(
@@ -326,7 +360,9 @@ impl Host {
                 })?;
             state.granted = granted;
             Ok(())
-        })
+        })?;
+        self.catalog_written();
+        Ok(())
     }
     pub fn grant(&self, local: &LocalName, grant: &watane_pkg::Grant) -> Result<(), HostError> {
         self.set_grant(local, grant, true)
@@ -370,6 +406,7 @@ impl Host {
             self.state.delete(&identity)?;
         }
         self.bus.send(local, bus::CLOSE);
+        self.catalog_written();
         Ok(())
     }
 }

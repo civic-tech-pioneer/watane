@@ -1,0 +1,18 @@
+package mods:manager@0.1.0;
+interface api {
+  use watane:host/manage@0.1.0.{mod-info, grant, failure, request-state};
+  mods: func() -> list<mod-info>;
+  disable: func(local: string) -> result<_, failure>;
+  withdraw: func(local: string, grant: grant) -> result<_, failure>;
+  close-page: func(local: string) -> result<_, failure>;
+  request-install: func(release: string, link: option<string>) -> result<string, failure>;
+  request-update: func(local: string) -> result<string, failure>;
+  request-enable: func(local: string) -> result<string, failure>;
+  request-grant: func(local: string, grant: grant) -> result<string, failure>;
+  request-remove: func(local: string, delete-data: bool) -> result<string, failure>;
+  request: func(id: string) -> option<request-state>;
+  disable-then-fail: func(local: string);
+  disable-then-read: func(local: string) -> bool;
+  who: func() -> string;
+}
+world manager { import watane:host/caller@0.1.0; import watane:host/manage@0.1.0; export api; }

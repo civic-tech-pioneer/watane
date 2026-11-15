@@ -52,6 +52,39 @@ pub(super) fn linker(
             Ok((ctx.data().caller.clone(),))
         })?;
     let ty = component.component_type();
+    if m.world().manage
+        && let Some(import) = ty.get_import(engine, crate::manage::MANAGE)
+    {
+        let ComponentItem::ComponentInstance(instance) = import.ty else {
+            return Err(HostError::Internal("manage is not an interface".into()).into());
+        };
+        let mut interface = linker.instance(crate::manage::MANAGE)?;
+        for (name, item) in instance.exports(engine) {
+            if !matches!(item.ty, ComponentItem::ComponentFunc(_)) {
+                continue;
+            }
+            let function = name.to_owned();
+            interface.func_new(name, move |mut ctx, ty, values, results| {
+                let args = ty
+                    .params()
+                    .zip(values)
+                    .map(|((name, _), value)| Ok((name.to_owned(), super::json::encode(value)?)))
+                    .collect::<Result<serde_json::Map<_, _>, CallError>>()?;
+                let invocation = ctx.data().invocation.clone();
+                let value =
+                    invocation.manage(&mut ctx.data_mut().manages, &function, args.into())?;
+                for (ty, result) in ty.results().zip(results) {
+                    *result = super::json::decode(&ty, &value, "$").map_err(|error| {
+                        CallError::new(
+                            crate::CallCode::Trap,
+                            format!("watane:host/manage.{function}: {error}"),
+                        )
+                    })?;
+                }
+                Ok(())
+            })?;
+        }
+    }
     for outlet in &m.world().events {
         let Some(import) = ty.get_import(engine, &outlet.to_string()) else {
             continue;
@@ -203,6 +236,7 @@ pub(super) fn store(
         stderr,
         deadline,
         outbox: Vec::new(),
+        manages: Vec::new(),
         invocation,
     };
     let mut store = Store::new(engine, ctx);
