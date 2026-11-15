@@ -164,20 +164,26 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
 
 #[test]
 fn ac11_endless_test_stops_with_exact_message() {
-    endless_limit(Duration::from_secs(60));
+    endless_limit(Duration::from_secs(60), false);
 }
 
 #[test]
 #[ignore = "timing: run on a quiescent machine, see factory/README.md"]
 fn ac10_endless_test_stops_with_exact_message_within_deadline() {
-    endless_limit(Duration::from_secs(7));
+    endless_limit(Duration::from_secs(7), true);
 }
 
-fn endless_limit(deadline: Duration) {
+fn endless_limit(deadline: Duration, cached: bool) {
     let f = Fixture::new();
-    // Warm the build cache before timing the endless test, so this measures execution.
-    assert_eq!(output(&mut f.command("test")).0, 0);
     f.source("#[test]\nfn endless() { loop {} }");
+    if cached {
+        // Build and check this exact endless source before measuring its stop.
+        run_endless(&f, Duration::from_secs(60));
+    }
+    run_endless(&f, deadline);
+}
+
+fn run_endless(f: &Fixture, deadline: Duration) {
     let started = Instant::now();
     let mut child = f
         .command("test")

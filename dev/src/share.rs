@@ -399,6 +399,7 @@ fn site_commands(dir: &Path, paths: &[&str], release: &str) -> Vec<Run> {
 pub fn prepare_mod(
     dir: &Path,
     owner: &str,
+    login: &str,
     rerun: &str,
 ) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     (|| {
@@ -447,7 +448,7 @@ pub fn prepare_mod(
             } else {
                 let mut reason = "no upstream repository".to_string();
                 if derived && let Some(upstream) = upstream {
-                    let request = gh(&[
+                    let mut request = gh(&[
                         "api",
                         "-X",
                         "POST",
@@ -459,6 +460,11 @@ pub fn prepare_mod(
                         "--jq",
                         ".full_name",
                     ]);
+                    if !owner.eq_ignore_ascii_case(login) {
+                        request
+                            .args
+                            .splice(6..6, ["-f".into(), format!("organization={owner}")]);
+                    }
                     match request.output() {
                         Ok(out)
                             if out.status.success()

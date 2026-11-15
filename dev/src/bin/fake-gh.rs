@@ -32,35 +32,43 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             );
             Ok(())
         }
-        [
-            "api",
-            "-X",
-            "POST",
-            endpoint,
-            "-f",
-            name,
-            "-F",
-            "default_branch_only=true",
-            "--jq",
-            ".full_name",
-        ] if endpoint.starts_with("repos/")
-            && endpoint.ends_with("/forks")
-            && name.starts_with("name=") =>
+        ["api", "-X", "POST", endpoint, "-f", name, rest @ ..]
+            if endpoint.starts_with("repos/")
+                && endpoint.ends_with("/forks")
+                && name.starts_with("name=") =>
         {
+            let user = env::var("FAKE_GH_USER").map_err(|e| (4, e.to_string()))?;
+            let account = match rest {
+                ["-F", "default_branch_only=true", "--jq", ".full_name"] => user.as_str(),
+                [
+                    "-f",
+                    organization,
+                    "-F",
+                    "default_branch_only=true",
+                    "--jq",
+                    ".full_name",
+                ] if organization.starts_with("organization=") => {
+                    let org = &organization[13..];
+                    if org.eq_ignore_ascii_case(&user) {
+                        return Err((1, format!("organization={org} must not name the login")));
+                    }
+                    org
+                }
+                _ => return Err((2, format!("fake-gh: unsupported: {}", args.join(" ")))),
+            };
             let upstream = &endpoint[6..endpoint.len() - 6];
             let source = root.join(upstream);
             if !source.is_dir() {
                 return Err((1, "gh: Not Found (HTTP 404)".into()));
             }
-            let user = env::var("FAKE_GH_USER").map_err(|e| (4, e.to_string()))?;
-            let owner = root.join(&user);
+            let owner = root.join(account);
             fs::create_dir_all(&owner).map_err(|e| (1, e.to_string()))?;
             for entry in fs::read_dir(&owner).map_err(|e| (1, e.to_string()))? {
                 let entry = entry.map_err(|e| (1, e.to_string()))?;
                 if fs::read_to_string(entry.path().join("fake-gh-parent"))
                     .is_ok_and(|p| p.trim() == upstream)
                 {
-                    println!("{user}/{}", entry.file_name().to_string_lossy());
+                    println!("{account}/{}", entry.file_name().to_string_lossy());
                     return Ok(());
                 }
             }
@@ -84,7 +92,7 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
                 )?;
             }
             fs::write(path.join("fake-gh-parent"), upstream).map_err(|e| (1, e.to_string()))?;
-            println!("{user}/{}", &name[5..]);
+            println!("{account}/{}", &name[5..]);
             Ok(())
         }
         ["repo", "edit", name, "--default-branch", branch] => {

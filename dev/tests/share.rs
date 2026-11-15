@@ -813,3 +813,219 @@ fn ac3_missing_git_falls_back_with_actionable_warning() {
     assert!(!f.root.join("ratings/.git").exists());
     f.assert_derived_files(&v);
 }
+
+#[test]
+fn ac2_owner_creates_and_pushes_both_repositories() {
+    let f = Fixture::new();
+    let (code, v) = f.run(&["--owner", "acme"]);
+    assert_eq!(code, 0, "{v}");
+    for (part, name) in [("mod", "demo"), ("site", "watane-channel")] {
+        assert_eq!(
+            v["result"]["push"][part]["repository"],
+            format!("https://github.com/acme/{name}")
+        );
+        assert_eq!(v["result"]["push"][part]["created"], true);
+        assert_eq!(v["result"]["push"][part]["pushed"], true);
+        let remote = f.root.join("remotes/acme").join(name);
+        assert!(!f.git(&remote, &["show-ref"]).is_empty());
+    }
+    assert!(!f.root.join("remotes/alice").exists());
+    assert!(
+        fs::read_to_string(f.dir.join("mod.toml"))
+            .unwrap()
+            .contains("repository = \"https://github.com/acme/demo\"")
+    );
+    assert!(
+        v["next"]
+            .as_str()
+            .unwrap()
+            .ends_with(" --push --owner acme")
+    );
+}
+
+#[test]
+fn ac4_fake_gh_organization_and_login_arms() {
+    let f = Fixture::new();
+    f.released();
+    let fork = |name: &str, organization: Option<&str>| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_fake-gh"));
+        f.env(&mut cmd);
+        cmd.args([
+            "api",
+            "-X",
+            "POST",
+            "repos/alice/reading-list/forks",
+            "-f",
+            &format!("name={name}"),
+        ]);
+        if let Some(org) = organization {
+            cmd.args(["-f", &format!("organization={org}")]);
+        }
+        cmd.args(["-F", "default_branch_only=true", "--jq", ".full_name"])
+            .output()
+            .unwrap()
+    };
+    let org = fork("ratings", Some("acme"));
+    assert!(org.status.success(), "{org:?}");
+    assert_eq!(String::from_utf8(org.stdout).unwrap(), "acme/ratings\n");
+    assert_eq!(
+        fs::read_to_string(f.root.join("remotes/acme/ratings/fake-gh-parent")).unwrap(),
+        "alice/reading-list"
+    );
+    let existing = fork("another", Some("acme"));
+    assert!(existing.status.success());
+    assert_eq!(
+        String::from_utf8(existing.stdout).unwrap(),
+        "acme/ratings\n"
+    );
+    assert!(!f.root.join("remotes/acme/another").exists());
+    for login in ["alice", "ALICE"] {
+        let refused = fork("refused", Some(login));
+        assert_eq!(refused.status.code(), Some(1));
+        assert!(
+            String::from_utf8(refused.stderr)
+                .unwrap()
+                .contains("organization=")
+        );
+    }
+    let personal = fork("personal", None);
+    assert!(personal.status.success(), "{personal:?}");
+    assert_eq!(
+        String::from_utf8(personal.stdout).unwrap(),
+        "alice/personal\n"
+    );
+    assert!(f.remote("personal").join("fake-gh-parent").exists());
+}
+
+#[test]
+fn ac3_owner_forks_and_existing_fork_fallback() {
+    for existing in [false, true] {
+        let mut f = Fixture::new();
+        let commit = f.ratings();
+        if existing {
+            let other = f.root.join("remotes/acme/other");
+            fs::create_dir_all(other.parent().unwrap()).unwrap();
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_fake-gh"));
+            f.env(&mut cmd);
+            assert!(
+                cmd.args([
+                    "api",
+                    "-X",
+                    "POST",
+                    "repos/alice/reading-list/forks",
+                    "-f",
+                    "name=other",
+                    "-f",
+                    "organization=acme",
+                    "-F",
+                    "default_branch_only=true",
+                    "--jq",
+                    ".full_name"
+                ])
+                .status()
+                .unwrap()
+                .success()
+            );
+        }
+        let out = f
+            .command()
+            .env("FAKE_GH_USER", "carol")
+            .args(["--owner", "acme"])
+            .output()
+            .unwrap();
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(out.status.success(), "{v}");
+        assert_eq!(v["result"]["push"]["mod"]["forked"], !existing);
+        assert_eq!(
+            v["result"]["push"]["mod"]["repository"],
+            "https://github.com/acme/ratings"
+        );
+        let remote = f.root.join("remotes/acme/ratings");
+        let branch = if existing { "main" } else { "watane" };
+        assert_eq!(
+            f.git(&remote, &["symbolic-ref", "HEAD"]),
+            format!("refs/heads/{branch}")
+        );
+        assert_eq!(f.git(&remote, &["merge-base", branch, &commit]), commit);
+        assert!(
+            fs::read_to_string(f.dir.join("mod.toml"))
+                .unwrap()
+                .contains("https://github.com/acme/ratings")
+        );
+        if existing {
+            assert_eq!(v["warnings"][0]["code"], "publish.fork_unavailable");
+            assert!(
+                v["warnings"][0]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("the account already has a fork")
+            );
+            assert!(!remote.join("fake-gh-parent").exists());
+        } else {
+            assert_eq!(
+                fs::read_to_string(remote.join("fake-gh-parent")).unwrap(),
+                "alice/reading-list"
+            );
+            assert_eq!(v["warnings"], json!([]));
+        }
+        assert!(!f.root.join("remotes/carol").exists());
+    }
+}
+
+#[test]
+fn ac3_owner_matching_login_case_insensitively_omits_organization() {
+    let mut f = Fixture::new();
+    f.ratings();
+    let out = f
+        .command()
+        .env("FAKE_GH_USER", "carol")
+        .args(["--owner", "CAROL"])
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(out.status.success(), "{v}");
+    assert_eq!(v["result"]["push"]["mod"]["forked"], true, "{v}");
+}
+
+#[test]
+fn ac1_owner_preserved_in_recovery_commands() {
+    let f = Fixture::new();
+    // Missing home: the app-start instruction carries the selected account.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+    f.env(&mut cmd);
+    let out = cmd
+        .args(["publish", "--push", "--owner", "acme", "--json", "--dir"])
+        .arg(&f.dir)
+        .arg("--home")
+        .arg(f.root.join("absent"))
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert!(v["next"].as_str().unwrap().contains("--push --owner acme"));
+    // Preflight fixes retain the same account.
+    let out = f
+        .command()
+        .args(["--owner", "acme"])
+        .env_remove("FAKE_GH_USER")
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["errors"][0]["code"], "env.gh_auth");
+    assert!(
+        v["errors"][0]["fix"]
+            .as_str()
+            .unwrap()
+            .contains("--push --owner acme")
+    );
+    fs::write(f.dir.join("deps.json"), r#"{"mods:provider":null}"#).unwrap();
+    fs::write(
+        f.dir.join(".watane-dev.json"),
+        r#"{"local_providers":{"provider":"../provider"}}"#,
+    )
+    .unwrap();
+    let (code, v) = f.run(&["--owner", "acme"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "publish.local_dependency");
+    assert!(v["next"].as_str().unwrap().ends_with("--push --owner acme"));
+}

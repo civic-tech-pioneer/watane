@@ -64,6 +64,8 @@ pub enum Command {
             help = "Push the site and consented source with your own git and gh"
         )]
         push: bool,
+        #[arg(long, requires = "push", allow_hyphen_values = true, value_parser = github_account, help = "GitHub account or organisation for the repositories dev creates [default: the gh login]")]
+        owner: Option<String>,
         #[arg(long, help = "Exclude the source from the package")]
         no_source: bool,
         #[arg(long, help = "Home of the running watane app")]
@@ -91,6 +93,23 @@ pub enum Command {
         stop: bool,
     },
 }
+fn github_account(account: &str) -> Result<String, String> {
+    if (1..=39).contains(&account.len())
+        && account
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        && !account.starts_with('-')
+        && !account.ends_with('-')
+        && !account.contains("--")
+    {
+        Ok(account.into())
+    } else {
+        Err(format!(
+            "{account:?} is not a valid GitHub account: use 1..=39 ASCII letters or digits with single inner hyphens"
+        ))
+    }
+}
+
 pub fn run(cli: Cli) -> Outcome {
     let name = match cli.command {
         Command::New { .. } => "new",
@@ -148,7 +167,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Search { .. } => unreachable!("search needs no mod folder"),
         Command::Doctor => return crate::doctor::doctor(&dir),
         Command::Install { home, wait } => return install(&dir, home, wait),
-        Command::Publish { no_source, push, home, wait } => return publish(&dir, no_source, push, home, wait),
+        Command::Publish { no_source, push, owner, home, wait } => return publish(&dir, no_source, push, owner.as_deref(), home, wait),
         Command::New { slug, .. } => template::new_mod(&dir, slug.as_deref().expect("clap requires a slug"))
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
@@ -729,6 +748,7 @@ fn publish(
     dir: &Path,
     no_source: bool,
     push: bool,
+    requested_owner: Option<&str>,
     home: Option<PathBuf>,
     wait: Option<u64>,
 ) -> Outcome {
@@ -763,6 +783,9 @@ fn publish(
                         let home = resolved_path(home).unwrap_or_else(|_| home.clone());
                         next.push_str(&format!(" --home {}", quote(&home)));
                     }
+                    if let Some(owner) = requested_owner {
+                        next.push_str(&format!(" --push --owner {owner}"));
+                    }
                     next
                 });
             return Err(errors);
@@ -771,6 +794,9 @@ fn publish(
             if let Some(next) = &mut outcome.next {
                 if push {
                     next.push_str(" --push");
+                    if let Some(owner) = requested_owner {
+                        next.push_str(&format!(" --owner {owner}"));
+                    }
                 }
                 if push && no_source {
                     next.push_str(" --no-source");
@@ -784,6 +810,9 @@ fn publish(
         );
         if push {
             rerun.push_str(" --push");
+            if let Some(owner) = requested_owner {
+                rerun.push_str(&format!(" --owner {owner}"));
+            }
         }
         if no_source {
             rerun.push_str(" --no-source");
@@ -832,15 +861,21 @@ fn publish(
                 .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"),
             ]);
         }
-        let owner = if push {
+        let login = if push {
             Some(crate::share::owner(dir, &rerun).map_err(|e| vec![e])?)
         } else {
             None
         };
+        let owner = login.as_deref().map(|login| {
+            requested_owner
+                .filter(|owner| !owner.eq_ignore_ascii_case(login))
+                .unwrap_or(login)
+        });
         let prepared = if let Some(owner) = &owner
             && !no_source
         {
-            let (prepared, warnings) = crate::share::prepare_mod(dir, owner, &rerun)?;
+            let (prepared, warnings) =
+                crate::share::prepare_mod(dir, owner, login.as_deref().unwrap(), &rerun)?;
             outcome.warnings.extend(warnings);
             Some(prepared)
         } else {
@@ -907,7 +942,7 @@ fn publish(
                 dir,
                 Path::new(answer["site"].as_str().unwrap_or_default()),
                 &package,
-                &owner,
+                owner,
                 answer["release"].as_str().unwrap_or_default(),
                 prepared,
             );
@@ -993,6 +1028,54 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac5_owner_documentation_and_ac6_cached_timing_contract() {
+        let guide = include_str!("../template/AGENTS.md");
+        assert!(guide.contains("--owner <org>"));
+        let functional = include_str!("../FUNCTIONAL.md");
+        assert!(functional.contains("--owner <account>"));
+        let technical = include_str!("../TECHNICAL.md");
+        let publishing = technical.split("#### 10.4.1").nth(1).unwrap();
+        assert!(publishing.contains("--owner <account>"));
+        assert!(publishing.contains("usage.args"));
+        let fork = technical.split("#### 10.4.2").nth(1).unwrap();
+        assert!(fork.contains("organization=<owner>"));
+        let row = technical
+            .lines()
+            .find(|line| line.starts_with("| DEV-S-16 |"))
+            .unwrap();
+        assert!(row.contains("second, build-cached run"));
+    }
+
+    #[test]
+    fn ac1_publish_owner_cli_validation_and_help() {
+        use clap::CommandFactory;
+        for account in ["a", "Acme-123", &"a".repeat(39)] {
+            assert!(
+                Cli::try_parse_from(["watane-dev", "publish", "--push", "--owner", account])
+                    .is_ok()
+            );
+        }
+        let err = Cli::try_parse_from(["watane-dev", "publish", "--owner", "acme"])
+            .err()
+            .unwrap();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains("--push"));
+        for account in ["", "-acme", "acme-", "ac--me", "a_b", "ä", &"a".repeat(40)] {
+            let err = Cli::try_parse_from(["watane-dev", "publish", "--push", "--owner", account])
+                .err()
+                .unwrap();
+            assert_eq!(err.exit_code(), 2);
+            assert!(err.to_string().contains(account));
+        }
+        let help = Cli::command()
+            .find_subcommand_mut("publish")
+            .unwrap()
+            .render_help()
+            .to_string();
+        assert!(help.contains("GitHub account or organisation for the repositories dev creates [default: the gh login]"));
+    }
 
     #[test]
     fn ac6_serve_recovery_preserves_command_text_inside_contract_filename() {

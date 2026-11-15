@@ -144,5 +144,5 @@ Work autonomously; do not ask questions. Finish with a passing `watane-dev test 
 
 When the person wants the mod in their own app, run `watane-dev install --json`. The person approves in the app. `env.host_not_running` means ask them to start the app, then run the command again.
 
-When the person wants to publish and share on GitHub, run `watane-dev publish --push --json`.
+When the person wants to publish and share on GitHub, run `watane-dev publish --push --json`. To publish under an organisation, add `--owner <org>`.
 The person approves in the app. For `env.gh_auth`, ask the person to run `gh auth login`, then retry. Read `next`: it gives the site URL to set in the app, the link to share, or commands to finish a failed push.

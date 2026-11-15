@@ -121,7 +121,7 @@ watane-dev [--json] [--dir <path>] <command>
   search [<text>...] [--publisher <key>] [--interface <name>] [--home <path>]   (step 4)
   new [<slug>] --from <link> [--home <path>]                (step 5)
   add --release <link or release> [--home <path>]           (step 5)
-  publish --push [--no-source] [--home <path>] [--wait <seconds>]  (step 6)
+  publish --push [--owner <account>] [--no-source] [--home <path>] [--wait <seconds>]  (step 6)
 ```
 
 - `--help` describes every command, positional argument and option. `serve --stop`
@@ -524,6 +524,7 @@ Every publish refusal has a `next`:
   for the first local provider whose folder `.watane-dev.json` knows; quote the
   paths for the shell as above. If `--home <h>` was passed (only then), append
   `--home <absolute h>` to keep the same home, without contacting it.
+  With an explicit owner, also append `--push --owner <account>`.
   If none is known, use the first error's fix.
 - `env.host_not_running`: repeat publish with `--json`, canonical `--dir`,
   home and explicit wait, as in 9.7 step 2; other environment gaps use doctor.
@@ -1414,7 +1415,7 @@ paths use `Raise the version in wit/world.wit, then run: <rerun>` for `next`;
 `host.no_answer` uses `Run again with a longer --wait: <rerun>`.
 The rerun is `watane-dev publish --json --dir <canonical mod> [--home <canonical home>]`
 (`--home` only when the command was given `--home`),
-with `--no-source`, `--push` (step 6) and explicit `--wait <n>` retained, paths shell quoted.
+with `--no-source`, `--push` and an explicit `--owner <account>` (step 6), and explicit `--wait <n>` retained, paths shell quoted.
 This includes default homes and timeouts while listing releases, and does
 not change error fix texts.
 Other errors are `host.refused` with `[<code>] <message>` and `next` equal
@@ -1575,10 +1576,10 @@ after removing one trailing `/` and one trailing `.git`.
 
 | Call | Use | Result |
 |---|---|---|
-| `gh api user --jq .login` | the owner | stdout: the login. Not found: `env.gh_missing`. Non-zero with `HTTP 401` or `gh auth login` in stderr: `env.gh_auth`. Other non-zero (no network): `publish.push_failed`. |
+| `gh api user --jq .login` | the login (default owner) | stdout: the login. Not found: `env.gh_missing`. Non-zero with `HTTP 401` or `gh auth login` in stderr: `env.gh_auth`. Other non-zero (no network): `publish.push_failed`. |
 | `gh api repos/<owner>/<name> --jq .parent.full_name` | does the repository exist, and what is it a fork of | exit 0: yes; stdout (trimmed) the parent's `<o>/<n>`, or empty or `null` when it is no fork. Non-zero with `HTTP 404` in stderr: no. Else `publish.push_failed`. |
 | `gh repo create <owner>/<name> --public` | create it | exit 0, else `publish.push_failed`. |
-| `gh api -X POST repos/<uo>/<un>/forks -f name=<slug> -F default_branch_only=true --jq .full_name` | fork the origin's repository `<uo>/<un>` (10.4.1 step 3) | accepted only with exit 0 and stdout `<owner>/<slug>`. GitHub answers an account's existing fork of that repository with that fork's name and renames nothing, so another name means "already forked". Anything else is `publish.fork_unavailable`, a warning. Not `gh repo fork`: it refuses `--remote` with a repository argument and renames an existing fork to `--fork-name`. |
+| `gh api -X POST repos/<uo>/<un>/forks -f name=<slug> [-f organization=<owner>] -F default_branch_only=true --jq .full_name` | fork the origin's repository `<uo>/<un>` (10.4.1 step 3) | accepted only with exit 0 and stdout `<owner>/<slug>`. GitHub answers an account's existing fork of that repository with that fork's name and renames nothing, so another name means "already forked". Anything else is `publish.fork_unavailable`, a warning. Not `gh repo fork`: it refuses `--remote` with a repository argument and renames an existing fork to `--fork-name`. |
 | `gh repo edit <owner>/<slug> --default-branch watane` | make the derived mod's branch the fork's default (idempotent) | exit 0, else `publish.push_failed` |
 
 dev builds a GitHub repository URL itself as `https://github.com/<owner>/<name>`;
@@ -1605,8 +1606,15 @@ keeps its own history and branch.
 
 #### 10.4.1 `publish --push`
 
-`publish [--push] [--no-source] [--home <path>] [--wait <seconds>]`.
+`publish [--push] [--owner <account>] [--no-source] [--home <path>] [--wait <seconds>]`.
 Without `--push`, publish is 9.7, unchanged.
+`--owner <account>` chooses the account or organisation for repositories dev
+names itself: `<owner>/<slug>` and `<owner>/watane-channel`. The default is
+the gh login. Existing repository URLs remain authoritative. `--owner`
+without `--push` is `usage.args` (status 2) naming `--push`. An account
+outside 1..=39 ASCII letters, digits and single inner hyphens (no leading
+or trailing hyphen) is `usage.args` naming the value. Every publish rerun,
+fix and provider `next` with `--push` retains an explicit `--owner <account>`.
 
 1. 9.7 steps 1, 2 and 2b, unchanged. `publish.version_exists` stops
    before anything below; it pushes nothing. (A failed push is finished
@@ -1614,7 +1622,8 @@ Without `--push`, publish is 9.7, unchanged.
 2. Preflight, before the test pipeline and before any file changes:
    `git --version` (not found: `env.git_missing`); `git var
    GIT_COMMITTER_IDENT` in the mod folder (non-zero: `env.git_identity`);
-   then `gh api user` (table above), giving `<owner>`.
+   then `gh api user` (table above), giving the login. `<owner>` is the
+   explicit `--owner` or that login; a case-insensitive match uses the login.
 3. The mod repository, unless `--no-source`. The folder's origin is
    `remote.origin.url` when `<dir>/.git` exists, else none.
    - `mod.toml` names a `repository`: an origin that is not equal to it
@@ -1722,6 +1731,14 @@ file for a few minutes after a push; the link stays valid because each
 reader verifies what it reads.
 
 #### 10.4.2 The fork of `new --from`
+
+At the first `publish --push`, `--owner <account>` selects the fork's
+account (default: gh login). If it differs from the login, compared
+case-insensitively, add `-f organization=<owner>` between `-f name=<slug>`
+and `-F default_branch_only=true` in the forks POST. When they match,
+omit the organization field: GitHub refuses it for the login. The existing
+fork check and `publish.fork_unavailable` fallback both use the owner account.
+`--owner` usage errors are specified in 10.4.1.
 
 10.2 steps 1 to 4 are unchanged. Then:
 
@@ -1848,7 +1865,7 @@ pub struct Cli { pub json: bool, pub dir: Option<PathBuf>, pub command: Command 
 pub enum Command { New { slug: Option<String>, from: Option<String>, home: Option<PathBuf> }, Check, Test, Serve { stop: bool }, Doctor,
     Add { provider: Option<PathBuf>, release: Option<String>, home: Option<PathBuf> },
     Install { home: Option<PathBuf>, wait: Option<u64> },
-    Publish { no_source: bool, push: bool, home: Option<PathBuf>, wait: Option<u64> },
+    Publish { no_source: bool, push: bool, owner: Option<String>, home: Option<PathBuf>, wait: Option<u64> },
     Search { text: Vec<String>, publisher: Option<String>, interface: Option<String>, home: Option<PathBuf> } }
 pub fn run(cli: Cli) -> Outcome;
 
@@ -1941,7 +1958,7 @@ pub fn add_release(dir: &Path, target: &str, client: &Client, env: &Env) -> Resu
 
 // share.rs (step 6, 10.4)
 pub fn owner(dir: &Path, rerun: &str) -> Result<String, Problem>;   // git, identity, then gh api user
-pub fn prepare_mod(dir: &Path, owner: &str, rerun: &str) -> Result<(serde_json::Value, Vec<Problem>), Vec<Problem>>;   // 10.4.1 step 3: result and warnings
+pub fn prepare_mod(dir: &Path, owner: &str, login: &str, rerun: &str) -> Result<(serde_json::Value, Vec<Problem>), Vec<Problem>>;   // 10.4.1 step 3: result and warnings
 pub fn push(dir: &Path, site: &Path, package: &watane_pkg::Package, owner: &str, release: &str, prepared: Option<serde_json::Value>)
     -> (serde_json::Value, Vec<Problem>);   // 10.4.1 steps 5, 6: the `push` result and its errors
 pub fn fork(folder: &Path, repository: &str, release: &watane_pkg::ReleaseRef, package: &watane_pkg::Package)
@@ -2131,7 +2148,7 @@ rules belong to 15.1.
 | DEV-S-13 | `builder::ac6_build_with_network_denied` → `ac6_build_counter_component` | slow; OS refusal permitted for nested sandbox |
 | DEV-S-14 | `unit_tests::ac4_unit_tests_have_no_files_environment_or_network`, `ac4_unit_host_imports_trap`; `unit::tests::ac3_unit_host_imports_are_unknown_import_traps` | integration, warm cache; slow Rust import wiring; unit trap |
 | DEV-S-15 | `unit_tests::ac2_panic_names_assert_and_counts_remaining_tests`; `unit::tests::ac3_panic_classification_counts_location_and_fix` | integration; unit |
-| DEV-S-16 | `unit_tests::ac11_endless_test_stops_with_exact_message` (default suite, exact status/code/message, 60 s hang guard); `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline` (7 s); `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | integration; timing; unit classification |
+| DEV-S-16 | `unit_tests::ac11_endless_test_stops_with_exact_message` (default suite, exact status/code/message, 60 s hang guard); `unit_tests::ac10_endless_test_stops_with_exact_message_within_deadline` (7 s over the second, build-cached run of the same endless source; first run untimed and checked for the same limit result); `unit::tests::ac3_wasm_exit_trap_and_limit_classifications` | integration; timing; unit classification |
 | DEV-S-17 | `contract::ac3_each_contract_file_starts_from_fresh_state` (committed Wasm); `contract::ac3_literal_fresh_counter_failure_and_fresh_state_per_file` (slow: full pipeline); `contract::tests::ac7_run_steps_uses_closure_arguments_and_continues_after_failures` | integration; unit |
 | DEV-S-18 | `contract::ac1_s11_fake_answers_provider_call`, `ac1_s11_missing_fake_fails` | integration: committed Wasm fixture |
 | DEV-S-19 | `contract::ac2_s11_deliver_retains_state_and_emits`, `ac2_s11_deliver_compares_emitted_events`, `ac2_s11_deliver_rejects_non_subscription`; `contract::tests::ac4_run_steps_events_exact_order_names_and_failed_calls`, `ac3_single_event_equality_and_failure_payloads` | integration: prebuilt; unit |
@@ -2307,9 +2324,14 @@ the five calls of 10.4. Tests check what was created on `remotes/`:
 |---|---|
 | `api user --jq .login` | user set: stdout `<user>\n`, exit 0; unset: stderr `To get started with GitHub CLI, please run:  gh auth login`, exit 4 |
 | `api repos/<o>/<n> --jq .parent.full_name` | `<root>/<o>/<n>` exists: stdout the content of its file `fake-gh-parent` and a newline, or `null\n` without that file, exit 0; else stderr `gh: Not Found (HTTP 404)`, exit 1 |
-| `api -X POST repos/<uo>/<un>/forks -f name=<n> -F default_branch_only=true --jq .full_name` | `<root>/<uo>/<un>` missing: stderr `gh: Not Found (HTTP 404)`, exit 1. A repository under `<root>/<user>/` whose `fake-gh-parent` is `<uo>/<un>` exists already: stdout `<user>/<its name>`, exit 0, nothing made or renamed (GitHub's one fork per account). Else `git clone -q --bare` it to `<root>/<user>/<n>` (all tags, as a GitHub fork shares them), delete every branch except its default, write `<uo>/<un>` to `fake-gh-parent`, stdout `<user>/<n>`, exit 0 |
+| `api -X POST repos/<uo>/<un>/forks -f name=<n> [-f organization=<org>] -F default_branch_only=true --jq .full_name` | `<root>/<uo>/<un>` missing: stderr `gh: Not Found (HTTP 404)`, exit 1. A repository under `<root>/<user>/` whose `fake-gh-parent` is `<uo>/<un>` exists already: stdout `<user>/<its name>`, exit 0, nothing made or renamed (GitHub's one fork per account). Else `git clone -q --bare` it to `<root>/<user>/<n>` (all tags, as a GitHub fork shares them), delete every branch except its default, write `<uo>/<un>` to `fake-gh-parent`, stdout `<user>/<n>`, exit 0 |
 | `repo edit <o>/<n> --default-branch <b>` | `git symbolic-ref HEAD refs/heads/<b>` in `<root>/<o>/<n>`, exit 0; no such branch: exit 1 |
 | `repo create <o>/<n> --public` | creates the bare repository, stdout `https://github.com/<o>/<n>\n`, exit 0; exists: stderr `GraphQL: Name already exists on this account (createRepository)`, exit 1 |
+
+The optional `organization=<org>` selects `<org>` instead of `<user>` for
+the fork folder, existing-fork scan and printed full name. Equal to
+`FAKE_GH_USER` (case-insensitively), it is refused with exit 1 and stderr
+naming `organization=`. Without it, the fork uses `<user>` as before.
 
 Anything else: stderr `fake-gh: unsupported: <args>`, exit 2.
 
