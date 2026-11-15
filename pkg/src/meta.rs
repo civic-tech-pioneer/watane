@@ -18,6 +18,10 @@ pub(crate) struct Meta {
     repository_raw: Option<toml::Value>,
     #[serde(skip)]
     pub repository: Option<String>,
+    #[serde(default, rename = "main")]
+    main_raw: Option<toml::Value>,
+    #[serde(skip)]
+    pub main: bool,
     #[serde(skip)]
     pub http_hosts: Vec<HttpHost>,
     #[serde(skip)]
@@ -109,6 +113,11 @@ pub(crate) fn read(dir: &Path) -> Result<Meta, ModError> {
             return Err(bad(message.into()));
         }
         meta.repository = value.as_str().map(String::from);
+    }
+    if let Some(value) = meta.main_raw.take() {
+        meta.main = value
+            .as_bool()
+            .ok_or_else(|| bad("`main` must be true or false".into()))?;
     }
     if let Some(http) = meta.http.take() {
         let hosts: BTreeSet<_> = http.hosts.iter().cloned().collect();

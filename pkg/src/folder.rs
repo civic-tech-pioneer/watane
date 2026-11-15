@@ -391,6 +391,16 @@ impl Mod {
         // A linked part already has its `path` violation; the parts rules add nothing for it.
         let ui = lstat(dir, "ui")?;
         let page = ui.is_some();
+        if meta.as_ref().is_some_and(|meta| meta.main)
+            && !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File)
+        {
+            add(
+                &mut violations,
+                Rule::ModToml,
+                "mod.toml",
+                "`main` needs a page (ui/index.html)",
+            );
+        }
         if ui.is_some_and(|m| m.kind != Kind::Link && m.kind != Kind::Dir)
             || ui.is_some_and(|m| m.kind == Kind::Dir)
                 && !lstat(dir, "ui/index.html")?.is_some_and(|m| m.kind == Kind::File)
@@ -570,6 +580,9 @@ impl Mod {
     }
     pub fn repository(&self) -> Option<&str> {
         self.meta.repository.as_deref()
+    }
+    pub fn main(&self) -> bool {
+        self.meta.main
     }
     pub fn http_hosts(&self) -> &[HttpHost] {
         &self.meta.http_hosts
