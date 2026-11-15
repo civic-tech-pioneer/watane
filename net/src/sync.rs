@@ -530,7 +530,7 @@ async fn sync_all(core: &Arc<Core>, node: &NodeKey) -> Result<(), NetError> {
     fetch_wanted(core, node, role).await
 }
 
-/// How long after a hint found the delivering machine behind it is asked again.
+/// How long after a hint found the machine asked behind the next one is asked.
 const HINT_RETRY: Duration = Duration::from_millis(250);
 /// How many times: 20 times 250 ms, 5 s in all (5.7).
 const HINT_RETRIES: u32 = 20;
@@ -540,8 +540,8 @@ const HINT_RETRIES: u32 = 20;
 pub(crate) enum Hinted {
     /// Done: pulled, forged, or nothing to pull.
     Done,
-    /// The delivering machine's head is below the hint's seq and ours is
-    /// too: ask it again soon.
+    /// The machine asked has a head below the hint's seq and ours is
+    /// too: ask the next machine soon.
     Behind,
 }
 
@@ -564,19 +564,20 @@ fn next_machine(core: &Core, node: NodeKey) -> NodeKey {
 }
 
 /// Is a hint asked again after its try number `tries` (0 is the first)?
-/// Only while the delivering machine is behind, and at most `HINT_RETRIES`
+/// Only while the machine asked is behind, and at most `HINT_RETRIES`
 /// times.
 fn again(hinted: &Hinted, tries: u32) -> bool {
     *hinted == Hinted::Behind && tries < HINT_RETRIES
 }
 
-/// Is a hint still waiting for the machine that delivered it? It is when
+/// Is a hint still waiting for the machine asked? It is when
 /// that machine's head is below the hint's seq and this machine's is too.
 pub(crate) fn waits_for(remote: Option<HeadInfo>, own: Option<HeadInfo>, seq: u64) -> bool {
     remote.is_none_or(|h| h.seq < seq) && own.is_none_or(|h| h.seq < seq)
 }
 
-/// A hint: step 2 for one channel, with the machine that delivered it.
+/// A hint: step 2 for one channel, with the machine asked (the one that
+/// delivered it on the first try, 5.7).
 async fn sync_channel(
     core: &Arc<Core>,
     node: &NodeKey,

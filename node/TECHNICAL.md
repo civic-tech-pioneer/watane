@@ -53,6 +53,7 @@ url = "2.5"                          # the program: a relay URL, as net's option
 
 [dev-dependencies]
 tempfile = "3.27"
+serde_json = "1.0"                   # tests read the files of a home (book.json, follows.json)
 tiny_http = "0.12"                   # a web host for S2 and S5, as dist's tests use it
 watane-pkg = { path = "../pkg" }     # tests only: pack Alice's fixture mod, as her own tools would
 ```
@@ -522,7 +523,7 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | Subsystem | Gap |
 |---|---|
 | `dist` | `InterfaceQuery` has no accessor for its name, so `search` cannot turn a query with an interface into a `net` query (4.3). It sends the remote query with no interface and lets `search_stored` apply the interface (5.4 step 4): correct, but the remote machine may return hits that are then dropped. |
-| `net` | A hint is acted on with the machine that delivered it (net 5.7), and iroh-gossip's `delivered_from` is the neighbor that relayed the message, not the machine that told it. In a topic of three machines the hint often reaches a machine through another replica that has not pulled the head yet (seen in S7: the light machine got the server's relay of the laptop's hint, asked the server, which still had the old head, and pulled nothing). The head then waits for the next sync (on connect, or 10 minutes). In about 1 run in 5 of `tests/light.rs` the tests of S6 and S7 reconnect (`set_options` off and on, which syncs) after 3 to 5 s without the entry. Fixed in S72 (net 5.7): the delivering machine is asked again every 250 ms, up to 5 s, until its head reaches the hint's seq. The reconnect workaround of `tests/light.rs` is removed. |
+| `net` | A hint is acted on with the machine that delivered it (net 5.7), and iroh-gossip's `delivered_from` is the neighbor that relayed the message, not the machine that told it. In a topic of three machines the hint often reaches a machine through another replica that has not pulled the head yet (seen in S7: the light machine got the server's relay of the laptop's hint, asked the server, which still had the old head, and pulled nothing). The head then waits for the next sync (on connect, or 10 minutes). In about 1 run in 5 of `tests/light.rs` the tests of S6 and S7 reconnect (`set_options` off and on, which syncs) after 3 to 5 s without the entry. Fixed in S72 (net 5.7): a machine is asked again every 250 ms, up to 5 s, until its head reaches the hint's seq; each retry asks the next trusted machine with a live link, so a light deliverer that never holds the channel does not stop the pull. The reconnect workaround of `tests/light.rs` is removed. |
 
 ## 13. Questions
 

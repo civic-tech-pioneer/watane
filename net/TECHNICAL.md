@@ -581,12 +581,13 @@ head for the same hint. The machine asked again is the next one, by node
 key, of the trusted machines this machine has a live link to (the
 delivering machine again when it is the only one): the delivering machine
 may be one that never holds the channel (a light machine), and each machine
-is asked by the same rules, so a forged id or seq is judged as before. When its head reaches the hint's
-seq the pull is as in 5.6 step 2. What it has below the hint's seq is
-pulled on the first and the last try only, so a forged seq does not keep
-a pull open for 5 s. After the 20th retry the hint is dropped (a forged
-seq ends here, with no ingest beyond what the delivering machine really
-has); the connect sync and the 10-minute timer still deliver. A newer hint for the
+is asked by the same rules, so a forged id or seq is judged as before. The
+retries are counted per hint, not per machine: 21 asks in all. When the
+head of the machine asked reaches the hint's seq the pull is as in 5.6
+step 2. What it has below the hint's seq is pulled on the first and the
+last try only, so a forged seq does not keep a pull open for 5 s. After
+the 20th retry the hint is dropped (a forged seq ends here, with no ingest
+beyond what the machines asked really have); the connect sync and the 10-minute timer still deliver. A newer hint for the
 channel replaces the one waiting. Only peers whose
 allowance includes the topic can connect on the gossip ALPN, so a stranger
 cannot join it.
