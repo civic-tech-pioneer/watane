@@ -321,10 +321,20 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   skipping. Make them wait for, or skip with a clear message on, `CGSSessionScreenIsLocked`, then
   run all four once on an unlocked screen and record the result. These four have never run.
   Needs the Mac and a human at it.
-- [ ] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
+- [~] **S53 J3 and J5 against real GitHub.** The journeys run against a repository under a real
   account with the real `gh`, in place of `fake-gh`. `fake-gh` was written from the same spec as the
-  code it serves, so this is the slice most likely to find something. Needs a throwaway org and a
-  token (the human). Keep `fake-gh` for the fast suite; the real run is a separate, ignored target.
+  code it serves, so this is the slice most likely to find something. Keep `fake-gh` for the fast
+  suite; the real run is a separate, ignored target. Branch `slice/s53`, local (the token lives on
+  the Mac). The human gave (2026-11-15) the throwaway org `minmax-fund` and a fine-grained token for
+  it in `CLAUDE_GH_TOKEN` (`~/.zshenv`; Administration, Contents and Pages read/write; checked: it
+  creates, pushes, turns on Pages and deletes there, and gets 403 on the human's other repos). Rules:
+  the org also holds the human's `OpenMLOps`; a test touches only repositories it creates, named
+  `watane-j-<random>`, refuses to start if the name exists, and deletes only those; the token never
+  enters a log, a commit or a test's output. Outcome: J3 and J5 pass against `minmax-fund` with the
+  real `gh`; each difference from `fake-gh` becomes a fix (or a question) and a `fake-gh` change
+  that keeps the fast suite honest. Touches: app/tests (j3, j5, support), dev/src/bin/fake-gh.rs.
+  S65 owns the rest of dev/ (src, tests) until it merges: a fix needed in dev/src goes to the product
+  owner as a question.
 - [ ] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
@@ -853,8 +863,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 ## Waiting on the human
 
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
-  (a) S53 needs a GitHub account and token for a throwaway org, so the journeys can run against a
-  real repository instead of `fake-gh`. (b) S54 needs somewhere to serve a channel for real
+  (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
   own. None of the three can run in a cloud foreman as it stands, because each needs a credential
   or a device that belongs to the human.
