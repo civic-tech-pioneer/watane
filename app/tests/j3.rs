@@ -408,34 +408,13 @@ fn ac3_j3_real_github() {
             .unwrap()
             .contains("Reading")
     );
-    // S54 AC5: forget the known base so open_link reads the changed base.
+    // Forget the known base before checking Ivy and the missing link.
     // A followed channel would refresh its recorded base instead of this link's.
     invoke(
         &bob,
         "channel_unfollow",
         json!({"channel":alice_link.channel().to_string()}),
     );
-    let missing_base = format!("{base}missing-{}/", site_name.split('/').nth(1).unwrap());
-    let missing = Link::new(alice_link.channel(), &missing_base, alice_link.slug()).unwrap();
-    let started = Instant::now();
-    begin(&bob, "install_link", json!({"link":missing.to_string()}));
-    let failed = finish(&bob);
-    assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
-    assert_eq!(failed["error"]["code"], "dist", "{failed}");
-    let message = failed["error"]["message"].as_str().unwrap();
-    assert!(message.contains("not found"), "{message}");
-    assert!(
-        message.contains(&format!("{missing_base}head")),
-        "{message}"
-    );
-    assert_eq!(
-        invoke(&bob, "mods_list", json!({}))
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-
     // S54 AC4: only Ivy is chosen; Alice is neither chosen nor followed.
     let ivy_home = root.join("ivy");
     let ivy = dist(&ivy_home);
@@ -474,6 +453,33 @@ fn ac3_j3_real_github() {
     let alice_record = &follows["channels"][alice_link.channel().to_string()];
     assert_eq!(alice_record["followed"], false);
     assert_eq!(alice_record["index"], false);
+
+    // S54 AC5: wait for the CDN miss before testing dist's not-found error.
+    let missing_base = format!("{base}missing-{}/", site_name.split('/').nth(1).unwrap());
+    github.wait_status(
+        &format!("{missing_base}head"),
+        404,
+        Duration::from_secs(300),
+    );
+    let missing = Link::new(alice_link.channel(), &missing_base, alice_link.slug()).unwrap();
+    let started = Instant::now();
+    begin(&bob, "install_link", json!({"link":missing.to_string()}));
+    let failed = finish(&bob);
+    assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
+    assert_eq!(failed["error"]["code"], "dist", "{failed}");
+    let message = failed["error"]["message"].as_str().unwrap();
+    assert!(message.contains("not found"), "{message}");
+    assert!(
+        message.contains(&format!("{missing_base}head")),
+        "{message}"
+    );
+    assert_eq!(
+        invoke(&bob, "mods_list", json!({}))
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     assert!(bob.quit().success());
     assert!(alice.quit().success());

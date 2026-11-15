@@ -498,6 +498,12 @@
 
 ## S54 real static host
 
+- In user-sim's run (2026-11-16), a never-published path under a freshly
+  served Pages site answered 503 for about a minute before 404. Dist reports
+  it as `HTTP 503 from <url>` with no retry. Real J3 now checks Ivy first,
+  then waits up to five minutes for the missing head to answer 404 before
+  Bob attempts the missing-base install.
+
 - Real J3 enables GitHub Pages on the reserved site repository's `main` root
   and waits up to ten minutes for its binary `head` to equal the fresh clone.
   Alice has no loopback server. Ivy remains a chosen loopback index and lists
@@ -528,3 +534,9 @@
   suite still fails at API GUI readiness with the same sandbox hiservices
   XPC error; default tests (115), both feature compilations/clippy, fmt and
   the 20 harness tests pass.
+- S54-fix1 validation: all 24 real-github harness self-tests and 118 default
+  tests pass; builds, test compilation and clippy pass with `driver` and
+  `driver,real-github`; fmt passes. Release with `driver` fails at the
+  required debug-only guard. The driver suite fails before API consent-window
+  readiness with the same macOS hiservices XPC / `_LSModifyNotification`
+  error -50 recorded above. The real GitHub journey was not run (no token).

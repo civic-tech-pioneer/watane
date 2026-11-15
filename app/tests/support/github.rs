@@ -146,6 +146,20 @@ mod real {
         }
 
         pub fn wait_served(&self, url: &str, expect: &[u8], deadline: Duration) {
+            self.wait_pages(url, 200, Some(expect), deadline);
+        }
+
+        pub fn wait_status(&self, url: &str, status: u16, deadline: Duration) {
+            self.wait_pages(url, status, None, deadline);
+        }
+
+        fn wait_pages(
+            &self,
+            url: &str,
+            expected_status: u16,
+            expect: Option<&[u8]>,
+            deadline: Duration,
+        ) {
             assert!(url.starts_with("https://"), "Pages fetch must use HTTPS");
             let client: ureq::Agent = ureq::Agent::config_builder()
                 .https_only(true)
@@ -169,7 +183,8 @@ mod real {
                     Ok(mut response) => {
                         let status = response.status();
                         last_status = Some(status);
-                        if status == ureq::http::StatusCode::OK {
+                        if status.as_u16() == expected_status {
+                            let Some(expect) = expect else { return };
                             match response.body_mut().read_to_vec() {
                                 Ok(body) if body == expect => return,
                                 Ok(_) => {}
