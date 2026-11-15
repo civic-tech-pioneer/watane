@@ -347,7 +347,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   creates and deletes; the token never in output). Pages can take minutes to serve a first build:
   the test waits with a deadline and says so when it runs out. Local (the token), behind the
   `real-github` app feature. After S71: it publishes the channel with `--owner minmax-fund`.
-- [~] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
+- [x] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
   chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
   derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
   `organization=<owner>` when the owner is not the `gh` login; without `--owner`, as today. fake-gh
@@ -356,6 +356,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   branch), and the fake J5 checks `organization=`. Touches: dev/src (share.rs, the publish CLI),
   dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/j5.rs. Local (the token). After S69
   (dev). Also fixes dev's `ac10_endless...` deadline test (Friction, S65 and S69).
+  Delivered (merged as 8de79ae): an agent runs `watane-dev publish --push --owner <org>` and dev creates `<org>/<slug>` and `<org>/watane-channel`, and forks a derived mod into the org (`organization=<org>`, parent set, default branch `watane`); without `--owner` nothing changes. Real J5 passed twice against minmax-fund, which held only OpenMLOps afterwards. Decisions: GitHub forks into the org that owns the parent under a new name, so the real J5 forks inside minmax-fund, with Carol's slug a reserved `watane-j-<r>` (harness `reserve()` checks a 404 and records the name for deletion); `--owner` checks GitHub's account rule and requires `--push`; `organization` is sent only when the owner is not the login (case-insensitive), and fake-gh refuses `organization=<login>`; ac10 builds the endless source once untimed, then times the cached run against 7 s. Verified on the Mac: dev green with ignored except envelope ac5 (red on main since S73, see Friction), app J5 green. For a later slice (user-sim): `--owner` does not apply to a channel whose origin is already stored, silently; the `--owner` usage errors point to `watane-dev --help` instead of `publish --help`.
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
@@ -974,7 +975,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S66: delivered 2026-11-15 and merged; foreman stopped, worktree and branch removed.
 - S73: cloud routine `trig_01CZpy9oswGijTpTZhRtsFVq` (handed out 2026-11-15), branch `slice/s73`.
 - S74: `5977e817` (sessionId `5977e817-a1e3-4195-b580-115e9ddb2317`), worktree `.claude/worktrees/s74` (local: the app; builds in main's `target/`).
-- S71: `0173237e` (sessionId `0173237e-96d8-45eb-a71f-6366484ebb0b`), worktree `.claude/worktrees/s71` (local: the token; builds in main's `target/`).
+- S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
@@ -1506,6 +1507,11 @@ The human may veto each one.
   filled the disk again (two local foremen' cloned targets diverge as they rebuild: 40+ GB each).
   Verify one slice at a time in main's `target/`, never a second target; clean a slice worktree's
   `target/` as soon as its foreman delivers.
+- S71: Sol wrote an 11 GB `target/` inside the worktree (it could not write main's `target/`, though
+  impl.sh lists `$CARGO_TARGET_DIR`; to check), and S74's build replaced `watane-dev` under S71's
+  suite (about 70 false reds). A foreman's verification holds only while no other foreman builds.
+- S73 to S76: main is red on dev's envelope ac5 again: S73's design names
+  `contract::ac_manage_fake_and_records`, which S76 builds. Not a slice's failure until then.
 
 ## Digest
 
