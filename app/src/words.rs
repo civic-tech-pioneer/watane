@@ -151,7 +151,7 @@ pub fn grant_line_bound(
         } => (
             GrantKind::Subscribe,
             format!(
-                "Receive the {interface} events of {}",
+                "Receive the {interface} events of {} and answer its requests",
                 provider_bound(p, binds, parties)
             ),
         ),
@@ -345,7 +345,7 @@ mod tests {
                         interface: interface.clone(),
                         provider: p.clone(),
                     },
-                    format!("Receive the {interface} events of {target}"),
+                    format!("Receive the {interface} events of {target} and answer its requests"),
                 ),
                 (Grant::Storage, "Keep its own data on this device".into()),
                 (
@@ -410,7 +410,7 @@ mod tests {
                 },
                 "subscribe mods:reading-list/books@0.1.0 from local/reading-list",
                 "subscribe",
-                "Receive the mods:reading-list/books@0.1.0 events of reading-list (local)",
+                "Receive the mods:reading-list/books@0.1.0 events of reading-list (local) and answer its requests",
             ),
         ];
         for (grant, key, kind, text) in rows {
