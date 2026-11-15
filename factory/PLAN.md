@@ -677,6 +677,32 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   `watane-dev new` gets each of the four right on the first try. Touches: dev only (src, template,
   tests, TECHNICAL). Not `share.rs` or the publish CLI (the `--owner` question is open). Cloud.
 
+### Step 10: Own manager (J10)
+
+Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority split and the grant
+`Manage`; its WIT, request forms, consent words and J10's tests wait for a design slice
+(spec/TECHNICAL 9). The main mod (W36) is not a step: pkg stage 10 and app stage I, buildable now.
+
+- [~] **S73 Step 10 designed: the management interface (W35).** Branch `slice/s73`. A design slice:
+  `watane:host/manage` in WIT (what a managing mod sees: installed mods, grants, links; what it does
+  alone: disable, withdraw a grant, close a page; what it only asks for: install, update, grant, a pick
+  of a provider, a removal that deletes data), how a request reaches the consent view and how its
+  answer comes back, the `Manage` grant in pkg, the host's checks, a fake manager in dev's contract
+  tests, the consent words, and J10's tests; each subsystem's build-plan row for step 10, sized for
+  slices. Outcome: a reviewer can build step 10 from the documents alone; every open question is
+  either decided in the documents or listed for the human with options. Touches: spec/TECHNICAL.md,
+  spec/FUNCTIONAL.md (J10 only), pkg, host, dev TECHNICAL and FUNCTIONAL; app/TECHNICAL.md only in a
+  new section at its end (S74 edits app/TECHNICAL 5.3 and 5.4). Docs only. Cloud.
+- [~] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
+  pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
+  5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
+  page the main mod and unsets it; a mod that proposes itself becomes main when installed and none is
+  set; "Mods…" in the app menu opens the manager; settings hold identity, agents and own machines).
+  Outcome: app S37 to S42 pass (`tests/manager.rs` with the fixture `desk`); every earlier suite
+  and J2 to J5, J9 pass. Touches: pkg (meta.rs, its tests, TECHNICAL 4.2 if a decision lands), app
+  (src, ui, tests/manager.rs, TECHNICAL 5.3, 5.4). Local (the app). S71 (local) owns dev/ and
+  app/tests/j5.rs; S72 (cloud) owns node/ and net/; S73 (cloud) owns the docs above.
+
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
