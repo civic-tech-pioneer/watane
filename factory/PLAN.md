@@ -501,8 +501,26 @@ is a step-7-style check, after S55.
   net/TECHNICAL.md 12 before N3. Outcome: scenario S1 and `heads` and `entries` between two trusted
   test nodes pass; S13 runs from here on. Touches: new `net/` crate, workspace `Cargo.toml`. Cloud:
   bind `127.0.0.1`, not `::1` (the cloud has no IPv6 loopback); no test reaches the internet.
+- [~] **S61 A home can be a replica: it reads, verifies and stores with no identity (log L6, dist
+  S8).** Branch `slice/s61`. Builds log L6 (log/TECHNICAL.md 5.5 and the L6 row of 9:
+  `Log::open_keyless`, `identity() -> Option<PublicKey>`, `drop_identity`, `channels`, `NoIdentity`,
+  `HasIdentity`) and dist S8 (dist/TECHNICAL.md 5.12 and the S8 row of 8: `Dist::open_keyless`,
+  `identity()` and `fingerprint()` as Option, `drop_identity`, `NoIdentity` on every signing path,
+  the holder methods of net/TECHNICAL 3.1, `HeadState`, the record reason `kept` with `Via::Kept`,
+  `search_stored`, and the lock rule of RV-06: no read lock and no own-channel lock held across a
+  holder call). One slice because both change `identity()`. dist gains no thread and no dependency
+  on `net`.
+
+  The Option ripples to every caller: about 37 sites in app/src (core.rs alone has 25), and dist's
+  own. Each caller of a home that has an identity keeps its behaviour; a keyless home answers
+  `NoIdentity` wherever it would sign. Outcome: a keyless home opens, reads, verifies and stores
+  another participant's channel, refuses to sign with `NoIdentity`, and `drop_identity` deletes only
+  an identity that signed nothing; every existing journey still passes. Touches: log, dist, app (the
+  Option), possibly host and dev. Needs the Mac: the app cannot build in the cloud, and J2 to J5 must
+  stay green. S60 is building net in the cloud at the same time and owns the workspace Cargo.toml
+  and Cargo.lock: add no dependency.
 - Then, sketched just in time as each lands. Two lines run side by side: net N2, N3, N4 in turn;
-  and log L6 with dist S8 as one slice, which needs nothing from net and can start now. node 1 joins
+  and S61. node 1 joins
   them after N2, node 2 after N4, node 3 after node 2, and app G after node 2 and 3; J8 closes the
   step.
 
@@ -526,8 +544,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | net | N2 device list, pairing, classes, allowances | 8 | open |
 | net | N3 sync, gossip hints, blobs | 8 | open |
 | net | N4 light machines, restore, reach | 8 | open |
-| log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open |
-| dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | open |
+| log | L6 keyless (`open_keyless`, `identity()` an Option, `drop_identity`) | 8 | open (S61) |
+| dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | open (S61) |
 | node | 1 holder | 8 | open |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | open |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open |
