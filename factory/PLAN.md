@@ -626,7 +626,7 @@ is a step-7-style check, after S55.
   `kept` record (dist 5.12); `DistHoldings::set` a second time is an error, not a silent keep.
   Touches: node, dist (the kept record), net (that one cause text). Cloud.
   Delivered (796c074, merged rebased): Alice publishes on her laptop and her server keeps entry and package within about 250 ms on loopback; a light laptop searches through the server (hits marked with its key), installs from it and gets the next release through it; an unused app home joins as a replica and drops its key; a restored identity takes its head only when Alice picks the server's hint. Decisions: net's Unreachable cause names only what is missing; a failed Kept ingest takes back only the kept mark it added; `DistHoldings::set` twice is `NodeError::HolderSet`; node's search sends one remote query with interface null (dist's `InterfaceQuery` has no accessor), so remote budgets are spent on any interface; S5 uses a 4 s host delay. Verified on the Mac: hakari clean, node, dist, net, log with ignored, host and app green. Found, not fixed (net 5.7): a gossip hint is acted on with the neighbour that relayed it, which may not hold the head yet, so about 1 in 10 updates on a three-machine topic waits for the 10-minute sync; node/tests/light.rs reconnects as a commented workaround. user-sim notes: 'own head 1 is not stored' reads wrong for a hint with the right seq and another id; `IdentityInUse` says 'signed statements' after one; an anchor never asks its full machines on fetch, follow or search (NODE-F-9), so it cannot search what only the server holds.
-- [~] **S72 Alice runs her server as a program (node 3), and a hint reaches the right machine.**
+- [x] **S72 Alice runs her server as a program (node 3), and a hint reaches the right machine.**
   Branch `slice/s72`. Builds node stage 3 (node/TECHNICAL.md 6 and 9, row 3): `watane-node` with
   `join`, `run`, `status`, `relay` (a fixed port; port 0 refused) and `dht`, and the output of 6.2.
   Fixes S70's net finding (net 5.7): a gossip hint pulls from the machine that told it, or retries once
@@ -634,6 +634,7 @@ is a step-7-style check, after S55.
   node/tests/light.rs's reconnect workaround. Outcome: node scenarios S10 to S13 pass on the real
   `watane-node` binary between homes on 127.0.0.1; the three-machine hint test passes 20 of 20 runs
   without the workaround. Touches: node (the bin, tests, docs), net (5.7 and its test). Cloud.
+  Delivered (merged rebased as 69954c2): Alice runs her server as `watane-node` (`join`, `run`, `status`, `relay`, `dht`, optional `--bind`); a hint whose machine lacks the seq retries every 250 ms on the next trusted machine, up to 20 times, and the light.rs workaround is gone. Decisions: tokio's signal feature, not signal-hook; `url` a direct node dependency (Cargo.lock: tokio and url in node's list, no new crate); a join stores the anchor's answering address; `Net::options()`; a signal during join exits 1 `interrupted`; a removed machine's `run` points to `join --replace`; S13 uses another author's entries. Verified on the Mac: hakari clean, net and node green with ignored, node's light test 5 of 5, app builds. For a later slice (user-sim wording, about ten items in the S72 report): the key printed twice in causes; `--help` says unknown flag; the y/N prompt and its answer share a line; no confirmation after dht and relay changes; a second run reports the dist lock instead of another watane-node.
 - Then app G after S72; J8 closes the
   step.
 
@@ -727,7 +728,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S8 keyless, holder methods, `kept`, `Via::Kept`, `search_stored`, the lock rule | 8 | done (S61) |
 | node | 1 holder | 8 | done (S64) |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | done (S70) |
-| node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | open (S72) |
+| node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | done (S72) |
 | app | G own machines (J8) | 8 | open |
 | pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
 | host | 10 collect | 9 | done (S65) |
@@ -950,7 +951,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S65: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S68: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S70: delivered 2026-11-15 and merged; routine finished, branches removed.
-- S72: cloud routine `trig_012y9RCK9KGTAZoXU9FitRky` (handed out 2026-11-15), branch `slice/s72`.
+- S72: delivered 2026-11-15 and merged; routine finished, branches removed.
 - S66: delivered 2026-11-15 and merged; foreman stopped, worktree and branch removed.
 - S73: cloud routine `trig_01CZpy9oswGijTpTZhRtsFVq` (handed out 2026-11-15), branch `slice/s73`.
 - S74: `5977e817` (sessionId `5977e817-a1e3-4195-b580-115e9ddb2317`), worktree `.claude/worktrees/s74` (local: the app; builds in main's `target/`).
