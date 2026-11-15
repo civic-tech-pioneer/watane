@@ -577,7 +577,7 @@ is a step-7-style check, after S55.
   node (new), the workspace `Cargo.toml` members line and `Cargo.lock`; not net (S63 owns it): a
   gap in net's API goes to the product owner as a question, not a change. Cloud.
   Delivered (ccf206d): the `node` crate opens a keyless home or an app home, and `DistHoldings` answers net's `Holdings` from what dist stored; a keyless node holds a channel it was given. dist re-exports `Grant`, `InterfaceName`, `Provider` so node depends only on dist and net. Verified on the Mac: hakari verify clean, node and dist green with ignored, app and host green (host's one flaky test passed 3 of 3 on rerun). Open for node 2: a `Kept` ingest that fails on a gap leaves its `kept` record; `DistHoldings::set` twice keeps the first.
-- [~] **S67 Alice's light laptop searches and installs through her server (net N4, part 1).**
+- [x] **S67 Alice's light laptop searches and installs through her server (net N4, part 1).**
   Branch `slice/s67`. Builds the light-machine and restore half of net N4 (net/TECHNICAL.md 5.9 and
   5.11): `query` with its 32-channel cap, `need`, `need_blob`, `NoFullMachine`, `own_heads`. Takes
   node Q5 (a light machine's `query` and `need` prefer a full replica over the anchor; NET-F-21
@@ -587,10 +587,14 @@ is a step-7-style check, after S55.
   (NET-F-32); the wrong-hash cause in watane's words; a `Refused` cause names the short key.
   Outcome: net S8, S12 and the query part of S9 pass as tests `s<n>_...`. Touches: net only. No new
   dependency. Cloud. Reach (mDNS, relay, DHT) is S68.
+  Delivered (d750ed5, merged as edae082): Alice's light laptop searches through her server and installs from it, same bytes; a restored laptop learns its head as a hint and pulls nothing until she confirms. The anchor syncs as a light machine (node Q5); a cap of 32 pulled channels per 5 s across all queries of a Net (node Q6); `query` answers trusted callers only, at most 200 hits. user-sim rejected once (iroh's words for a package not served), fixed with `regress_s67.rs`. Verified on the Mac: net green in 78 s, node green with ignored, app builds.
 - [ ] **S68 Two of Alice's machines on different networks connect through her relay (net N4, part 2).**
   Branch `slice/s68`. Builds reach (net/TECHNICAL.md 5.10): mDNS, stored addresses, addresses from
   `devices` answers, the relay of `relays`, the DHT switch, `Unreachable` with NET-F-28's cause, and
-  `relay_server` (iroh-relay, pinned `=1.4.1` as net 2 says). Outcome: net S11 passes; no service
+  `relay_server` (iroh-relay, pinned `=1.4.1` as net 2 says). First task: bring net's default test
+  run well under the 120 s limit (it took 120 s in the cloud after S67, 78 s on the Mac): S67 named
+  `support::settle`'s 3 x 300 ms window and the ~3 s `Net::close` / `set_options(off)` with open
+  connections. Outcome: net S11 passes; no service
   is reached that the options did not turn on (`no_default_services`). Touches: net, the workspace
   `Cargo.lock`. Cloud; the product owner runs `cargo hakari` on merge. After S67 (both own net).
 - Then node 2 after S68, node 3 after node 2, and app G after node 2 and 3; J8 closes the
@@ -854,7 +858,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S60: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S62: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S63: delivered 2026-11-15 and merged; routine finished, branch removed.
-- S67: cloud routine `trig_01QzNPKruqWLdit5sZ26jGUg` (handed out 2026-11-15), branch `slice/s67`.
+- S67: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S53: `68b6f713` (sessionId `68b6f713-8425-4db7-aba5-eb1b449a1320`), worktree `.claude/worktrees/s53` (local: the token).
 - S52: `e94a9b4e` (sessionId `e94a9b4e-fe58-4627-a92e-734ec694d848`), worktree `.claude/worktrees/s52` (local: the screen).
 - S64: delivered 2026-11-15 and merged; routine finished, branch removed.
@@ -1372,6 +1376,8 @@ The human may veto each one.
 - S63: the brief said both "add no dependency" and "do not touch Cargo.lock"; naming gossip's Stream
   needed one line in each. A brief that forbids the lock says what to do when the lock must change.
 - S63: net's default test run takes about 113 s of the 120 s limit (pairing settles about 1 s each).
+- S67: telling "the server does not have this package" from "its copy failed its check" needs a
+  wire answer; both read the same today.
 
 ## Digest
 
