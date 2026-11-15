@@ -218,6 +218,8 @@ pub struct MemHoldings {
     taken: Mutex<HashMap<[u8; 32], Vec<u8>>>,
     /// `ingest` answers `NotWanted` while set.
     pub not_wanted: std::sync::atomic::AtomicBool,
+    /// What `search` answers, whatever the query.
+    pub hits: Mutex<Vec<Hit>>,
     /// How many `entries` calls came for each channel.
     pub entries_calls: AtomicUsize,
     dir: tempfile::TempDir,
@@ -242,6 +244,7 @@ impl MemHoldings {
             wanted: Mutex::new(Vec::new()),
             taken: Mutex::new(HashMap::new()),
             not_wanted: std::sync::atomic::AtomicBool::new(false),
+            hits: Mutex::new(Vec::new()),
             entries_calls: AtomicUsize::new(0),
             dir: tempfile::tempdir().unwrap(),
         })
@@ -299,6 +302,10 @@ impl MemHoldings {
     }
     pub fn taken_blob(&self, id: &BlobId) -> Option<Vec<u8>> {
         self.taken.lock().unwrap().get(&id.0).cloned()
+    }
+    /// The hits `search` answers from now on.
+    pub fn set_hits(&self, hits: Vec<Hit>) {
+        *self.hits.lock().unwrap() = hits;
     }
     pub fn ingested_entries(&self) -> usize {
         self.ingests.lock().unwrap().iter().map(|(_, n, _)| n).sum()
@@ -427,7 +434,8 @@ impl Holdings for MemHoldings {
         Ok(())
     }
     fn search(&self, _: &Query) -> Vec<Hit> {
-        Vec::new()
+        self.enter();
+        self.hits.lock().unwrap().clone()
     }
 }
 
@@ -507,9 +515,19 @@ pub fn node_trusting(
 /// Pair `joiner` to `anchor` as `role` through the code, the join question
 /// and its answer. Both learn each other's addresses.
 pub fn pair_into(anchor: &Node, joiner: &Node, role: Role) -> watane_net::DeviceList {
+    pair_with(anchor, joiner, role, false)
+}
+
+/// `pair_into`, with `replace` as the joiner says it.
+pub fn pair_with(
+    anchor: &Node,
+    joiner: &Node,
+    role: Role,
+    replace: bool,
+) -> watane_net::DeviceList {
     let (ea, ej) = (anchor.net.events(), joiner.net.events());
     let code = anchor.net.pair_code(role).unwrap();
-    let list = try_pair(anchor, joiner, code, false, Some(true)).unwrap();
+    let list = try_pair(anchor, joiner, code, replace, Some(true)).unwrap();
     anchor.net.add_addrs(&joiner.key, &joiner.net.addrs());
     joiner.net.add_addrs(&anchor.key, &anchor.net.addrs());
     // the machines connect and sync now: wait until that has settled

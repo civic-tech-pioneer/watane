@@ -239,6 +239,14 @@ code is trimmed; whitespace inside it is a bad code.
 | `devices` | `seq: uint` | `[list: bytes or null, addrs: [[node: bytes(32), [text]]]]` | trusted |
 | `pair` | `secret: bytes(16)` | `[list: bytes]`, after the participant's answer | anyone (the code decides) |
 
+`query` is decoded strictly (4.4: a `limit` above 200, a `mode` other than
+`offers`, `uses` or `sends`, or text that is not text is `bad_request`); the
+answer is one item `[hits]` of at most `min(limit, hits per answer)` hits, from
+`holdings.search` only, within the request deadline; its answer limit is
+32 KiB. The caller refuses more hits than it asked for, or a hit whose
+channel or id is not 32 bytes (`BadObject`). `hello` still lists the six ops
+of N2; no caller reads the list to choose an op.
+
 The other two ALPNs are iroh-blobs' and iroh-gossip's own. `serve.rs`
 accepts a connection on them only from a trusted node (5.4).
 
@@ -500,12 +508,13 @@ pairs each machine with `replace` (PEERS 6.1).
 For each own machine that is online, on connect, on a hint (5.7), and every
 10 minutes (NET-F-18):
 
-1. Ask `heads`: a full machine asks with an empty list (all); a light
-   machine asks for the channels `holdings.heads(None)` lists.
+1. Ask `heads`: a full replica asks with an empty list (all); a light
+   machine, and the anchor of the list (or a holder with `is_anchor`), ask
+   for the channels `holdings.heads(None)` lists (NET-F-21, node Q5).
 2. For each channel where the other's seq is higher: `entries` from the
    own seq + 1, in pages, until the other's seq. Check each entry
-   (NET-F-23), then `holdings.ingest(channel, entries, Kept)` (full) or
-   `Asked` (light). `NotWanted` stops that channel. Emit `Pulled`.
+   (NET-F-23), then `holdings.ingest(channel, entries, Kept)` (a full
+   replica) or `Asked` (a light machine and the anchor). `NotWanted` stops that channel. Emit `Pulled`.
 3. A `forked` channel: ask `fork` and ingest both entries; `log` marks it.
 4. Then fetch the packages of `holdings.wanted_blobs(role)` (5.8).
 
@@ -534,7 +543,7 @@ decodes exactly (a message of any other shape is dropped), comes from a
 trusted machine, and its seq is above the holder's head for that channel,
 run step 2 of 5.6 for that channel with the machine that delivered it, else
 drop it (NET-F-20). The rule by role (answers node Q3): a full machine acts
-on a hint for any channel; a light machine only for a channel in
+on a hint for any channel; a light machine and the anchor only for a channel in
 `holdings.heads(None)`, so a hint never makes it hold a channel it does
 not. Acting asks the sender for the channel's head first: when the head's
 seq is the hint's and its id is not, the hint was forged and nothing is
@@ -564,13 +573,42 @@ which is what a reference needs.
 
 ### 5.9 A light machine
 
-- `query(q)`: run `holdings.search(q)` and ask `query` of one reachable full
-  machine (5 s). Return each node's hits apart. For a hit whose channel the
-  holder lacks, pull it from that node with `Asked`, at most 32 channels per
-  query (PEERS 8.2). The holder verifies each hit as it does a local one.
-- `need(channel)`, `need_blob(id, size)`: pull from a full machine, as 5.6
-  and 5.8, with `Asked`. `node` calls these before `dist` reads, so a
-  `dist` fetch then finds the bytes in its own store.
+A light own machine, and any machine that needs what it does not hold, asks
+a full machine.
+
+- **The choice.** The candidates are the machines of the newest device list
+  with role `Full` other than this node, minus any dropped for the session
+  (5.6) and any with neither a kept connection nor a known address. In
+  order: full replicas (not the list's anchor) with a kept connection, the
+  other full replicas (dialed), then the anchor. `need`, `need_blob` and
+  `query` use the first that answers (node Q5). With no list, or none
+  reachable, `need` and `need_blob` give `NoFullMachine`; `query` returns the
+  own hits only. With net off, `need` and `need_blob` give `Off`; `query`
+  returns the own hits only and `own_heads` is empty.
+- `query(q)`: run `holdings.search(q)` and ask `query` (4.2) of one full
+  machine (5 s). Return `(own node, own hits)` first, then `(machine, its
+  hits)` when one answered. The callee answers from its holder only (ND-6).
+  For each remote hit whose channel the holder lacks, or holds at a lower
+  seq than the hit, pull it from that machine as `need` does, `Asked`. At
+  most `QUERY_PULLS` = 32 distinct channels are pulled per `QUERY_WINDOW` =
+  5 s, across all `query` calls of one `Net` (a counter and the time of the
+  first pull of the window), so the three calls of one participant query pull
+  at most 32 (node Q6). A hit beyond the cap is returned and not pulled; a
+  hit is returned whether or not its pull worked, and the holder verifies it
+  (node 5.4). `limit` above 200 is cut to 200.
+- `need(channel)`: ask the chosen machine `heads` for the channel, then
+  `entries` from the holder's seq + 1 in pages to its head (ND-14 on each
+  page), `Asked`; a forked head as 5.6 step 3; `Pulled` once. `Ok` when the
+  holder's head is the remote's or the remote has nothing newer. A bad
+  object is `BadObject`, with 5.6's drop and `Refused`. A full machine may
+  call it too (it asks another full machine).
+- `need_blob(id, size)`: fetch as 5.8 (a package over `limits.blob` is
+  `TooLarge` with no transfer; a hash mismatch is `BadObject`) and call
+  `holdings.store_blob`. A machine that is not reached, or that does not
+  have it, gives way to the next candidate; none connected is
+  `NoFullMachine`; some connected and none had it is `Unreachable` naming the
+  last of them and why. `node` calls these before `dist` reads, so a `dist`
+  fetch then finds the bytes in its own store.
 
 A light machine with no full machine reachable gives `NoFullMachine`, and
 the holder reads from link locations as today.
@@ -589,8 +627,9 @@ machines; the participant adds its URL to `relays` on the others.
 
 ### 5.11 Restore
 
-`own_heads(channel)`: ask `heads` for the own channel of every reachable
-full machine and return each answer. The caller (`app` through `node`)
+`own_heads(channel)`: ask `heads` for the own channel of every candidate of
+5.9 that answers (in parallel, each within the request deadline) and return
+`(node, head)` for each. It ingests nothing and emits no `Pulled`. The caller (`app` through `node`)
 shows them as hints; `dist` reads the entries with `need` and confirms the
 head only after the participant does (F-APP-6, NET-F-30).
 
@@ -751,6 +790,33 @@ N3 notes (built):
   crate only to read the gossip receiver, which is a `Stream`; iroh-gossip
   re-exports nothing to name that trait.
 
+N4 part 1 notes (built, S67):
+
+- Light machines (5.9): `light.rs` holds the choice of a full machine (`order`,
+  a pure function over the list, this node and the set of connected machines),
+  `need`, `need_blob`, `query`, `own_heads` and the window counter (`Window`,
+  `QUERY_PULLS` 32, `QUERY_WINDOW` 5 s, in `Core`, tested with an injected
+  clock). A machine with neither a kept connection nor a known address is not
+  a candidate: reach by mDNS, `book.json` addresses, relay, the DHT and S11 is
+  S68, so a test gives the light machine the server's address with
+  `add_addrs`.
+- The `query` op (4.2): `Request::Query`, codec unit tests in `wire.rs`; a
+  trusted caller only; an unknown caller gets `not_allowed` before the holder.
+- The anchor (5.6, 5.7): a machine whose list names it as anchor, or whose
+  holder says `is_anchor`, syncs as a light machine: `heads(None)` of its
+  holder only, `Asked`, hints for held channels only, `wanted_blobs(Light)`.
+  Only a full replica asks for all and ingests `Kept`.
+- `own_heads` hints only; it calls no `ingest` and emits no `Pulled`.
+- Follow-ups (NET-F-32): a wanted package over `limits.blob` in a sync is
+  skipped with no transfer and `Event::Unreachable` ("package <hex8> is <n>
+  bytes, over this machine's limit of <m>"; hex8 is the first four bytes of
+  the hash); a hash mismatch says "package <hex8> from <short key> does not
+  match its hash"; every `Refused` cause contains the node's short key (the
+  event adds "node <short>: " when the cause lacks it).
+- No `Limits` field is new; `hello` is unchanged.
+- Tests: `tests/light.rs` (S8, S9 query part, S12, the anchor, the causes),
+  unit tests in `light.rs` and `wire.rs`.
+
 S13 runs from N1 on. `node` and the `app` views follow N4 in step 8; J8
 closes the step.
 
@@ -778,7 +844,7 @@ closes the step.
 | Q1 | 5.4 and 5.8 rest on two library features: adding a file to the iroh-blobs store by reference, and wrapping a protocol handler in iroh's router. | Answered by N1 against iroh 1.4.1, iroh-blobs 0.105.0 and iroh-gossip 0.102.0: both are present. `ImportMode::TryReference` (`api::blobs::AddPathOptions`) leaves a 1 MiB file out of the store (`q1a_blobs_by_reference_keep_no_second_copy`; the store's redb file is preallocated at about 1 MiB whatever it holds, so the test measures growth and the `data/` directory, and a `Copy` import as the control). A wrapper `Gate<P: ProtocolHandler>` that checks `Connection::remote_id()` before it calls the inner `accept`, and forwards `shutdown`, works around `BlobsProtocol` and around `Gossip`, both in one `Router`; a refused node's download fails and the inner handler is not called (`q1b_a_wrapper_admits_a_connection_by_its_remote_key`). |
 | Q2 | What does a light machine keep after a search pulled a channel? | **Decided (S59).** `Asked` channels stay in the store with no record, like a channel read for a provider today (`dist` 5.11): not held, so not in `heads(None)`, not synced and not refreshed (`dist` 5.12, DD-38). A search shows one only when `node` verified the remote hit against it (`node` 5.4). An install from such a hit gives the channel a `kept` record on the replica, so it stays current through the full machines (`node` 5.3, NO-6). `Log::forget` cleans up at D5. |
 | Q4 | (node Q4) Do `Options` and `Limits` derive `Clone`, `Debug` and `Default`? | **Answered (S62).** Yes, both, since N1; `Default` is `on` false, no relays, `dht` false, no relay server, no bind, and the limits and budgets of 4.2 (section 3). |
-| Q5 | (node Q5, the N2 part) The anchor is `full` in the device list, but keeps only what the participant's acts there chose (node NO-8). Which machine is a full machine for NET-F-21 and for a light machine's `query` and `need`? | **Answered for N2 (S62).** The list keeps the anchor as `full` (4.3 unchanged; it is the role a lost anchor's restore needs). NET-F-21's "keep everything" binds full replicas only, not the anchor. A light machine asks a full replica first and the anchor only when no full replica is reachable; N4 builds that choice in 5.9. |
+| Q5 | (node Q5, the N2 part) The anchor is `full` in the device list, but keeps only what the participant's acts there chose (node NO-8). Which machine is a full machine for NET-F-21 and for a light machine's `query` and `need`? | **Answered for N2 (S62).** The list keeps the anchor as `full` (4.3 unchanged; it is the role a lost anchor's restore needs). NET-F-21's "keep everything" binds full replicas only, not the anchor. A light machine asks a full replica first and the anchor only when no full replica is reachable; built in 5.9 (S67). |
 | Q3 | How does the app show own machines and their freshness? | **Decided (S59), `app/TECHNICAL.md` 9.8 (stage G).** A machines view with each machine's short key, role, this machine and anchor marks, online or last seen (`PeerUp`, `PeerDown`), and the last pull from it (`Pulled`), kept in memory from `events()`; refusals and unreachable machines with their causes. No heads count: it needs no new op, and the last pull says how current a machine keeps this one. The join question, the relay and the DHT switch go through the app's consent view with the texts of `node` 7. |
 | Q6 | (node Q3) Does a hint make a light machine pull any channel any machine tells? | **Answered (N3).** No: a full machine acts for any channel; a light machine only for a channel in `holdings.heads(None)` (5.7). |
 

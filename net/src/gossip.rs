@@ -218,7 +218,7 @@ fn received(core: &Arc<Core>, from: NodeKey, content: &[u8]) {
     }
     let core = core.clone();
     tokio::spawn(async move {
-        let role = core.role();
+        let role = sync::role_of(&core).await;
         let channel = hint.channel;
         let Ok((own, listed)) = sync::holder(&core, move |h| {
             let own = h

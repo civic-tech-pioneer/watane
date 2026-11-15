@@ -1,7 +1,7 @@
 //! Requests and answers of `watane/1` (TECHNICAL 4.2), as deterministic CBOR.
 
 use crate::{
-    HeadInfo,
+    HeadInfo, Hit, Query,
     cbor::{self, Item, Reader},
     error::Code,
 };
@@ -19,6 +19,10 @@ pub(crate) const HEADS_ANSWER: usize = 1 << 20;
 pub(crate) const FORK_ANSWER: usize = 2 * MAX_ENTRY + 64;
 /// The answers of `devices` and `pair`: a device list and little else.
 pub(crate) const LIST_ANSWER: usize = 1 << 20;
+/// The answer of `query`: at most 200 hits of about 80 bytes.
+pub(crate) const QUERY_ANSWER: usize = 32 * 1024;
+/// The most hits a query may ask for (4.4).
+pub(crate) const MAX_HITS: u64 = 200;
 /// The longest `err` item the caller reads (inside the cap of its op).
 pub(crate) const ERR_MESSAGE: usize = 200;
 
@@ -159,6 +163,7 @@ pub(crate) enum Request {
     Pair {
         secret: [u8; 16],
     },
+    Query(Query),
 }
 
 impl Request {
@@ -170,6 +175,7 @@ impl Request {
             Request::Fork { .. } => "fork",
             Request::Devices { .. } => "devices",
             Request::Pair { .. } => "pair",
+            Request::Query(_) => "query",
         }
     }
 
@@ -214,6 +220,11 @@ impl Request {
                 cbor::array(2, &mut out);
                 cbor::text("pair", &mut out);
                 cbor::bytes(secret, &mut out);
+            }
+            Request::Query(q) => {
+                cbor::array(2, &mut out);
+                cbor::text("query", &mut out);
+                encode_query(q, &mut out);
             }
         }
         out
@@ -261,12 +272,94 @@ impl Request {
             ("pair", [Item::Bytes(secret)]) => Ok(Request::Pair {
                 secret: <[u8; 16]>::try_from(*secret).map_err(|_| Code::BadRequest)?,
             }),
-            ("hello" | "heads" | "entries" | "fork" | "devices" | "pair", _) => {
+            ("query", [Item::Array(fields)]) => decode_query(fields)
+                .map(Request::Query)
+                .ok_or(Code::BadRequest),
+            ("hello" | "heads" | "entries" | "fork" | "devices" | "pair" | "query", _) => {
                 Err(Code::BadRequest)
             }
             _ => Err(Code::UnknownOp),
         }
     }
+}
+
+fn encode_query(q: &Query, out: &mut Vec<u8>) {
+    cbor::array(5, out);
+    match &q.text {
+        Some(t) => cbor::text(t, out),
+        None => cbor::null(out),
+    }
+    match &q.publisher {
+        Some(p) => cbor::bytes(p.as_bytes(), out),
+        None => cbor::null(out),
+    }
+    match &q.interface {
+        Some((mode, name)) => {
+            cbor::array(2, out);
+            cbor::text(mode, out);
+            cbor::text(name, out);
+        }
+        None => cbor::null(out),
+    }
+    match &q.origin {
+        Some((publisher, slug)) => {
+            cbor::array(2, out);
+            cbor::bytes(publisher.as_bytes(), out);
+            cbor::text(slug, out);
+        }
+        None => cbor::null(out),
+    }
+    cbor::uint(q.limit, out);
+}
+
+fn key_item(item: &Item<'_>) -> Option<PublicKey> {
+    key32(item).and_then(|k| PublicKey::from_bytes(k).ok())
+}
+
+/// The query of 4.4, strictly: `limit` at most 200, a `mode` of `offers`,
+/// `uses` or `sends`, text where text is named.
+fn decode_query(fields: &[Item<'_>]) -> Option<Query> {
+    let [text, publisher, interface, origin, Item::Uint(limit)] = fields else {
+        return None;
+    };
+    if *limit > MAX_HITS {
+        return None;
+    }
+    let text = match text {
+        Item::Null => None,
+        Item::Text(t) => Some((*t).to_owned()),
+        _ => return None,
+    };
+    let publisher = match publisher {
+        Item::Null => None,
+        other => Some(key_item(other)?),
+    };
+    let interface = match interface {
+        Item::Null => None,
+        Item::Array(pair) => match pair.as_slice() {
+            [
+                Item::Text(mode @ ("offers" | "uses" | "sends")),
+                Item::Text(name),
+            ] => Some(((*mode).to_owned(), (*name).to_owned())),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let origin = match origin {
+        Item::Null => None,
+        Item::Array(pair) => match pair.as_slice() {
+            [key, Item::Text(slug)] => Some((key_item(key)?, (*slug).to_owned())),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(Query {
+        text,
+        publisher,
+        interface,
+        origin,
+        limit: *limit,
+    })
 }
 
 // ---- answers: building (callee) ----
@@ -350,6 +443,20 @@ pub(crate) fn heads_answer(heads: &[(PublicKey, Option<HeadInfo>)]) -> Vec<u8> {
                 cbor::null(&mut out);
             }
         }
+    }
+    out
+}
+
+/// `query`: one item `[hits]`, each hit `[channel, seq, entry]`.
+pub(crate) fn query_answer(hits: &[Hit]) -> Vec<u8> {
+    let mut out = ok();
+    cbor::array(1, &mut out);
+    cbor::array(hits.len(), &mut out);
+    for hit in hits {
+        cbor::array(3, &mut out);
+        cbor::bytes(hit.channel.as_bytes(), &mut out);
+        cbor::uint(hit.seq, &mut out);
+        cbor::bytes(hit.entry.as_bytes(), &mut out);
     }
     out
 }
@@ -511,6 +618,34 @@ pub(crate) fn parse_heads(bytes: &[u8]) -> Result<Vec<(PublicKey, Option<RawHead
     Ok(out)
 }
 
+pub(crate) fn parse_query(bytes: &[u8]) -> Result<Vec<Hit>, AnswerError> {
+    let items = items(bytes)?;
+    let [Item::Array(outer)] = items.as_slice() else {
+        return bad("not a query answer");
+    };
+    let [Item::Array(hits)] = outer.as_slice() else {
+        return bad("not a query answer");
+    };
+    let mut out = Vec::with_capacity(hits.len());
+    for hit in hits {
+        let Item::Array(fields) = hit else {
+            return bad("a hit is not an array");
+        };
+        let [channel, Item::Uint(seq), entry] = fields.as_slice() else {
+            return bad("a hit has the wrong shape");
+        };
+        let (Some(channel), Some(entry)) = (key_item(channel), key32(entry)) else {
+            return bad("a hit has a bad channel or entry id");
+        };
+        out.push(Hit {
+            channel,
+            seq: *seq,
+            entry: entry_id(*entry),
+        });
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_entries(bytes: &[u8]) -> Result<Vec<&[u8]>, AnswerError> {
     let items = items(bytes)?;
     items
@@ -560,4 +695,184 @@ pub(crate) fn parse_pair(bytes: &[u8]) -> Result<&[u8], AnswerError> {
 
 pub(crate) fn entry_id(bytes: [u8; 32]) -> EntryId {
     EntryId::from_bytes(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(n: u8) -> PublicKey {
+        PublicKey::from_bytes(&ed25519_pk(n)).unwrap_or_else(|_| panic!("key {n}"))
+    }
+
+    /// A valid public key: the base point's multiples are easy to find by
+    /// asking `watane_log`, but any valid point will do; hash to one.
+    fn ed25519_pk(n: u8) -> [u8; 32] {
+        // the compressed identity-adjacent points are not all valid; use
+        // the well-known point of y = 1 (identity) shifted by trying seeds
+        let mut y = [0u8; 32];
+        y[0] = 1;
+        let mut k = 0u8;
+        loop {
+            y[1] = n.wrapping_add(k);
+            if PublicKey::from_bytes(&y).is_ok() {
+                return y;
+            }
+            k = k.wrapping_add(1);
+            y[2] = k;
+        }
+    }
+
+    fn full() -> Query {
+        Query {
+            text: Some("notes".into()),
+            publisher: Some(key(1)),
+            interface: Some(("offers".into(), "note".into())),
+            origin: Some((key(2), "slug".into())),
+            limit: 200,
+        }
+    }
+
+    #[test]
+    fn ac2_a_query_round_trips() {
+        for q in [
+            full(),
+            Query {
+                text: None,
+                publisher: None,
+                interface: None,
+                origin: None,
+                limit: 0,
+            },
+        ] {
+            let bytes = Request::Query(q.clone()).encode();
+            assert_eq!(Request::decode(&bytes), Ok(Request::Query(q)));
+        }
+        for mode in ["uses", "sends"] {
+            let q = Query {
+                interface: Some((mode.into(), "x".into())),
+                ..full()
+            };
+            let bytes = Request::Query(q.clone()).encode();
+            assert_eq!(Request::decode(&bytes), Ok(Request::Query(q)));
+        }
+    }
+
+    #[test]
+    fn ac2_a_bad_query_is_a_bad_request() {
+        let bad = |q: Query| Request::decode(&Request::Query(q).encode());
+        assert_eq!(
+            bad(Query {
+                limit: 201,
+                ..full()
+            }),
+            Err(Code::BadRequest),
+            "limit"
+        );
+        assert_eq!(
+            bad(Query {
+                interface: Some(("frobs".into(), "x".into())),
+                ..full()
+            }),
+            Err(Code::BadRequest),
+            "mode"
+        );
+        // by hand: fields that are not what 4.4 names
+        let by_hand = |fields: Vec<Vec<u8>>| {
+            let mut out = Vec::new();
+            cbor::array(2, &mut out);
+            cbor::text("query", &mut out);
+            cbor::array(fields.len(), &mut out);
+            for f in fields {
+                out.extend(f);
+            }
+            Request::decode(&out)
+        };
+        let null = || vec![0xf6u8];
+        let uint = |n| {
+            let mut o = Vec::new();
+            cbor::uint(n, &mut o);
+            o
+        };
+        let text = |t: &str| {
+            let mut o = Vec::new();
+            cbor::text(t, &mut o);
+            o
+        };
+        let bytes = |b: &[u8]| {
+            let mut o = Vec::new();
+            cbor::bytes(b, &mut o);
+            o
+        };
+        let ok = by_hand(vec![null(), null(), null(), null(), uint(5)]);
+        assert!(matches!(ok, Ok(Request::Query(_))));
+        // text that is not text
+        assert_eq!(
+            by_hand(vec![uint(1), null(), null(), null(), uint(5)]),
+            Err(Code::BadRequest)
+        );
+        // a publisher of the wrong length
+        assert_eq!(
+            by_hand(vec![null(), bytes(&[1; 31]), null(), null(), uint(5)]),
+            Err(Code::BadRequest)
+        );
+        // a slug that is not text
+        let origin = {
+            let mut o = Vec::new();
+            cbor::array(2, &mut o);
+            o.extend(bytes(key(2).as_bytes()));
+            o.extend(uint(3));
+            o
+        };
+        assert_eq!(
+            by_hand(vec![null(), null(), null(), origin, uint(5)]),
+            Err(Code::BadRequest)
+        );
+        // four fields; a limit that is not a number
+        assert_eq!(
+            by_hand(vec![null(), null(), null(), uint(5)]),
+            Err(Code::BadRequest)
+        );
+        assert_eq!(
+            by_hand(vec![null(), null(), null(), null(), text("5")]),
+            Err(Code::BadRequest)
+        );
+    }
+
+    #[test]
+    fn ac2_a_query_answer_round_trips_and_a_bad_one_is_refused() {
+        let hits = vec![
+            Hit {
+                channel: key(1),
+                seq: 7,
+                entry: entry_id([4; 32]),
+            },
+            Hit {
+                channel: key(2),
+                seq: 300,
+                entry: entry_id([5; 32]),
+            },
+        ];
+        assert_eq!(parse_query(&query_answer(&hits)), Ok(hits.clone()));
+        assert_eq!(parse_query(&query_answer(&[])), Ok(Vec::new()));
+        // a refusal
+        let err = err_answer(Code::NotAllowed, "no");
+        assert_eq!(
+            parse_query(&err),
+            Err(AnswerError::Refused(Code::NotAllowed))
+        );
+        // a hit whose channel is 31 bytes
+        let mut out = ok();
+        cbor::array(1, &mut out);
+        cbor::array(1, &mut out);
+        cbor::array(3, &mut out);
+        cbor::bytes(&[1; 31], &mut out);
+        cbor::uint(1, &mut out);
+        cbor::bytes(&[2; 32], &mut out);
+        assert!(matches!(parse_query(&out), Err(AnswerError::Bad(_))));
+        // hits not in one inner array
+        let mut out = ok();
+        cbor::array(0, &mut out);
+        assert!(matches!(parse_query(&out), Err(AnswerError::Bad(_))));
+    }
 }

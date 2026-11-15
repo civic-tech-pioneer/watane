@@ -309,7 +309,19 @@ fn s7_bad_objects_are_refused_and_the_machine_dropped() {
         ("more bytes than wanted", vec![], Some(truth), 99),
     ];
     for (i, (name, entries, blob, wanted)) in cases.into_iter().enumerate() {
-        let holder = MemHoldings::empty();
+        // the node trusting the fake is the anchor of its own list, which
+        // pulls only channels its holder holds (NET-F-21): it holds the first
+        // entry of the channel the bad entries are offered for
+        let held: Vec<Entry> = if wanted > 0 {
+            vec![]
+        } else {
+            good[..1].to_vec()
+        };
+        let holder = if held.is_empty() {
+            MemHoldings::empty()
+        } else {
+            holding(&[(cx, held.clone())], false)
+        };
         let answer = entries_answer_of(&entries);
         let heads = heads.clone();
         let (n, fake, count) = with_fake(
@@ -334,8 +346,23 @@ fn s7_bad_objects_are_refused_and_the_machine_dropped() {
         // the node dials the fake from the next tick on; it was told the address
         let cause = refused(&events, &fake.key);
         assert!(cause.is_some(), "{name}: not refused");
+        let cause = cause.unwrap();
+        // NET-F-32: the cause names the machine by its short key
+        assert!(cause.contains(&fake.key.short()), "{name}: {cause}");
+        if name == "bytes that are not the hash" {
+            // in watane's words, not iroh's
+            assert_eq!(
+                cause,
+                format!(
+                    "package {} from {} does not match its hash",
+                    hex(&small_id.0[..4]),
+                    fake.key.short()
+                ),
+            );
+        }
         assert!(
-            holder.chains().is_empty() && holder.ingests.lock().unwrap().is_empty(),
+            raws(&holder.chains().get(&cx).cloned().unwrap_or_default()) == raws(&held)
+                && holder.ingests.lock().unwrap().is_empty(),
             "{name}: the holder was given entries"
         );
         assert!(holder.stored_blobs.lock().unwrap().is_empty(), "{name}");
@@ -385,7 +412,7 @@ fn s9_unasked_entries_are_not_stored_and_requests_are_not_forwarded() {
 
 /// S9 (b): a trusted caller asking for a channel the server lacks gets the
 /// server's own answer; no third node is contacted. (A light machine's
-/// `query` reaching the server is N4.)
+/// `query` reaching the server and no third node is `tests/light.rs`.)
 #[test]
 fn s9_requests_are_answered_from_the_holder_only() {
     let w = [53u8; 32];

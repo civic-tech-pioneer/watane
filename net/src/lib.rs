@@ -10,6 +10,7 @@ mod devices;
 mod error;
 mod gossip;
 mod key;
+mod light;
 mod pairing;
 mod serve;
 mod sync;
@@ -178,6 +179,8 @@ pub(crate) struct Core {
     /// Where gossip looks for a node.
     lookup: Mutex<Option<iroh::address_lookup::memory::MemoryLookup>>,
     pub(crate) gossip: Mutex<Option<gossip::Hub>>,
+    /// The channels pulled for queries in the current window (5.9).
+    pub(crate) pulls: Mutex<light::Window>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -292,6 +295,7 @@ impl Net {
                 dropped: Mutex::new(HashSet::new()),
                 lookup: Mutex::new(None),
                 gossip: Mutex::new(None),
+                pulls: Mutex::new(light::Window::default()),
             }),
             shared: Arc::new(Shared {
                 runtime: OnceLock::new(),
@@ -523,6 +527,27 @@ impl Net {
     }
 
     /// Every receiver gets every later event (node Q2).
+    /// Light: pull `channel` from a full machine with `Why::Asked` (5.9).
+    pub fn need(&self, channel: &PublicKey) -> Result<(), NetError> {
+        light::need(self, channel)
+    }
+
+    /// Fetch a package of `size` bytes from a full machine (5.9).
+    pub fn need_blob(&self, id: &BlobId, size: u64) -> Result<(), NetError> {
+        light::need_blob(self, id, size)
+    }
+
+    /// This node's own hits first, then those of a full machine (5.9).
+    pub fn query(&self, query: &Query) -> Vec<(NodeKey, Vec<Hit>)> {
+        light::query(self, query)
+    }
+
+    /// The head of an own channel at each reachable full machine: restore
+    /// hints; nothing is ingested (5.11).
+    pub fn own_heads(&self, channel: &PublicKey) -> Vec<(NodeKey, Option<HeadInfo>)> {
+        light::own_heads(self, channel)
+    }
+
     pub fn events(&self) -> mpsc::Receiver<Event> {
         let (tx, rx) = mpsc::channel();
         lock(&self.core.subscribers).push(tx);
@@ -549,6 +574,9 @@ impl Net {
     }
     pub(crate) fn core(&self) -> &Core {
         &self.core
+    }
+    pub(crate) fn core_arc(&self) -> Arc<Core> {
+        self.core.clone()
     }
 }
 

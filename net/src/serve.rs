@@ -226,6 +226,13 @@ fn run(core: &Core, class: Class, request: Request) -> Vec<u8> {
             }
             answer
         }
+        Request::Query(query) => {
+            // from this holder only, never forwarded (ND-6)
+            let most = query.limit.min(limits.hits as u64) as usize;
+            let mut hits = core.holdings.search(&query);
+            hits.truncate(most);
+            wire::query_answer(&hits)
+        }
         Request::Devices { .. } | Request::Pair { .. } => unreachable!("answered in respond"),
     }
 }

@@ -3,7 +3,7 @@
 //! (NET-F-23, NET-F-24).
 
 use crate::{
-    Core, DeviceList, HeadInfo, Net, NetError,
+    Core, DeviceList, HeadInfo, Hit, Net, NetError, Query,
     error::Code,
     key::NodeKey,
     lock,
@@ -381,4 +381,32 @@ pub(crate) async fn fork_async(
         return Err(bad_object(node, "the fork entries are the same entry"));
     }
     Ok(Some((a, b)))
+}
+
+/// `query` of one machine; the answer is checked before it is returned.
+pub(crate) async fn query_async(
+    core: &Core,
+    node: &NodeKey,
+    query: &Query,
+) -> Result<Vec<Hit>, NetError> {
+    let answer = call_async(
+        core,
+        node,
+        &Request::Query(query.clone()),
+        wire::QUERY_ANSWER,
+        core.limits().deadline,
+    )
+    .await?;
+    let hits = wire::parse_query(&answer).map_err(|e| answer_error(node, e))?;
+    if hits.len() as u64 > query.limit {
+        return Err(bad_object(
+            node,
+            format!(
+                "{} hits, and at most {} were asked for",
+                hits.len(),
+                query.limit
+            ),
+        ));
+    }
+    Ok(hits)
 }

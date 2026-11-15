@@ -156,11 +156,17 @@ fn ac5_later_and_made_up_ops_are_unknown_op() {
     let a = node_trusting(MemHoldings::new(fx), vec![node_key_of_seed(seed)], None);
     let addr = a.net.addrs()[0];
     use cbor::*;
-    for op in ["query", "frobnicate"] {
+    // only made-up ops are unknown now; `query` is an op (below)
+    for op in ["frobnicate", "subscribe"] {
         let req = array(&[text(op), uint(1)]);
         let answer = raw_call(seed, &a.key, addr, &req);
         assert_eq!(err_code(&answer), "unknown_op", "{op}");
     }
+    // `query` from a trusted caller with a malformed query is a bad request
+    let before = a.holdings.calls();
+    let req = array(&[text("query"), uint(1)]);
+    assert_eq!(err_code(&raw_call(seed, &a.key, addr, &req)), "bad_request");
+    assert_eq!(a.holdings.calls(), before, "the holder was called");
     // `devices` and `pair` exist now: a wrong argument is a bad request
     let req = array(&[text("pair"), uint(1)]);
     assert_eq!(err_code(&raw_call(seed, &a.key, addr, &req)), "bad_request");

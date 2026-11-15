@@ -82,6 +82,13 @@ impl Core {
     pub(crate) fn refuse(&self, node: &NodeKey, cause: String) {
         let first = lock(&self.dropped).insert(*node);
         if first {
+            // every cause names the node by its short key (NET-F-32)
+            let short = node.short();
+            let cause = if cause.contains(&short) {
+                cause
+            } else {
+                format!("node {short}: {cause}")
+            };
             self.emit(Event::Refused { node: *node, cause });
         }
         if let Some(link) = lock(&self.links).get(node) {
@@ -104,6 +111,19 @@ impl Core {
     /// Remember an address where `node` was reached, first in line.
     pub(crate) fn learn_addr(&self, node: &NodeKey, addr: std::net::SocketAddr) {
         self.remember(node, &[addr], true);
+    }
+}
+
+/// The role this machine syncs as: a full replica keeps everything; the
+/// anchor of the list keeps only what its holder asks for, as a light
+/// machine does (NET-F-21, node Q5).
+pub(crate) async fn role_of(core: &Core) -> Role {
+    if core.role() == Role::Light || core.devices().is_some_and(|l| l.anchor == core.key) {
+        return Role::Light;
+    }
+    match holder(core, |h| h.is_anchor()).await {
+        Ok(true) => Role::Light,
+        _ => Role::Full,
     }
 }
 
@@ -395,7 +415,7 @@ pub(crate) async fn holder<T: Send + 'static>(
 
 /// 5.6, steps 1 to 4.
 async fn sync_all(core: &Arc<Core>, node: &NodeKey) -> Result<(), NetError> {
-    let role = core.role();
+    let role = role_of(core).await;
     let asked: Vec<PublicKey> = match role {
         Role::Full => Vec::new(),
         Role::Light => holder(core, |h| h.heads(None))
@@ -438,7 +458,7 @@ async fn sync_channel(
     seq: u64,
     id: [u8; 32],
 ) -> Result<(), NetError> {
-    let role = core.role();
+    let role = role_of(core).await;
     let remote = client::heads_async(core, node, &[*channel]).await?;
     let Some((_, Some(head))) = remote.into_iter().next() else {
         return Ok(());
@@ -460,7 +480,7 @@ async fn sync_channel(
 
 /// Step 2 and 3 for one channel: read from `own seq + 1` to the other's seq
 /// in pages, check, and hand to the holder.
-async fn pull(
+pub(crate) async fn pull(
     core: &Arc<Core>,
     node: &NodeKey,
     role: Role,
@@ -520,7 +540,18 @@ async fn pull(
 /// 5.6 step 4.
 async fn fetch_wanted(core: &Arc<Core>, node: &NodeKey, role: Role) -> Result<(), NetError> {
     let wanted = holder(core, move |h| h.wanted_blobs(role)).await?;
+    let limit = core.limits().blob;
     for (id, size) in wanted {
+        if size > limit {
+            core.emit(Event::Unreachable {
+                node: *node,
+                cause: format!(
+                    "package {} is {size} bytes, over this machine's limit of {limit}",
+                    crate::blobs::hex8(&id)
+                ),
+            });
+            continue;
+        }
         match crate::blobs::fetch(core, node, id, size).await {
             Ok(()) => {}
             Err(e @ NetError::BadObject { .. }) => return Err(e),

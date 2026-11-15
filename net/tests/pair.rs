@@ -223,6 +223,11 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
         array(&[text("entries"), trusted_key.clone(), uint(0), uint(5)]),
         array(&[text("fork"), c1.clone()]),
         array(&[text("devices"), uint(0)]),
+        // a well-formed query: refused before the holder is called
+        array(&[
+            text("query"),
+            array(&[text("x"), vec![NULL], vec![NULL], vec![NULL], uint(10)]),
+        ]),
     ];
     // a new key for each call: a raw client may leave its connection to idle
     // out, and the connection budget of one unknown key is small
@@ -236,7 +241,7 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     }
     assert_eq!(b.net.class_of(&unknown), Class::Unknown);
     assert_eq!(b.holdings.calls(), before);
-    // `query` and made-up ops stay unknown
+    // made-up ops stay unknown
     let (code, _) = answer_err(&raw_call(seed, &b.key, addr, &array(&[text("frobnicate")])));
     assert_eq!(code, "unknown_op");
 }

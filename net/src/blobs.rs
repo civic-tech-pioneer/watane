@@ -130,6 +130,21 @@ fn bad(node: &NodeKey, cause: impl Into<String>) -> NetError {
     }
 }
 
+/// Why a fetch failed: no connection to the machine, or a connection that
+/// did not give the package.
+pub(crate) enum Failed {
+    NoConnection(NetError),
+    NotFetched(NetError),
+}
+
+impl Failed {
+    pub(crate) fn error(self) -> NetError {
+        match self {
+            Failed::NoConnection(e) | Failed::NotFetched(e) => e,
+        }
+    }
+}
+
 /// Fetch one wanted package from `node` and hand it to the holder.
 pub(crate) async fn fetch(
     core: &Arc<Core>,
@@ -137,19 +152,44 @@ pub(crate) async fn fetch(
     id: BlobId,
     size: u64,
 ) -> Result<(), NetError> {
+    fetch_via(core, node, id, size).await.map_err(Failed::error)
+}
+
+pub(crate) async fn fetch_via(
+    core: &Arc<Core>,
+    node: &NodeKey,
+    id: BlobId,
+    size: u64,
+) -> Result<(), Failed> {
     let limits = core.limits();
     if size > limits.blob {
-        return Ok(());
+        return Err(Failed::NotFetched(NetError::TooLarge { node: *node }));
     }
     let work = fetch_inner(core, node, id, size);
     tokio::time::timeout(limits.blob_deadline, work)
         .await
-        .map_err(|_| NetError::Timeout { node: *node })?
+        .map_err(|_| Failed::NotFetched(NetError::Timeout { node: *node }))?
 }
 
-fn failed(node: &NodeKey, e: get::GetError) -> NetError {
+/// The first four bytes of a package's hash, in hex.
+pub(crate) fn hex8(id: &BlobId) -> String {
+    id.0[..4].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn mismatch(node: &NodeKey, id: &BlobId) -> NetError {
+    bad(
+        node,
+        format!(
+            "package {} from {} does not match its hash",
+            hex8(id),
+            node.short()
+        ),
+    )
+}
+
+fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
     match e {
-        get::GetError::Decode { .. } => bad(node, format!("the package does not verify: {e}")),
+        get::GetError::Decode { .. } => mismatch(node, id),
         e => NetError::Unreachable {
             node: *node,
             cause: e.to_string(),
@@ -162,10 +202,14 @@ async fn fetch_inner(
     node: &NodeKey,
     id: BlobId,
     size: u64,
-) -> Result<(), NetError> {
+) -> Result<(), Failed> {
     let hash = Hash::from_bytes(id.0);
-    let conn = client::connect(core, node, iroh_blobs::ALPN).await?;
-    let result = download(core, node, &conn, hash, id, size).await;
+    let conn = client::connect(core, node, iroh_blobs::ALPN)
+        .await
+        .map_err(Failed::NoConnection)?;
+    let result = download(core, node, &conn, hash, id, size)
+        .await
+        .map_err(Failed::NotFetched);
     conn.close(0u32.into(), b"done");
     result
 }
@@ -180,7 +224,7 @@ async fn download(
 ) -> Result<(), NetError> {
     let (claimed, _) = get_verified_size(conn, &hash)
         .await
-        .map_err(|e| failed(node, e))?;
+        .map_err(|e| failed(node, &id, e))?;
     if claimed != size {
         return Err(bad(
             node,
@@ -207,7 +251,7 @@ async fn download(
     let bytes = get_blob(conn.clone(), hash)
         .bytes()
         .await
-        .map_err(|e| failed(node, e))?;
+        .map_err(|e| failed(node, &id, e))?;
     if bytes.len() as u64 != size {
         return Err(bad(node, "the package is not the size that was wanted"));
     }
@@ -226,7 +270,7 @@ async fn download(
     .map_err(|_| bad(node, "the check failed"))?
     .map_err(io)?;
     if ok.0 != size || !ok.1 {
-        return Err(bad(node, "the package does not match its hash and size"));
+        return Err(mismatch(node, &id));
     }
     let stored = sync::holder(core, move |h| h.store_blob(&id, &path)).await?;
     drop(temp);
