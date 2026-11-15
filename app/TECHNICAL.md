@@ -1650,8 +1650,10 @@ Fixtures: **Desk** is host's prebuilt `manager` (host 13.1; `name =
 `tests/fixtures/desk-ui/ui/` and `main = true` added to its `mod.toml`.
 The page has one button per `api` function, with text inputs for the
 local name and the release, and shows each result or error code as text.
-**Weather** is the fixture `reading-list`, **Notes** the fixture
-`recommendations` (it holds state), and **Book club** a copy of host's
+**Weather** is a copy of the fixture `reading-list` with `name =
+"Weather"` (local name `reading-list`), **Notes** a copy of the fixture
+`recommendations` with `name = "Notes"` (local name `recommendations`;
+it holds state and calls Weather), and **Book club** a copy of host's
 `counter`, published from Ivy's home made with `watane_dist` and listed in
 Ivy's index, as `tests/find.rs` does.
 
@@ -1668,8 +1670,8 @@ Scenarios of `tests/manage.rs`:
 - **S43 Grant words** (APP-F-70). The plan of Desk shows the line
   `Manage your mods: ...` of 17.2 with `new`; its details after install
   show it with a switch.
-- **S44 Turn off** (APP-F-74). With `mod-weather` open, Desk's page calls
-  `api.disable` with `reading-list`: the window `mod-weather` closes and
+- **S44 Turn off** (APP-F-74). With `mod-reading-list` open, Desk's page calls
+  `api.disable` with `reading-list`: the window `mod-reading-list` closes and
   Weather's details show `Turned off by Desk (local)`. After a restart the
   notice is gone and Weather is still off.
 - **S45 Install asked** (APP-F-71, 72, 75). Desk asks to install Book

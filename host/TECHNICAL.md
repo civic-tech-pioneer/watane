@@ -933,7 +933,7 @@ does not parse is the failure `bad_request`.
 
 | Function | Kind | Does | Failures (`failure.code`) |
 |---|---|---|---|
-| `mods` | read | the `mod-info` of every installed mod, in local-name order, from `Host::mods` (2.4); the manager itself included | none |
+| `mods` | read | the `mod-info` of every installed mod, in local-name order, from `Host::mods` (2.1); the manager itself included | none |
 | `disable(local)` | reduction | `Host::disable` (4.4), after `Confirm::reduced` (12.1); a disabled mod stays disabled (ok) | `no_mod` |
 | `withdraw(local, grant)` | reduction | `Host::revoke` (4.4), after `Confirm::reduced`; an ungranted grant stays ungranted (ok) | `no_mod`, `not_declared` |
 | `close-page(local)` | reduction | `Confirm::reduced` with `ClosePage`: the app closes the mod's window, if one is open; the host itself has nothing to close | `no_mod` |
@@ -943,6 +943,12 @@ does not parse is the failure `bad_request`.
 | `request-grant(local, grant)` | request | asks to give a declared, ungranted grant (`Ask::Grant`) | `no_mod`, `not_declared`, `bad_request` (granted), `request_open`, `refused` |
 | `request-remove(local, delete-data)` | request | asks to remove the mod, and with `delete-data` its state (`Ask::Remove`) | `no_mod`, `request_open`, `refused` |
 | `request(id)` | read | the state of a request of this manager; `none` for an id it never got, or that a failed call made | none |
+
+`mod-info` is `InstalledMod` (2.4) field by field: `identity` as is;
+`slug`, `version`, `publisher`, `release`, `origin` and the interface
+names of `grants` and `links` as their `Display` texts; `has-page` is
+true when the mod has `ui/` (`page` may still be `None` before
+`serve`); `grant` as in Names above.
 
 `release` is a `ReleaseRef` text; `link` is the link text of the
 channel or index that lists it, or `none`. A removal is a request with or
@@ -957,6 +963,8 @@ chain returns (a top-level call, a tool call, or one delivery of 9.2), and
 before the chain's events are delivered, the host applies the chain's
 manage effects in order. Before each one it checks again that the manager
 holds `Manage` and is enabled, and drops the effect if not (Q24's rule).
+An effect whose host function fails then (its mod was removed meanwhile)
+is dropped and logged; a dropped request ends `denied`.
 A read inside the call sees the catalog as it is at that moment, not the
 effects queued before it. A `request(id)` for an id that this call queued
 returns `pending`.
@@ -1546,7 +1554,7 @@ run on the preview install path.
 | A manager only reduces on its own | reads and the three reductions are the only acting functions; each addition is an `Ask` that only the app decides; a manager-started install always asks (6.10, 12.1) | S41 to S44 |
 | A manager acts only while it holds the grant | the grant check at each function and again before each effect; pending requests dropped when it loses the grant (6.10) | S45 |
 | A failed manager call changes nothing | manage effects join the chain only on the manager's success (6.10) | S46 |
-| A manager cannot flood the consent view | one pending request per manager (6.10) | S44 |
+| A manager holds at most one request in the consent view | one pending request per manager (6.10); it may ask again after an answer, until the participant withdraws `Manage` | S44 |
 | A manager reaches no identity, signature or consent answer | `watane:host/manage` has no such function; the host never signs; only the app answers `Confirm` (W35) | review rule |
 | A network grant is narrow | HTTPS only, exact host list (6.8) | S27 |
 | A preview never holds participant data | mode fixed in `home.json`; one host per home (3.1) | S2, S3 |

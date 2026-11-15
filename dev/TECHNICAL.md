@@ -1172,7 +1172,7 @@ Each is one JSON object. Unknown fields are errors.
 | `fails` | `true`: the call must fail. A string: the call must fail, and `"<code>: <message>"` of the error must contain it (`"not_granted"`, `"trap"`, a word of a panic). |
 | neither | The call must succeed; any value. |
 | `emits` | Optional. The call must send exactly these events, in this order. `event` is `<iface>.<fn>` for an interface of the own package, or `mods:<slug>/<iface>.<fn>`. `args` is an object by parameter name. A failed call sends none. |
-| `manages` | Optional (step 10). The call must make exactly these reductions and requests of `watane:host/manage`, in this order: `[{"fn": "disable", "args": {"local": "weather"}}]`, with `fn` the WIT function name and `args` by parameter name; reads are not listed. A failed call makes none. It is `watane_host::Outcome.manages` (host 2.6), compared with `json_eq`. |
+| `manages` | Optional (step 10). The call must make exactly these reductions and requests of `watane:host/manage`, in this order: `[{"fn": "disable", "args": {"local": "weather"}}]`, with `fn` the WIT function name and `args` by parameter name; reads are not listed. A failed call makes none. It is `watane_host::Outcome.manages` (host 2.6), each `ManageRecord { function, args }` written `{"fn": function, "args": args}`, compared with `json_eq`. |
 
 Exactly one of `call` and `deliver`; at most one of `returns` and `fails`.
 Values use the JSON encoding of host `TECHNICAL.md` 6.9. Two values are
