@@ -796,6 +796,12 @@ N3 notes (built):
 
 N4 part 1 notes (built, S67):
 
+- A fetch that fails gives a cause in watane's words (NET-F-32), never iroh's
+  text: a request the serving machine cut or refused reads "package <hex8> is
+  not served by <short>: it does not have it, or its copy failed its check";
+  any other transport failure reads "package <hex8> could not be read from
+  <short>: the connection failed" (`failed()` in `blobs.rs`).
+
 - Light machines (5.9): `light.rs` holds the choice of a full machine (`order`,
   a pure function over the list, this node and the set of connected machines),
   `need`, `need_blob`, `query`, `own_heads` and the window counter (`Window`,

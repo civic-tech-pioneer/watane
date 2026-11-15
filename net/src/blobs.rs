@@ -192,7 +192,19 @@ fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
         get::GetError::Decode { .. } => mismatch(node, id),
         e => NetError::Unreachable {
             node: *node,
-            cause: e.to_string(),
+            cause: if e.iroh_error_code().is_some() {
+                format!(
+                    "package {} is not served by {}: it does not have it, or its copy failed its check",
+                    hex8(id),
+                    node.short()
+                )
+            } else {
+                format!(
+                    "package {} could not be read from {}: the connection failed",
+                    hex8(id),
+                    node.short()
+                )
+            },
         },
     }
 }
