@@ -463,9 +463,11 @@ entry; the panel is the details. In order:
 3. The notice band, when there is a notice, an error, an offer or a
    `Turned off by …` line (17): `--bad-bg`/`--bad` for a Problem,
    `--accent-weak`/`--accent` otherwise, radius 12, with its text and, at
-   the right, the offer button (9.5: `release_install`, labelled by
-   `offerLabel`; rule wins over the board's `Review`, whose words 9.5 and
-   the Updates card carry), sized to its label, wrapping under the text
+   the right, the offer button (9.5: `release_install`; in this band
+   labelled `Install <v>…` when the offer asks for new grants, else
+   `Install <v>`: the band text names the grants, so the offer as a whole
+   still names them, APP-F-39; Updates and 9.5 keep `offerLabel`), sized
+   to its label, wrapping under the text
    only when the panel is too narrow. For an offer without a notice or
    error the text names the version and what it asks for, from `offer`'s
    version and the `short` words of `offerGrants` (first letter lower case,
