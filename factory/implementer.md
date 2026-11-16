@@ -11,8 +11,13 @@ Work test-first:
    A test that needs a cold build or the full pipeline gets `#[ignore = "slow: <what only it
    proves>"]`. Name the test after the criterion (`ac1_...`). Run it and see it fail for the
    right reason.
-2. Write the least code that makes it pass. Then refactor while green.
-3. Run the commands of `AGENTS.md` (tests, clippy, fmt). All must pass.
+2. Write the least code that makes it pass. Then refactor while green. In this loop run only
+   the tests you work on (`cargo test --test <file> <name>`, or `--lib <name>`), not the suite.
+3. Once, at the end: run the default `cargo test`, clippy and fmt of `AGENTS.md`. All must pass.
+   Do not run ignored tests you did not write, the whole slow set, or any window (`driver`)
+   test: your sandbox cannot start the GUI or `sandbox-exec`. After you finish, a script runs
+   the default tests and the slow tests of the test files you touched outside your sandbox; if
+   they fail you get the log back in this session.
 
 Rules:
 - Build only THE TASK. No seams, options or abstractions "for later". No new dependency unless

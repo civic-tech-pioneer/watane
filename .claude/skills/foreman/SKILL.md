@@ -17,6 +17,8 @@ and no way to message the product owner. Everything below holds, with these chan
 - Implementer: run the `implementer` agent (Sonnet) in the background with the task id and its
   worktree, instead of `impl.sh`. For a `RETURN`, send the list to that same agent with
   `SendMessage` (it keeps its context). Count its runs per task yourself for the report.
+  After each implementer run, run `factory/check.sh <task> <commit before its first run>` in
+  its worktree yourself, and treat the result as section 2, step 2 says.
 - Per-task worktrees: `cp -R`, not `cp -c -R`.
 - Not run here: `front` tests and `ac6_build_with_network_denied` (macOS only). Put them in the
   report as `not run (cloud)`; the product owner runs them after the merge.
@@ -70,7 +72,11 @@ and by file, and fix the interface in both briefs' `## Interface` so neither wai
    APFS clone of your build: instant, no disk), then run `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
    fast-forward `slice/<id>` to it, and remove the worktree and branch (each worktree has its own
    `target/`).
-2. Read its last message. `BLOCKED` or `QUESTIONS` go to section 4 first.
+2. Read its last message. `BLOCKED` or `QUESTIONS` go to section 4 first. Its last line is
+   `CHECK PASS` or `CHECK FAIL` (`factory/check.sh`: the tests outside Sol's sandbox). On a
+   `CHECK FAIL`, send Sol the failing part of the check log with `impl.sh <task> resume` before
+   any validator; this does not count as a round. After two failed checks in a row, run the
+   validator anyway with the log.
 3. Run the `validator` agent with the task id, the round and the commit range.
    - `PASS`: the task is done.
    - `RETURN` in round 1: `factory/impl.sh <task> resume` with the RETURN list on stdin

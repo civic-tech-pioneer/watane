@@ -6,6 +6,8 @@
 # Run it from the slice's worktree. Output goes to factory/runs/ of the main checkout, so it survives
 # the worktree: <task>.{jsonl,last.md,session}, and one line per run in ledger.jsonl. A new run of a
 # task that ran before first moves the old files to <task>.<n>.*, so no log is lost.
+# After each run, factory/check.sh runs the task's checks outside the sandbox from the commit the
+# task started at (<task>.base); its last line (CHECK PASS/FAIL) is impl.sh's, and its exit is impl.sh's.
 set -u
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"  # rustup's cargo (has wasm32-wasip2) before Homebrew's
 F=$(cd "$(dirname "$0")" && pwd); W=$(dirname "$F")
@@ -26,8 +28,9 @@ OPTS=(-m gpt-6.1-sol -c "model_reasoning_effort=\"${EFFORT:-medium}\"" -c 'sandb
 cd "$W/$SUB" || exit 2  # resume runs in the current folder
 if [ "$MODE" = new ] && [ -e "$R/$ID.jsonl" ]; then
   N=1; while [ -e "$R/$ID.$N.jsonl" ]; do N=$((N+1)); done
-  for X in jsonl last.md session; do [ -e "$R/$ID.$X" ] && mv "$R/$ID.$X" "$R/$ID.$N.$X"; done
+  for X in jsonl last.md session base check.log; do [ -e "$R/$ID.$X" ] && mv "$R/$ID.$X" "$R/$ID.$N.$X"; done
 fi
+[ "$MODE" = new ] && git -C "$W" rev-parse HEAD > "$R/$ID.base"
 L0=$(cat "$R/$ID.jsonl" 2>/dev/null | wc -l)  # resume appends: this run's lines start after L0
 T0=$(date +%s)
 if [ "$MODE" = resume ]; then
@@ -40,7 +43,9 @@ else
 fi
 # Codex's token usage of this run, from its last turn.completed; null when the run never finished a turn.
 U=$(tail -n +$((L0+1)) "$R/$ID.jsonl" | grep '"turn.completed"' | tail -1 | grep -o '"usage":{[^}]*}')
-printf '{"task":"%s","mode":"%s","effort":"%s","start":%s,"end":%s,"exit":%s,%s}\n' \
-  "$ID" "$MODE" "${EFFORT:-medium}" "$T0" "$(date +%s)" "$RC" "${U:-\"usage\":null}" >> "$R/ledger.jsonl"
-echo "$ID $MODE exit=$RC"; tail -5 "$R/$ID.last.md" 2>/dev/null
-exit $RC
+T1=$(date +%s)
+CHECK=$("$F/check.sh" "$ID" "$(cat "$R/$ID.base" 2>/dev/null)"); CRC=$?
+printf '{"task":"%s","mode":"%s","effort":"%s","start":%s,"end":%s,"exit":%s,"check":%s,"check_end":%s,%s}\n' \
+  "$ID" "$MODE" "${EFFORT:-medium}" "$T0" "$T1" "$RC" "$CRC" "$(date +%s)" "${U:-\"usage\":null}" >> "$R/ledger.jsonl"
+echo "$ID $MODE exit=$RC"; tail -5 "$R/$ID.last.md" 2>/dev/null; echo "$CHECK"
+[ $RC -ne 0 ] && exit $RC; exit $CRC

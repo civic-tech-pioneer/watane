@@ -82,7 +82,8 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
 | `.claude/skills/foreman/SKILL.md` | One slice end to end: brief, build, validate, user-sim, deliver |
 | `.claude/agents/validator.md` | Acceptance coverage, architectural fit, simplicity; fix or return |
 | `.claude/agents/user-sim.md` | Accepts a slice as its user; turns each failure into a red test |
-| `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback |
+| `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback; then `check.sh` |
+| `factory/check.sh` | A task's tests outside Sol's sandbox: default, clippy, fmt, slow tests of touched files |
 | `factory/implementer.md` | Sol's standing instructions (test-first, fixed interface, report format) |
 | `.claude/agents/implementer.md` | Sonnet in Sol's place, for cloud foremen (no Codex there); same instructions |
 | `factory/cloud-setup.sh` | SessionStart hook: wasm target and vendor folder in a cloud container; no-op on the Mac |
@@ -126,10 +127,12 @@ Rules:
 - An integration test never builds a mod from scratch unless the build is what it tests.
 - App GUI tests run hidden (`App::start`) or in the background (`App::background`): no window on
   screen, no Dock icon, no focus taken. Only `front` tests take the screen.
-- Who runs what: Sol runs the default tests. The validator runs the default tests and the slow
-  tests of its task's files (by name), not the whole slow set, and never `front` tests; for the
-  app that means `--features driver --test <file>` for each touched test file, never the whole
-  driver suite. The
+- Who runs what: Sol runs the tests it works on, and the default tests once at the end.
+  `factory/check.sh` (run by `impl.sh` after every Sol run, outside the sandbox) runs the default
+  tests, clippy, fmt and the `slow:` tests of each touched test file (app: with `driver`); a
+  failure goes back to Sol before any validator. The validator reads that log instead of
+  rerunning it, and reruns `check.sh` only after its own fixes; never the whole slow set or
+  driver suite, never `front` tests. The
   foreman runs everything once, `front` tests included, before it delivers. The product owner
   reruns a suite only for what changed after that run (a rebase on a newer `main`, a flake), plus
   the tests the cloud could not run. The user-sim runs no suite; it uses the programs.
@@ -146,7 +149,8 @@ time; a failure counts only if it repeats:
 A new test of a time limit gets the same attribute. A wait that only guards against a hang is
 not such a test: give it a wide bound (30 s or more) and leave it in the normal run.
 
-## Tests only the validator runs
+## Tests Sol's sandbox cannot run
 
-Sol's sandbox cannot start a nested `sandbox-exec`, so DEV-S-13 (the build with network access
-denied) runs only in the validator. That is expected; it is not friction.
+Sol's sandbox cannot start a nested `sandbox-exec` or the GUI, so DEV-S-13 (the build with network
+access denied) and the window tests run first in `factory/check.sh`, right after Sol. That is
+expected; it is not friction.

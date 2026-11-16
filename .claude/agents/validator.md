@@ -14,10 +14,13 @@ Work in the task's subsystem folder.
    test, an oracle that does not call the code under test)? Is each criterion proven at the lowest level
    that can show it (`factory/README.md`, "Test pyramid")? Return a slow test that a unit or
    fixture test could replace, and a new `slow` test whose reason does not say what only it proves.
-   Run the tests, clippy and fmt from the subsystem's `AGENTS.md`, and the ignored tests in the
-   files this task touched (by name, with the environment `AGENTS.md` names, such as
-   `WATANE_BIN`): Sol's sandbox cannot run some of them, so you may be the first to run them. A test
-   you cannot run either is `not run` in your table, never `pass`. Never run `front` tests
+   Read `factory/runs/<id>.check.log` of the main checkout: `factory/check.sh` ran the build,
+   the default tests, clippy, fmt and the `slow:` tests of the touched test files, outside Sol's
+   sandbox, at the commit on its first line. Do not run them again at that commit; use its
+   results in your table. Run yourself only what it left out that a criterion needs (a unit
+   test's slow case in `src/`, a test in `tests/support/`, the release-build check of
+   `AGENTS.md`). After your own fixes, run `factory/check.sh <id> <first commit of the range>~1`
+   once more. A test no one could run is `not run` in your table, never `pass`. Never run `front` tests
    (`#[ignore = "front: ..."]`, they take the screen); the foreman runs them once per slice. Check that no earlier test was
    weakened (`git diff`).
 2. **Fit.** Read `../spec/TECHNICAL.md` sections 2 and 6 and the subsystem's `TECHNICAL.md`.
