@@ -123,10 +123,15 @@ fn ac1_find_search_install() {
     let app = App::start(home.path(), &[]);
     f.add(&app);
     app.eval("main", "document.querySelector('#search-text').value = 'no-such-mod'; document.querySelector('#search').click(); null");
-    contains(&app, "#results", "No mods found");
+    contains(&app, "#result-count", "No mods found");
     search_reading(&app);
+    // 5.3.5: the card names the mod and says `read <ago>`; the slug is the name's title.
+    until(
+        &app,
+        "main",
+        "document.querySelector('#results article h2')?.title === 'reading-list' && /^read (just now|[0-9]+ min ago)$/.test(document.querySelector('#results .checked')?.textContent)",
+    );
     for value in [
-        "reading-list",
         "Reading list",
         "0.1.0",
         "Keep books",
@@ -135,7 +140,6 @@ fn ac1_find_search_install() {
         "signature verified",
         "listed by Ivy",
         NOTE,
-        "checked",
     ] {
         contains(&app, "#results", value);
     }
@@ -198,9 +202,22 @@ fn ac1_find_stale_mark() {
         .unwrap();
     drop(f.alice_site.take());
     refresh_find(&app);
-    contains(&app, "#results", "could not check since");
-    let time = app.eval("main", &format!("new Date({checked}).toLocaleString()"));
-    assert!(text(&app, "#results").contains(time.as_str().unwrap()));
+    // 5.3.5: the stale mark is `not read since <ago>` of the last good read.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let ago = |m: u64| match m {
+        0 => "not read since just now".to_owned(),
+        m => format!("not read since {m} min ago"),
+    };
+    let minutes = now.saturating_sub(checked) / 60000;
+    let marks = json!([ago(minutes), ago(minutes + 1)]);
+    until(
+        &app,
+        "main",
+        &format!("{marks}.includes(document.querySelector('#results .checked')?.textContent)"),
+    );
     assert!(text(&app, "#results").contains("Reading list"));
     assert!(app.quit().success());
 }

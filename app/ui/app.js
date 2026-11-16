@@ -1,7 +1,7 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -391,8 +391,6 @@ export function renderResults(hits) {
   lastHits = signature;
   $('#result-count').textContent = foundCount(hits.length);
   $('#results').replaceChildren();
-  // Keep the empty result message in the live region as well as the count.
-  if (!hits.length) element('p', emptySearch(), $('#results'), 'sr-only');
   for (const hit of hits) {
     const compromised = hit.status === 'compromised';
     const row = element('article', '', $('#results'), `result${compromised ? ' compromised' : ''}`); row.dataset.release = hit.release;

@@ -1186,12 +1186,12 @@ No dependencies were added.
 
 Changed fact: 5.3.5 requires `read <ago>` / `not read since <ago>`; 9.6
 still described the old checked/local-time wording and now cites 5.3.5.
-The existing `tests/find.rs::ac1_find_search_install` still asserts a slug
-and `checked` in result text, and `ac1_find_stale_mark` still asserts
-`could not check since` and a local timestamp. Those assertions contradict
-the new board/5.3.5. They are left intact as the task explicitly permits
-only selector changes and forbids weakening contradictory tests. The old
-`checkedLabel` pure helper and its wording tests are unchanged.
+Validator: `tests/find.rs::ac1_find_search_install` now reads the slug from
+the card name's `title` (5.3.5 shows the name, not the slug), `read <ago>`
+from `.checked`, and `No mods found` from `#result-count`;
+`ac1_find_stale_mark` asserts `not read since <ago>` of the same
+`last_success` it compared as local time before. Words and selectors only.
+The old `checkedLabel` stays for the consent page.
 
 Validation: the new pure-word tests were run red (missing exports, then
 invalid interface-version recognition) and green. The production renderer
