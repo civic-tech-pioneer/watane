@@ -640,7 +640,7 @@ is a step-7-style check, after S55.
   `watane-node` binary between homes on 127.0.0.1; the three-machine hint test passes 20 of 20 runs
   without the workaround. Touches: node (the bin, tests, docs), net (5.7 and its test). Cloud.
   Delivered (merged rebased as 69954c2): Alice runs her server as `watane-node` (`join`, `run`, `status`, `relay`, `dht`, optional `--bind`); a hint whose machine lacks the seq retries every 250 ms on the next trusted machine, up to 20 times, and the light.rs workaround is gone. Decisions: tokio's signal feature, not signal-hook; `url` a direct node dependency (Cargo.lock: tokio and url in node's list, no new crate); a join stores the anchor's answering address; `Net::options()`; a signal during join exits 1 `interrupted`; a removed machine's `run` points to `join --replace`; S13 uses another author's entries. Verified on the Mac: hakari clean, net and node green with ignored, node's light test 5 of 5, app builds. For a later slice (user-sim wording, about ten items in the S72 report): the key printed twice in causes; `--help` says unknown flag; the y/N prompt and its answer share a line; no confirmation after dht and relay changes; a second run reports the dist lock instead of another watane-node.
-- [~] **S75 Alice pairs her laptop and her server from the app, and J8 passes (app stage G).** Branch
+- [x] **S75 Alice pairs her laptop and her server from the app, and J8 passes (app stage G).** Branch
   `slice/s75`. Builds app stage G (app/TECHNICAL.md 9.8 and 12, row G) on node stages 1 to 3: turn own
   machines on, the pairing code and the join question with the short key, devices and roles, expiry,
   relays, the DHT switch with its consent text, restore hints; in the app's settings, where S74 puts
@@ -648,6 +648,7 @@ is a step-7-style check, after S55.
   reports `NoIdentity` after it worked; the `IdentityInUse` text). Outcome: J8 (`app/tests/j8.rs`)
   passes on loopback homes on one Mac, and J2 to J5, J9 still pass. Touches: app (src, ui, tests/j8.rs,
   TECHNICAL 9.8). Local (the app). After S74, which changes the same app/src and app/ui.
+  Delivered (merged as e1643b5): Alice turns on her own machines in Settings, pairs her server (`watane-node`) and a second laptop with a code and the consent view, publishes to the server with no static host, searches and installs through it from a light laptop, removes a machine, restores from the server's hint, and adds relays or the DHT only after consent; no mod or local route reaches any of it. J8 passes natively (5 of 5, 52 to 77 s). Step 8 is done. Decisions: net (no format change): after `pair` the joiner pulls `devices` once from the anchor, so a new machine learns the others' addresses (in memory, not book.json; a failed pull does not fail the join; net 5.5); J8's restore keeps the restored laptop as anchor and the server re-joins with `join --replace`; `Status.identity.signed`, and the Join question asks the delete question only for an identity that signed nothing; IdentityInUse reads "has signed at least one statement"; S61 leftovers: `indexes` works keyless, `choose_index` on a keyless home succeeds or changes nothing; tests/support/node.rs. Verified on the Mac: hakari clean; net and node green with ignored; the app driver suite green with ignored, J8 included (front tests not run). For a later slice: a light laptop refused by a server that removed it shows dist's "is not followed" (node/src/calls.rs:66 drops need_blob's Result; net turns not_allowed into Unreachable, light.rs:178); user-sim wording: a reused code says "not a pairing code", "no direct path" also when the anchor is just off (3x), no reconnect after both restart on new ports, the anchor's own row "Last seen: unknown", "anchor · anchor <key>", Join clickable twice before the 2 s refresh, the restore refusal does not point to Settings, no `watane-node --help`, `status` fails "home is locked" while run runs, relay/DHT controls enabled while off, publishing does not warn that the home can no longer join; node/tests/restore.rs s9 flakes about 3 in 12 (SiteNotWritten), also on main.
 
 ### Step 9: Extension points (J9)
 
@@ -772,7 +773,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | node | 1 holder | 8 | done (S64) |
 | node | 2 machines (`told`, `need`, search, join, restore hints) | 8 | done (S70) |
 | node | 3 program (`watane-node` join, run, status, relay, dht) | 8 | done (S72) |
-| app | G own machines (J8) | 8 | open |
+| app | G own machines (J8) | 8 | done (S75) |
 | pkg | 9 outlet functions, `World::collects` | 9 | done (S65) |
 | host | 10 collect | 9 | done (S65) |
 | dev | 12 collect fakes and answers | 9 | done (S65) |
@@ -1005,7 +1006,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S66: delivered 2026-11-15 and merged; foreman stopped, worktree and branch removed.
 - S73: cloud routine `trig_01CZpy9oswGijTpTZhRtsFVq` (handed out 2026-11-15), branch `slice/s73`.
 - S74: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
-- S75: `72a0f1f0` (sessionId `72a0f1f0-fc06-41c7-b283-fc9e5d9cad01`), worktree `.claude/worktrees/s75` (local: the app; its own `target/`, since S54 builds the app in main's from a branch without S74).
+- S75: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: delivered 2026-11-16 and merged; routine finished, branches removed.
@@ -1557,6 +1558,8 @@ The human may veto each one.
   watane-app does not compile in the cloud (no gdk-3.0), so a shared enum's app fixes go unchecked there.
 - S73 to S76: main is red on dev's envelope ac5 again: S73's design names
   `contract::ac_manage_fake_and_records`, which S76 builds. Not a slice's failure until then.
+- S75: `--skip front:` skips nothing (front tests are marked only by their ignore reason); a
+  validator's run took the screen before it stopped. Briefs and commands skip the four by name.
 
 ## Digest
 
