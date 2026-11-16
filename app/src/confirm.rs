@@ -978,47 +978,60 @@ mod tests {
     }
     #[test]
     fn ac5_s81_first_publish_warns_join_is_lost() {
-        let home = tempfile::tempdir().unwrap();
-        let broker = consent::Broker::new();
-        let confirm = Arc::new(DistConfirm {
-            broker: broker.clone(),
-            parties: Arc::new(Parties::new()),
-            dist: OnceLock::new(),
-        });
-        let dist = Arc::new(
-            watane_dist::Dist::open(home.path(), confirm.clone(), Default::default()).unwrap(),
-        );
-        confirm.dist.set(Arc::downgrade(&dist)).unwrap();
-        for (fixture, warning) in [("reading-list", true), ("hostile", false)] {
-            let package = watane_host::watane_pkg::pack(
+        struct Approve;
+        impl watane_dist::Confirm for Approve {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Approve
+            }
+        }
+        let package = |fixture: &str| {
+            watane_host::watane_pkg::pack(
                 &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/fixtures")
                     .join(fixture),
                 false,
             )
             .unwrap()
-            .into_bytes();
+            .into_bytes()
+        };
+        for signed in [false, true] {
+            let home = tempfile::tempdir().unwrap();
+            if signed {
+                watane_dist::Dist::open(home.path(), Arc::new(Approve), Default::default())
+                    .unwrap()
+                    .publish(package("reading-list"))
+                    .unwrap();
+            }
+            let broker = consent::Broker::new();
+            let confirm = Arc::new(DistConfirm {
+                broker: broker.clone(),
+                parties: Arc::new(Parties::new()),
+                dist: OnceLock::new(),
+            });
+            let dist = Arc::new(
+                watane_dist::Dist::open(home.path(), confirm.clone(), Default::default()).unwrap(),
+            );
+            confirm.dist.set(Arc::downgrade(&dist)).unwrap();
             let signing = dist.clone();
-            let pending = std::thread::spawn(move || signing.publish(package));
+            let hostile = package("hostile");
+            let pending = std::thread::spawn(move || signing.publish(hostile));
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            let (id, request) = loop {
-                if let Some(current) = broker.current() {
+            let request = loop {
+                if let Some((_, current)) = broker.current() {
                     break current;
                 }
                 assert!(std::time::Instant::now() < deadline);
                 std::thread::yield_now();
             };
+            broker.deny_all();
+            assert!(pending.join().unwrap().is_err());
             let consent::Request::Sign { details, .. } = request else {
                 panic!()
             };
             let found = details
                 .iter()
                 .any(|d| d.value == "After this, this home cannot join your other machines.");
-            broker
-                .answer(&id, consent::Answer::Approve { withheld: vec![] })
-                .unwrap();
-            pending.join().unwrap().unwrap();
-            assert_eq!(found, warning);
+            assert_eq!(found, !signed, "signed home: {signed}");
         }
     }
     #[test]

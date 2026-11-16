@@ -838,7 +838,7 @@ fn ac4_s81_reach_controls_follow_switch() {
 #[test]
 fn ac5_s81_consent_renders_first_signature_line() {
     let output = std::process::Command::new("node")
-        .arg("tests/support/sign-consent.cjs")
+        .args(["tests/support/consent_dom.mjs", "sign_first"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .unwrap();

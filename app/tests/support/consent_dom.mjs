@@ -75,6 +75,14 @@ if (process.argv[2] === 'manage') {
     const line = 'Desk opens when watane starts, in place of the manager.';
     assert.equal(all(main).some(n => n.content === line), becomes_main === true);
   }
+} else if (process.argv[2] === 'sign_first') {
+  const warning = 'After this, this home cannot join your other machines.';
+  for (const first of [true, false]) {
+    await load({kind:'sign',statement:'release',signer:{name:'Carol',fingerprint:'carol-key',you:true},
+      details:[{label:'Made from',value:'alice/books@1.0.0'}, ...(first ? [{label:'',value:warning}] : [])]});
+    assert.equal(all(main).some(n => n.content === warning), first);
+    assert.ok(all(main).some(n => n.content === 'Made from: alice/books@1.0.0'));
+  }
 } else if (process.argv[2] === 'pick') {
   const request = {kind:'pick',consumer:'Dave stats',provider:'Carol ratings',cause:'<img src=x onerror=alert(1)>',
     candidates:[candidate('first','Ratings'), candidate('second','<img src=x onerror=alert(1)>')]};
