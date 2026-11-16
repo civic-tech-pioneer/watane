@@ -1383,3 +1383,24 @@ real-pairing unit test: `Failed to create netmon monitor` in the sandbox;
 111 unit tests pass. Per this task's execution instructions no driver/window
 test was run. The external GUI runner still needs to run only driver look
 with --include-ignored; native layout validation remains pending.
+
+
+### S84 — short details offer button
+
+Only the Library details band now labels its offer `Install <v>…` with new
+grants, otherwise `Install <v>`. The band still names the grant requests;
+release_install receives the same offer. Shared offerLabel and Updates are
+unchanged. No dependency, interface or spec changed.
+
+Test-first: ac1_ac2_update_band_version_grants_and_short_button failed on the
+old long label, then passed with the short label. The update-band scenario
+checks zero/one/multiple grants and the release_install argument. The native
+layout fixture now has one grant and expects the ellipsis, retaining the
+default-size same-row/right-edge and narrow wrapping checks.
+
+Validation: targeted look test and find-updates DOM scenario pass; driver
+all-target clippy with -D warnings and cargo fmt --check pass. The single
+required cargo test -p watane-app run stops at the existing pairing test
+(Failed to create netmon monitor); 111 unit tests pass. No window test ran,
+as required by the task execution instructions. External validation must run
+only driver look with --include-ignored for native layout coverage.

@@ -138,7 +138,7 @@ export function modsView(mods) {
     if (mod.notice || mod.error || mod.offer) {
       const notice = element('div', '', entry, `notice${problem(mod) ? ' problem' : ''}`);
       element('span', mod.error || mod.notice || offerNotice(mod.offer, mod.offerGrants), notice);
-      if (mod.offer) button(notice, offerLabel(mod.offer, mod.offerGrants || []), 'offer', () => action('release_install', {release:mod.offer}));
+      if (mod.offer) button(notice, `Install ${mod.offer.slice(mod.offer.lastIndexOf('@') + 1)}${mod.offerGrants?.length ? '…' : ''}`, 'offer', () => action('release_install', {release:mod.offer}));
     }
     const actions = element('div', '', entry, 'actions');
     if (mod.enabled && mod.page) button(actions, 'Open', 'open primary', () => action('mod_open', {local:mod.local}));

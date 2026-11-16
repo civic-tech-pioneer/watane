@@ -140,7 +140,10 @@ if (which === 'update-band' || which === 'look') {
   ]) {
     render([mod('book',{offer,offerGrants})]);
     assert.equal(entry('book').querySelector('.notice span').textContent,expected);
-    assert.equal(entry('book').querySelector('.notice .offer').textContent,words.offerLabel(offer,offerGrants));
+    assert.equal(entry('book').querySelector('.notice .offer').textContent,offerGrants.length ? 'Install 0.4.0…' : 'Install 0.4.0');
+    entry('book').querySelector('.notice .offer').click(); await tick();
+    assert.equal(calls.at(-1).cmd,'release_install');
+    assert.equal(calls.at(-1).args.release,offer);
   }
   render([mod('book',{offer})]);
   assert.equal(entry('book').querySelector('.notice span').textContent,'Version 0.4.0 is available.');

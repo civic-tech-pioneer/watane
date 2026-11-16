@@ -12,7 +12,7 @@ fn manager_criterion(scenario: &str) {
     );
 }
 #[test]
-fn ac1_ac3_update_band_version_grants_and_offer_label() {
+fn ac1_ac2_update_band_version_grants_and_short_button() {
     manager_criterion("update-band");
 }
 
@@ -731,6 +731,7 @@ mod windows {
                 }
                 "recommendations" => {
                     mod_view["offer"] = json!("key/recommendations@2.0.0");
+                    mod_view["offerGrants"] = json!([{ "short": "Connect to example.org", "text": "Connect to example.org" }]);
                 }
                 _ => unreachable!(),
             }
@@ -756,7 +757,7 @@ mod windows {
         );
         // AC2 (S84-fix3): the offer button keeps its label width at the band's right; it wraps under the text only when narrow.
         click(&app, "[data-tile=recommendations]");
-        let band = "(() => { const n = document.querySelector('[data-local=recommendations] .notice'), r = n.getBoundingClientRect(), s = n.querySelector('span').getBoundingClientRect(), b = n.querySelector('.offer').getBoundingClientRect(); return n.querySelector('span').textContent === 'Version 2.0.0 is available.' && n.querySelector('.offer').textContent === 'Install 2.0.0' && b.width > 0 && Math.abs(r.right - 14 - b.right) < 1 && WRAP; })()";
+        let band = "(() => { const n = document.querySelector('[data-local=recommendations] .notice'), r = n.getBoundingClientRect(), s = n.querySelector('span').getBoundingClientRect(), b = n.querySelector('.offer').getBoundingClientRect(); return n.querySelector('span').textContent === 'Version 2.0.0 asks to connect to example.org.' && n.querySelector('.offer').textContent === 'Install 2.0.0…' && b.width > 0 && Math.abs(r.right - 14 - b.right) < 1 && WRAP; })()";
         check(
             &app,
             &band.replace(
