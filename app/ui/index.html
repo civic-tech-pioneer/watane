@@ -1,27 +1,26 @@
 <!doctype html><html><head><meta charset="utf-8"><title>watane</title><link rel="stylesheet" href="style.css"></head><body>
-<header id="manager-header"><div class="header-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><path d="M17 13v8m-4-4h8"/></svg> Mods</div>
+<header id="manager-header"><div class="header-title"><svg stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><path d="M17 13v8M13 17h8"/></svg> Mods</div>
 <nav aria-label="Manager"><a class="tab" href="#mods" data-tab="library">Library</a><a class="tab" href="#find" data-tab="find">Find</a><a class="tab" href="#updates" data-tab="updates">Updates <span id="updates-count" hidden></span></a></nav>
-<div class="view-controls"><label class="filter" id="filter-control"><span aria-hidden="true">⌕</span><input id="library-filter" type="search" placeholder="Filter your mods" aria-label="Filter your mods"></label>
-<button id="add-mod" class="btn primary" aria-expanded="false" aria-controls="add-menu">＋ Install a mod</button>
-<span id="checked-at" class="hint" role="status" hidden></span><button id="refresh-channels" class="btn" hidden><span class="refresh-glyph" aria-hidden="true">↻</span><span class="refresh-label">Check now</span></button>
+<div class="view-controls"><label class="filter" id="filter-control"><svg class="icon icon-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="library-filter" type="search" placeholder="Filter your mods" aria-label="Filter your mods"></label>
+<button id="add-mod" class="btn primary" aria-expanded="false" aria-controls="add-menu"><svg class="icon icon-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Install a mod</button>
+<span id="checked-at" class="hint" role="status" hidden></span><button id="refresh-channels" class="btn" hidden><svg class="icon icon-16 refresh-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg><span class="refresh-label">Check now</span></button>
 <div id="add-menu" hidden><input id="install-link" placeholder="Paste the link" aria-label="Mod or channel link"><button class="btn primary" id="install-from-link">Continue</button><hr><button class="btn" id="install">Choose a folder</button><p>Or drop mod folders on this window.</p></div></div><span class="mark" aria-label="Consent mark of this home" title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane."></span></header>
 <header id="settings-header" hidden><div class="header-title">Settings</div><a class="btn quiet" href="#mods">Back to mods</a><span class="mark" aria-label="Consent mark of this home" title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane."></span></header>
 <p id="error" role="alert"></p>
 <div id="mods" data-area="mods">
 <section id="library">
-<div id="first-start" hidden><div class="first-picture" aria-hidden="true"><span></span><span></span><span></span><span></span></div><h1>Install your first mod</h1><p>watane is empty until you install mods. Each one asks before it gets anything.</p>
+<div id="first-start" hidden><div class="first-intro"><div class="first-picture" aria-hidden="true"><span></span><span></span><span></span><span></span></div><h1>Install your first mod</h1><p>watane is empty until you install mods. Each one asks before it gets anything.</p></div>
 <div class="first-cards">
-<article class="card"><span class="ico" aria-hidden="true">↗</span><h2>From a link</h2><p>Someone sent you a link to a mod or to their channel.</p><input id="first-link" placeholder="Paste the link" aria-label="Mod or channel link"><button id="first-link-go" class="btn primary">Continue</button></article>
-<article class="card"><span class="ico" aria-hidden="true">⌕</span><h2>From an index</h2><p>An index is someone's list of mods. watane adds none by itself; add one you trust.</p><button id="first-index" class="btn">Add an index</button></article>
-<article class="card folder-card"><span class="ico" aria-hidden="true">▱</span><h2>From a folder</h2><p>A mod you or your agent made on this device. Drop the folder here.</p><button id="first-folder" class="btn">Choose a folder</button></article>
+<article class="card"><span class="ico" aria-hidden="true"><svg class="icon icon-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span><h2>From a link</h2><p>Someone sent you a link to a mod or to their channel.</p><input id="first-link" placeholder="Paste the link" aria-label="Mod or channel link"><button id="first-link-go" class="btn primary">Continue</button></article>
+<article class="card"><span class="ico" aria-hidden="true"><svg class="icon icon-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><h2>From an index</h2><p>An index is someone's list of mods. watane adds none by itself; add one you trust.</p><button id="first-index" class="btn">Add an index</button></article>
+<article class="card folder-card"><span class="ico" aria-hidden="true"><svg class="icon icon-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><h2>From a folder</h2><p>A mod you or your agent made on this device. Drop the folder here.</p><button id="first-folder" class="btn">Choose a folder</button></article>
 </div></div>
-<div class="library-layout" id="library-content"><div class="library-list"><div class="library-heading"><h1>Library</h1><span id="library-count"></span><div class="pills" role="group" aria-label="Show"><button class="pill" data-source="" aria-pressed="true">All</button><button class="pill" data-source="published" aria-pressed="false">Published</button><button class="pill" data-source="local" aria-pressed="false">Local</button></div></div>
-<div id="installed-note" class="toast" role="status" hidden></div>
+<div class="library-layout" id="library-content"><div class="library-list"><div id="installed-note" class="toast" role="status" hidden></div><div class="library-heading"><h1>Library</h1><span id="library-count"></span><div class="pills" role="group" aria-label="Show"><button class="pill" data-source="" aria-pressed="true">All</button><button class="pill" data-source="published" aria-pressed="false">Published</button><button class="pill" data-source="local" aria-pressed="false">Local</button></div></div>
 <p id="no-matches" hidden>No mod matches. <a href="#find">Look in Find</a></p><main id="launcher"></main></div><aside id="mod-details" aria-label="Mod details"></aside></div></section>
 <section id="find">
-<div class="search-box"><span aria-hidden="true">⌕</span><input id="search-text" type="search" placeholder="Search by words, publisher or interface" aria-label="Search mods"><button id="search" class="btn primary">Search</button></div>
+<div class="search-box"><svg class="icon icon-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search-text" type="search" placeholder="Search by words, publisher or interface" aria-label="Search mods"><button id="search" class="btn primary">Search</button></div>
 <p id="search-reading" class="hint" hidden></p>
-<div class="index-controls"><h2 class="label">Searching</h2><div id="indexes"></div><button id="show-index" class="btn" aria-expanded="false" aria-controls="index-entry">＋ Add an index</button></div>
+<div class="index-controls"><h2 class="label">Searching</h2><div id="indexes"></div><button id="show-index" class="btn" aria-expanded="false" aria-controls="index-entry"><svg class="icon icon-14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add an index</button></div>
 <div id="index-entry" hidden><input id="index-link" aria-label="Index link" placeholder="Paste the index link"><button id="add-index" class="btn">Add</button></div>
 <p id="no-index" class="hint">Add an index from a link that someone shared with you.</p><div id="index-notices" class="hint"></div>
 <p id="result-count" class="hint" role="status">No mods found</p><div id="results" aria-live="polite"></div>
@@ -34,32 +33,32 @@
 <section aria-labelledby="done-label"><h2 id="done-label" class="label">Updated by itself</h2><p class="hint">These asked for nothing new, so they installed without a question.</p><div id="update-done"></div></section></section>
 </div>
 <div id="settings" data-area="settings" hidden><section id="distribution">
-<section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="identity-controls"><div id="releases"></div><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>
-<details id="backup"><summary>Back up or restore identity</summary>
+<section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="identity-controls"><div id="releases"></div><label>Profile name <input id="profile-name"></label><button class="btn primary" id="set-name">Set name</button>
+<details id="backup"><summary>Back up or restore identity</summary><div class="settings-fields">
 <label>Passphrase <input id="passphrase" type="password" autocomplete="new-password"></label><label>Repeat passphrase for backup <input id="passphrase-repeat" type="password" autocomplete="new-password"></label>
-<button id="identity-backup">Save backup</button><button id="identity-restore">Restore backup</button></details></div>
+<button class="btn" id="identity-backup">Save backup</button><button class="btn" id="identity-restore">Restore backup</button></div></details></div>
 <div id="confirm-own" hidden><p>Confirm your restored identity before signing. A wrong “never published” answer forks your channel.</p>
-<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button id="confirm-identity">Confirm identity</button><h3>From your machines</h3><p>A machine’s answer is its claim. watane checks every statement it reads.</p><div id="own-hints"></div></div>
-</section><section id="site"><h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button id="set-site">Set site URL</button>
-<p id="own-link"></p><button id="copy-link">Copy link</button></section>
+<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button class="btn primary" id="confirm-identity">Confirm identity</button><h3>From your machines</h3><p>A machine’s answer is its claim. watane checks every statement it reads.</p><div id="own-hints"></div></div>
+</section><section id="site"><h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button class="btn primary" id="set-site">Set site URL</button>
+<p id="own-link"></p><button class="btn" id="copy-link">Copy link</button></section>
 </section>
 <section id="agents"><h2>Agents</h2>
-<label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button id="save-toolset">Save toolset</button><div id="toolsets"></div>
-<label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button id="issue-token">Issue token</button>
-<dialog id="token-dialog"><p>Copy this token now. It is shown only here.</p><pre id="token-secret"></pre><p id="mcp-url"></p><button id="copy-token">Copy token</button><button id="close-token">Done</button></dialog><div id="tokens"></div>
+<label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button class="btn primary" id="save-toolset">Save toolset</button><div id="toolsets"></div>
+<label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button class="btn primary" id="issue-token">Issue token</button>
+<dialog id="token-dialog"><p>Copy this token now. It is shown only here.</p><pre id="token-secret"></pre><p id="mcp-url"></p><button class="btn" id="copy-token">Copy token</button><button class="btn" id="close-token">Done</button></dialog><div id="tokens"></div>
 </section>
 <section id="machines"><h2>Own machines</h2>
 <p id="net-on-text">Connect your own machines. This machine will announce itself on your local network and connect to the machines that you pair. It publishes nothing on the internet, and uses no relay and no DHT unless you choose one.</p>
 <label><input id="machines-on" type="checkbox">Connect own machines</label><p id="machine-info"></p>
-<button id="pair-full">Pair a full machine</button><button id="pair-light">Pair a light machine</button>
-<label>Pairing code <input id="pair-code" readonly></label><button id="pair-copy">Copy</button><p id="pair-expiry"></p>
-<label>Join with a code <input id="join-code"></label><label id="join-replace-label"><input id="join-replace" type="checkbox">Replace this machine’s pairing</label><button id="join">Join</button><p id="joining"></p>
-<dialog id="join-question"><p></p><button id="join-cancel" autofocus>Cancel</button><button id="join-confirm">Join</button></dialog>
-<div id="machine-list"></div><label>List expiry in days <input id="machines-expiry" type="number" min="0" value="0"></label><p>Machines stop trusting each other after this many days without reaching this one. 0: never.</p><button id="save-expiry">Set expiry</button>
-<label>Relay URL <input id="relay-url" type="url"></label><button id="relay-add">Add relay</button><div id="relay-list"></div>
+<button class="btn" id="pair-full">Pair a full machine</button><button class="btn" id="pair-light">Pair a light machine</button>
+<label>Pairing code <input id="pair-code" readonly></label><button class="btn" id="pair-copy">Copy</button><p id="pair-expiry"></p>
+<label>Join with a code <input id="join-code"></label><label id="join-replace-label"><input id="join-replace" type="checkbox">Replace this machine’s pairing</label><button class="btn primary" id="join">Join</button><p id="joining"></p>
+<dialog id="join-question"><p></p><button class="btn" id="join-cancel" autofocus>Cancel</button><button class="btn" id="join-confirm">Join</button></dialog>
+<div id="machine-list"></div><label>List expiry in days <input id="machines-expiry" type="number" min="0" value="0"></label><p>Machines stop trusting each other after this many days without reaching this one. 0: never.</p><button class="btn primary" id="save-expiry">Set expiry</button>
+<label>Relay URL <input id="relay-url" type="url"></label><button class="btn primary" id="relay-add">Add relay</button><div id="relay-list"></div>
 <label><input id="dht-on" type="checkbox">Use the DHT</label><div id="machine-problems" aria-live="polite"></div>
-<dialog id="machine-remove-question"><p></p><button id="machine-remove-cancel" autofocus>Cancel</button><button id="machine-remove-confirm">Remove</button></dialog>
+<dialog id="machine-remove-question"><p></p><button class="btn" id="machine-remove-cancel" autofocus>Cancel</button><button class="btn" id="machine-remove-confirm">Remove</button></dialog>
 </section></div>
 <div id="confirm-panel" role="group" aria-labelledby="confirm-title" hidden><p id="confirm-title"></p><div id="dependency-warning"></div><fieldset id="data-choice"><legend>Its data on this device</legend><label><input id="keep-data" type="radio" name="mod-data" checked>Keep its data</label><label><input id="delete-data" type="radio" name="mod-data">Delete its data</label></fieldset><div class="confirm-actions"><button class="btn" id="confirm-cancel">Cancel</button><button class="btn danger" id="confirm-continue">Remove</button></div></div>
-<div id="drop-target"><span class="ico" aria-hidden="true">↓</span><strong>Drop to install</strong><span>watane reads the mod in this folder and asks before it gets anything.</span></div>
+<div id="drop-target"><span class="ico" aria-hidden="true"><svg class="icon icon-26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg></span><strong>Drop to install</strong><span>watane reads the mod in this folder and asks before it gets anything.</span></div>
 <script type="module" src="app.js"></script></body></html>

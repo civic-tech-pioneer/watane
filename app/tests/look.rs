@@ -1,3 +1,33 @@
+// S84 behaviour checks use the production renderer without a native window.
+fn manager_criterion(scenario: &str) {
+    let result = std::process::Command::new("node")
+        .args(["tests/support/manager_dom.mjs", scenario])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+#[test]
+fn ac5_installed_note_word_forms() {
+    manager_criterion("ac5");
+}
+#[test]
+fn ac6_start_row_visible_during_confirmation() {
+    manager_criterion("ac6");
+}
+#[test]
+fn ac11_installed_version_and_name_only_listings() {
+    manager_criterion("ac11");
+}
+#[test]
+fn ac12_withdrawal_and_empty_channel_check() {
+    manager_criterion("ac12");
+}
+
 #[test]
 fn ac1_ac2_ac3_ac5_find_and_updates_rendering() {
     let result = std::process::Command::new("node")
@@ -346,7 +376,7 @@ mod windows {
                 $('#result-count').textContent==='4 mods found' &&
                 cards[0].querySelector('.install-release').textContent==='Install…' &&
                 cards[1].querySelector('a.installed-link').textContent==='Installed' &&
-                cards[2].textContent.includes('You have 0.1.0') &&
+                cards[2].textContent.includes('You have 0.1.0') && cards[2].querySelector('a.installed-link').textContent==='Installed' && !cards[2].querySelector('.install-release') &&
                 cards[3].querySelector('.blocked').textContent==="Can't install: Ivy's channel no longer matches what it said before, so watane can't trust it. Ask Ivy for the link to a new channel." &&
                 !cards[3].querySelector('button') && !!$('#follow-link') && !!$('#follow-channel') && !!$('#channels') &&
                 $('#find').textContent.includes('Channels you follow') &&
@@ -396,7 +426,7 @@ mod windows {
               const labels=Array.from(document.querySelectorAll('#updates h2'),n=>n.textContent).join('|');
               const first=$('#update-offers .card');
               const valid=labels==='Needs you|Channels|Updated by itself' && $('#updates h1').textContent==='Updates' &&
-                first.querySelector('.newgrant').textContent==='◎ Connect to books.test' && first.querySelector('.newgrant').title==='Full exact grant' &&
+                first.querySelector('.newgrant').textContent==='Connect to books.test' && first.querySelector('.newgrant').title==='Full exact grant' &&
                 first.textContent.includes('Not now keeps 1.0.0 and hides this until the offer changes or watane restarts.') &&
                 first.querySelector('.offer').textContent==='Review…' && $('#updates-count').textContent==='3' &&
                 $('#update-offers').textContent.includes('Notes uses it.') && $('#update-offers').textContent.includes('2.0.0 is the newest version that is not withdrawn and asks for nothing new.') &&

@@ -2,7 +2,7 @@ import {call} from './ipc.js';
 const $ = selector => document.querySelector(selector);
 let hooks, lastView = '', lastHints = '', status, view, joinPending = false;
 function text(parent, tag, value) {const e = document.createElement(tag); e.textContent = value; parent.append(e); return e;}
-function button(parent, label, work) {const b = text(parent, 'button', label); b.onclick = () => Promise.resolve().then(work).catch(hooks.showError); return b;}
+function button(parent, label, work) {const b = text(parent, 'button', label); b.className = 'btn'; b.onclick = () => Promise.resolve().then(work).catch(hooks.showError); return b;}
 export function setupMachines(options) {
   hooks = options;
   const act = (cmd, args) => hooks.action(cmd, args).catch(hooks.showError);

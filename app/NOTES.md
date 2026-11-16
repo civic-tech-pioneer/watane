@@ -1263,3 +1263,49 @@ excluded, 153 tests pass. That supplemental run first saw an unrelated
 support_selftest listener-shutdown failure; its isolated rerun and the
 subsequent full supplemental run pass. AC1/AC3/AC5 native interactions and
 AC6 native regressions still need the validator's native run.
+
+
+## S84 — manager design comparison
+
+The manager now uses the boards' spacing, normal control/row line height,
+monogram type sizes, and decorative inline SVG icons. Paragraphs retain
+1.5 line height; the consent view retains its existing line height and layout.
+Settings uses the shared button shapes and spaced controls, with all ids kept.
+No dependency, command, capability or subsystem interface was added.
+
+Changed fact: Find's listing words use names only (or the fingerprint when
+unnamed). `tests/find.rs` keeps its exact listing and merged-note assertions,
+with `Alice` replacing `Alice (abcd)`; publisher assertions still include keys.
+Changed fact: a Find hit installed in another version links to Library as
+`Installed`, alongside `You have <version>`. The DOM harness assertion changes
+from `Install…` to `Installed`; the native snapshot also asserts that the
+install control is absent for that hit.
+Changed fact: network grant chips use a decorative globe SVG instead of `◎`.
+The DOM/native assertions retain the exact grant words and title, and the
+DOM harness also checks that the SVG is present.
+
+New `ac5`, `ac6`, `ac11`, and `ac12` renderer scenarios were run red before
+implementation: block adds-to text, hidden start row, missing Installed link,
+and withdrawal dismissal respectively. They now cover one/two/three installed
+names (no adds-to text for several), note placement, the visible start row,
+name-only listings with own/unnamed parties, withdrawal without Not now,
+and Checking… with no channels. Existing look/find-updates scenarios pass.
+Pure CSS values use board review, without changing static_style's token checks.
+
+
+Validation: `cargo build -p watane-app`, driver all-target clippy with
+`-D warnings`, fmt, static_style and static_config pass. Both requested
+full test commands stop at the unchanged real-pairing test because this
+sandbox cannot create a netmon monitor (111/112 other unit tests pass).
+The supplemental normal run excluding only that test passes serially (157 tests);
+a concurrent listener-shutdown failure passes both in isolation and in
+that serial run. The driver run, with all four front tests excluded and
+the netmon test excluded supplementally, reaches the API native test and
+cannot start the app: `Connection Invalid` for
+`com.apple.hiservices-xpcservice`, then a driver-ready timeout. The explicit
+`--features driver --test look -- --include-ignored` run passes all ten
+non-window/fixture checks; its seven native checks fail at the same startup
+boundary. AC15's full native validation remains PARTIAL for the validator;
+the manager's visual changes still need its native review. No test was
+weakened or skipped in source. Release with driver fails at the intended
+`the driver feature is only for debug test builds` compile_error.

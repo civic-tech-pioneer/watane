@@ -111,6 +111,24 @@ if (which === 'warning') {
     }
   }
 }
+if (which === 'ac5') {
+  const a=mod('a',{name:'Alpha'}), b=mod('b',{name:'Beta',links:[{kind:'subscribe',provider:'a',granted:true}]}), c=mod('c',{name:'Charlie'});
+  render([a,b,c]);
+  for (const [locals, text] of [[['b'],'Beta is installed.'],[['a','b'],'Alpha and Beta are installed.'],[['a','b','c'],'Alpha, Beta and Charlie are installed.']]) {
+    context.locals=locals; vm.runInContext('installedNote(currentMods.filter(m=>locals.includes(m.local)))',context);
+    assert.equal($('#installed-note strong').textContent,text);
+    if (locals.length === 1) { assert.equal($('#installed-note .hint').tag,'span'); assert.equal($('#installed-note .hint').textContent,'It adds to Alpha.'); }
+    else assert.equal($('#installed-note .hint'),null);
+  }
+  assert.equal($('.library-list').children[0],$('#installed-note'));
+}
+if (which === 'ac6') {
+  render([mod('a',{main:true})]); entry('a').querySelector('.remove').click(); await tick();
+  assert.equal($('#confirm-panel').hidden,false);
+  assert.equal(entry('a').querySelector('.actions').hidden,true);
+  assert.equal(entry('a').querySelector('.start-row').hidden,false);
+  $('#confirm-cancel').click(); assert.equal(entry('a').querySelector('.actions').hidden,false);
+}
 if (which === 'look') {
   assert.equal($('#add-menu').hidden,true);
   $('#add-mod').click(); assert.equal($('#add-menu').hidden,false); assert.equal(document.activeElement,$('#install-link'));
@@ -172,9 +190,35 @@ if (which === 'look') {
   document.dispatchEvent({type:'keydown',key:'Escape'}); assert.equal($('#confirm-panel').hidden,true);
 }
 
-if (which === 'find-updates') {
+if (['find-updates','ac11','ac12'].includes(which)) {
   vm.runInContext(source.slice(source.indexOf("let lastChannels ="), source.indexOf("$('#identity-backup').onclick")).replaceAll('export function ', 'function '),context);
   vm.runInContext(source.slice(source.indexOf("const dismissedOffers ="), source.indexOf('window.wataneDropped')).replaceAll('export function ', 'function '),context);
+  if (which === 'ac11') {
+    render([mod('book',{version:'1.0.0'})]);
+    const alice={name:'Alice',fingerprint:'alicefp'}, ivy={name:'Ivy',fingerprint:'ivyfp'};
+    context.hits=[{slug:'book',name:'Book',version:'2.0.0',release:'key/book@2',publisher:alice,status:'ok',verified:true,installed:'book',via:[{kind:'index',index:alice,through:ivy}],checkedAt:null,uncheckedSince:null}];
+    vm.runInContext('renderResults(hits)',context);
+    const row=$('#results article');
+    assert.equal(row.querySelector('.installed-link').textContent,'Installed');
+    assert.equal(row.querySelector('.install-release'),null);
+    assert.equal(row.querySelector('.badge').textContent,'You have 1.0.0');
+    assert.ok(row.textContent.includes('listed by Alice through Ivy'));
+    assert.equal(words.viaLabel({kind:'index',index:{...alice,you:true}}),'listed by you');
+    assert.equal(words.viaLabel({kind:'index',index:{fingerprint:'fallback'}}),'listed by fallback');
+    process.exit(0);
+  }
+  if (which === 'ac12') {
+    context.offered=[mod('tags',{notice:'Withdrawn by the publisher: broken',offer:'key/tags@2',offerGrants:[]})];
+    vm.runInContext('renderUpdates(offered, [], [], [])',context);
+    assert.equal($('#update-offers .not-now'),null);
+    assert.ok($('#update-offers .offer'));
+    let finish; context.call=()=>new Promise(resolve=>finish=resolve);
+    vm.runInContext('knownChannels=[]; knownIndexes=[]',context);
+    const pending=vm.runInContext('refreshChannels()',context);
+    assert.equal($('#checked-at').textContent,'Checking…');
+    finish([]); await pending;
+    process.exit(0);
+  }
   const ivy={channel:'ivy-key',name:'Ivy',fingerprint:'ivyfp',status:'ok',base:'https://ivy.test/'};
   const index={...ivy,mods:6,own:false,included:[],listings:[],skipped:[]};
   context.indexes=[index]; context.hits=[]; context.channels=[ivy];
@@ -192,7 +236,7 @@ if (which === 'find-updates') {
   assert.equal($('#result-count').textContent,'3 mods found');
   $('#results .installed-link').click();
   assert.equal(context.location.hash,'#mods'); assert.equal(tile('book').getAttribute('aria-pressed'),'true');
-  assert.equal($('#results article.result').querySelector('.install-release').textContent,'Install…');
+  assert.equal($('#results article.result').querySelector('.installed-link').textContent,'Installed');
   assert.ok($('#results').textContent.includes('You have 1.0.0')); assert.ok($('#results').textContent.includes('read 3 min ago'));
   assert.ok($('#results .installed-link')); const blocked=$('#results .compromised');
   assert.equal(blocked.querySelector('button'),null);
@@ -219,7 +263,7 @@ if (which === 'find-updates') {
   assert.equal($('#updates h1').textContent,'Updates');
   assert.deepEqual($('#updates').querySelectorAll('h2').map(n=>n.textContent),['Needs you','Channels','Updated by itself']);
   assert.equal($('#updates-count').textContent,'3');
-  assert.equal($('#update-offers .newgrant').textContent,'◎ Connect to books.test');
+  assert.equal($('#update-offers .newgrant').textContent,'Connect to books.test'); assert.ok($('#update-offers .newgrant svg'));
   assert.ok($('#update-offers').textContent.includes('Not now keeps 1.0.0 and hides this until the offer changes or watane restarts.'));
   assert.equal($('#update-offers .offer').textContent,'Review…');
   const review=$('#update-offers .offer'); vm.runInContext('renderUpdates(offered, done, failed, [])',context); assert.equal($('#update-offers .offer'),review,'a poll must preserve the focused control');

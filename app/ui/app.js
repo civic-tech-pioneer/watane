@@ -32,6 +32,28 @@ async function action(cmd, args = {}) {
   }
   return result;
 }
+// Decorative manager icons share geometry and take their size and colour from CSS.
+function icon(kind, size, className = '') {
+  const shapes = {
+    plus: [['path', {d:'M12 5v14M5 12h14'}]],
+    link: [['path', {d:'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1'}], ['path', {d:'M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1'}]],
+    check: [['path', {d:'M20 6 9 17l-5-5'}]],
+    warning: [['path', {d:'M12 9v4M12 17h.01'}], ['path', {d:'M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z'}]],
+    globe: [['circle', {cx:12,cy:12,r:9}], ['path', {d:'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'}]]
+  };
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  for (const [key, value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':kind === 'check' ? '2.4' : kind === 'plus' || kind === 'globe' && size === 13 ? '2.2' : '2','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',class:`icon icon-${size} ${className}`})) svg.setAttribute(key, value);
+  for (const [tag, attrs] of shapes[kind]) {
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attrs)) shape.setAttribute(key, value);
+    svg.append(shape);
+  }
+  return svg;
+}
+function grantIcon(grant, parent, size) {
+  if (['network','http'].includes(grant.kind)) parent.append(icon('globe', size));
+  else element('span', {storage:'▤',call:'→',subscribe:'⇄',manage:'⚙'}[grant.kind] || '→', parent).setAttribute('aria-hidden','true');
+}
 async function runAction(work) {
   const id = errors.begin();
   try {
@@ -54,11 +76,13 @@ let managerTab = 'library', selected = null, sourceFilter = '', noteSelection = 
 function dismissInstalled() { $('#installed-note').hidden = true; noteSelection = null; }
 function installedNote(mods) {
   const note = $('#installed-note'); note.replaceChildren();
-  element('span', '✓', note, 'verified').setAttribute('aria-hidden', 'true');
+  note.append(icon('check', 18, 'verified'));
   const text = element('div', '', note);
-  element('strong', `${mods.map(m => m.name).join(' and ')} ${mods.length === 1 ? 'is' : 'are'} installed.`, text);
+  const names = mods.map(m => m.name);
+  const label = names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  element('strong', `${label} ${mods.length === 1 ? 'is' : 'are'} installed.`, text);
   const targets = [...new Set(mods.flatMap(m => connections(m, currentMods).addsTo))].map(local => currentMods.find(m => m.local === local)?.name).filter(Boolean);
-  if (targets.length) element('div', `It adds to ${targets.join(' and ')}.`, text, 'hint');
+  if (mods.length === 1 && targets.length) { text.append(document.createTextNode(' ')); element('span', `It adds to ${targets.join(' and ')}.`, text, 'hint'); }
   const dismiss = button(note, '✕', 'quiet dismiss', dismissInstalled); dismiss.setAttribute('aria-label', 'Dismiss');
   noteSelection = selected; note.hidden = false;
 }
@@ -131,7 +155,7 @@ export function modsView(mods) {
     const grants = element('div', '', entry, 'grants'); element('div', 'What it may do', grants, 'label');
     for (const grant of mod.grants) {
       const row = element('p', '', grants, `grant-row${grant.granted ? '' : ' denied'}`); row.dataset.key = grant.key;
-      element('span', {storage:'▤', network:'◎', http:'◎', call:'→', subscribe:'⇄', manage:'⚙'}[grant.kind] || '→', row, 'grant-icon').setAttribute('aria-hidden', 'true');
+      grantIcon(grant, element('span', '', row, 'grant-icon'), 14);
       const text = grant.short || grant.text; element('span', text, row, 'grant-text').title = grant.text;
       makeSwitch(row, text, grant.granted, grant.granted ? 'withdraw' : 'give', () => action(grant.granted ? 'grant_withdraw' : 'grant_give', {local:mod.local,key:grant.key}));
     }
@@ -179,7 +203,7 @@ export function modsView(mods) {
 let confirming = null;
 function cancelConfirm() {
   const panel = $('#confirm-panel'); panel.hidden = true;
-  if (confirming) { confirming.entry.querySelector('.actions').hidden = false; const start = confirming.entry.querySelector('.start-row'); if (start) start.hidden = false; }
+  if (confirming) confirming.entry.querySelector('.actions').hidden = false;
   confirming = null;
 }
 function warn(mod, verb) {
@@ -189,16 +213,18 @@ function warn(mod, verb) {
   cancelConfirm();
   const entry = Array.from($('#mod-details').children).find(n => n.dataset.local === mod.local);
   const panel = $('#confirm-panel'), actions = entry.querySelector('.actions');
-  actions.hidden = true; const start = entry.querySelector('.start-row'); if (start) start.hidden = true;
-  (start || actions).after(panel);
+  actions.hidden = true;
+  actions.after(panel);
   confirming = {mod,verb,entry};
   $('#confirm-title').textContent = `${verb} ${mod.name}?`;
   const warning = $('#dependency-warning'); warning.replaceChildren();
+  warning.append(icon('warning', 18));
+  const lines = element('div', '', warning, 'warning-lines');
   for (const [locals, label] of [[usedBy,'use'],[extendedBy,'extend']]) {
-    if (locals.length) { const line = element('div', `These mods ${label} it: ${locals.map(local => currentMods.find(m => m.local === local).name).join(', ')}.`, warning); line.dataset.locals = locals.join(' '); }
+    if (locals.length) { const line = element('div', `These mods ${label} it: ${locals.map(local => currentMods.find(m => m.local === local).name).join(', ')}.`, lines); line.dataset.locals = locals.join(' '); }
   }
-  if (mod.main) element('div', verb === 'Disable' ? 'Until you enable it, the manager opens at start.' : 'No mod will open at start.', warning);
-  warning.hidden = !warning.children.length;
+  if (mod.main) element('div', verb === 'Disable' ? 'Until you enable it, the manager opens at start.' : 'No mod will open at start.', lines);
+  warning.hidden = !lines.children.length;
   $('#data-choice').hidden = verb !== 'Remove'; $('#keep-data').checked = true; $('#delete-data').checked = false;
   $('#confirm-continue').textContent = verb; panel.hidden = false; $('#confirm-cancel').focus();
 }
@@ -419,7 +445,7 @@ export function renderResults(hits) {
     else if (hit.checkedAt != null) element('p', `read ${ago(hit.checkedAt)}`, metadata, 'checked hint');
     if (hit.from?.length) element('p', `From your machines: ${hit.from.join(', ')}`, body, 'hint');
     if (compromised) element('div', `Can't install: ${label}'s channel no longer matches what it said before, so watane can't trust it. Ask ${label} for the link to a new channel.`, body, 'blocked');
-    else if (exact) {
+    else if (installed) {
       const link = element('a', 'Installed', row, 'btn installed-link'); link.href = '#mods';
       link.onclick = () => { $('#library-filter').value = ''; sourceFilter = ''; location.hash = '#mods'; route(); filterLibrary(); selectMod(installed.local, true); };
     } else if (hit.verified) button(row, 'Install…', 'primary install-release', () => action('install_release', {release:hit.release,link:hit.link}));
@@ -488,7 +514,8 @@ function headerView() {
   $('#checked-at').hidden = managerTab !== 'updates';
   $('#filter-control').hidden = managerTab !== 'library' || !currentMods.length;
   $('#add-mod').hidden = managerTab === 'updates' || managerTab === 'library' && !currentMods.length;
-  $('#add-mod').textContent = managerTab === 'find' ? '↗ Install from a link' : '＋ Install a mod';
+  const add = $('#add-mod'); add.replaceChildren(); add.append(icon(managerTab === 'find' ? 'link' : 'plus', 16));
+  element('span', managerTab === 'find' ? 'Install from a link' : 'Install a mod', add);
   $('#add-mod').classList.toggle('primary', managerTab === 'library');
   $('[data-tab=updates]').hidden = !currentMods.length && !$('#updates-count').textContent && !$('#update-channels .card') && !$('#update-done .done-row');
 }
@@ -533,18 +560,21 @@ export function renderUpdates(mods, done, channels, indexes) {
     if (withdrawn || compromised) element('p',mod.notice,body,'bad');
     if (withdrawn) {
       const users = [...new Set([...dependents(mod,mods).usedBy,...dependents(mod,mods).extendedBy])].map(local=>mods.find(m=>m.local===local).name);
-      if (users.length) element('p',`${users.join(' and ')} ${users.length === 1 ? 'uses' : 'use'} it.`,body,'hint');
-      if (mod.offer) element('p',`${version} is the newest version that is not withdrawn${mod.offerGrants.length ? '.' : ' and asks for nothing new.'}`,body,'hint');
+      const details = [];
+      if (users.length) details.push(`${users.join(' and ')} ${users.length === 1 ? 'uses' : 'use'} it.`);
+      if (mod.offer) details.push(`${version} is the newest version that is not withdrawn${mod.offerGrants.length ? '.' : ' and asks for nothing new.'}`);
+      if (details.length) element('p',details.join(' '),body,'hint');
     } else if (!compromised) {
       const grants = element('div','Asks for something new:',body,'grant-chips hint');
       for (const grant of mod.offerGrants) {
-        const chip = element('span',`${{storage:'▤',network:'◎',call:'→',subscribe:'⇄',manage:'⚙'}[grant.kind] || '→'} ${grant.short || grant.text}`,grants,'newgrant'); chip.title=grant.text;
+        const chip = element('span','',grants,'newgrant'); chip.title=grant.text;
+        grantIcon(grant, chip, 13); element('span',grant.short || grant.text,chip);
       }
       element('p',`Not now keeps ${mod.version} and hides this until the offer changes or watane restarts.`,body,'later-hint');
     }
     if (!compromised) {
       const actions = element('div','',row,'update-actions');
-      button(actions,'Not now','not-now',()=>{dismissedOffers.set(mod.local,offerKey(mod)); renderUpdates(...updateData);});
+      if (!withdrawn) button(actions,'Not now','not-now',()=>{dismissedOffers.set(mod.local,offerKey(mod)); renderUpdates(...updateData);});
       if (mod.offer) button(actions,withdrawn ? offerLabel(mod.offer,mod.offerGrants) : 'Review…','primary offer',()=>action('release_install',{release:mod.offer}));
     }
   }
@@ -552,7 +582,7 @@ export function renderUpdates(mods, done, channels, indexes) {
   for (const channel of [...channels,...indexes]) {
     if (!channel.cause || seen.has(channel.channel)) continue; seen.add(channel.channel);
     const row = element('article','',$('#update-channels'),'card update-card'); row.dataset.channel=channel.channel;
-    element('span','⚠',row,'channel-warning').setAttribute('aria-hidden','true');
+    element('span','',row,'channel-warning').append(icon('warning',20));
     const body = element('div','',row,'update-body');
     element('strong',channel.name ? `Couldn't read ${channel.name}'s channel` : `Couldn't read channel ${channel.fingerprint}`,body);
     const names = mods.filter(m=>m.release?.split('/')[0] === channel.channel).map(m=>m.name);
@@ -579,7 +609,7 @@ function renderCheck() {
   $('#refresh-channels .refresh-label').textContent = checking ? 'Checking…' : 'Check now';
   $('#refresh-channels .refresh-glyph').classList.toggle('spin',checking);
   const count = new Set([...knownChannels,...knownIndexes.filter(i=>!i.own)].map(c=>c.channel)).size;
-  $('#checked-at').textContent = checking ? `Reading ${count} ${count === 1 ? 'channel' : 'channels'}…` : checkedAt == null ? 'Not checked yet' : `Checked ${ago(checkedAt)}`;
+  $('#checked-at').textContent = checking ? count ? `Reading ${count} ${count === 1 ? 'channel' : 'channels'}…` : 'Checking…' : checkedAt == null ? 'Not checked yet' : `Checked ${ago(checkedAt)}`;
   for (const retry of document.querySelectorAll('.retry-channel')) retry.disabled = checking;
 }
 async function refreshChannels() {

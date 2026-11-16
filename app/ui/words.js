@@ -31,7 +31,8 @@ export function checkedLabel(hit, now = Date.now()) {
 export function viaLabel(via) {
   if (via.kind === 'own') return 'Your release';
   if (via.kind === 'followed') return 'Followed channel';
-  return `listed by ${partyLabel(via.index)}${via.through ? ` through ${partyLabel(via.through)}` : ''}${via.note ? ` · ${via.note}` : ''}`;
+  const name = party => party.you ? 'you' : party.name || party.fingerprint;
+  return `listed by ${name(via.index)}${via.through ? ` through ${name(via.through)}` : ''}${via.note ? ` · ${via.note}` : ''}`;
 }
 
 export function emptySearch() { return 'No mods found'; }

@@ -397,18 +397,18 @@ fn ac1_find_wording_and_freshness() {
         assert.deepEqual(viaLabels([
           {{kind:'index',index:alice,through:null}},
           {{kind:'index',index:alice,through:you}}
-        ]), ['listed by Alice (abcd) through you']);
+        ]), ['listed by Alice through you']);
         assert.deepEqual(viaLabels([
           {{kind:'index',index:alice,through:null,note:'direct'}},
           {{kind:'index',index:alice,through:you,note:'included'}}
-        ]), ['listed by Alice (abcd) through you · included · direct']);
+        ]), ['listed by Alice through you · included · direct']);
 
         assert.equal(partyLabel(alice), 'Alice (abcd)');
         assert.equal(partyLabel({{name:null, fingerprint:'abcd'}}), 'abcd');
         assert.equal(checkedLabel({{checkedAt:60000, uncheckedSince:null}}, 360000), 'checked 5 min ago');
         assert.equal(checkedLabel({{checkedAt:null, uncheckedSince:null}}, 0), '');
         assert.equal(checkedLabel({{checkedAt:0, uncheckedSince:0}}, 360000), 'could not check since ' + new Date(0).toLocaleString());
-        assert.equal(viaLabel({{kind:'index', index:alice, through:null, note:'<img>'}}), 'listed by Alice (abcd) · <img>');
+        assert.equal(viaLabel({{kind:'index', index:alice, through:null, note:'<img>'}}), 'listed by Alice · <img>');
     "#,
         include_str!("../ui/words.js")
     );
