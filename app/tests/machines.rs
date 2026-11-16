@@ -746,14 +746,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync('ui/app.js', 'utf8');
-const route = source.slice(source.indexOf('function route() {'), source.indexOf('\nfor (const tab of document.querySelectorAll'));
+const route = source.slice(source.indexOf('function route() {'), source.indexOf("\nwindow.addEventListener('hashchange', route);"));
 const nodes = new Map();
 const $ = selector => {
-  if (!nodes.has(selector)) nodes.set(selector, {hidden:false, setAttribute() {}});
+  if (!nodes.has(selector)) nodes.set(selector, {hidden:false, setAttribute() {}, removeAttribute() {}});
   return nodes.get(selector);
 };
 let refreshes = 0;
-const context = { $, location: {hash:'#mods'}, managerTab:'library',
+const context = { $, location: {hash:'#mods'}, managerTab:'library', closeAdd() {}, headerView() {},
   document: {hidden:true}, readRefresh: () => {refreshes++; return Promise.resolve();},
   showError: error => {throw error;} };
 vm.createContext(context);

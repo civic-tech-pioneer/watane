@@ -95,6 +95,44 @@ fn ac2_ac3_ac4_ac5_ac6_ac7_page_rendering_and_commands() {
 #[cfg(feature = "driver")]
 mod support;
 #[cfg(feature = "driver")]
+#[test]
+fn ac3_channel_site_holds_a_real_read_until_released() {
+    use support::publish::Site;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("head"), "verified head fixture").unwrap();
+    let site = Site::serve(dir.path().to_path_buf());
+    let held = site.hold();
+    let url = format!("{}head", site.base);
+    let (finished, result) = std::sync::mpsc::channel();
+    let request = std::thread::spawn(move || {
+        let response = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(support::journey::TIMEOUT)
+            .build()
+            .unwrap()
+            .get(url)
+            .send()
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .text()
+            .unwrap();
+        finished.send(response).unwrap();
+    });
+    site.wait_held(held);
+    assert!(matches!(
+        result.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    site.release();
+    assert_eq!(
+        result.recv_timeout(support::journey::TIMEOUT).unwrap(),
+        "verified head fixture"
+    );
+    request.join().unwrap();
+}
+
+#[cfg(feature = "driver")]
 mod windows {
     use super::support::{
         driver::App,
@@ -122,36 +160,151 @@ mod windows {
         check(app, "window.__snapshot !== null");
         assert_eq!(app.eval("main", "window.__snapshot"), json!(true));
     }
+    struct FindFixture {
+        publisher: watane_dist::Dist,
+        other: watane_dist::Dist,
+        _site: super::support::publish::Site,
+        _other_site: super::support::publish::Site,
+        _publisher_home: tempfile::TempDir,
+        _other_home: tempfile::TempDir,
+    }
+    impl FindFixture {
+        fn new() -> Self {
+            use super::support::publish::{Site, dist};
+            let publisher_home = tempfile::tempdir().unwrap();
+            let publisher = dist(publisher_home.path());
+            publisher.set_name("Ivy").unwrap();
+            let site = Site::serve(publisher.site_dir());
+            publisher.set_site_url(&site.base).unwrap();
+            let package = watane_host::watane_pkg::pack(&fixture("reading-list"), false).unwrap();
+            publisher.publish(package.into_bytes()).unwrap();
+            // Ivy has a book mod and a non-book mod. Another publisher has a
+            // book mod without Ivy's interface: each filter must exclude a decoy.
+            fn page_package(slug: &str, name: &str, summary: &str) -> Vec<u8> {
+                let dir = tempfile::tempdir().unwrap();
+                std::fs::create_dir(dir.path().join("wit")).unwrap();
+                std::fs::create_dir(dir.path().join("ui")).unwrap();
+                std::fs::write(
+                    dir.path().join("mod.toml"),
+                    format!("name = {name:?}\nsummary = {summary:?}\n"),
+                )
+                .unwrap();
+                std::fs::write(
+                    dir.path().join("wit/world.wit"),
+                    format!("package mods:{slug}@0.1.0; world {slug} {{}} "),
+                )
+                .unwrap();
+                std::fs::write(
+                    dir.path().join("ui/index.html"),
+                    "<!doctype html><p>Fixture</p>",
+                )
+                .unwrap();
+                watane_host::watane_pkg::pack(dir.path(), false)
+                    .unwrap()
+                    .into_bytes()
+            }
+            publisher
+                .publish(page_package("notes", "Notes", "Plain notes"))
+                .unwrap();
+            let other_home = tempfile::tempdir().unwrap();
+            let other = dist(other_home.path());
+            other.set_name("Alice").unwrap();
+            let other_site = Site::serve(other.site_dir());
+            other.set_site_url(&other_site.base).unwrap();
+            let other_release = other
+                .publish(page_package("bookmarks", "Bookmarks", "Save books"))
+                .unwrap();
+            publisher
+                .list(other_release.link.as_ref().unwrap(), "More books")
+                .unwrap();
+            Self {
+                publisher,
+                other,
+                _site: site,
+                _other_site: other_site,
+                _publisher_home: publisher_home,
+                _other_home: other_home,
+            }
+        }
+    }
+    #[test]
+    fn ac1_real_dist_fixture_filters_search_fields() {
+        use super::support::publish::dist;
+        let fixture = FindFixture::new();
+        let home = tempfile::tempdir().unwrap();
+        let reader = dist(home.path());
+        reader
+            .choose_index(&fixture.other.own_link(None).unwrap())
+            .unwrap();
+        reader
+            .choose_index(&fixture.publisher.own_link(None).unwrap())
+            .unwrap();
+        let mut query = watane_dist::Query::default();
+        assert_eq!(reader.search(&query).unwrap().len(), 3);
+        query.text = "book".into();
+        assert_eq!(reader.search(&query).unwrap().len(), 2);
+        query.publisher = fixture.publisher.identity();
+        let expected = format!(
+            "{}/reading-list@0.1.0",
+            fixture.publisher.identity().unwrap()
+        );
+        let hits = reader.search(&query).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].info.reference.to_string(), expected);
+        query = watane_dist::Query {
+            interface: Some("mods:reading-list/books".parse().unwrap()),
+            ..Default::default()
+        };
+        let hits = reader.search(&query).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].info.reference.to_string(), expected);
+    }
     #[test]
     fn ac1_ac3_ac5_find_words_results_and_light_dark() {
-        use super::support::publish::{Site, choose, dist};
-        let publisher_home = tempfile::tempdir().unwrap();
-        let publisher = dist(publisher_home.path());
-        publisher.set_name("Ivy").unwrap();
-        let site = Site::serve(publisher.site_dir());
-        publisher.set_site_url(&site.base).unwrap();
-        let package = watane_host::watane_pkg::pack(&fixture("reading-list"), false).unwrap();
-        publisher.publish(package.into_bytes()).unwrap();
+        use super::support::publish::choose;
+        let fixture = FindFixture::new();
+        let publisher = &fixture.publisher;
+        let other = &fixture.other;
         let home = tempfile::tempdir().unwrap();
         let app = App::start(home.path(), &[]);
+        // Explicitly choosing the other publisher allows its loopback site
+        // under DD-26, just as in tests/find.rs.
+        choose(&app, &other.own_link(None).unwrap().to_string());
         choose(&app, &publisher.own_link(None).unwrap().to_string());
         area(&app, "#find");
-        app.eval("main", "window.__searches=[]; window.__invoke=window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke=(cmd,args)=>{if(cmd==='search') window.__searches.push(args); return window.__invoke(cmd,args)}; document.querySelector('#search-text').value='book ivy'; document.querySelector('#search').click(); null");
+        app.eval("main", "document.querySelector('#search-text').value=''; document.querySelector('#search').click(); null");
+        check(
+            &app,
+            "document.querySelectorAll('#results article.result').length===3",
+        );
+        app.eval("main", "document.querySelector('#search-text').value='book'; document.querySelector('#search').click(); null");
+        check(
+            &app,
+            "document.querySelectorAll('#results article.result').length===2",
+        );
+        app.eval("main", "document.querySelector('#search-text').value='book ivy'; document.querySelector('#search').click(); null");
+        let ivy_release = format!("{}/reading-list@0.1.0", publisher.identity().unwrap());
         check(
             &app,
             &format!(
-                "window.__searches.some(q=>q.text==='book' && q.publisher==={})",
-                json!(publisher.identity().unwrap().to_string())
+                "document.querySelectorAll('#results article.result').length===1 && document.querySelector('#results article.result').dataset.release==={} && document.querySelector('#search-reading').textContent==='By Ivy'",
+                json!(ivy_release)
             ),
         );
+        // Start from all three again, so the interface check cannot pass on
+        // the result left behind by the publisher search.
+        app.eval("main", "document.querySelector('#search-text').value=''; document.querySelector('#search').click(); null");
         check(
             &app,
-            "document.querySelector('#search-reading').textContent==='By Ivy'",
+            "document.querySelectorAll('#results article.result').length===3",
         );
         app.eval("main", "document.querySelector('#search-text').value='mods:reading-list/books'; document.querySelector('#search-text').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); null");
         check(
             &app,
-            "window.__searches.some(q=>q.interface==='mods:reading-list/books' && q.text==='' && q.publisher===null)",
+            &format!(
+                "document.querySelectorAll('#results article.result').length===1 && document.querySelector('#results article.result').dataset.release==={} && document.querySelector('#search-reading').textContent==='Offering mods:reading-list/books'",
+                json!(ivy_release)
+            ),
         );
         click(&app, "#add-mod");
         check(
@@ -164,7 +317,12 @@ mod windows {
             "search",
             json!({"text":"","publisher":null,"interface":null}),
         );
-        let hit = &hits[0];
+        let hit = hits
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|hit| hit["release"] == ivy_release)
+            .unwrap();
         let mut compromised = hit.clone();
         compromised["status"] = json!("compromised");
         compromised["verified"] = json!(false);
@@ -203,9 +361,28 @@ mod windows {
     }
     #[test]
     fn ac2_ac3_ac5_updates_cards_and_held_check() {
+        use super::support::publish::{Site, dist};
+        let publisher_home = tempfile::tempdir().unwrap();
+        let publisher = dist(publisher_home.path());
+        publisher.set_name("Ivy").unwrap();
+        let site = Site::serve(publisher.site_dir());
+        publisher.set_site_url(&site.base).unwrap();
         let home = tempfile::tempdir().unwrap();
         let app = App::start(home.path(), &[]);
         check(&app, "document.body.dataset.ready==='true'");
+        invoke(
+            &app,
+            "channel_follow",
+            json!({"link":publisher.own_link(None).unwrap().to_string()}),
+        );
+        app.eval("main", "window.dispatchEvent(new Event('focus')); null");
+        check(
+            &app,
+            &format!(
+                "!!document.querySelector('#channels [data-channel=\"{}\"]')",
+                publisher.identity().unwrap()
+            ),
+        );
         area(&app, "#updates");
         for theme in ["light", "dark"] {
             app.theme(Some(theme));
@@ -234,18 +411,20 @@ mod windows {
             "#,
             );
             check(&app, "window.__dismissCheck()");
-            // A changed offer must be shown again; dismissal stays in page memory.
+            // Empty lists show their placeholders and hide the Channels section.
             snapshot(
                 &app,
                 r#"page.renderUpdates([],[],[],[]); return document.querySelector('#update-offers').textContent==='Nothing needs you.' && document.querySelector('#failed-channels').hidden && document.querySelector('#update-done').textContent==='None since the app started.';"#,
             );
         }
-        app.eval("main", "window.__invoke=window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke=(cmd,args)=>cmd==='channels_refresh' ? new Promise(resolve=>{window.__finishCheck=resolve}) : window.__invoke(cmd,args); document.querySelector('#refresh-channels').click(); null");
+        let held = site.hold();
+        click(&app, "#refresh-channels");
+        site.wait_held(held);
         check(
             &app,
-            "document.querySelector('#refresh-channels').disabled && document.querySelector('#refresh-channels .refresh-label').textContent==='Checking…' && document.querySelector('#refresh-channels .refresh-glyph').classList.contains('spin') && /^Reading [0-9]+ channels?…$/.test(document.querySelector('#checked-at').textContent) && document.querySelector('#checked-at').getAttribute('role')==='status'",
+            "document.querySelector('#refresh-channels').disabled && document.querySelector('#refresh-channels .refresh-label').textContent==='Checking…' && document.querySelector('#refresh-channels .refresh-glyph').classList.contains('spin') && document.querySelector('#checked-at').textContent==='Reading 1 channel…' && document.querySelector('#checked-at').getAttribute('role')==='status'",
         );
-        app.eval("main", "window.__finishCheck([]); null");
+        site.release();
         check(
             &app,
             "!document.querySelector('#refresh-channels').disabled && document.querySelector('#refresh-channels .refresh-label').textContent==='Check now' && document.querySelector('#checked-at').textContent==='Checked just now' && !document.querySelector('#refresh-channels .refresh-glyph').classList.contains('spin')",

@@ -281,7 +281,8 @@ mod windows {
         details(&app, "stats");
         let text = body(&app, "main");
         assert!(
-            text.contains("of ratings by Frank") && text.contains("in place of ratings by Carol"),
+            text.contains("of Frank ratings by Frank")
+                && text.contains("in place of ratings by Carol"),
             "{text}"
         );
         followed(picked.path(), &f.frank.dist.identity().unwrap().to_string());

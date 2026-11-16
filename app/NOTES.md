@@ -1218,3 +1218,48 @@ words test passes with driver. Targeted look, find, build_on, j4 and j5
 native runs all stop at HIServices startup, including all three new look
 window tests. The full include-ignored driver run (front four excluded)
 stops in the unit suite at the same netmon test (109 passed, 1 failed).
+
+
+### S84-4 validator return, round 1
+
+The native Find test no longer attempts to replace Tauri's immutable
+invoke property. Its real dist fixture has Ivy's Reading list (books
+interface), Ivy's Notes (no book words), and Alice's Bookmarks (book words,
+no books interface). The page starts from all three hits, shows two for
+`book`, and only Ivy's release for `book ivy`; it starts from all three
+again before checking the interface search. A non-window dist test proves
+the fixture's three/two/one/one results independently of the native test.
+
+The held Check now test now follows exactly one real channel and holds
+its HTTP response with Site's watch gate, waiting for a request to reach
+the hold before inspecting Checking, disabled, spin and `Reading 1
+channel…`. Releasing the site lets the actual channels_refresh finish.
+A non-window HTTP test proves the response stays pending until release;
+Site releases a hold on drop too, so a failed assertion cannot hang its
+shutdown. The empty-state snapshot's comment now describes its assertions.
+
+Changed fact: build_on's provider-pick details use section 4's short grant
+words, `Call api of Frank ratings by Frank (in place of ratings by Carol)`.
+Its assertion now expects `of Frank ratings by Frank` and retains
+`in place of ratings by Carol`.
+
+The one authorised unlisted change is
+`tests/machines.rs::ac8_settings_navigation_refreshes_hidden_page`: its
+route extraction ends before the hashchange listener and stubs
+removeAttribute, closeAdd and headerView. All three refresh-count
+assertions are unchanged. This test was run red at the overlong extraction
+and green after the repair; the HTTP hold test was run red for its missing
+helper and green with the real server. The dist fixture test also passes.
+No production code, dependency or specification changed in this return.
+Native window tests are left to the validator as requested.
+
+Round-1 checks: build, all-target driver clippy, fmt, diff check and
+`cargo test --features driver --no-run` pass. The release-driver guard
+fails at the intended compile_error. Both new non-window fixture tests,
+the repaired machines navigation test, all five non-window look tests and
+the fixed-now gui_shell wording test pass. The full normal run stops at
+the known netmon monitor failure (111 passed, 1 failed); with that test
+excluded, 153 tests pass. That supplemental run first saw an unrelated
+support_selftest listener-shutdown failure; its isolated rerun and the
+subsequent full supplemental run pass. AC1/AC3/AC5 native interactions and
+AC6 native regressions still need the validator's native run.

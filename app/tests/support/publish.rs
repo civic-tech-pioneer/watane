@@ -77,6 +77,8 @@ pub fn finish(app: &App) -> Value {
 pub struct Site {
     pub base: String,
     requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    gate: tokio::sync::watch::Sender<bool>,
+    held_requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -84,9 +86,32 @@ impl Site {
     pub fn requests(&self) -> usize {
         self.requests.load(std::sync::atomic::Ordering::SeqCst)
     }
+    /// Hold real HTTP responses until release, returning the current held count.
+    pub fn hold(&self) -> usize {
+        let before = self.held_requests.load(std::sync::atomic::Ordering::SeqCst);
+        self.gate.send_replace(true);
+        before
+    }
+    pub fn wait_held(&self, before: usize) {
+        let deadline = std::time::Instant::now() + TIMEOUT;
+        while self.held_requests.load(std::sync::atomic::Ordering::SeqCst) <= before {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no HTTP read reached the held site"
+            );
+            std::thread::yield_now();
+        }
+    }
+    pub fn release(&self) {
+        self.gate.send_replace(false);
+    }
     pub fn serve(dir: std::path::PathBuf) -> Self {
         let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = requests.clone();
+        let (gate, _) = tokio::sync::watch::channel(false);
+        let request_gate = gate.clone();
+        let held_requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let waiting = held_requests.clone();
         let (stop, rx) = tokio::sync::oneshot::channel();
         let (tx, ready) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
@@ -102,7 +127,18 @@ impl Site {
                             .fallback_service(tower_http::services::ServeDir::new(dir))
                             .layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
                                 count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                async move { next.run(request).await }
+                                let mut gate = request_gate.subscribe();
+                                let waiting = waiting.clone();
+                                async move {
+                                    if *gate.borrow() {
+                                        waiting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                    }
+                                    loop {
+                                        let held = *gate.borrow_and_update();
+                                        if !held || gate.changed().await.is_err() { break; }
+                                    }
+                                    next.run(request).await
+                                }
                             })),
                     )
                     .with_graceful_shutdown(async move {
@@ -115,6 +151,8 @@ impl Site {
         Self {
             base: ready.recv_timeout(TIMEOUT).unwrap(),
             requests,
+            gate,
+            held_requests,
             stop: Some(stop),
             thread: Some(thread),
         }
@@ -122,6 +160,8 @@ impl Site {
 }
 impl Drop for Site {
     fn drop(&mut self) {
+        // A failed assertion must not leave graceful shutdown waiting on a hold.
+        self.release();
         let _ = self.stop.take().unwrap().send(());
         self.thread.take().unwrap().join().unwrap();
     }
