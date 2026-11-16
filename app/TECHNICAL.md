@@ -572,7 +572,7 @@ View types:
 
 ```text
 Status     {home, port, mark, error: null | string,   // identity is null on a replica (stage G)
-            identity: null | {name: null | string, fingerprint, ownConfirmed: bool,
+            identity: null | {name: null | string, fingerprint, signed: bool, ownConfirmed: bool,
                               releases: [{release, version, slug, withdrawn: null | reason}]},
             site: null | {dir, url: null | string, link: null | string}}
 ModView    {local, name, summary, slug, version, release: null | string (ReleaseRef),
@@ -1159,13 +1159,15 @@ per machine; net gives none in D1).
   The page shows the code text in a read-only field with `Copy` and
   `Valid until <time>`; it keeps the code only in memory.
 - `machine_join(code, replace)`: `PairCode::from_str` (`bad_input`).
-  When `Status.identity` is set, the page first asks `This home's identity
+  `Status.identity.signed` is `dist.own()?.head.is_some()`. When identity
+  is set and `signed` is false, the page first asks `This home's identity
   <fingerprint> has signed nothing. Joining your machines deletes it, and
   this machine then signs nothing. Join?` with `Cancel` (focused) and
   `Join`. The `replace` box shows only when `machine` is not `alone`. Then
   `node.join` in `spawn_blocking`; while it waits, `joining` is set, and
   the view shows `This machine: <short key>. Confirm it on <anchor short
-  key>.` A home that signed gives node's `IdentityInUse` text.
+  key>.` A home that signed calls `machine_join` directly without the
+  question and shows node's `IdentityInUse` text.
 - `machine_remove(node)`: the page asks `Remove <short key>? It stops
   being trusted when your machines learn of it.` (`Cancel` focused);
   `net.remove_device`. `machine_role`: `net.set_role`. `machines_expiry`:

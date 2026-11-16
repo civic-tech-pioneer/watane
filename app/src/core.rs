@@ -537,7 +537,7 @@ fn dist_status(
         None
     };
     Ok((
-        serde_json::json!({"name":own.name,"fingerprint":dist.fingerprint(),"ownConfirmed":dist.own_confirmed()?,"releases":own_releases(&own)}),
+        serde_json::json!({"name":own.name,"fingerprint":dist.fingerprint(),"signed":own.head.is_some(),"ownConfirmed":dist.own_confirmed()?,"releases":own_releases(&own)}),
         serde_json::json!({"dir":dist.site_dir(),"url":own.base,"link":link}),
     ))
 }
@@ -890,6 +890,21 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_s75_status_tracks_whether_identity_signed() {
+        struct Approve;
+        impl watane_dist::Confirm for Approve {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Approve
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist =
+            watane_dist::Dist::open(home.path(), Arc::new(Approve), Default::default()).unwrap();
+        assert_eq!(dist_status(&dist).unwrap().0["signed"], false);
+        dist.set_name("Alice").unwrap();
+        assert_eq!(dist_status(&dist).unwrap().0["signed"], true);
+    }
     #[test]
     fn ac4_keyless_status_has_null_identity_without_panicking() {
         let home = tempfile::tempdir().unwrap();

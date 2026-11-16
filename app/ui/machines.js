@@ -13,7 +13,7 @@ export function setupMachines(options) {
   const join = () => act('machine_join', pendingJoin);
   $('#join').onclick = () => {
     pendingJoin = {code:$('#join-code').value, replace:$('#join-replace').checked};
-    if (!status.identity) {join(); return;}
+    if (!status.identity || status.identity.signed) {join(); return;}
     const dialog = $('#join-question');
     dialog.querySelector('p').textContent = `This home's identity ${status.identity.fingerprint} has signed nothing. Joining your machines deletes it, and this machine then signs nothing. Join?`;
     dialog.showModal(); $('#join-cancel').focus();
