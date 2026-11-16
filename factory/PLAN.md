@@ -659,7 +659,7 @@ is a step-7-style check, after S55.
   when there is none, once; node/tests/restore.rs s9 flake (SiteNotWritten). Outcome: each item has a
   test on the real `watane-node`. Touches: node, net (no wire or disk format change). Cloud.
   Delivered (merged as 5e2e12f): watane-node says what is wrong: a removed light laptop is told "node <short> refused: not_allowed"; `--help`; `status` answers while `run` runs; a second run, dht, relay or join names the running watane-node; each key printed once; the y/N answer on its own line; dht and relay changes confirmed; a used code says it was used or expired; "no direct path" only with no known address, else "did not answer at its n known address(es)"; restore.rs s9 fixed (a test race). Decisions: no wire change (the joiner maps the anchor's bad_code to CodeSpent when the code parses); need/need_blob return Refused{NotAllowed} (iroh-blobs' 403 mapped to it), busy/over_budget unchanged; nested causes drop the inner node name; a kept refusal replaces only dist's missing-source errors, as DistError::Io { path: "the server" }; `Machine::of(&Net)`. Verified on the Mac: hakari clean; node green with ignored; net green with ignored on reruns (reach ac4 failed once under S81's build load, then 5 of 5 alone and 3 of 3 as a file); app J8, machines and J3 green. For a later slice: a refused fetch still waits dist's package_timeout before reporting; the chain's top line is just "the server"; join prints "waiting for your answer" before the code is checked; a join answered yes after its joiner died adds a machine that never joined (a net check); `relay remove` of an unset relay is silent; `watane-node bogus` asks for --home; "relative URL without a base" is parser jargon.
-- [~] **S81 The app says what it means (app wording).** Branch `slice/s81`. The app items of S74's,
+- [x] **S81 The app says what it means (app wording).** Branch `slice/s81`. The app items of S74's,
   S75's and S77's user-sim reports: the library marks the main mod; the consent for a mod proposing
   main says it becomes the start window; a connection link moves focus to the target's details; the
   disable warning words an Extended-by link; the anchor's own row and "anchor · anchor"; Join not
@@ -667,8 +667,9 @@ is a step-7-style check, after S55.
   join; the restore refusal points to Settings; Desk's call during a grant change gets an answer;
   `machines.rs ac3_s30` waits for its full text; the app's own temp-folder leaks (11, S76). Outcome:
   each item has a test on the real app. Touches: app. Local (the app).
+  Delivered (merged as 6788eb6): the Library marks the main mod `Opens at start`; the install consent says when a mod becomes the start window; a connection link moves focus to the target's details; the warning separates `These mods use it` from `These mods extend it`; no "anchor · anchor" or "Last seen: unknown" for this machine; Join cannot be clicked twice; relay/DHT controls disabled while own machines are off; the first signature warns the home can then no longer join; a publish refused after a restore points to Settings › identity › From your machines; Desk gets `page_reloaded` for a call cut off by a grant change; ac3_s30 waits for its full text; no app test leaks temp folders. Decisions: `PlanMod.becomes_main` reads `Mod::main()` from host's staging layout (a `main: bool` on host's PlanEntry later); the restore refusal is dist's `OwnHeadUnconfirmed`, mapped in `From<DistError> for CmdError`; S81's built words sit at the end of app/TECHNICAL 5.3 for S84 to carry into the design, and S84 decides the extend wording of 5.3.4 item 5. Verified on the Mac: hakari clean; the app driver suite green with ignored (front tests not run). For a later slice: a host-side reload notice for a manager's in-flight call; the consent says "uses menu" for a mod that only extends it; the anchor's own row reads `Last pull: unknown`; a hidden anchor lists a new replica late and the replica shows the anchor offline right after pairing; the restore refusal names an empty From your machines while own machines are off, and "own head" is jargon; `Give back` on manage needs no consent (check against W35).
 
-- [ ] **S82 Desk opens a page, asks to read a new link, and Alice stops its asks (Q30 b, Q31 b, Q32 b).**
+- [~] **S82 Desk opens a page, asks to read a new link, and Alice stops its asks (Q30 b, Q31 b, Q32 b).**
   Branch `slice/s82`. Builds the human's answers: host 6.10 gains `open-page(local)` (a direct call:
   the app opens or focuses that mod's window, never while a consent is open) and dev's manage fake
   with it; `request-install` with a link of a channel the home does not read shows a first consent
@@ -1060,7 +1061,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S77: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S80: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S83: delivered 2026-11-16 and merged; routine finished, branches removed.
-- S81: `d3a8edfc` (sessionId `d3a8edfc-25fe-47a3-8b8d-4cd54f52c1f2`), worktree `.claude/worktrees/s81` (local: the app; builds in main's `target/`).
+- S81: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: delivered 2026-11-16 and merged; routine finished, branches removed.
@@ -1614,6 +1615,7 @@ The human may veto each one.
   `contract::ac_manage_fake_and_records`, which S76 builds. Not a slice's failure until then.
 - S75: `--skip front:` skips nothing (front tests are marked only by their ignore reason); a
   validator's run took the screen before it stopped. Briefs and commands skip the four by name.
+- S81: briefs must not ask for tests that grep spec text (two broke on S83's respec).
 
 ## Digest
 
