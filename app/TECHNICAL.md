@@ -174,8 +174,26 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
 - `GrantLine.key` is pkg's stable text form of the grant (PKG-F-19), for
   example `call mods:reading-list/books@0.1.0 from local/reading-list`.
 
+- **Short form** (W37, the details of 5.3 only). `GrantLine.short` is the
+  same sentence in plain words: `{interface}` is the interface's name
+  without namespace, package and version (`books` for
+  `mods:reading-list/books@0.1.0`), and `{provider}` is the provider's
+  installed mod name (else its slug) followed by ` by <party name>` (the
+  profile name, else the fingerprint; `you` for the own key) or
+  ` (local)`. A bound provider keeps ` (in place of <name>)`. Storage,
+  network and manage lines are the same in both forms. A subscription to
+  an interface named `events` reads `Receive the events of {provider}`
+  (not `the events events`). Example:
+  `Call books of Reading list by Alice`. The consent view and every request
+  show only `text`; `short` never replaces it there, because the
+  participant decides on the exact words. `GrantLine.short` is
+  `#[serde(default)]`; an empty `short` renders `text`.
+
 ```rust
 pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) -> GrantLine;
+// W37: grant_line leaves `short` empty; Core sets it with grant_short for ModView.grants and
+// ModView.offerGrants. names: the installed mods' names by local name
+pub fn grant_short(grant: &Grant, parties: &Parties, names: &BTreeMap<LocalName, String>) -> String;
 // step 5: grant_line_bound(grant, binds: &[Bind], parties, granted, new); grant_line is it with no binds
 pub fn party(publisher: &str, parties: &Parties) -> Party;
 ```
@@ -239,20 +257,326 @@ identity and channels, and from stage D, find. It never shows mod content.
 From stage I the page has two areas, chosen by the hash `#mods` (default)
 or `#settings`:
 
-- **Mods** (the manager): a header with the tabs `Library`, `Find` and
-  `Updates` (with the count of offers that need the participant), the
-  library filter, `Add mod` (link or folders) and the mark. Library is a
-  grid of `ModView` entries; selecting one shows its details beside the
-  grid: name, version, publisher, summary, its notice, `Open`,
-  `Disable`/`Enable`, `Remove`, `Make main`/`Unset main` (only with a
-  page), the grants with a switch each, the connections (APP-F-66) and,
-  behind a disclosure, origin, page origin and package id. Find holds the
-  search, the chosen indexes and the followed channels. Updates holds the
-  lists of APP-F-69. The window accepts dropped folders (APP-F-20): the
+- **Mods** (the manager): the views Library, Find and Updates, and the
+  details of one mod. From W37 they look as the human's design draws them
+  (5.3.1 to 5.3.7). The window accepts dropped folders (APP-F-20): the
   `main` window keeps Tauri's drag-and-drop handler, and a drop event's
   paths go to `install_paths`.
 - **Settings**: identity, site, backup and restore, agents (toolsets and
-  tokens) and own machines, as before.
+  tokens) and own machines, as before, in the tokens of 5.3.1. Its header
+  holds the title `Settings`, a link `Back to mods` (to `#mods`) and the
+  mark. The design has no Settings board.
+
+**The design** (W37) is `spec/design/manager/`: the boards `Main`
+(Library and details), `Find`, `Updates`, `Empty` (first start) and
+`Shell` (launch with a main mod, the menu), and the launch rule and design
+rules in `canvas.json`. The boards are HTML mockups with sample data: read
+them for layout, sizes, colours and words, never as code to copy. Where a
+board and an APP-F rule or this section disagree, the rule wins and this
+section says so ("rule wins"). The demo's findings are
+`COMPARISON-2026-11-16.md` beside them. Design rules that hold in every
+view: two levels (a list, then one mod); one primary action per view (per
+card where a view is a list of cards);
+a destructive action is never the default and never focused first; quiet
+chrome, so that the consent view stands out.
+
+#### 5.3.1 Tokens, type and themes
+
+`ui/style.css` defines the tokens on `:root` and redefines them under
+`@media (prefers-color-scheme: dark)`; nothing else switches the theme
+(the boards' Tweaks toggle is the designer's preview of the same thing).
+`consent.html` uses the same stylesheet, so it follows the same theme;
+its layout is not part of this slice.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--bg` | `#F6F6F4` | `#111113` | page |
+| `--panel` | `#FFFFFF` | `#19191C` | tiles, cards, the details panel, fields |
+| `--ink` | `#18181B` | `#EDEDEF` | text |
+| `--muted` | `#5D5E66` | `#A3A3AC` | secondary text, labels |
+| `--line` | `#E3E3DF` | `#2B2B30` | borders, separators |
+| `--hover` | `#EFEFEC` | `#222226` | hover of buttons and tabs |
+| `--accent` | `#3355D6` | `#8EA4FF` | primary button, selection, links, focus ring, switch on |
+| `--accent-ink` | `#FFFFFF` | `#0D1330` | text on accent |
+| `--accent-weak` | `#ECF0FD` | `#1D2340` | Update badge, selection halo, update notice |
+| `--warn`, `--warn-bg` | `#8A5300`, `#FFF3DC` | `#F2B65A`, `#2B2112` | dependency warning, a new grant, a channel that could not be read |
+| `--bad`, `--bad-bg` | `#B42318`, `#FDECEA` | `#FF8A80`, `#2E1615` | Problem badge, withdrawal or compromise, Remove, errors |
+| `--ok` | `#1B7346` | `#6FD39E` | "signature verified" shield, an index that reads |
+| `--off`, `--off-bg` | `#5D5E66`, `#ECECE9` | `#A3A3AC`, `#26262A` | Off and local badges |
+
+- Type: `system-ui, sans-serif` (rule wins: the boards load Inter from
+  Google Fonts, and the CSP of section 14 allows only `'self'`; no font
+  file is bundled). Sizes: body 14 px; small 13 px; labels 12 px,
+  weight 600, upper case, letter spacing .04em, `--muted`; view title
+  (`h1`) 26 px, weight 700; details name 20 px; tile name 15 px,
+  weight 600.
+- Shapes: buttons, fields and tabs 36 px high with radius 9 px; pills 30 px
+  with radius 15 px; tiles and cards radius 14 px; badges 22 px with
+  radius 6 px, 12 px weight 600.
+- Buttons: `.btn` (`--panel`, `--line` border), `.btn.primary`
+  (`--accent`, `--accent-ink`), `.btn.danger` (text `--bad`). Focus:
+  2 px `--accent` outline, offset 2 px, on every control.
+- **Monogram**: a square with the first letter of the mod's name in upper
+  case, white, weight 600, on one of eight colours `#475569`, `#3355D6`,
+  `#0F766E`, `#7C3AED`, `#C2410C`, `#B45309`, `#0E7490`, `#9F1239`,
+  chosen by the sum of the UTF-16 code units of the slug, modulo 8, so a
+  mod keeps its colour in every view and home. As classes `.mono-0` to
+  `.mono-7` in `style.css` (the CSP has no `'unsafe-inline'` for style
+  attributes). Sizes: tile 44 px (radius 12), details 56 px (radius 15),
+  find result 48 px, update card 44 px, list row 28 px, chip 24 px.
+  A monogram is `aria-hidden`; the name is always beside it in text.
+- **Mark** (rule wins): the boards draw the consent mark as three coloured
+  shapes; the mark is the two words of 6.4, because the consent view must
+  show the same mark. In the header it is the two words in a 1 px `--line`
+  box with radius 9, `aria-label` `Consent mark of this home`.
+
+#### 5.3.2 Header
+
+One row, 14 px × 24 px padding, a `--line` border below, wrapping on a
+narrow window: the title `Mods` with the four-squares glyph of the boards
+(16 px, weight 700); the tabs `Library` (`#mods`), `Find` (`#find`) and
+`Updates` (`#updates`, with `#updates-count`: the number of shown "Needs
+you" cards, an accent pill, hidden at 0); a spacer; the view's own
+controls (below); the mark. A tab is 36 px with radius 9; the current one
+has `aria-current="page"`, `--panel` and a 1 px `--line` ring. The link row
+`Mods | Settings` above the tabs is gone: Settings is reached by
+`Settings…` in the menu (5.4), as on the Shell board. `#error` sits under
+the header as a `--bad-bg` band, hidden when empty.
+
+View controls: Library: the filter `#library-filter` (240 px, a search
+glyph, placeholder `Filter your mods`) and `Add mod` (primary, plus
+glyph). Find: `Install from a link` (link glyph). Updates: `Checked <ago>`
+(`#checked-at`, from `Status.checkedAt`) and `Check now`
+(`#refresh-channels`, `channels_refresh`).
+
+`Add mod` and `Install from a link` open one popover `#add-menu` under
+the button: a link field `#install-link` (placeholder `Paste the link`)
+with `Continue` (`#install-from-link`, primary, `install_link`), and
+`Choose a folder` (`#install`, `install_folders`) with the line `Or drop
+mod folders on this window.` Escape or a click outside closes it. In
+Find the popover opens with the link field focused.
+
+#### 5.3.3 Library
+
+`<h1>Library</h1>`, then the count (`6 mods`, `1 mod`) in `--muted`, a
+spacer, and the pills `All`, `Published`, `Local` (`button.pill` with
+`data-source` `""`, `published`, `local` and `aria-pressed`; the chosen
+one is `--ink` on `--bg`). They replace `#library-source`. The filter of
+APP-F-68 combines the words of `#library-filter` with the pill.
+
+`#launcher` is a grid, `repeat(auto-fill, minmax(196px, 1fr))`, gap 14 px,
+of one tile per shown mod in `mods_list` order: a `button.tile` with
+`data-tile="<local>"` and `aria-pressed` (selected), min height 150 px,
+padding 18, holding the monogram, the name and `<publisher name, else
+fingerprint, or local> · <version>`. At the top right one badge, the first
+that applies:
+
+| Badge | Class | When |
+|---|---|---|
+| `Off` | `b-off` | not `enabled`; the monogram is dimmed to .45 |
+| `Problem` | `b-problem` | `error` is set, or `notice` is a withdrawal, a compromised channel, a failed update or a channel that could not be read (9.5) |
+| `Update` | `b-update` | `offer` is set |
+| `Main` | `b-local` | `main` |
+
+The selected tile has an `--accent` border and a 3 px `--accent-weak`
+halo. Clicking a tile selects it; arrow keys move between tiles. On
+opening, and when the selected mod disappears, the first shown tile is
+selected. When the filter hides every mod, `#no-matches` reads `No mod
+matches. Look in Find` (the link goes to `#find`), and the panel is empty.
+
+**First start** (the Empty board): when no mod is installed, the
+Library shows `#first-start` instead of the count, pills, grid and panel,
+and the header hides the filter, `Add mod` and the Updates tab:
+the four-squares picture, `<h1>Add your first mod</h1>`, `watane is
+empty until you add mods. Each one asks before it gets anything.`, and
+three cards in a grid of `minmax(260px, 1fr)`, each with a 40 px accent
+icon, a heading, a line, and its control:
+
+| Card | Line | Control |
+|---|---|---|
+| `From a link` | `Someone sent you a link to a mod or to their channel.` | `#first-link` (`Paste the link`) and `Continue` (`#first-link-go`, primary): `install_link` |
+| `From an index` | `An index is someone's list of mods. watane adds none by itself; add one you trust.` | `Add an index`: opens Find with `#index-link` focused |
+| `From a folder` (dashed border) | `A mod you or your agent made on this device. Drop the folder here.` | `Choose a folder` (`#first-folder`): `install_folders` |
+
+The window keeps its drop handler in this view. The Updates tab comes back
+once a mod is installed or any Updates list is not empty.
+
+#### 5.3.4 Details
+
+`aside#mod-details` beside the grid (380 to 460 px wide, `--panel`, a
+`--line` border on its left, padding 28 × 24; below 940 px of window
+width it wraps under the grid). It holds one `section.mod-details` with
+`data-local="<local>"` per installed mod, every one but the selected one
+`hidden`, so a mod's controls are always at `[data-local=<local>]`.
+Rule wins over the old layout: there is no `<details>` disclosure per
+entry; the panel is the details. In order:
+
+1. Head: the 56 px monogram; the name in `h2`; `Version <version>` in a
+   sibling with class `version` (9.5); the tile's badge, if any; then
+   either a `--ok` shield, the publisher's profile name (weight 500) and
+   `(<fingerprint>) · signature verified`, or a `local` badge and `made on
+   this device`.
+2. The summary in `--muted`.
+3. The notice band, when there is a notice, an error, an offer or a
+   `Turned off by …` line (17): `--bad-bg`/`--bad` for a Problem,
+   `--accent-weak`/`--accent` otherwise, radius 12, with its text and, at
+   the right, the offer button (9.5: `release_install`, labelled by
+   `offerLabel`; rule wins over the board's `Review`, whose words 9.5 and
+   the Updates card carry).
+4. The actions: `Open` (`button.open`, primary, the row's widest; only
+   when enabled with a page), `Disable` or `Enable` (`button.disable`,
+   `button.enable`), `Remove` (`button.remove`, danger), and `Make main` or
+   `Unset main` (`button.main-set`, only with a page; rule wins: APP-F-63
+   needs it, the board leaves it out).
+5. The confirmation, inline in place of the actions (rule wins over the
+   old modal dialogs; APP-F-24 and APP-F-67 still hold):
+   `div#confirm-panel[role=group]` on `--bg`, radius 14, with the title
+   `Turn <name> off?` or `Remove <name>?`; when enabled mods use it
+   (`dependents`), `#dependency-warning` in `--warn` on `--warn-bg` with
+   the warning glyph: `<A> uses it and stops working until it is back.`
+   or `<A> and <B> use it and stop working until it is back.` (mod names;
+   the local names in `data-locals`); for a removal the radios `Keep its
+   data` (`#keep-data`, checked) and `Delete its data` (`#delete-data`)
+   under `Its data on this device`; then `Cancel` (`#confirm-cancel`,
+   focused when the panel opens; Escape too) and `Turn off` or `Remove`
+   (`#confirm-continue`, danger). Disabling a mod that nothing uses asks
+   nothing, as before; Remove always opens the panel. The ids
+   `#dependency-dialog`, `#dependency-cancel`, `#dependency-continue` and
+   `#remove-dialog` are gone.
+6. `What it may do` (label): one row per grant, `[data-key=<key>]`: a
+   32 px glyph box (`▤` storage, `◎` network, `→` call, `⇄` subscribe,
+   `⚙` manage), `GrantLine.short` (section 4) with `GrantLine.text` as its
+   `title`, in `--muted` when not granted, and a switch: `button.sw` with
+   `role="switch"`, `aria-checked`, `aria-label` the short text, and class
+   `withdraw` when granted, `give` when not; a click calls `grant_withdraw`
+   or `grant_give` at once (APP-F-23). Under the rows: `A change here takes
+   effect now. A mod that asks for more goes through the consent view.`
+7. `Connections` (label), from `ModView.links` as below: one row per
+   non-empty group, `[data-rel=uses|adds-to|used-by|extended-by]`, with
+   the label `Uses`, `Adds to`, `Used by`, `Extended by` and under it the
+   hint `it calls`, `it answers`, `they call it`, `they answer it`; then
+   one `button.chip[data-target=<local>]` per mod: its 24 px monogram and
+   its name. A chip selects that mod and moves the focus to its `h2`.
+   With no group: `Works on its own: it uses no mod and no mod uses it.`
+   The section has class `connections`.
+8. `Made from this` (step 5, APP-F-42; rule wins, the board has none):
+   the derived list of 9.7, class `derived`, when not empty.
+9. `details.technical` with the summary `Technical details`: a two-column
+   `dl`: `Made from` (`derivedFromLabel`, else `its own source`; the
+   publisher's claim, APP-F-42), `Page origin` (or `none`), `Package`
+   (the package id), `Release` (the ReleaseRef, published only) and
+   `Publisher key` (the fingerprint, or `none (local)`); values in a
+   monospace 12 px, breaking anywhere.
+
+Connections come from `ModView.links` (section 7): `Uses` is the
+providers of the mod's `call` links, `Adds to` of its `subscribe` links,
+`Used by` and `Extended by` the inverse over all installed mods; only links
+whose grant is granted count. Host's `LinkView` has no grant flag: Core
+matches its kind and interface against `InstalledMod.grants`, and omits
+unbound links. The page derives connections and links to the other mod's
+details; no command is added.
+
+#### 5.3.5 Find
+
+The view is a column of at most 920 px, centred, padding 36 × 24, gap 22:
+
+1. One search box `#search-text`, 52 px high, radius 14, 16 px text, a
+   20 px search glyph, placeholder `Search by words, publisher or
+   interface`; Enter or `#search` (a `Search` button at its right end)
+   searches. The page reads the words: one that parses as an interface
+   name (`<ns>:<pkg>/<iface>`, optionally `@<version>`) becomes
+   `interface`; one that equals, ignoring case, the profile name or the
+   fingerprint of a party in `indexes_list` or `channels_list` becomes
+   `publisher` (its key); the rest is `text`. At most one of each; a
+   second stays a word. When one was taken, a line under the box says so:
+   `By Ivy` and/or `Offering <interface>`. `#search-publisher` and
+   `#search-interface` are gone; the command `search` is unchanged.
+2. `Searching` (label) and one chip `.ix[data-channel=<key>]` per chosen
+   index (32 px, radius 16): a dot (`--ok`, or `--bad` when failed or
+   compromised), `<name, else fingerprint> · <n> mods` (`1 mod`), or
+   `· could not be read` or `· compromised`, and a `×` button
+   `button.drop-index` with `aria-label` `Stop using <name> as index`
+   (rule wins, APP-F-38: the board has no drop). The own index is the
+   chip `You · <n> mods` when APP-F-38 shows it. Then `Add an index`
+   (pill button) which shows `#index-link` with `Add` (`#add-index`).
+   Under the chips, each failed read in full (`Could not read <index>:
+   <cause>`, APP-F-37) and the skipped rows (S29), in `--muted`.
+   `#no-index` stays as the hint when no index is chosen.
+3. The count: `<n> mods found`, `1 mod found`, or `No mods found`
+   (APP-F-43).
+4. `#results`: one `article.result` card per hit (radius 14, padding 18):
+   the 48 px monogram (opacity .5 when compromised); the name (16 px,
+   weight 600), the version, and a tag: `You have <version>` (accent)
+   when another version of it is installed, `Compromised` (bad); the
+   summary; a line with the shield, the publisher's name, `(fingerprint)`
+   and `signature verified` or `channel compromised`, then the listing
+   words of APP-F-43 and the read mark of APP-F-44 (`read <ago>`, or
+   `not read since <ago>`); and at the right `Install…` (primary,
+   `button.install-release`), `Installed` (a link that selects it in
+   Library), or a disabled `Can't install` (compromised). The board's
+   line `Adds commands to <main>, which you use as your main mod` is not
+   built: `ModView` does not carry the main mod's interfaces (later).
+5. `Install opens the plan in the consent view. Nothing installs from
+   here.` in 13 px `--muted`.
+6. Rule wins (APP-F-65: followed channels are in Find; the board has
+   none): `Channels you follow` (label) with `#follow-link` and
+   `#follow-channel`, and `#channels` with the rows and controls of 9.3
+   and 9.6 (`Unfollow`, `Use as index`, `Include in my index`, `List in
+   my index`, `End a listing`), as cards in the same style.
+
+`#refresh-find` is gone: `Check now` in Updates refreshes, and Find runs
+its last search again after each refresh.
+
+#### 5.3.6 Updates
+
+A column of at most 860 px, centred, `<h1>Updates</h1>`, then three
+sections with a label each, in the order of APP-F-69:
+
+1. `Needs you` (`#update-offers`): one `.card[data-local]` per offer of
+   `updateOffers` (radius 14, padding 16 × 18, wrapping):
+   - a new grant: the 44 px monogram; `<name>` and `<installed> →
+     <offer version>` in `--muted`; `Asks for something new:` and one chip
+     per `offerGrants` line (glyph and `short`, `--warn` on `--warn-bg`);
+     `Not now` (`button.not-now`) and `Review…` (primary, the offer button
+     of 9.5: `release_install`, which opens the consent view);
+   - a withdrawal: a `--bad` border; `<name> <version>`; the notice in
+     `--bad`; in `--muted`, `<A> uses it.` / `<A> and <B> use it.` when
+     `dependents` is not empty, and `<version> is the newest version that
+     is not withdrawn` followed by ` and asks for nothing new.` when
+     `offerGrants` is empty, else `.`; the offer button (`Install
+     <version>`, `offerLabel`) when there is an offer;
+   - a compromised channel: a `--bad` border and the notice; no button.
+   `Not now` hides that card until its offer changes or the page reloads
+   (page memory only; nothing is stored) and lowers `#updates-count`; the
+   tile keeps its badge. With no card: `Nothing needs you.`
+2. `Channels` (`#update-channels`): one card per failed channel: the
+   warning glyph on `--warn-bg`; `Could not read <name, else
+   fingerprint>`; in `--muted` the whole cause (APP-F-37; rule wins over
+   the board's short `connection refused`), `last read <ago>` when
+   `ChannelRow.readAt` is set, and `<A> comes from it` / `<A> and <B> come
+   from it` for installed mods of that publisher; `Try again`
+   (`channels_refresh`). Hidden when empty.
+3. `Updated by itself` (`#update-done`): `These asked for nothing new, so
+   they installed without a question.`, then one row per `updates_done`
+   entry, newest first: the 28 px monogram, the name, `<from> → <to>`, and
+   at the right `today, 08:12`, `yesterday`, or the date. With none:
+   `None since the app started.`
+
+`<ago>` is `just now` (under a minute), `<n> min ago`, `<n> h ago`,
+`<n> days ago` (`1 day ago`); `ui/words.js` owns it (`ago(ms, now)`) and
+the `when(ms, now)` of the list.
+
+#### 5.3.7 Ids and tests
+
+Every id of the old page that this section does not remove keeps its
+meaning (the Settings and machines ids above included). Removed or
+renamed: `#library-source` (pills), `#search-publisher`,
+`#search-interface`, `#refresh-find` (to `#refresh-channels` in Updates),
+`#dependency-dialog`, `#dependency-cancel`, `#dependency-continue`,
+`#remove-dialog` (to `#confirm-panel`, `#confirm-cancel`,
+`#confirm-continue`). Window tests that used them, or opened a mod's
+`<details>`, change their selectors only, never what they assert (section
+11, W37 rows).
 
 Settings groups controls into `identity`, `site`, `backup` and `agents`,
 retaining the established input and button ids. Stage G fills `#machines`
@@ -271,17 +595,9 @@ The manager tabs use `#mods` (Library), `#find`, and `#updates`;
 restore hints, including when the native window is hidden. Navigation does
 not depend on the visible-window polling timer.
 The library filter matches every entered word
-against the name and publisher and can select published or local mods.
-A dependency warning is a dialog in the main page, before disabling or
-before the existing removal/data dialog; Cancel is focused and Escape cancels.
-
-Connections come from `ModView.links` (section 7): `Uses` is the
-providers of the mod's `call` links, `Adds to` of its `subscribe` links,
-`Used by` and `Extended by` the inverse over all installed mods; only links
-whose grant is granted count. Host's `LinkView` has no grant flag: Core
-matches its kind and interface against `InstalledMod.grants`, and omits
-unbound links. The page derives connections and links to the other mod's
-details; no command is added.
+against the name and publisher and can select published or local mods
+(5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
+disabling or removing; Cancel is focused and Escape cancels.
 
 ### 5.4 Menu and the main mod (stage I)
 
@@ -292,16 +608,43 @@ treated as absent and the file deleted.
 - First window: when `main` names an enabled mod with a page,
   `views::open_mod` for it (5.1) and no main window; otherwise the main
   window (APP-F-62).
-- After each install of the app (`install_folders`, `install_paths`,
-  `install_link`, `release_install`): when `main` is absent and an
-  installed mod's `Mod::main()` is true (pkg 4.2), write its local name;
-  of several, the first in install order (APP-F-63).
+- After each install, however it was asked for: when `main` is absent
+  and a mod that the install added new has `Mod::main()` true (pkg 4.2),
+  write its local name; of several, the first in install order
+  (APP-F-63). From W37 one place applies this: `HostConfirm::installed`
+  (host 12.1, `Confirm::installed`) with `Installed.new`, for every
+  requester: the app's own commands (`install_folders`, `install_paths`,
+  `install_link`, `release_install`, `install_release`, the refresh
+  loop's updates), a local program over `POST /api/install` (for example
+  `watane-dev install`), and a managing mod's request (17). It runs on the
+  host's thread, so it only writes the file (or spawns that write) and
+  never blocks; the per-command adoption of stage I is removed. An update
+  (`Installed.updated`) never makes a mod main, so an unset main stays
+  unset across updates.
+- The consent view says it: for an install plan, a `PlanMod` that is new,
+  has `Mod::main()` true, and would become main by the rule above (no main
+  set and the first such mod of the plan) says that it becomes the start
+  window: watane opens it at start instead of the manager. S81 builds
+  this line (its words in `words.rs`, and how `PlanMod` carries it); W37
+  only requires it for every requester, `LocalApi` and `Mod` included,
+  since the rule above now holds for them too. The line describes the plan
+  as asked; if another install sets main first, the rule above decides.
 - `mod_remove` deletes the file when it names the removed mod.
-- The menu (`tauri::menu`): the app submenu holds `About watane`, `Mods…`
-  (`CmdOrCtrl+Shift+M`), `Settings…` (`CmdOrCtrl+,`) and `Quit`. `Mods…`
-  and `Settings…` show and focus `main` (creating it when closed) with
-  the hash `#mods` or `#settings`. No mod window reaches the menu: menu
-  events are handled in Rust only.
+- The menu (`tauri::menu`): the app submenu holds `About watane`, a
+  separator, `Mods…` (`CmdOrCtrl+Shift+M`), `Settings…` (`CmdOrCtrl+,`),
+  a separator and `Quit watane` (`CmdOrCtrl+Q`), as the Shell board
+  draws it. `Mods…` and `Settings…` show and focus `main` (creating it
+  when closed) with the hash `#mods` or `#settings`. No mod window reaches
+  the menu: menu events are handled in Rust only.
+- W37: after the app submenu, an `Edit` submenu of Tauri's predefined
+  items (`Undo`, `Redo`, separator, `Cut`, `Copy`, `Paste`, `Select All`)
+  and a `Window` submenu (`Minimize`, `Close Window`), so that the usual
+  keys work in every field and page on macOS. The board's `File` and
+  `View` have no items in any design or rule, so there are none (an empty
+  menu would be noise). Predefined items act natively and send no menu
+  event; they give no page a new reach.
+- Mod window title (rule wins): the Shell board writes `Desk — Alice`;
+  the title stays `<mod name> — <party label or local>` (5.1, APP-F-6).
 
 ## 6. Consent
 
@@ -395,7 +738,8 @@ pub struct PlanMod {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party { pub name: Option<String>, pub fingerprint: String, #[serde(default)] pub you: bool }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct GrantLine { pub key: String, pub kind: GrantKind, pub text: String, pub granted: bool, pub new: bool }
+pub struct GrantLine { pub key: String, pub kind: GrantKind, pub text: String, pub granted: bool, pub new: bool,
+                       #[serde(default)] pub short: String }   // W37: section 4, short form
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantKind { Storage, Http, Call, Subscribe }
@@ -574,7 +918,8 @@ View types:
 Status     {home, port, mark, error: null | string,   // identity is null on a replica (stage G)
             identity: null | {name: null | string, fingerprint, signed: bool, ownConfirmed: bool,
                               releases: [{release, version, slug, withdrawn: null | reason}]},
-            site: null | {dir, url: null | string, link: null | string}}
+            site: null | {dir, url: null | string, link: null | string},
+            checkedAt: null | number}  // W37: ms since the Unix epoch, end of the last refresh (9.5); memory only
 ModView    {local, name, summary, slug, version, release: null | string (ReleaseRef),
             publisher: null | Party, enabled, page: null | string (page URL),
             package (package id), derivedFrom: null | string (ReleaseRef),
@@ -584,7 +929,8 @@ ModView    {local, name, summary, slug, version, release: null | string (Release
             main: bool, proposesMain: bool,                    // stage I: <home>/app/main, Mod::main()
             links: [{kind: "call" | "subscribe", provider: string (local), granted: bool}]} // stage I: InstalledMod.links
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
-            status: "ok" | "compromised" | "failed", cause: null | string}
+            status: "ok" | "compromised" | "failed", cause: null | string,
+            readAt: null | number}  // W37: ms, the last refresh in this run that read it; memory only
 IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string,
             you: bool, own: bool, mods: number, included: [Party],
@@ -947,7 +1293,9 @@ and unfollowed publishers have neither notice nor offer. Text comes from
 from the followed `ChannelView`, excluding every `Grant` present in
 `InstalledMod.grants` (including withheld grants). Each uses
 `words::grant_line(grant, parties, false, true)`. No offer gives `[]`.
-A nonempty list adds ` — asks for: <text>, <text>` to the offer button.
+A nonempty list adds ` — asks for: <text>, <text>` to the offer button
+(in the details; from W37 the Updates card shows the grants as chips and
+labels the same button `Review…`, 5.3.6).
 `ui/words.js` owns the pure `offerLabel(release, grants)` and
 `ownWithdrawal(reason)` functions; `app.js` uses them for the offer button
 and own withdrawn release row. Default window tests import that module
@@ -1238,6 +1586,8 @@ setup and the first page load of the startup window (`main` or
 | `wait` | `label`, `timeoutMs` | `true` when the window exists and its last page load finished |
 | `screen` | — | `{mode: "hidden" \| "background" \| "front", accessory: bool}`; on macOS reads AppKit’s actual activation policy on the main thread (false on other platforms) |
 | `menu` | `item: "mods" \| "settings"` | `true`; invokes the same Rust handler as the native menu on the event loop; other items are errors |
+| `menu_items` | — | W37: the menu bar as `[{menu, items: [string]}]`, each item its label or `"-"` for a separator, read from the app's `Menu` |
+| `theme` | `theme: "light" \| "dark" \| null` | W37: `true`; `set_theme` on every window (null: follow the system), so `prefers-color-scheme` follows |
 | `windows` | — | `[{label, url, title, alwaysOnTop, focused, visible}]` |
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |
@@ -1318,6 +1668,13 @@ real approval gate. No production security check changes.
 | `tests/j8.rs` (G) | One quiet, slow `ac1_journey_j8`: Alice's laptop app (anchor), `watane-node` (full), a second laptop app (light), a restored laptop app, all bound to loopback; S29's pairing, a second use of the code refused, a publish that reaches the server within 5 s with no static host. Only after that check, serve Alice's site folder (Ivy's `list` reads Alice's head at the link's location) and Ivy's index listing Alice's reading-list there. Wait for the server's printed verified pull of Ivy, stop both sites and turn Alice's net off before the light search/install. After corruption, repair the file and restart the light app, turn its net off and on, then fetch byte-equal as control; do not restart the app between that fetch and the removal refusal. Keep its old list offline during removal, wait for the server's printed devices-change event, then require its fetch to fail while still locally light. Check the HTTP error message: if it carries `not_allowed`, require the literal net error `node <server> refused: not_allowed`; otherwise exclude unreachable/no-path causes. Node currently discards the blob-fetch net error before dist's no-base fallback, so do not require an authorization-denial event in problems: `Event::Refused` means a bad object. For restore, the restored app stays anchor and issues the full code; the server re-pairs with `join --replace`, so the restored identity can confirm its hint and sign the next seq. No relay and no DHT | original packed fixture bytes; CLI short keys, join/device/pull output; consent and identity DOM; verified hit's `from`; mod page's stored book; `<home>/dist/packages/` byte-equal across homes; server hint seq 0 and next release seq 1; every machine's `book.json` (`relays` empty, `dht` false) |
 | `tests/manager.rs` (I) | S37 to S42: the fixture `desk` and `reading-list`, `recommendations`; restarts of one home | the window labels the driver reports; `<home>/app/main` read with `std::fs`; the DOM text of the details and the warning; the literal texts of APP-F-66 |
 | `tests/find.rs` (D) | S17 to S22; the rows of section 8.2 | static servers over site folders that the test made with `watane_dist` and an approving `Confirm`; the find view's DOM text; the consent DOM text; `<home>/dist/follows.json` |
+| `words::tests` (K, W37) | `grant_short` of each grant kind: `Call books of Reading list by Alice`, `Receive the events of Reading list (local)` (interface `events`), a bound provider, `you`, a provider not installed (slug); storage, http and manage equal `text` | literal strings |
+| `ui/words.js` in `gui_shell` (K) | `ago(ms, now)`: 30 s `just now`, 3 min `3 min ago`, 2 h `2 h ago`, 1 day, 2 days; `when(ms, now)`: same day `today, HH:MM`, the day before `yesterday`, else the date; the count words `1 mod`, `6 mods`, `1 mod found`, `No mods found` | literal strings; fixed `now` |
+| `tests/static_style.rs` (K) | `ui/style.css` defines every token of 5.3.1 on `:root` with the light value and again inside `@media (prefers-color-scheme: dark)` with the dark value; it names no URL other than `'self'`-relative ones and no `@import` or `@font-face` of another origin; `.mono-0` to `.mono-7` carry the eight colours in order; no `style=` attribute in `ui/*.html` | the table of 5.3.1 as literals in the test; a text parse of the CSS |
+| `tests/look.rs` (K, W37) | S49; quiet window tests with fake catalogs (stage A style, `WATANE_APP_FAKE`) and the real fixtures: (1) Library: one `button.tile[data-tile]` per mod in `mods_list` order with monogram, name and `<publisher> · <version>`; the badge table of 5.3.3 for a disabled, a withdrawn, an offered and the main mod, one badge each, in that priority; the count; the pills filter with the words; `No mod matches. Look in Find`; (2) details: one `section.mod-details[data-local]` each, only the selected one visible; a tile click selects; the order of 5.3.4; `Open` is the only primary; the grant switch's class, `aria-checked` and `title` (the full text) and a click that withdraws then gives back; the connection rows and chips, a chip selecting its mod and focusing its `h2`; `Technical details` closed with its five labels; (3) the inline confirm: disable with a dependent shows `#confirm-panel` with the warning naming it and focus on `#confirm-cancel`; Escape closes it with both mods enabled; remove shows `#keep-data` checked and `Cancel` focused; disabling a mod nothing uses opens no panel; (4) first start: an empty home shows `#first-start` with its three cards and words, no filter, no `Add mod`, no Updates tab; a folder installed through `#first-folder`'s command leaves it; (5) Find: one `#search-text`; `book ivy` with a chosen index named Ivy calls `search` with Ivy's key as `publisher` and `book` as `text`; an interface word goes to `interface`; index chips with counts and `×`; the count line; `Install…`, `Installed`, `Can't install` and `You have <version>`; the channels section present; (6) Updates: the three labels in order; an offer card's grant chips, `Not now` hiding it and lowering `#updates-count`, `Review…` opening the consent view; a withdrawal card's dependents and newest-version line; a failed channel card with its whole cause and `Try again`; `Checked <ago>` and `Check now`; (7) the header: no `Mods \| Settings` row; the popover's `#install-link`, `#install-from-link` and `#install`; the mark's two words | the DOM through the driver's `eval`; the driver's command log (which command, which arguments); the 5.3 words as literals; `getComputedStyle` only for `hidden`/`display` and the selected tile's border colour against `--accent` |
+| `tests/look.rs` dark (K) | S50: the main window under a dark appearance: `getComputedStyle(document.body).backgroundColor` is `rgb(17, 17, 19)` and a tile's is `rgb(25, 25, 28)`; light gives `rgb(246, 246, 244)` and `rgb(255, 255, 255)` | the driver op `theme` (section 10), no system change; if the platform gives no dark appearance the test fails, not skips, and `NOTES.md` records it |
+| `tests/manager.rs` (K, W37) | S51: `watane-dev install` of `desk` (`main = true`) into a running app with no main, approved in the consent view (which shows the start-window line), writes `<home>/app/main` = `desk\n`, and a restart opens `mod-desk` only; an update of `desk` after `Unset main` leaves the file absent; S39 (W37): the app submenu's items and separators in the order of 5.4, and the `Edit` and `Window` submenus | `<home>/app/main` with `std::fs`; the consent DOM text; the driver's `windows`; the driver op `menu_items` |
+| Changed window tests (K) | selectors only, same facts: `[data-local=X] details` → `[data-local=X]` (the panel section) in `manager.rs`, `build_on.rs`, `manage.rs`, and `.open = true` → a click on `[data-tile=X]`; `#dependency-dialog`/`-cancel`/`-continue` and `#remove-dialog` → `#confirm-panel`, `#confirm-cancel`, `#confirm-continue` in `j2.rs` and `manager.rs` (`.open` → `!hidden`; j2's removal now checks the radios and that `#confirm-cancel` has the focus, where it checked two buttons and `#keep-data` focused: Keep is still the default, now as the checked radio); `'Disabled'` in `j2.rs` → the `Off` badge; S40's `Uses: reading-list` → the `uses` row holding the chip `[data-target=reading-list]` named `Reading list`; `build_on.rs`'s `Made from …` → the `Made from` value of `Technical details`; `tests/support`'s `#refresh-find` → `#refresh-channels` | as before |
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
 their listings through Ivy. This respects dist DD-26's local-address guard
@@ -1371,6 +1728,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/manage.rs`, `tests/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
+| K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the driver ops `menu_items` and `theme`; `tests/look.rs`, `tests/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -1496,6 +1854,9 @@ From **host** (`../host/TECHNICAL.md` sections 2, 3, 8, 10 to 12):
   Requester }) -> Answer`, with `Requester { App, LocalApi }` and `Answer {
   Approve { withhold: Vec<(LocalName, Grant)> }, Deny }`. No answer in 600 s
   is `refused`.
+- W37, **asked of host** (host 12.1, stage 12): `Confirm::installed(&Installed {
+  requester, new, updated })`, called once after each install that wrote the
+  catalog, any requester; a default body that does nothing (5.4).
 - Step 5: `plan_with(Vec<Source>, Vec<Bind>) -> Plan`; `Bind { consumer,
   provider, to }`; `PlanEntry.binds`, `InstalledMod.binds` (host 2.4, 4.5).
 - `plan(Vec<Source>) -> Plan` with `Source { Folder(PathBuf), Release {

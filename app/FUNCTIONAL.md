@@ -47,13 +47,15 @@ The main mod and the manager (stage I, W36) are designed and not built.
 ### Main mod and manager (stage I)
 
 - **APP-F-62** At start, the app shall open the window of the main mod when one is set and enabled, and otherwise the main window with the manager. Traces: F-APP-1, F-APP-7, J10.
-- **APP-F-63** The participant shall be able to make any installed mod with a page the main mod, and to unset it, in the details of that mod. When no main mod is set and the participant installs a mod that proposes itself as main, the app shall make it the main mod. When the main mod is removed, no mod is main. Traces: F-APP-7.
-- **APP-F-64** The app menu shall hold `Mods…` (⇧⌘M on macOS, Ctrl+Shift+M elsewhere), which opens or focuses the main window on the manager, and `Settings…` (⌘, on macOS, Ctrl+, elsewhere), which opens it on the settings. The app shall quit when its last window other than the consent view closes. Traces: F-APP-7.
+- **APP-F-63** The participant shall be able to make any installed mod with a page the main mod, and to unset it, in the details of that mod. When no main mod is set and a mod that proposes itself as main is installed new, whether the participant, a local program or a managing mod asked for the install, the app shall make it the main mod, and the consent view for that install shall say that it becomes the start window. An update shall never make a mod main. When the main mod is removed, no mod is main. Traces: F-APP-7.
+- **APP-F-64** The app menu shall hold `Mods…` (⇧⌘M on macOS, Ctrl+Shift+M elsewhere), which opens or focuses the main window on the manager, and `Settings…` (⌘, on macOS, Ctrl+, elsewhere), which opens it on the settings. The usual edit commands (cut, copy, paste, undo, select all) shall work in every field and page. The app shall quit when its last window other than the consent view closes. Traces: F-APP-7.
 - **APP-F-65** The manager shall hold the views Library, Find and Updates, and the details of one mod. The views of the identity, the site, the backup, the agents and the own machines shall be in Settings, not in the manager. Followed channels and indexes shall be in Find. Traces: F-APP-8.
 - **APP-F-66** The details of a mod shall show its connections, each a link to that mod's details: the mods it calls (`Uses`), the mods whose events or collects it receives (`Adds to`), the mods that call it (`Used by`) and the mods that receive its events or collects (`Extended by`). Only granted links of installed mods count. A mod with none shall read `Works on its own: it uses no mod and no mod uses it.` Traces: F-APP-9, J9.
 - **APP-F-67** When the participant disables or removes a mod that an enabled mod calls or receives events from, the app shall first name those mods and ask; `Cancel` is the default. Traces: F-APP-9, F-INST-5.
 - **APP-F-68** The library shall filter its entries by words in the name or the publisher, and by published or local. When nothing matches, it shall say so and link to Find. Traces: F-APP-8.
 - **APP-F-69** Updates shall list, in this order: the offers that need the participant (a new grant, a withdrawal, a compromised channel), the channels that could not be read, and the updates that installed without a question since the app started, newest first. Traces: F-INST-7, F-INST-8, F-APP-8.
+- **APP-F-76** The app views shall follow the light or dark appearance of the system. Traces: F-APP-8.
+- **APP-F-77** The details of a mod shall show each grant in plain words, naming each provider by its mod name, with a switch that takes effect at once; the consent view shall keep the exact words of every grant. Traces: F-APP-5, F-INST-5.
 
 ### Agents
 
@@ -342,15 +344,34 @@ when they close `mod-desk` and then the main window, the app quits.
 
 **S40 Connections** (APP-F-66). Given `reading-list` and
 `recommendations` (which calls and subscribes to it) installed, then the
-details of `recommendations` show `Uses: reading-list` and
-`Adds to: reading-list`, and those of `reading-list` show `Used by` and
-`Extended by` with `recommendations`. After the participant withdraws the
+details of `recommendations` show `Reading list` under `Uses` and under
+`Adds to`, and those of `reading-list` show `Recommendations` under
+`Used by` and `Extended by`. After the participant withdraws the
 call grant, `Uses` and `Used by` are gone.
 
 **S41 Warn before disable** (APP-F-67). Given S40, when the participant
-disables `reading-list`, then the page names `recommendations` and
+disables `reading-list`, then the page names `Recommendations` and
 `Cancel` has the focus; Cancel leaves both enabled.
 
 **S42 Settings apart** (APP-F-65). The library, Find and Updates views
 hold no control of identity, site, backup, agents or machines; Settings
 holds them all.
+
+**S49 The manager looks as drawn** (APP-F-3, APP-F-77, W37). Given
+`desk` (main), `reading-list` with an offer that asks for a new grant, and
+`recommendations` disabled, then the library shows three tiles with the
+badges `Main`, `Update` and `Off`, and `3 mods`; selecting `Recommendations`
+shows its details beside the tiles with `Call books of Reading list (local)`
+and a switch that is on; switching it off withdraws the grant at once.
+Updates shows the offer under `Needs you` with `Review…`; `Not now` hides it.
+A home with no mod shows `Add your first mod` with the three ways and no
+Updates tab.
+
+**S50 Light and dark** (APP-F-76). When the system turns dark, the
+manager's page and tiles turn dark; back to light, they turn light.
+
+**S51 Main through a local program** (APP-F-63). Given a running app with
+no main mod, when a local program installs `desk` (`main = true`) and the
+participant approves the consent view, which says that `desk` becomes the
+start window, then `desk` is the main mod and the next start opens its
+window. After `Unset main`, an update of `desk` leaves no main mod.

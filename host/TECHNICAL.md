@@ -1405,7 +1405,14 @@ pub trait Confirm: Send + Sync + 'static {
     /// Step 10 (6.10): a manager makes things do less; called before the host acts. Must not block.
     /// Default: nothing.
     fn reduced(&self, by: &LocalName, reduction: &Reduction) {}
+    /// After an install has written the catalog, before `Host::install` returns; every requester
+    /// (`App`, `LocalApi`, `Mod`) and every home. Must not block. Default: nothing. (W37: the app
+    /// makes a `main = true` mod main however it was installed, app 5.4.)
+    fn installed(&self, report: &Installed) {}
 }
+/// Debug, Clone, PartialEq. `new`: the local names of the plan entries that were `New`, in install
+/// order; `updated`: those that were `Update`. `Unchanged` entries are in neither.
+pub struct Installed { pub requester: Requester, pub new: Vec<LocalName>, pub updated: Vec<LocalName> }
 pub struct InstallRequest { pub entries: Vec<PlanEntry>, pub requester: Requester }
 pub enum Requester { App, LocalApi, Mod(LocalName) /* step 10: the manager that asked (6.10) */ }
 pub enum Answer {
@@ -1431,6 +1438,13 @@ pub enum Reduction { Disable(LocalName), Withdraw { local: LocalName, grant: Gra
 The default bodies keep an earlier `Confirm` compiling; a host whose app
 uses them refuses nothing it did before and answers every request
 `failed`.
+
+`installed` (W37) is called exactly once per `Host::install` that wrote
+the catalog (10 of 4.2 done), after the registry swap and before the
+call returns, with the same `Requester`. It is not called on `refused`, on
+any error, or for a plan whose entries are all `Unchanged`. It is how the
+app learns of an install over `POST /api/install` (11), whose answer it
+does not see; the host gives no other meaning to it.
 
 `Plan::needs_confirmation()` is true in a participant home when an entry
 is `New`, or is an `Update` with a non-empty `new_grants`, or (step 5) has
@@ -1529,7 +1543,7 @@ run on the preview install path.
 | `tests/pages.rs` | S11, S12, S13; a page answers alike over `127.0.0.1` and `[::1]`; path refusals (`/../x`, `/a//b`, `/.env`, `/%2e%2e/x`, `/a\b`); unknown `Host` → 421; `/watane.js` bytes equal `src/watane.js` read from disk; a 404 has `text/plain` | status codes, literal header strings, file bytes |
 | `tests/mcp.rs` | S14, S15; `tools/call` output for ok, err and a trap; batch → `-32600`; notification → 202; `initialize` version choice | literal JSON-RPC responses |
 | `tests/catalog.rs` | S16 to S23, S25, S28, S29; the pinned publisher (a provider of another publisher does not link); an update keeps a withdrawn grant withdrawn | a `Confirm` fake that counts calls and answers from a script; directory listings of `mods/`; `installed.json` parsed as plain JSON |
-| `tests/api.rs` | the four endpoints; `Origin` → 403; S22; S30 | status codes, literal JSON |
+| `tests/api.rs` | the four endpoints; `Origin` → 403; S22; S30; W37: a `POST /api/install` of two new folders calls `Confirm::installed` once with `requester` `LocalApi` and both names in `new` in install order; a denied install and a failing plan call it never | status codes, literal JSON; the `Confirm` fake's record of calls |
 | `tests/program.rs` | S1, S2, S3 through `env!("CARGO_BIN_EXE_watane")`; SIGTERM removes `run.json`; `--bad` exits 2 | the stdout line parsed as plain JSON; exit codes; file presence |
 | `tests/hostile.rs` | `/call` with a subscription function → 404 (`ac12_s11_page_cannot_call_a_subscription_function`); a body field `caller` → 400; `/call` with the origin of another mod → 403; `/api/...` with any `Origin` → 403; `Host: evil.example:<port>` → 421; a token of toolset `a` on `/mcp/b` → 403; a 2 MiB `/call` body → 413; `counter` without storage grant cannot read state that it wrote before the revoke (`ac8_s12a_storage_after_revoke_cannot_read_old_state`); exact and repeated Host checks on both loopbacks; preflight without CORS; streamed and declared oversized bodies; mod/API route isolation; raw path tricks; cross-origin events; S11 to S13 through the program | status codes, literal headers and JSON, fixture page bytes; every step-1 probe uses `Preview` |
 | `tests/binds.rs` | S33 to S35: signed picks, persistence, bind-only updates, removal, validation, preview matching and local API rejection | literal binds, links, JSON, caller and confirmation count |
@@ -1717,6 +1731,7 @@ is added.
 | 9 Binds (step 5) | `Bind`, `plan_with`, 4.5, `binds` in `installed.json`; the preview rule of 4.2 step 7 | stage 8 | none | S33 to S35 pass (`tests/binds.rs`); J5 with `dev`, `dist` and `app` |
 | 10 Collect (step 9) | 9.4; the outlet row of 6.4; collect edges in 4.2 step 8; the 5.3 rule; collect fakes in `Harness` (2.6); fixtures `menu`, `item-*` | stage 5; `pkg` stage 9 (`World::collects`) | none; the stage waits for pkg | S36 to S39 pass (`tests/collect.rs`); J9 with `dev` and `app` |
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/manage.rs`); J10 with `dev` and `app` |
+| 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/api.rs` passes; every earlier test passes unchanged (the default body) |
 
 Step 10 is done when J10 passes with `dev` and `app` (app 17).
 
@@ -1732,6 +1747,7 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` | the page origin `http://<local>.localhost:<port>/` to load as a top-level view, on `127.0.0.1` and `::1` (8.1); CSP `frame-ancestors 'none'`; close a mod's view on disable or remove; `<home>/app/` reserved (3.1); `extra_api` routes set their own body limit (8.1) |
 | `dist` (through `app`) | `Source::Release { package: Package, entry: Entry }` for `plan`, as `Fetched` gives them; `MissingProvider.release` (a `ReleaseRef`) to fetch; `InstalledMod.release` (a `ReleaseRef`) to compare with updates and withdrawals; `<home>/dist/` and `<home>/log/` reserved (3.1) |
 | `app` (step 10) | `Confirm::{manage, reduced}`, `ManageRequest`, `RequestId`, `Ask`, `ManageOutcome`, `Reduction`, `Requester::Mod` (12.1); install with `Requester::Mod(by)` for a manager's install and update (6.10) |
+| `app` (W37) | `Confirm::installed`, `Installed` (12.1): one call after each install that wrote the catalog, any requester |
 | `dev` (step 10) | the manage fakes of 6.10 under the `Fakes` key `watane:host/manage`; `Outcome.manages`, `ManageRecord` (2.6); `HOST_WIT` with `manage` |
 | `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
 
