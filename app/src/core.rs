@@ -408,6 +408,30 @@ impl Core {
             eprintln!("cannot schedule page close: {error}");
         }
     }
+    pub fn post_open(self: &Arc<Self>, local: LocalName) {
+        let core = self.clone();
+        if let Err(error) = self.app.run_on_main_thread(move || {
+            // Recheck at application time: the call's later effects may have
+            // disabled or removed the target after OpenPage was posted.
+            let Some(m) = crate::confirm::open_page_target(&core.host, &core.broker, &local) else {
+                return;
+            };
+            let party = m
+                .publisher
+                .map(|p| words::party_label(&words::party(&p.to_string(), &core.parties)))
+                .unwrap_or_else(|| "local".into());
+            if let Err(error) = views::open_mod(
+                &core.app,
+                local.as_ref(),
+                m.page.as_deref().unwrap(),
+                &format!("{} — {party}", m.name),
+            ) {
+                eprintln!("{}", error.message);
+            }
+        }) {
+            eprintln!("cannot schedule page open: {error}");
+        }
+    }
     pub fn disable(&self, local: &str) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
         views::close_mod(&self.app, local)?;

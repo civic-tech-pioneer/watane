@@ -99,7 +99,18 @@ fn reduction_effect(
         watane_host::Reduction::Disable(l) => (l, Some("Turned off"), true),
         watane_host::Reduction::Withdraw { local, .. } => (local, Some("Grant withdrawn"), false),
         watane_host::Reduction::ClosePage(l) => (l, None, true),
+        watane_host::Reduction::OpenPage(l) => (l, None, false),
     }
+}
+pub(crate) fn open_page_target(
+    host: &watane_host::Host,
+    broker: &consent::Broker,
+    local: &watane_host::LocalName,
+) -> Option<watane_host::InstalledMod> {
+    if broker.current().is_some() {
+        return None;
+    }
+    host.get(local).filter(|m| m.enabled && m.page.is_some())
 }
 fn asker(m: &watane_host::InstalledMod, parties: &Parties) -> consent::Asker {
     consent::Asker {
@@ -292,6 +303,11 @@ impl Confirm for HostConfirm {
         }
         if close && let Some(core) = self.core.get().and_then(Weak::upgrade) {
             core.post_close(local.to_string());
+        }
+        if matches!(reduction, watane_host::Reduction::OpenPage(_))
+            && let Some(core) = self.core.get().and_then(Weak::upgrade)
+        {
+            core.post_open(local.clone());
         }
     }
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
@@ -762,9 +778,11 @@ mod tests {
                 false,
             ),
             (watane_host::Reduction::ClosePage(local.clone()), None, true),
+            (watane_host::Reduction::OpenPage(local.clone()), None, false),
         ] {
             assert_eq!(reduction_effect(&reduction).0, &local);
             assert_eq!(reduction_effect(&reduction).2, close);
+            let previous_notice = notices.get(local.as_ref(), None);
             let c = confirm.clone();
             let b = by.clone();
             let (tx, rx) = std::sync::mpsc::channel();
@@ -773,6 +791,9 @@ mod tests {
                 tx.send(()).unwrap();
             });
             rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+            if expected.is_none() {
+                assert_eq!(notices.get(local.as_ref(), None), previous_notice);
+            }
             if let Some(expected) = expected {
                 assert_eq!(notices.get(local.as_ref(), None).as_deref(), Some(expected));
                 assert_eq!(
@@ -793,6 +814,45 @@ mod tests {
                 .get(local.as_ref(), None)
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn ac1_open_page_rechecks_consent_and_current_mod_state() {
+        let (_home, host) = preview();
+        fixtures(&host).await;
+        let _served = host.serve(0, axum::Router::new()).await.unwrap();
+        let broker = consent::Broker::new();
+        let local = LocalName::parse("reading-list").unwrap();
+        assert!(open_page_target(&host, &broker, &local).is_some());
+        host.disable(&local).unwrap();
+        assert!(open_page_target(&host, &broker, &local).is_none());
+        host.enable(&local).unwrap();
+        let mut request = Box::pin(broker.ask(consent::Request::Install {
+            asked_by: None,
+            by_program: false,
+            mods: vec![],
+        }));
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(
+                request.as_mut().poll(cx).is_pending()
+            ))
+            .await
+        );
+        assert!(broker.current().is_some());
+        assert!(open_page_target(&host, &broker, &local).is_none());
+        drop(request);
+        assert!(open_page_target(&host, &broker, &local).is_some());
+        host.remove(&local, false).unwrap();
+        assert!(open_page_target(&host, &broker, &local).is_none());
+
+        let plan = host
+            .plan(vec![watane_host::Source::Folder(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../host/tests/fixtures/mods/echo"),
+            )])
+            .unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+        assert!(open_page_target(&host, &broker, &LocalName::parse("echo").unwrap()).is_none());
     }
     #[test]
     fn ac4_host_origin_new_binds_and_bound_uses() {

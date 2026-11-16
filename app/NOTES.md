@@ -1018,3 +1018,40 @@ No dependencies added.
   partial in this sandbox; none of the four screen-taking tests was run.
   Logs: `/tmp/s82-*.log`. No new dependency, command, capability, sibling
   code or unlisted file changed.
+
+### S82 Open page
+
+- `HostConfirm::reduced` now posts `OpenPage` to the main thread. At
+  application time it checks `Broker::current` and the host's current mod:
+  pending consent, a disabled/removed mod, or no page drops the open. It
+  uses `views::open_mod`, retains no request for later, and changes no
+  notice. Repeated opens reuse the existing window.
+- Necessary file-list extension: `src/core.rs` owns the private app
+  handle. Added `Core::post_open` beside `post_close` to schedule that
+  operation; no new command, dependency, capability or sibling code.
+- Desk gains only the `open-page` button in the existing style. Its
+  existing script passes the local field through, verified by the fixture
+  script test. The reduction-list test covers `OpenPage` and verifies that
+  page operations leave existing notices unchanged. A new unit test checks
+  current consent and target state using prebuilt fixtures. The no-page
+  target is host's `echo`: `counter` has a page and cannot prove that case.
+- Added `ac3_s82_open_page_is_unique_and_dropped_during_consent`: it waits
+  on window labels for the first open, checks uniqueness, compares labels
+  through pending enable consent and after answering, and applies a later
+  open before checking that the dropped target stayed closed. Menu round
+  trips drain posted main-thread work; no sleep or focus assertion. Echo's
+  open reports `bad_request` on Desk.
+- Red/green: the reduction test exposed the missing `OpenPage` match arm;
+  the fixture button-list test failed on `open-page`; the target-state unit
+  test failed on the missing helper. All pass after implementation. The
+  native scenario was attempted before and after implementation, but cannot
+  reach its assertions: the sandbox's HIServices XPC connection is refused.
+- Validation: `cargo build`, strict driver clippy, fmt and diff checks
+  pass. The required default and driver/include-ignored commands both stop
+  at the existing pairing test (`Failed to create netmon monitor`). With
+  only that test excluded, the default suite passes 145 tests and the driver
+  unit suite passes 109. Both fixture checks pass. J10 was explicitly run
+  and, like the new window scenario, cannot start at HIServices. AC3 and
+  full AC5/J10 validation remain PARTIAL for the native validator. The four
+  screen-taking tests were skipped by their exact names. The release-driver
+  build fails at the required debug-only guard. Logs: `/tmp/s82-open-*.log`.

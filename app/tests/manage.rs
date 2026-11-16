@@ -12,6 +12,7 @@ fn ac1_desk_ui_has_every_manager_api_button() {
         "disable",
         "withdraw",
         "close-page",
+        "open-page",
         "request-install",
         "request-update",
         "request-enable",
@@ -28,6 +29,89 @@ fn ac1_desk_ui_has_every_manager_api_button() {
         assert!(html.contains(&format!("id=\"{field}\"")), "{field}");
     }
     assert!(!html.contains("<script>"));
+}
+
+#[test]
+fn ac3_s82_open_page_is_unique_and_dropped_during_consent() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.install(&app);
+    no_window(&app, "mod-reading-list");
+    click(&app, "open-page", json!({"local":"reading-list"}));
+    outcome(&app, "ok");
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    while !app
+        .windows()
+        .iter()
+        .any(|w| w["label"] == "mod-reading-list")
+    {
+        assert!(std::time::Instant::now() < deadline, "Weather did not open");
+        std::thread::yield_now();
+    }
+    click(&app, "open-page", json!({"local":"reading-list"}));
+    outcome(&app, "ok");
+    // The menu round trip drains earlier posted window operations.
+    app.menu("mods");
+    assert_eq!(
+        app.windows()
+            .iter()
+            .filter(|w| w["label"] == "mod-reading-list")
+            .count(),
+        1
+    );
+    assert!(
+        invoke(&app, "mods_list", json!({}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["local"] == "reading-list")
+            .unwrap()["notice"]
+            .is_null()
+    );
+
+    click(&app, "disable", json!({"local":"reading-list"}));
+    outcome(&app, "ok");
+    no_window(&app, "mod-reading-list");
+    no_window(&app, "mod-recommendations");
+    let labels = || {
+        let mut labels: Vec<_> = app
+            .windows()
+            .iter()
+            .map(|w| w["label"].as_str().unwrap().to_owned())
+            .collect();
+        labels.sort();
+        labels
+    };
+    let before = labels();
+    click(&app, "request-enable", json!({"local":"reading-list"}));
+    consent(&app);
+    outcome(&app, "pending");
+    let mut with_consent = before.clone();
+    with_consent.push("consent".into());
+    with_consent.sort();
+    click(&app, "open-page", json!({"local":"recommendations"}));
+    outcome(&app, "ok");
+    app.menu("mods");
+    assert_eq!(labels(), with_consent);
+    approve(&app);
+    app.menu("mods");
+    assert_eq!(labels(), before);
+    // Apply a later open successfully: the dropped one must not reappear.
+    click(&app, "open-page", json!({"local":"reading-list"}));
+    outcome(&app, "ok");
+    assert!(app.wait("mod-reading-list", TIMEOUT));
+    app.menu("mods");
+    no_window(&app, "mod-recommendations");
+
+    begin_install(&app, &[host_fixture("echo")]);
+    approve(&app);
+    installed(&app, "echo");
+    click(&app, "open-page", json!({"local":"echo"}));
+    outcome(&app, "bad_request");
+    no_window(&app, "mod-echo");
+    assert!(app.quit().success());
 }
 
 #[test]
