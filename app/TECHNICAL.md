@@ -465,7 +465,13 @@ entry; the panel is the details. In order:
    `--accent-weak`/`--accent` otherwise, radius 12, with its text and, at
    the right, the offer button (9.5: `release_install`, labelled by
    `offerLabel`; rule wins over the board's `Review`, whose words 9.5 and
-   the Updates card carry).
+   the Updates card carry), sized to its label, wrapping under the text
+   only when the panel is too narrow. For an offer without a notice or
+   error the text names the version and what it asks for, from `offer`'s
+   version and the `short` words of `offerGrants` (first letter lower case,
+   joined by `, ` and ` and `): `Version 0.4.0 asks to connect to
+   openlibrary.org.`, or `Version <v> is available.` when it asks for
+   nothing new (S84, as the Main board).
 4. The actions: `Open` (`button.open`, primary, the row's widest; only
    when enabled with a page), `Disable` or `Enable` (`button.disable`,
    `button.enable`), and `Remove` (`button.remove`, `.btn.danger.quiet`,
