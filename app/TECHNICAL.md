@@ -1159,8 +1159,9 @@ per machine; net gives none in D1).
   The page shows the code text in a read-only field with `Copy` and
   `Valid until <time>`; it keeps the code only in memory.
 - `machine_join(code, replace)`: `PairCode::from_str` (`bad_input`).
-  `Status.identity.signed` is `dist.own()?.head.is_some()`. When identity
-  is set and `signed` is false, the page first asks `This home's identity
+  `Status.identity.signed` is `dist.own()?.head.is_some()`; the page reads
+  `status` at the click. When identity is set and `signed` is false, the
+  page first asks `This home's identity
   <fingerprint> has signed nothing. Joining your machines deletes it, and
   this machine then signs nothing. Join?` with `Cancel` (focused) and
   `Join`. The `replace` box shows only when `machine` is not `alone`. Then

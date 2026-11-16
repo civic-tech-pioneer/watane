@@ -11,13 +11,16 @@ export function setupMachines(options) {
   $('#pair-copy').onclick = () => navigator.clipboard.writeText($('#pair-code').value).catch(hooks.showError);
   let pendingJoin;
   const join = () => act('machine_join', pendingJoin);
-  $('#join').onclick = () => {
+  // Read the identity at the click: the page's last status may predate a
+  // signature (an agent's publish), and the question must not say "signed nothing".
+  $('#join').onclick = () => Promise.resolve().then(async () => {
     pendingJoin = {code:$('#join-code').value, replace:$('#join-replace').checked};
-    if (!status.identity || status.identity.signed) {join(); return;}
+    const identity = (await call('status')).identity;
+    if (!identity || identity.signed) {join(); return;}
     const dialog = $('#join-question');
-    dialog.querySelector('p').textContent = `This home's identity ${status.identity.fingerprint} has signed nothing. Joining your machines deletes it, and this machine then signs nothing. Join?`;
+    dialog.querySelector('p').textContent = `This home's identity ${identity.fingerprint} has signed nothing. Joining your machines deletes it, and this machine then signs nothing. Join?`;
     dialog.showModal(); $('#join-cancel').focus();
-  };
+  }).catch(hooks.showError);
   $('#join-cancel').onclick = () => $('#join-question').close();
   $('#join-confirm').onclick = () => {$('#join-question').close(); join();};
   $('#save-expiry').onclick = () => act('machines_expiry', {days:Number($('#machines-expiry').value)});
