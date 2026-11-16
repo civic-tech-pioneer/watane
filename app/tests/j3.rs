@@ -453,7 +453,7 @@ fn ac3_j3_real_github() {
     assert_eq!(alice_record["followed"], false);
     assert_eq!(alice_record["index"], false);
 
-    // S54 AC5: wait for the CDN miss before testing dist's not-found error.
+    // S54 AC5: prefer the CDN's 404 path; another edge may still answer 5xx.
     let missing_base = format!("{base}missing-{}/", site_name.split('/').nth(1).unwrap());
     github.wait_status(
         &format!("{missing_base}head"),
@@ -470,7 +470,22 @@ fn ac3_j3_real_github() {
     assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
     assert_eq!(failed["error"]["code"], "dist", "{failed}");
     let message = failed["error"]["message"].as_str().unwrap();
-    assert!(message.contains("not found"), "{message}");
+    let http_error = message.as_bytes().windows(13).find(|answer| {
+        answer.starts_with(b"HTTP 5")
+            && answer[6].is_ascii_digit()
+            && answer[7].is_ascii_digit()
+            && &answer[8..] == b" from"
+    });
+    assert!(
+        message.contains("not found") || http_error.is_some(),
+        "{message}"
+    );
+    if message.contains("not found") {
+        eprintln!("S54 missing base: not found");
+    } else {
+        let status = std::str::from_utf8(&http_error.unwrap()[..8]).unwrap();
+        eprintln!("S54 missing base: {status}");
+    }
     assert!(
         message.contains(&format!("{missing_base}head")),
         "{message}"

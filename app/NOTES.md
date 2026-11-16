@@ -498,9 +498,10 @@
 
 ## S54 real static host
 
-- In user-sim's run (2026-11-16), a never-published path under a freshly
-  served Pages site answered 503 for about a minute before 404. Dist reports
-  it as `HTTP 503 from <url>` with no retry. Real J3 now checks Ivy first,
+- Two real runs (2026-11-16) saw 503 for a missing path after Pages had
+  served the site, once after a 404 had already been seen for the same URL.
+  The test accepts either not found or HTTP 5xx; dist reports
+  `HTTP 503 from <url>` without a retry. Real J3 checks Ivy first,
   then waits up to five minutes for the missing head to answer 404 before
   Dan attempts the missing-base install.
 
@@ -509,8 +510,9 @@
   Alice has no loopback server. Ivy remains a chosen loopback index and lists
   Alice's public HTTPS base with the default local-address guard unchanged.
 - The missing-path check keeps Alice's key and slug, changes the base to an
-  unpublished subdirectory, and requires app code `dist`, `not found`, and
-  that subdirectory's `head` URL within 60 seconds, with Dan's mod list empty.
+  unpublished subdirectory, and requires app code `dist`, `not found` or
+  `HTTP 5<two digits> from`, and that subdirectory's `head` URL within
+  60 seconds, with Dan's mod list empty.
   Bob still unfollows Alice before choosing Ivy to exercise a listed record.
 - A known channel (followed or listed by a chosen index) is read from its recorded bases, so the missing-base check uses a fresh home.
 - S54-fix2 replaces the red Ivy regression with a fresh-dist-home loopback
@@ -550,3 +552,14 @@
   before app readiness with macOS `hiservices-xpcservice` /
   `_LSModifyNotification` error -50 in the sandbox. Real GitHub J3 was not
   run (no token); the foreman must run it and validate fake J3 with a GUI.
+
+- S54-fix3 validation: an extracted assertion check failed on HTTP 500 before
+  the change, then passed for not found and all 500–599 statuses, rejecting
+  malformed statuses and other errors. Exact stderr lines omit a synthetic
+  token. The updated note passed a content check that failed on the old note.
+  All 117 default tests and 23 real-github support self-tests pass, including
+  the S54-fix1 source check. Builds, test compilation and clippy pass with
+  `driver` and `driver,real-github`; fmt passes. Release with `driver` fails
+  at the required debug-only guard. The driver suite again fails before API
+  consent-window readiness with macOS `hiservices-xpcservice` /
+  `_LSModifyNotification` error -50. Real GitHub J3 was not run (no token).
