@@ -59,7 +59,7 @@ fn quick() -> Limits {
 /// Four paired machines that S8 and the query part of S9 share (pairing
 /// costs seconds): the anchor laptop, the server and a third machine (both
 /// full replicas, which know each other) and Alice's second laptop (light),
-/// which knows the server and not the third machine.
+/// which reaches both replicas and chooses the server first by key order.
 struct Shared {
     anchor: Node,
     server: Node,
@@ -105,9 +105,26 @@ fn shared() -> Fixture {
             let package = vec![5u8; 3000];
             // neither the anchor nor the light laptop holds x or w
             let anchor = node(holding(&[], true), None);
-            let server = node(holding(&[(chan(x), cx.clone())], false), None);
-            let third = node(holding(&[(chan(w), cw.clone())], false), None);
+            let a = node(MemHoldings::empty(), None);
+            let b = node(MemHoldings::empty(), None);
+            // Both replicas become reachable through devices answers. Among
+            // connected replicas the lower key is asked first (5.9).
+            let (server, third) = if a.key < b.key { (a, b) } else { (b, a) };
+            for entry in &cx {
+                server.holdings.append(entry.clone());
+            }
+            for entry in &cw {
+                third.holdings.append(entry.clone());
+            }
             let light = node(MemHoldings::empty(), None);
+            let links = [
+                (server.net.events(), third.key),
+                (third.net.events(), server.key),
+                (light.net.events(), server.key),
+                (server.net.events(), light.key),
+                (light.net.events(), third.key),
+                (third.net.events(), light.key),
+            ];
             // the server reaches the third machine (a server that forwarded a
             // query would ask it) and takes none of its channels; the anchor
             // passes the addresses on (5.10), so this holds from the start
@@ -123,6 +140,17 @@ fn shared() -> Fixture {
             pair_unsettled(&anchor, &light, Role::Light, false);
             introduce(&server, &third);
             introduce(&light, &server);
+            // Finish every link's hello before settling: otherwise a late
+            // hello could look like a forwarded request in S9.
+            for (events, peer) in links {
+                assert!(
+                    wait_for(10, || events
+                        .try_iter()
+                        .any(|e| matches!(e, Event::PeerUp(k) if k == peer))),
+                    "the fixture did not connect to {}",
+                    peer.short()
+                );
+            }
             settle(&[&anchor, &server, &third, &light]);
             Shared {
                 anchor,
