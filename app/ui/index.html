@@ -36,14 +36,14 @@
 <section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="identity-controls"><div id="releases"></div><label>Profile name <input id="profile-name"></label><button class="btn primary" id="set-name">Set name</button>
 <details id="backup"><summary>Back up or restore identity</summary><div class="settings-fields">
 <label>Passphrase <input id="passphrase" type="password" autocomplete="new-password"></label><label>Repeat passphrase for backup <input id="passphrase-repeat" type="password" autocomplete="new-password"></label>
-<button class="btn" id="identity-backup">Save backup</button><button class="btn" id="identity-restore">Restore backup</button></div></details></div>
+<button class="btn primary" id="identity-backup">Save backup</button><button class="btn" id="identity-restore">Restore backup</button></div></details></div>
 <div id="confirm-own" hidden><p>Confirm your restored identity before signing. A wrong “never published” answer forks your channel.</p>
-<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button class="btn primary" id="confirm-identity">Confirm identity</button><h3>From your machines</h3><p>A machine’s answer is its claim. watane checks every statement it reads.</p><div id="own-hints"></div></div>
+<label>Link to your published channel <input id="own-channel"></label><label><input id="never-published" type="checkbox">This identity never published</label><button class="btn" id="confirm-identity">Confirm identity</button><h3>From your machines</h3><p>A machine’s answer is its claim. watane checks every statement it reads.</p><div id="own-hints"></div></div>
 </section><section id="site"><h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button class="btn primary" id="set-site">Set site URL</button>
 <p id="own-link"></p><button class="btn" id="copy-link">Copy link</button></section>
 </section>
 <section id="agents"><h2>Agents</h2>
-<label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button class="btn primary" id="save-toolset">Save toolset</button><div id="toolsets"></div>
+<label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button class="btn" id="save-toolset">Save toolset</button><div id="toolsets"></div>
 <label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button class="btn primary" id="issue-token">Issue token</button>
 <dialog id="token-dialog"><p>Copy this token now. It is shown only here.</p><pre id="token-secret"></pre><p id="mcp-url"></p><button class="btn" id="copy-token">Copy token</button><button class="btn" id="close-token">Done</button></dialog><div id="tokens"></div>
 </section>

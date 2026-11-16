@@ -50,7 +50,7 @@ button, .btn, input:not([type=checkbox]):not([type=radio]), select { height: 36p
 button, .btn { cursor: pointer; }
 button:hover, .btn:hover { background: var(--hover); }
 button:disabled { opacity: .5; cursor: default; }
-.btn { line-height: normal; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.btn { color: var(--ink); line-height: normal; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn.danger { color: var(--bad); }
 .btn.quiet { background: transparent; border-color: transparent; }
@@ -68,7 +68,7 @@ nav { display: flex; gap: 4px; }
 .filter { position: relative; }
 .filter > svg { position: absolute; left: 11px; top: 10px; color: var(--muted); }
 .mark { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; font-weight: 600; white-space: nowrap; }
-#updates-count { border-radius: 9px; background: var(--accent); color: var(--accent-ink); padding: 0 5px; font-size: 11px; }
+#updates-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; font-weight: 600; border-radius: 9px; background: var(--accent); color: var(--accent-ink); padding: 0 5px; font-size: 11px; }
 #error { margin: 0; padding: 12px 24px; color: var(--bad); background: var(--bad-bg); }
 #error:empty { display: none; }
 #add-menu { position: absolute; z-index: 4; top: 48px; right: 0; width: 340px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 8px 28px #0002; }
@@ -100,17 +100,18 @@ button.tile { position: relative; height: auto; min-height: 150px; padding: 18px
 .b-problem { color: var(--bad); background: var(--bad-bg); }
 .b-update { color: var(--accent); background: var(--accent-weak); }
 #mod-details { background: var(--panel); border-left: 1px solid var(--line); padding: 28px 24px; }
+section.mod-details { display: flex; flex-direction: column; gap: 26px; }
 .detail-head { display: flex; gap: 14px; align-items: flex-start; }
 .publisher { margin-top: 6px; font-size: 13px; color: var(--muted); }
 .publisher strong { font-weight: 500; color: var(--ink); }
 .shield { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; vertical-align: middle; margin-right: 6px; }
 .verified { color: var(--ok); }
-.summary { color: var(--muted); margin: 16px 0; }
+.summary { color: var(--muted); margin: -10px 0 0; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--accent-weak); color: var(--accent); }
 .notice > span { flex: 1 1 160px; }
 .notice .offer { margin-left: auto; height: auto; min-height: 36px; padding: 8px 14px; }
 .notice.problem { background: var(--bad-bg); color: var(--bad); }
-.actions { display: flex; gap: 8px; margin: 20px 0 14px; }
+.actions { display: flex; gap: 8px; margin: 0; }
 .actions .open { flex: 1; }
 .actions .remove { margin-left: auto; }
 .start-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
@@ -120,8 +121,8 @@ button.sw { position: relative; width: 40px; height: 24px; border-radius: 12px; 
 .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 9px; background: #FFFFFF; transition: left .15s; }
 .sw[aria-checked=true] { background: var(--accent); }
 .sw[aria-checked=true]::after { left: 19px; }
-.grants, .connections, .derived, .technical { margin-top: 28px; }
-.grant-row { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; line-height: normal; }
+.grants, .connections, .derived, .technical { margin: 0; }
+.grant-row { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; line-height: 1.4; }
 .grant-row .grant-text { flex: 1; }
 .grant-row.denied { color: var(--muted); }
 .grant-icon { color: var(--muted); font-size: 14px; width: 32px; height: 32px; border-radius: 9px; background: var(--bg); display: inline-flex; justify-content: center; align-items: center; }
@@ -135,7 +136,7 @@ button.chip { display: inline-flex; align-items: center; gap: 8px; height: 32px;
 dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 14px; }
 dt { color: var(--muted); font-size: 12px; }
 dd { margin: 0; font: 12px ui-monospace, monospace; overflow-wrap: anywhere; }
-#confirm-panel { display: flex; flex-direction: column; gap: 12px; margin: 20px 0 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+#confirm-panel { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
 #confirm-title { margin: 0; font-size: 15px; font-weight: 600; line-height: normal; }
 #dependency-warning { display: flex; align-items: flex-start; gap: 8px; color: var(--warn); background: var(--warn-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
 .warning-lines { display: flex; flex-direction: column; gap: 4px; }
@@ -173,6 +174,8 @@ body.dropping:not(.settings) #drop-target { display: flex; }
 #settings > section, #find, #updates { padding: 28px 24px; }
 #settings { max-width: 1000px; margin: auto; }
 #settings section { margin-bottom: 24px; }
+#settings :is(p, div):empty { display: none; }
+#site:last-child { margin-bottom: 0; }
 #settings-header .mark { margin-left: auto; }
 #settings :is(#identity-controls, #confirm-own, #site, #agents, #machines, .settings-fields) { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 #settings :is(h1, h2, h3, p, details, summary), #settings :is(#releases, #own-hints, #tools, #toolsets, #tokens, #machine-list, #relay-list, #machine-problems) { flex-basis: 100%; }

@@ -1309,3 +1309,31 @@ boundary. AC15's full native validation remains PARTIAL for the validator;
 the manager's visual changes still need its native review. No test was
 weakened or skipped in source. Release with driver fails at the intended
 `the driver feature is only for debug test builds` compile_error.
+
+
+## S84 — second comparison spacing and button polish
+
+Details now use a 26 px flex-column gap, with the board's -10 px summary
+margin after the heading and no extra action, confirmation or section margins.
+The existing important hidden rule still removes unselected details and hidden
+controls from layout. The Updates count is a centred 18 px pill; plain link
+buttons use ink, and grant rows use line-height 1.4.
+
+Settings primary actions are Set name, Set site URL, Save backup, Issue token
+and Join. Save toolset and Confirm identity use plain buttons; all ids remain.
+Empty Settings paragraphs and containers occupy no space, and Site no longer
+adds a bottom margin inside the distribution wrapper. No behaviour, test,
+dependency or interface changed. Rechecked look.rs and manager_dom.mjs: neither
+counts Settings primaries.
+
+Validation: build, driver all-target clippy with -D warnings, fmt and
+static_style pass. Release with driver fails at the intended debug-only
+compile_error. The required full normal test run passes 111 unit tests and
+fails the unchanged real-pairing test because the sandbox cannot create a
+netmon monitor. The required driver look run passes ten non-window checks;
+all seven native checks fail before readiness with macOS
+com.apple.hiservices-xpcservice Connection Invalid. Native visual review
+remains outstanding in a GUI session. No test was weakened.
+
+Supplemental serial normal run excluding only the netmon test: 157 passed,
+1 filtered out. The final normal look run passes all eight tests.
