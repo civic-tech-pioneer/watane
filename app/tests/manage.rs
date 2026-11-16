@@ -140,7 +140,7 @@ fn ac2_s43_grant_words() {
     );
     let details = app.eval(
         "main",
-        "document.querySelector('[data-local=manager] details').textContent",
+        "document.querySelector('[data-local=manager] [data-key=manage] .grant-text').title",
     );
     assert!(details.as_str().unwrap().contains(MANAGE), "{details}");
     assert!(app.quit().success());

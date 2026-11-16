@@ -22,3 +22,17 @@ export function updateOffers(mods) {
   return mods.filter(m => (m.offer && m.offerGrants.length) ||
     m.notice === "The publisher's channel is compromised" || m.notice?.startsWith('Withdrawn by the publisher: '));
 }
+
+export function problem(mod) {
+  const notice = mod.notice || '';
+  return !!mod.error || notice === "The publisher's channel is compromised" ||
+    notice.startsWith('Withdrawn by the publisher: ') || notice.startsWith('Could not read ') ||
+    /^Update to .+ failed: /.test(notice);
+}
+export function badge(mod) {
+  return !mod.enabled ? 'Off' : problem(mod) ? 'Problem' : mod.offer ? 'Update' : '';
+}
+export function libraryOrder(mods) {
+  const rank = mod => mod.main ? 0 : problem(mod) ? 1 : mod.offer ? 2 : 3;
+  return [...mods].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, {sensitivity:'base'}));
+}

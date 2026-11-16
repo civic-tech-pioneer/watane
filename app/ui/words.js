@@ -76,3 +76,14 @@ export function dependencyWarning(verb, name, users, extensions) {
   if (extensions.length) sentences.push(`These mods extend it: ${extensions.join(', ')}.`);
   return sentences.length ? `${verb} ${name}? ${sentences.join(' ')}` : '';
 }
+
+export function monogram(mod, size) {
+  const node = document.createElement('span');
+  const slug = mod.slug || mod.local;
+  let sum = 0;
+  for (let i = 0; i < slug.length; i++) sum += slug.charCodeAt(i);
+  node.className = `mono mono-${sum % 8} mono-${size}`;
+  node.textContent = Array.from(mod.name || slug)[0].toLocaleUpperCase();
+  node.setAttribute('aria-hidden', 'true');
+  return node;
+}

@@ -312,11 +312,11 @@ fn ac1_journey_j5() {
     install_result(&fresh, &frank_key);
     fresh.eval(
         "main",
-        "document.querySelector('[data-local=stats] details').open = true; null",
+        "document.querySelector('[data-tile=stats]').click(); null",
     );
     let text = fresh.eval(
         "main",
-        "document.querySelector('[data-local=stats] details p[data-key]').textContent",
+        "document.querySelector('[data-local=stats] p[data-key] .grant-text').title",
     );
     contains(
         text.as_str().unwrap(),

@@ -198,7 +198,7 @@ mod windows {
     fn details(app: &App, local: &str) {
         app.eval(
             "main",
-            &format!("document.querySelector('[data-local={local}] details').open = true; null"),
+            &format!("document.querySelector('[data-tile={local}]').click(); null"),
         );
     }
     /// The hidden window does not poll, and `begin` bypasses the page's refresh.
@@ -360,7 +360,7 @@ mod windows {
         until(
             &app,
             "main",
-            "document.querySelector('[data-local=ratings] details').textContent.includes('Made from Reading list 0.1.0 by Alice')",
+            "document.querySelector('[data-local=ratings] .technical dd').textContent.includes('Reading list 0.1.0 by Alice')",
         );
         until(
             &app,

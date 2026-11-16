@@ -43,7 +43,7 @@ pub fn refresh_find(app: &App) {
     // Callers wait for the stale/compromised DOM condition after this click.
     app.eval(
         "main",
-        "document.querySelector('#refresh-find').click(); null",
+        "document.querySelector('#refresh-channels').click(); null",
     );
 }
 pub fn http(port: u16, content: &str, bytes: Vec<u8>) -> (u16, Value) {

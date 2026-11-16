@@ -115,23 +115,38 @@ fn ac4_s40_connections_and_withdrawal() {
     for (local, texts) in [
         (
             "recommendations",
-            vec!["Uses: reading-list", "Adds to: reading-list"],
+            vec![("uses", "Reading list"), ("adds-to", "Reading list")],
         ),
         (
             "reading-list",
-            vec!["Used by: recommendations", "Extended by: recommendations"],
+            vec![
+                ("used-by", "Recommendations"),
+                ("extended-by", "Recommendations"),
+            ],
         ),
         (
             "desk",
-            vec!["Works on its own: it uses no mod and no mod uses it."],
+            vec![("", "Works on its own: it uses no mod and no mod uses it.")],
         ),
     ] {
-        for text in texts {
+        for (rel, text) in texts {
             until(
                 &app,
                 "main",
                 &format!(
-                    "document.querySelector('[data-local={local}] details').textContent.includes({})",
+                    "document.querySelector('[data-local={local}] {}').textContent.includes({})",
+                    if rel.is_empty() {
+                        String::from(".connections")
+                    } else {
+                        format!(
+                            "[data-rel={rel}] [data-target={}]",
+                            if rel == "uses" || rel == "adds-to" {
+                                "reading-list"
+                            } else {
+                                "recommendations"
+                            }
+                        )
+                    },
                     json!(text)
                 ),
             );
@@ -160,7 +175,7 @@ fn ac4_s40_connections_and_withdrawal() {
     until(
         &app,
         "main",
-        "!document.querySelector('[data-local=recommendations] .connections').textContent.includes('Uses:') && !document.querySelector('[data-local=reading-list] .connections').textContent.includes('Used by:')",
+        "!document.querySelector('[data-local=recommendations] .connections').querySelector('[data-rel=uses]') && !document.querySelector('[data-local=reading-list] .connections').querySelector('[data-rel=used-by]')",
     );
     assert!(app.quit().success());
 }
@@ -180,16 +195,22 @@ fn ac5_s41_warn_before_disable_and_remove() {
         until(
             &app,
             "main",
-            "document.querySelector('#dependency-dialog').open",
+            "!document.querySelector('#confirm-panel').hidden",
         );
-        assert_eq!(app.eval("main", "document.querySelector('#dependency-dialog').textContent.includes('recommendations')"), true);
+        assert_eq!(
+            app.eval(
+                "main",
+                "document.querySelector('#confirm-panel').textContent.includes('Recommendations')"
+            ),
+            true
+        );
         assert_eq!(
             app.eval("main", "document.activeElement.id"),
-            "dependency-cancel"
+            "confirm-cancel"
         );
         app.eval(
             "main",
-            "document.querySelector('#dependency-cancel').click(); null",
+            "document.querySelector('#confirm-cancel').click(); null",
         );
         let mods = invoke(&app, "mods_list", json!({}));
         assert!(
@@ -199,7 +220,7 @@ fn ac5_s41_warn_before_disable_and_remove() {
                 .all(|m| m["enabled"] == true)
         );
         assert_eq!(
-            app.eval("main", "document.querySelector('#remove-dialog').open"),
+            app.eval("main", "!document.querySelector('#confirm-panel').hidden"),
             false
         );
     }
@@ -397,9 +418,9 @@ fn ac1_s81_library_marks_only_main_and_unset_clears_it() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=reading-list] .main-mark')?.textContent === 'Opens at start' && document.querySelectorAll('.main-mark').length === 1",
+        "document.querySelector('[data-tile=reading-list] .main-mark')?.textContent === 'Opens at start' && document.querySelectorAll('.main-mark').length === 1",
     );
-    app.eval("main", "document.querySelector('[data-local=reading-list] details').open = true; document.querySelector('[data-local=reading-list] .main-set').click(); null");
+    app.eval("main", "document.querySelector('[data-tile=reading-list]').click(); document.querySelector('[data-local=reading-list] .main-set').click(); null");
     until(
         &app,
         "main",
@@ -459,11 +480,11 @@ fn ac3_s81_used_by_link_opens_details_and_moves_focus() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     install(&app, &["reading-list", "recommendations"]);
-    app.eval("main", "document.querySelector('[data-local=reading-list] details').open = true; document.querySelector('[data-local=reading-list] .connections a').click(); null");
+    app.eval("main", "document.querySelector('[data-tile=reading-list]').click(); document.querySelector('[data-local=reading-list] .connections .chip').click(); null");
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=recommendations] details').open && document.activeElement.closest('[data-local]')?.dataset.local === 'recommendations'",
+        "!document.querySelector('[data-local=recommendations]').hidden && document.activeElement.closest('[data-local]')?.dataset.local === 'recommendations'",
     );
     assert!(app.quit().success());
 }
@@ -475,11 +496,11 @@ fn ac4_s81_disable_remove_warning_distinguishes_connections_dom() {
 #[test]
 fn ac4_s81_disable_remove_warning_distinguishes_connections() {
     for (withhold_kind, sentences) in [
-        (Some("call"), "These mods extend it: recommendations."),
-        (Some("subscribe"), "These mods use it: recommendations."),
+        (Some("call"), "These mods extend it: Recommendations."),
+        (Some("subscribe"), "These mods use it: Recommendations."),
         (
             None,
-            "These mods use it: recommendations. These mods extend it: recommendations.",
+            "These mods use it: Recommendations. These mods extend it: Recommendations.",
         ),
     ] {
         let home = tempfile::tempdir().unwrap();
@@ -511,7 +532,7 @@ fn ac4_s81_disable_remove_warning_distinguishes_connections() {
                 "main",
                 &format!(
                     "!document.querySelector('[data-local=recommendations] .connections').textContent.includes({})",
-                    json!(if kind == "call" { "Uses:" } else { "Adds to:" })
+                    json!(if kind == "call" { "Uses" } else { "Adds to" })
                 ),
             );
         }
@@ -526,18 +547,18 @@ fn ac4_s81_disable_remove_warning_distinguishes_connections() {
             until(
                 &app,
                 "main",
-                "document.querySelector('#dependency-dialog').open",
+                "!document.querySelector('#confirm-panel').hidden",
             );
             assert_eq!(
                 app.eval(
                     "main",
-                    "document.querySelector('#dependency-dialog p').textContent"
+                    "document.querySelector('#confirm-title').textContent + ' ' + Array.from(document.querySelector('#dependency-warning').children,n=>n.textContent).join(' ')"
                 ),
                 format!("{verb} Reading list? {sentences}")
             );
             app.eval(
                 "main",
-                "document.querySelector('#dependency-cancel').click(); null",
+                "document.querySelector('#confirm-cancel').click(); null",
             );
         }
         assert!(app.quit().success());

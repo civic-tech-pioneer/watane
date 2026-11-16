@@ -1098,3 +1098,55 @@ No dependencies added.
   `ac5_s81_words_and_focus_are_documented_at_their_facts` reads Markdown
   specs. It was retained unchanged under the instruction not to delete
   or weaken existing tests; no new test reads specification text.
+## S84-3 — Library design
+
+The manager now uses the W37 tokens in light and dark, a shared header,
+selectable Library tiles, one details panel, grant and start switches,
+connection chips, first-start cards, an inline confirmation, the installed
+note, and the drag overlay. Settings keeps its ids. Find and Updates keep
+their existing content layout; the single search field and refresh id use
+5.3.7. S84-4 owns search-word parsing and the remaining Find/Updates design.
+No dependency was added. `monogram(mod, size)` is exported from `ui/words.js`.
+`modsView` is exported from the production page module so window tests can
+render literal distribution-only badge states without a Rust test command.
+
+Changed test facts required by 5.3: the details section is selected by a
+tile, rather than opened as a disclosure; connections and dependency warnings
+name mods, rather than local slugs; Off replaces Disabled; grants express
+whether they are given through switch aria-checked, and their exact words
+remain in the grant text's title. Removal keeps data by its checked radio;
+Cancel takes focus and a separate confirmation performs either removal.
+The main mark is on its tile. Made from is read from Technical details.
+The Node renderer harness retains the previous main-mark, connection-focus
+and dependency-warning assertions using these controls.
+
+S84-2 was not present: the only Rust addition here is the fixed driver
+`theme` operation and its `App::theme` support method. It calls set_theme
+on every existing window. Empty or absent GrantLine.short falls back to text.
+
+Validation limits in this sandbox: native hidden window tests cannot start,
+with `Connection Invalid error for service com.apple.hiservices-xpcservice`
+and a readiness timeout. Consequently native focus, colours (including S50),
+drop visibility, and J2/J5/J10 remain unvalidated here. The test failure is
+not turned into a skip. A normal test also fails before any UI in
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`
+with `Failed to create netmon monitor`. The four screen-taking tests are
+excluded from the driver run as required by the task.
+
+Existing test conflict left intact as the task requires:
+`gui_shell::ac7_real_installed_version_is_a_name_sibling_outside_details`
+requires the old direct-child heading, bare version and per-mod disclosure;
+5.3.3/5.3.4 replace that markup with tiles, a head and Technical details.
+The same file's `ac1_new_home_has_empty_launcher_and_mark` expects the
+old `No mods yet` copy, and `ac2_real_catalog_opens_one_window_and_no_page_is_not_found`
+expects a disabled Disable button where 5.3.4 now specifies Enable.
+These are outside the listed selector migrations. Existing specification-text
+assertions in static_config.rs and manager.rs are also left unchanged;
+none of the new tests reads a Markdown specification.
+
+Checks completed here: the normal build succeeds; static_style, both
+non-window look tests, static_config and the four renderer harness cases
+pass. Clippy with all targets and driver and fmt check are clean. A release
+build with driver fails at the intended compile_error. J2, J5, J10 and all
+four new native look tests were explicitly attempted and fail at native
+startup, before their page assertions, with the HIServices error above.

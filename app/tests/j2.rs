@@ -43,7 +43,7 @@ fn ac4_s2_install_order_and_s2b_withhold_storage() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=reading-list] [data-key=storage]').textContent.includes('Not granted')",
+        "document.querySelector('[data-local=reading-list] [data-key=storage] .sw').getAttribute('aria-checked') === 'false'",
     );
     assert!(app.quit().success());
 }
@@ -101,25 +101,25 @@ fn ac7_idle_polling_disabled_entry_and_consent_focus() {
     until(
         &app,
         "main",
-        "document.querySelector('#dependency-dialog').open",
+        "!document.querySelector('#confirm-panel').hidden",
     );
     assert!(
         app.eval(
             "main",
-            "document.querySelector('#dependency-dialog').textContent"
+            "document.querySelector('#confirm-panel').textContent"
         )
         .as_str()
         .unwrap()
-        .contains("recommendations")
+        .contains("Recommendations")
     );
     app.eval(
         "main",
-        "document.querySelector('#dependency-continue').click(); null",
+        "document.querySelector('#confirm-continue').click(); null",
     );
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=reading-list]').textContent.includes('Disabled') && !!document.querySelector('[data-local=reading-list] button.enable') && !document.querySelector('[data-local=reading-list] button.open')",
+        "document.querySelector('[data-local=reading-list]').textContent.includes('Off') && !!document.querySelector('[data-local=reading-list] button.enable') && !document.querySelector('[data-local=reading-list] button.open')",
     );
     app.eval(
         "main",
@@ -147,24 +147,31 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     until(
         &app,
         "main",
-        "document.querySelector('#remove-dialog').open",
+        "!document.querySelector('#confirm-panel').hidden",
     );
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('#remove-dialog p').textContent"
+            "document.querySelector('#confirm-title').textContent"
         ),
-        "Delete the data of Recommendations?"
+        "Remove Recommendations?"
     );
     assert_eq!(
         app.eval(
             "main",
-            "Array.from(document.querySelectorAll('#remove-dialog button'), b => b.textContent)"
+            "Array.from(document.querySelectorAll('#data-choice label'), b => b.textContent)"
         ),
-        json!(["Keep data", "Delete data"])
+        json!(["Keep its data", "Delete its data"])
     );
-    assert_eq!(app.eval("main", "document.activeElement.id"), "keep-data");
-    app.eval("main", "document.querySelector('#keep-data').click(); null");
+    assert_eq!(
+        app.eval("main", "document.querySelector('#keep-data').checked"),
+        true
+    );
+    assert_eq!(
+        app.eval("main", "document.activeElement.id"),
+        "confirm-cancel"
+    );
+    app.eval("main", "document.querySelector('#keep-data').click(); document.querySelector('#confirm-continue').click(); null");
     until(
         &app,
         "main",
@@ -343,11 +350,11 @@ fn ac5_journey_j2() {
     until(
         &app,
         "main",
-        "document.querySelector('#remove-dialog').open",
+        "!document.querySelector('#confirm-panel').hidden",
     );
     app.eval(
         "main",
-        "document.querySelector('#delete-data').click(); null",
+        "document.querySelector('#delete-data').click(); document.querySelector('#confirm-continue').click(); null",
     );
     until(
         &app,

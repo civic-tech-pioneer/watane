@@ -1,7 +1,7 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
-import {connections, dependents, matchesLibrary, updateOffers} from './manager.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, dependencyWarning } from './words.js';
+import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, monogram } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -17,7 +17,21 @@ function readRefresh() {
   const id = errors.current();
   return refresh().catch(e => { throw taggedError(e, id); });
 }
-async function action(cmd, args = {}) { return runAction(() => call(cmd, args)); }
+async function action(cmd, args = {}) {
+  const installing = ['install_link', 'install_folders', 'install_paths', 'install_release'].includes(cmd);
+  const before = new Set(currentMods.map(mod => mod.local));
+  if (installing) dismissInstalled();
+  const result = await runAction(() => call(cmd, args));
+  if (installing) {
+    const added = (result?.installed || []).filter(local => !before.has(local)).map(local => currentMods.find(mod => mod.local === local)).filter(Boolean);
+    if (added.length) {
+      $('#library-filter').value = ''; sourceFilter = ''; selected = added[0].local;
+      location.hash = '#mods'; route(); filterLibrary(); installedNote(added);
+    }
+    closeAdd();
+  }
+  return result;
+}
 async function runAction(work) {
   const id = errors.begin();
   try {
@@ -32,118 +46,187 @@ async function runAction(work) {
   }
 }
 function button(parent, text, className, callback) {
-  const b = element('button', text, parent, className);
+  const b = element('button', text, parent, `btn ${className || ''}`);
   b.onclick = () => Promise.resolve().then(callback).catch(showError); return b;
 }
 let lastMods = '', currentMods = [];
-let managerTab = 'library';
-function modsView(mods) {
+let managerTab = 'library', selected = null, sourceFilter = '', noteSelection = null;
+function dismissInstalled() { $('#installed-note').hidden = true; noteSelection = null; }
+function installedNote(mods) {
+  const note = $('#installed-note'); note.replaceChildren();
+  element('span', '✓', note, 'verified').setAttribute('aria-hidden', 'true');
+  const text = element('div', '', note);
+  element('strong', `${mods.map(m => m.name).join(' and ')} ${mods.length === 1 ? 'is' : 'are'} installed.`, text);
+  const targets = [...new Set(mods.flatMap(m => connections(m, currentMods).addsTo))].map(local => currentMods.find(m => m.local === local)?.name).filter(Boolean);
+  if (targets.length) element('div', `It adds to ${targets.join(' and ')}.`, text, 'hint');
+  const dismiss = button(note, '✕', 'quiet dismiss', dismissInstalled); dismiss.setAttribute('aria-label', 'Dismiss');
+  noteSelection = selected; note.hidden = false;
+}
+function selectMod(local, focus = false) {
+  if (noteSelection && noteSelection !== local) dismissInstalled();
+  if (confirming && selected !== local) cancelConfirm();
+  selected = local;
+  for (const tile of launcher.children) tile.setAttribute('aria-pressed', String(tile.dataset.tile === local));
+  for (const section of $('#mod-details').children) section.hidden = section.dataset.local !== local;
+  if (focus) Array.from($('#mod-details').children).find(n => n.dataset.local === local)?.querySelector('h2').focus();
+}
+function drawBadge(mod, parent) {
+  const text = badge(mod);
+  if (text) element('span', text, parent, `badge b-${{Off:'off',Problem:'problem',Update:'update'}[text]}`);
+}
+function makeSwitch(parent, label, checked, className, callback) {
+  const sw = button(parent, '', `sw ${className}`, callback);
+  sw.setAttribute('role', 'switch'); sw.setAttribute('aria-checked', String(checked)); sw.setAttribute('aria-label', label);
+  return sw;
+}
+export function modsView(mods) {
   currentMods = mods;
-  // Polls must not replace controls while the participant is using them.
   const signature = JSON.stringify(mods);
   if (signature === lastMods) return;
   lastMods = signature;
-  const expanded = new Set(Array.from(launcher.querySelectorAll('details[open]'), d => d.closest('section').dataset.local));
-  launcher.replaceChildren();
-  if (!mods.length) element('p', 'No mods yet', launcher);
-  for (const mod of mods) {
-    const entry = element('section', '', launcher); entry.dataset.local = mod.local;
-    const heading = element('h2', '', entry);
-    button(heading, mod.name, 'select-mod', () => { entry.querySelector('details').open = true; });
-    element('span', mod.version, entry, 'version');
-    if (mod.main) element('span', 'Opens at start', entry, 'main-mark');
-    if (mod.notice) element('p', mod.notice, entry, 'notice');
-    if (mod.offer) button(entry, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release: mod.offer}));
-    if (mod.error) element('p', mod.error, entry);
-    if (mod.enabled && mod.page) button(entry, 'Open', 'open', () => action('mod_open', {local: mod.local}));
-    if (!mod.enabled) { element('p', 'Disabled', entry); button(entry, 'Enable', 'enable', () => action('mod_enable', {local: mod.local})); }
-    // Keep the established disable hook, including its disabled state.
-    const disable = button(entry, 'Disable', 'disable', () => warn(mod, () => action('mod_disable', {local: mod.local}), 'Disable')); disable.disabled = !mod.enabled;
-    button(entry, 'Remove', 'remove', () => warn(mod, () => remove(mod), 'Remove'));
-    const details = element('details', '', entry); details.open = expanded.has(mod.local);
-    element('summary', 'Details', details);
-    element('p', mod.summary || '', details, 'summary');
-    if (mod.page) button(details, mod.main ? 'Unset main' : 'Make main', 'main-set', () => action('main_set', {local: mod.main ? null : mod.local}));
-    const links = element('div', '', details, 'connections');
+  // Keep the shared confirm node alive when a poll replaces the panel.
+  cancelConfirm(); document.body.append($('#confirm-panel'));
+  launcher.replaceChildren(); $('#mod-details').replaceChildren();
+  $('#library-count').textContent = modCount(mods.length);
+  $('#first-start').hidden = !!mods.length; $('#library-content').hidden = !mods.length;
+  for (const mod of libraryOrder(mods)) {
+    const tile = button(launcher, '', `tile${mod.enabled ? '' : ' off'}`, () => selectMod(mod.local));
+    tile.dataset.tile = mod.local; tile.append(monogram(mod, 44));
+    drawBadge(mod, tile);
+    element('span', mod.name, tile, 'tile-name');
+    element('span', `${mod.publisher?.name || mod.publisher?.fingerprint || 'local'} · ${mod.version}`, tile, 'tile-by');
+    if (mod.main) element('span', 'Opens at start', tile, 'main-mark');
+    const entry = element('section', '', $('#mod-details'), 'mod-details'); entry.dataset.local = mod.local;
+    const head = element('div', '', entry, 'detail-head'); head.append(monogram(mod, 56));
+    const heading = element('div', '', head);
+    const h2 = element('h2', mod.name, heading); h2.tabIndex = -1;
+    element('div', `Version ${mod.version}`, heading, 'version'); drawBadge(mod, heading);
+    const publisher = element('div', '', heading, 'publisher');
+    if (mod.publisher) {
+      const shield = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      shield.setAttribute('viewBox', '0 0 24 24'); shield.setAttribute('aria-hidden', 'true'); shield.setAttribute('class', 'verified shield');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6z M8 12l3 3 5-6'); shield.append(path); publisher.append(shield);
+      element('strong', mod.publisher.name || mod.publisher.fingerprint, publisher);
+      element('span', ` (${mod.publisher.fingerprint}) · signature verified`, publisher);
+    } else { element('span', 'local', publisher, 'badge b-local'); publisher.append(document.createTextNode(' made on this device')); }
+    element('p', mod.summary || '', entry, 'summary');
+    if (mod.notice || mod.error || mod.offer) {
+      const notice = element('div', '', entry, `notice${problem(mod) ? ' problem' : ''}`);
+      element('span', mod.error || mod.notice || 'An update is available.', notice);
+      if (mod.offer) button(notice, offerLabel(mod.offer, mod.offerGrants || []), 'offer', () => action('release_install', {release:mod.offer}));
+    }
+    const actions = element('div', '', entry, 'actions');
+    if (mod.enabled && mod.page) button(actions, 'Open', 'open primary', () => action('mod_open', {local:mod.local}));
+    if (mod.enabled) button(actions, 'Disable', 'disable', () => warn(mod, 'Disable'));
+    else button(actions, 'Enable', 'enable', () => action('mod_enable', {local:mod.local}));
+    button(actions, 'Remove', 'remove danger quiet', () => warn(mod, 'Remove'));
+    if (mod.page) {
+      const start = element('div', '', entry, 'start-row'), text = element('div', '', start);
+      const label = element('div', 'Opens at start', text, 'start-label'); label.id = `start-label-${mod.local}`;
+      const main = mods.find(m => m.main);
+      element('div', mod.main ? 'watane opens it when it starts, in place of the manager.' : `Turn on to open it at start, in place of ${main ? main.name : 'the manager'}.`, text, 'hint');
+      const sw = makeSwitch(start, 'Opens at start', !!mod.main, 'main-set', () => action('main_set', {local:mod.main ? null : mod.local})); sw.setAttribute('aria-labelledby', label.id);
+    }
+    const grants = element('div', '', entry, 'grants'); element('div', 'What it may do', grants, 'label');
+    for (const grant of mod.grants) {
+      const row = element('p', '', grants, `grant-row${grant.granted ? '' : ' denied'}`); row.dataset.key = grant.key;
+      element('span', {storage:'▤', network:'◎', http:'◎', call:'→', subscribe:'⇄', manage:'⚙'}[grant.kind] || '→', row, 'grant-icon').setAttribute('aria-hidden', 'true');
+      const text = grant.short || grant.text; element('span', text, row, 'grant-text').title = grant.text;
+      makeSwitch(row, text, grant.granted, grant.granted ? 'withdraw' : 'give', () => action(grant.granted ? 'grant_withdraw' : 'grant_give', {local:mod.local,key:grant.key}));
+    }
+    element('p', 'A change here takes effect now. A mod that asks for more goes through the consent view.', grants, 'hint');
+    const links = element('div', '', entry, 'connections'); element('div', 'Connections', links, 'label');
     const connected = connections(mod, mods);
     if (Object.values(connected).every(names => !names.length)) element('p', 'Works on its own: it uses no mod and no mod uses it.', links);
-    for (const [kind, label] of [['uses', 'Uses'], ['addsTo', 'Adds to'], ['usedBy', 'Used by'], ['extendedBy', 'Extended by']]) {
+    for (const [kind, rel, label, hint] of [['uses','uses','Uses','it needs them'],['addsTo','adds-to','Adds to','it puts things in them'],['usedBy','used-by','Used by','they need it'],['extendedBy','extended-by','Extended by','they put things in it']]) {
       if (!connected[kind].length) continue;
-      const row = element('p', `${label}: `, links);
-      connected[kind].forEach((local, i) => {
-        if (i) row.append(document.createTextNode(', '));
-        const a = element('a', local, row); a.href = '#mods';
-        a.onclick = event => {
-          event.preventDefault();
-          $('#library-filter').value = ''; $('#library-source').value = ''; filterLibrary();
-          managerTab = 'library'; route();
-          const target = Array.from(launcher.children).find(e => e.dataset.local === local);
-          if (target) { target.querySelector('details').open = true; target.scrollIntoView(); target.querySelector('.select-mod').focus(); }
-        };
-      });
+      const row = element('div', '', links, 'connection-row'); row.dataset.rel = rel;
+      const caption = element('div', '', row, 'connection-label');
+      element('span', label, caption); element('span', hint, caption, 'hint');
+      const targets = element('div', '', row, 'connection-targets');
+      for (const local of connected[kind]) {
+        const target = mods.find(m => m.local === local);
+        const chip = button(targets, '', 'chip', () => {
+          $('#library-filter').value = ''; sourceFilter = ''; location.hash = '#mods'; route(); filterLibrary(); selectMod(local, true);
+        });
+        chip.dataset.target = local; chip.append(monogram(target, 24)); element('span', target.name, chip);
+      }
     }
-    const publisher = mod.publisher ? `${partyLabel(mod.publisher)} · signature verified` : 'local';
-    for (const text of [mod.version, publisher, mod.page, mod.package, mod.release, mod.derivedFromLabel]) if (text) element('p', text, details);
     if (mod.release) {
-      const derived = element('div', '', details, 'derived');
-      let loading = false;
-      const showDerived = async () => {
-        if (!details.open || loading) return;
-        loading = true;
-        const actionId = errors.current();
-        try {
-          const origin = mod.release.slice(0, mod.release.lastIndexOf('@'));
-          const hits = await call('search', {text: '', publisher: null, interface: null, origin});
-          derived.replaceChildren();
-          element('p', 'Made from this: as far as your indexes list them', derived);
-          for (const hit of hits) {
-            const row = element('p', `${hit.name} ${hit.version} by ${partyLabel(hit.publisher)} `, derived);
-            row.dataset.release = hit.release;
-            if (derivedAction(hit) === 'Installed') element('span', 'Installed', row);
-            else if (derivedAction(hit) === 'Install') button(row, 'Install', 'install-release', () => action('install_release', {release: hit.release, link: hit.link}));
-          }
-        } catch (error) { showError(taggedError(error, actionId)); }
-        finally { loading = false; }
-      };
-      details.addEventListener('toggle', showDerived);
-      if (details.open) showDerived();
+      const derived = element('div', '', entry, 'derived'); derived.hidden = true;
+      const origin = mod.release.slice(0, mod.release.lastIndexOf('@'));
+      const actionId = errors.current();
+      call('search', {text:'',publisher:null,interface:null,origin}).then(hits => {
+        if (!hits.length) return;
+        derived.hidden = false; element('p', 'Made from this: as far as your indexes list them', derived);
+        for (const hit of hits) {
+          const row = element('p', `${hit.name} ${hit.version} by ${partyLabel(hit.publisher)} `, derived); row.dataset.release = hit.release;
+          if (derivedAction(hit) === 'Installed') element('span', 'Installed', row);
+          else if (derivedAction(hit) === 'Install') button(row, 'Install', 'install-release', () => action('install_release', {release:hit.release,link:hit.link}));
+        }
+      }).catch(e => showError(taggedError(e, actionId)));
     }
-    for (const grant of mod.grants) {
-      const row = element('p', '', details); row.dataset.key = grant.key;
-      element('span', `${grant.text} — ${grant.granted ? 'Granted' : 'Not granted'} `, row);
-      button(row, grant.granted ? 'Withdraw' : 'Give back', grant.granted ? 'withdraw' : 'give', () => action(grant.granted ? 'grant_withdraw' : 'grant_give', {local:mod.local, key:grant.key}));
-    }
+    const technical = element('details', '', entry, 'technical'); element('summary', 'Technical details', technical);
+    const dl = element('dl', '', technical);
+    const values = [['Made from', mod.derivedFromLabel || 'its own source'], ['Page origin', mod.page || 'none'], ['Package', mod.package]];
+    if (mod.release) values.push(['Release',mod.release]);
+    values.push(['Publisher key',mod.publisher?.fingerprint || 'none (local)']);
+    for (const [label,value] of values) { element('dt', label, dl); element('dd', value || '', dl); }
   }
-  filterLibrary();
+  filterLibrary(); headerView();
 }
 let confirming = null;
-function warn(mod, proceed, verb) {
+function cancelConfirm() {
+  const panel = $('#confirm-panel'); panel.hidden = true;
+  if (confirming) { confirming.entry.querySelector('.actions').hidden = false; const start = confirming.entry.querySelector('.start-row'); if (start) start.hidden = false; }
+  confirming = null;
+}
+function warn(mod, verb) {
+  selectMod(mod.local);
   const {usedBy, extendedBy} = dependents(mod, currentMods);
-  const warning = dependencyWarning(verb, mod.name, usedBy, extendedBy);
-  if (!warning) return proceed();
-  confirming = proceed;
-  $('#dependency-dialog p').textContent = warning;
-  $('#dependency-dialog').showModal(); $('#dependency-cancel').focus();
+  if (verb === 'Disable' && !usedBy.length && !extendedBy.length && !mod.main) return action('mod_disable', {local:mod.local});
+  cancelConfirm();
+  const entry = Array.from($('#mod-details').children).find(n => n.dataset.local === mod.local);
+  const panel = $('#confirm-panel'), actions = entry.querySelector('.actions');
+  actions.hidden = true; const start = entry.querySelector('.start-row'); if (start) start.hidden = true;
+  (start || actions).after(panel);
+  confirming = {mod,verb,entry};
+  $('#confirm-title').textContent = `${verb} ${mod.name}?`;
+  const warning = $('#dependency-warning'); warning.replaceChildren();
+  for (const [locals, label] of [[usedBy,'use'],[extendedBy,'extend']]) {
+    if (locals.length) { const line = element('div', `These mods ${label} it: ${locals.map(local => currentMods.find(m => m.local === local).name).join(', ')}.`, warning); line.dataset.locals = locals.join(' '); }
+  }
+  if (mod.main) element('div', verb === 'Disable' ? 'Until you enable it, the manager opens at start.' : 'No mod will open at start.', warning);
+  warning.hidden = !warning.children.length;
+  $('#data-choice').hidden = verb !== 'Remove'; $('#keep-data').checked = true; $('#delete-data').checked = false;
+  $('#confirm-continue').textContent = verb; panel.hidden = false; $('#confirm-cancel').focus();
 }
-$('#dependency-cancel').onclick = () => $('#dependency-dialog').close();
-$('#dependency-continue').onclick = () => {
-  const proceed = confirming; confirming = null; $('#dependency-dialog').close();
-  Promise.resolve().then(proceed).catch(showError);
+$('#confirm-cancel').onclick = cancelConfirm;
+$('#delete-data').onchange = $('#keep-data').onchange = () => { $('#confirm-continue').textContent = $('#delete-data').checked ? 'Remove and delete data' : 'Remove'; };
+$('#confirm-continue').onclick = () => {
+  const {mod,verb} = confirming, deleteData = $('#delete-data').checked; cancelConfirm();
+  action(verb === 'Disable' ? 'mod_disable' : 'mod_remove', verb === 'Disable' ? {local:mod.local} : {local:mod.local,deleteData}).catch(showError);
 };
-$('#dependency-dialog').addEventListener('close', () => { confirming = null; });
-let removing = null;
-function remove(mod) {
-  removing = mod.local;
-  $('#remove-dialog p').textContent = `Delete the data of ${mod.name}?`;
-  $('#remove-dialog').showModal(); $('#keep-data').focus();
-}
-for (const [id, deleteData] of [['keep-data', false], ['delete-data', true]]) {
-  $(`#${id}`).onclick = () => {
-    const local = removing; removing = null; $('#remove-dialog').close();
-    action('mod_remove', {local, deleteData}).catch(showError);
-  };
-}
-$('#install').onclick = () => action('install_folders').catch(showError);
+function closeAdd() { $('#add-menu').hidden = true; $('#add-mod').setAttribute('aria-expanded', 'false'); }
+$('#add-mod').onclick = () => {
+  const open = $('#add-menu').hidden; $('#add-menu').hidden = !open; $('#add-mod').setAttribute('aria-expanded', String(open));
+  if (open) $('#install-link').focus();
+};
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { cancelConfirm(); closeAdd(); } });
+document.addEventListener('click', event => { if (!event.target.closest('#add-menu, #add-mod')) closeAdd(); });
+$('#install').onclick = $('#first-folder').onclick = () => action('install_folders').catch(showError);
+$('#first-link-go').onclick = () => action('install_link', {link:$('#first-link').value}).catch(showError);
+$('#first-index').onclick = () => { location.hash = '#find'; route(); $('#index-link').focus(); };
+launcher.addEventListener('keydown', event => {
+  if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return;
+  const tiles = Array.from(launcher.children).filter(tile => !tile.hidden);
+  const index = tiles.findIndex(tile => tile.dataset.tile === selected);
+  const columns = getComputedStyle(launcher).gridTemplateColumns.split(' ').length;
+  const step = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[event.key];
+  const next = tiles[Math.max(0, Math.min(tiles.length - 1, index + step))];
+  if (next) { event.preventDefault(); selectMod(next.dataset.tile); next.focus(); }
+});
 let lastTools = '', lastSets = '', lastTokens = '';
 async function agentsView() {
   const [tools, sets, tokens] = await Promise.all([call('tools_list'), call('toolsets_list'), call('tokens_list')]);
@@ -192,7 +275,7 @@ function refresh() {
   refreshing = (async () => {
     const status = await call('status');
     if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
-    $('.mark').textContent = status.mark;
+    for (const mark of document.querySelectorAll('.mark')) mark.textContent = status.mark;
     const machines = await machinesView(status);
     identityView(status, machines);
     await channelsView();
@@ -313,10 +396,9 @@ async function findView() {
 $('#add-index').onclick = () => action('index_choose', {link: $('#index-link').value}).catch(showError);
 $('#search').onclick = () => {
   errors.begin();
-  query = {text: $('#search-text').value, publisher: $('#search-publisher').value.trim() || null, interface: $('#search-interface').value.trim() || null};
+  query = {text: $('#search-text').value, publisher: null, interface: null};
   readRefresh().catch(showError);
 };
-$('#refresh-find').onclick = () => action('channels_refresh').catch(showError);
 $('#install-from-link').onclick = () => action('install_link', {link: $('#install-link').value}).catch(showError);
 $('#set-name').onclick = () => action('identity_set_name', {name: $('#profile-name').value}).catch(showError);
 $('#set-site').onclick = () => action('site_set_url', {url: $('#site-url').value}).catch(showError);
@@ -341,27 +423,41 @@ $('#confirm-identity').onclick = () => {
 };
 
 function filterLibrary() {
-  let matches = 0;
-  for (const entry of launcher.querySelectorAll('section[data-local]')) {
-    const mod = currentMods.find(m => m.local === entry.dataset.local);
-    entry.hidden = !matchesLibrary(mod, $('#library-filter').value, $('#library-source').value);
-    if (!entry.hidden) matches++;
+  const visible = [];
+  for (const tile of launcher.children) {
+    const mod = currentMods.find(m => m.local === tile.dataset.tile);
+    tile.hidden = !matchesLibrary(mod, $('#library-filter').value, sourceFilter);
+    if (!tile.hidden) visible.push(mod.local);
   }
-  $('#no-matches').hidden = !currentMods.length || matches > 0;
+  for (const pill of document.querySelectorAll('[data-source]')) pill.setAttribute('aria-pressed', String(pill.dataset.source === sourceFilter));
+  $('#no-matches').hidden = !currentMods.length || visible.length > 0;
+  selectMod(visible.includes(selected) ? selected : visible[0] || null);
 }
 $('#library-filter').oninput = filterLibrary;
-$('#library-source').onchange = filterLibrary;
+for (const pill of document.querySelectorAll('[data-source]')) pill.onclick = () => { sourceFilter = pill.dataset.source; filterLibrary(); };
+function headerView() {
+  const settings = location.hash === '#settings';
+  document.body.classList.toggle('settings', settings);
+  $('#manager-header').hidden = settings; $('#settings-header').hidden = !settings;
+  $('#refresh-channels').hidden = managerTab !== 'updates';
+  $('#filter-control').hidden = managerTab !== 'library' || !currentMods.length;
+  $('#add-mod').hidden = managerTab === 'updates' || managerTab === 'library' && !currentMods.length;
+  $('#add-mod').textContent = managerTab === 'find' ? '↗ Install from a link' : '＋ Install a mod';
+  $('#add-mod').classList.toggle('primary', managerTab === 'library');
+  $('[data-tab=updates]').hidden = !currentMods.length && !$('#updates-count').textContent && !$('#update-channels').children.length && !$('#update-done').children.length;
+}
 function route() {
   const settings = location.hash === '#settings';
   managerTab = location.hash === '#find' ? 'find' : location.hash === '#updates' ? 'updates' : 'library';
   $('#settings').hidden = !settings; $('#mods').hidden = settings;
   for (const tab of ['library', 'find', 'updates']) {
     $(`#${tab}`).hidden = tab !== managerTab;
-    $(`[data-tab=${tab}]`).setAttribute('aria-pressed', String(tab === managerTab));
+    const link = $(`[data-tab=${tab}]`);
+    if (tab === managerTab) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
+  closeAdd(); headerView();
   if (settings) readRefresh().catch(showError);
 }
-for (const tab of document.querySelectorAll('[data-tab]')) tab.onclick = () => { location.hash = tab.dataset.tab === 'library' ? '#mods' : `#${tab.dataset.tab}`; route(); };
 window.addEventListener('hashchange', route);
 if (!location.hash) location.hash = '#mods';
 route();
@@ -369,7 +465,7 @@ let lastUpdates = '';
 async function updatesView(mods) {
   const [done, channels, indexes] = await Promise.all([call('updates_done'), call('channels_list'), call('indexes_list')]);
   const offers = updateOffers(mods);
-  $('#updates-count').textContent = offers.length ? String(offers.length) : '';
+  $('#updates-count').textContent = offers.length ? String(offers.length) : ''; $('#updates-count').hidden = !offers.length;
   const signature = JSON.stringify([offers, channels, indexes, done]);
   if (signature === lastUpdates) return;
   lastUpdates = signature;
@@ -383,6 +479,7 @@ async function updatesView(mods) {
     if (channel.cause && !seen.has(channel.channel)) { seen.add(channel.channel); element('p', `${partyLabel(channel)}: ${channel.cause}`, $('#update-channels')); }
   }
   for (const update of done) element('p', `${update.name}: ${update.from} → ${update.to} · ${new Date(update.at).toLocaleString()}`, $('#update-done'));
+  headerView();
 }
 
 
