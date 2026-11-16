@@ -228,8 +228,9 @@ fn ac5_machines_learn_each_others_addresses_from_a_devices_answer() {
         node(MemHoldings::empty(), None),
     );
     pair_into(&anchor, &b, Role::Full);
-    pair_into(&anchor, &c, Role::Full);
+    // C can learn B's address and connect during join, before pair_into returns.
     let events = b.net.events();
+    pair_into(&anchor, &c, Role::Full);
     // a new list: the anchor tells b, which asks for it and is told where c is
     anchor.net.set_role(&c.key, Role::Light).unwrap();
     assert!(
@@ -250,8 +251,9 @@ fn a_callee_with_an_older_list_passes_on_no_address() {
         node(MemHoldings::empty(), None),
     );
     pair_into(&anchor, &b, Role::Full);
-    pair_into(&anchor, &c, Role::Full);
+    // Observe the link even when C's post-join pull starts it immediately.
     let b_events = b.net.events();
+    pair_into(&anchor, &c, Role::Full);
     anchor.net.set_role(&c.key, Role::Light).unwrap();
     assert!(peer_up(&b_events, c.key, 10), "b knows where c is");
     let events = anchor.net.events();

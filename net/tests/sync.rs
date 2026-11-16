@@ -539,7 +539,18 @@ fn s9_requests_are_answered_from_the_holder_only() {
     // the anchor keeps only what its participant chose: nothing here
     server.holdings.not_wanted.store(true, Ordering::SeqCst);
     pair_into(&server, &third, Role::Full);
+    let (caller_events, third_events) = (caller.net.events(), third.net.events());
     pair_into(&server, &caller, Role::Light);
+    // Join gives the caller the third node's address. Finish that link's
+    // hello and initial sync before measuring whether the server forwards.
+    for (events, peer) in [(caller_events, third.key), (third_events, caller.key)] {
+        assert!(
+            wait_for(10, || events
+                .try_iter()
+                .any(|e| matches!(e, Event::PeerUp(k) if k == peer))),
+            "caller and third node did not connect"
+        );
+    }
     settle(&[&server, &third, &caller]);
     let before = third.holdings.calls();
     let heads = caller.net.heads_of(&server.key, &[chan(w)]).unwrap();
