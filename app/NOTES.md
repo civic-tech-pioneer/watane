@@ -842,3 +842,5 @@
   socket is absent, so the Linux runner is unavailable. AC2/AC3 runtime
   behavior and AC4 green acceptance still need a working native GUI session.
   No participant-free refusal was observed: startup never reached manage.
+- Later (validator, user-sim, outside the sandbox): S43 to S48 and J10 run and
+  pass; the startup failures above came from Sol's sandbox only.
