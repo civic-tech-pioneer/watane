@@ -719,7 +719,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   runtime. Folds in Q31 (b) and Q32 (b) if the human takes them. Outcome: app S43 to S48 and J10 pass;
   J2 to J5, J8, J9 still pass. Touches: app (src, ui, tests/manage.rs, tests/j10.rs, fixtures,
   TECHNICAL 17). Local (the app). After S75, which changes the same app/src and app/ui.
-- [ ] **S78 A full test run leaves nothing behind in the temp folder.** Branch `slice/s78`. Tests leaked
+- [~] **S78 A full test run leaves nothing behind in the temp folder.** Branch `slice/s78`. Tests leaked
   186 GB of `.tmp*` folders on the Mac (Friction, S76): dev's build caches (`build`, `cargo-home`,
   `counter`: 359 folders), copies (124), and a few from host, net and dist. Find what keeps each (a
   `TempDir` kept or leaked, a child killed before its drop, a cache that defaults to a new temp folder)
