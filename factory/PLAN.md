@@ -650,6 +650,23 @@ is a step-7-style check, after S55.
   TECHNICAL 9.8). Local (the app). After S74, which changes the same app/src and app/ui.
   Delivered (merged as e1643b5): Alice turns on her own machines in Settings, pairs her server (`watane-node`) and a second laptop with a code and the consent view, publishes to the server with no static host, searches and installs through it from a light laptop, removes a machine, restores from the server's hint, and adds relays or the DHT only after consent; no mod or local route reaches any of it. J8 passes natively (5 of 5, 52 to 77 s). Step 8 is done. Decisions: net (no format change): after `pair` the joiner pulls `devices` once from the anchor, so a new machine learns the others' addresses (in memory, not book.json; a failed pull does not fail the join; net 5.5); J8's restore keeps the restored laptop as anchor and the server re-joins with `join --replace`; `Status.identity.signed`, and the Join question asks the delete question only for an identity that signed nothing; IdentityInUse reads "has signed at least one statement"; S61 leftovers: `indexes` works keyless, `choose_index` on a keyless home succeeds or changes nothing; tests/support/node.rs. Verified on the Mac: hakari clean; net and node green with ignored; the app driver suite green with ignored, J8 included (front tests not run). For a later slice: a light laptop refused by a server that removed it shows dist's "is not followed" (node/src/calls.rs:66 drops need_blob's Result; net turns not_allowed into Unreachable, light.rs:178); user-sim wording: a reused code says "not a pairing code", "no direct path" also when the anchor is just off (3x), no reconnect after both restart on new ports, the anchor's own row "Last seen: unknown", "anchor · anchor <key>", Join clickable twice before the 2 s refresh, the restore refusal does not point to Settings, no `watane-node --help`, `status` fails "home is locked" while run runs, relay/DHT controls enabled while off, publishing does not warn that the home can no longer join; node/tests/restore.rs s9 flakes about 3 in 12 (SiteNotWritten), also on main.
 
+- [~] **S80 Alice's server says what is wrong (node, net).** Branch `slice/s80`. The node and net items
+  of S72's and S75's user-sim reports: a light laptop refused by a server that removed it is told so
+  (node/src/calls.rs:66 keeps need_blob's Result; net reports not_allowed, not Unreachable, light.rs:178);
+  `watane-node --help`; `status` while `run` runs answers instead of "home is locked"; a second `run`
+  names the running watane-node; the key printed once in causes; the y/N answer on its own line; a
+  confirmation after `dht` and `relay` changes; a reused code says it was used; "no direct path" only
+  when there is none, once; node/tests/restore.rs s9 flake (SiteNotWritten). Outcome: each item has a
+  test on the real `watane-node`. Touches: node, net (no wire or disk format change). Cloud.
+- [~] **S81 The app says what it means (app wording).** Branch `slice/s81`. The app items of S74's,
+  S75's and S77's user-sim reports: the library marks the main mod; the consent for a mod proposing
+  main says it becomes the start window; a connection link moves focus to the target's details; the
+  disable warning words an Extended-by link; the anchor's own row and "anchor · anchor"; Join not
+  clickable twice; relay/DHT controls disabled while off; publishing warns that the home can no longer
+  join; the restore refusal points to Settings; Desk's call during a grant change gets an answer;
+  `machines.rs ac3_s30` waits for its full text; the app's own temp-folder leaks (11, S76). Outcome:
+  each item has a test on the real app. Touches: app. Local (the app).
+
 ### Step 9: Extension points (J9)
 
 The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and
