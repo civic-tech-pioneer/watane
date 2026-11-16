@@ -875,3 +875,62 @@ fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
          answer 404 for {{missing_base}}head; Pages answered 503 there in a real run"
     );
 }
+
+/// S54 second acceptance, real run 2026-11-16: S54-fix1 moved the Ivy/DD-26 block before
+/// the missing-base block. Choosing Ivy, who lists Alice, gives Bob a listed record of
+/// Alice's channel with her real base; `open_link` then refreshes from that recorded base
+/// instead of reading the link's missing base, so the missing-base install succeeds
+/// (`{"ok":{"installed":["reading-list"]}}`) and no `not found` is shown. Same order as
+/// `ac3_j3_real_github`: install, unfollow, choose Ivy, then the missing link.
+#[test]
+fn regress_s54_missing_base_after_choosing_ivy_still_not_found() {
+    let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
+    struct Approve;
+    impl watane_dist::Confirm for Approve {
+        fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+            watane_dist::Decision::Approve
+        }
+    }
+    let alice_home = tempfile::tempdir().unwrap();
+    let ivy_home = tempfile::tempdir().unwrap();
+    let bob_home = tempfile::tempdir().unwrap();
+    let open = |home: &Path, options: watane_dist::Options| {
+        watane_dist::Dist::open(home, std::sync::Arc::new(Approve), options).unwrap()
+    };
+    let alice = open(alice_home.path(), Default::default());
+    alice.set_name("Alice").unwrap();
+    let site = Pages::start(&alice_home.path().join("dist"));
+    let base = site.url("site");
+    alice.set_site_url(&base).unwrap();
+    let package = watane_host::watane_pkg::pack(&fixtures().join("reading-list"), false).unwrap();
+    let link = alice
+        .publish(package.as_bytes().to_vec())
+        .unwrap()
+        .link
+        .unwrap();
+    // Bob accepts Alice's loopback base when Ivy lists it, as the real run's public base.
+    let bob = open(
+        bob_home.path(),
+        watane_dist::Options {
+            listed_local: true,
+            ..Default::default()
+        },
+    );
+    bob.open_link(&link).unwrap();
+    bob.unfollow(&link.channel()).unwrap();
+    let ivy = open(ivy_home.path(), Default::default());
+    ivy.set_name("Ivy").unwrap();
+    ivy.list(&link, "Books from Alice").unwrap();
+    let ivy_site = Pages::start(&ivy_home.path().join("dist"));
+    ivy.set_site_url(&ivy_site.url("site")).unwrap();
+    bob.choose_index(&ivy.own_link(None).unwrap()).unwrap();
+    let missing_base = format!("{base}missing-unpublished/");
+    let missing = watane_dist::Link::new(link.channel(), &missing_base, link.slug()).unwrap();
+    let error = bob
+        .open_link(&missing)
+        .expect_err("a link naming a never-published base must fail after choosing Ivy");
+    assert!(
+        matches!(&error, watane_dist::DistError::NotFound { url } if url == &format!("{missing_base}head")),
+        "{error:?}"
+    );
+}
