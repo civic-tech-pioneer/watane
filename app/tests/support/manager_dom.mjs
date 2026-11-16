@@ -132,14 +132,16 @@ if (which === 'look') {
   assert.equal(entry('logic').querySelector('.grant-text').textContent,'Full fallback words');
   assert.equal(entry('logic').querySelector('.give').getAttribute('aria-label'),'Full fallback words');
   entry('logic').querySelector('.give').click(); await tick(); assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{cmd:'grant_give',args:{local:'logic',key:'storage'}});
-  const a=mod('a',{name:'Alpha',publisher:{name:'Alice',fingerprint:'abc'},grants:[{key:'storage',kind:'storage',text:'Exact full words',short:'Short words',granted:true}]});
+  const a=mod('a',{name:'Alpha',release:'abc/a@1.0.0',publisher:{name:'Alice',fingerprint:'abc'},grants:[{key:'storage',kind:'storage',text:'Exact full words',short:'Short words',granted:true}]});
   const b=mod('b',{name:'Beta',offer:'key/b@2',notice:'Withdrawn by the publisher: broken',main:true,enabled:false});
   render([a,b]); assert.equal($('#first-start').hidden,true); assert.equal(launcher.children[0],tile('b'));
+  assert.equal(tile('a').querySelector('.tile-name').textContent,'Alpha'); assert.equal(tile('a').querySelector('.tile-by').textContent,'Alice · 1.0.0'); assert.equal(tile('b').querySelector('.tile-by').textContent,'local · 1.0.0'); assert.ok(tile('a').querySelector('.mono'));
   assert.equal(tile('b').querySelectorAll('.badge').length,1); assert.equal(tile('b').querySelector('.badge').textContent,'Off');
   assert.equal(entry('a').hidden,true); tile('a').click(); await tick(); assert.equal(entry('a').hidden,false);
   const grant=entry('a').querySelector('[data-key=storage]'); assert.equal(grant.querySelector('.grant-text').title,'Exact full words'); assert.equal(grant.querySelector('.grant-text').textContent,'Short words');
   assert.equal(grant.querySelector('.sw').getAttribute('aria-checked'),'true'); grant.querySelector('.withdraw').click(); await tick(); assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{cmd:'grant_withdraw',args:{local:'a',key:'storage'}});
-  assert.deepEqual(entry('a').children.map(n=>n.className),['detail-head','summary','actions','start-row','grants','connections','technical']);
+  assert.deepEqual(entry('a').children.map(n=>n.className),['detail-head','summary','actions','start-row','grants','connections','derived','technical']);
+  assert.deepEqual(entry('a').querySelectorAll('.technical dt').map(n=>n.textContent),['Made from','Page origin','Package','Release','Publisher key']);
   assert.equal(entry('a').querySelectorAll('.actions .primary').length,1);
   assert.equal(entry('a').querySelector('.actions').children.at(-1).classList.contains('quiet'),true);
   assert.equal(entry('a').querySelector('.start-row .hint').textContent,'Turn on to open it at start, in place of Beta.');
@@ -150,7 +152,7 @@ if (which === 'look') {
   $('#delete-data').checked=true; $('#delete-data').onchange(); assert.equal($('#confirm-continue').textContent,'Remove and delete data'); document.dispatchEvent({type:'keydown',key:'Escape'}); assert.equal($('#confirm-panel').hidden,true);
   let prevented=false; launcher.dispatchEvent({type:'keydown',key:'ArrowRight',preventDefault(){prevented=true;}}); assert.equal(prevented,true); assert.equal(document.activeElement,tile('a'));
   $('#library-filter').value='alpha alice'; $('#library-filter').oninput(); assert.equal(tile('a').hidden,false); assert.equal(tile('b').hidden,true);
-  $('[data-source=local]').click(); assert.equal(tile('a').hidden,true); assert.equal($('#no-matches').hidden,false); assert.ok([...$('#mod-details').children].every(n=>n.hidden));
+  $('[data-source=local]').click(); assert.equal(tile('a').hidden,true); assert.equal($('#no-matches').hidden,false); assert.ok([...$('#mod-details').children].every(n=>n.hidden)); assert.equal($('#no-matches').textContent,'No mod matches. Look in Find'); assert.equal($('#no-matches a').getAttribute('href'),'#find');
   $('#library-filter').value=''; $('[data-source=""]').click();
   for (const cmd of ['install_link','install_folders','install_paths','install_release']) {
     render([a,b]); const c=mod('c',{name:'Charlie',links:[{kind:'subscribe',provider:'a',granted:true}]});

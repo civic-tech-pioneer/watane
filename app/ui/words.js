@@ -70,13 +70,6 @@ export function manageTitle(request) {
   return `${request.asked_by.name} asks to ${action}`;
 }
 
-export function dependencyWarning(verb, name, users, extensions) {
-  const sentences = [];
-  if (users.length) sentences.push(`These mods use it: ${users.join(', ')}.`);
-  if (extensions.length) sentences.push(`These mods extend it: ${extensions.join(', ')}.`);
-  return sentences.length ? `${verb} ${name}? ${sentences.join(' ')}` : '';
-}
-
 export function monogram(mod, size) {
   const node = document.createElement('span');
   const slug = mod.slug || mod.local;

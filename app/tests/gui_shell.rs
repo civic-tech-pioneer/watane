@@ -42,7 +42,7 @@ fn ac1_new_home_has_empty_launcher_and_mark() {
                 .is_none()
     );
     assert_eq!(
-        app.eval("main", "document.body.textContent.includes('No mods yet')"),
+        app.eval("main", "!document.querySelector('#first-start').hidden && document.querySelector('#first-start').textContent.includes('Install your first mod')"),
         true
     );
     assert_ne!(app.port, 0);
@@ -170,7 +170,7 @@ fn ac2_real_catalog_opens_one_window_and_no_page_is_not_found() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=books] button.disable')?.disabled === true",
+        "!!document.querySelector('[data-local=books] button.enable') && !document.querySelector('[data-local=books] button.disable')",
     );
     assert!(!app.windows().iter().any(|w| w["label"] == "mod-books"));
     assert!(
@@ -616,21 +616,21 @@ fn ac7_real_installed_version_is_a_name_sibling_outside_details() {
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local=books] > h2').textContent"
+            "document.querySelector('[data-local=books] h2').textContent"
         ),
         "Books"
     );
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local=books] > h2 + .version')?.textContent ?? null"
+            "(n => n && !n.closest('details') ? n.textContent : null)(document.querySelector('[data-local=books] h2 + .version'))"
         ),
-        "1.2.3"
+        "Version 1.2.3"
     );
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelector('[data-local=books] > details').open"
+            "document.querySelector('[data-local=books] details.technical').open"
         ),
         false
     );

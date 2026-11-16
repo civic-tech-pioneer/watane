@@ -108,12 +108,12 @@ mod windows {
         app.eval("main","document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); null");
         check(&app, "document.querySelector('#add-menu').hidden");
         area(&app, "#mods");
-        app.eval("main", "document.body.classList.add('dropping')");
+        app.eval("main", "document.body.classList.add('dropping'); null");
         check(
             &app,
             "getComputedStyle(document.querySelector('#drop-target')).display === 'flex' && document.querySelector('#drop-target').textContent.includes('Drop to install') && document.querySelector('#drop-target').textContent.includes('watane reads the mod in this folder and asks before it gets anything.')",
         );
-        app.eval("main", "document.body.classList.remove('dropping')");
+        app.eval("main", "document.body.classList.remove('dropping'); null");
         check(
             &app,
             "getComputedStyle(document.querySelector('#drop-target')).display === 'none'",
@@ -259,6 +259,13 @@ mod windows {
         );
         app.eval("main","document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); null");
         check(&app, "document.querySelector('#confirm-panel').hidden");
+        assert!(
+            invoke(&app, "mods_list", json!({}))
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|m| m["enabled"] == true)
+        );
         click(&app, "[data-local=reading-list] .remove");
         check(
             &app,
@@ -274,7 +281,7 @@ mod windows {
         click(&app, "[data-local=recommendations] .disable");
         check(
             &app,
-            "document.querySelector('#confirm-panel').hidden && document.querySelector('[data-tile=recommendations] .badge').textContent === 'Off'",
+            "document.querySelector('#confirm-panel').hidden && document.querySelector('[data-tile=recommendations] .badge')?.textContent === 'Off'",
         );
         app.eval("main","document.querySelector('#library-filter').value='no match'; document.querySelector('#library-filter').dispatchEvent(new Event('input')); null");
         check(
@@ -307,7 +314,7 @@ mod windows {
         );
         check(
             &app,
-            "Array.from(document.querySelectorAll('.tile')).every(tile => tile.querySelectorAll('.badge').length === 1) && document.querySelector('[data-tile=desk] .badge').textContent === 'Problem' && document.querySelector('[data-tile=desk] .main-mark').textContent === 'Opens at start' && document.querySelector('[data-tile=reading-list] .badge').textContent === 'Problem' && document.querySelector('[data-tile=recommendations] .badge').textContent === 'Off'",
+            "Array.from(document.querySelectorAll('.tile')).every(tile => tile.querySelectorAll('.badge').length === 1) && document.querySelector('[data-tile=desk] .badge').textContent === 'Problem' && document.querySelector('[data-tile=desk] .main-mark').textContent === 'Opens at start' && document.querySelector('[data-tile=reading-list] .badge').textContent === 'Problem' && document.querySelector('[data-tile=recommendations] .badge')?.textContent === 'Off'",
         );
         for mod_view in badges.as_array_mut().unwrap() {
             if mod_view["local"] == "recommendations" {

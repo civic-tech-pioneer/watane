@@ -266,7 +266,7 @@ fn ac4_disabling_hostile_closes_window_and_disables_catalog_entry() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=hostile] button.disable')?.disabled === true",
+        "!!document.querySelector('[data-local=hostile] button.enable') && !document.querySelector('[data-local=hostile] button.disable')",
     );
     let deadline = Instant::now() + TIMEOUT;
     while app.windows().iter().any(|w| w["label"] == MOD) {

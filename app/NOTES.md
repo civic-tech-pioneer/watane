@@ -1133,16 +1133,13 @@ not turned into a skip. A normal test also fails before any UI in
 with `Failed to create netmon monitor`. The four screen-taking tests are
 excluded from the driver run as required by the task.
 
-Existing test conflict left intact as the task requires:
-`gui_shell::ac7_real_installed_version_is_a_name_sibling_outside_details`
-requires the old direct-child heading, bare version and per-mod disclosure;
-5.3.3/5.3.4 replace that markup with tiles, a head and Technical details.
-The same file's `ac1_new_home_has_empty_launcher_and_mark` expects the
-old `No mods yet` copy, and `ac2_real_catalog_opens_one_window_and_no_page_is_not_found`
-expects a disabled Disable button where 5.3.4 now specifies Enable.
-These are outside the listed selector migrations. Existing specification-text
-assertions in static_config.rs and manager.rs are also left unchanged;
-none of the new tests reads a Markdown specification.
+Validator (round 1) decided the three `gui_shell` conflicts and one in
+`gui_isolation` against 5.3, selector or words only: an empty home shows
+the visible `#first-start` with `Install your first mod` (was `No mods
+yet`); a disabled mod shows `button.enable` and no `button.disable` (was a
+disabled `button.disable`; 5.3.4 replaces it) in `gui_shell` ac2 and
+`gui_isolation` ac4; the version is `Version 1.2.3` in `h2 + .version`,
+outside any `details`, and `details.technical` is closed (5.3.4 item 1, 9).
 
 Checks completed here: the normal build succeeds; static_style, both
 non-window look tests, static_config and the four renderer harness cases
@@ -1150,3 +1147,8 @@ pass. Clippy with all targets and driver and fmt check are clean. A release
 build with driver fails at the intended compile_error. J2, J5, J10 and all
 four new native look tests were explicitly attempted and fail at native
 startup, before their page assertions, with the HIServices error above.
+Validator native run (outside the sandbox): driver suite with
+`--include-ignored` (front four skipped) green after the fixes above, J2,
+J5, J10 and the four look window tests included. A first full run hit
+`app did not become ready` in j5 `ac2_j5_github`, j8, j9 and look while
+another worktree ran window tests; each passes when rerun alone.
