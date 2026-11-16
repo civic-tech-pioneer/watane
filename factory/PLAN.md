@@ -712,6 +712,21 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   options marked "built" in Q28 to Q33); a change from the human's answers comes as its own task.
   Touches: pkg, host, dev. Cloud. After S71 (dev).
   Delivered (merged as 797cd9f): a manager mod (grant `manage`) reads every installed mod, disables one, withdraws a grant or closes a page at once, and asks the participant for an install, update, enable, grant or removal as a request whose state it can read; a maker's agent fakes `watane:host/manage` and checks `manages` in a contract test (DEV-S-53); dev's envelope ac5 is green again. Decisions: Q28 to Q33 built as option (a); `Confirm::manage` runs on its own thread with a small current-thread tokio runtime (app J: run runtime-bound work on the app's own runtime and await it from there); a request-* in a preview or a home with no app answers `refused` before any other check; harness request ids r1, r2, ... count across one Harness, a failed call takes no number; fixed a deadlock in `Host::remove` (catalog lock held while sending the catalog message); `Grant` keeps Display only; app gains `GrantKind::Manage` and the words of app 17.2. Verified on the Mac: hakari clean; host, dev and the app driver suite green with ignored (front tests not run), the cloud's not-run tests included.
+- [ ] **S77 Alice's own manager asks, and she approves in the consent view; J10 passes (app stage J).**
+  Branch `slice/s77`. Builds app stage J (app/TECHNICAL 17.2 to 17.4, row J): `HostConfirm::{manage,
+  reduced}`, the consent page's `manage` request and `asked_by` line, APP-F-70 to 75, the fixture
+  `desk-ui`, `tests/manage.rs` and `tests/j10.rs`; S76's note: runtime-bound work runs on the app's own
+  runtime. Folds in Q31 (b) and Q32 (b) if the human takes them. Outcome: app S43 to S48 and J10 pass;
+  J2 to J5, J8, J9 still pass. Touches: app (src, ui, tests/manage.rs, tests/j10.rs, fixtures,
+  TECHNICAL 17). Local (the app). After S75, which changes the same app/src and app/ui.
+- [ ] **S78 A full test run leaves nothing behind in the temp folder.** Branch `slice/s78`. Tests leaked
+  186 GB of `.tmp*` folders on the Mac (Friction, S76): dev's build caches (`build`, `cargo-home`,
+  `counter`: 359 folders), copies (124), and a few from host, net and dist. Find what keeps each (a
+  `TempDir` kept or leaked, a child killed before its drop, a cache that defaults to a new temp folder)
+  and fix it; a test that must keep its folder says why. Outcome: the number of `$TMPDIR/.tmp*` folders
+  is the same before and after a full run of pkg, host, dev, log, dist, net and node (cloud: the tests
+  that run there; the Mac checks the rest at merge). Touches: test support and the temp-folder code of
+  pkg, host, dev, log, dist, net, node; not app (S54, S75 own its tests; the app leaks 11). Cloud.
 - [x] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
   pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
   5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
