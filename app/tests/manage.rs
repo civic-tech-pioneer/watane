@@ -98,7 +98,7 @@ fn ac2_s44_disable_closes_page_and_restart_clears_notice() {
 }
 
 #[test]
-fn ac2_s45_install_denied_approved_and_unread_link_never_connects() {
+fn ac5_s45_install_denied_approved_and_unread_link_never_connects() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let f = Fixture::new();
     let home = tempfile::tempdir().unwrap();
@@ -137,8 +137,10 @@ fn ac2_s45_install_denied_approved_and_unread_link_never_connects() {
         "request-install",
         json!({"release":format!("{unknown}/counter@0.1.0"), "link":link}),
     );
-    outcome(&app, "failed");
-    outcome(&app, "named a channel this home does not read");
+    assert!(consent_text(&app).contains(&format!("Desk asks to read {link}")));
+    deny(&app);
+    outcome(&app, "denied");
+    no_window(&app, "consent");
     assert!(
         matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
         "unread channel received a connection"
@@ -537,5 +539,105 @@ fn ac1_manage_calls_settle_across_grant_reload() {
     outcome(&app, "pending");
     deny(&app);
     outcome(&app, "denied");
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac3_s82_read_asked_before_fetch_then_install_and_follow() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[("WATANE_DRIVER_LISTED_LOCAL", "1")]);
+    f.install(&app);
+    let before = mods_on_disk(&app);
+    f.ask_install(&app);
+    assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
+    deny(&app);
+    outcome(&app, "denied");
+    assert_eq!(f.requests(), 0);
+    assert_eq!(mods_on_disk(&app), before);
+    f.ask_install(&app);
+    assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
+    approve(&app);
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('h1').textContent"),
+        "Install Book club"
+    );
+    assert!(consent_text(&app).contains(ASKED));
+    assert!(!app.home.join("mods/counter").exists());
+    approve(&app);
+    outcome(&app, "approved");
+    assert!(app.home.join("mods/counter").is_dir());
+    let channels = invoke(&app, "channels_list", json!({}));
+    assert!(
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["channel"] == f.ivy.identity().unwrap().to_string()),
+        "{channels}"
+    );
+    assert!(f.requests() > 0);
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac4_s82_stop_asks_withdraws_manage_until_given_back() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.install(&app);
+    click(&app, "disable", json!({"local":"reading-list"}));
+    outcome(&app, "ok");
+    click(&app, "request-enable", json!({"local":"reading-list"}));
+    assert!(consent_text(&app).contains("Desk asks to turn on Weather"));
+    outcome(&app, "pending");
+    until(
+        &app,
+        DESK,
+        "document.querySelector('#request-id').value.length === 32",
+    );
+    let id = app.eval(DESK, "document.querySelector('#request-id').value");
+    app.eval(DESK, "window.oldContext = true; null");
+    app.eval("consent", "document.querySelector('#stop').click(); null");
+    assert!(app.wait(DESK, TIMEOUT));
+    until(
+        &app,
+        DESK,
+        "!window.oldContext && !!document.querySelector('#request-enable')",
+    );
+    no_window(&app, "consent");
+    let mods = invoke(&app, "mods_list", json!({}));
+    let mods = mods.as_array().unwrap();
+    assert!(mods.iter().any(|m| {
+        m["local"] == "manager"
+            && m["grants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|g| g["key"] == "manage" && g["granted"] == false)
+    }));
+    assert!(
+        mods.iter()
+            .any(|m| m["local"] == "reading-list" && m["enabled"] == false)
+    );
+    click(&app, "request-enable", json!({"local":"reading-list"}));
+    outcome(&app, "not_granted");
+    until(&app, DESK, "location.hash === ''");
+    invoke(
+        &app,
+        "grant_give",
+        json!({"local":"manager","key":"manage"}),
+    );
+    assert!(app.wait(DESK, TIMEOUT));
+    until(&app, DESK, "!!document.querySelector('#request')");
+    click(&app, "request", json!({"request-id":id}));
+    outcome(&app, "denied");
+    click(&app, "request-enable", json!({"local":"reading-list"}));
+    assert!(consent_text(&app).contains("Desk asks to turn on Weather"));
+    approve(&app);
+    outcome(&app, "approved");
     assert!(app.quit().success());
 }

@@ -46,27 +46,26 @@ fn manage_answer(answer: consent::Answer) -> Result<(), crate::CmdError> {
         _ => Err(crate::CmdError::new("refused", "request denied")),
     }
 }
-fn check_manager_link(
+fn manager_read_request(
     dist: &watane_dist::Dist,
     by: &consent::Asker,
     link: Option<&watane_dist::Link>,
-) -> Result<(), crate::CmdError> {
+    release: &str,
+) -> Result<Option<consent::Request>, crate::CmdError> {
     if let Some(link) = link {
         let key = link.channel();
         let known = dist.identity() == Some(key)
             || dist.followed()?.iter().any(|v| v.channel == key)
             || dist.indexes()?.iter().any(|v| v.view.channel == key);
         if !known {
-            return Err(crate::CmdError::new(
-                "bad_input",
-                format!(
-                    "{} named a channel this home does not read: {link}",
-                    words::asker_label(by)
-                ),
-            ));
+            return Ok(Some(consent::Request::Read {
+                asked_by: by.clone(),
+                link: link.to_string(),
+                release: release.into(),
+            }));
         }
     }
-    Ok(())
+    Ok(None)
 }
 fn manager_offer(
     offer: Option<String>,
@@ -336,16 +335,24 @@ async fn manage(
     match ask {
         Ask::Install { release, link } => {
             let link = link.map(|l| l.parse::<watane_dist::Link>()).transpose()?;
-            check_manager_link(&core.dist, &asked_by, link.as_ref())?;
-            // The supplied base is never followed: fetch only through already held bases.
-            core.install_managed(release, requester, asked_by).await?;
+            let read =
+                manager_read_request(&core.dist, &asked_by, link.as_ref(), &release.to_string())?;
+            let read_link = if let Some(read) = read {
+                manage_answer(core.broker.ask(read).await)?;
+                link
+            } else {
+                None
+            };
+            core.install_managed(release, read_link, requester, asked_by)
+                .await?;
         }
         Ask::Update(local) => {
             let m = core
                 .get(local.as_ref())?
                 .ok_or_else(|| crate::CmdError::new("not_found", "mod not found"))?;
             let release = manager_offer(m.offer, &m.name)?;
-            core.install_managed(release, requester, asked_by).await?;
+            core.install_managed(release, None, requester, asked_by)
+                .await?;
         }
         Ask::Enable(ref local) | Ask::Grant { ref local, .. } | Ask::Remove { ref local, .. } => {
             let m = core
@@ -636,7 +643,7 @@ mod tests {
         );
     }
     #[test]
-    fn ac3_unread_channel_fails_without_connecting() {
+    fn ac3_s82_unread_channel_requests_read_without_connecting() {
         let home = tempfile::tempdir().unwrap();
         let dist = watane_dist::Dist::open_keyless(
             home.path(),
@@ -661,10 +668,19 @@ mod tests {
             name: "Desk".into(),
             publisher: None,
         };
-        let error = check_manager_link(&dist, &by, Some(&link)).unwrap_err();
+        let release = format!("{}/counter@0.1.0", link.channel());
         assert_eq!(
-            error.message,
-            format!("Desk (local) named a channel this home does not read: {link}")
+            manager_read_request(&dist, &by, Some(&link), &release).unwrap(),
+            Some(consent::Request::Read {
+                asked_by: by.clone(),
+                link: link.to_string(),
+                release
+            })
+        );
+        assert!(
+            manager_read_request(&dist, &by, None, "release")
+                .unwrap()
+                .is_none()
         );
         assert_eq!(
             listener.accept().unwrap_err().kind(),

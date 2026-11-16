@@ -26,6 +26,9 @@ pub struct Fixture {
     _folders: tempfile::TempDir,
 }
 impl Fixture {
+    pub fn requests(&self) -> usize {
+        self._site.requests()
+    }
     pub fn new() -> Self {
         let folders = tempfile::tempdir().unwrap();
         let desk = folders.path().join("manager");

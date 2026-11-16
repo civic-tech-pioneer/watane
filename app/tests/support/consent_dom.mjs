@@ -24,7 +24,7 @@ class Node {
 function all(node) { return [node, ...node.children.flatMap(all)]; }
 let main, nodes, events, timers, calls;
 async function load(request) {
-  nodes = Object.fromEntries(['#approve', '#deny', 'main', '.mark', 'h1', '#error'].map(k => [k, new Node(k)]));
+  nodes = Object.fromEntries(['#approve', '#deny', '#stop', 'main', '.mark', 'h1', '#error'].map(k => [k, new Node(k)]));
   main = nodes.main; events = {}; timers = new Map(); calls = [];
   globalThis.document = { querySelector: key => nodes[key], createElement: tag => new Node(tag),
     body: {dataset:{}}, hasFocus: () => true };
@@ -39,7 +39,29 @@ async function load(request) {
 function expire() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } }
 const candidate = (choice, name) => ({choice, name, summary:'Book scores', version:'1.0.0',
   publisher:{name:'Frank',fingerprint:'frank-key'}, origin:'alice/books@1.0.0', installed:true, checked_at:0});
-if (process.argv[2] === 'manage') {
+if (process.argv[2] === 's82') {
+  for (const name of ['Desk', '<img src=x onerror=alert(1)>']) {
+    const asked_by = {local:'desk',name,publisher:null};
+    const link = '<img src=x onerror=alert(1)>';
+    for (const kind of ['read','install','pick','manage']) {
+      await load({kind,asked_by,link,release:'channel/books@1.0.0',mods:[],consumer:'Notes',provider:'Weather',cause:'offline',candidates:[],action:'enable',target:{name:'Weather',version:'1.0.0',publisher:null},users:[]});
+      assert.equal(main.children[0].textContent, `Asked by ${name} (local), which manages your mods`);
+      if (kind === 'read') {
+        assert.equal(nodes.h1.textContent, `${name} asks to read ${link}`);
+        assert.equal(main.children[1].textContent, 'To install channel/books@1.0.0, this home reads the channel of this link. It has not read it before.');
+      }
+      assert.equal(nodes['#stop'].textContent, `Deny and stop asks from ${name}`);
+      assert.equal(nodes['#stop'].hidden, false);
+      assert.equal(document.activeElement, nodes['#deny']);
+      assert.equal(nodes['#approve'].disabled, true);
+      assert.equal(all(main).filter(n => n.tagName === 'img').length, 0);
+      await nodes['#stop'].click();
+      assert.deepEqual(calls[0], {command:'consent_answer',args:{id:'request-id',approve:false,choice:null,withheld:[],stop:true}});
+    }
+  }
+  await load({kind:'install',mods:[]});
+  assert.equal(nodes['#stop'].hidden, true);
+} else if (process.argv[2] === 'manage') {
   const asked_by = {local:'desk',name:'Desk',publisher:null};
   const target = {local:'weather',name:'Weather',version:'1.2.3',publisher:null};
   for (const kind of ['install','pick']) {

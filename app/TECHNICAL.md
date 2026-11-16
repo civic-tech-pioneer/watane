@@ -886,22 +886,30 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   including publish; a signed home or a replica has no such line. The
   adapter sends it as a detail with an empty label, rendered as its value
   alone through `textContent`.
-- Buttons: `Deny` and `Approve`. `Deny` has the focus at load. The page has
+- Buttons: `Deny` and `Approve`, plus `Deny and stop asks from <asker name>`
+  after `Deny` for requests with `asked_by` (17.4). `Deny` has the focus at load. The page has
   no form and no default button; Enter and Space act only on the focused
   control.
 - `Approve` is `disabled` at load, on each window `blur`, and for 800 ms
   after each window `focus` (APP-F-16).
-- A click sends `consent_answer({id, approve, withheld, choice})`; `withheld` lists
+- A click sends `consent_answer({id, approve, withheld, choice, stop})`; `stop` is optional
+  and false by default (17.4); `withheld` lists
   each unchecked grant as `{local, key}`; `choice` is null except for a pick.
   `consent_answer` maps the arguments to `Answer` (step 5):
 
   | Request | `approve` | `choice` | Answer |
   |---|---|---|---|
-  | any | false | any | `Deny` |
+  | any (without `stop`) | false | any | `Deny` |
   | `install`, `sign` | true | null | `Approve { withheld }` |
   | `install`, `sign` | true | a text | `WrongAnswer` |
   | `pick` | true | a text | `Pick { choice }` (then `UnknownChoice` if no candidate has it) |
   | `pick` | true | null, or `withheld` not empty | `WrongAnswer` |
+
+  With `stop: true`, a request with `asked_by` maps to `Deny` regardless
+  of the other answer arguments; one without gives `WrongAnswer`. After
+  answering, withdraw `manage` through the same path as `grant_withdraw`,
+  including its page reload. `manage` and `read` accept approval only with
+  no withheld grants and no choice.
 
   The driver's `ask` returns the `Answer` JSON as before, with the new
   variant `{"answer":"pick","choice":"..."}`. No `Answer` is persisted. The Rust side answers the broker
@@ -988,7 +996,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `own_hints` | main | — | `[{node, seq: number \| null, id: string \| null, forked: bool}]` | G |
 | `identity_confirm_hint` | main | `node`, `seq`, `id` | `Status` | G |
 | `consent_get` | consent | — | `ConsentView \| null` | A |
-| `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]`, `choice: string \| null` (step 5: a pick) | `null` | A |
+| `consent_answer` | consent | `id`, `approve: bool`, `withheld: [{local, key}]`, `choice: string \| null` (step 5: a pick), optional `stop: bool` (17.4) | `null` | A |
 
 View types:
 
@@ -2093,7 +2101,7 @@ second app runtime is created.
 
 | `Ask` | The app |
 |---|---|
-| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), first `Request::Read` (17.4), with no network request before the answer (host Q30, answered b). A deny ends the request `Denied` and reads nothing. On approve, the app reads the link as its own install from a link does (`Core::plan_link`'s `open_link`), so dist learns that channel's bases. Then, for every request, the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`, whose consent shows as for any manager install. After an install from a link that was read this way, the channel is followed as `install_link` follows it (`follow_fetched`); a read that leads to no install follows nothing. Without a link, or with a link of a channel already read, dist fetches only through the bases it already holds (dist 5.11). |
+| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), first `Request::Read` (17.4), with no network request before the answer (host Q30, answered b). A deny ends the request `Denied` and reads nothing. On approve, the app reads the link with `node.read_link`, retaining its verified `Fetched` and link for planning and `follow_fetched`. Unlike `open_link`, this does not follow before the install. The existing dist checks for listed locations still apply. Then, for every request, the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`, whose consent shows as for any manager install. After an install from a link that was read this way, the channel is followed as `install_link` follows it (`follow_fetched`); a read that leads to no install follows nothing. Without a link, or with a link of a channel already read, dist fetches only through the bases it already holds (dist 5.11). |
 | `Update(local)` | The offer of that mod (`ModView.offer`, 9.5); none gives `Failed("no update is offered for <name>")`. Else install it as `Install` does, with `Requester::Mod(by)`. |
 | `Enable(local)` | `Request::Manage` with `Enable`; on approve, `host.enable`. |
 | `Grant { local, grant }` | `Request::Manage` with `Grant` and the grant line; on approve, `host.grant`. |
@@ -2199,9 +2207,9 @@ Ivy's index, as `tests/find.rs` does.
 
 | Test | Checks | Oracle |
 |---|---|---|
-| `consent::tests` (J) | a `Manage` request takes `Approve` with no withheld, or `Deny`; else `WrongAnswer` | the answers that the test submitted |
+| `consent::tests` (J) | `Manage` and `Read` take `Approve` with no withheld, or `Deny`; else `WrongAnswer`; `stop` denies only requests with `asked_by`, with legacy answers unchanged | the answers that the test submitted |
 | `words::tests` (J) | the `manage` row of 17.2; the asker label for a local and a published manager | literal strings |
-| `tests/gui_shell.rs` (J) | through the driver's `ask`: an `install` with `asked_by`, and a `manage` request of each action, show the title and lines of 17.4; a hostile asker name shows as text | `eval` of the consent DOM text |
+| `tests/gui_shell.rs` (J) | through the driver's `ask`: an `install` with `asked_by`, a `manage` request of each action, and `read` show the title and lines of 17.4; hostile links and asker names show as text; requests with `asked_by` show the stop button and keep Deny focused | `eval` of the consent DOM text |
 | `tests/manage.rs` (J) | S43 to S48 | below |
 | `tests/j10.rs` (J) | J10 on the real app: the steps of spec/FUNCTIONAL.md J10 with the fixtures above | the window labels the driver reports; the consent DOM text; `<home>/mods/` and `<home>/app/main` read with `std::fs`; Desk's page DOM text |
 
@@ -2243,7 +2251,9 @@ Scenarios of `tests/manage.rs`:
   installs it, and the channel is then followed.
 - **S82 Stop asks** (host Q32). Desk asks to enable Weather; `Deny and stop
   asks from Desk` ends it `denied`, Desk's `manage` grant reads withdrawn
-  in its details, and Desk's next request shows `not_granted`.
+  in its details, and Desk's next request shows `not_granted`. Withdrawal
+  reloads Desk as the details switch does (S81); after give-back, querying
+  the original request shows `denied`, and a new request can be approved.
 - **S82 Open page** (host Q31). Desk's `api.open-page` with `reading-list`
   opens the window `mod-reading-list`; with a consent request open it opens
   no window; for a mod with no page it shows `bad_request`.
@@ -2264,7 +2274,7 @@ Stage J is listed in section 12; its row is repeated here for reference:
 
 | Property | Enforced by | Test |
 |---|---|---|
-| A manager adds nothing without the participant | every `Ask` goes through the broker; an install with `Requester::Mod` always asks (host 12.1); a `Manage` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
+| A manager adds nothing without the participant | every `Ask` goes through the broker; an install with `Requester::Mod` always asks (host 12.1); a `Manage` or `Read` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
 | The participant sees who asks | `asked_by` and `Manage.asked_by`, from the host's `by`, never from the manager's arguments | S45, `gui_shell` |
 | A manager's install reads no new host without the participant | a `link` of a channel dist does not read waits for an approved `Read` request (17.4); otherwise dist fetches through known bases only | S45, S82 Read asked |
 | A manager cannot open a window over a consent | `OpenPage` opens nothing while `Broker::current` is some | S82 Open page |

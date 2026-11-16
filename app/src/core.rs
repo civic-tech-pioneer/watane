@@ -646,12 +646,13 @@ impl Core {
     pub async fn install_managed(
         self: &Arc<Self>,
         release: watane_dist::ReleaseRef,
+        read_link: Option<watane_dist::Link>,
         requester: watane_host::Requester,
         asked_by: crate::consent::Asker,
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
         self.install_resolved(
             release,
-            None,
+            read_link,
             Some(self.broker.clone()),
             requester,
             Some(asked_by),
@@ -671,10 +672,16 @@ impl Core {
         let background = pick.is_none();
         let result = async {
             let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
-                if let Some(link) = &link {
-                    planner.node.follow(link)?;
-                }
-                let fetched = planner.node.fetch(&target)?;
+                let fetched = if let Some(link) = &link
+                    && asked_by.is_some()
+                {
+                    read_managed_release(&planner.node, &target, link)?
+                } else {
+                    if let Some(link) = &link {
+                        planner.node.follow(link)?;
+                    }
+                    planner.node.fetch(&target)?
+                };
                 planner.plan_fetched(fetched, pick.as_deref(), asked_by.as_ref())
             })
             .await
@@ -938,6 +945,22 @@ impl Core {
             );
         }
         let _ = self.channels();
+    }
+}
+
+// Read only after the manager's read consent. Following waits for an install.
+fn read_managed_release(
+    node: &watane_node::Node,
+    release: &watane_dist::ReleaseRef,
+    link: &watane_dist::Link,
+) -> Result<watane_dist::Fetched, CmdError> {
+    let read = node.read_link(link)?;
+    if &read.info.reference == release {
+        Ok(read)
+    } else {
+        let mut fetched = node.fetch(release)?;
+        fetched.link = read.link;
+        Ok(fetched)
     }
 }
 
@@ -2001,6 +2024,53 @@ mod find_integration_tests {
         )
         .unwrap()
         .into_bytes()
+    }
+
+    #[test]
+    fn ac3_s82_read_retains_link_and_exact_release_without_following() {
+        let source_home = tempfile::tempdir().unwrap();
+        let source = open(&source_home);
+        let site = Site::serve(source.site_dir());
+        source.set_site_url(&site.base).unwrap();
+        let published = source.publish(package()).unwrap();
+        let reader_home = tempfile::tempdir().unwrap();
+        let reader = watane_node::Node::open_keyless(
+            reader_home.path(),
+            watane_node::Options {
+                dist: Options {
+                    listed_local: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let fetched = read_managed_release(
+            &reader,
+            &published.info.reference,
+            published.link.as_ref().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fetched.info.reference, published.info.reference);
+        assert_eq!(fetched.link, published.link);
+        assert!(reader.dist().followed().unwrap().is_empty());
+        // Planning alone leaves the read channel unfollowed.
+        let host_home = tempfile::tempdir().unwrap();
+        let host = watane_host::Host::open(
+            host_home.path(),
+            watane_host::Mode::Preview,
+            Default::default(),
+        )
+        .unwrap();
+        let plan = host
+            .plan(vec![watane_host::Source::Release {
+                package: fetched.package,
+                entry: fetched.entry,
+            }])
+            .unwrap();
+        assert!(!plan.entries().is_empty());
+        assert!(host.mods().is_empty());
+        assert!(reader.dist().followed().unwrap().is_empty());
     }
 
     #[test]

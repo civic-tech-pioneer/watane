@@ -977,3 +977,44 @@ No dependencies added.
   Round 2 native runs: driver suite with `--include-ignored` (front four
   skipped by name) 242 passed, 0 failed, J10 included; default 142 passed.
   Real `$TMPDIR/.tmp*`: 27 before and 27 after each run, same names.
+
+
+### S82 read consent and stop asks
+
+- Added `Request::Read` before any network access for a manager's unread
+  link. Denial ends the manager request as `denied`. Approval reads the
+  release, then uses the existing managed install/provider-pick path and
+  its separate install consent. A completed install follows the fetched
+  channel through `follow_fetched`.
+- Corrected app 17.3: dist's `open_link` immediately follows a channel;
+  `node.read_link` returns the verified package and link without following.
+  Retaining that `Fetched` keeps a denied install from adding a follow.
+  The existing dist listed-location checks remain; the loopback journey
+  uses the existing driver-only `WATANE_DRIVER_LISTED_LOCAL=1` switch.
+- Every consent with `asked_by` offers the stop button after Deny, outside
+  the approve delay. `stop` is optional; a true value denies only a request
+  with an asker. The command then calls the details switch's `Core::grant`
+  withdrawal path, including S81's page reload. The stop journey captures
+  the request id before reload, checks the withdrawn grant and unchanged
+  Weather, checks `not_granted`, then gives back the grant and reads that
+  original request as `denied` before approving a new request.
+- S45's unread-link expectation changed from `failed` to a read consent,
+  followed by `denied`; its no-connection and unchanged-mods assertions
+  remain. The previous confirm unit test now expects the Read request
+  rather than the obsolete unread-channel error. No tests were weakened.
+- Red/green: the read-answer test failed on the unknown `read` variant;
+  the stop-answer test failed on the missing answer mapping; the shipped
+  consent DOM test failed to finish rendering a read request; the real
+  read/planning test failed on the missing read adapter. They now pass.
+  The native tests could not reach their behavioral assertions: macOS
+  refuses the sandbox's HIServices XPC connection at app startup.
+- Validation: `cargo build` passes (one existing linker unwind-table
+  warning); both full test commands stop at the existing real pairing
+  test with `Failed to create netmon monitor`. The default suite with only
+  that test excluded passes 144 tests. All driver test targets compile;
+  the four selected consent/manager DOM tests pass. Strict driver clippy,
+  fmt and diff checks pass. The release-driver build fails at its required
+  debug-only guard. Native AC2, AC3, AC4, AC5 and AC6/J10 validation remains
+  partial in this sandbox; none of the four screen-taking tests was run.
+  Logs: `/tmp/s82-*.log`. No new dependency, command, capability, sibling
+  code or unlisted file changed.

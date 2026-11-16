@@ -60,6 +60,11 @@ pub enum Request {
         grant: Option<GrantLine>,
         users: Vec<String>,
     },
+    Read {
+        asked_by: Asker,
+        link: String,
+        release: String,
+    },
     Sign {
         statement: Statement,
         signer: Party,
@@ -168,6 +173,28 @@ pub struct Detail {
 }
 
 impl Request {
+    pub(crate) fn asked_by(&self) -> Option<&Asker> {
+        match self {
+            Self::Install { asked_by, .. } | Self::Pick { asked_by, .. } => asked_by.as_ref(),
+            Self::Manage { asked_by, .. } | Self::Read { asked_by, .. } => Some(asked_by),
+            _ => None,
+        }
+    }
+    pub(crate) fn answer_with_stop(
+        &self,
+        approve: bool,
+        choice: Option<String>,
+        withheld: Vec<Withheld>,
+        stop: bool,
+    ) -> Result<Answer, ConsentError> {
+        if stop {
+            return self
+                .asked_by()
+                .map(|_| Answer::Deny)
+                .ok_or(ConsentError::WrongAnswer);
+        }
+        self.answer(approve, choice, withheld)
+    }
     pub(crate) fn answer(
         &self,
         approve: bool,
@@ -180,11 +207,10 @@ impl Request {
         match (self, choice) {
             (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
             (Self::Pick { .. }, _) | (_, Some(_)) => Err(ConsentError::WrongAnswer),
-            (Self::Join { .. } | Self::Reach { .. } | Self::Manage { .. }, None)
-                if !withheld.is_empty() =>
-            {
-                Err(ConsentError::WrongAnswer)
-            }
+            (
+                Self::Join { .. } | Self::Reach { .. } | Self::Manage { .. } | Self::Read { .. },
+                None,
+            ) if !withheld.is_empty() => Err(ConsentError::WrongAnswer),
             (_, None) => Ok(Answer::Approve { withheld }),
         }
     }
@@ -312,7 +338,10 @@ impl Broker {
                     }
                 }
                 (
-                    Request::Join { .. } | Request::Reach { .. } | Request::Manage { .. },
+                    Request::Join { .. }
+                    | Request::Reach { .. }
+                    | Request::Manage { .. }
+                    | Request::Read { .. },
                     Answer::Approve { withheld },
                 ) if !withheld.is_empty() => {
                     return Err(ConsentError::WrongAnswer);
@@ -333,7 +362,8 @@ impl Broker {
                         | Request::Pick { .. }
                         | Request::Join { .. }
                         | Request::Reach { .. }
-                        | Request::Manage { .. } => false,
+                        | Request::Manage { .. }
+                        | Request::Read { .. } => false,
                     };
                     if !known {
                         return Err(ConsentError::UnknownGrant(format!(
@@ -415,6 +445,94 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::{future::Future, pin::pin, task::Poll, time::Duration};
+
+    #[test]
+    fn ac1_s82_stop_denies_only_manager_requests() {
+        let asker = json!({"local":"desk","name":"Desk","publisher":null});
+        let read = json!({"kind":"read","asked_by":asker,"link":"link","release":"release"});
+        let manage = json!({"kind":"manage","asked_by":asker,"action":"enable","target":{"local":"weather","name":"Weather","version":"1.0.0","publisher":null},"grant":null,"users":[]});
+        for mut value in [
+            serde_json::to_value(install()).unwrap(),
+            serde_json::to_value(pick()).unwrap(),
+            read,
+            manage,
+        ] {
+            value["asked_by"] = asker.clone();
+            let request: Request = serde_json::from_value(value).unwrap();
+            for approve in [false, true] {
+                assert_eq!(
+                    request
+                        .answer_with_stop(
+                            approve,
+                            Some("ignored".into()),
+                            vec![Withheld {
+                                local: "ignored".into(),
+                                key: "ignored".into()
+                            }],
+                            true
+                        )
+                        .unwrap(),
+                    Answer::Deny
+                );
+            }
+            assert_eq!(
+                request
+                    .answer_with_stop(false, None, vec![], false)
+                    .unwrap(),
+                request.answer(false, None, vec![]).unwrap()
+            );
+        }
+        for request in [install(), pick(), serde_json::from_value(json!({"kind":"sign","statement":"profile","signer":{"fingerprint":"key","name":null},"details":[]})).unwrap()] {
+            for approve in [false, true] {
+                assert!(matches!(request.answer_with_stop(approve, None, vec![], true), Err(ConsentError::WrongAnswer)));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn ac1_s82_read_answers() {
+        let request: Request = serde_json::from_value(json!({"kind":"read",
+            "asked_by":{"local":"desk","name":"Desk","publisher":null},
+            "link":"watane:channel@https://example.org/#books", "release":"channel/books@1.0.0"}))
+        .unwrap();
+        assert!(matches!(
+            request.answer(
+                true,
+                None,
+                vec![Withheld {
+                    local: "books".into(),
+                    key: "storage".into()
+                }]
+            ),
+            Err(ConsentError::WrongAnswer)
+        ));
+        assert!(matches!(
+            request.answer(true, Some("x".into()), vec![]),
+            Err(ConsentError::WrongAnswer)
+        ));
+        for answer in [Answer::Approve { withheld: vec![] }, Answer::Deny] {
+            let broker = Broker::new();
+            let mut pending = pin!(broker.ask(request.clone()));
+            queue(pending.as_mut()).await;
+            let id = broker.current().unwrap().0;
+            for wrong in [
+                Answer::Approve {
+                    withheld: vec![Withheld {
+                        local: "books".into(),
+                        key: "storage".into(),
+                    }],
+                },
+                Answer::Pick { choice: "x".into() },
+            ] {
+                assert!(matches!(
+                    broker.answer(&id, wrong),
+                    Err(ConsentError::WrongAnswer)
+                ));
+            }
+            broker.answer(&id, answer.clone()).unwrap();
+            assert_eq!(pending.await, answer);
+        }
+    }
 
     #[tokio::test]
     async fn ac2_manage_answers_and_legacy_requests() {

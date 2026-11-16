@@ -76,11 +76,17 @@ pub fn finish(app: &App) -> Value {
 }
 pub struct Site {
     pub base: String,
+    requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Site {
+    pub fn requests(&self) -> usize {
+        self.requests.load(std::sync::atomic::Ordering::SeqCst)
+    }
     pub fn serve(dir: std::path::PathBuf) -> Self {
+        let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = requests.clone();
         let (stop, rx) = tokio::sync::oneshot::channel();
         let (tx, ready) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
@@ -93,7 +99,11 @@ impl Site {
                     axum::serve(
                         listener,
                         axum::Router::new()
-                            .fallback_service(tower_http::services::ServeDir::new(dir)),
+                            .fallback_service(tower_http::services::ServeDir::new(dir))
+                            .layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+                                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                async move { next.run(request).await }
+                            })),
                     )
                     .with_graceful_shutdown(async move {
                         let _ = rx.await;
@@ -104,6 +114,7 @@ impl Site {
         });
         Self {
             base: ready.recv_timeout(TIMEOUT).unwrap(),
+            requests,
             stop: Some(stop),
             thread: Some(thread),
         }

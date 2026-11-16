@@ -3,6 +3,7 @@ import { signTitle, checkedLabel, partyLabel, askerLabel, manageTitle } from './
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
+const stop = document.querySelector('#stop');
 const main = document.querySelector('main');
 const grants = [];
 let timer;
@@ -39,22 +40,25 @@ function text(parent, tag, value) {
 function party(p) {
   return partyLabel(p);
 }
-async function answer(allow) {
+async function answer(allow, stopAsks = false) {
   if (!view || submitting || (allow && approve.disabled)) return;
   submitting = true;
   disarm();
   deny.disabled = true;
+  stop.disabled = true;
   try {
     const withheld = allow ? grants.filter(g => !g.input.checked).map(g => ({local: g.local, key: g.key})) : [];
-    await call('consent_answer', {id: view.id, approve: allow, withheld, choice: allow ? choice : null});
+    await call('consent_answer', {id: view.id, approve: allow, withheld, choice: allow ? choice : null, ...(stopAsks ? {stop: true} : {})});
   } catch (e) {
     text(document.querySelector('#error'), 'span', e.message || String(e));
     submitting = false;
     deny.disabled = false;
+    stop.disabled = false;
     arm();
   }
 }
 deny.onclick = () => answer(false);
+stop.onclick = () => answer(false, true);
 approve.onclick = () => answer(true);
 
 try {
@@ -62,11 +66,15 @@ try {
   if (view) {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
-    document.querySelector('h1').textContent = request.kind === 'manage' ? manageTitle(request) : request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : request.kind === 'join' ? 'Pair a machine' : request.kind === 'reach' ? (request.what === 'relay' ? 'Use a relay' : 'Turn on the DHT') : signTitle(request.statement);
+    document.querySelector('h1').textContent = request.kind === 'read' ? `${request.asked_by.name} asks to read ${request.link}` : request.kind === 'manage' ? manageTitle(request) : request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : request.kind === 'join' ? 'Pair a machine' : request.kind === 'reach' ? (request.what === 'relay' ? 'Use a relay' : 'Turn on the DHT') : signTitle(request.statement);
+    stop.hidden = !request.asked_by;
     if (request.asked_by) {
+      stop.textContent = `Deny and stop asks from ${request.asked_by.name}`;
       text(main, 'p', `Asked by ${askerLabel(request.asked_by)}, which manages your mods`);
     }
-    if (request.kind === 'manage') {
+    if (request.kind === 'read') {
+      text(main, 'p', `To install ${request.release}, this home reads the channel of this link. It has not read it before.`);
+    } else if (request.kind === 'manage') {
       const target = request.target;
       text(main, 'h2', target.name);
       text(main, 'p', target.version);

@@ -949,3 +949,83 @@ fn ac5_manager_page_dom() {
             .success()
     );
 }
+
+#[test]
+fn ac2_s82_read_and_stop_asks_consent() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    for name in ["Desk", "<img src=x onerror=alert(1)>"] {
+        let link = "watane:channel@https://example.org/#<img src=x onerror=alert(1)>";
+        let asker = json!({"local":"desk","name":name,"publisher":null});
+        let mut install = install("Weather");
+        install["asked_by"] = asker.clone();
+        let mut pick = pick_request();
+        pick["asked_by"] = asker.clone();
+        for request in [
+            json!({"kind":"read","asked_by":asker,"link":link,"release":"channel/books@1.0.0"}),
+            install,
+            pick,
+            json!({"kind":"manage","asked_by":asker,"action":"enable","target":{"local":"weather","name":"Weather","version":"1.0.0","publisher":null},"grant":null,"users":[]}),
+        ] {
+            let read = request["kind"] == "read";
+            let ask = app.ask(request);
+            consent(&app);
+            assert_eq!(
+                app.eval(
+                    "consent",
+                    "document.querySelector('main').firstElementChild.textContent"
+                ),
+                format!("Asked by {name} (local), which manages your mods")
+            );
+            assert_eq!(
+                app.eval("consent", "document.querySelector('#stop').textContent"),
+                format!("Deny and stop asks from {name}")
+            );
+            assert_eq!(
+                app.eval("consent", "document.querySelector('#stop').hidden"),
+                false
+            );
+            assert_eq!(app.eval("consent", "document.activeElement.id"), "deny");
+            if read {
+                assert_eq!(
+                    app.eval("consent", "document.querySelector('h1').textContent"),
+                    format!("{name} asks to read {link}")
+                );
+                assert_eq!(
+                    app.eval(
+                        "consent",
+                        "document.querySelector('main').lastElementChild.textContent"
+                    ),
+                    "To install channel/books@1.0.0, this home reads the channel of this link. It has not read it before."
+                );
+            }
+            assert_eq!(
+                app.eval("consent", "document.querySelectorAll('img').length"),
+                0
+            );
+            app.close("consent");
+            assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+        }
+    }
+    let ask = app.ask(install("Weather"));
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('#stop').hidden"),
+        true
+    );
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac2_s82_read_and_stop_page_dom() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "s82"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}

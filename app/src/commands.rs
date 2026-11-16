@@ -107,8 +107,10 @@ pub(crate) fn consent_answer(
     approve: bool,
     withheld: Vec<Withheld>,
     choice: Option<String>,
+    stop: Option<bool>,
 ) -> Result<(), CmdError> {
     record(&webview, "consent_answer");
+    let stop = stop.unwrap_or(false);
     let result = (|| {
         let (head, request) = state
             .broker
@@ -117,10 +119,15 @@ pub(crate) fn consent_answer(
         if head != id {
             return Err(crate::consent::ConsentError::Stale);
         }
-        let answer = request.answer(approve, choice, withheld)?;
-        state.broker.answer(&id, answer)
+        let answer = request.answer_with_stop(approve, choice, withheld, stop)?;
+        state.broker.answer(&id, answer)?;
+        Ok::<_, crate::consent::ConsentError>(request)
     })();
-    result.map_err(|e| CmdError::new("refused", e.to_string()))
+    let request = result.map_err(|e| CmdError::new("refused", e.to_string()))?;
+    if stop && let Some(asker) = request.asked_by() {
+        core(&state)?.grant(&asker.local, "manage", false)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
