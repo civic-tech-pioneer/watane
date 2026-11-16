@@ -887,3 +887,32 @@
   Connection Invalid, _LSModifyNotification -50, then driver readiness
   timeout. AC1–AC4 native validation and AC6 remain PARTIAL for the validator
   in a working GUI session. No screen-taking front test was run.
+
+## S81-2: own machines wording
+
+The anchor heading names its role once; replica headings say whose machine
+it is. The local machine row omits remote liveness fields. Join disables
+before reading status and stays disabled across refreshes; failure and
+cancel allow retry. Relay and DHT controls follow the own-machines switch.
+A first signing consent warns that the home can no longer join; restored
+unconfirmed-head errors point to Settings, identity, From your machines
+(or restore again). These are app mappings; no node/net/dist changes.
+
+Changed fact in tests/j8.rs: the restored publish refusal now gives the
+Settings recovery path instead of dist's bare cause. No check is weakened.
+
+Validation in the sandbox: S81-2 unit and JavaScript DOM regression tests
+pass; build, clippy with driver and `-D warnings`, and fmt pass. A release
+build with driver fails at the intended compile guard. The driver suite
+uses `--include-ignored` and the four explicit front-test skips. GUI tests,
+including `ac1_journey_j8`, cannot reach app readiness: HIServices XPC
+returns Connection Invalid. After repeated startup failures, the remaining
+driver run was stopped; J8 was also attempted directly. The existing real
+pairing unit test also
+cannot create its netmon monitor. AC8 therefore needs validator execution
+in a macOS GUI session. No test or security check was weakened.
+
+`src/lib.rs` is an unlisted task file: the existing `From<DistError>` for
+`CmdError` lives there, and mapping the restored-head error there keeps
+command and HTTP messages consistent without duplicating the conversion.
+No dependencies added.

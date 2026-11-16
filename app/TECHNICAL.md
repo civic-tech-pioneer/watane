@@ -818,6 +818,12 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   None is selected at load. The approve button reads `Use this mod`; it
   is also disabled while no candidate is selected. A click sends
   `consent_answer({id, approve: true, withheld: [], choice})`.
+- A Sign request whose current `Status.identity.signed` is false and whose
+  home holds an identity adds the standalone line `After this, this home
+  cannot join your other machines.` This is read at the signing callback,
+  including publish; a signed home or a replica has no such line. The
+  adapter sends it as a detail with an empty label, rendered as its value
+  alone through `textContent`.
 - Buttons: `Deny` and `Approve`. `Deny` has the focus at load. The page has
   no form and no default button; Enter and Space act only on the focused
   control.
@@ -1484,6 +1490,16 @@ commands `identity_*`, `site_set_url`, `release_withdraw`, `index_list`,
 `index_include` and `index_unlist` give `bad_input` with dist's
 `NoIdentity` text.
 
+The machine heading reads `This machine: <short> · anchor` on the anchor,
+`This machine: <short> · <full|light> of <anchor short>` on a replica,
+and `This machine: <short> · alone` alone. A row marked `you` reads
+`this machine` and omits online/offline and `Last seen`; other rows keep
+those fields. `Last pull` is unchanged.
+
+While own machines are off, `relay-url`, `relay-add`, every `Remove relay`
+button, and `dht-on` are disabled. Turning on enables them, including
+existing relay rows that a refresh does not rebuild.
+
 **The machines thread.** One thread (not a tokio task: `net` blocks)
 takes `node.net().events()` and updates `Machines`:
 
@@ -1526,7 +1542,11 @@ per machine; net gives none in D1).
   `node.join` in `spawn_blocking`; while it waits, `joining` is set, and
   the view shows `This machine: <short key>. Confirm it on <anchor short
   key>.` A home that signed calls `machine_join` directly without the
-  question and shows node's `IdentityInUse` text.
+  question and shows node's `IdentityInUse` text. The first click disables
+  `Join` synchronously, before reading status or refreshing machines; a
+  pending join stays disabled across refreshes and sends only one
+  `machine_join`. A failed join, failed status read, or cancelled question
+  enables it again (unless the machines view still reports a join).
 - `machine_remove(node)`: the page asks `Remove <short key>? It stops
   being trusted when your machines learn of it.` (`Cancel` focused);
   `net.remove_device`. `machine_role`: `net.set_role`. `machines_expiry`:
@@ -1551,6 +1571,12 @@ machine's short key and `position <seq>`, a forked one marked `forked`
 with no button, and a button `Use this` per hint. The view says that a
 machine's answer is its claim and that watane checks every statement it
 reads.
+
+A publish refused with dist's `OwnHeadUnconfirmed` keeps its
+`publish_refused` API code (409). Both the command and `/api/publish`
+message read `Confirm the restored own head before signing: in Settings,
+identity, choose From your machines, or restore again.` The app maps this
+error; dist's text is unchanged.
 
 **Consent page.** `Join` shows the title `Pair a machine`, the `text`,
 and the short key in large type; `Reach` shows `Use a relay` or `Turn on
@@ -1951,8 +1977,8 @@ Each answer is the one this spec uses.
    each grant.
 10. **How the app shows own machines** (net Q3, step 8). Answer: the
     machines view of 9.8: each machine's short key, role, this machine and
-    anchor marks, online or last seen, and the last pull from it, from
-    `net`'s events in memory. No heads count per machine: `net` gives none
+    anchor marks, online or last seen for other machines, and the last pull
+    from it, from `net`'s events in memory. No heads count per machine: `net` gives none
     in D1, and the last pull says how current a machine keeps this one.
 11. **Turning own machines on is no consent request.** W32 asks for a
     consent per endpoint that someone else runs. Answer: the relay and the

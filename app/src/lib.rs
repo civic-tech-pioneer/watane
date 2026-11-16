@@ -78,6 +78,9 @@ fn serve_error(error: &watane_host::HostError) -> String {
 impl From<watane_dist::DistError> for CmdError {
     fn from(e: watane_dist::DistError) -> Self {
         let message = match &e {
+            watane_dist::DistError::OwnHeadUnconfirmed => {
+                "Confirm the restored own head before signing: in Settings, identity, choose From your machines, or restore again.".into()
+            }
             watane_dist::DistError::VersionExists { release, .. } => {
                 format!("release {release} already exists")
             }

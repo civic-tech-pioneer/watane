@@ -379,7 +379,7 @@ fn ac1_journey_j8() {
     assert_eq!(refused["error"]["code"], "publish_refused");
     assert_eq!(
         refused["error"]["message"],
-        "confirm the restored own head before signing"
+        "Confirm the restored own head before signing: in Settings, identity, choose From your machines, or restore again."
     );
     assert!(!restored.windows().iter().any(|w| w["label"] == "consent"));
     invoke(

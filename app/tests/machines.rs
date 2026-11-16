@@ -805,3 +805,66 @@ fn regress_s75_join_question_on_signed_home() {
     );
     assert!(app.quit().success());
 }
+
+fn wording_test(criterion: &str) {
+    let output = std::process::Command::new("node")
+        .args(["tests/support/machines.cjs", criterion])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+#[test]
+fn ac1_s81_machine_line() {
+    wording_test("ac1");
+}
+#[test]
+fn ac2_s81_this_machine_row() {
+    wording_test("ac2");
+}
+#[test]
+fn ac3_s81_join_disables_before_refresh() {
+    wording_test("ac3");
+}
+#[test]
+fn ac4_s81_reach_controls_follow_switch() {
+    wording_test("ac4");
+}
+
+#[test]
+fn ac5_s81_consent_renders_first_signature_line() {
+    let output = std::process::Command::new("node")
+        .arg("tests/support/sign-consent.cjs")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ac7_s81_specs_record_machine_wording() {
+    let technical = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md"),
+    )
+    .unwrap()
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ");
+    for text in [
+        "This machine: <short> · anchor",
+        "This machine: <short> · <full|light> of <anchor short>",
+        "This machine: <short> · alone",
+        "After this, this home cannot join your other machines.",
+        "Confirm the restored own head before signing: in Settings, identity, choose From your machines, or restore again.",
+    ] {
+        assert!(technical.contains(text), "missing wording: {text}");
+    }
+}

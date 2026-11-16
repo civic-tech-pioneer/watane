@@ -529,6 +529,27 @@ mod tests {
         (status, headers, body)
     }
     #[tokio::test]
+    async fn ac6_s81_restored_publish_names_settings_and_machine_hints() {
+        let home = tempfile::tempdir().unwrap();
+        let original = open(&home);
+        original.publish(package()).unwrap();
+        let backup = original.backup("twelve character passphrase").unwrap();
+        let restored_home = tempfile::tempdir().unwrap();
+        let dist = open(&restored_home);
+        dist.restore(&backup, "twelve character passphrase")
+            .unwrap();
+        assert!(!dist.own_confirmed().unwrap());
+        let command = CmdError::from(DistError::OwnHeadUnconfirmed);
+        assert_eq!(command.code, "dist");
+        assert!(command.message.contains("Settings"));
+        assert!(command.message.contains("From your machines"));
+        let (status, _, body) =
+            request(router(Some(dist)), Method::POST, "/api/publish", package()).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "publish_refused");
+        assert_eq!(body["error"]["message"], command.message);
+    }
+    #[tokio::test]
     async fn ac3_no_identity_api_is_conflict_with_dist_text() {
         let home = tempfile::tempdir().unwrap();
         let dist = Arc::new(Dist::open_keyless(home.path(), Default::default()).unwrap());

@@ -127,7 +127,7 @@ try {
       if (request.kind === 'join') text(main, 'h2', request.node);
     } else {
       text(main, 'p', party(request.signer));
-      for (const detail of request.details) text(main, 'p', `${detail.label}: ${detail.value}`);
+      for (const detail of request.details) text(main, 'p', detail.label ? `${detail.label}: ${detail.value}` : detail.value);
     }
     arm();
     document.body.dataset.ready = 'true';

@@ -414,7 +414,10 @@ pub(crate) struct DistConfirm {
 impl watane_dist::Confirm for DistConfirm {
     fn confirm(&self, request: &watane_dist::SignRequest) -> watane_dist::Decision {
         let mut profile_error = None;
+        let mut first_signature = false;
         if let Some(dist) = self.dist.get().and_then(Weak::upgrade) {
+            first_signature =
+                dist.identity().is_some() && dist.own().is_ok_and(|own| own.head.is_none());
             let mut keys = vec![request.channel];
             match &request.statement {
                 watane_dist::Statement::Release { release, .. } => {
@@ -436,6 +439,12 @@ impl watane_dist::Confirm for DistConfirm {
             }
         }
         let mut view = sign_view(request, &self.parties);
+        if first_signature && let consent::Request::Sign { details, .. } = &mut view {
+            details.push(consent::Detail {
+                label: String::new(),
+                value: "After this, this home cannot join your other machines.".into(),
+            });
+        }
         if let Some(cause) = profile_error
             && let consent::Request::Sign { details, .. } = &mut view
         {
@@ -965,6 +974,51 @@ mod tests {
                     request.entries[0].origin.as_ref().unwrap()
                 )
             );
+        }
+    }
+    #[test]
+    fn ac5_s81_first_publish_warns_join_is_lost() {
+        let home = tempfile::tempdir().unwrap();
+        let broker = consent::Broker::new();
+        let confirm = Arc::new(DistConfirm {
+            broker: broker.clone(),
+            parties: Arc::new(Parties::new()),
+            dist: OnceLock::new(),
+        });
+        let dist = Arc::new(
+            watane_dist::Dist::open(home.path(), confirm.clone(), Default::default()).unwrap(),
+        );
+        confirm.dist.set(Arc::downgrade(&dist)).unwrap();
+        for (fixture, warning) in [("reading-list", true), ("hostile", false)] {
+            let package = watane_host::watane_pkg::pack(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures")
+                    .join(fixture),
+                false,
+            )
+            .unwrap()
+            .into_bytes();
+            let signing = dist.clone();
+            let pending = std::thread::spawn(move || signing.publish(package));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let (id, request) = loop {
+                if let Some(current) = broker.current() {
+                    break current;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::yield_now();
+            };
+            let consent::Request::Sign { details, .. } = request else {
+                panic!()
+            };
+            let found = details
+                .iter()
+                .any(|d| d.value == "After this, this home cannot join your other machines.");
+            broker
+                .answer(&id, consent::Answer::Approve { withheld: vec![] })
+                .unwrap();
+            pending.join().unwrap().unwrap();
+            assert_eq!(found, warning);
         }
     }
     #[test]
