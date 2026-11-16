@@ -598,7 +598,10 @@ fn ac2_s51_dev_install_adopts_main_and_update_keeps_it_unset() {
     let dev = support::dev::workspace_dev();
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
-    let mut command = support::dev::dev_command(&dev, &app, &fixture("desk"), &["install"]);
+    // A copy: watane-dev writes wit/deps into the folder it installs.
+    let desk = tempfile::tempdir().unwrap();
+    support::journey::copy_dir(&fixture("desk"), desk.path());
+    let mut command = support::dev::dev_command(&dev, &app, desk.path(), &["install"]);
     let child = command
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
