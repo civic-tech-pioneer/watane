@@ -661,3 +661,63 @@
   broker test; the driver run passes its other 94 library tests before
   stopping there. No `front:` test was run. The failing tests remain
   enabled, and no acceptance assertion was weakened for the environment.
+
+## S75-2 — J8 journey (native validation incomplete)
+
+- Added one driver-only, ignored slow `ac1_journey_j8` in `tests/j8.rs`.
+  It uses the committed reading-list component, hidden app homes with
+  loopback net binds, and the existing real `watane-node` process helper.
+  No dependency, app/src code, existing test, or shared helper changed.
+- AC1/AC2 compare the CLI short key with the consent DOM, check the
+  joined list and Alice's online full machine, and refuse a reused code
+  in a fresh home. AC3 polls the actual server package file against the
+  packed fixture bytes with a five-second deadline starting at approval;
+  no static server has been created at that point.
+- AC4 creates Ivy with watane_dist only after AC3. Ivy lists Alice's mod
+  at Alice's local API origin, which serves no channel/site. Alice owns
+  those entries already, so choosing Ivy needs no publisher web host.
+  The server's printed verified pull proves it holds Ivy's listing.
+  Ivy's site is stopped and Alice's net turned off before the light app
+  searches and installs, so the server is its only full machine. The hit
+  must name that server alone and be verified; the mod opens and stores
+  a book through its page.
+- AC5 warms the server's blob reference by installation, clears the light
+  package cache, changes one server-file byte, and requires fetch failure,
+  a hash-mismatch problem naming the server, and no cached bad package.
+  AC6 repairs the bytes and restarts the light app (bad peers are dropped
+  for the session), then proves a successful byte-equal fetch before
+  removing it. The light app stays offline on its old device list until
+  the server prints the new devices-change event. Its next fetch must
+  fail while it still reports Light, with no package cached. Node's CLI
+  prints that devices-change event; it does not emit a new Refused event
+  merely for denying an untrusted caller's request.
+- AC7 follows spec/FUNCTIONAL J8 and the fixed node interface: the restored
+  identity remains anchor, issues a full code, and the existing server
+  re-joins with `--replace`. Making the restored app join would delete its
+  restored identity and make hint confirmation/publishing impossible.
+  The identity DOM must show the server and seq; publish must return the
+  unconfirmed-head error before confirmation, then publish seq 1 after
+  the server's seq-0 hint. AC8 checks every machine's persisted empty
+  relays and false DHT, including the refused-code home.
+- Test-first limit: the initial AC1-only journey and the complete journey
+  both compile but fail before app readiness: macOS rejects
+  `com.apple.hiservices-xpcservice` with Connection Invalid. None of the
+  acceptance assertions can run here, so this is not a demonstrated
+  acceptance red/green cycle. Assertions remain enabled and unchanged.
+- Checks: build succeeds (the existing compact-unwind linker
+  warning); all-targets driver clippy with warnings denied and fmt pass.
+  The default suite fails only its existing real-network pairing test at
+  `Failed to create netmon monitor`; its other suites pass. Release with
+  driver fails at the required debug-only compile guard.
+- The requested J8 run and J2/J3/J4/J5/J9 `--include-ignored` regression
+  command all fail at the same app-readiness boundary, before their
+  journey assertions. J5's non-window origin check passes. Both full
+  default/driver commands and every ignored-journey command explicitly
+  exclude the four task-listed focus test names; no `front:` test runs.
+- The full driver run (`--no-fail-fast`) completes: 140 tests pass and
+  50 fail. The real-pairing broker fails to create netmon; the native
+  window failures time out before app readiness with the same macOS
+  service rejection. The default suite completes with 126 passes and
+  that one netmon failure. J8's dedicated driver compile (`--no-run`)
+  succeeds. These results do not establish AC1–AC8 or AC9's journey
+  regression requirement; a native macOS validator must still run them.
