@@ -2,15 +2,17 @@
 //! machines (node TECHNICAL 6).
 use std::{
     error::Error,
-    io::{BufRead, Write},
+    io::{BufRead, IsTerminal, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
     process::ExitCode,
+    sync::Arc,
     task::Poll,
 };
 use watane_node::{
-    Machine, Node, NodeError, Options,
-    net::{DeviceList, Event, NetError, NodeKey, PairCode, Role},
+    DistHoldings, Machine, Node, NodeError, Options,
+    dist::DistError,
+    net::{DeviceList, Event, Net, NetError, NodeKey, PairCode, Role},
     words,
 };
 
@@ -22,6 +24,7 @@ const USAGE: &str = "usage:
   watane-node --home <dir> relay remove <url>
   watane-node --home <dir> dht on [--yes]
   watane-node --home <dir> dht off
+  watane-node --help
 WATANE_NODE_HOME stands in for --home.";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -184,6 +187,29 @@ fn machines(list: &DeviceList) -> String {
         .join(", ")
 }
 
+/// Names each node's short key once: a later `node <key>` that repeats an earlier key goes.
+fn once(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("node ") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 5..];
+        let key: String = after
+            .chars()
+            .take_while(char::is_ascii_alphanumeric)
+            .collect();
+        if key.len() == 8 && out.contains(&key) {
+            let tail = &after[8..];
+            rest = tail.strip_prefix(' ').unwrap_or(tail);
+        } else {
+            out.push_str("node ");
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The line of `run` for an event (6.2); `None` for an event that prints nothing.
 fn line(event: &Event) -> Option<String> {
     Some(match event {
@@ -196,8 +222,10 @@ fn line(event: &Event) -> Option<String> {
                 from.short()
             )
         }
-        Event::Refused { node, cause } => format!("refused {}: {cause}", node.short()),
-        Event::Unreachable { node, cause } => format!("unreachable {}: {cause}", node.short()),
+        Event::Refused { node, cause } => once(&format!("refused {}: {cause}", node.short())),
+        Event::Unreachable { node, cause } => {
+            once(&format!("unreachable {}: {cause}", node.short()))
+        }
         Event::DevicesChanged(list) => format!("machines {}: {}", list.seq, machines(list)),
         Event::JoinAsked { .. } => return None,
     })
@@ -214,12 +242,14 @@ fn chain(error: &dyn Error) -> String {
         }
         next = cause.source();
     }
-    text
+    once(&text)
 }
 
 enum Fail {
     Usage(String),
     Failed(String),
+    /// `run` holds the home (the lock of dist).
+    Busy(String),
 }
 
 impl From<NodeError> for Fail {
@@ -257,7 +287,13 @@ fn switches(node: &Node) -> Switches {
 /// A node home with net off: no command but `join` and `run` makes contact (Q1).
 fn open(home: &Path) -> Result<Node, Fail> {
     std::fs::create_dir_all(home).map_err(|e| failed(format!("{}: {e}", home.display())))?;
-    Ok(Node::open_keyless(home, Options::default())?)
+    match Node::open_keyless(home, Options::default()) {
+        Err(NodeError::Dist(DistError::Locked { .. })) => Err(Fail::Busy(format!(
+            "another watane-node is running on this home ({}); stop it first",
+            home.display()
+        ))),
+        other => Ok(other?),
+    }
 }
 
 fn set(
@@ -407,14 +443,32 @@ fn run(home: &Path, relay: Option<SocketAddr>, bind: Option<SocketAddr>) -> Resu
     Ok(())
 }
 
-fn status(home: &Path) -> Result<(), Fail> {
-    let node = open(home)?;
-    let s = switches(&node);
-    let key = node.net().node_key();
-    out(&format!("node {key}"));
+fn relays_line(relays: &[url::Url]) -> String {
+    format!(
+        "relays {}",
+        if relays.is_empty() {
+            "none".to_owned()
+        } else {
+            relays
+                .iter()
+                .map(url::Url::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    )
+}
+
+fn dht_line(dht: bool) -> String {
+    format!("dht {}", if dht { "on" } else { "off" })
+}
+
+/// The lines that come from net's files alone.
+fn net_lines(net: &Net) {
+    let o = net.options();
+    out(&format!("node {}", net.node_key()));
     out(&format!(
         "machine {}",
-        match node.machine() {
+        match Machine::of(net) {
             Machine::Alone => "alone",
             Machine::Anchor => "anchor",
             Machine::Full => "full",
@@ -422,7 +476,7 @@ fn status(home: &Path) -> Result<(), Fail> {
             Machine::Removed => "removed",
         }
     ));
-    match node.net().devices() {
+    match net.devices() {
         None => {
             out("anchor none");
             out("devices none");
@@ -440,19 +494,28 @@ fn status(home: &Path) -> Result<(), Fail> {
             ));
         }
     }
-    out(&format!(
-        "relays {}",
-        if s.relays.is_empty() {
-            "none".to_owned()
-        } else {
-            s.relays
-                .iter()
-                .map(url::Url::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
+    out(&relays_line(&o.relays));
+    out(&dht_line(o.dht));
+}
+
+fn status(home: &Path) -> Result<(), Fail> {
+    let node = match open(home) {
+        Ok(node) => node,
+        Err(Fail::Busy(_)) => {
+            // `run` holds the home: read net's files alone, which write nothing
+            let net = Net::open(
+                &home.join("net"),
+                Arc::new(DistHoldings::empty()),
+                Default::default(),
+            )?;
+            net_lines(&net);
+            out("channels and packages: watane-node run is running on this home");
+            net.close();
+            return Ok(());
         }
-    ));
-    out(&format!("dht {}", if s.dht { "on" } else { "off" }));
+        Err(e) => return Err(e),
+    };
+    net_lines(node.net());
     let dist = node.dist();
     out(&format!(
         "channels held {}",
@@ -477,7 +540,12 @@ fn consent(text: &str, yes: bool) -> bool {
     let _ = write!(std::io::stdout(), "Turn this on? [y/N] ");
     let _ = std::io::stdout().flush();
     let mut answer = String::new();
-    if std::io::stdin().lock().read_line(&mut answer).is_err() {
+    let read = std::io::stdin().lock().read_line(&mut answer);
+    if !std::io::stdin().is_terminal() {
+        // no one typed the line break: the next output starts on its own line
+        out(answer.trim());
+    }
+    if read.is_err() {
         return false;
     }
     matches!(answer.trim().to_lowercase().as_str(), "y" | "yes")
@@ -492,6 +560,11 @@ fn store(home: &Path, relays: Option<Vec<url::Url>>, dht: Option<bool>) -> Resul
         dht: dht.unwrap_or(s.dht),
         ..Default::default()
     })?;
+    let now = switches(&node);
+    out(&match dht {
+        Some(_) => dht_line(now.dht),
+        None => relays_line(&now.relays),
+    });
     node.close();
     Ok(())
 }
@@ -542,8 +615,22 @@ fn dispatch(args: Args) -> Result<(), Fail> {
     }
 }
 
+/// `--help` or `-h` anywhere, or `help` as the first word.
+fn wants_help(args: &[String]) -> bool {
+    let first_word = if args.first().is_some_and(|a| a == "--home") {
+        args.get(2)
+    } else {
+        args.first()
+    };
+    first_word.is_some_and(|a| a == "help") || args.iter().any(|a| a == "--help" || a == "-h")
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if wants_help(&args) {
+        out(USAGE);
+        return ExitCode::SUCCESS;
+    }
     let result = parse(&args, std::env::var("WATANE_NODE_HOME").ok())
         .map_err(Fail::Usage)
         .and_then(dispatch);
@@ -553,7 +640,7 @@ fn main() -> ExitCode {
             eprintln!("watane-node: {text}\n{USAGE}");
             ExitCode::from(2)
         }
-        Err(Fail::Failed(text)) => {
+        Err(Fail::Failed(text) | Fail::Busy(text)) => {
             eprintln!("watane-node: {text}");
             ExitCode::from(1)
         }
@@ -759,5 +846,38 @@ mod tests {
         #[error("inner")]
         struct Inner;
         assert_eq!(chain(&Outer(Inner)), "outer: inner");
+        let node = NodeKey::from_bytes([7; 32]);
+        let nested = NodeError::from(NetError::Unreachable {
+            node,
+            cause: format!("node {} refused: not_allowed", node.short()),
+        });
+        let text = chain(&nested);
+        assert_eq!(text.matches(&node.short()).count(), 1, "{text}");
+        assert_eq!(
+            text,
+            format!("node {} is unreachable: refused: not_allowed", node.short())
+        );
+        let event = Event::Unreachable {
+            node,
+            cause: format!("node {} refused: not_allowed", node.short()),
+        };
+        let text = line(&event).unwrap();
+        assert_eq!(text.matches(&node.short()).count(), 1, "{text}");
+    }
+
+    #[test]
+    fn ac1_help_is_asked_for_in_four_ways() {
+        for yes in [
+            "--help",
+            "-h",
+            "help",
+            "--home h help",
+            "--home h run --help",
+        ] {
+            assert!(wants_help(&args(yes)), "{yes}");
+        }
+        for no in ["status", "--home h status --wat", ""] {
+            assert!(!wants_help(&args(no)), "{no}");
+        }
     }
 }

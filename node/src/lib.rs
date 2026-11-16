@@ -33,6 +33,24 @@ pub enum Machine {
     Removed,
 }
 
+impl Machine {
+    /// The place that `net`'s device list gives its own node.
+    pub fn of(net: &Net) -> Machine {
+        let Some(list) = net.devices() else {
+            return Machine::Alone;
+        };
+        let me = net.node_key();
+        if list.anchor == me {
+            return Machine::Anchor;
+        }
+        match list.devices.iter().find(|(key, _)| *key == me) {
+            Some((_, watane_net::Role::Full)) => Machine::Full,
+            Some((_, watane_net::Role::Light)) => Machine::Light,
+            None => Machine::Removed,
+        }
+    }
+}
+
 /// A hit of this home's search, with the machines that gave it (5.4).
 #[derive(Clone, Debug)]
 pub struct NodeHit {
@@ -107,18 +125,7 @@ impl Node {
     }
 
     pub fn machine(&self) -> Machine {
-        let Some(list) = self.net.devices() else {
-            return Machine::Alone;
-        };
-        let me = self.net.node_key();
-        if list.anchor == me {
-            return Machine::Anchor;
-        }
-        match list.devices.iter().find(|(key, _)| *key == me) {
-            Some((_, watane_net::Role::Full)) => Machine::Full,
-            Some((_, watane_net::Role::Light)) => Machine::Light,
-            None => Machine::Removed,
-        }
+        Machine::of(&self.net)
     }
 
     pub fn close(self) {

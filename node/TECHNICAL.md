@@ -365,7 +365,12 @@ watane-node --home <dir> relay add <url> [--yes]    NODE-F-17
 watane-node --home <dir> relay remove <url>
 watane-node --home <dir> dht on [--yes]             NODE-F-17
 watane-node --home <dir> dht off
+watane-node --help
 ```
+
+`--help` or `-h` anywhere, or `help` as the first word, prints this usage on
+stdout and exits 0; no home is needed. Any other unknown flag exits 2 with
+`unknown flag <flag>` and the usage.
 
 `--home` is required; `WATANE_NODE_HOME` stands in for it. The home is
 created when missing. A home with `home.json` (a home of the app or of
@@ -400,21 +405,34 @@ identity. Arguments are parsed by hand, as `watane` does.
   each `net` event (6.2); the main thread waits for SIGINT or SIGTERM
   (tokio's `signal` on a runtime of the main thread that does nothing else; no node or net call runs inside it), then `node.close()` and exit 0. `net` is on only while
   `join` or `run` runs.
+- **a home that another watane-node holds**: `Dist` keeps its lock while
+  `run` runs. A command that finds `DistError::Locked` exits 1 with
+  `another watane-node is running on this home (<home>); stop it first`
+  and changes nothing; `status` instead opens `net` alone (`Net::open` on
+  `<home>/net`, net off, an empty holder; it writes nothing), prints its
+  lines for node, machine, anchor, devices, relays and dht, and in place
+  of the channel and package lines `channels and packages: watane-node run
+  is running on this home`.
 - **status**: no network. Node key, machine, anchor, device list (seq,
   expiry, each machine), relays, DHT on or off, the number of held
   channels and of missing packages.
 - **relay add**, **dht on**: print the consent text of section 7. With
   `--yes`, or a line `y` or `yes` on standard input, store it with `net.set_options`;
-  else change nothing and exit 1 with `not changed`. **relay remove**,
+  else change nothing and exit 1 with `not changed`. When standard input
+  is not a terminal, the program writes the answer it read (trimmed) and a
+  line break after `Turn this on? [y/N] `, so the next output starts on its
+  own line. After a change, the command prints the line `status` prints for
+  it: `dht on` or `dht off`, `relays <list|none>`. **relay remove**,
   **dht off** need no question: they only take something away.
 
 Exit codes: 0 done; 1 a refusal or failure, with one line
 `watane-node: <cause>` on stderr (the whole cause chain, each cause once,
-as app 13 does); 2 bad arguments, with the usage.
+as app 13 does, and each node's short key once: `node K is unreachable:
+refused: not_allowed`, not `node K ... node K refused`); 2 bad arguments, with the usage.
 
 ### 6.2 Output of `run`
 
-One line per event on stdout, in this form, so that a test and a person
+One line per event on stdout (a repeated `node <short>` in a cause is dropped), in this form, so that a test and a person
 read the same text (NODE-F-18):
 
 | Event (net 3) | Line |
@@ -550,4 +568,5 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-8 | Only a replica keeps: on the anchor, a `Kept` pull is ingested as `Asked`, with no record. | The anchor's held set comes only from the participant's own acts there (follow, index, install), so an unfollow on the anchor takes effect and the anchor does not collect what the light machines follow. Undo: cheap. |
 | NO-9 | The program reads `relays` and `dht` with `Net::options()`, to keep them when it changes the other switch and to print them in `status`. | `net` keeps them from `book.json` at open (net 5.1) and gives them back. Undo: cheap. |
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
+| NO-13 | `status` beside a running `run` reads `net`'s files alone and says that the channel and package lines are `run`'s. | `run` holds dist's lock for as long as it runs; net's files are read without the lock and the command writes nothing. Undo: cheap. |
 | NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |

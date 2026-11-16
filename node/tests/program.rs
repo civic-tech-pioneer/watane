@@ -584,3 +584,151 @@ fn s10_a_signal_during_join_ends_it_with_net_off() {
     assert_eq!(prog.stderr().trim(), "watane-node: interrupted");
     assert_eq!(book(dirs[1].path())["on"], false);
 }
+
+fn usage_ok(done: &Done) {
+    assert_eq!(done.code, 0, "{}", done.stderr);
+    assert!(done.stdout.starts_with("usage:"), "{}", done.stdout);
+}
+
+#[test]
+fn ac1_help_prints_the_usage_on_stdout_with_no_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("never");
+    for args in [
+        &["--help"][..],
+        &["-h"],
+        &["help"],
+        &["run", "--help"],
+        &["status", "-h"],
+    ] {
+        usage_ok(&run_end(&home, args));
+    }
+    let bare = Command::new(env!("CARGO_BIN_EXE_watane-node"))
+        .env_remove("WATANE_NODE_HOME")
+        .arg("--help")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(bare.status.code(), Some(0));
+    assert!(String::from_utf8(bare.stdout).unwrap().contains("usage:"));
+    assert!(!home.exists());
+    let bad = run_end(&home, &["status", "--wat"]);
+    assert_eq!(bad.code, 2);
+    assert!(bad.stderr.contains("unknown flag --wat"), "{}", bad.stderr);
+    assert!(bad.stderr.contains("usage:"));
+}
+
+const BUSY: &str = "another watane-node is running on this home";
+
+#[test]
+fn ac2_ac3_status_reads_beside_run_and_a_second_command_says_who_is_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let anchor = app(dir.path());
+    let (home, key) = paired(&anchor);
+    let before = status_of(home.path());
+    let mut prog = Prog::start(home.path(), &["run", "--bind", LO]);
+    prog.line(10, |l| l.starts_with("running as full"));
+
+    let beside = status_of(home.path());
+    let want: Vec<&str> = before
+        .lines()
+        .filter(|l| !l.starts_with("channels held") && !l.starts_with("packages missing"))
+        .collect();
+    let got: Vec<&str> = beside.lines().collect();
+    assert_eq!(got[..want.len()], want[..], "{beside}\nagainst\n{before}");
+    assert_eq!(
+        got[want.len()..],
+        ["channels and packages: watane-node run is running on this home"]
+    );
+    assert!(beside.contains(&format!("node {key}")));
+
+    let text = format!(
+        "watane-node: {BUSY} ({}); stop it first",
+        home.path().display()
+    );
+    let book_before = book(home.path());
+    for args in [
+        &["run", "--bind", LO][..],
+        &["dht", "on", "--yes"],
+        &["relay", "add", "http://127.0.0.1:9/", "--yes"],
+        &["relay", "remove", "http://127.0.0.1:9/"],
+        &["dht", "off"],
+    ] {
+        let done = run_end(home.path(), args);
+        assert_eq!(done.code, 1, "{args:?}");
+        assert_eq!(done.stderr.trim(), text, "{args:?}");
+    }
+    let code = anchor.net().pair_code(Role::Full).unwrap().to_string();
+    let done = run_end(home.path(), &["join", "--replace", "--bind", LO, &code]);
+    assert_eq!(done.code, 1);
+    assert_eq!(done.stderr.trim(), text);
+    let mut now = book(home.path());
+    let mut then = book_before;
+    now["on"] = then["on"].clone(); // run's own switch
+    then["on"] = now["on"].clone();
+    assert_eq!(now, then);
+    assert_eq!(prog.child.try_wait().unwrap(), None);
+
+    prog.signal("TERM");
+    assert_eq!(prog.code(10), 0);
+    assert_eq!(status_of(home.path()), before);
+}
+
+#[test]
+fn ac4_ac5_the_answer_gets_its_own_line_and_a_change_is_confirmed() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let ask = |args: &[&str], answer: &str| {
+        let mut child = command(dir.path())
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(answer.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        (
+            out.status.code().unwrap(),
+            String::from_utf8(out.stdout).unwrap(),
+        )
+    };
+    let url = "http://127.0.0.1:9/";
+
+    let (code, stdout) = ask(&["dht", "on"], "y\n");
+    assert_eq!(code, 0);
+    assert!(
+        stdout.lines().any(|l| l == "Turn this on? [y/N] y"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.lines().last(), Some("dht on"), "{stdout}");
+
+    let (code, stdout) = ask(&["dht", "off"], "");
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "dht off\n");
+
+    let (code, stdout) = ask(&["dht", "on"], "");
+    assert_eq!(code, 1);
+    assert!(stdout.ends_with("Turn this on? [y/N] \n"), "{stdout:?}");
+    assert!(!stdout.contains("dht on"));
+
+    let (code, stdout) = ask(&["relay", "add", url], "no\n");
+    assert_eq!(code, 1);
+    assert!(stdout.ends_with("Turn this on? [y/N] no\n"), "{stdout:?}");
+    assert!(!stdout.contains("relays"));
+
+    let (code, stdout) = ask(&["relay", "add", url], "yes\n");
+    assert_eq!(code, 0);
+    assert_eq!(
+        stdout.lines().last(),
+        Some(format!("relays {url}").as_str())
+    );
+    let (code, stdout) = ask(&["relay", "remove", url], "");
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "relays none\n");
+}
