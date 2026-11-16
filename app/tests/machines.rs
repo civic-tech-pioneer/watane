@@ -57,6 +57,48 @@ fn bytes() -> Vec<u8> {
         .into_bytes()
 }
 
+fn find_on(app: &App, reference: &Value, from: &str) -> Value {
+    let end = Instant::now() + TIMEOUT;
+    loop {
+        let hits = invoke(
+            app,
+            "search",
+            json!({"text":"reading","publisher":null,"interface":null,"origin":null}),
+        );
+        if let Some(hit) = hits.as_array().unwrap().iter().find(|hit| {
+            hit["release"] == *reference
+                && hit["verified"] == true
+                && hit["from"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|key| key == from)
+        }) {
+            return hit.clone();
+        }
+        assert!(
+            Instant::now() < end,
+            "release {reference} not found through {from}: {hits}"
+        );
+    }
+}
+fn fetch(app: &App, reference: &Value) -> reqwest::blocking::Response {
+    reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(TIMEOUT)
+        .build()
+        .unwrap()
+        .post(format!("http://localhost:{}/api/fetch", app.port))
+        .json(&json!({"release":reference}))
+        .send()
+        .unwrap()
+}
+fn fetched(app: &App, reference: &Value, expected: &[u8]) {
+    let response = fetch(app, reference);
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.bytes().unwrap().as_ref(), expected);
+}
+
 #[test]
 fn ac1_s28_off_by_default_and_publish() {
     let home = tempfile::tempdir().unwrap();
@@ -236,37 +278,112 @@ fn ac3_s30_join_light_and_refuse_used_identity() {
 fn ac4_s31_role_expiry_and_removal() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
+    let c = tempfile::tempdir().unwrap();
     let anchor = start(a.path());
-    let replica = start(b.path());
-    pair_app(&anchor, &replica, "light");
-    let short = machines(&replica)["node"].as_str().unwrap().to_owned();
-    invoke(&anchor, "machine_role", json!({"node":short,"role":"full"}));
-    invoke(&anchor, "machines_expiry", json!({"days":1}));
-    wait_machines(&replica, |v| {
-        v["expiresDays"] == 1 && v["machine"] == "full"
-    });
-    invoke(&anchor, "machine_remove", json!({"node":short}));
-    let publishing = publish(&anchor, bytes());
+    let light = start(c.path());
+    pair_app(&anchor, &light, "light");
+    let package = bytes();
+    let id = watane_host::watane_pkg::Package::from_bytes(package.clone())
+        .unwrap()
+        .id()
+        .to_string();
+    let publishing = publish(&anchor, package.clone());
     consent(&anchor);
     approve(&anchor);
-    let published = publishing.join().unwrap();
-    assert_eq!(published.0, 200);
+    let (status, published) = publishing.join().unwrap();
+    assert_eq!(status, 200);
+    let full = start(b.path());
+    // Its initial sync copies the existing release and package.
+    pair_app(&anchor, &full, "full");
+    let full_key = machines(&full)["node"].as_str().unwrap().to_owned();
+    let light_key = machines(&light)["node"].as_str().unwrap().to_owned();
     let end = Instant::now() + TIMEOUT;
-    loop {
-        let response = reqwest::blocking::Client::builder()
-            .no_proxy()
-            .build()
-            .unwrap()
-            .post(format!("http://localhost:{}/api/fetch", replica.port))
-            .json(&json!({"release":published.1["release"]}))
-            .send()
-            .unwrap();
-        if !response.status().is_success() {
-            break;
-        }
-        assert!(Instant::now() < end, "removed machine is still served");
+    while !b.path().join("dist/packages").join(&id).is_file() {
+        assert!(
+            Instant::now() < end,
+            "full machine did not copy the package"
+        );
+        std::thread::yield_now();
     }
-    assert!(replica.quit().success());
+    invoke(
+        &anchor,
+        "machine_role",
+        json!({"node":full_key,"role":"light"}),
+    );
+    invoke(&anchor, "machines_expiry", json!({"days":1}));
+    for app in [&anchor, &full, &light] {
+        wait_machines(app, |view| {
+            view["expiresDays"] == 1
+                && view["machines"].as_array().unwrap().len() == 3
+                && view["machines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["node"] == full_key && m["role"] == "light")
+        });
+    }
+    // Restore the serving role and check all three views again.
+    invoke(
+        &anchor,
+        "machine_role",
+        json!({"node":full_key,"role":"full"}),
+    );
+    for app in [&anchor, &full, &light] {
+        wait_machines(app, |view| {
+            view["expiresDays"] == 1
+                && view["machines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["node"] == full_key && m["role"] == "full")
+        });
+    }
+    find_on(&light, &published["release"], &full_key);
+    invoke(&anchor, "machines_on", json!({"on":false}));
+    // No web base, no local package, and the anchor is off: only full can serve.
+    let cached = c.path().join("dist/packages").join(&id);
+    assert!(!cached.exists());
+    fetched(&light, &published["release"], &package);
+    assert!(cached.is_file());
+
+    // Keep the light home on its old list, so its next fetch must ask full;
+    // a local Removed state must not make this a vacuous refusal.
+    invoke(&light, "machines_on", json!({"on":false}));
+    std::fs::remove_file(&cached).unwrap();
+    on(&anchor);
+    let removed = invoke(&anchor, "machine_remove", json!({"node":light_key}));
+    wait_machines(&full, |view| {
+        view["seq"] == removed["seq"]
+            && view["machines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|m| m["node"] != light_key)
+    });
+    assert!(
+        removed["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["node"] != light_key)
+    );
+    invoke(&anchor, "machines_on", json!({"on":false}));
+    assert_eq!(machines(&full)["on"], true);
+    on(&light);
+    assert_eq!(machines(&light)["machine"], "light");
+    let response = fetch(&light, &published["release"]);
+    assert_eq!(response.status(), 502);
+    assert_eq!(
+        response.json::<Value>().unwrap()["error"]["code"],
+        "fetch_failed"
+    );
+    assert_eq!(machines(&light)["machine"], "light");
+    assert!(
+        !cached.exists(),
+        "removed light machine received the package"
+    );
+    assert!(light.quit().success());
+    assert!(full.quit().success());
     assert!(anchor.quit().success());
 }
 
@@ -387,9 +504,16 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
     let published = publishing.join().unwrap();
     assert_eq!(published.0, 200);
     pair_app(&full, &light, "light");
+    let short = machines(&full)["node"].as_str().unwrap().to_owned();
+    let hit = find_on(&light, &published.1["release"], &short);
+    // Warm the full machine's blob store with the verified file, then change
+    // its referenced bytes. A corrupt file on first admission is refused by
+    // the serving holder before it ever sends bytes; that is a different case.
+    fetched(&light, &hit["release"], &package);
+    std::fs::remove_file(b.path().join("dist/packages").join(&id)).unwrap();
     let mut changed = package;
     changed[0] ^= 1;
-    std::fs::write(a.path().join("dist/packages").join(id), changed).unwrap();
+    std::fs::write(a.path().join("dist/packages").join(&id), changed).unwrap();
     // A light machine asks the full one for this package; receiving its changed
     // bytes must report a refusal, even when fetch subsequently has no web base.
     begin(
@@ -398,7 +522,6 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
         json!({"release":published.1["release"],"link":null}),
     );
     assert!(finish(&light).get("error").is_some());
-    let short = machines(&full)["node"].as_str().unwrap().to_owned();
     let view = wait_machines(&light, |v| {
         v["problems"].as_array().unwrap().iter().any(|p| {
             p["text"]
@@ -407,15 +530,24 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
                 .starts_with(&format!("refused {short}:"))
         })
     });
-    assert!(
-        view["problems"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| !p["text"].as_str().unwrap().trim_end().ends_with(':'))
-    );
+    assert!(view["problems"].as_array().unwrap().iter().any(|p| {
+        p["node"] == short
+            && p["text"]
+                .as_str()
+                .unwrap()
+                .contains("does not match its hash")
+    }));
+    assert!(!b.path().join("dist/packages").join(&id).exists());
     assert!(full.quit().success());
-    // The former direct address is now unreachable and neither fallback is on.
+    assert!(light.quit().success());
+    // A fresh session clears the deliberate bad-peer drop. The paired full
+    // machine is now offline, so its saved direct address has no path and
+    // neither fallback is on. Do not reuse a session that must ignore it.
+    let light = start(b.path());
+    let fresh = machines(&light);
+    assert_eq!(fresh["on"], true);
+    assert_eq!(fresh["dht"], false);
+    assert_eq!(fresh["relays"], json!([]));
     let end = Instant::now() + TIMEOUT;
     loop {
         let _ = invoke(
@@ -428,7 +560,12 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
             .unwrap()
             .iter()
             .any(|p| {
-                p["text"].as_str().unwrap().contains("relay")
+                p["node"] == short
+                    && p["text"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with(&format!("unreachable {short}:"))
+                    && p["text"].as_str().unwrap().contains("relay")
                     && p["text"].as_str().unwrap().contains("DHT")
             })
         {
@@ -502,6 +639,15 @@ fn ac8_s35_restore_confirm_machine_hint_and_next_sequence() {
         assert!(Instant::now() < end);
     };
     area(&new, "#settings");
+    let restored = invoke(&new, "status", json!({}));
+    until(
+        &new,
+        "main",
+        &format!(
+            "document.querySelector('#identity-info').textContent.includes({})",
+            restored["identity"]["fingerprint"]
+        ),
+    );
     until(
         &new,
         "main",
@@ -586,4 +732,42 @@ fn ac9_s36_hostile_stage_g_commands_are_all_refused() {
             .all(|c| c["label"] != "mod-hostile")
     );
     assert!(app.quit().success());
+}
+
+#[test]
+fn ac8_settings_navigation_refreshes_hidden_page() {
+    let output = std::process::Command::new("node")
+        .args(["-e", r#"
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source = fs.readFileSync('ui/app.js', 'utf8');
+const route = source.slice(source.indexOf('function route() {'), source.indexOf('\nfor (const tab of document.querySelectorAll'));
+const nodes = new Map();
+const $ = selector => {
+  if (!nodes.has(selector)) nodes.set(selector, {hidden:false, setAttribute() {}});
+  return nodes.get(selector);
+};
+let refreshes = 0;
+const context = { $, location: {hash:'#mods'}, managerTab:'library',
+  document: {hidden:true}, readRefresh: () => {refreshes++; return Promise.resolve();},
+  showError: error => {throw error;} };
+vm.createContext(context);
+vm.runInContext(route, context);
+context.route();
+assert.equal(refreshes, 0);
+context.location.hash = '#settings'; context.route();
+assert.equal($('#settings').hidden, false);
+assert.equal(refreshes, 1, 'showing Settings must refresh even in a hidden window');
+context.location.hash = '#mods'; context.route();
+context.location.hash = '#settings'; context.route();
+assert.equal(refreshes, 2, 'returning to Settings must read the latest identity and hints');
+"#])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

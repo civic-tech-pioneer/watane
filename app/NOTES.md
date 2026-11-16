@@ -613,3 +613,51 @@
   filtering only that real-network broker test, passes 120 tests. This is
   partial evidence, not a substitute for the full suite or S28–S36 on a
   macOS GUI session with network-monitor access. `tests/j8.rs` is untouched.
+
+### S75 validator round 1
+
+- Preserved validator commit `61c5782` (node error rustfmt, relay removal
+  assertions, and the CLI scenario's slow reason).
+- AC6 discovers and verifies the release by search before fetching. It first
+  fetches the exact package bytes to warm the full machine's blob reference,
+  clears the light cache, then changes the referenced file. This distinguishes
+  sending changed bytes (a hash refusal) from rejecting a bad file on its
+  first admission at the serving holder. The test now requires the named
+  machine's hash-mismatch cause and confirms no bad package was stored.
+  The no-path half restarts the light home after stopping the full home:
+  refusing a peer deliberately drops it for that session, so reusing that
+  session would never dial it. The fresh session asserts net on, no relays,
+  DHT off, and an `unreachable` cause naming the same peer, a relay and DHT.
+- AC4 now has anchor, full and light homes. It checks the role changes and
+  expiry in all three views, including the anchor. With the anchor off and
+  no local package or web base, a byte-equal successful fetch proves the
+  full replica serves the light home. The light home goes offline and its
+  cache is cleared before removal. After the full replica learns the
+  removal, the anchor goes off again and the light home retries with its
+  old list. Assertions keep its machine state `light`, require a failed
+  fetch and no cached package: a local Removed state or an undiscovered
+  release cannot satisfy this test.
+- Settings navigation now refreshes immediately even in a hidden native
+  window. The added JS behavioral test failed first (`0` refreshes instead
+  of `1`) and passes after the change. AC8 retains the driver restore and
+  now checks the restored fingerprint as well as the machine hint and
+  next-sequence assertions, exercising navigation rather than the hidden
+  window's intentionally suspended polling timer.
+- Removed the test-only `follow_channel`, `choose_index`, and `fetch_release`
+  shims from `core.rs`. Their existing tests retain their assertions and
+  call production `map_follow`, `choose_index_with`, and `Node::fetch` /
+  `Node::follow` directly. The own-index check additionally asserts that
+  the choosing callback cannot be reached.
+- Validation: the focused unit/API/static/JS suite passes 120 tests with
+  only the real-network broker test explicitly filtered; the new hidden
+  Settings regression passes. Build succeeds; clippy with all targets,
+  driver and `-D warnings`, fmt, hakari diff, and JS syntax checks are clean.
+  Release with driver is rejected at the expected compile guard.
+- Native acceptance still needs the validator: this sandbox again refuses
+  `com.apple.hiservices-xpcservice`, so all nine window scenarios in
+  `machines.rs` (including corrected AC4, AC6 and AC8) time out before app
+  readiness. Its two non-window tests pass. Full default/driver runs also
+  retain the `Failed to create netmon monitor` failure in the real-pairing
+  broker test; the driver run passes its other 94 library tests before
+  stopping there. No `front:` test was run. The failing tests remain
+  enabled, and no acceptance assertion was weakened for the environment.

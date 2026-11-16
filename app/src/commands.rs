@@ -727,8 +727,12 @@ mod index_tests {
         let dist =
             Dist::open(home.path(), std::sync::Arc::new(Refuse), Default::default()).unwrap();
         dist.set_site_url("https://example.org/").unwrap();
-        let error = crate::core::choose_index(&dist, &dist.own_link(None).unwrap().to_string())
-            .unwrap_err();
+        let error = crate::core::choose_index_with(
+            &dist,
+            &dist.own_link(None).unwrap().to_string(),
+            |_| panic!("own index must be refused before choosing"),
+        )
+        .unwrap_err();
         assert_eq!(error.code, "bad_input");
         assert_eq!(error.message, "Your own channel is always your index.");
     }

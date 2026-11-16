@@ -83,14 +83,6 @@ pub(crate) fn toolset_row(name: &str, entries: Vec<String>) -> serde_json::Value
     let tools: Vec<_> = entries.iter().map(|entry| tool_name(entry)).collect();
     serde_json::json!({"name":name, "entries":entries, "tools":tools})
 }
-#[cfg(test)]
-fn follow_channel(
-    dist: &watane_dist::Dist,
-    parties: &Parties,
-    link: &watane_dist::Link,
-) -> Result<watane_dist::RefreshReport, CmdError> {
-    map_follow(dist, parties, dist.follow(link))
-}
 fn map_follow(
     dist: &watane_dist::Dist,
     parties: &Parties,
@@ -1758,14 +1750,7 @@ fn party_views(dist: &watane_dist::Dist) -> Result<Vec<watane_dist::ChannelView>
     }
     Ok(views)
 }
-#[cfg(test)]
-pub(crate) fn choose_index(
-    dist: &watane_dist::Dist,
-    text: &str,
-) -> Result<Vec<watane_dist::RefreshReport>, CmdError> {
-    choose_index_with(dist, text, |link| dist.choose_index(link))
-}
-fn choose_index_with(
+pub(crate) fn choose_index_with(
     dist: &watane_dist::Dist,
     text: &str,
     choose: impl FnOnce(
@@ -1784,17 +1769,6 @@ fn choose_index_with(
             .unwrap_or_else(|| link.channel().fingerprint());
         CmdError::new("dist", words::index_read(&name, &crate::cause_chain(&e)))
     })
-}
-#[cfg(test)]
-pub(crate) fn fetch_release(
-    dist: &watane_dist::Dist,
-    release: &watane_dist::ReleaseRef,
-    link: Option<&watane_dist::Link>,
-) -> Result<watane_dist::Fetched, CmdError> {
-    if let Some(link) = link {
-        dist.follow(link)?;
-    }
-    Ok(dist.fetch(release)?)
 }
 fn index_rows(
     own: &watane_dist::ChannelView,
@@ -2017,7 +1991,7 @@ mod find_integration_tests {
             .read_link(ivy_release.link.as_ref().unwrap())
             .unwrap();
         let wrong = Link::new(alice.identity().unwrap(), &ivy_site.base, None).unwrap();
-        let error = follow_channel(&reader, &Parties::new(), &wrong).unwrap_err();
+        let error = map_follow(&reader, &Parties::new(), reader.follow(&wrong)).unwrap_err();
         assert_eq!(error.code, "dist");
         assert!(
             error.message.contains(&format!(
@@ -2044,13 +2018,15 @@ mod find_integration_tests {
         let unknown = open(&unknown_home);
         let link = publisher.own_link(None).unwrap().to_string();
         drop(site);
-        let error = choose_index(&reader, &link).unwrap_err();
+        let error =
+            choose_index_with(&reader, &link, |link| reader.choose_index(link)).unwrap_err();
         assert!(
             error.message.starts_with("Could not read Ivy: "),
             "{}",
             error.message
         );
-        let error = choose_index(&unknown, &link).unwrap_err();
+        let error =
+            choose_index_with(&unknown, &link, |link| unknown.choose_index(link)).unwrap_err();
         assert!(
             error.message.starts_with(&format!(
                 "Could not read {}: ",
@@ -2123,14 +2099,27 @@ mod find_integration_tests {
             Default::default(),
         )
         .unwrap();
-        let carol = open(&carol_home);
+        let node = watane_node::Node::open(
+            carol_home.path(),
+            Arc::new(Approve),
+            watane_node::Options {
+                dist: Options {
+                    listed_local: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let carol = node.dist();
         let reference = &published.info.reference;
-        let expected = carol.fetch(reference).unwrap_err().to_string();
-        let error = fetch_release(&carol, reference, None).unwrap_err();
+        let expected = node.fetch(reference).unwrap_err().to_string();
+        let error = CmdError::from(node.fetch(reference).unwrap_err());
         assert_eq!(error.message, expected);
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
-        let fetched = fetch_release(&carol, reference, published.link.as_ref()).unwrap();
+        node.follow(published.link.as_ref().unwrap()).unwrap();
+        let fetched = node.fetch(reference).unwrap();
         assert_eq!(
             carol.followed().unwrap()[0].channel,
             alice.identity().unwrap()
@@ -2183,7 +2172,10 @@ mod find_integration_tests {
         .unwrap();
         let carol_home = tempfile::tempdir().unwrap();
         let carol = open(&carol_home);
-        choose_index(&carol, &ivy.own_link(None).unwrap().to_string()).unwrap();
+        choose_index_with(&carol, &ivy.own_link(None).unwrap().to_string(), |link| {
+            carol.choose_index(link)
+        })
+        .unwrap();
         assert!(carol.followed().unwrap().is_empty());
         let parties = Parties::new();
         parties.remember(&party_views(&carol).unwrap());

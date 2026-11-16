@@ -267,7 +267,10 @@ and `#machine-remove-confirm`. Replica controls are hidden in
 `#identity-controls`; restored-head choices are in `#own-hints`.
 Stage I itself adds no machine command.
 The manager tabs use `#mods` (Library), `#find`, and `#updates`;
-`#settings` selects Settings. The library filter matches every entered word
+`#settings` selects Settings and immediately refreshes status, machines and
+restore hints, including when the native window is hidden. Navigation does
+not depend on the visible-window polling timer.
+The library filter matches every entered word
 against the name and publisher and can select published or local mods.
 A dependency warning is a dialog in the main page, before disabling or
 before the existing removal/data dialog; Cancel is focused and Escape cancels.

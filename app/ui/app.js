@@ -356,6 +356,7 @@ function route() {
     $(`#${tab}`).hidden = tab !== managerTab;
     $(`[data-tab=${tab}]`).setAttribute('aria-pressed', String(tab === managerTab));
   }
+  if (settings) readRefresh().catch(showError);
 }
 for (const tab of document.querySelectorAll('[data-tab]')) tab.onclick = () => { location.hash = tab.dataset.tab === 'library' ? '#mods' : `#${tab.dataset.tab}`; route(); };
 window.addEventListener('hashchange', route);
