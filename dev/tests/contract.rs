@@ -562,3 +562,48 @@ fn ac3_fake_of_a_function_manage_lacks_is_refused() {
         "{message}"
     );
 }
+
+#[test]
+fn ac1_open_page_manage_record_passes_and_missing_record_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    let manager = temp.path().join("manager");
+    copy_manager(&manager);
+    let mut step = json!({"call":"api.open-page","args":{"local":"weather"},
+        "returns":{"ok":null},
+        "manages":[{"fn":"open-page","args":{"local":"weather"}}]});
+    let (code, v) = test_in(&manager, json!({"steps":[step]}));
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["result"]["contract"]["passed"], 1, "{v}");
+    step["manages"] = json!([]);
+    let (code, v) = test_in(&manager, json!({"steps":[step]}));
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "test.contract", "{v}");
+    let failure = &v["result"]["contract"]["failures"][0];
+    assert_eq!(failure["step"], 1, "{v}");
+    assert_eq!(failure["call"], "api.open-page", "{v}");
+    assert_eq!(failure["expected"], json!([]), "{v}");
+    assert_eq!(
+        failure["got"],
+        json!([{"fn":"open-page","args":{"local":"weather"}}]),
+        "{v}"
+    );
+}
+
+#[test]
+fn ac2_fixture_host_wit_matches_host() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut checked = 0;
+    for entry in fs::read_dir(fixtures).unwrap() {
+        let path = entry.unwrap().path().join("wit/deps/watane-host/host.wit");
+        if path.exists() {
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                watane_host::HOST_WIT,
+                "{}",
+                path.display()
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}

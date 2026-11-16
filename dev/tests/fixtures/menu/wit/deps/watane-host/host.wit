@@ -43,6 +43,8 @@ interface manage {
   disable: func(local: string) -> result<_, failure>;
   withdraw: func(local: string, grant: grant) -> result<_, failure>;
   close-page: func(local: string) -> result<_, failure>;
+  /// Open or focus the page of a mod (Q31). Gives no authority.
+  open-page: func(local: string) -> result<_, failure>;
   /// Ask the participant. Each returns the id of the request.
   request-install: func(release: string, link: option<string>) -> result<string, failure>;
   request-update: func(local: string) -> result<string, failure>;
