@@ -958,11 +958,12 @@ channel or index that lists it, or `none`. A removal is a request with or
 without `delete-data`, and so is `enable`: section 18 Q28 and Q29 hold the
 human's choice, and both answers keep this interface.
 
-**When effects happen.** A reduction or a request is not applied inside
-the call. Like an event (9.1), it goes to the store's outbox in order, and
-joins the chain effects only when the manager's invoke succeeds; a failed
-call reduces nothing and asks nothing. After the invoke that started the
-chain returns (a top-level call, a tool call, or one delivery of 9.2), and
+**When effects happen.** A reduction, `open-page` or a request is not applied
+inside the call. Like an event (9.1), it goes to the store's outbox in order,
+and joins the chain effects only when the manager's invoke succeeds. A failed
+call reduces nothing, opens no page and asks nothing. After the invoke that
+started the chain returns (a top-level call, a tool call, or one delivery of
+9.2), and
 before the chain's events are delivered, the host applies the chain's
 manage effects in order. Before each one it checks again that the manager
 holds `Manage` and is enabled, and drops the effect if not (Q24's rule).
@@ -1405,7 +1406,7 @@ pub trait Confirm: Send + Sync + 'static {
     /// Step 10 (6.10): a request of a manager. The app decides it in the consent view and acts.
     /// Default: `Failed("this app takes no requests of mods")`.
     fn manage(&self, request: ManageRequest) -> Pin<Box<dyn Future<Output = ManageOutcome> + Send>> { .. }
-    /// Step 10 (6.10): a manager makes things do less; called before the host acts. Must not block.
+    /// Step 10 (6.10): a manager reduces authority or opens a page; called before the host acts. Must not block.
     /// Default: nothing.
     fn reduced(&self, by: &LocalName, reduction: &Reduction) {}
     /// After an install has written the catalog, before `Host::install` returns; every requester
@@ -1527,7 +1528,7 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `item-a`, `item-b`, `item-c` (step 9) | `deps.json` `{"mods:menu": null}`; export `mods:menu/menu`: `ask` returns `["a"]`, `["b"]`, `["c"]` and puts the state key `asked`; `clicked` puts the state key `clicked` |
 | `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key, burns a fixed loop of about 19.5M fuel and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
-| `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
+| `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `open-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `open-page-then-fail(local: string)`, which calls `open-page` and then traps, `close-open-close(local: string)`, which queues those three page effects in order, `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components

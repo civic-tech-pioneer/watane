@@ -13,7 +13,7 @@ pub trait Confirm: Send + Sync + 'static {
         let _ = request;
         Box::pin(async { ManageOutcome::Failed("this app takes no requests of mods".into()) })
     }
-    /// Step 10 (6.10): a manager makes things do less; called before the host acts.
+    /// Step 10 (6.10): a manager reduces authority or opens a page; called before the host acts.
     /// Must not block. Default: nothing.
     fn reduced(&self, by: &LocalName, reduction: &Reduction) {
         let _ = (by, reduction);
@@ -85,10 +85,15 @@ pub enum ManageOutcome {
     Denied,
     Failed(String),
 }
-/// Step 10 (6.10): what a manager makes do less.
+/// Step 10 (6.10): a reduction of authority or a request to open a page.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Reduction {
     Disable(LocalName),
-    Withdraw { local: LocalName, grant: Grant },
+    Withdraw {
+        local: LocalName,
+        grant: Grant,
+    },
     ClosePage(LocalName),
+    /// Open or focus an installed mod's page. Gives no authority (Q31).
+    OpenPage(LocalName),
 }

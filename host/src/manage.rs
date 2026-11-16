@@ -224,7 +224,11 @@ impl Host {
             ));
         }
         let is_request = function.starts_with("request-");
-        let is_effect = is_request || matches!(function, "disable" | "withdraw" | "close-page");
+        let is_effect = is_request
+            || matches!(
+                function,
+                "disable" | "withdraw" | "close-page" | "open-page"
+            );
         if let Some((fakes, serial)) = fake {
             let faked = fakes.get(function).cloned();
             if !is_effect {
@@ -352,6 +356,16 @@ impl Host {
             let reduction = match function {
                 "disable" => Reduction::Disable(local()),
                 "close-page" => Reduction::ClosePage(local()),
+                "open-page" => {
+                    let target = target.as_ref().unwrap();
+                    if !target.enabled || target.page.is_none() {
+                        return Err(failure(
+                            "bad_request",
+                            format!("{} is disabled or has no page", target.local),
+                        ));
+                    }
+                    Reduction::OpenPage(local())
+                }
                 _ => {
                     let grant = grant()?;
                     declared(&grant)?;
@@ -439,7 +453,7 @@ impl Host {
                     let result = match &reduction {
                         Reduction::Disable(local) => self.disable(local),
                         Reduction::Withdraw { local, grant } => self.revoke(local, grant),
-                        Reduction::ClosePage(_) => Ok(()),
+                        Reduction::ClosePage(_) | Reduction::OpenPage(_) => Ok(()),
                     };
                     if let Err(error) = result {
                         eprintln!("watane: {by}: {reduction:?} failed: {error}");

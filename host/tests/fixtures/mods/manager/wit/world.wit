@@ -5,6 +5,9 @@ interface api {
   disable: func(local: string) -> result<_, failure>;
   withdraw: func(local: string, grant: grant) -> result<_, failure>;
   close-page: func(local: string) -> result<_, failure>;
+  open-page: func(local: string) -> result<_, failure>;
+  open-page-then-fail: func(local: string);
+  close-open-close: func(local: string);
   request-install: func(release: string, link: option<string>) -> result<string, failure>;
   request-update: func(local: string) -> result<string, failure>;
   request-enable: func(local: string) -> result<string, failure>;

@@ -266,6 +266,126 @@ fn ac2_s41_reductions_tell_the_app_then_act() {
 }
 
 #[test]
+fn ac2_s82_open_page_reaches_the_app_on_a_served_host_in_chain_order() {
+    let w = World::standard();
+    let served = w
+        .runtime
+        .block_on(w.host.serve(0, axum::Router::new()))
+        .unwrap();
+    let before = fs::read(w.host.home().join("installed.json")).unwrap();
+    assert_eq!(
+        w.manager("api.open-page", json!({"local":"shelf"})),
+        json!({"ok":null})
+    );
+    assert_eq!(
+        *w.app.reduced.lock().unwrap(),
+        vec![(local("manager"), Reduction::OpenPage(local("shelf")))]
+    );
+    assert_eq!(
+        fs::read(w.host.home().join("installed.json")).unwrap(),
+        before
+    );
+    w.app.reduced.lock().unwrap().clear();
+    assert_eq!(
+        w.manager("api.close-open-close", json!({"local":"shelf"})),
+        Value::Null
+    );
+    assert_eq!(
+        *w.app.reduced.lock().unwrap(),
+        vec![
+            (local("manager"), Reduction::ClosePage(local("shelf"))),
+            (local("manager"), Reduction::OpenPage(local("shelf"))),
+            (local("manager"), Reduction::ClosePage(local("shelf"))),
+        ]
+    );
+    w.runtime.block_on(served.shutdown());
+}
+
+#[test]
+fn ac3_s82_open_page_refuses_invalid_targets_without_effects() {
+    let w = World::new(&["manager", "counter", "hog"], vec![]);
+    w.host.disable(&local("counter")).unwrap();
+    for (name, code) in [
+        ("nope", "no_mod"),
+        ("counter", "bad_request"),
+        ("hog", "bad_request"),
+        ("Bad!", "bad_request"),
+    ] {
+        let result = w.manager("api.open-page", json!({"local":name}));
+        assert_eq!(result["err"]["code"], code, "{name}: {result}");
+        assert!(w.app.reduced.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn ac3_s82_open_page_requires_manage_and_discards_a_failed_call() {
+    let w = World::standard();
+    // Page presence comes from ui/, even before the host has a page URL.
+    assert_eq!(
+        w.manager("api.open-page", json!({"local":"shelf"})),
+        json!({"ok":null})
+    );
+    assert_eq!(
+        *w.app.reduced.lock().unwrap(),
+        vec![(local("manager"), Reduction::OpenPage(local("shelf")))]
+    );
+    w.app.reduced.lock().unwrap().clear();
+    assert_eq!(
+        w.call(
+            "manager",
+            "api.open-page-then-fail",
+            json!({"local":"shelf"})
+        )
+        .unwrap_err()
+        .code,
+        CallCode::Trap
+    );
+    assert!(w.app.reduced.lock().unwrap().is_empty());
+    w.host.revoke(&local("manager"), &Grant::Manage).unwrap();
+    assert_eq!(
+        w.call("manager", "api.open-page", json!({"local":"shelf"}))
+            .unwrap_err()
+            .code,
+        CallCode::NotGranted
+    );
+    assert!(w.app.reduced.lock().unwrap().is_empty());
+}
+
+#[test]
+fn ac4_s82_harness_fakes_and_records_open_page() {
+    let h = harness_fakes();
+    assert_eq!(
+        h.call("api.open-page", json!({"local":"uninstalled"}))
+            .unwrap(),
+        Outcome {
+            value: json!({"ok":null}),
+            events: vec![],
+            manages: vec![ManageRecord {
+                function: "open-page".into(),
+                args: json!({"local":"uninstalled"})
+            }],
+        }
+    );
+}
+
+#[test]
+fn ac5_s82_manager_component_exports_open_page() {
+    let w = World::new(&["manager"], vec![]);
+    let function = w
+        .host
+        .functions(&local("manager"))
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == "open-page")
+        .expect("manager exports open-page");
+    assert_eq!(function.params, vec![("local".into(), "string".into())]);
+    assert_eq!(
+        function.result.as_deref(),
+        Some("result<_, record { code: string, message: string }>")
+    );
+}
+
+#[test]
 fn ac3_s42_a_request_is_pending_then_decided_by_the_app() {
     let w = World::standard();
     let grant = w.recs_call_grant();

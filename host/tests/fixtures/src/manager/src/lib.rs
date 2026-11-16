@@ -15,6 +15,18 @@ impl Guest for Component {
     fn close_page(local: String) -> Result<(), m::Failure> {
         m::close_page(&local)
     }
+    fn open_page(local: String) -> Result<(), m::Failure> {
+        m::open_page(&local)
+    }
+    fn open_page_then_fail(local: String) {
+        m::open_page(&local).unwrap();
+        panic!("open-page-then-fail");
+    }
+    fn close_open_close(local: String) {
+        m::close_page(&local).unwrap();
+        m::open_page(&local).unwrap();
+        m::close_page(&local).unwrap();
+    }
     fn request_install(release: String, link: Option<String>) -> Result<String, m::Failure> {
         m::request_install(&release, link.as_deref())
     }

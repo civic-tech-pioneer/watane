@@ -275,7 +275,7 @@ app is a fake that records what it is asked.
   with `disabled`. When `api.withdraw` runs for `recs`'s call grant, then
   `recs`'s `api.suggest` fails with `not_granted`. `api.close-page("shelf")`
   tells the app `ClosePage(shelf)` and changes no catalog. `api.disable("nope")`
-  returns the failure `no_mod`.
+  returns the failure `no_mod`. `api.open-page("shelf")` tells the app `OpenPage(shelf)` after the call succeeds, without changing the catalog.
 - **S42 Ask** (HOST-F-51). Given `recs`'s call grant withdrawn, when
   `api.request-grant` runs for it, then it returns an id of 32 hex
   characters, the app got `Ask::Grant` with `by` = `manager`, and

@@ -12,3 +12,45 @@ interface state {
 interface caller {
   who: func() -> string;
 }
+
+/// Step 10: the management of mods (W35). Importing it is the grant
+/// `manage`. Reads and reductions act when the call succeeds; anything
+/// more is a request that the participant decides in the consent view.
+/// A mod is named by its local name.
+interface manage {
+  /// A grant as pkg names it. `provider` is "<publisher key>/<slug>" or "local/<slug>".
+  record provided { %interface: string, provider: string }
+  variant grant { storage, http(string), call(provided), subscribe(provided), manage }
+  record grant-state { grant: grant, granted: bool }
+  enum link-kind { call, subscribe }
+  /// `provider` is the local name of the linked mod; none while unbound.
+  record link { kind: link-kind, %interface: string, provider: option<string>, provider-interface: option<string> }
+  /// Identities: the consumer, the provider that deps.json names, the picked mod.
+  record bind { consumer: string, provider: string, to: string }
+  record mod-info {
+    local: string, identity: string, slug: string, name: string, summary: string,
+    version: string, publisher: option<string>, release: option<string>, origin: option<string>,
+    enabled: bool, has-page: bool, has-logic: bool,
+    grants: list<grant-state>, links: list<link>, binds: list<bind>, error: option<string>,
+  }
+  /// `code`: bad_request, no_mod, not_declared, request_open or refused.
+  record failure { code: string, message: string }
+  variant request-state { pending, approved, denied, failed(string) }
+
+  /// Every installed mod, by local name.
+  mods: func() -> list<mod-info>;
+  /// Make things do less, at once.
+  disable: func(local: string) -> result<_, failure>;
+  withdraw: func(local: string, grant: grant) -> result<_, failure>;
+  close-page: func(local: string) -> result<_, failure>;
+  /// Open or focus the page of a mod (Q31). Gives no authority.
+  open-page: func(local: string) -> result<_, failure>;
+  /// Ask the participant. Each returns the id of the request.
+  request-install: func(release: string, link: option<string>) -> result<string, failure>;
+  request-update: func(local: string) -> result<string, failure>;
+  request-enable: func(local: string) -> result<string, failure>;
+  request-grant: func(local: string, grant: grant) -> result<string, failure>;
+  request-remove: func(local: string, delete-data: bool) -> result<string, failure>;
+  /// The state of a request of this mod; none for an unknown id.
+  request: func(id: string) -> option<request-state>;
+}
