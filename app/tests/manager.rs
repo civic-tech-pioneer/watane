@@ -386,3 +386,208 @@ fn ac6_library_filters_and_updates_need_attention() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn ac1_s81_library_marks_only_main_and_unset_clears_it() {
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    install(&app, &["reading-list", "desk"]);
+    invoke(&app, "main_set", json!({"local":"reading-list"}));
+    app.eval("main", "window.dispatchEvent(new Event('focus')); null");
+    until(
+        &app,
+        "main",
+        "document.querySelector('[data-local=reading-list] .main-mark')?.textContent === 'Opens at start' && document.querySelectorAll('.main-mark').length === 1",
+    );
+    app.eval("main", "document.querySelector('[data-local=reading-list] details').open = true; document.querySelector('[data-local=reading-list] .main-set').click(); null");
+    until(
+        &app,
+        "main",
+        "document.querySelectorAll('.main-mark').length === 0",
+    );
+    assert!(app.quit().success());
+}
+
+fn dom_test(script: &str, case: &str) {
+    let output = std::process::Command::new("node")
+        .args([script, case])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+#[test]
+fn ac1_s81_library_main_marker_dom() {
+    dom_test("tests/support/manager_dom.mjs", "main");
+}
+
+#[test]
+fn ac2_s81_install_main_explanation_dom() {
+    dom_test("tests/support/consent_dom.mjs", "main");
+}
+#[test]
+fn ac2_s81_install_consent_explains_only_new_main() {
+    for existing in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[]);
+        install(&app, &["reading-list"]);
+        if existing {
+            invoke(&app, "main_set", json!({"local":"reading-list"}));
+        }
+        begin_install(&app, &[fixture("desk")]);
+        assert_eq!(app.eval("consent", "Array.from(document.querySelectorAll('main p')).some(p => p.textContent === 'Desk opens when watane starts, in place of the manager.')"), !existing);
+        approve(&app);
+        installed(&app, "desk");
+        assert_eq!(
+            std::fs::read_to_string(home.path().join("app/main")).unwrap(),
+            if existing { "reading-list\n" } else { "desk\n" }
+        );
+        assert!(app.quit().success());
+    }
+}
+
+#[test]
+fn ac3_s81_connection_moves_focus_dom() {
+    dom_test("tests/support/manager_dom.mjs", "focus");
+}
+#[test]
+fn ac3_s81_used_by_link_opens_details_and_moves_focus() {
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    install(&app, &["reading-list", "recommendations"]);
+    app.eval("main", "document.querySelector('[data-local=reading-list] details').open = true; document.querySelector('[data-local=reading-list] .connections a').click(); null");
+    until(
+        &app,
+        "main",
+        "document.querySelector('[data-local=recommendations] details').open && document.activeElement.closest('[data-local]')?.dataset.local === 'recommendations'",
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac4_s81_disable_remove_warning_distinguishes_connections_dom() {
+    dom_test("tests/support/manager_dom.mjs", "warning");
+}
+#[test]
+fn ac4_s81_disable_remove_warning_distinguishes_connections() {
+    for (withhold_kind, sentences) in [
+        (Some("call"), "These mods extend it: recommendations."),
+        (Some("subscribe"), "These mods use it: recommendations."),
+        (
+            None,
+            "These mods use it: recommendations. These mods extend it: recommendations.",
+        ),
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[]);
+        install(&app, &["reading-list", "recommendations"]);
+        if let Some(kind) = withhold_kind {
+            let mods = invoke(&app, "mods_list", json!({}));
+            let consumer = mods
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["local"] == "recommendations")
+                .unwrap();
+            let key = consumer["grants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|g| g["kind"] == kind)
+                .unwrap()["key"]
+                .clone();
+            invoke(
+                &app,
+                "grant_withdraw",
+                json!({"local":"recommendations", "key":key}),
+            );
+            app.eval("main", "window.dispatchEvent(new Event('focus')); null");
+            until(
+                &app,
+                "main",
+                &format!(
+                    "!document.querySelector('[data-local=recommendations] .connections').textContent.includes({})",
+                    json!(if kind == "call" { "Uses:" } else { "Adds to:" })
+                ),
+            );
+        }
+        for verb in ["Disable", "Remove"] {
+            app.eval(
+                "main",
+                &format!(
+                    "document.querySelector('[data-local=reading-list] .{}').click(); null",
+                    verb.to_lowercase()
+                ),
+            );
+            until(
+                &app,
+                "main",
+                "document.querySelector('#dependency-dialog').open",
+            );
+            assert_eq!(
+                app.eval(
+                    "main",
+                    "document.querySelector('#dependency-dialog p').textContent"
+                ),
+                format!("{verb} Reading list? {sentences}")
+            );
+            app.eval(
+                "main",
+                "document.querySelector('#dependency-cancel').click(); null",
+            );
+        }
+        assert!(app.quit().success());
+    }
+}
+
+#[test]
+fn ac5_s81_words_and_focus_are_documented_at_their_facts() {
+    let technical = include_str!("../TECHNICAL.md");
+    let functional = include_str!("../FUNCTIONAL.md");
+    let library = technical
+        .split("### 5.3 Main window")
+        .nth(1)
+        .unwrap()
+        .split("### 5.4")
+        .next()
+        .unwrap();
+    for text in [
+        "Opens at start",
+        "focus",
+        "These mods use it",
+        "These mods extend it",
+    ] {
+        assert!(library.contains(text), "5.3 lacks {text}");
+    }
+    let consent = technical
+        .split("### 6.3 The consent page")
+        .nth(1)
+        .unwrap()
+        .split("## 7.")
+        .next()
+        .unwrap();
+    assert!(consent.contains("<name> opens when watane starts, in place of the manager."));
+    for (id, texts) in [
+        (
+            "63",
+            vec![
+                "Opens at start",
+                "opens when watane starts, in place of the manager.",
+            ],
+        ),
+        ("66", vec!["focus"]),
+        ("67", vec!["These mods use it", "These mods extend it"]),
+    ] {
+        let line = functional
+            .lines()
+            .find(|l| l.starts_with(&format!("- **APP-F-{id}**")))
+            .unwrap();
+        for text in texts {
+            assert!(line.contains(text), "APP-F-{id} lacks {text}");
+        }
+    }
+}

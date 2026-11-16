@@ -68,6 +68,13 @@ if (process.argv[2] === 'manage') {
     assert.ok((main.textContent + nodes.h1.textContent).includes(asked_by.name));
     assert.equal(all(main).filter(n => n.tagName === 'img').length,0);
   }
+} else if (process.argv[2] === 'main') {
+  for (const becomes_main of [true, false, undefined]) {
+    await load({kind:'install',by_program:false,mods:[{name:'Desk',version:'1.0.0',local:'desk',publisher:null,
+      grants:[],uses:[],becomes_main}]});
+    const line = 'Desk opens when watane starts, in place of the manager.';
+    assert.equal(all(main).some(n => n.content === line), becomes_main === true);
+  }
 } else if (process.argv[2] === 'pick') {
   const request = {kind:'pick',consumer:'Dave stats',provider:'Carol ratings',cause:'<img src=x onerror=alert(1)>',
     candidates:[candidate('first','Ratings'), candidate('second','<img src=x onerror=alert(1)>')]};

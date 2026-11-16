@@ -112,6 +112,8 @@ pub struct Candidate {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanMod {
+    #[serde(default)]
+    pub becomes_main: bool,
     pub local: String,
     pub name: String,
     pub slug: String,
@@ -781,7 +783,7 @@ mod tests {
     fn ac9_request_and_answer_json_match_spec() {
         let value = json!({"kind":"install","by_program":false,"mods":[{
             "local":"reading-list","name":"Reading list","slug":"reading-list","version":"0.1.0",
-            "release":null,"publisher":null,"replaces":null,"grants":[{"key":"storage","kind":"storage",
+            "becomes_main":false,"release":null,"publisher":null,"replaces":null,"grants":[{"key":"storage","kind":"storage",
             "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[],"origin":null,"binds":[]}]});
         assert_eq!(serde_json::to_value(install()).unwrap(), value);
         let sign = json!({"kind":"sign","statement":"release","signer":{"name":"Alice","fingerprint":"abc","you":false},

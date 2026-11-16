@@ -844,3 +844,46 @@
   No participant-free refusal was observed: startup never reached manage.
 - Later (validator, user-sim, outside the sandbox): S43 to S48 and J10 run and
   pass; the startup failures above came from Sol's sandbox only.
+
+## S81 — The app says what it means
+
+- Only the Library's main entry shows `.main-mark` with `Opens at start`;
+  unsetting main removes the marker. Install consent has a snake_case
+  `PlanMod.becomes_main` flag (default false for older fixtures) and says
+  `<name> opens when watane starts, in place of the manager.` only for the
+  selected proposal when no main is set.
+- Host's PlanEntry has no proposal metadata. MainMod reads pkg's `main()`
+  from host's documented staging layout (host TECHNICAL 4.2), matches the
+  package id including any source files, and selects in request order.
+  This avoids a sibling interface change for folder and published plans.
+  src/confirm.rs is an unlisted required edit: it maps that choice into the
+  host install request's app consent model. No dependencies were added.
+- Connection links prevent their default hash navigation, open the target
+  details, and focus its heading button. Disable/remove warnings distinguish
+  granted enabled callers (`These mods use it`) from subscribers (`These mods
+  extend it`), uses first. A mod with both kinds occurs in both lists.
+  A local name appears once per list. Cancel remains focused.
+- Test-first: DOM checks failed on the missing marker, missing consent line,
+  source entry retaining focus and the old extension-as-use wording. The
+  proposal unit test failed with None instead of Desk; the spec check failed
+  on the missing Library wording. Each passes after implementation.
+- New tests: manager.rs has ac1–ac4_s81 DOM and native scenarios, plus
+  ac5_s81_words_and_focus_are_documented_at_their_facts. main_mod.rs has
+  ac2_s81_consent_selects_first_proposal_only_without_a_main, also checking
+  pending plans with equal slug/version, source-bearing packages and order.
+  The only changed existing test is
+  consent::tests::ac9_request_and_answer_json_match_spec, which now expects
+  becomes_main:false. No existing Extended-by-only text assertion or
+  connection-link click test was found to change; none was weakened.
+- Validation: cargo build passes; default cargo test has 102 passes and the
+  existing pairing failure `Failed to create netmon monitor`. The exact
+  requested driver/include-ignored command (all four front tests skipped by
+  their exact names) has 103 library passes and that same failure before
+  integration targets. API, static config and support selftests pass (30).
+  Strict all-targets/driver clippy and fmt --check pass. Release with driver
+  fails at the required `the driver feature is only for debug test builds`.
+- All five S81 DOM/spec tests pass. All four new native scenarios were
+  attempted; each fails before any scenario assertion, with HIServices XPC
+  Connection Invalid, _LSModifyNotification -50, then driver readiness
+  timeout. AC1–AC4 native validation and AC6 remain PARTIAL for the validator
+  in a working GUI session. No screen-taking front test was run.

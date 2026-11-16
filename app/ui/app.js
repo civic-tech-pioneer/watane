@@ -1,7 +1,7 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
-import {connections, dependents, matchesLibrary, updateOffers} from './manager.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes } from './words.js';
+import {connections, matchesLibrary, updateOffers} from './manager.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, dependencyWarning } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -51,6 +51,7 @@ function modsView(mods) {
     const heading = element('h2', '', entry);
     button(heading, mod.name, 'select-mod', () => { entry.querySelector('details').open = true; });
     element('span', mod.version, entry, 'version');
+    if (mod.main) element('span', 'Opens at start', entry, 'main-mark');
     if (mod.notice) element('p', mod.notice, entry, 'notice');
     if (mod.offer) button(entry, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release: mod.offer}));
     if (mod.error) element('p', mod.error, entry);
@@ -72,11 +73,12 @@ function modsView(mods) {
       connected[kind].forEach((local, i) => {
         if (i) row.append(document.createTextNode(', '));
         const a = element('a', local, row); a.href = '#mods';
-        a.onclick = () => {
+        a.onclick = event => {
+          event.preventDefault();
           $('#library-filter').value = ''; $('#library-source').value = ''; filterLibrary();
           managerTab = 'library'; route();
           const target = Array.from(launcher.children).find(e => e.dataset.local === local);
-          if (target) { target.querySelector('details').open = true; target.scrollIntoView(); }
+          if (target) { target.querySelector('details').open = true; target.scrollIntoView(); target.querySelector('.select-mod').focus(); }
         };
       });
     }
@@ -116,10 +118,12 @@ function modsView(mods) {
 }
 let confirming = null;
 function warn(mod, proceed, verb) {
-  const affected = dependents(mod, currentMods);
-  if (!affected.length) return proceed();
+  const linked = connections(mod, currentMods);
+  const enabled = new Set(currentMods.filter(m => m.enabled).map(m => m.local));
+  const warning = dependencyWarning(verb, mod.name, linked.usedBy.filter(local => enabled.has(local)), linked.extendedBy.filter(local => enabled.has(local)));
+  if (!warning) return proceed();
   confirming = proceed;
-  $('#dependency-dialog p').textContent = `${verb} ${mod.name}? These mods use it: ${affected.join(', ')}.`;
+  $('#dependency-dialog p').textContent = warning;
   $('#dependency-dialog').showModal(); $('#dependency-cancel').focus();
 }
 $('#dependency-cancel').onclick = () => $('#dependency-dialog').close();

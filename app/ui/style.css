@@ -11,3 +11,5 @@ nav { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
 #launcher > section { border: 1px solid #d5d8d4; padding: 1rem; border-radius: .5rem; }
 #launcher h2 { margin: 0; } .select-mod { margin: 0; padding: 0; border: 0; background: transparent; font-weight: bold; cursor: pointer; }
 .connections a { color: #235d51; } dialog { max-width: 36rem; } button:focus-visible, a:focus-visible { outline: 2px solid #235d51; }
+
+.main-mark { display: inline-block; margin-left: .75rem; color: #235d51; font-weight: 600; }

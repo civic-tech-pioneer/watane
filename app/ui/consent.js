@@ -87,6 +87,7 @@ try {
         if (mod.origin) text(section, 'p', `made from ${mod.origin} (the publisher says so)`);
         for (const bind of mod.binds || []) text(section, 'p', bind);
         if (mod.replaces) text(section, 'p', `replaces ${mod.replaces}`);
+        if (mod.becomes_main) text(section, 'p', `${mod.name} opens when watane starts, in place of the manager.`);
         for (const grant of mod.grants) {
           const label = document.createElement('label');
           const input = document.createElement('input');

@@ -127,6 +127,7 @@ fn request_view(
             .entries
             .iter()
             .map(|e| consent::PlanMod {
+                becomes_main: false,
                 origin: e.origin.as_ref().map(|origin| {
                     let name = host
                         .and_then(|h| {
@@ -297,8 +298,26 @@ impl Confirm for HostConfirm {
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
         let broker = self.broker.clone();
         let host = self.host.get().and_then(Weak::upgrade);
-        let view = request_view(&request, &self.parties, host.as_deref());
-        Box::pin(async move { host_answer(broker.ask(view).await, &request) })
+        let mut view = request_view(&request, &self.parties, host.as_deref());
+        let core = self.core.get().and_then(Weak::upgrade);
+        Box::pin(async move {
+            if let Some(core) = core {
+                match core.main.proposed(&core.host, &request.entries) {
+                    Ok(proposed) => {
+                        if let consent::Request::Install { mods, .. } = &mut view {
+                            for m in mods {
+                                m.becomes_main = proposed.as_deref() == Some(&m.local);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e.message);
+                        return Answer::Deny;
+                    }
+                }
+            }
+            host_answer(broker.ask(view).await, &request)
+        })
     }
 }
 

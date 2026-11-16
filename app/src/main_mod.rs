@@ -31,6 +31,34 @@ impl MainMod {
             local: Mutex::new(local),
         })
     }
+    pub fn proposed(
+        &self,
+        host: &Host,
+        entries: &[watane_host::PlanEntry],
+    ) -> Result<Option<String>, CmdError> {
+        if self.get().is_some() || entries.is_empty() {
+            return Ok(None);
+        }
+        // PlanEntry omits `main`. Read pkg metadata from the host's documented
+        // staging layout (host 4.2); match bytes, never just a slug/version that
+        // another pending plan might share. Source files are kept when present.
+        let mut proposals = std::collections::HashSet::new();
+        for stage in std::fs::read_dir(host.home().join("staging"))? {
+            let folder = stage?.path().join("mod");
+            let Ok(metadata) = Mod::read(&folder) else {
+                continue;
+            };
+            if metadata.main() {
+                let package = watane_host::watane_pkg::pack(&folder, true)
+                    .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
+                proposals.insert(package.id());
+            }
+        }
+        Ok(entries
+            .iter()
+            .find(|e| proposals.contains(&e.package))
+            .map(|e| e.local.to_string()))
+    }
     pub fn get(&self) -> Option<String> {
         self.local.lock().unwrap().clone()
     }
@@ -112,6 +140,75 @@ mod tests {
         host.install(plan, watane_host::Requester::App)
             .await
             .unwrap()
+    }
+    #[tokio::test]
+    async fn ac2_s81_consent_selects_first_proposal_only_without_a_main() {
+        let home = tempfile::tempdir().unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
+        install(&host, vec![fixture("reading-list")]).await;
+        let main = MainMod::open(&host).unwrap();
+        let plan = host
+            .plan(vec![watane_host::Source::Folder(fixture("desk"))])
+            .unwrap();
+        assert_eq!(
+            main.proposed(&host, plan.entries()).unwrap().as_deref(),
+            Some("desk")
+        );
+        main.set(&host, Some("reading-list")).unwrap();
+        assert_eq!(main.proposed(&host, plan.entries()).unwrap(), None);
+        main.set(&host, None).unwrap();
+        let other = host
+            .plan(vec![watane_host::Source::Folder(fixture("reading-list"))])
+            .unwrap();
+        assert_eq!(main.proposed(&host, other.entries()).unwrap(), None);
+        // Another pending plan with the same slug/version must not borrow
+        // Desk's proposal. This also exercises packages containing source.
+        let variant = tempfile::tempdir().unwrap();
+        std::fs::create_dir(variant.path().join("wit")).unwrap();
+        std::fs::create_dir(variant.path().join("ui")).unwrap();
+        for file in ["wit/world.wit", "ui/index.html"] {
+            std::fs::copy(fixture("desk").join(file), variant.path().join(file)).unwrap();
+        }
+        std::fs::write(
+            variant.path().join("mod.toml"),
+            "name = \"Desk\"\nsummary = \"Desk\"\nmain = false\n",
+        )
+        .unwrap();
+        let nonmain = host
+            .plan(vec![watane_host::Source::Folder(variant.path().into())])
+            .unwrap();
+        assert_eq!(main.proposed(&host, nonmain.entries()).unwrap(), None);
+        std::fs::write(
+            variant.path().join("mod.toml"),
+            "name = \"Other desk\"\nsummary = \"Desk\"\nmain = true\n",
+        )
+        .unwrap();
+        std::fs::write(
+            variant.path().join("wit/world.wit"),
+            "package mods:zdesk@0.1.0; world zdesk {}",
+        )
+        .unwrap();
+        std::fs::create_dir(variant.path().join("tests")).unwrap();
+        std::fs::write(variant.path().join("tests/example.json"), "{}").unwrap();
+        let pkg = watane_host::watane_pkg::pack(variant.path(), true).unwrap();
+        // A folder plan repacks without source; put the source-bearing bytes
+        // in an independent staged directory to check the adapter's id match.
+        let staged = host.home().join("staging/source-package");
+        std::fs::create_dir(&staged).unwrap();
+        pkg.unpack(&staged.join("mod")).unwrap();
+        let mut second = plan.entries()[0].clone();
+        second.package = pkg.id();
+        second.local = LocalName::parse("zdesk").unwrap();
+        let ordered = [second, plan.entries()[0].clone()];
+        assert_eq!(
+            main.proposed(&host, &ordered).unwrap().as_deref(),
+            Some("zdesk")
+        );
+        let reversed = ordered.into_iter().rev().collect::<Vec<_>>();
+        assert_eq!(
+            main.proposed(&host, &reversed).unwrap().as_deref(),
+            Some("desk")
+        );
     }
     #[tokio::test]
     async fn ac1_startup_chooses_enabled_main_page_or_library() {

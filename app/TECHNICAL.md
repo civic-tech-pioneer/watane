@@ -729,6 +729,7 @@ pub struct PlanMod {
     pub local: String, pub name: String, pub slug: String, pub version: String,
     pub release: Option<String>,      // ReleaseRef text; None = local
     pub publisher: Option<Party>,     // None = local; Some = signature verified by host
+    pub becomes_main: bool,           // default false; selected proposal when no main is set (5.4)
     pub replaces: Option<String>,     // the installed version that this replaces
     pub grants: Vec<GrantLine>,
     pub uses: Vec<String>,            // providers, as {provider} of section 4
@@ -751,12 +752,19 @@ pub struct Detail { pub label: String, pub value: String }
 ```
 
 `GrantLine.granted` is used in `ModView`; in a request it is `true`.
+`HostConfirm` sets `PlanMod.becomes_main` for only the first proposing entry
+when no main mod is set. The host's `PlanEntry` omits `main`, so the app
+reads `Mod::main()` from the documented `staging/<random>/mod/` layout
+(host 4.2), matching the repacked package id to the entry rather than just
+its slug or version. This covers folder and published plans without adding
+a sibling interface. Missing `becomes_main` in old fixtures
+means false.
 `consent_get` returns `{"id": AskId, "mark": "<w1> <w2>", "request": Request}`:
 
 ```json
 {"id":"9f0c…","mark":"cedar otter","request":{"kind":"install","by_program":false,"mods":[
  {"local":"reading-list","name":"Reading list","slug":"reading-list","version":"0.1.0","release":null,
-  "publisher":null,"replaces":null,
+  "publisher":null,"becomes_main":false,"replaces":null,
   "grants":[{"key":"storage","kind":"storage","text":"Keep its own data on this device","granted":true,"new":true}],
   "uses":[],"origin":null,"binds":[]}]}}
 ```
@@ -797,8 +805,10 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
 - An install shows one block per mod: name, version, then
   `<slug> <version> by <party label> · signature verified — <ReleaseRef>`,
   with the readable part first and the full reference last, or `local`; `replaces <version>`
-  if set; then each
-  grant line with a checkbox `Allow`, checked at load; a new grant carries
+  if set; when `becomes_main` is true, a separate paragraph reads exactly
+  `<name> opens when watane starts, in place of the manager.` It is absent
+  for every other mod, including proposals when a main mod is already set.
+  Then each grant line with a checkbox `Allow`, checked at load; a new grant carries
   the label `new`. Then `uses <provider>` lines; step 5: `made from
   <origin> (the publisher says so)` when set, and each `binds` line.
 - A pick (step 5) has the title `Choose a mod for <consumer>`, the text
