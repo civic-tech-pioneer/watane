@@ -288,7 +288,8 @@ mod tests {
             "key `watane:host/manage`",
             r#""manages": [{"fn": "disable", "args": {"local": "weather"}}]"#,
             "reads are not listed",
-            "grant that the person approves",
+            "grant that the participant approves",
+            "requests return the ids `r1`, `r2`, ... in call order",
             r#"{"type":"catalog"}"#,
             "`watane:host/caller`",
         ] {
