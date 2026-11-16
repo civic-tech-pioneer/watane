@@ -974,3 +974,6 @@ No dependencies added.
   set by the next pass's held call. Desk now counts outstanding button calls
   and clears the marker only when the last settles; the test waits for the
   cleared marker after each post-reload call. Native: **20/20 pass**.
+  Round 2 native runs: driver suite with `--include-ignored` (front four
+  skipped by name) 242 passed, 0 failed, J10 included; default 142 passed.
+  Real `$TMPDIR/.tmp*`: 27 before and 27 after each run, same names.
