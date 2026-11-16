@@ -498,10 +498,11 @@ when an anchor is stored and `replace` is false. Dial the code's key with
 its hints, call `pair`, verify the list (signed by that key, names this
 node), and store it and `anchor`, and store the address at which the anchor
 answered as `learn_addr` would for a listed machine (4.5), so a reopened home
-reaches it with no hint. With `replace`, the new anchor's list replaces the
-old one whatever its seq. After `pair`, the joiner pulls `devices` once from
-the anchor and stores the returned addresses before `join` returns; a failed pull
-does not fail the join (the next newer hello or list push retries).
+reaches it with no hint; nothing is written to `book.json` for other machines.
+With `replace`, the new anchor's list replaces the old one whatever its seq.
+After `pair`, the joiner pulls `devices` once from the anchor and keeps the
+addresses it passes on (5.10) before `join` returns; a failed pull does not
+fail the join (the next newer hello or list push retries).
 
 A machine stores a list from any node only when its stored anchor signed
 it, it verifies, and its seq is higher (NET-F-11). Each time this machine
