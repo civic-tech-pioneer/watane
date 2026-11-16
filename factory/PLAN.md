@@ -1100,6 +1100,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (`--features driver --test <file>`, app/AGENTS.md), the foreman the whole suite once, the PO only
   what changed since. Next, measured after S84: (1) the driver suite without `--test-threads=1`;
   (3) `app/scripts/linux-test.sh` (Docker, xvfb) as a way to run app slices off the Mac or in the cloud.
+  Measured (3), warm, on 2c820c3-era main: the whole app suite (default + driver with ignored, front
+  skipped) in 5 min (cold build 4 min more); 393 passed, 4 failed on Linux only: j10 ac3, s44 ac2 and
+  s39 ac3 (the main window never reaches its area), machines s28 ac1. linux-test.sh had no
+  `site.localhost` since S54 (fixed). The 4 are a later app slice (Linux, stage F).
 - S83 (2026-11-16): the app learns of an install over POST /api/install through host
   `Confirm::installed(&Installed{requester,new,updated})`, a default no-op method called once after each
   install that wrote the catalog (host 12.1); the app applies the main-mod rule there for every requester.
