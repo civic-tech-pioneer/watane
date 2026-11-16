@@ -272,6 +272,11 @@ fn ac1_journey_j8() {
     std::fs::write(&server_package, &bytes).unwrap();
     let light = start(light_home.path());
     find_on(&light, reference, &server_key);
+    // The control runs after the same off/on cycle as the refused fetch, so
+    // only the removal differs between the two (dist's error text below
+    // does not name the server: node drops net's blob error).
+    on(&light, false);
+    on(&light, true);
     fetched(&light, reference, &bytes);
     std::fs::remove_file(&light_package).unwrap();
     on(&light, false); // Keep its old list until its next request to the server.

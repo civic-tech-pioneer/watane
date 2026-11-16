@@ -733,22 +733,16 @@
   the same light app session. The AC5 recovery restart occurs before
   both fetches. Alice's net and both static sites are off for the positive
   fetch; its cached package is removed before removal and the retry.
-- A 502 alone no longer satisfies AC6. The light's problems must contain
-  `node == <server short key>` and exactly
-  `refused <server>: node <server> refused: not_allowed`, absent before
-  removal. This independent literal uses net's untrusted-caller answer
-  `Code::NotAllowed` and NetError's Display text, rather than an app
-  formatting function. Neither `unreachable <server>:` nor the earlier
-  hash-mismatch refusal can pass. The test still requires locally Light,
-  the server's printed devices-change event, and no cached package.
-- Interface observation for native validation: `node::words` currently
-  supplies consent texts only, with no untrusted-caller refusal formatter.
-  Also, the current net light-client code emits Refused for a bad object,
-  but discards ordinary `NetError::Refused` diagnostics; blob-protocol
-  permission denial is currently mapped to Unreachable. The stronger
-  oracle intentionally does not accept those weaker diagnostics or change
-  sibling code. The native validator/net task must establish the required
-  refusal evidence after the address defect is fixed.
+- AC6 (as d141db6 and the round-2 validator left it): the light's fetch
+  must fail with `fetch_failed` while it is still locally light, after the
+  server printed `machines <seq>:` without it. The successful control runs
+  after the same light off/on cycle, so removal is the only difference.
+  Natively, without `machine_remove` the same fetch returns 200 (checked by
+  mutation in round 2). The error text is dist's no-base fallback
+  ("channel ... is not followed; ..."): node's `need_package` drops net's
+  blob error, so neither the server's key nor `not_allowed` reaches the
+  app. If net's text ever reaches it, the test requires
+  `node <server> refused: not_allowed`.
 - Validation: J8's driver `--no-run` compile and all-targets driver clippy
   with `-D warnings` pass; formatting is clean after rustfmt. No native J8
   run was attempted in this sandbox, per the validator's return
