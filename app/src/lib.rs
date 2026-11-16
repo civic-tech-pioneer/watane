@@ -204,6 +204,8 @@ pub fn run(config: Config) -> Result<(), AppError> {
         broker: broker.clone(),
         parties: parties.clone(),
         host: OnceLock::new(),
+        core: OnceLock::new(),
+        notices: Arc::new(confirm::ManagerNotices::default()),
     });
     let host = watane_host::Host::open(
         &config.home,
@@ -342,6 +344,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                         node.clone(),
                         parties.clone(),
                         state.broker.clone(),
+                        confirm.notices.clone(),
                     ) {
                         Ok(core) => Arc::new(core),
                         Err(error) => {
@@ -349,6 +352,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                             break 'startup;
                         }
                     };
+                    let _ = confirm.core.set(Arc::downgrade(&core));
                     let initial = core.clone();
                     let result = tauri::async_runtime::block_on(async move {
                         tauri::async_runtime::spawn_blocking(move || initial.channels()).await

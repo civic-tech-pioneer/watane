@@ -58,3 +58,14 @@ export function actionErrors(render) {
 export function visibleIndexes(indexes) {
   return indexes.filter(index => !index.own || indexes.some(other => !other.own) || index.listings.length || index.included.length);
 }
+
+export function askerLabel(asker) {
+  return asker.publisher ? `${asker.name} by ${partyLabel(asker.publisher)}` : `${asker.name} (local)`;
+}
+
+export function manageTitle(request) {
+  const target = request.target.name;
+  const action = {enable: `turn on ${target}`, grant: `give ${target} a grant`,
+    remove: `remove ${target}`, remove_data: `remove ${target} and delete its data`}[request.action];
+  return `${request.asked_by.name} asks to ${action}`;
+}

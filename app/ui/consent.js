@@ -1,5 +1,5 @@
 import { call } from './ipc.js';
-import { signTitle, checkedLabel, partyLabel } from './words.js';
+import { signTitle, checkedLabel, partyLabel, askerLabel, manageTitle } from './words.js';
 
 const approve = document.querySelector('#approve');
 const deny = document.querySelector('#deny');
@@ -62,8 +62,21 @@ try {
   if (view) {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
-    document.querySelector('h1').textContent = request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : request.kind === 'join' ? 'Pair a machine' : request.kind === 'reach' ? (request.what === 'relay' ? 'Use a relay' : 'Turn on the DHT') : signTitle(request.statement);
-    if (request.kind === 'install') {
+    document.querySelector('h1').textContent = request.kind === 'manage' ? manageTitle(request) : request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : request.kind === 'join' ? 'Pair a machine' : request.kind === 'reach' ? (request.what === 'relay' ? 'Use a relay' : 'Turn on the DHT') : signTitle(request.statement);
+    if (request.asked_by) {
+      text(main, 'p', `Asked by ${askerLabel(request.asked_by)}, which manages your mods`);
+    }
+    if (request.kind === 'manage') {
+      const target = request.target;
+      text(main, 'h2', target.name);
+      text(main, 'p', target.version);
+      text(main, 'p', target.publisher ? `by ${party(target.publisher)}` : 'local');
+      if (request.action === 'grant' && request.grant) text(main, 'p', request.grant.text);
+      if (request.action === 'remove' || request.action === 'remove_data') {
+        text(main, 'p', request.action === 'remove' ? 'Its data is kept. Installing it again brings it back.' : 'Its data is deleted. This cannot be undone.');
+        if (request.users.length) text(main, 'p', `Used by: ${request.users.join(', ')}`);
+      }
+    } else if (request.kind === 'install') {
       if (request.by_program) text(main, 'p', 'Asked by a program on this device');
       for (const mod of request.mods) {
         const section = document.createElement('section');

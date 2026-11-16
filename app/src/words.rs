@@ -44,6 +44,12 @@ pub(crate) fn party_label(p: &Party) -> String {
             .unwrap_or_else(|| p.fingerprint.clone())
     }
 }
+pub(crate) fn asker_label(asker: &crate::consent::Asker) -> String {
+    match &asker.publisher {
+        Some(p) => format!("{} by {}", asker.name, party_label(p)),
+        None => format!("{} (local)", asker.name),
+    }
+}
 pub(crate) fn release_label(r: &watane_dist::ReleaseRef, parties: &Parties) -> String {
     format!(
         "{r} by {}",
@@ -205,6 +211,33 @@ pub(crate) fn bad_note(cause: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_manager_words_and_asker_labels() {
+        let line = grant_line(&Grant::Manage, &Parties::new(), true, true);
+        assert_eq!(line.key, "manage");
+        assert_eq!(line.kind, GrantKind::Manage);
+        assert_eq!(
+            line.text,
+            "Manage your mods: see every mod and its grants, turn mods off, withdraw grants, and ask you to add, turn on or remove mods"
+        );
+        let mut asker = crate::consent::Asker {
+            local: "desk".into(),
+            name: "Desk".into(),
+            publisher: None,
+        };
+        assert_eq!(asker_label(&asker), "Desk (local)");
+        asker.publisher = Some(Party {
+            you: false,
+            name: Some("Ivy".into()),
+            fingerprint: "abcdefghij".into(),
+        });
+        assert_eq!(asker_label(&asker), "Desk by Ivy (abcdefghij)");
+        asker.publisher.as_mut().unwrap().you = true;
+        assert_eq!(asker_label(&asker), "Desk by you");
+        asker.publisher.as_mut().unwrap().you = false;
+        asker.publisher.as_mut().unwrap().name = None;
+        assert_eq!(asker_label(&asker), "Desk by abcdefghij");
+    }
     #[test]
     fn ac3_wrong_channel_names_both_parties() {
         let named = "a".repeat(52);

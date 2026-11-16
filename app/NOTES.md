@@ -747,3 +747,51 @@
   with `-D warnings` pass; formatting is clean after rustfmt. No native J8
   run was attempted in this sandbox, per the validator's return
   instructions. The strengthened removal assertion awaits native validation.
+
+
+### S77 — app stage J manager consent
+
+- Implements `HostConfirm::manage` and `reduced` using host's existing
+  interface, with Q28–Q33 option (a). No new dependency, Tauri command,
+  permission, route or fixture. S77-2 owns Desk's page and J10.
+- Manager installs use the existing provider resolution path with the
+  manager carried into picks and `Requester::Mod` carried into install.
+  A supplied link only checks the already-read channel; its base is never
+  followed. All async app work stays on the app runtime, with the join
+  awaited from host's runtime. Dropping the host future aborts the app task.
+- Reduction notices are memory only and clear on enable; release/channel
+  notices retain priority. Disable and close-page post a close to the main
+  thread without waiting for it.
+- Legacy requests omit absent `asked_by` when serialized, preserving the
+  earlier exact-JSON test; deserialization defaults it to `None`. The new
+  Manage request rejects withheld grants and provider choices.
+- The table's manager titles alone omitted the asker's publisher/local
+  status required by APP-F-71. Section 17.4 now explicitly puts the same
+  asked-by line first for every manager request.
+- Unlisted file: `tests/support/consent_dom.mjs`, extended to execute the
+  shipped consent script for all actions, literal hostile names and the
+  checkbox-free grant. This gives DOM coverage alongside the required
+  native `gui_shell` tests when the sandbox cannot start native apps.
+- Red: missing manager request types/labels and mapping/reduction helpers
+  failed compilation; the DOM test failed on the missing asked-by line.
+  The cancellation test failed on the missing task guard. Green: all new
+  unit tests and the DOM companion pass. The final library run has 101
+  passes and one existing netmon failure (`Failed to create netmon monitor`).
+- Build succeeds; clippy with all targets and driver under `-D warnings`
+  and fmt pass. The release driver build fails at the required debug-only
+  compile guard. Native manager consent tests fail before readiness with
+  `com.apple.hiservices-xpcservice` connection errors and
+  `_LSModifyNotification` error -50, matching earlier sandbox findings.
+  The final default run totals 137 passes and that one existing netmon
+  failure. The four task-listed front tests are excluded by their exact
+  names. No existing assertion was weakened or removed.
+
+- Final isolated driver regression (`--include-ignored --no-fail-fast`, with
+  the four exact front skips): 152 pass, 61 fail across 20 targets. Every
+  panic is either app readiness or the existing netmon error; all new unit
+  tests, all DOM companions and all 16 static-config tests pass. The
+  native AC5 case fails before its assertions. AC5's native checks and
+  AC6's full-regression acceptance still need native macOS validation.
+  This run followed the final default build, with no concurrent build
+  overwriting the shared app binary. Logs: `/tmp/s77-driver-final.log`,
+  `/tmp/s77-default-final.log`, `/tmp/s77-confirm-final.log`.

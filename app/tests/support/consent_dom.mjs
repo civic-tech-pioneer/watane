@@ -33,13 +33,42 @@ async function load(request) {
   globalThis.clearTimeout = id => timers.delete(id);
   globalThis.__call = async (command, args) => command === 'consent_get' ? {id:'request-id', mark:'cedar otter', request} : calls.push({command, args});
   globalThis.__words = words;
-  await import(`data:text/javascript,${encodeURIComponent('const call = globalThis.__call; const {signTitle, checkedLabel, partyLabel} = globalThis.__words;\n' + source)}#${Math.random()}`);
+  await import(`data:text/javascript,${encodeURIComponent('const call = globalThis.__call; const {signTitle, checkedLabel, partyLabel, askerLabel, manageTitle} = globalThis.__words;\n' + source)}#${Math.random()}`);
   assert.equal(document.body.dataset.ready, 'true');
 }
 function expire() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } }
 const candidate = (choice, name) => ({choice, name, summary:'Book scores', version:'1.0.0',
   publisher:{name:'Frank',fingerprint:'frank-key'}, origin:'alice/books@1.0.0', installed:true, checked_at:0});
-if (process.argv[2] === 'pick') {
+if (process.argv[2] === 'manage') {
+  const asked_by = {local:'desk',name:'Desk',publisher:null};
+  const target = {local:'weather',name:'Weather',version:'1.2.3',publisher:null};
+  for (const kind of ['install','pick']) {
+    await load({kind,asked_by,mods:[],consumer:'Notes',provider:'Weather',cause:'offline',candidates:[]});
+    assert.equal(main.children[0].textContent, 'Asked by Desk (local), which manages your mods');
+  }
+  for (const [action,title,data,users] of [
+    ['enable','Desk asks to turn on Weather',null,[]],
+    ['grant','Desk asks to give Weather a grant',null,[]],
+    ['remove','Desk asks to remove Weather','Its data is kept. Installing it again brings it back.',['Notes']],
+    ['remove_data','Desk asks to remove Weather and delete its data','Its data is deleted. This cannot be undone.',[]]
+  ]) {
+    await load({kind:'manage',asked_by,action,target,users,grant:{text:'Keep its own data on this device'}});
+    assert.equal(nodes.h1.textContent,title);
+    assert.equal(main.children[0].textContent, 'Asked by Desk (local), which manages your mods');
+    for (const text of ['Weather','1.2.3','local',...(data ? [data] : []),...(users.length ? ['Used by: Notes'] : [])]) assert.ok(main.textContent.includes(text),text);
+    assert.equal(main.textContent.includes('Used by:'),!!users.length);
+    if (action === 'grant') assert.ok(main.textContent.includes('Keep its own data on this device'));
+    assert.equal(all(main).filter(n => n.type === 'checkbox').length,0);
+    expire(); await nodes['#approve'].click();
+    assert.deepEqual(calls[0].args,{id:'request-id',approve:true,choice:null,withheld:[]});
+  }
+  asked_by.name = '<img src=x onerror=alert(1)>';
+  for (const kind of ['install','pick','manage']) {
+    await load({kind,asked_by,action:'enable',target,mods:[],consumer:'Notes',provider:'Weather',cause:'offline',candidates:[]});
+    assert.ok((main.textContent + nodes.h1.textContent).includes(asked_by.name));
+    assert.equal(all(main).filter(n => n.tagName === 'img').length,0);
+  }
+} else if (process.argv[2] === 'pick') {
   const request = {kind:'pick',consumer:'Dave stats',provider:'Carol ratings',cause:'<img src=x onerror=alert(1)>',
     candidates:[candidate('first','Ratings'), candidate('second','<img src=x onerror=alert(1)>')]};
   await load(request);

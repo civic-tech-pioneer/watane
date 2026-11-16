@@ -130,9 +130,7 @@ pub(crate) fn mod_enable(
     local: String,
 ) -> Result<(), CmdError> {
     record(&webview, "mod_enable");
-    Ok(core(&state)?
-        .host
-        .enable(&watane_host::LocalName::parse(&local)?)?)
+    core(&state)?.enable(&local)
 }
 #[tauri::command]
 pub(crate) fn mod_remove(

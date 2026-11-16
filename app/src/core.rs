@@ -34,10 +34,10 @@ pub(crate) struct ModView {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ModLink {
     kind: String,
-    provider: String,
-    granted: bool,
+    pub(crate) provider: String,
+    pub(crate) granted: bool,
 }
-fn mod_links(m: &watane_host::InstalledMod) -> Vec<ModLink> {
+pub(crate) fn mod_links(m: &watane_host::InstalledMod) -> Vec<ModLink> {
     m.links
         .iter()
         .filter_map(|link| {
@@ -118,7 +118,8 @@ pub(crate) struct Core {
     update_failures: Mutex<std::collections::BTreeMap<String, String>>,
     pub served: Mutex<Option<Served>>,
     app: tauri::AppHandle,
-    parties: Arc<Parties>,
+    pub(crate) parties: Arc<Parties>,
+    pub(crate) manager_notices: Arc<crate::confirm::ManagerNotices>,
 }
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct UpdateDone {
@@ -235,8 +236,10 @@ impl Core {
         node: Arc<watane_node::Node>,
         parties: Arc<Parties>,
         broker: Arc<crate::consent::Broker>,
+        manager_notices: Arc<crate::confirm::ManagerNotices>,
     ) -> Result<Self, CmdError> {
         Ok(Self {
+            manager_notices,
             main: crate::main_mod::MainMod::open(&host)?,
             app,
             host,
@@ -350,7 +353,7 @@ impl Core {
                 .unwrap_or_default(),
             links: mod_links(&m),
             derived_from_label,
-            notice,
+            notice: self.manager_notices.get(m.local.as_ref(), notice),
             offer,
             offer_grants,
             local: m.local.to_string(),
@@ -390,6 +393,20 @@ impl Core {
         let name = LocalName::parse(local)?;
         let followed = self.dist.followed()?;
         Ok(self.host.get(&name).map(|m| self.view(m, &followed)))
+    }
+    pub fn enable(&self, local: &str) -> Result<(), CmdError> {
+        self.manager_notices
+            .enable(&self.host, &LocalName::parse(local)?)
+    }
+    pub fn post_close(&self, local: String) {
+        let app = self.app.clone();
+        if let Err(error) = self.app.run_on_main_thread(move || {
+            if let Err(error) = views::close_mod(&app, &local) {
+                eprintln!("{}", error.message);
+            }
+        }) {
+            eprintln!("cannot schedule page close: {error}");
+        }
     }
     pub fn disable(&self, local: &str) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
@@ -591,7 +608,9 @@ impl Core {
         for release in updates {
             let core = self.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = core.install_resolved(release, None, None).await;
+                let _ = core
+                    .install_resolved(release, None, None, watane_host::Requester::App, None)
+                    .await;
             });
         }
     }
@@ -612,6 +631,23 @@ impl Core {
             release,
             link,
             Some(self.app.state::<crate::AppState>().broker.clone()),
+            watane_host::Requester::App,
+            None,
+        )
+        .await
+    }
+    pub async fn install_managed(
+        self: &Arc<Self>,
+        release: watane_dist::ReleaseRef,
+        requester: watane_host::Requester,
+        asked_by: crate::consent::Asker,
+    ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
+        self.install_resolved(
+            release,
+            None,
+            Some(self.broker.clone()),
+            requester,
+            Some(asked_by),
         )
         .await
     }
@@ -620,6 +656,8 @@ impl Core {
         release: watane_dist::ReleaseRef,
         link: Option<watane_dist::Link>,
         pick: Option<Arc<crate::consent::Broker>>,
+        requester: watane_host::Requester,
+        asked_by: Option<crate::consent::Asker>,
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
         let planner = self.clone();
         let target = release.clone();
@@ -630,13 +668,13 @@ impl Core {
                     planner.node.follow(link)?;
                 }
                 let fetched = planner.node.fetch(&target)?;
-                planner.plan_fetched(fetched, pick.as_deref())
+                planner.plan_fetched(fetched, pick.as_deref(), asked_by.as_ref())
             })
             .await
             .map_err(|e| CmdError::new("io", e.to_string()))??;
             let automatic = background && !plan.needs_confirmation();
             let before = self.host.mods();
-            let installed = self.host.install(plan, watane_host::Requester::App).await?;
+            let installed = self.host.install(plan, requester).await?;
             self.installed(&installed)?;
             if automatic {
                 let at = std::time::SystemTime::now()
@@ -713,12 +751,17 @@ impl Core {
         }
         let first = self.node.open_link(&link)?;
         self.channels()?;
-        self.plan_fetched(first, Some(&self.app.state::<crate::AppState>().broker))
+        self.plan_fetched(
+            first,
+            Some(&self.app.state::<crate::AppState>().broker),
+            None,
+        )
     }
     fn plan_fetched(
         &self,
         first: watane_dist::Fetched,
         pick: Option<&crate::consent::Broker>,
+        asked_by: Option<&crate::consent::Asker>,
     ) -> Result<(watane_host::Plan, Vec<watane_dist::Fetched>), CmdError> {
         let result = resolve_plan(
             vec![first],
@@ -764,7 +807,9 @@ impl Core {
                     Err(error) => crate::build_on::fetch_or_pick(
                         Err(error.into()),
                         pick.map(|broker| {
-                            |cause: &CmdError| self.pick_provider(plan, m, broker, &cause.message)
+                            |cause: &CmdError| {
+                                self.pick_provider(plan, m, broker, &cause.message, asked_by)
+                            }
                         }),
                     ),
                 }
@@ -779,6 +824,7 @@ impl Core {
         missing: &watane_host::MissingProvider,
         broker: &crate::consent::Broker,
         cause: &str,
+        asked_by: Option<&crate::consent::Asker>,
     ) -> Result<(Option<watane_dist::Fetched>, Vec<watane_host::Bind>), CmdError> {
         use crate::build_on;
         let provider = &missing.provider;
@@ -840,6 +886,7 @@ impl Core {
             .find(|e| e.identity == missing.needed_by)
             .expect("missing consumer belongs to plan");
         let choice = build_on::picked(broker.ask_blocking(crate::consent::Request::Pick {
+            asked_by: asked_by.cloned(),
             consumer: consumer.name.clone(),
             provider: label,
             cause: cause.into(),

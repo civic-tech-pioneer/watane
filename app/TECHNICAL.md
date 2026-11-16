@@ -1370,6 +1370,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | E Build on | 8.1 providers, 8.3, 9.4 steps 3 and 5, 9.7; `Request::Pick`, `Answer::Pick`, `Candidate`; `PlanMod.origin` and `binds`; `HitView.origin`; the `origin` argument of `search`; `tests/build_on.rs`, `tests/j5.rs` | host stage 9 (binds); dist S7 (provider bases, `Fetched.link`, `Query.origin`); dev stage 9 (J5 only) | none: a pick request is tested in stage A through the driver's `ask` | S23 to S27 and J5 pass |
 | G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
+| J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/manage.rs`, `tests/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -1599,15 +1600,8 @@ the app only through the host's `Confirm` (host 12.1).
 
 ### 17.1 Requirements
 
-These join `FUNCTIONAL.md` (Step 10) in the slice that builds stage J,
-after S74's edits of that file have merged.
-
-- **APP-F-70** The grant to manage shall read in words in the consent view and in the details of a mod, like every other grant. Traces: F-INST-9, F-APP-5, J10.
-- **APP-F-71** Each request of a managing mod shall show in the consent view, which shall name that mod, with its publisher or "local", as the one who asks. The app shall act on it only after the participant approves. Traces: F-INST-11, F-APP-4, F-AGENT-4, J10.
-- **APP-F-72** An install or an update that a managing mod asked for shall show in the consent view also when it adds no grant. The app shall install only a release that it can read through the channels and indexes it already reads, and shall contact no other host for the request. Traces: F-INST-11, F-OWN-7, J10.
-- **APP-F-73** A request to remove a mod shall say whether its data is deleted, and name the mods that use it (APP-F-67). Traces: F-INST-5, F-INST-11, J10.
-- **APP-F-74** When a managing mod disables a mod or closes its page, the app shall close that mod's window, and the details of a disabled mod shall say which mod turned it off, until the app restarts. Traces: F-INST-10, F-APP-9, J10.
-- **APP-F-75** When the participant denies a request, closes the consent view or does not answer in 10 minutes, nothing shall change, and the managing mod shall learn that the request was denied. Traces: F-INST-11, W19.
+The stage J requirements are APP-F-70 to APP-F-75 in
+`FUNCTIONAL.md`, Step 10.
 
 ### 17.2 Words
 
@@ -1631,6 +1625,12 @@ The asker of a request is `<name> (local)` for a local manager and
 named, and maps the result: the change made gives `Approved`; a `Deny`
 of the participant, or the host's `refused` after one, gives `Denied`;
 any other error gives `Failed(<its text>)`.
+
+Host polls this future on its own small runtime. `manage` posts its async
+work to the app runtime and awaits the join handle; dist work remains in
+the existing blocking tasks on that runtime. Dropping the host future
+aborts the app task, so a pending manage consent cannot later act. No
+second app runtime is created.
 
 | `Ask` | The app |
 |---|---|
@@ -1656,6 +1656,7 @@ restarts or the mod is enabled. `Withdraw` keeps `Grant withdrawn by
 ```rust
 // Request::Install and Request::Pick gain, with #[serde(default)]:
 //     asked_by: Option<Asker>,                      // step 10: the manager that asked
+// Absent askers are omitted when serialized to preserve earlier request JSON.
 pub enum Request {
     // ... the variants of 6.2, and:
     /// Step 10 (17.3): an enable, a grant or a removal that a manager asks for.
@@ -1676,7 +1677,10 @@ A `Manage` request takes only `Approve` with no `withheld`, or `Deny`
 `users` holds the APP-F-67 names (the enabled mods that call it or
 receive its events) only for `Remove` and `RemoveData`.
 
-The consent page (6.3):
+The consent page (6.3): every request with `asked_by`, including `manage`,
+starts with `Asked by <asker>, which manages your mods`. This names the
+asker's publisher or local status (APP-F-71); the table lists the remaining
+lines for `manage`.
 
 | Request | Title | Lines |
 |---|---|---|
@@ -1745,7 +1749,7 @@ Scenarios of `tests/manage.rs`:
 
 ### 17.6 Build plan
 
-A row for section 12, which joins it with this stage's slice:
+Stage J is listed in section 12; its row is repeated here for reference:
 
 | Stage | Builds | Needs | Fake until then | Done when |
 |---|---|---|---|---|

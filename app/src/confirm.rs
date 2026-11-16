@@ -13,14 +13,115 @@ pub(crate) struct HostConfirm {
     pub broker: Arc<consent::Broker>,
     pub parties: Arc<Parties>,
     pub host: OnceLock<Weak<watane_host::Host>>,
+    pub core: OnceLock<Weak<crate::core::Core>>,
+    pub notices: Arc<ManagerNotices>,
 }
 
+#[derive(Default)]
+pub(crate) struct ManagerNotices(std::sync::Mutex<std::collections::BTreeMap<String, String>>);
+impl ManagerNotices {
+    pub fn get(&self, local: &str, release: Option<String>) -> Option<String> {
+        release.or_else(|| self.0.lock().unwrap().get(local).cloned())
+    }
+    pub fn enable(
+        &self,
+        host: &watane_host::Host,
+        local: &watane_host::LocalName,
+    ) -> Result<(), crate::CmdError> {
+        host.enable(local)?;
+        self.0.lock().unwrap().remove(local.as_ref());
+        Ok(())
+    }
+}
+fn manage_outcome(result: Result<(), crate::CmdError>) -> watane_host::ManageOutcome {
+    match result {
+        Ok(()) => watane_host::ManageOutcome::Approved,
+        Err(e) if e.code == "refused" => watane_host::ManageOutcome::Denied,
+        Err(e) => watane_host::ManageOutcome::Failed(e.message),
+    }
+}
+fn manage_answer(answer: consent::Answer) -> Result<(), crate::CmdError> {
+    match answer {
+        consent::Answer::Approve { withheld } if withheld.is_empty() => Ok(()),
+        _ => Err(crate::CmdError::new("refused", "request denied")),
+    }
+}
+fn check_manager_link(
+    dist: &watane_dist::Dist,
+    by: &consent::Asker,
+    link: Option<&watane_dist::Link>,
+) -> Result<(), crate::CmdError> {
+    if let Some(link) = link {
+        let key = link.channel();
+        let known = dist.identity() == Some(key)
+            || dist.followed()?.iter().any(|v| v.channel == key)
+            || dist.indexes()?.iter().any(|v| v.view.channel == key);
+        if !known {
+            return Err(crate::CmdError::new(
+                "bad_input",
+                format!(
+                    "{} named a channel this home does not read: {link}",
+                    words::asker_label(by)
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+fn manager_offer(
+    offer: Option<String>,
+    name: &str,
+) -> Result<watane_dist::ReleaseRef, crate::CmdError> {
+    offer
+        .ok_or_else(|| {
+            crate::CmdError::new("not_found", format!("no update is offered for {name}"))
+        })?
+        .parse()
+        .map_err(|e: watane_host::watane_pkg::NameError| {
+            crate::CmdError::new("bad_input", e.to_string())
+        })
+}
+fn manager_users(host: &watane_host::Host, target: &watane_host::LocalName) -> Vec<String> {
+    host.mods()
+        .iter()
+        .filter(|m| {
+            m.enabled
+                && crate::core::mod_links(m)
+                    .iter()
+                    .any(|l| l.granted && l.provider == target.as_ref())
+        })
+        .map(|m| m.name.clone())
+        .collect()
+}
+fn reduction_effect(
+    reduction: &watane_host::Reduction,
+) -> (&watane_host::LocalName, Option<&'static str>, bool) {
+    match reduction {
+        watane_host::Reduction::Disable(l) => (l, Some("Turned off"), true),
+        watane_host::Reduction::Withdraw { local, .. } => (local, Some("Grant withdrawn"), false),
+        watane_host::Reduction::ClosePage(l) => (l, None, true),
+    }
+}
+fn asker(m: &watane_host::InstalledMod, parties: &Parties) -> consent::Asker {
+    consent::Asker {
+        local: m.local.to_string(),
+        name: m.name.clone(),
+        publisher: m
+            .publisher
+            .as_ref()
+            .map(|p| words::party(&p.to_string(), parties)),
+    }
+}
 fn request_view(
     request: &InstallRequest,
     parties: &Parties,
     host: Option<&watane_host::Host>,
 ) -> consent::Request {
     consent::Request::Install {
+        asked_by: match &request.requester {
+            Requester::Mod(by) => host.and_then(|h| h.get(by)).map(|m| asker(&m, parties)),
+            _ => None,
+        },
         by_program: matches!(request.requester, Requester::LocalApi),
         mods: request
             .entries
@@ -145,13 +246,145 @@ fn host_answer(answer: consent::Answer, request: &InstallRequest) -> Answer {
         }
     }
 }
+// Host cancels a manager's request when it loses management authority. Dropping
+// its future must also cancel our spawned work and remove any queued consent.
+struct ManageTask(tauri::async_runtime::JoinHandle<Result<(), crate::CmdError>>);
+impl Drop for ManageTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 impl Confirm for HostConfirm {
+    fn manage(
+        &self,
+        request: watane_host::ManageRequest,
+    ) -> Pin<Box<dyn Future<Output = watane_host::ManageOutcome> + Send>> {
+        let core = self.core.get().and_then(Weak::upgrade);
+        Box::pin(async move {
+            let Some(core) = core else {
+                return watane_host::ManageOutcome::Failed("app unavailable".into());
+            };
+            // Host polls this future on its own runtime. All app resources stay on ours.
+            let mut task = ManageTask(tauri::async_runtime::spawn(manage(
+                core,
+                request.by,
+                request.ask,
+            )));
+            match (&mut task.0).await {
+                Ok(result) => manage_outcome(result),
+                Err(e) => watane_host::ManageOutcome::Failed(e.to_string()),
+            }
+        })
+    }
+    fn reduced(&self, by: &watane_host::LocalName, reduction: &watane_host::Reduction) {
+        let (local, notice, close) = reduction_effect(reduction);
+        if let Some(host) = self.host.get().and_then(Weak::upgrade)
+            && let Some(m) = host.get(by)
+            && let Some(notice) = notice
+        {
+            self.notices.0.lock().unwrap().insert(
+                local.to_string(),
+                format!(
+                    "{notice} by {}",
+                    words::asker_label(&asker(&m, &self.parties))
+                ),
+            );
+        }
+        if close && let Some(core) = self.core.get().and_then(Weak::upgrade) {
+            core.post_close(local.to_string());
+        }
+    }
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
         let broker = self.broker.clone();
         let host = self.host.get().and_then(Weak::upgrade);
         let view = request_view(&request, &self.parties, host.as_deref());
         Box::pin(async move { host_answer(broker.ask(view).await, &request) })
     }
+}
+
+async fn manage(
+    core: Arc<crate::core::Core>,
+    by: watane_host::LocalName,
+    ask: watane_host::Ask,
+) -> Result<(), crate::CmdError> {
+    use watane_host::Ask;
+    let manager = core
+        .host
+        .get(&by)
+        .ok_or_else(|| crate::CmdError::new("not_found", "asking mod not found"))?;
+    let asked_by = asker(&manager, &core.parties);
+    let requester = Requester::Mod(by);
+    match ask {
+        Ask::Install { release, link } => {
+            let link = link.map(|l| l.parse::<watane_dist::Link>()).transpose()?;
+            check_manager_link(&core.dist, &asked_by, link.as_ref())?;
+            // The supplied base is never followed: fetch only through already held bases.
+            core.install_managed(release, requester, asked_by).await?;
+        }
+        Ask::Update(local) => {
+            let m = core
+                .get(local.as_ref())?
+                .ok_or_else(|| crate::CmdError::new("not_found", "mod not found"))?;
+            let release = manager_offer(m.offer, &m.name)?;
+            core.install_managed(release, requester, asked_by).await?;
+        }
+        Ask::Enable(ref local) | Ask::Grant { ref local, .. } | Ask::Remove { ref local, .. } => {
+            let m = core
+                .host
+                .get(local)
+                .ok_or_else(|| crate::CmdError::new("not_found", "mod not found"))?;
+            let (action, grant, users) = match &ask {
+                Ask::Enable(_) => (consent::ManageAction::Enable, None, vec![]),
+                Ask::Grant { grant, .. } => (
+                    consent::ManageAction::Grant,
+                    Some(words::grant_line_bound(
+                        grant,
+                        &m.binds,
+                        &core.parties,
+                        false,
+                        true,
+                    )),
+                    vec![],
+                ),
+                Ask::Remove { delete_data, .. } => (
+                    if *delete_data {
+                        consent::ManageAction::RemoveData
+                    } else {
+                        consent::ManageAction::Remove
+                    },
+                    None,
+                    manager_users(&core.host, local),
+                ),
+                _ => unreachable!(),
+            };
+            let answer = core
+                .broker
+                .ask(consent::Request::Manage {
+                    asked_by,
+                    action,
+                    target: consent::Target {
+                        local: local.to_string(),
+                        name: m.name,
+                        version: m.version.to_string(),
+                        publisher: m
+                            .publisher
+                            .as_ref()
+                            .map(|p| words::party(&p.to_string(), &core.parties)),
+                    },
+                    grant,
+                    users,
+                })
+                .await;
+            manage_answer(answer)?;
+            match ask {
+                Ask::Enable(_) => core.enable(local.as_ref())?,
+                Ask::Grant { grant, .. } => core.grant(local.as_ref(), &grant.to_string(), true)?,
+                Ask::Remove { delete_data, .. } => core.remove(local.as_ref(), delete_data)?,
+                _ => unreachable!(),
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct DistConfirm {
@@ -312,6 +545,211 @@ mod tests {
         LocalName, PlanEntry,
         watane_pkg::{Grant, Provider},
     };
+    fn preview() -> (tempfile::TempDir, Arc<watane_host::Host>) {
+        let home = tempfile::tempdir().unwrap();
+        let host =
+            watane_host::Host::open(home.path(), watane_host::Mode::Preview, Default::default())
+                .unwrap();
+        (home, host)
+    }
+    async fn fixtures(host: &watane_host::Host) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let plan = host
+            .plan(
+                ["reading-list", "recommendations"]
+                    .into_iter()
+                    .map(|n| watane_host::Source::Folder(root.join(n)))
+                    .collect(),
+            )
+            .unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+    }
+    #[tokio::test]
+    async fn ac3_cancelled_manager_request_leaves_no_consent() {
+        let broker = consent::Broker::new();
+        let queued = broker.clone();
+        let request: consent::Request = serde_json::from_value(serde_json::json!({"kind":"manage","asked_by":{"local":"desk","name":"Desk","publisher":null},"action":"enable","target":{"local":"weather","name":"Weather","version":"1.0.0","publisher":null},"grant":null,"users":[]})).unwrap();
+        let task = ManageTask(tauri::async_runtime::spawn(async move {
+            manage_answer(queued.ask(request).await)
+        }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while broker.current().is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(task);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while broker.current().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+    #[test]
+    fn ac3_manage_outcomes() {
+        assert_eq!(
+            manage_outcome(manage_answer(consent::Answer::Approve { withheld: vec![] })),
+            watane_host::ManageOutcome::Approved
+        );
+        assert_eq!(
+            manage_outcome(manage_answer(consent::Answer::Deny)),
+            watane_host::ManageOutcome::Denied
+        );
+        assert_eq!(
+            manage_outcome(Err(crate::CmdError::new("refused", "denied"))),
+            watane_host::ManageOutcome::Denied
+        );
+        assert_eq!(
+            manage_outcome(Err(crate::CmdError::new("io", "disk broke"))),
+            watane_host::ManageOutcome::Failed("disk broke".into())
+        );
+    }
+    #[test]
+    fn ac3_unread_channel_fails_without_connecting() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = watane_dist::Dist::open_keyless(
+            home.path(),
+            watane_dist::Options {
+                listed_local: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let link = watane_dist::Link::new(
+            "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy"
+                .parse()
+                .unwrap(),
+            &format!("http://{}/", listener.local_addr().unwrap()),
+            None,
+        )
+        .unwrap();
+        let by = consent::Asker {
+            local: "desk".into(),
+            name: "Desk".into(),
+            publisher: None,
+        };
+        let error = check_manager_link(&dist, &by, Some(&link)).unwrap_err();
+        assert_eq!(
+            error.message,
+            format!("Desk (local) named a channel this home does not read: {link}")
+        );
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    #[tokio::test]
+    async fn ac3_remove_users_and_install_requester_and_missing_offer() {
+        let (_home, host) = preview();
+        fixtures(&host).await;
+        let local = LocalName::parse("reading-list").unwrap();
+        assert_eq!(manager_users(&host, &local), ["Recommendations"]);
+        let by = LocalName::parse("recommendations").unwrap();
+        let view = request_view(
+            &InstallRequest {
+                entries: vec![],
+                requester: Requester::Mod(by.clone()),
+            },
+            &Parties::new(),
+            Some(&host),
+        );
+        assert!(
+            matches!(view, consent::Request::Install { asked_by: Some(consent::Asker { name, .. }), .. } if name == "Recommendations")
+        );
+        let error = manager_offer(None, "Reading list").unwrap_err();
+        assert_eq!(error.message, "no update is offered for Reading list");
+        let grants = host.get(&by).unwrap().grants;
+        let call = grants
+            .iter()
+            .find(|g| matches!(g.grant, Grant::Call { .. }))
+            .unwrap();
+        let subscribe = grants
+            .iter()
+            .find(|g| matches!(g.grant, Grant::Subscribe { .. }))
+            .unwrap();
+        host.revoke(&by, &call.grant).unwrap();
+        assert_eq!(
+            manager_users(&host, &local),
+            ["Recommendations"],
+            "event receivers still use the mod"
+        );
+        host.revoke(&by, &subscribe.grant).unwrap();
+        assert!(manager_users(&host, &local).is_empty());
+        host.grant(&by, &call.grant).unwrap();
+        assert_eq!(
+            manager_users(&host, &local),
+            ["Recommendations"],
+            "callers still use the mod"
+        );
+        host.disable(&by).unwrap();
+        assert!(manager_users(&host, &local).is_empty());
+    }
+    #[tokio::test]
+    async fn ac4_reduced_returns_without_an_event_loop_and_notices_clear() {
+        let (_home, host) = preview();
+        fixtures(&host).await;
+        let notices = Arc::new(ManagerNotices::default());
+        let confirm = Arc::new(HostConfirm {
+            broker: consent::Broker::new(),
+            parties: Arc::new(Parties::new()),
+            host: OnceLock::from(Arc::downgrade(&host)),
+            core: OnceLock::new(),
+            notices: notices.clone(),
+        });
+        let local = LocalName::parse("reading-list").unwrap();
+        let by = LocalName::parse("recommendations").unwrap();
+        for (reduction, expected, close) in [
+            (
+                watane_host::Reduction::Disable(local.clone()),
+                Some("Turned off by Recommendations (local)"),
+                true,
+            ),
+            (
+                watane_host::Reduction::Withdraw {
+                    local: local.clone(),
+                    grant: Grant::Storage,
+                },
+                Some("Grant withdrawn by Recommendations (local)"),
+                false,
+            ),
+            (watane_host::Reduction::ClosePage(local.clone()), None, true),
+        ] {
+            assert_eq!(reduction_effect(&reduction).0, &local);
+            assert_eq!(reduction_effect(&reduction).2, close);
+            let c = confirm.clone();
+            let b = by.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                c.reduced(&b, &reduction);
+                tx.send(()).unwrap();
+            });
+            rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+            if let Some(expected) = expected {
+                assert_eq!(notices.get(local.as_ref(), None).as_deref(), Some(expected));
+                assert_eq!(
+                    notices
+                        .get(
+                            local.as_ref(),
+                            Some("Withdrawn by the publisher: unsafe".into())
+                        )
+                        .as_deref(),
+                    Some("Withdrawn by the publisher: unsafe")
+                );
+            }
+        }
+        notices.enable(&host, &local).unwrap();
+        assert!(notices.get(local.as_ref(), None).is_none());
+        assert!(
+            ManagerNotices::default()
+                .get(local.as_ref(), None)
+                .is_none()
+        );
+    }
     #[test]
     fn ac4_host_origin_new_binds_and_bound_uses() {
         let carol = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";
@@ -604,8 +1042,9 @@ mod tests {
             entries: vec![first, second],
             requester: Requester::LocalApi,
         };
-        let consent::Request::Install { mods, by_program } =
-            request_view(&request, &Parties::new(), None)
+        let consent::Request::Install {
+            mods, by_program, ..
+        } = request_view(&request, &Parties::new(), None)
         else {
             panic!("install expected")
         };
@@ -664,8 +1103,9 @@ mod tests {
             entries: plan.entries().to_vec(),
             requester: Requester::App,
         };
-        let consent::Request::Install { mods, by_program } =
-            request_view(&request, &Parties::new(), Some(&host))
+        let consent::Request::Install {
+            mods, by_program, ..
+        } = request_view(&request, &Parties::new(), Some(&host))
         else {
             panic!("install expected")
         };

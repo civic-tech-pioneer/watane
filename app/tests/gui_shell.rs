@@ -839,3 +839,111 @@ fn ac6_s37_page_dom_origin_binds_and_sign() {
             .success()
     );
 }
+
+#[test]
+fn ac5_manager_consent_titles_lines_and_literal_asker() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let asker = json!({"local":"desk","name":"Desk","publisher":null});
+    let mut requests = vec![install("Weather"), pick_request()];
+    for request in &mut requests {
+        request["asked_by"] = asker.clone();
+    }
+    for request in requests {
+        let ask = app.ask(request);
+        consent(&app);
+        assert_eq!(
+            app.eval(
+                "consent",
+                "document.querySelector('main').firstElementChild.textContent"
+            ),
+            "Asked by Desk (local), which manages your mods"
+        );
+        app.close("consent");
+        assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    }
+    for (action, title, data, users) in [
+        ("enable", "Desk asks to turn on Weather", None, vec![]),
+        ("grant", "Desk asks to give Weather a grant", None, vec![]),
+        (
+            "remove",
+            "Desk asks to remove Weather",
+            Some("Its data is kept. Installing it again brings it back."),
+            vec!["Notes"],
+        ),
+        (
+            "remove_data",
+            "Desk asks to remove Weather and delete its data",
+            Some("Its data is deleted. This cannot be undone."),
+            vec![],
+        ),
+    ] {
+        let request = json!({"kind":"manage","asked_by":asker,"action":action,
+            "target":{"local":"reading-list","name":"Weather","version":"1.2.3","publisher":null},
+            "grant":if action == "grant" { json!({"key":"storage","kind":"storage","text":"Keep its own data on this device","granted":false,"new":true}) } else { Value::Null }, "users":users});
+        let ask = app.ask(request);
+        consent(&app);
+        assert_eq!(
+            app.eval("consent", "document.querySelector('h1').textContent"),
+            title
+        );
+        let text = app
+            .eval("consent", "document.querySelector('main').textContent")
+            .as_str()
+            .unwrap()
+            .to_owned();
+        for expected in ["Weather", "1.2.3", "local"] {
+            assert!(text.contains(expected), "{text}");
+        }
+        if let Some(data) = data {
+            assert!(text.contains(data), "{text}");
+        }
+        assert_eq!(text.contains("Used by:"), !users.is_empty());
+        if !users.is_empty() {
+            assert!(text.contains("Used by: Notes"));
+        }
+        if action == "grant" {
+            assert!(text.contains("Keep its own data on this device"));
+        }
+        assert_eq!(
+            app.eval(
+                "consent",
+                "document.querySelectorAll('input[type=checkbox]').length"
+            ),
+            0
+        );
+        app.close("consent");
+        assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    }
+    let hostile = "<img src=x onerror=alert(1)>";
+    let mut request = install("Weather");
+    request["asked_by"] = json!({"local":"desk","name":hostile,"publisher":null});
+    let ask = app.ask(request);
+    consent(&app);
+    assert_eq!(
+        app.eval(
+            "consent",
+            "document.querySelector('main').firstElementChild.textContent"
+        ),
+        format!("Asked by {hostile} (local), which manages your mods")
+    );
+    assert_eq!(
+        app.eval("consent", "document.querySelectorAll('img').length"),
+        0
+    );
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac5_manager_page_dom() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "manage"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}

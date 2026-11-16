@@ -111,6 +111,15 @@ holds none (W33). A machine is named by its short key (8 characters).
 - **APP-F-60** After a restore, the identity view shall show the heads of the own channel that own machines report, each with its machine and position, as claims to pick from. The app shall confirm the own channel only after the participant picks one, and shall offer no pick for a forked head. Traces: F-APP-6, W18.
 - **APP-F-61** No mod and no local program shall reach any function of this step: no local API route and no mod window command turns machines on, pairs, removes, or changes a relay or the DHT. Traces: F-AGENT-4, F-OWN-7.
 
+## Step 10: A mod as manager
+
+- **APP-F-70** The grant to manage shall read in words in the consent view and in the details of a mod, like every other grant. Traces: F-INST-9, F-APP-5, J10.
+- **APP-F-71** Each request of a managing mod shall show in the consent view, which shall name that mod, with its publisher or "local", as the one who asks. The app shall act on it only after the participant approves. Traces: F-INST-11, F-APP-4, F-AGENT-4, J10.
+- **APP-F-72** An install or an update that a managing mod asked for shall show in the consent view also when it adds no grant. The app shall install only a release that it can read through the channels and indexes it already reads, and shall contact no other host for the request. Traces: F-INST-11, F-OWN-7, J10.
+- **APP-F-73** A request to remove a mod shall say whether its data is deleted, and name the mods that use it (APP-F-67). Traces: F-INST-5, F-INST-11, J10.
+- **APP-F-74** When a managing mod disables a mod or closes its page, the app shall close that mod's window, and the details of a disabled mod shall say which mod turned it off, until the app restarts. Traces: F-INST-10, F-APP-9, J10.
+- **APP-F-75** When the participant denies a request, closes the consent view or does not answer in 10 minutes, nothing shall change, and the managing mod shall learn that the request was denied. Traces: F-INST-11, W19.
+
 ## Acceptance scenarios
 
 Each scenario is a test (TECHNICAL.md section 9 names the test).

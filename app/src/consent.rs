@@ -40,20 +40,52 @@ pub enum Request {
         text: String,
     },
     Pick {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        asked_by: Option<Asker>,
         consumer: String,
         provider: String,
         cause: String,
         candidates: Vec<Candidate>,
     },
     Install {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        asked_by: Option<Asker>,
         mods: Vec<PlanMod>,
         by_program: bool,
     }, // install order; Requester::LocalApi
+    Manage {
+        asked_by: Asker,
+        action: ManageAction,
+        target: Target,
+        grant: Option<GrantLine>,
+        users: Vec<String>,
+    },
     Sign {
         statement: Statement,
         signer: Party,
         details: Vec<Detail>,
     },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Asker {
+    pub local: String,
+    pub name: String,
+    pub publisher: Option<Party>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Target {
+    pub local: String,
+    pub name: String,
+    pub version: String,
+    pub publisher: Option<Party>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManageAction {
+    Enable,
+    Grant,
+    Remove,
+    RemoveData,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -146,7 +178,9 @@ impl Request {
         match (self, choice) {
             (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
             (Self::Pick { .. }, _) | (_, Some(_)) => Err(ConsentError::WrongAnswer),
-            (Self::Join { .. } | Self::Reach { .. }, None) if !withheld.is_empty() => {
+            (Self::Join { .. } | Self::Reach { .. } | Self::Manage { .. }, None)
+                if !withheld.is_empty() =>
+            {
                 Err(ConsentError::WrongAnswer)
             }
             (_, None) => Ok(Answer::Approve { withheld }),
@@ -275,9 +309,10 @@ impl Broker {
                         return Err(ConsentError::UnknownChoice(choice.clone()));
                     }
                 }
-                (Request::Join { .. } | Request::Reach { .. }, Answer::Approve { withheld })
-                    if !withheld.is_empty() =>
-                {
+                (
+                    Request::Join { .. } | Request::Reach { .. } | Request::Manage { .. },
+                    Answer::Approve { withheld },
+                ) if !withheld.is_empty() => {
                     return Err(ConsentError::WrongAnswer);
                 }
                 (_, Answer::Deny) => {}
@@ -295,7 +330,8 @@ impl Broker {
                         Request::Sign { .. }
                         | Request::Pick { .. }
                         | Request::Join { .. }
-                        | Request::Reach { .. } => false,
+                        | Request::Reach { .. }
+                        | Request::Manage { .. } => false,
                     };
                     if !known {
                         return Err(ConsentError::UnknownGrant(format!(
@@ -377,6 +413,44 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::{future::Future, pin::pin, task::Poll, time::Duration};
+
+    #[tokio::test]
+    async fn ac2_manage_answers_and_legacy_requests() {
+        let request: Request = serde_json::from_value(json!({"kind":"manage", "asked_by":{"local":"desk","name":"Desk","publisher":null}, "action":"enable", "target":{"local":"weather","name":"Weather","version":"1.0.0","publisher":null},"grant":null,"users":[]})).unwrap();
+        let withheld = vec![Withheld {
+            local: "weather".into(),
+            key: "storage".into(),
+        }];
+        assert!(matches!(
+            request.answer(true, None, withheld.clone()),
+            Err(ConsentError::WrongAnswer)
+        ));
+        assert!(matches!(
+            request.answer(true, Some("x".into()), vec![]),
+            Err(ConsentError::WrongAnswer)
+        ));
+        for answer in [Answer::Approve { withheld: vec![] }, Answer::Deny] {
+            let b = Broker::new();
+            let mut pending = pin!(b.ask(request.clone()));
+            queue(pending.as_mut()).await;
+            let id = b.current().unwrap().0;
+            for wrong in [
+                Answer::Approve {
+                    withheld: withheld.clone(),
+                },
+                Answer::Pick { choice: "x".into() },
+            ] {
+                assert!(matches!(
+                    b.answer(&id, wrong),
+                    Err(ConsentError::WrongAnswer)
+                ));
+            }
+            b.answer(&id, answer.clone()).unwrap();
+            assert_eq!(pending.await, answer);
+        }
+        assert!(matches!(install(), Request::Install { asked_by: None, .. }));
+        assert!(matches!(pick(), Request::Pick { asked_by: None, .. }));
+    }
 
     fn install() -> Request {
         serde_json::from_value(json!({"kind":"install","by_program":false,"mods":[{
