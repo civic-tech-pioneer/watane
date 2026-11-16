@@ -714,13 +714,14 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   options marked "built" in Q28 to Q33); a change from the human's answers comes as its own task.
   Touches: pkg, host, dev. Cloud. After S71 (dev).
   Delivered (merged as 797cd9f): a manager mod (grant `manage`) reads every installed mod, disables one, withdraws a grant or closes a page at once, and asks the participant for an install, update, enable, grant or removal as a request whose state it can read; a maker's agent fakes `watane:host/manage` and checks `manages` in a contract test (DEV-S-53); dev's envelope ac5 is green again. Decisions: Q28 to Q33 built as option (a); `Confirm::manage` runs on its own thread with a small current-thread tokio runtime (app J: run runtime-bound work on the app's own runtime and await it from there); a request-* in a preview or a home with no app answers `refused` before any other check; harness request ids r1, r2, ... count across one Harness, a failed call takes no number; fixed a deadlock in `Host::remove` (catalog lock held while sending the catalog message); `Grant` keeps Display only; app gains `GrantKind::Manage` and the words of app 17.2. Verified on the Mac: hakari clean; host, dev and the app driver suite green with ignored (front tests not run), the cloud's not-run tests included.
-- [~] **S77 Alice's own manager asks, and she approves in the consent view; J10 passes (app stage J).**
+- [x] **S77 Alice's own manager asks, and she approves in the consent view; J10 passes (app stage J).**
   Branch `slice/s77`. Builds app stage J (app/TECHNICAL 17.2 to 17.4, row J): `HostConfirm::{manage,
   reduced}`, the consent page's `manage` request and `asked_by` line, APP-F-70 to 75, the fixture
   `desk-ui`, `tests/manage.rs` and `tests/j10.rs`; S76's note: runtime-bound work runs on the app's own
   runtime. Folds in Q31 (b) and Q32 (b) if the human takes them. Outcome: app S43 to S48 and J10 pass;
   J2 to J5, J8, J9 still pass. Touches: app (src, ui, tests/manage.rs, tests/j10.rs, fixtures,
   TECHNICAL 17). Local (the app). After S75, which changes the same app/src and app/ui.
+  Delivered (merged as ad2a6cc): Alice lets a managing mod (Desk) turn her mods off at once, and every install, update, enable, grant or removal it asks for waits in the consent view, which names Desk as the one asking. J10 passes; step 10 is done. Decisions: Q28 to Q33 built as option (a), Q31 (b) and Q32 (b) not built; the notices `Turned off by <asker>` and `Grant withdrawn by <asker>` live in memory, cleared on enable or restart, and a release notice wins over them; Desk's requests run their dist and host work on the app's own runtime and are aborted if host drops the request; `manage_outcome` turns any host `refused` into `Denied`; APP-F-70 to 75 moved into app/FUNCTIONAL (Step 10), row J into app/TECHNICAL 12. Verified on the Mac: hakari clean; the app driver suite green with ignored, J10 included (front tests not run). For a later slice: withdrawing or giving back Desk's manage grant reloads its page, and a call Desk makes at that moment gets no answer; `machines.rs ac3_s30` (S75) is flaky (compares the identity text before its second sentence updates).
 - [x] **S79 Bob installs from a site published minutes ago, and a new base sticks (dist).** Branch
   `slice/s79`. Builds the S54 deputy decision: dist retries an HTTP 5xx twice with a short backoff within
   the fetch timeouts (4.5), and a link's base for a known channel is appended to its record's bases
@@ -783,7 +784,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | pkg | 11 `Grant::Manage` | 10 | done (S76) |
 | host | 11 `watane:host/manage` | 10 | done (S76) |
 | dev | 13 manage fake | 10 | done (S76) |
-| app | J manage requests, J10 | 10 | open |
+| app | J manage requests, J10 | 10 | done (S77) |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
 | pkg | 5 package (pack, unpack) | 1 | done (S7, S8: the host installs through it) |
@@ -1007,7 +1008,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S73: cloud routine `trig_01CZpy9oswGijTpTZhRtsFVq` (handed out 2026-11-15), branch `slice/s73`.
 - S74: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S75: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
-- S77: `91b4727f` (sessionId `91b4727f-001c-4c86-ac12-17e98fadff92`), worktree `.claude/worktrees/s77` (local: the app; builds in main's `target/`).
+- S77: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: delivered 2026-11-16 and merged; routine finished, branches removed.
