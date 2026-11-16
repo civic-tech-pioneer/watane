@@ -131,6 +131,8 @@ fn ac3_journey_j10() {
         "grant_withdraw",
         json!({"local":"manager","key":"manage"}),
     );
+    // The withdrawal reloads Desk: click only in the replacement document.
+    assert!(app.wait(DESK, TIMEOUT));
     no_window(&app, "consent");
     assert!(home.path().join("mods/recommendations").is_dir());
     assert!(app.windows().iter().any(|w| w["label"] == DESK));
