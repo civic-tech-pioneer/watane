@@ -888,24 +888,26 @@ fn ac5_manager_consent_titles_lines_and_literal_asker() {
             app.eval("consent", "document.querySelector('h1').textContent"),
             title
         );
-        let text = app
-            .eval("consent", "document.querySelector('main').textContent")
-            .as_str()
-            .unwrap()
-            .to_owned();
-        for expected in ["Weather", "1.2.3", "local"] {
-            assert!(text.contains(expected), "{text}");
-        }
-        if let Some(data) = data {
-            assert!(text.contains(data), "{text}");
-        }
-        assert_eq!(text.contains("Used by:"), !users.is_empty());
-        if !users.is_empty() {
-            assert!(text.contains("Used by: Notes"));
-        }
+        let mut lines = vec![
+            "Asked by Desk (local), which manages your mods",
+            "Weather",
+            "1.2.3",
+            "local",
+        ];
         if action == "grant" {
-            assert!(text.contains("Keep its own data on this device"));
+            lines.push("Keep its own data on this device");
         }
+        lines.extend(data);
+        if !users.is_empty() {
+            lines.push("Used by: Notes");
+        }
+        assert_eq!(
+            app.eval(
+                "consent",
+                "[...document.querySelector('main').children].map(e => e.textContent)"
+            ),
+            json!(lines)
+        );
         assert_eq!(
             app.eval(
                 "consent",
