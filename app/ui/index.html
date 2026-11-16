@@ -54,8 +54,8 @@
 <label>Pairing code <input id="pair-code" readonly></label><button class="btn" id="pair-copy">Copy</button><p id="pair-expiry"></p>
 <label>Join with a code <input id="join-code"></label><label id="join-replace-label"><input id="join-replace" type="checkbox">Replace this machine’s pairing</label><button class="btn primary" id="join">Join</button><p id="joining"></p>
 <dialog id="join-question"><p></p><button class="btn" id="join-cancel" autofocus>Cancel</button><button class="btn" id="join-confirm">Join</button></dialog>
-<div id="machine-list"></div><label>List expiry in days <input id="machines-expiry" type="number" min="0" value="0"></label><p>Machines stop trusting each other after this many days without reaching this one. 0: never.</p><button class="btn primary" id="save-expiry">Set expiry</button>
-<label>Relay URL <input id="relay-url" type="url"></label><button class="btn primary" id="relay-add">Add relay</button><div id="relay-list"></div>
+<div id="machine-list"></div><label>List expiry in days <input id="machines-expiry" type="number" min="0" value="0"></label><p>Machines stop trusting each other after this many days without reaching this one. 0: never.</p><button class="btn" id="save-expiry">Set expiry</button>
+<label>Relay URL <input id="relay-url" type="url"></label><button class="btn" id="relay-add">Add relay</button><div id="relay-list"></div>
 <label><input id="dht-on" type="checkbox">Use the DHT</label><div id="machine-problems" aria-live="polite"></div>
 <dialog id="machine-remove-question"><p></p><button class="btn" id="machine-remove-cancel" autofocus>Cancel</button><button class="btn" id="machine-remove-confirm">Remove</button></dialog>
 </section></div>
