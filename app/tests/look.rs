@@ -17,23 +17,6 @@ fn ac1_ac3_update_band_version_grants_and_offer_label() {
 }
 
 #[test]
-fn ac2_update_band_button_has_intrinsic_flex_size() {
-    let css = include_str!("../ui/style.css");
-    let rule = css
-        .split(".notice .offer {")
-        .nth(1)
-        .unwrap()
-        .split('}')
-        .next()
-        .unwrap();
-    assert!(rule.contains("flex: 0 0 auto;"));
-    assert!(rule.contains("width: fit-content;"));
-    assert!(rule.contains("margin-left: auto;"));
-    assert!(css.contains(".notice { display: flex; flex-wrap: wrap;"));
-    assert!(css.contains(".notice > span { flex: 1 1 160px; }"));
-}
-
-#[test]
 fn ac5_installed_note_word_forms() {
     manager_criterion("ac5");
 }
@@ -770,6 +753,25 @@ mod windows {
         check(
             &app,
             "window.__rendered && document.querySelector('[data-tile=recommendations] .badge').textContent === 'Update'",
+        );
+        // AC2 (S84-fix3): the offer button keeps its label width at the band's right; it wraps under the text only when narrow.
+        click(&app, "[data-tile=recommendations]");
+        let band = "(() => { const n = document.querySelector('[data-local=recommendations] .notice'), r = n.getBoundingClientRect(), s = n.querySelector('span').getBoundingClientRect(), b = n.querySelector('.offer').getBoundingClientRect(); return n.querySelector('span').textContent === 'Version 2.0.0 is available.' && n.querySelector('.offer').textContent === 'Install 2.0.0' && b.width > 0 && Math.abs(r.right - 14 - b.right) < 1 && WRAP; })()";
+        check(
+            &app,
+            &band.replace(
+                "WRAP",
+                "b.width < r.width / 2 && b.top < s.bottom && s.top < b.bottom",
+            ),
+        );
+        app.eval("main", "document.querySelector('[data-local=recommendations] .notice').style.width = '180px'; null");
+        check(
+            &app,
+            &band.replace("WRAP", "b.top >= s.bottom && b.width < r.width - 28"),
+        );
+        app.eval(
+            "main",
+            "document.querySelector('[data-local=recommendations] .notice').style.width = ''; null",
         );
         app.theme(None);
         assert!(app.quit().success());
