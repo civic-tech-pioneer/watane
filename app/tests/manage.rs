@@ -454,3 +454,64 @@ fn ac1_fixture_packages_and_page_messages() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// Quiet: every reload is observed through the native page-load event, then DOM.
+#[test]
+fn ac1_manage_calls_settle_across_grant_reload() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.install(&app);
+    let mut cancelled = serde_json::Value::Null;
+    for command in ["grant_withdraw", "grant_give"] {
+        // Hold the response after the real host processed the request. This
+        // guarantees a live JS promise when the grant operation reloads Desk.
+        app.eval(DESK, "window.oldContext = true; window.responseHeld = false; const fetchNow = window.fetch; window.fetch = async (...args) => { const response = await fetchNow(...args); if (JSON.parse(args[1]?.body || '{}').fn !== 'api.request-remove') return response; window.responseValue = await response.clone().json(); window.responseHeld = true; await new Promise(() => {}); return response; }; null");
+        click(
+            &app,
+            "request-remove",
+            json!({"local":"recommendations","delete-data":true}),
+        );
+        until(&app, DESK, "window.responseHeld === true");
+        if command == "grant_withdraw" {
+            consent(&app);
+            cancelled = app.eval(DESK, "window.responseValue.value.ok");
+            assert!(cancelled.is_string(), "{cancelled}");
+        }
+        invoke(&app, command, json!({"local":"manager","key":"manage"}));
+        assert!(app.wait(DESK, TIMEOUT));
+        until(
+            &app,
+            DESK,
+            "!window.oldContext && !!document.querySelector('#result')",
+        );
+        // The old context is gone. Desk must say so instead of leaving silence.
+        outcome(&app, "page_reloaded");
+        no_window(&app, "consent");
+        assert!(home.path().join("mods/recommendations").is_dir());
+        click(&app, "mods", json!({}));
+        outcome(
+            &app,
+            if command == "grant_withdraw" {
+                "not_granted"
+            } else {
+                "recommendations"
+            },
+        );
+    }
+    click(&app, "request", json!({"request-id":cancelled}));
+    outcome(&app, "denied");
+    // The cancelled request was ended by host on revoke: no pending request
+    // survives to block another request after manage is given back.
+    click(
+        &app,
+        "request-remove",
+        json!({"local":"recommendations","delete-data":true}),
+    );
+    consent(&app);
+    outcome(&app, "pending");
+    deny(&app);
+    outcome(&app, "denied");
+    assert!(app.quit().success());
+}

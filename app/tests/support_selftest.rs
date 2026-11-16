@@ -917,3 +917,44 @@ fn regress_s54_missing_base_fresh_home_reports_not_found() {
         "{error:?}"
     );
 }
+
+#[test]
+fn ac1_desk_reports_interrupted_call_after_reload() {
+    let script = r#"
+      import assert from 'node:assert/strict';
+      import {readFileSync} from 'node:fs';
+      import vm from 'node:vm';
+      const source = readFileSync('tests/fixtures/desk-ui/ui/app.js', 'utf8');
+      const saved = new Map();
+      const sessionStorage = {getItem:k=>saved.get(k) ?? null, setItem:(k,v)=>saved.set(k,v), removeItem:k=>saved.delete(k)};
+      const load = blocked => {
+        const fields = Object.fromEntries(['result','mods-result','mods','local','request-id'].map(id=>[id,{id,textContent:'',value:''}]));
+        const document = {getElementById:id=>fields[id],querySelectorAll:()=>[fields.mods]};
+        const watane = {on:()=>{},call:()=>blocked ? new Promise(()=>{}) : Promise.resolve([])};
+        vm.runInNewContext(source,{document,watane,sessionStorage});
+        return fields;
+      };
+      const first = load(true);
+      first.mods.onclick();
+      assert.equal(first.result.textContent,'');
+      const next = load(false);
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(JSON.parse(next.result.textContent).code,'page_reloaded');
+      await next.mods.onclick();
+      assert.equal(next.result.textContent,'[]');
+      assert.equal(saved.size,0);
+      const clean = load(false);
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(clean.result.textContent,'');
+    "#;
+    let output = std::process::Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

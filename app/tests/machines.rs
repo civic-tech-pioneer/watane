@@ -229,20 +229,24 @@ fn ac3_s30_join_light_and_refuse_used_identity() {
     ready_consent(&anchor, "Pair a machine");
     approve(&anchor);
     wait_machines(&light, |v| v["machine"] == "light");
+    let expected_identity = format!(
+        "This machine holds no identity. It is a light machine of {}.",
+        machines(&anchor)["node"].as_str().unwrap()
+    );
     until(
         &light,
         "main",
-        "document.querySelector('#identity-info').textContent.startsWith('This machine holds no identity.')",
+        &format!(
+            "document.querySelector('#identity-info').textContent === {}",
+            json!(expected_identity)
+        ),
     );
     assert_eq!(
         light.eval(
             "main",
             "document.querySelector('#identity-info').textContent"
         ),
-        format!(
-            "This machine holds no identity. It is a light machine of {}.",
-            machines(&anchor)["node"].as_str().unwrap()
-        )
+        expected_identity
     );
     assert!(!b.path().join("log/identity.key").exists());
     let (status, body) = http(light.port, "application/octet-stream", bytes());

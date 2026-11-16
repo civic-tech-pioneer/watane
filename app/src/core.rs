@@ -435,6 +435,13 @@ impl Core {
         // The stage B host changes authority immediately but emits no page
         // notification for grant changes. Refresh the open page's view of it.
         if let Some(window) = self.app.get_webview_window(&format!("mod-{local}")) {
+            // A wait issued just after this command must observe the new
+            // page-load event, not the previous document's finished state.
+            #[cfg(feature = "driver")]
+            self.app
+                .state::<crate::AppState>()
+                .driver
+                .loaded(window.label(), false);
             window.reload()?;
         }
         Ok(())

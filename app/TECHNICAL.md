@@ -2100,6 +2100,12 @@ Fixtures: **Desk** is host's prebuilt `manager` (host 13.1; `name =
 `tests/fixtures/desk-ui/ui/` and `main = true` added to its `mod.toml`.
 The page has one button per `api` function, with text inputs for the
 local name and the release, and shows each result or error code as text.
+When a grant change reloads Desk with a call still awaiting its response,
+the new document shows `page_reloaded`, using a marker in the window's
+ephemeral session storage. It does not claim the call failed or retry it.
+Host applies or drops the call's outbox; withdrawing `manage` cancels any
+pending management request and drops the app future and its consent (17.3;
+host 6.10). Giving it back cannot revive that request.
 **Weather** is a copy of the fixture `reading-list` with `name =
 "Weather"` (local name `reading-list`), **Notes** a copy of the fixture
 `recommendations` with `name = "Notes"` (local name `recommendations`;
@@ -2116,6 +2122,13 @@ Ivy's index, as `tests/find.rs` does.
 | `tests/j10.rs` (J) | J10 on the real app: the steps of spec/FUNCTIONAL.md J10 with the fixtures above | the window labels the driver reports; the consent DOM text; `<home>/mods/` and `<home>/app/main` read with `std::fs`; Desk's page DOM text |
 
 Scenarios of `tests/manage.rs`:
+
+- **Grant reload** (S81). Hold the response of a real Desk request while
+  withdrawing or giving back its `manage` grant. Wait for page load; the
+  replacement document reports `page_reloaded`, and its next call settles
+  with a result or `not_granted`. Withdrawal closes the pending consent;
+  after give-back the old request reads `denied` and a new request can be
+  decided. Notes remains installed throughout the cancellation.
 
 - **S43 Grant words** (APP-F-70). The plan of Desk shows the line
   `Manage your mods: ...` of 17.2 with `new`; its details after install
