@@ -502,7 +502,7 @@
   served Pages site answered 503 for about a minute before 404. Dist reports
   it as `HTTP 503 from <url>` with no retry. Real J3 now checks Ivy first,
   then waits up to five minutes for the missing head to answer 404 before
-  Bob attempts the missing-base install.
+  Dan attempts the missing-base install.
 
 - Real J3 enables GitHub Pages on the reserved site repository's `main` root
   and waits up to ten minutes for its binary `head` to equal the fresh clone.
@@ -510,9 +510,11 @@
   Alice's public HTTPS base with the default local-address guard unchanged.
 - The missing-path check keeps Alice's key and slug, changes the base to an
   unpublished subdirectory, and requires app code `dist`, `not found`, and
-  that subdirectory's `head` URL within 60 seconds, with one installed mod.
-  Bob first unfollows Alice: an existing follow would reuse its recorded
-  base. The local fixture probe covers this behavior and error mapping.
+  that subdirectory's `head` URL within 60 seconds, with Dan's mod list empty.
+  Bob still unfollows Alice before choosing Ivy to exercise a listed record.
+- A known channel (followed or listed by a chosen index) is read from its recorded bases, so the missing-base check uses a fresh home.
+- S54-fix2 replaces the red Ivy regression with a fresh-dist-home loopback
+  check; the earlier AC5 test installs and unfollows first, so is not equivalent.
 - Local gh stubs check Pages POST arguments, repository guards, HTTPS and
   trailing-slash normalization. The foreman's first real run timed out after
   600 seconds with no HTTP status: reqwest's dev features had no TLS support.
@@ -540,3 +542,11 @@
   required debug-only guard. The driver suite fails before API consent-window
   readiness with the same macOS hiservices XPC / `_LSModifyNotification`
   error -50 recorded above. The real GitHub journey was not run (no token).
+
+- S54-fix2 validation: 117 default tests and all 23 real-github-enabled
+  support self-tests pass. Builds, test compilation and clippy pass with
+  `driver` and `driver,real-github`; fmt passes. Release with `driver` fails
+  at the required debug-only guard. The driver suite and fake J3 both fail
+  before app readiness with macOS `hiservices-xpcservice` /
+  `_LSModifyNotification` error -50 in the sandbox. Real GitHub J3 was not
+  run (no token); the foreman must run it and validate fake J3 with a GUI.

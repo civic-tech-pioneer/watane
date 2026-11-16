@@ -408,8 +408,7 @@ fn ac3_j3_real_github() {
             .unwrap()
             .contains("Reading")
     );
-    // Forget the known base before checking Ivy and the missing link.
-    // A followed channel would refresh its recorded base instead of this link's.
+    // Unfollow Alice so the Ivy check exercises a listed record.
     invoke(
         &bob,
         "channel_unfollow",
@@ -462,9 +461,12 @@ fn ac3_j3_real_github() {
         Duration::from_secs(300),
     );
     let missing = Link::new(alice_link.channel(), &missing_base, alice_link.slug()).unwrap();
+    // Dan has no follows or index: only the missing link can supply Alice's base.
+    let dan_home = root.join("dan");
+    let dan = App::start(&dan_home, &[]);
     let started = Instant::now();
-    begin(&bob, "install_link", json!({"link":missing.to_string()}));
-    let failed = finish(&bob);
+    begin(&dan, "install_link", json!({"link":missing.to_string()}));
+    let failed = finish(&dan);
     assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
     assert_eq!(failed["error"]["code"], "dist", "{failed}");
     let message = failed["error"]["message"].as_str().unwrap();
@@ -474,13 +476,14 @@ fn ac3_j3_real_github() {
         "{message}"
     );
     assert_eq!(
-        invoke(&bob, "mods_list", json!({}))
+        invoke(&dan, "mods_list", json!({}))
             .as_array()
             .unwrap()
             .len(),
-        1
+        0
     );
 
+    assert!(dan.quit().success());
     assert!(bob.quit().success());
     assert!(alice.quit().success());
 }

@@ -866,8 +866,12 @@ fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
     let source = fs::read_to_string(app.join("tests/j3.rs")).unwrap();
     let start = source.find("fn ac3_j3_real_github()").unwrap();
     let journey = &source[start..];
+    assert!(
+        journey.contains("let dan = App::start(&dan_home, &[]);"),
+        "missing-base check needs a fresh Dan home"
+    );
     let install = journey
-        .find("begin(&bob, \"install_link\", json!({\"link\":missing")
+        .find("begin(&dan, \"install_link\", json!({\"link\":missing")
         .unwrap();
     assert!(
         journey[..install].contains("{missing_base}head"),
@@ -876,14 +880,10 @@ fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
     );
 }
 
-/// S54 second acceptance, real run 2026-11-16: S54-fix1 moved the Ivy/DD-26 block before
-/// the missing-base block. Choosing Ivy, who lists Alice, gives Bob a listed record of
-/// Alice's channel with her real base; `open_link` then refreshes from that recorded base
-/// instead of reading the link's missing base, so the missing-base install succeeds
-/// (`{"ok":{"installed":["reading-list"]}}`) and no `not found` is shown. Same order as
-/// `ac3_j3_real_github`: install, unfollow, choose Ivy, then the missing link.
+/// A known channel uses recorded bases, including records learned through Ivy.
+/// Real J3 therefore checks a missing base from a fresh home with no records.
 #[test]
-fn regress_s54_missing_base_after_choosing_ivy_still_not_found() {
+fn regress_s54_missing_base_fresh_home_reports_not_found() {
     let _net = NET.lock().unwrap_or_else(|e| e.into_inner());
     struct Approve;
     impl watane_dist::Confirm for Approve {
@@ -892,12 +892,11 @@ fn regress_s54_missing_base_after_choosing_ivy_still_not_found() {
         }
     }
     let alice_home = tempfile::tempdir().unwrap();
-    let ivy_home = tempfile::tempdir().unwrap();
-    let bob_home = tempfile::tempdir().unwrap();
-    let open = |home: &Path, options: watane_dist::Options| {
-        watane_dist::Dist::open(home, std::sync::Arc::new(Approve), options).unwrap()
+    let dan_home = tempfile::tempdir().unwrap();
+    let open = |home: &Path| {
+        watane_dist::Dist::open(home, std::sync::Arc::new(Approve), Default::default()).unwrap()
     };
-    let alice = open(alice_home.path(), Default::default());
+    let alice = open(alice_home.path());
     alice.set_name("Alice").unwrap();
     let site = Pages::start(&alice_home.path().join("dist"));
     let base = site.url("site");
@@ -908,27 +907,15 @@ fn regress_s54_missing_base_after_choosing_ivy_still_not_found() {
         .unwrap()
         .link
         .unwrap();
-    // Bob accepts Alice's loopback base when Ivy lists it, as the real run's public base.
-    let bob = open(
-        bob_home.path(),
-        watane_dist::Options {
-            listed_local: true,
-            ..Default::default()
-        },
-    );
-    bob.open_link(&link).unwrap();
-    bob.unfollow(&link.channel()).unwrap();
-    let ivy = open(ivy_home.path(), Default::default());
-    ivy.set_name("Ivy").unwrap();
-    ivy.list(&link, "Books from Alice").unwrap();
-    let ivy_site = Pages::start(&ivy_home.path().join("dist"));
-    ivy.set_site_url(&ivy_site.url("site")).unwrap();
-    bob.choose_index(&ivy.own_link(None).unwrap()).unwrap();
+    let dan = open(dan_home.path());
+    assert!(dan.followed().unwrap().is_empty());
+    assert!(dan.indexes().unwrap().is_empty());
+    assert!(!dan_home.path().join("dist/follows.json").exists());
     let missing_base = format!("{base}missing-unpublished/");
     let missing = watane_dist::Link::new(link.channel(), &missing_base, link.slug()).unwrap();
-    let error = bob
+    let error = dan
         .open_link(&missing)
-        .expect_err("a link naming a never-published base must fail after choosing Ivy");
+        .expect_err("a fresh home must read the link's missing base");
     assert!(
         matches!(&error, watane_dist::DistError::NotFound { url } if url == &format!("{missing_base}head")),
         "{error:?}"
