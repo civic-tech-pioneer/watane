@@ -4,6 +4,11 @@ use watane_pkg::{Grant, ReleaseRef};
 
 pub trait Confirm: Send + Sync + 'static {
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>>;
+    /// Called after an install writes the catalog and before it returns.
+    /// Runs on the host's thread and must not block. Default: nothing.
+    fn installed(&self, report: &Installed) {
+        let _ = report;
+    }
     /// Step 10 (6.10): a request of a manager. The app decides it in the consent view and acts.
     /// Default: `Failed("this app takes no requests of mods")`.
     fn manage(
@@ -18,6 +23,13 @@ pub trait Confirm: Send + Sync + 'static {
     fn reduced(&self, by: &LocalName, reduction: &Reduction) {
         let _ = (by, reduction);
     }
+}
+/// The changed plan entries, in install order, after the catalog commit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Installed {
+    pub requester: Requester,
+    pub new: Vec<LocalName>,
+    pub updated: Vec<LocalName>,
 }
 #[derive(Clone, Debug)]
 pub struct InstallRequest {

@@ -427,3 +427,243 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
     );
     served.shutdown().await;
 }
+
+#[test]
+fn ac1_s84_installed_is_public_and_confirm_defaults_to_noop() {
+    use watane_host::{Answer, Confirm, InstallRequest, Installed, Requester};
+    struct EarlierConfirm;
+    impl Confirm for EarlierConfirm {
+        fn install(
+            &self,
+            _: InstallRequest,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Answer> + Send>> {
+            Box::pin(async { Answer::Deny })
+        }
+    }
+    let report = Installed {
+        requester: Requester::App,
+        new: vec![watane_host::LocalName::parse("hello").unwrap()],
+        updated: vec![],
+    };
+    assert_eq!(report.clone(), report);
+    assert_eq!(
+        format!("{report:?}"),
+        "Installed { requester: App, new: [LocalName(\"hello\")], updated: [] }"
+    );
+    EarlierConfirm.installed(&report);
+}
+
+mod s84 {
+    use super::*;
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{Arc, Mutex, Weak},
+    };
+    use watane_host::{
+        Answer, Confirm, Host, InstallRequest, Installed, Limits, LocalName, Mode, Requester,
+        Source,
+    };
+
+    #[derive(Default)]
+    struct App {
+        deny: Mutex<bool>,
+        reports: Mutex<Vec<Installed>>,
+        host: Mutex<Weak<Host>>,
+    }
+    impl Confirm for App {
+        fn install(&self, _: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
+            let deny = *self.deny.lock().unwrap();
+            Box::pin(async move {
+                if deny {
+                    Answer::Deny
+                } else {
+                    Answer::Approve { withhold: vec![] }
+                }
+            })
+        }
+        fn installed(&self, report: &Installed) {
+            let host = self.host.lock().unwrap().upgrade().unwrap();
+            let disk: Value =
+                serde_json::from_slice(&fs::read(host.home().join("installed.json")).unwrap())
+                    .unwrap();
+            // The callback sees both the durable catalog and the swapped registry.
+            for name in report.new.iter().chain(&report.updated) {
+                assert!(
+                    disk["mods"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|m| m["local"] == name.as_ref())
+                );
+                assert!(host.get(name).is_some());
+            }
+            self.reports.lock().unwrap().push(report.clone());
+        }
+    }
+    fn local(name: &str) -> LocalName {
+        LocalName::parse(name).unwrap()
+    }
+    fn home() -> (TempDir, Arc<Host>, Arc<App>) {
+        let dir = tempfile::tempdir().unwrap();
+        let app = Arc::new(App::default());
+        let host = Host::open(
+            dir.path(),
+            Mode::Home {
+                app: Some(app.clone()),
+            },
+            Limits::default(),
+        )
+        .unwrap();
+        *app.host.lock().unwrap() = Arc::downgrade(&host);
+        (dir, host, app)
+    }
+
+    #[tokio::test]
+    async fn ac3_s84_w37_api_reports_new_in_install_order_and_skips_denied_and_bad_plans() {
+        let (_dir, host, app) = home();
+        let served = host.serve(0, axum::Router::new()).await.unwrap();
+        let client = Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{}/api/install", served.port);
+        let response = client
+            .post(&url)
+            .json(&json!({"folders":[fixture("recs"), fixture("shelf")]}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            *app.reports.lock().unwrap(),
+            vec![Installed {
+                requester: Requester::LocalApi,
+                new: vec![local("shelf"), local("recs")],
+                updated: vec![],
+            }]
+        );
+        app.reports.lock().unwrap().clear();
+        *app.deny.lock().unwrap() = true;
+        assert_eq!(
+            client
+                .post(&url)
+                .json(&json!({"folders":[fixture("hello")]}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            403
+        );
+        assert!(app.reports.lock().unwrap().is_empty());
+        *app.deny.lock().unwrap() = false;
+        assert_eq!(
+            client
+                .post(&url)
+                .json(&json!({"folders":[fixture("hello"), fixture("empty")]}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            422
+        );
+        assert!(app.reports.lock().unwrap().is_empty());
+        served.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn ac2_s84_app_and_manager_report_updates_and_omit_unchanged() {
+        let (_dir, host, app) = home();
+        let folder = copy_hello();
+        let plan = host
+            .plan(vec![
+                Source::Folder(fixture("manager")),
+                Source::Folder(folder.path().into()),
+            ])
+            .unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+        assert_eq!(
+            *app.reports.lock().unwrap(),
+            vec![Installed {
+                requester: Requester::App,
+                new: vec![local("hello"), local("manager")],
+                updated: vec![],
+            }]
+        );
+        app.reports.lock().unwrap().clear();
+        for requester in [Requester::App, Requester::Mod(local("manager"))] {
+            fs::write(
+                folder.path().join("ui/index.html"),
+                format!("updated by {requester:?}"),
+            )
+            .unwrap();
+            let plan = host
+                .plan(vec![
+                    Source::Folder(fixture("manager")),
+                    Source::Folder(folder.path().into()),
+                ])
+                .unwrap();
+            host.install(plan, requester.clone()).await.unwrap();
+            assert_eq!(
+                *app.reports.lock().unwrap(),
+                vec![Installed {
+                    requester: requester.clone(),
+                    new: vec![],
+                    updated: vec![local("hello")],
+                }]
+            );
+            app.reports.lock().unwrap().clear();
+            let before = fs::read(host.home().join("installed.json")).unwrap();
+            let plan = host
+                .plan(vec![Source::Folder(folder.path().into())])
+                .unwrap();
+            host.install(plan, requester).await.unwrap();
+            assert_eq!(
+                fs::read(host.home().join("installed.json")).unwrap(),
+                before
+            );
+            assert!(app.reports.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn ac2_s84_no_report_for_missing_stale_or_failed_commit() {
+        let (_dir, host, app) = home();
+        let plan = host.plan(vec![Source::Folder(fixture("recs"))]).unwrap();
+        assert_eq!(
+            host.install(plan, Requester::App).await.unwrap_err().code(),
+            "missing_providers"
+        );
+        assert!(app.reports.lock().unwrap().is_empty());
+        let stale = host.plan(vec![Source::Folder(fixture("hello"))]).unwrap();
+        let plan = host.plan(vec![Source::Folder(fixture("hello"))]).unwrap();
+        host.install(plan, Requester::App).await.unwrap();
+        app.reports.lock().unwrap().clear();
+        assert_eq!(
+            host.install(stale, Requester::App)
+                .await
+                .unwrap_err()
+                .code(),
+            "stale_plan"
+        );
+        assert!(app.reports.lock().unwrap().is_empty());
+        let folder = copy_hello();
+        fs::write(folder.path().join("ui/index.html"), "updated").unwrap();
+        let plan = host
+            .plan(vec![Source::Folder(folder.path().into())])
+            .unwrap();
+        let before = fs::read(host.home().join("installed.json")).unwrap();
+        // A directory at the temporary file path makes the catalog write fail.
+        fs::create_dir(host.home().join("installed.json.tmp")).unwrap();
+        assert_eq!(
+            host.install(plan, Requester::App).await.unwrap_err().code(),
+            "internal"
+        );
+        assert!(app.reports.lock().unwrap().is_empty());
+        assert_eq!(
+            fs::read(host.home().join("installed.json")).unwrap(),
+            before
+        );
+        assert_eq!(
+            fs::read(host.home().join("mods/hello/ui/index.html")).unwrap(),
+            fs::read(fixture("hello").join("ui/index.html")).unwrap()
+        );
+    }
+}

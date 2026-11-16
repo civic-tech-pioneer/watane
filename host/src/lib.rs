@@ -7,8 +7,8 @@ mod catalog;
 mod confirm;
 mod error;
 pub use confirm::{
-    Answer, Ask, Confirm, InstallRequest, ManageOutcome, ManageRequest, Reduction, RequestId,
-    Requester,
+    Answer, Ask, Confirm, InstallRequest, Installed, ManageOutcome, ManageRequest, Reduction,
+    RequestId, Requester,
 };
 mod harness;
 mod home;
@@ -245,7 +245,7 @@ impl Host {
                     .filter(|e| !matches!(e.change, Change::Unchanged))
                     .cloned()
                     .collect(),
-                requester,
+                requester: requester.clone(),
             };
             match tokio::time::timeout(std::time::Duration::from_secs(600), app.install(request))
                 .await
@@ -261,11 +261,29 @@ impl Host {
         {
             return Err(HostError::Refused(format!("{by} lost its grant to manage")));
         }
-        self.commit_plan(
+        let mut report = Installed {
+            requester,
+            new: vec![],
+            updated: vec![],
+        };
+        for entry in plan.entries() {
+            match entry.change {
+                Change::New => report.new.push(entry.local.clone()),
+                Change::Update { .. } => report.updated.push(entry.local.clone()),
+                Change::Unchanged => {}
+            }
+        }
+        let installed = self.commit_plan(
             plan,
             &withhold,
             self.port.load(std::sync::atomic::Ordering::Acquire),
-        )
+        )?;
+        if (!report.new.is_empty() || !report.updated.is_empty())
+            && let Mode::Home { app: Some(app) } = &self.home.mode
+        {
+            app.installed(&report);
+        }
+        Ok(installed)
     }
     fn commit_plan(
         &self,
