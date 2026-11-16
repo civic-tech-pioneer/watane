@@ -189,6 +189,10 @@ pub(crate) fn join(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceLi
     if let Some(addr) = reached {
         core.learn_addr(&code.anchor, addr);
     }
+    // Pair carries the list only. Pull addresses even when its seq is current;
+    // a failed pull cannot undo the join that was already installed.
+    net.runtime()?
+        .block_on(crate::pairing::pull(net.core_arc(), code.anchor));
     Ok(list)
 }
 
