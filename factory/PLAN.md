@@ -705,12 +705,13 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   spec/FUNCTIONAL.md (J10 only), pkg, host, dev TECHNICAL and FUNCTIONAL; app/TECHNICAL.md only in a
   new section at its end (S74 edits app/TECHNICAL 5.3 and 5.4). Docs only. Cloud.
   Delivered (merged as 1153b15): step 10 can be built from the documents. host 6.4 (the WIT of `watane:host/manage`), 6.10 (reads; three reductions: disable, withdraw, close-page; requests: install, update, enable, grant, remove, each an id with `request(id)`; effects wait in the outbox and the grant is checked again before each; one open request per manager), 12.1 (`Confirm::{manage, reduced}`, `Requester::Mod`); pkg 4.5, 5.1, 7.2 (`Grant::Manage`, CBOR `[4]`, grant limit 82); dev 8.1 (a manage fake, `manages`); app 17 (words, consents, S43 to S48, j10.rs; APP-F-70 to 75 sit in 17.1 until S74 merges). Build rows: pkg 11, host 11, dev 13, app J. Validator PASS in round 1. Six questions for the human (host/TECHNICAL 18, Q28 to Q33), each built so either answer keeps the WIT.
-- [~] **S76 A mod manages Alice's mods, and asks for anything more (pkg 11, host 11, dev 13).**
+- [x] **S76 A mod manages Alice's mods, and asks for anything more (pkg 11, host 11, dev 13).**
   Branch `slice/s76`. Builds the rows S73 wrote: pkg 11 (`Grant::Manage`, `World::manage`), host 11
   (`watane:host/manage`, host 6.10 and 12.1; S40 to S47), dev 13 (the manage fake, DEV-S-53).
   Outcome: host S40 to S47 and DEV-S-53 pass; every earlier suite passes. Built as designed (the
   options marked "built" in Q28 to Q33); a change from the human's answers comes as its own task.
   Touches: pkg, host, dev. Cloud. After S71 (dev).
+  Delivered (merged as 797cd9f): a manager mod (grant `manage`) reads every installed mod, disables one, withdraws a grant or closes a page at once, and asks the participant for an install, update, enable, grant or removal as a request whose state it can read; a maker's agent fakes `watane:host/manage` and checks `manages` in a contract test (DEV-S-53); dev's envelope ac5 is green again. Decisions: Q28 to Q33 built as option (a); `Confirm::manage` runs on its own thread with a small current-thread tokio runtime (app J: run runtime-bound work on the app's own runtime and await it from there); a request-* in a preview or a home with no app answers `refused` before any other check; harness request ids r1, r2, ... count across one Harness, a failed call takes no number; fixed a deadlock in `Host::remove` (catalog lock held while sending the catalog message); `Grant` keeps Display only; app gains `GrantKind::Manage` and the words of app 17.2. Verified on the Mac: hakari clean; host, dev and the app driver suite green with ignored (front tests not run), the cloud's not-run tests included.
 - [x] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
   pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
   5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
@@ -754,9 +755,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | app | H extension points (J9) | 9 | done (S66) |
 | pkg | 10 `main` in `mod.toml` | 10 | done (S74) |
 | app | I main mod and manager | 10 | done (S74) |
-| pkg | 11 `Grant::Manage` | 10 | open |
-| host | 11 `watane:host/manage` | 10 | open |
-| dev | 13 manage fake | 10 | open |
+| pkg | 11 `Grant::Manage` | 10 | done (S76) |
+| host | 11 `watane:host/manage` | 10 | done (S76) |
+| dev | 13 manage fake | 10 | done (S76) |
 | app | J manage requests, J10 | 10 | open |
 | pkg | 1 names, 2 meta/deps, 3 world/folder/grant | 1 | done (S1) |
 | pkg | 4 component | 1 | done (S2) |
@@ -981,7 +982,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S74: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S75: `72a0f1f0` (sessionId `72a0f1f0-fc06-41c7-b283-fc9e5d9cad01`), worktree `.claude/worktrees/s75` (local: the app; its own `target/`, since S54 builds the app in main's from a branch without S74).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
-- S76: cloud routine `trig_01PfRdUs1u8HSXgu7UBhoY7c` (handed out 2026-11-15), branch `slice/s76`.
+- S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S54: `71fd3eb5` (sessionId `71fd3eb5-d288-4b30-88d3-f43f009adf27`), worktree `.claude/worktrees/s54` (local: the token; builds in main's `target/`).
 - S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
@@ -1521,6 +1522,9 @@ The human may veto each one.
   and during the PO's verification (j2 and 8 manager tests red, green on a rerun alone). Codex's
   sandbox cannot start macOS window tests (HIServices XPC): Sol reports window ACs PARTIAL and the
   validator runs them all. Proposed to the human: each local slice its own target again.
+- S76: tests leak `.tmp*` folders (about 600 MB each); in the cloud they filled the disk mid-run.
+  On the Mac, 928 of them held 186 GB of `$TMPDIR` on 2026-11-16: the real cause of the full disks.
+  watane-app does not compile in the cloud (no gdk-3.0), so a shared enum's app fixes go unchecked there.
 - S73 to S76: main is red on dev's envelope ac5 again: S73's design names
   `contract::ac_manage_fake_and_records`, which S76 builds. Not a slice's failure until then.
 
