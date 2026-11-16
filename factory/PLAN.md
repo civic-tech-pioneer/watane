@@ -720,12 +720,13 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   runtime. Folds in Q31 (b) and Q32 (b) if the human takes them. Outcome: app S43 to S48 and J10 pass;
   J2 to J5, J8, J9 still pass. Touches: app (src, ui, tests/manage.rs, tests/j10.rs, fixtures,
   TECHNICAL 17). Local (the app). After S75, which changes the same app/src and app/ui.
-- [~] **S79 Bob installs from a site published minutes ago, and a new base sticks (dist).** Branch
+- [x] **S79 Bob installs from a site published minutes ago, and a new base sticks (dist).** Branch
   `slice/s79`. Builds the S54 deputy decision: dist retries an HTTP 5xx twice with a short backoff within
   the fetch timeouts (4.5), and a link's base for a known channel is appended to its record's bases
   (5.9). Outcome: a test server that answers 503 then 200 installs; one that always answers 503 fails
   naming the URL after three tries, within its deadline; a follow through a link with a second base
   reads both bases. Touches: dist (src/http.rs and the follow path, its tests, TECHNICAL 4.5, 5.9). Cloud.
+  Delivered (merged as 7ca2e54): Bob installs from a site that answers 503 for a while (a 5xx is tried twice more, 250 ms then 500 ms, inside the read's timeout); a link with a new base for a known channel adds that base, and refreshes read every base. Decisions: only 5xx is retried, for every GET, and no retry starts past the deadline; follow, choose_index and open_link learn a link's base, read_link (preview) learns nothing, and a base whose verifying read fails is not learned; at most 4 bases (a fifth drops the oldest learned after the front one); a re-follow through a known base changes nothing (it used to overwrite `base`); follows.json stays version 1 (dist 4.4, 4.5, 5.9, DD-41, DD-42, DIST-F-61, 62). Verified on the Mac: hakari clean; dist and node green with ignored; app J2 to J5, J9 and find green. For a later slice: a 503 then a timeout reports only `request timed out`; a newly learned base is read twice (one extra head GET); a reused Dist waits the whole entry_timeout on a dropped keep-alive test host.
 - [~] **S78 A full test run leaves nothing behind in the temp folder.** Branch `slice/s78`. Tests leaked
   186 GB of `.tmp*` folders on the Mac (Friction, S76): dev's build caches (`build`, `cargo-home`,
   `counter`: 359 folders), copies (124), and a few from host, net and dist. Find what keeps each (a
@@ -1007,7 +1008,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: cloud routine (handed out 2026-11-16), branch `slice/s78`.
-- S79: cloud routine (handed out 2026-11-16), branch `slice/s79`.
+- S79: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S54: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
