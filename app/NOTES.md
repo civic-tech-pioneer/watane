@@ -919,63 +919,51 @@ No dependencies added.
 
 ### S81 reloads, S30 and temporary-folder audit
 
-- Desk now records an outstanding button call in the window's ephemeral
-  session storage. If a grant change destroys that JavaScript context,
-  the next document reports `page_reloaded` instead of leaving `#result`
-  blank. It neither retries an effect nor claims the host failed it.
-  A subsequent call clears the marker on success or error. No dependency,
-  command, capability or sibling implementation changed.
-- `ac1_manage_calls_settle_across_grant_reload` holds the response to a real
-  `api.request-remove` while the main window withdraws/gives back manage.
-  It waits for page load and checks the replacement document's code and
-  a new call's result/error. Host owns the old outbox and cancellation:
-  revoke ends the pending request `denied`, drops HostConfirm's app task
-  and removes its consent. The test reads that exact request after give-back,
-  checks Notes remains, then proves another request can be denied normally.
-  The give-back-time call starts without manage and has no management
-  effect or consent to leave behind.
-- Core clears the driver's loaded flag before requesting a grant reload;
-  an immediately following driver wait must observe the replacement
-  document's page-load event. No fixed delay was added.
-- Red: `ac1_desk_reports_interrupted_call_after_reload` failed because the
-  replacement document left its result empty. Green: it passes, as does
-  the unchanged `ac1_fixture_packages_and_page_messages` fixture check.
-  Existing tests other than S30 are unchanged.
-- S30 retains its assertions and now waits for the complete expected
-  identity text, including the light role and anchor key, before comparing.
-  The requested loop completed 20 attempts: 0 passed, all 20 failed before
-  readiness with HIServices errors (`/tmp/s81-s30-count.log` and
-  `/tmp/s81-s30-1.log` through `/tmp/s81-s30-20.log`).
-- Native readiness remains unavailable in this sandbox: HIServices XPC
-  reports Connection Invalid and `_LSModifyNotification` error -50. The
-  new quiet manage test cannot reach its scenario assertions. The existing
-  library pairing test also fails constructing the netmon monitor. These
-  security and runtime checks were not weakened or skipped.
-- The initial default-feature temp count was 19 before and 19 after.
-  Six empty folders appeared in the shared temporary directory later;
-  their birth timestamps are after the driver run completed, so they
-  cannot be attributed to that run. Final counts use a dedicated TMPDIR
-  inherited by both Cargo and its test children, excluding other slices'
-  concurrent tests. No pre-existing folder was deleted, and no app test
-  intentionally retains a temporary folder.
+- Desk marks an outstanding button call in its reload URL fragment with
+  `history.replaceState`. If a grant change destroys that JavaScript context,
+  the replacement document consumes the marker and reports `page_reloaded`.
+  A completed call clears it. No effect is retried or claimed to have failed.
+  No dependency, command, capability or sibling implementation changed.
+- Round 1's session-storage signal was unreliable in native WebKit: the
+  give-back pass timed out waiting for `page_reloaded` (validator reported
+  5/20 and 6/10, plus a full-driver failure). An asynchronous storage flush was suspected,
+  not proven. The replacement uses navigation state instead of storage.
+  Before either grant command, the quiet test confirms the held response,
+  the page's marker, and the same URL in the native view reported by the app.
+  This establishes the reload address on both sides of WebKit's process
+  boundary without a fixed delay or a storage-persistence assumption.
+- `ac1_manage_calls_settle_across_grant_reload` holds a real
+  `api.request-remove` response during withdraw/give-back. It checks the
+  replacement's code and a new call's result/error. Host owns the old outbox
+  and cancellation: revoke ends the pending request `denied`, drops
+  HostConfirm's app task and removes its consent. The test reads that exact
+  request after give-back, checks Notes remains, then proves another request
+  can be denied normally. The give-back-time call starts without manage and
+  has no management effect or consent to leave behind.
+- Core clears `driver.loaded(label, false)` before requesting a grant reload,
+  so the next driver wait observes the replacement document's page-load
+  event. Validator commit `6ec012b` adds that wait after `grant_withdraw`
+  in J10; it relies on this invalidation and is retained unchanged.
+- S30 retains its assertions and waits for the complete identity text,
+  including the light role and anchor key. Native validator: **20/20 pass**.
+- Native validator counts in the real `$TMPDIR`: driver **25 before, 25
+  after**; default features **25 before, 25 after**. The sets of names are
+  identical. No new temporary folder is retained by either run.
 - Lifetime audit: app tests have no `TempDir::keep`, `into_path`,
   `mem::forget` or helper `process::exit`. The `into_path` calls in
   commands.rs convert dialog `FilePath` values, not temporary directories.
-  Copied fixtures keep a scoped/fixture-owned TempDir; App and NodeProc
-  kill and wait for their children before the caller's home drops.
-  No cleanup implementation was changed without a reproduced app leak.
-  The S76 count's original folders cannot be assigned causes from their
-  remaining names alone; native execution still needs the validator.
-- Final isolated counts: driver **0 before, 0 after**; default features
-  **0 before, 0 after**, no leaked folder in either measured run. The
-  dedicated TMPDIR itself was removed after both runs. Report:
-  `/tmp/s81-audit.json`; logs: `/tmp/s81-driver-final.log` and
-  `/tmp/s81-default-final.log`. The driver run included ignored tests and
-  excluded only the four task-named front tests; `--no-fail-fast` let all
-  targets run despite the native startup failures. It totals 169 passes
-  and 73 failures. The default run fails only the existing netmon pairing
-  test. Native AC1/AC2 and the full native cleanup/green acceptance remain
-  PARTIAL; these counts cannot exercise code beyond failed GUI startup.
-- Final `cargo build`, strict all-targets/driver clippy, `cargo fmt --check`
-  and `git diff --check` pass. The release build with driver fails at the
-  intended `compile_error!("the driver feature is only for debug test builds")`.
+  Copied fixtures keep a scoped/fixture-owned TempDir; App and NodeProc kill
+  and wait for their children before the caller's home drops. No app test
+  intentionally retains a temporary folder, and no cleanup implementation
+  was changed without a reproduced app leak.
+- Round 2 red/green: the DOM regression now supplies navigation state and
+  makes session storage unavailable. It fails with the old storage marker
+  and passes with the URL marker. The unchanged fixture/page check remains
+  part of validation. The native AC1 20-run loop and full-driver green check
+  are delegated to the validator, since this sandbox cannot start windows.
+- Round 2 local checks: build, all driver targets' `--no-run` compilation,
+  strict driver clippy, fmt and diff checks pass. The default run's DOM
+  regression and the unchanged Desk fixture/page check pass. Both full test
+  commands encounter the existing netmon pairing failure; the direct quiet
+  reload test stops at HIServices readiness. The release-driver build fails
+  at the required debug-only compile guard. Logs: `/tmp/s81-r2-*.log`.

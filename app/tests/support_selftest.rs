@@ -925,24 +925,31 @@ fn ac1_desk_reports_interrupted_call_after_reload() {
       import {readFileSync} from 'node:fs';
       import vm from 'node:vm';
       const source = readFileSync('tests/fixtures/desk-ui/ui/app.js', 'utf8');
-      const saved = new Map();
-      const sessionStorage = {getItem:k=>saved.get(k) ?? null, setItem:(k,v)=>saved.set(k,v), removeItem:k=>saved.delete(k)};
+      // Keep navigation state across documents, but make storage unavailable:
+      // an asynchronously persisted storage write cannot be our reload signal.
+      const location = {pathname:'/',search:'',hash:''};
+      const history = {replaceState:(_state,_title,url)=>{
+        location.hash = new URL(url,'http://manager.localhost').hash;
+      }};
       const load = blocked => {
         const fields = Object.fromEntries(['result','mods-result','mods','local','request-id'].map(id=>[id,{id,textContent:'',value:''}]));
         const document = {getElementById:id=>fields[id],querySelectorAll:()=>[fields.mods]};
         const watane = {on:()=>{},call:()=>blocked ? new Promise(()=>{}) : Promise.resolve([])};
-        vm.runInNewContext(source,{document,watane,sessionStorage});
+        const context = {document,watane,location,history};
+        Object.defineProperty(context,'sessionStorage',{get:()=>{throw Error('storage must not be used');}});
+        vm.runInNewContext(source,context);
         return fields;
       };
       const first = load(true);
       first.mods.onclick();
       assert.equal(first.result.textContent,'');
+      assert.equal(location.hash,'#desk-call-pending');
       const next = load(false);
       await new Promise(resolve=>setImmediate(resolve));
       assert.equal(JSON.parse(next.result.textContent).code,'page_reloaded');
       await next.mods.onclick();
       assert.equal(next.result.textContent,'[]');
-      assert.equal(saved.size,0);
+      assert.equal(location.hash,'');
       const clean = load(false);
       await new Promise(resolve=>setImmediate(resolve));
       assert.equal(clean.result.textContent,'');

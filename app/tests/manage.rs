@@ -473,7 +473,28 @@ fn ac1_manage_calls_settle_across_grant_reload() {
             "request-remove",
             json!({"local":"recommendations","delete-data":true}),
         );
-        until(&app, DESK, "window.responseHeld === true");
+        // Confirm both the live call and its navigation marker before granting.
+        // The marker travels in the reload URL, independent of storage flushes.
+        until(
+            &app,
+            DESK,
+            "window.responseHeld === true && location.hash === '#desk-call-pending'",
+        );
+        // WebKit's native view must know that URL too: that is the address
+        // Core's reload will use, across the web-content process boundary.
+        let deadline = std::time::Instant::now() + TIMEOUT;
+        while !app.windows().iter().any(|w| {
+            w["label"] == DESK
+                && w["url"]
+                    .as_str()
+                    .is_some_and(|url| url.ends_with("#desk-call-pending"))
+        }) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pending URL not visible to app"
+            );
+            std::thread::yield_now();
+        }
         if command == "grant_withdraw" {
             consent(&app);
             cancelled = app.eval(DESK, "window.responseValue.value.ok");

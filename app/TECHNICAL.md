@@ -2102,7 +2102,8 @@ The page has one button per `api` function, with text inputs for the
 local name and the release, and shows each result or error code as text.
 When a grant change reloads Desk with a call still awaiting its response,
 the new document shows `page_reloaded`, using a marker in the window's
-ephemeral session storage. It does not claim the call failed or retry it.
+reload URL fragment, set synchronously with `history.replaceState`. It
+does not depend on a session-storage flush, claim the call failed, or retry it.
 Host applies or drops the call's outbox; withdrawing `manage` cancels any
 pending management request and drops the app future and its consent (17.3;
 host 6.10). Giving it back cannot revive that request.
