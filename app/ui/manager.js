@@ -9,7 +9,9 @@ export function connections(mod, mods) {
 }
 
 export function dependents(mod, mods) {
-  return mods.filter(m => m.enabled && (m.links || []).some(l => l.granted && l.provider === mod.local)).map(m => m.local);
+  const enabled = new Set(mods.filter(m => m.enabled).map(m => m.local));
+  const {usedBy, extendedBy} = connections(mod, mods);
+  return {usedBy: usedBy.filter(l => enabled.has(l)), extendedBy: extendedBy.filter(l => enabled.has(l))};
 }
 export function matchesLibrary(mod, text, source) {
   return (!source || (source === 'published' ? !!mod.publisher : !mod.publisher)) &&

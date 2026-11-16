@@ -43,14 +43,15 @@ impl MainMod {
         // staging layout (host 4.2); match bytes, never just a slug/version that
         // another pending plan might share. Source files are kept when present.
         let mut proposals = std::collections::HashSet::new();
-        for stage in std::fs::read_dir(host.home().join("staging"))? {
-            let folder = stage?.path().join("mod");
+        for stage in std::fs::read_dir(host.home().join("staging"))?.flatten() {
+            let folder = stage.path().join("mod");
             let Ok(metadata) = Mod::read(&folder) else {
                 continue;
             };
-            if metadata.main() {
-                let package = watane_host::watane_pkg::pack(&folder, true)
-                    .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
+            // Another plan's staging may vanish mid-read; skip it, never deny.
+            if metadata.main()
+                && let Ok(package) = watane_host::watane_pkg::pack(&folder, true)
+            {
                 proposals.insert(package.id());
             }
         }

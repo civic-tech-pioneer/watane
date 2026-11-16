@@ -214,7 +214,7 @@ fn ac5_warning_names_only_enabled_granted_dependents() {
         const mods = [source, {local:'recommendations', enabled:true, links:[{kind:'call',provider:source.local,granted:true},{kind:'subscribe',provider:source.local,granted:true}]},
             {local:'disabled',enabled:false,links:[{kind:'call',provider:source.local,granted:true}]},
             {local:'withdrawn',enabled:true,links:[{kind:'call',provider:source.local,granted:false}]}];
-        assert.deepEqual(dependents(source,mods), ['recommendations']);
+        assert.deepEqual(dependents(source,mods), {usedBy:['recommendations'], extendedBy:['recommendations']});
     "#;
     let output = std::process::Command::new("node")
         .args(["--input-type=module", "-e", script])

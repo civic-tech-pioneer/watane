@@ -1,6 +1,6 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
-import {connections, matchesLibrary, updateOffers} from './manager.js';
+import {connections, dependents, matchesLibrary, updateOffers} from './manager.js';
 import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, dependencyWarning } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
@@ -118,9 +118,8 @@ function modsView(mods) {
 }
 let confirming = null;
 function warn(mod, proceed, verb) {
-  const linked = connections(mod, currentMods);
-  const enabled = new Set(currentMods.filter(m => m.enabled).map(m => m.local));
-  const warning = dependencyWarning(verb, mod.name, linked.usedBy.filter(local => enabled.has(local)), linked.extendedBy.filter(local => enabled.has(local)));
+  const {usedBy, extendedBy} = dependents(mod, currentMods);
+  const warning = dependencyWarning(verb, mod.name, usedBy, extendedBy);
   if (!warning) return proceed();
   confirming = proceed;
   $('#dependency-dialog p').textContent = warning;
