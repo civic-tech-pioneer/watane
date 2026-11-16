@@ -700,7 +700,9 @@ is a step-7-style check, after S55.
   is new). The renders `render/1-5*.png` predate the revision: where they differ, the `.dc.html` wins.
   The spec says where a rule wins over the design. Existing ids and driver tests keep working, except
   the selector changes 5.3 lists. Outcome: the test rows of section 11 (stage K) and S49 to S52 pass;
-  a screenshot of each view sits beside the design. Touches: app (ui, src, tests), host
+  a screenshot of each view sits beside the design, and every discrepancy is (a) a rule that wins
+  (5.3) or (b) just as good, with its reason; the PO checks this side by side before the merge
+  (the human, 2026-11-16). Touches: app (ui, src, tests), host
   (`Confirm::installed`, host 12.1). Local (the app). After S81 and S82.
 
 ### Step 9: Extension points (J9)
