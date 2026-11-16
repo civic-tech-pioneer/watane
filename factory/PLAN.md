@@ -667,6 +667,15 @@ is a step-7-style check, after S55.
   `machines.rs ac3_s30` waits for its full text; the app's own temp-folder leaks (11, S76). Outcome:
   each item has a test on the real app. Touches: app. Local (the app).
 
+- [ ] **S82 Desk opens a page, asks to read a new link, and Alice stops its asks (Q30 b, Q31 b, Q32 b).**
+  Branch `slice/s82`. Builds the human's answers: host 6.10 gains `open-page(local)` (a direct call:
+  the app opens or focuses that mod's window, never while a consent is open) and dev's manage fake
+  with it; `request-install` with a link of a channel the home does not read shows a first consent
+  "<mod> asks to read <link>" before the install's own; the consent view offers "Deny and stop asks
+  from <mod>", which withdraws `Manage`. Specs: host 6.4, 6.10, 18 (answered); app 17; dev 8.1.
+  Outcome: tests for each on the real app and host; J10 and S43 to S48 still pass. Touches: host,
+  dev, app. Local (the app). After S81 (app).
+
 ### Step 9: Extension points (J9)
 
 The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and
@@ -1041,16 +1050,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- Step 10 (2026-11-15, from S73; host/TECHNICAL 18). Each is designed so either answer keeps the
-  WIT; the design builds the first option. Q28 a removal that keeps the data: (a) a request, (b) a
-  direct reduction; rec. (a). Q29 enable: (a) a request, (b) direct only for a mod this manager
-  disabled, (c) direct always; rec. (a). Q30 install from a channel the home does not read: (a) only
-  releases readable through channels the home already reads, (b) any link after a first consent;
-  rec. (a): (b) lets a manager make the app fetch a URL no grant names. Q31 open-page: (a) none, (b)
-  a direct open-page that opens no window while a consent is open; rec. (b). Q32 a manager asking
-  again after each deny: (a) only withdrawing Manage stops it, (b) a "Deny and stop asks" button that
-  withdraws Manage, (c) a 60 s pause; rec. (b). Q33 who may call a manager uses its grant: (a) as for
-  every grant, (b) only the manager's own page; rec. (a): (b) breaks agent-driven managers.
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
@@ -1064,6 +1063,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- The human (2026-11-16) answered step 10's questions (host/TECHNICAL 18): Q28 (a) every removal is a
+  request; Q29 (a) enable is a request; Q30 (b) a manager may ask to install from any link, after a
+  first consent "<mod> asks to read <link>"; Q31 (b) a direct `open-page(local)` that opens no window
+  while a consent is open; Q32 (b) "Deny and stop asks from <mod>" in the consent view, which
+  withdraws `Manage`; Q33 (a) as for every grant. Q30, Q31, Q32 are built in S82.
 - S54 (2026-11-16): dist retries an HTTP 5xx twice with a short backoff, within the fetch timeouts (a
   Pages site published minutes ago answers 503); a link naming a new base for a channel dist knows adds
   that base to the record's bases (5.9: learned bases are appended; every base is checked). Built in S79.
