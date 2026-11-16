@@ -614,6 +614,10 @@ index holds it (5.9), and removes the record when no read set holds it any
 more. A listed record also has `"bases": [text]`: all distinct bases that
 listings give (5.9), at most 4, default `[]`; its `base` equals the first
 element. The base that serves the highest head moves to the front.
+A followed or chosen record has `bases` too, default `[]` (a step 3 or 4
+file reads unchanged, from `base` alone): it holds the bases the participant
+gave by links, learned as in 5.9, at most 4, and `base` equals the first
+element when `bases` is not empty.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
@@ -657,10 +661,21 @@ let bytes = response.body_mut().with_config().limit(limit).read_to_vec()?;
 |---|---|
 | status 200 | the bytes |
 | status 404 or 410 | `NotFound` |
+| status 5xx | after the retries below: `Http` |
 | other status | `Http` |
 | `ureq::Error::Timeout(_)` | `Timeout` |
 | `ureq::Error::BodyExceedsLimit(_)` | `TooLarge` |
 | any other `ureq::Error` | `Network { cause: error.to_string() }` |
+
+**Retry (S79).** A GET that gets a 5xx is tried twice more, after waits of
+250 ms and then 500 ms (a site published minutes ago answers 503 for a while).
+The deadline of the read is the start of the first attempt plus its timeout in
+the table; each attempt's `timeout_global` is the time left, and a retry whose
+wait would reach the deadline is not made, so the read never takes longer than
+one timeout and the last `Http { url, status }` is the error. Only a 5xx is
+retried: not 404, 410, 403 or 429, not a timeout, not a network error, not a
+body over its limit. The wait is a blocking sleep in the caller's thread
+(rule 7 bans background timers, not a wait in a call).
 
 Redirects to another host are followed: every byte is verified, so the
 host is never trusted. The proxy comes from the environment (`ureq`
@@ -890,13 +905,25 @@ either.
 nor chosen has a listed record (`followed: false`, `index: false`). Its
 `bases` are the distinct bases of the listings that name it, at most 4:
 first learned in the order of the walk (own channel first, then chosen
-indexes in key order), then reordered by the read below. A followed or chosen channel is read only from its own `base`: a
-listing never changes it. dist creates a listed record when the walk first
+indexes in key order), then reordered by the read below. A listing never changes the `bases` or `base` of a followed or chosen
+channel; only a link the participant gives does (below). dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
 
-**Read of a listed channel.** `read_channel` (5.4) from every base in
-`bases`, in order, on each read (at most 4 reads per listed channel per
+**Learned bases (S79, DD-41).** When `follow`, `choose_index` or `open_link`
+gets a link whose channel has a record and whose base is neither the record's
+`base` nor in its `bases`, and a read from that base succeeds (`Current` or
+`Behind`; for `follow` and `choose_index` as before, a failed read is the
+`Err` and nothing changes), the base is appended to `bases` (when `bases` is
+empty it first becomes `[base]`), the record keeps at most 4 (the oldest
+learned base after the front one goes), and the channel is read from every
+base as below, so the base with the highest head leads and `base` equals it.
+A base the record already has changes nothing (`open_link` does not even
+read it). A record with no base (kept only) takes the link's base as `base`.
+`read_link` learns nothing.
+
+**Read of a followed, chosen or listed channel.** `read_channel` (5.4) from every base in
+`bases` (or from `base` when `bases` is empty), in order, on each read (at most 4 reads per listed channel per
 refresh). Each base's entries are ingested as usual; later bases start from
 the head stored so far. `Current` means current against the stored head,
 so a mirror serving exactly that head must not stop the remaining reads:
@@ -909,6 +936,10 @@ highest head moves to the front of `bases` (first read wins a tie). Newly
 learned bases are appended after retained bases; every base is checked.
 The limits of 4.5 and the channel caps below still apply, with at most
 `max_listed_entries` (default 1000) entry files per base read.
+
+`refresh`, `refresh_channel` and `fetch` read a followed or chosen record the
+same way, with the same move to the front; the local-address skip below stays
+for listed reads only.
 
 **Local addresses.** Unless `Options::listed_local` is set (tests only;
 default `false`), dist skips a listed base whose host is `localhost`, ends
@@ -940,7 +971,7 @@ remove the listed records that no read set holds.
 **`choose_index(link)`**: a link with a slug is `BadLink`; own key is
 `OwnChannel`. `read_channel` as `follow` does (a failed or compromised
 first read is the `Err`, and nothing changes). Then set `index: true` and
-the link's base (as `follow` does: the base of the newest link wins), keep
+the link's base as a learned base (as `follow` does, above), keep
 `followed` as it was (a new record has `followed: false`), and run passes
 (b) and (c) for the whole read set. Returns the reports. A second choose
 of a chosen index reads it again.
@@ -1453,6 +1484,8 @@ are `list` and `include` statements of 4.1.
 | Q11 | spec TECHNICAL §9, W15 | The four open points of step 4 (S26). | Decided in 4.1, 5.9, 5.10 and DD-18 to DD-24; spec W20 to W23 name them. |
 | Q12 | log | A listed channel that no index lists any more leaves its entries in `<home>/log/`; storage grows with every channel ever listed. | Step 4 keeps them (they are small, and a later listing reuses them). A `Log::forget(key)` is a later log stage. |
 | Q13 | spec W33, `PEERS.md` 6.1 | Step 8: a replica must read, verify and store with no identity, and `node` must serve `net` from the store. | **Decided (S59): stage S8, section 5.12, DD-36 to DD-40.** `open_keyless`, `drop_identity`, `confirm_own_head`; the holder methods; kept records; the lock rule. The proposal was: `Dist::open_keyless(home)` over `Log::open_keyless`; `sign_and_append` and the publish paths give `NoIdentity`. The holder methods of `net/TECHNICAL.md` 3.1, a record reason `kept` for what a full machine keeps, and reads that do not hold the store lock across network calls (`net/REVIEW.md` RV-06). `dist` gains no thread and no dependency on `net`. |
+| Q14 | S79, PLAN S54 | A site published minutes ago answers 503 for a while, and a first install then failed. | **Decided (DD-42).** 4.5: a 5xx is tried twice more (250 ms, 500 ms) within the read's own timeout. |
+| Q15 | S79, PLAN S54 | Alice moves her site to a new base; a link to it was dropped (`open_link`) or replaced the old base (`follow`). | **Decided (DD-41).** 5.9: a base the participant gives is appended to the record and every base is read. |
 | Q10 | dist §5.5 and §5.3 | A restored home can read its release entries but has no packages for the required site export. | DD-13: fetch and verify live packages from the supplied own link before confirming the head and exporting. |
 
 ## 13. Decisions of this subsystem
@@ -1499,3 +1532,5 @@ are `list` and `include` statements of 4.1.
 | DD-38 | An `Asked` ingest makes no record (net Q2); `keep` makes one after an install. | A search hit pulled through a full machine must not grow the held set; an installed mod must keep getting updates (DD-24). |
 | DD-39 | The holder methods take no read lock and no own-channel lock; only `log`'s and `follows`'s, never across a request. | RV-06: a web read must not stall the own machines; every source only raises a head (PEERS A2), so no coordination is needed. |
 | DD-40 | Kept channels are search candidates with `Via::Kept`, which counts as no index in the order. | A full machine answers a light machine's query from what the own machines hold; the order still uses only the participant's choices. |
+| DD-41 | A base that the participant gives by a link (`follow`, `choose_index`, `open_link`) for a channel with a record is appended to the record's `bases`, at most 4, and every later read checks every base (5.9). A listing still never changes a followed or chosen record. Deputy decision S54. | Alice's move from one host to another must stick without losing the old host, and a stale mirror must not hide a newer one. Undo: cheap (reader-only, serde default). |
+| DD-42 | A 5xx on a read is tried twice more, after 250 ms and 500 ms, inside the read's own timeout, with a blocking sleep in the caller's thread; nothing else is retried (4.5). | A fresh GitHub Pages site answers 503 for minutes; one failure should not end Bob's install. The wait is bounded by the existing deadline, so no read gets slower than its timeout. Undo: cheap (http.rs). |

@@ -1,4 +1,7 @@
 use crate::*;
+use std::time::Instant;
+
+const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(250), Duration::from_millis(500)];
 
 pub(crate) fn file_url(base: &str, file: &str) -> String {
     // Bases have passed Link validation; files are fixed text, seqs or verified hashes.
@@ -9,7 +12,39 @@ pub(crate) fn file_url(base: &str, file: &str) -> String {
         .into()
 }
 impl Dist {
+    /// One read with its whole timeout. A 5xx is tried twice more, after 250 ms and
+    /// 500 ms; the waits and the attempts all end at the first attempt's start plus
+    /// `timeout`, so a host that keeps failing costs no more than one read (TECHNICAL 4.5).
     pub(crate) fn get(
+        &self,
+        url: &str,
+        limit: u64,
+        timeout: Duration,
+        head: bool,
+    ) -> Result<Vec<u8>, DistError> {
+        let deadline = Instant::now() + timeout;
+        let mut waits = RETRY_WAITS.iter();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let error = match self.get_once(url, limit, left, head) {
+                Err(
+                    error @ DistError::Http {
+                        status: 500..=599, ..
+                    },
+                ) => error,
+                other => return other,
+            };
+            let Some(wait) = waits.next() else {
+                return Err(error);
+            };
+            // No retry starts when the wait would use up the time left.
+            if Instant::now() + *wait >= deadline {
+                return Err(error);
+            }
+            std::thread::sleep(*wait);
+        }
+    }
+    fn get_once(
         &self,
         url: &str,
         limit: u64,

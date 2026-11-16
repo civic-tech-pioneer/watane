@@ -393,7 +393,9 @@ impl Dist {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .contains_key(&link.channel());
             if followed {
-                self.refresh_channel(&link.channel())?;
+                if !self.learn_link_base(link)? {
+                    self.refresh_channel(&link.channel())?;
+                }
             } else {
                 self.follow(link)?;
             }

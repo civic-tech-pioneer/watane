@@ -96,6 +96,10 @@ is the product that answers each confirmation. Ids of `spec/` are cited in
   Traces: F-PUB-6.
 - **DIST-F-30** If a link names the own channel, then dist shall refuse to follow it.
   Traces: F-PUB-1.
+- **DIST-F-61** If a web host answers a read with a server error (HTTP 5xx), then dist shall try that read twice more with a short wait, all within the time allowed for the read, and if the host keeps failing, fail within that time and name the URL and the status.
+  Traces: F-INST-6, F-QUAL-3, J3.
+- **DIST-F-62** When the participant opens, follows or chooses a link that names a new base for a channel dist already knows, dist shall keep the new base beside the old ones, and every later read of the channel shall check every base.
+  Traces: F-PUB-6, F-INST-8.
 
 ### 2.6 Fetch (step 3)
 

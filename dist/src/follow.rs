@@ -7,6 +7,26 @@ pub(crate) fn now() -> u64 {
         .unwrap_or_default()
         .as_millis() as u64
 }
+/// Adds a base the participant gave to a record: appended after the known ones, at most
+/// 4 (the oldest learned base after the front one goes). True when the record changed
+/// its set of bases, so the caller reads them all (5.9).
+pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
+    if record.base.is_empty() {
+        record.base = base.into();
+        return false;
+    }
+    if record.base == base || record.bases.iter().any(|b| b == base) {
+        return false;
+    }
+    if record.bases.is_empty() {
+        record.bases.push(record.base.clone());
+    }
+    record.bases.push(base.into());
+    if record.bases.len() > 4 {
+        record.bases.remove(1);
+    }
+    true
+}
 impl Dist {
     pub(crate) fn save_follows(
         &self,
@@ -62,14 +82,74 @@ impl Dist {
             last_success: None,
         });
         record.followed = true;
-        record.base = link.base().into();
+        let learned = learn_base(record, link.base());
         record._last_attempt = time;
         if matches!(report.outcome, Outcome::Current { .. }) {
             record.last_success = Some(time);
         }
         self.save_follows(&next)?;
         *records = next;
-        Ok(report)
+        drop(records);
+        self.after_learning(link.channel(), report, learned)
+    }
+    /// `open_link` of a link to a known channel: a base the record does not have is read
+    /// first, and learned only when it serves the channel. True when the channel was
+    /// read again from all its bases.
+    pub(crate) fn learn_link_base(&self, link: &Link) -> Result<bool, DistError> {
+        let _guard = self
+            .read_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let key = link.channel();
+        let unknown = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+            .is_some_and(|r| {
+                !r.base.is_empty()
+                    && r.base != link.base()
+                    && !r.bases.iter().any(|b| b == link.base())
+            });
+        if !unknown {
+            return Ok(false);
+        }
+        let Ok(report) = self.read_channel(key, link.base()) else {
+            return Ok(false);
+        };
+        if !matches!(
+            report.outcome,
+            Outcome::Current { .. } | Outcome::Behind { .. }
+        ) {
+            return Ok(false);
+        }
+        let mut records = self
+            .follows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut next = records.clone();
+        if let Some(record) = next.get_mut(&key) {
+            learn_base(record, link.base());
+        }
+        self.save_follows(&next)?;
+        *records = next;
+        drop(records);
+        self.read_record(key)?;
+        Ok(true)
+    }
+    /// A learned base reorders the record's bases by the highest head (5.9).
+    pub(crate) fn after_learning(
+        &self,
+        key: PublicKey,
+        report: RefreshReport,
+        learned: bool,
+    ) -> Result<RefreshReport, DistError> {
+        if !learned {
+            return Ok(report);
+        }
+        let mut all = self.read_record(key)?;
+        all.changes.splice(0..0, report.changes);
+        Ok(all)
     }
     pub fn unfollow(&self, channel: &PublicKey) -> Result<(), DistError> {
         let _guard = self
@@ -113,20 +193,17 @@ impl Dist {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter(|(_, r)| r.followed || r.index)
-            .map(|(k, r)| (*k, r.base.clone()))
+            .map(|(k, _)| *k)
             .collect();
         let mut seen = std::collections::BTreeSet::new();
         let mut reports = Vec::new();
-        for (key, base) in keys {
+        for key in keys {
             seen.insert(key);
-            reports.push(
-                self.read_channel(key, &base)
-                    .unwrap_or_else(|cause| RefreshReport {
-                        channel: key,
-                        outcome: Outcome::Failed { cause },
-                        changes: Vec::new(),
-                    }),
-            );
+            reports.push(self.read_record(key).unwrap_or_else(|cause| RefreshReport {
+                channel: key,
+                outcome: Outcome::Failed { cause },
+                changes: Vec::new(),
+            }));
         }
         if let Err(error) = self.read_listed(&mut reports, &mut seen) {
             let (channel, cause) = *error;

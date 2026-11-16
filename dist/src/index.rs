@@ -265,7 +265,7 @@ impl Dist {
             last_success: None,
         });
         r.index = true;
-        r.base = link.base().into();
+        let learned = follow::learn_base(r, link.base());
         r._last_attempt = time;
         if matches!(report.outcome, Outcome::Current { .. }) {
             r.last_success = Some(time);
@@ -273,6 +273,7 @@ impl Dist {
         self.save_follows(&next)?;
         *records = next;
         drop(records);
+        let report = self.after_learning(link.channel(), report, learned)?;
         let mut reports = vec![report];
         let mut seen = BTreeSet::from([link.channel()]);
         self.read_listed(&mut reports, &mut seen)
@@ -390,7 +391,8 @@ impl Dist {
                 changes: Vec::new(),
             });
         }
-        let bases = if record.followed || record.index {
+        let listed = !record.followed && !record.index;
+        let bases = if record.bases.is_empty() {
             vec![record.base]
         } else {
             record.bases
@@ -400,12 +402,11 @@ impl Dist {
         let mut highest: Option<(u64, String)> = None;
         let mut any_current = false;
         for base in bases {
-            if !record.followed && !record.index && !self.options.listed_local && local_base(&base)
-            {
+            if listed && !self.options.listed_local && local_base(&base) {
                 continue;
             }
             let mut report = self
-                .read_channel_mode(key, &base, !record.followed && !record.index)
+                .read_channel_mode(key, &base, listed)
                 .unwrap_or_else(|cause| RefreshReport {
                     channel: key,
                     outcome: Outcome::Failed { cause },
@@ -438,14 +439,14 @@ impl Dist {
                 break;
             }
         }
-        if !record.followed && !record.index && (highest.is_some() || any_current) {
+        if highest.is_some() || any_current {
             let mut records = self
                 .follows
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut next = records.clone();
             let r = next.get_mut(&key).expect("listed record");
-            if let Some((_, base)) = highest {
+            if let Some((_, base)) = highest.filter(|_| !r.bases.is_empty()) {
                 r.bases.retain(|b| b != &base);
                 r.bases.insert(0, base.clone());
                 r.base = base;
