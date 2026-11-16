@@ -454,7 +454,8 @@ Rule wins over the old layout: there is no `<details>` disclosure per
 entry; the panel is the details. In order:
 
 1. Head: the 56 px monogram; the name in `h2`; `Version <version>` in a
-   sibling with class `version` (9.5); the tile's badge, if any; then
+   sibling with class `version` (9.5); no badge (as the Main board: the
+   tile carries it and the notice band says why); then
    either a `--ok` shield, the publisher's profile name (weight 500) and
    `(<fingerprint>) · signature verified`, or a `local` badge and `made on
    this device`.
