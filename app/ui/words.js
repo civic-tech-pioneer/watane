@@ -7,6 +7,17 @@ export function offerLabel(release, grants) {
   return `Install ${version}${grants.length ? ` — asks for: ${grants.map(grant => grant.text).join(', ')}` : ''}`;
 }
 
+export function offerNotice(release, grants = []) {
+  const version = release.slice(release.lastIndexOf('@') + 1);
+  if (!grants.length) return `Version ${version} is available.`;
+  const words = grants.map(grant => {
+    const text = grant.short || grant.text;
+    return text.charAt(0).toLowerCase() + text.slice(1);
+  });
+  const joined = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+  return `Version ${version} asks to ${joined}.`;
+}
+
 export function signTitle(statement) {
   return {profile: 'Sign your profile', release: 'Sign a release', withdraw: 'Sign a withdrawal',
     list: 'List in your index', include: 'Include in your index', unlist: 'End a listing'}[statement];

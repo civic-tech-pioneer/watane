@@ -12,6 +12,28 @@ fn manager_criterion(scenario: &str) {
     );
 }
 #[test]
+fn ac1_ac3_update_band_version_grants_and_offer_label() {
+    manager_criterion("update-band");
+}
+
+#[test]
+fn ac2_update_band_button_has_intrinsic_flex_size() {
+    let css = include_str!("../ui/style.css");
+    let rule = css
+        .split(".notice .offer {")
+        .nth(1)
+        .unwrap()
+        .split('}')
+        .next()
+        .unwrap();
+    assert!(rule.contains("flex: 0 0 auto;"));
+    assert!(rule.contains("width: fit-content;"));
+    assert!(rule.contains("margin-left: auto;"));
+    assert!(css.contains(".notice { display: flex; flex-wrap: wrap;"));
+    assert!(css.contains(".notice > span { flex: 1 1 160px; }"));
+}
+
+#[test]
 fn ac5_installed_note_word_forms() {
     manager_criterion("ac5");
 }

@@ -129,6 +129,26 @@ if (which === 'ac6') {
   assert.equal(entry('a').querySelector('.start-row').hidden,false);
   $('#confirm-cancel').click(); assert.equal(entry('a').querySelector('.actions').hidden,false);
 }
+if (which === 'update-band' || which === 'look') {
+  const offer='key/book@0.4.0';
+  const grants=[{short:'Connect to openlibrary.org',text:'Full network words'}, {short:'',text:'Keep its own data'}, {short:'Call Notes',text:'Full call words'}];
+  for (const [offerGrants, expected] of [
+    [[], 'Version 0.4.0 is available.'],
+    [grants.slice(0,1), 'Version 0.4.0 asks to connect to openlibrary.org.'],
+    [grants.slice(0,2), 'Version 0.4.0 asks to connect to openlibrary.org and keep its own data.'],
+    [grants, 'Version 0.4.0 asks to connect to openlibrary.org, keep its own data and call Notes.'],
+  ]) {
+    render([mod('book',{offer,offerGrants})]);
+    assert.equal(entry('book').querySelector('.notice span').textContent,expected);
+    assert.equal(entry('book').querySelector('.notice .offer').textContent,words.offerLabel(offer,offerGrants));
+  }
+  render([mod('book',{offer})]);
+  assert.equal(entry('book').querySelector('.notice span').textContent,'Version 0.4.0 is available.');
+  for (const extra of [{notice:'Publisher notice'}, {notice:'Publisher notice',error:'Exact error'}]) {
+    render([mod('book',{offer,offerGrants:grants,...extra})]);
+    assert.equal(entry('book').querySelector('.notice span').textContent,extra.error || extra.notice);
+  }
+}
 if (which === 'look') {
   assert.equal($('#add-menu').hidden,true);
   $('#add-mod').click(); assert.equal($('#add-menu').hidden,false); assert.equal(document.activeElement,$('#install-link'));

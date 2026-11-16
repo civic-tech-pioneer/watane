@@ -109,7 +109,7 @@ section.mod-details { display: flex; flex-direction: column; gap: 26px; }
 .summary { color: var(--muted); margin: -10px 0 0; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--accent-weak); color: var(--accent); }
 .notice > span { flex: 1 1 160px; }
-.notice .offer { margin-left: auto; height: auto; min-height: 36px; padding: 8px 14px; }
+.notice .offer { flex: 0 0 auto; width: fit-content; max-width: 100%; margin-left: auto; height: auto; min-height: 36px; padding: 8px 14px; }
 .notice.problem { background: var(--bad-bg); color: var(--bad); }
 .actions { display: flex; gap: 8px; margin: 0; }
 .actions .open { flex: 1; }

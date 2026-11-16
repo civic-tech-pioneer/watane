@@ -1359,3 +1359,27 @@ native tests fail before readiness with the same macOS hiservices error.
 All four J2 native tests also fail at that startup boundary, including the
 updated ac7 assertion; no assertion is reached. Native suites were limited
 to look and the changed j2 file.
+
+
+### S84 — versioned Library update band
+
+The details band now names the offered version and its grant requests, using
+short words (falling back to full text), lowercasing the first letter of each
+phrase, and joining one, two or more requests with commas and “and”. Offers
+without new grants say `Version <v> is available.` Notices and errors retain
+their own text. The offerLabel button retains its words and has intrinsic,
+non-growing flex sizing at the right; the row still wraps on narrow panels.
+No interface, dependency or spec changed.
+
+Test-first: the new look.rs renderer check failed on `An update is available.`;
+the sizing check failed on missing `flex: 0 0 auto`. Both pass after the change.
+The look DOM scenario also covers both required 0.4.0 texts, unchanged
+button labels, fallback words, two/three requests, and notice/error precedence.
+All ten default look checks pass. Driver all-target clippy with -D warnings
+and cargo fmt --check pass; git diff --check is clean.
+
+The one required default `cargo test -p watane-app` run stops in the existing
+real-pairing unit test: `Failed to create netmon monitor` in the sandbox;
+111 unit tests pass. Per this task's execution instructions no driver/window
+test was run. The external GUI runner still needs to run only driver look
+with --include-ignored; native layout validation remains pending.

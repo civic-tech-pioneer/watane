@@ -1,7 +1,7 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
+import { ownWithdrawal, offerLabel, offerNotice, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -137,7 +137,7 @@ export function modsView(mods) {
     element('p', mod.summary || '', entry, 'summary');
     if (mod.notice || mod.error || mod.offer) {
       const notice = element('div', '', entry, `notice${problem(mod) ? ' problem' : ''}`);
-      element('span', mod.error || mod.notice || 'An update is available.', notice);
+      element('span', mod.error || mod.notice || offerNotice(mod.offer, mod.offerGrants), notice);
       if (mod.offer) button(notice, offerLabel(mod.offer, mod.offerGrants || []), 'offer', () => action('release_install', {release:mod.offer}));
     }
     const actions = element('div', '', entry, 'actions');
