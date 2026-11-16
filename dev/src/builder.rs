@@ -530,36 +530,41 @@ mod tests {
         if std::env::var_os(CHILD).is_some() {
             let root = tempfile::tempdir().unwrap();
             let copy = root.path().join("copy");
-            fs::create_dir_all(copy.join("logic/src")).unwrap();
-            fs::write(
-                copy.join("logic/Cargo.toml"),
-                "[package]\nname = 'counter'\n",
-            )
-            .unwrap();
-            fs::write(copy.join("logic/src/lib.rs"), "").unwrap();
-            let env = Env {
-                cache: root.path().join("cache"),
-                unit_seconds: 60,
-            };
-            let toolchain = Toolchain {
-                cargo: "/usr/bin/false".into(),
-                rustc: "/unused/rustc".into(),
-                sysroot: "/unused/sysroot".into(),
-                version: "test".into(),
-            };
-            let allow = Allowlist::embedded();
-            let ctx = BuildCtx {
-                env: &env,
-                toolchain: &toolchain,
-                vendor: root.path(),
-                allow: &allow,
-            };
-            for args in [&["build", "--release"][..], &["test", "--no-run"][..]] {
-                assert!(compile(&ctx, &copy, &"counter".parse().unwrap(), args).is_err());
+            {
+                fs::create_dir_all(copy.join("logic/src")).unwrap();
+                fs::write(
+                    copy.join("logic/Cargo.toml"),
+                    "[package]\nname = 'counter'\n",
+                )
+                .unwrap();
+                fs::write(copy.join("logic/src/lib.rs"), "").unwrap();
+                let env = Env {
+                    cache: root.path().join("cache"),
+                    unit_seconds: 60,
+                };
+                let toolchain = Toolchain {
+                    cargo: "/usr/bin/false".into(),
+                    rustc: "/unused/rustc".into(),
+                    sysroot: "/unused/sysroot".into(),
+                    version: "test".into(),
+                };
+                let allow = Allowlist::embedded();
+                let ctx = BuildCtx {
+                    env: &env,
+                    toolchain: &toolchain,
+                    vendor: root.path(),
+                    allow: &allow,
+                };
+                for args in [&["build", "--release"][..], &["test", "--no-run"][..]] {
+                    assert!(compile(&ctx, &copy, &"counter".parse().unwrap(), args).is_err());
+                }
             }
+            // `exit` runs no destructors: drop the temp folder first.
+            drop(root);
             println!("{{\"ok\":false}}");
             std::process::exit(0);
         }
+        let tmp = tempfile::tempdir().unwrap();
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -568,9 +573,15 @@ mod tests {
                 "--quiet",
             ])
             .env(CHILD, "1")
+            .env("TMPDIR", tmp.path())
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
+        let left: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert!(left.is_empty(), "temp folders left by the child: {left:?}");
         assert_eq!(
             String::from_utf8(output.stderr).unwrap(),
             "building counter\n"
