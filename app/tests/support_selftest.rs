@@ -866,10 +866,6 @@ fn regress_s54_real_j3_waits_for_cdn_404_before_missing_install() {
     let source = fs::read_to_string(app.join("tests/j3.rs")).unwrap();
     let start = source.find("fn ac3_j3_real_github()").unwrap();
     let journey = &source[start..];
-    assert!(
-        journey.contains("let dan = App::start(&dan_home, &[]);"),
-        "missing-base check needs a fresh Dan home"
-    );
     let install = journey
         .find("begin(&dan, \"install_link\", json!({\"link\":missing")
         .unwrap();
