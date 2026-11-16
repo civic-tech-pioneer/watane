@@ -591,3 +591,79 @@ fn ac5_s81_words_and_focus_are_documented_at_their_facts() {
         }
     }
 }
+
+#[test]
+#[ignore = "slow: proves watane-dev install adoption through a running app and restart"]
+fn ac2_s51_dev_install_adopts_main_and_update_keeps_it_unset() {
+    let dev = support::dev::workspace_dev();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let mut command = support::dev::dev_command(&dev, &app, &fixture("desk"), &["install"]);
+    let child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    assert!(app.wait("consent", TIMEOUT));
+    until(&app, "consent", "document.body.dataset.ready === 'true'");
+    assert_eq!(app.eval("consent", "document.body.textContent.includes('Desk opens when watane starts, in place of the manager.')"), true);
+    approve(&app);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let path = home.path().join("app/main");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "desk\n");
+    assert!(app.quit().success());
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("mod-desk", TIMEOUT));
+    assert_eq!(
+        app.windows()
+            .iter()
+            .map(|w| w["label"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["mod-desk"]
+    );
+    app.menu("mods");
+    assert!(app.wait("main", TIMEOUT));
+    invoke(&app, "main_set", json!({"local":null}));
+    let changed = tempfile::tempdir().unwrap();
+    support::journey::copy_dir(&fixture("desk"), changed.path());
+    std::fs::write(
+        changed.path().join("ui/index.html"),
+        "<!doctype html><h1>Updated Desk</h1>",
+    )
+    .unwrap();
+    support::dev::dev_run(&dev, &app, changed.path(), &["install"]);
+    assert!(!path.exists());
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac5_s39_w37_menu_items_and_separators() {
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    assert_eq!(
+        app.menu_items(),
+        json!([
+            {"menu":"watane", "items":["About watane", "-", "Mods…", "Settings…", "-", "Quit watane"]},
+            {"menu":"Edit", "items":["Undo", "Redo", "-", "Cut", "Copy", "Paste", "Select All"]},
+            {"menu":"Window", "items":["Minimize", "Close Window"]}
+        ])
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac7_s39_w37_quiet_theme_changes_prefers_color_scheme() {
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    for (theme, dark) in [("dark", true), ("light", false)] {
+        app.theme(Some(theme));
+        until(
+            &app,
+            "main",
+            &format!("matchMedia('(prefers-color-scheme: dark)').matches === {dark}"),
+        );
+    }
+    app.theme(None);
+    assert!(app.quit().success());
+}

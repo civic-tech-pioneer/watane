@@ -1036,3 +1036,64 @@ No dependencies added.
 - Validator native run: driver suite with `--include-ignored` (front four
   skipped by name) green, J10 and S43 to S48 included; removing the consent
   check in `open_page_target` fails the S82 window test.
+
+
+### S84-2: Rust support for the manager design
+
+- `HostConfirm::installed` adopts only the first proposing mod in
+  `Installed.new`, for every requester. It reads installed metadata and
+  writes the shared main choice directly, with no host catalog call,
+  consent wait or event-loop dispatch. App commands retain only their
+  update-failure cleanup. `Installed.updated` cannot adopt main, and an
+  update/unchanged plan cannot claim the start-window line in consent.
+- Moved the former main_mod install-order/existing-choice assertions into
+  `confirm::tests::ac1_installed_adopts_only_first_new_proposal_for_every_requester`,
+  preserving the missing/invalid-metadata checks and adding LocalApi,
+  Mod and update-only reports. The startup test selects its fixture main
+  explicitly; adoption is exercised by the callback test and S51.
+- `GrantLine.short` defaults to empty; empty values are omitted in consent
+  JSON, preserving the existing exact-JSON test and full consent words.
+  Only ModView grants and offerGrants receive short words. Section 4's
+  names map now uses provider identities rather than local names: a grant
+  identifies a provider by publisher/slug, and a bind can connect two
+  providers with the same slug but different installed names.
+- Refresh times live only in Core memory. checkedAt records completion of
+  node.refresh; readAt advances for Current/Behind reports. Failed reads
+  and already-stopped compromised channels retain their last successful
+  read. New Core instances have no timestamps.
+- The menu uses Tauri predefined About, Quit, Edit and Window items, with
+  the required separators. menu_items reads the installed Menu's labels;
+  no duplicate expected menu is returned by the driver. The native S39
+  test asserts the labels, including `Close Window`. No differing native
+  label could be observed here because the sandbox cannot start the app.
+- Main-window drag Enter/Leave/Drop use exported constant class scripts.
+  Drop paths stay in Rust and call install_paths directly; successful
+  installs refresh the manager and failures show textContent. No page
+  receives serialized drop paths. No UI, command ACL, permission or
+  dependency changed.
+- The driver theme op applies light/dark/system to every open window.
+  `ac7_s39_w37_quiet_theme_changes_prefers_color_scheme` asserts the actual
+  matchMedia result after dark and light and does not skip on failure.
+- Red/green: callback adoption failed with no main; the update-plan check
+  failed with an incorrect Desk proposal; short-word, timestamp, constant
+  script and driver-client tests initially failed on the missing fields,
+  functions or methods. The focused unit tests then passed. S51 is slow
+  because it builds the maker binary and proves local-API consent and
+  restart; it uses the committed page-only Desk fixture, not a mod build.
+- Native S51, S39 menu and S39 theme runs each failed before readiness:
+  `Connection Invalid error for service com.apple.hiservices-xpcservice`,
+  `_LSModifyNotification` -50, then the driver's 30-second startup timeout.
+  These failures establish no platform theme result. AC2, AC5, AC7 and
+  full AC8 GUI validation remain PARTIAL for the logged-in validator.
+  No front test was run, and no assertion was weakened.
+- The required full default and driver/include-ignored runs encountered
+  the existing pairing test's `Failed to create netmon monitor`. The
+  four front tests were explicitly skipped. A diagnostic default run
+  excludes only that known pairing failure and passes 148 tests across
+  22 suites, including static_config; all tests remain unchanged.
+  Debug build, strict all-targets driver clippy, fmt and diff checks pass;
+  release with driver fails at the required debug-only compile guard.
+- The existing manager test
+  `ac5_s81_words_and_focus_are_documented_at_their_facts` reads Markdown
+  specs. It was retained unchanged under the instruction not to delete
+  or weaken existing tests; no new test reads specification text.

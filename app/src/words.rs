@@ -167,11 +167,62 @@ pub fn grant_line_bound(
         ),
     };
     GrantLine {
+        short: String::new(),
         key: grant.to_string(),
         kind,
         text,
         granted,
         new,
+    }
+}
+
+// Names are keyed by provider identity, not slug: different publishers can
+// install the same slug, and a bind must name both sides accurately.
+pub fn grant_short(grant: &Grant, parties: &Parties, names: &BTreeMap<String, String>) -> String {
+    grant_short_bound(grant, &[], parties, names)
+}
+pub fn grant_short_bound(
+    grant: &Grant,
+    binds: &[watane_host::Bind],
+    parties: &Parties,
+    names: &BTreeMap<String, String>,
+) -> String {
+    let (interface, p) = match grant {
+        Grant::Call {
+            interface,
+            provider,
+        }
+        | Grant::Subscribe {
+            interface,
+            provider,
+        } => (interface, provider),
+        _ => return grant_line(grant, parties, false, false).text,
+    };
+    let label = |identity: &str| {
+        let (publisher, slug) = identity.split_once('/').expect("provider identity");
+        let name = names.get(identity).map(String::as_str).unwrap_or(slug);
+        if publisher == "local" {
+            return format!("{name} (local)");
+        }
+        let party = party(publisher, parties);
+        let author = if party.you {
+            "you"
+        } else {
+            party.name.as_deref().unwrap_or(&party.fingerprint)
+        };
+        format!("{name} by {author}")
+    };
+    let pinned = label(&p.to_string());
+    let target = match binds.iter().find(|b| b.provider == *p) {
+        Some(bind) => format!("{} (in place of {pinned})", label(&bind.to)),
+        None => pinned,
+    };
+    let text = interface.to_string();
+    let interface = text.split_once('/').unwrap().1.split('@').next().unwrap();
+    match grant {
+        Grant::Call { .. } => format!("Call {interface} of {target}"),
+        _ if interface == "events" => format!("Receive the events of {target}"),
+        _ => format!("Receive the {interface} events of {target} and answer its requests"),
     }
 }
 
@@ -211,6 +262,79 @@ pub(crate) fn bad_note(cause: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac3_short_grants_name_interfaces_providers_binds_and_you() {
+        let key = "y".repeat(52);
+        let parties = Parties::new();
+        parties.insert(key.clone(), "Alice".into());
+        let p = Provider {
+            slug: "reading-list".parse().unwrap(),
+            publisher: Some(key.parse().unwrap()),
+        };
+        let mut names = BTreeMap::from([
+            (format!("{key}/reading-list"), "Reading list".into()),
+            ("local/reading-list".into(), "Reading list".into()),
+        ]);
+        let call = Grant::Call {
+            interface: "mods:reading-list/books@0.1.0".parse().unwrap(),
+            provider: p.clone(),
+        };
+        assert_eq!(
+            grant_short(&call, &parties, &names),
+            "Call books of Reading list by Alice"
+        );
+        assert!(grant_line(&call, &parties, true, false).short.is_empty());
+        let legacy = serde_json::json!({"key":"storage","kind":"storage","text":"Exact words","granted":true,"new":false});
+        assert!(
+            serde_json::from_value::<GrantLine>(legacy)
+                .unwrap()
+                .short
+                .is_empty()
+        );
+        let sub = Grant::Subscribe {
+            interface: "mods:reading-list/events@0.1.0".parse().unwrap(),
+            provider: Provider {
+                publisher: None,
+                ..p.clone()
+            },
+        };
+        assert_eq!(
+            grant_short(&sub, &parties, &names),
+            "Receive the events of Reading list (local)"
+        );
+        names.insert("local/reading-list".into(), "My reading list".into());
+        let bind = watane_host::Bind {
+            consumer: "local/consumer".into(),
+            provider: p,
+            to: "local/reading-list".into(),
+        };
+        assert_eq!(
+            grant_short_bound(&call, &[bind], &parties, &names),
+            "Call books of My reading list (local) (in place of Reading list by Alice)"
+        );
+        parties.set_own(key);
+        assert_eq!(
+            grant_short(&call, &parties, &names),
+            "Call books of Reading list by you"
+        );
+        names.clear();
+        assert_eq!(
+            grant_short(&call, &parties, &names),
+            "Call books of reading-list by you"
+        );
+        for grant in [
+            Grant::Storage,
+            Grant::Http {
+                host: "example.org".parse().unwrap(),
+            },
+            Grant::Manage,
+        ] {
+            assert_eq!(
+                grant_short(&grant, &parties, &names),
+                grant_line(&grant, &parties, true, false).text
+            );
+        }
+    }
     #[test]
     fn ac1_manager_words_and_asker_labels() {
         let line = grant_line(&Grant::Manage, &Parties::new(), true, true);

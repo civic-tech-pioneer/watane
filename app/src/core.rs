@@ -110,10 +110,11 @@ pub(crate) struct Core {
     pub node: Arc<watane_node::Node>,
     pub machines: Arc<crate::machines::Machines>,
     pub broker: Arc<crate::consent::Broker>,
-    pub main: crate::main_mod::MainMod,
+    pub main: Arc<crate::main_mod::MainMod>,
     pub host: Arc<Host>,
     pub dist: Arc<watane_dist::Dist>,
     failures: Mutex<std::collections::BTreeMap<String, String>>,
+    refresh_times: Mutex<RefreshTimes>,
     updates: Mutex<Vec<UpdateDone>>,
     update_failures: Mutex<std::collections::BTreeMap<String, String>>,
     pub served: Mutex<Option<Served>>,
@@ -240,7 +241,7 @@ impl Core {
     ) -> Result<Self, CmdError> {
         Ok(Self {
             manager_notices,
-            main: crate::main_mod::MainMod::open(&host)?,
+            main: Arc::new(crate::main_mod::MainMod::open(&host)?),
             app,
             host,
             served: Mutex::new(None),
@@ -249,6 +250,7 @@ impl Core {
             node,
             broker,
             failures: Mutex::new(Default::default()),
+            refresh_times: Mutex::new(Default::default()),
             parties,
             updates: Mutex::new(Vec::new()),
             update_failures: Mutex::new(Default::default()),
@@ -331,7 +333,22 @@ impl Core {
                 })
             });
         let offer = release_offer(m.release.as_ref(), channel);
-        let offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
+        let mut offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
+        let names = self
+            .host
+            .mods()
+            .into_iter()
+            .map(|m| (m.identity, m.name))
+            .collect();
+        for line in &mut offer_grants {
+            if let Some(grant) = offer
+                .as_ref()
+                .and_then(|offer| channel?.releases.iter().find(|r| &r.reference == offer))
+                .and_then(|r| r.release.grants.iter().find(|g| g.to_string() == line.key))
+            {
+                line.short = words::grant_short_bound(grant, &m.binds, &self.parties, &names);
+            }
+        }
         let offer = offer.map(|r| r.to_string());
         let origin_channel = m
             .origin
@@ -373,7 +390,19 @@ impl Core {
                 .grants
                 .iter()
                 .map(|g| {
-                    words::grant_line_bound(&g.grant, &m.binds, &self.parties, g.granted, false)
+                    let mut line = words::grant_line_bound(
+                        &g.grant,
+                        &m.binds,
+                        &self.parties,
+                        g.granted,
+                        false,
+                    );
+                    line.short = if m.binds.is_empty() {
+                        words::grant_short(&g.grant, &self.parties, &names)
+                    } else {
+                        words::grant_short_bound(&g.grant, &m.binds, &self.parties, &names)
+                    };
+                    line
                 })
                 .collect(),
         }
@@ -480,9 +509,31 @@ impl Core {
         Ok(tools)
     }
 }
+#[derive(Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshTimes {
+    checked_at: Option<u64>,
+    #[serde(skip)]
+    read_at: std::collections::BTreeMap<String, u64>,
+}
+impl RefreshTimes {
+    fn finish(&mut self, reports: &[watane_dist::RefreshReport], at: u64) {
+        for report in reports {
+            if matches!(
+                report.outcome,
+                watane_dist::Outcome::Current { .. } | watane_dist::Outcome::Behind { .. }
+            ) {
+                self.read_at.insert(report.channel.to_string(), at);
+            }
+        }
+        self.checked_at = Some(at);
+    }
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChannelRow {
+    read_at: Option<u64>,
     channel: String,
     fingerprint: String,
     name: Option<String>,
@@ -492,6 +543,7 @@ pub(crate) struct ChannelRow {
 }
 fn channel_row(view: &watane_dist::ChannelView, failure: Option<&String>) -> ChannelRow {
     ChannelRow {
+        read_at: None,
         channel: view.channel.to_string(),
         fingerprint: view.fingerprint.clone(),
         name: view.name.clone(),
@@ -595,6 +647,10 @@ impl Core {
         dist_status(&self.dist)
     }
 
+    pub fn checked_at(&self) -> Option<u64> {
+        self.refresh_times.lock().unwrap().checked_at
+    }
+
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
         let followed = self.dist.followed()?;
         self.parties.remember(&party_views(&self.dist)?);
@@ -604,11 +660,26 @@ impl Core {
         let failures = self.failures.lock().unwrap();
         Ok(followed
             .iter()
-            .map(|v| channel_row(v, failures.get(&v.channel.to_string())))
+            .map(|v| {
+                let mut row = channel_row(v, failures.get(&v.channel.to_string()));
+                row.read_at = self
+                    .refresh_times
+                    .lock()
+                    .unwrap()
+                    .read_at
+                    .get(&row.channel)
+                    .copied();
+                row
+            })
             .collect())
     }
     pub fn refresh(&self) -> Result<(Vec<ChannelRow>, Vec<watane_dist::ReleaseRef>), CmdError> {
         let reports = self.node.refresh();
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.refresh_times.lock().unwrap().finish(&reports, at);
         let followed = self.dist.followed()?;
         let mut updates = Vec::new();
         for report in reports {
@@ -645,13 +716,11 @@ impl Core {
             });
         }
     }
-    pub fn installed(&self, installed: &[watane_host::InstalledMod]) -> Result<(), CmdError> {
-        self.main.installed(&self.host, installed)?;
+    pub fn clear_update_failures(&self, installed: &[watane_host::InstalledMod]) {
         let mut failures = self.update_failures.lock().unwrap();
         for m in installed {
             failures.remove(m.local.as_ref());
         }
-        Ok(())
     }
     pub async fn install_release(
         self: &Arc<Self>,
@@ -713,7 +782,7 @@ impl Core {
             let automatic = background && !plan.needs_confirmation();
             let before = self.host.mods();
             let installed = self.host.install(plan, requester).await?;
-            self.installed(&installed)?;
+            self.clear_update_failures(&installed);
             if automatic {
                 let at = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1062,6 +1131,75 @@ mod tests {
 #[cfg(test)]
 mod stage_c_tests {
     use super::*;
+    #[test]
+    fn ac4_refresh_times_are_memory_only_and_failures_keep_last_read() {
+        let mut times = RefreshTimes::default();
+        let alice = stage_d_tests::channel().channel;
+        let mut bytes = *alice.as_bytes();
+        bytes[31] ^= 0x80;
+        let bob = watane_dist::PublicKey::from_bytes(&bytes).unwrap();
+        let report = |channel, outcome| watane_dist::RefreshReport {
+            channel,
+            outcome,
+            changes: vec![],
+        };
+        let failed = || watane_dist::Outcome::Failed {
+            cause: watane_dist::DistError::Timeout {
+                url: "https://offline.test/head".into(),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&times).unwrap()["checkedAt"],
+            serde_json::Value::Null
+        );
+        assert_eq!(times.read_at.get(&alice.to_string()), None);
+        times.finish(
+            &[
+                report(alice, watane_dist::Outcome::Current { head: 1 }),
+                report(bob, failed()),
+            ],
+            1700000000123,
+        );
+        assert_eq!(
+            serde_json::to_value(&times).unwrap()["checkedAt"],
+            1700000000123u64
+        );
+        assert_eq!(times.read_at.get(&alice.to_string()), Some(&1700000000123));
+        assert_eq!(times.read_at.get(&bob.to_string()), None);
+        times.finish(
+            &[
+                report(alice, failed()),
+                report(
+                    bob,
+                    watane_dist::Outcome::Behind {
+                        served: 1,
+                        stored: 2,
+                    },
+                ),
+            ],
+            1700000000456,
+        );
+        assert_eq!(times.checked_at, Some(1700000000456));
+        assert_eq!(times.read_at.get(&alice.to_string()), Some(&1700000000123));
+        assert_eq!(times.read_at.get(&bob.to_string()), Some(&1700000000456));
+        times.finish(
+            &[report(alice, watane_dist::Outcome::Compromised { seq: 1 })],
+            1700000000789,
+        );
+        assert_eq!(times.read_at.get(&alice.to_string()), Some(&1700000000123));
+        assert_eq!(RefreshTimes::default().checked_at, None);
+        let view = stage_d_tests::channel();
+        let mut row = channel_row(&view, None);
+        assert_eq!(
+            serde_json::to_value(&row).unwrap()["readAt"],
+            serde_json::Value::Null
+        );
+        row.read_at = times.read_at.get(&alice.to_string()).copied();
+        assert_eq!(
+            serde_json::to_value(row).unwrap()["readAt"],
+            1700000000123u64
+        );
+    }
     #[test]
     fn ac2_channel_row_prioritizes_compromise_and_keeps_failure() {
         let home = tempfile::tempdir().unwrap();

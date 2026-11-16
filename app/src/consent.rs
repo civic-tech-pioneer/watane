@@ -141,6 +141,8 @@ pub struct Party {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GrantLine {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub short: String,
     pub key: String,
     pub kind: GrantKind,
     pub text: String,

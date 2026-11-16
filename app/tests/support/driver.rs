@@ -238,6 +238,14 @@ impl App {
     pub fn screen(&self) -> Value {
         self.call(json!({"op":"screen"}))
     }
+    #[allow(dead_code)] // Shared support: inspected by manager's S39.
+    pub fn menu_items(&self) -> Value {
+        self.call(json!({"op":"menu_items"}))
+    }
+    #[allow(dead_code)] // Shared support: manager checks the actual media query.
+    pub fn theme(&self, theme: Option<&str>) {
+        assert_eq!(self.call(json!({"op":"theme", "theme":theme})), true);
+    }
     pub fn menu(&self, item: &str) {
         assert_eq!(self.call(json!({"op":"menu", "item":item})), true);
     }

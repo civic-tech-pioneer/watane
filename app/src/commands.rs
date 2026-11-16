@@ -33,7 +33,7 @@ pub(crate) async fn status(
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, CmdError> {
     record(&webview, "status");
-    let mut value = json!({"home":state.home,"port":state.core.get().map_or(state.port, |c| c.port()),"mark":state.mark,"error":state.failed.get(),"identity":null,"site":null});
+    let mut value = json!({"home":state.home,"port":state.core.get().map_or(state.port, |c| c.port()),"mark":state.mark,"error":state.failed.get(),"identity":null,"site":null,"checkedAt":state.core.get().and_then(|c| c.checked_at())});
     if let Some(core) = state.core.get().cloned() {
         match blocking(move || core.status()).await {
             Ok((identity, site)) => {
@@ -236,7 +236,7 @@ async fn install_selected(
     .await
     .map_err(|e| CmdError::new("io", e.to_string()))??;
     let installed = host.install(plan, watane_host::Requester::App).await?;
-    core.installed(&installed)?;
+    core.clear_update_failures(&installed);
     Ok(json!({"installed": installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
 #[tauri::command]
@@ -352,7 +352,7 @@ pub(crate) async fn install_link(
     let host = planner.host.clone();
     let (plan, fetched) = blocking(move || planner.plan_link(&link)).await?;
     let installed = host.install(plan, watane_host::Requester::App).await?;
-    core.installed(&installed)?;
+    core.clear_update_failures(&installed);
     blocking(move || {
         core.follow_fetched(&fetched);
         Ok(())

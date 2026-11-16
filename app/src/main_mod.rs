@@ -57,7 +57,9 @@ impl MainMod {
         }
         Ok(entries
             .iter()
-            .find(|e| proposals.contains(&e.package))
+            .find(|e| {
+                matches!(e.change, watane_host::Change::New) && proposals.contains(&e.package)
+            })
             .map(|e| e.local.to_string()))
     }
     pub fn get(&self) -> Option<String> {
@@ -108,16 +110,11 @@ impl MainMod {
         }
         Ok(())
     }
-    pub fn installed(&self, host: &Host, mods: &[InstalledMod]) -> Result<(), CmdError> {
+    pub fn adopt(&self, local: &str) -> Result<(), CmdError> {
         let mut current = self.local.lock().unwrap();
         if current.is_none() {
-            for m in mods {
-                if proposes(host, m.local.as_ref()) {
-                    self.write(Some(m.local.as_ref()))?;
-                    *current = Some(m.local.to_string());
-                    break;
-                }
-            }
+            self.write(Some(local))?;
+            *current = Some(local.to_owned());
         }
         Ok(())
     }
@@ -217,8 +214,8 @@ mod tests {
         let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
         let main = MainMod::open(&host).unwrap();
         assert!(main.startup(&host).is_none());
-        let mods = install(&host, vec![fixture("reading-list"), fixture("desk")]).await;
-        main.installed(&host, &mods).unwrap();
+        install(&host, vec![fixture("reading-list"), fixture("desk")]).await;
+        main.set(&host, Some("desk")).unwrap();
         let served = host.serve(0, axum::Router::new()).await.unwrap();
         let reopened = MainMod::open(&host).unwrap();
         assert_eq!(reopened.startup(&host).unwrap().local.as_ref(), "desk");
@@ -254,52 +251,5 @@ mod tests {
         std::fs::write(&path, "absent\n").unwrap();
         assert!(MainMod::open(&host).unwrap().get().is_none());
         assert!(!path.exists());
-    }
-    #[tokio::test]
-    async fn ac8_first_proposal_in_install_order_and_existing_choice_wins() {
-        let home = tempfile::tempdir().unwrap();
-        let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
-        let second = tempfile::tempdir().unwrap();
-        std::fs::create_dir(second.path().join("wit")).unwrap();
-        std::fs::create_dir(second.path().join("ui")).unwrap();
-        std::fs::write(
-            second.path().join("mod.toml"),
-            "name = \"Other desk\"\nsummary = \"Another desk\"\nmain = true\n",
-        )
-        .unwrap();
-        std::fs::write(
-            second.path().join("wit/world.wit"),
-            "package mods:zdesk@0.1.0; world zdesk {}",
-        )
-        .unwrap();
-        std::fs::write(
-            second.path().join("ui/index.html"),
-            "<!doctype html><h1>Other desk</h1>",
-        )
-        .unwrap();
-        let installed = install(
-            &host,
-            vec![
-                fixture("desk"),
-                second.path().into(),
-                fixture("reading-list"),
-            ],
-        )
-        .await;
-        let mut ordered: Vec<_> = installed
-            .iter()
-            .filter(|m| m.local.as_ref() != "reading-list")
-            .cloned()
-            .collect();
-        ordered.sort_by(|a, b| b.local.cmp(&a.local));
-        let main = MainMod::open(&host).unwrap();
-        main.installed(&host, &ordered).unwrap();
-        assert_eq!(main.get().as_deref(), Some("zdesk"));
-        main.set(&host, Some("reading-list")).unwrap();
-        main.installed(&host, &ordered).unwrap();
-        assert_eq!(main.get().as_deref(), Some("reading-list"));
-        assert!(!proposes(&host, "absent"));
-        std::fs::write(host.home().join("mods/desk/mod.toml"), "invalid").unwrap();
-        assert!(!proposes(&host, "desk"));
     }
 }

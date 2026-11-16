@@ -12,7 +12,7 @@ mod find;
 mod machines;
 mod main_mod;
 pub mod mark;
-mod views;
+pub mod views;
 mod words;
 use consent::{AskId, Broker};
 use std::{
@@ -208,6 +208,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         parties: parties.clone(),
         host: OnceLock::new(),
         core: OnceLock::new(),
+        main: OnceLock::new(),
         notices: Arc::new(confirm::ManagerNotices::default()),
     });
     let host = watane_host::Host::open(
@@ -355,6 +356,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                             break 'startup;
                         }
                     };
+                    let _ = confirm.main.set(core.main.clone());
                     let _ = confirm.core.set(Arc::downgrade(&core));
                     let initial = core.clone();
                     let result = tauri::async_runtime::block_on(async move {

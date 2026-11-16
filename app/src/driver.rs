@@ -194,6 +194,55 @@ pub(crate) fn start(app: tauri::AppHandle) {
 fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match field(v, "op")? {
+        "theme" => {
+            let theme = match v.get("theme") {
+                Some(Value::Null) => None,
+                Some(Value::String(s)) if s == "light" => Some(tauri::Theme::Light),
+                Some(Value::String(s)) if s == "dark" => Some(tauri::Theme::Dark),
+                _ => return Err("theme must be light, dark or null".into()),
+            };
+            for window in app.webview_windows().into_values() {
+                window.set_theme(theme).map_err(|e| e.to_string())?;
+            }
+            Ok(json!(true))
+        }
+        "menu_items" => {
+            use tauri::menu::MenuItemKind;
+            let menu = app.menu().ok_or("menu not found")?;
+            let rows = menu
+                .items()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter_map(|item| {
+                    let MenuItemKind::Submenu(submenu) = item else {
+                        return None;
+                    };
+                    Some((|| -> tauri::Result<Value> {
+                        let items = submenu
+                            .items()?
+                            .into_iter()
+                            .map(|item| {
+                                let label = match item {
+                                    MenuItemKind::MenuItem(i) => i.text()?,
+                                    MenuItemKind::Predefined(i) => i.text()?,
+                                    MenuItemKind::Submenu(i) => i.text()?,
+                                    MenuItemKind::Check(i) => i.text()?,
+                                    MenuItemKind::Icon(i) => i.text()?,
+                                };
+                                Ok(if label.is_empty() {
+                                    "-".to_owned()
+                                } else {
+                                    label
+                                })
+                            })
+                            .collect::<tauri::Result<Vec<_>>>()?;
+                        Ok(json!({"menu":submenu.text()?, "items":items}))
+                    })())
+                })
+                .collect::<tauri::Result<Vec<_>>>()
+                .map_err(|e| e.to_string())?;
+            Ok(json!(rows))
+        }
         "menu" => {
             let item = field(v, "item")?.to_owned();
             if !["mods", "settings"].contains(&item.as_str()) {

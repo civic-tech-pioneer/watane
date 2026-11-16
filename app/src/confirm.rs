@@ -14,6 +14,7 @@ pub(crate) struct HostConfirm {
     pub parties: Arc<Parties>,
     pub host: OnceLock<Weak<watane_host::Host>>,
     pub core: OnceLock<Weak<crate::core::Core>>,
+    pub main: OnceLock<Arc<crate::main_mod::MainMod>>,
     pub notices: Arc<ManagerNotices>,
 }
 
@@ -266,6 +267,25 @@ impl Drop for ManageTask {
     }
 }
 impl Confirm for HostConfirm {
+    fn installed(&self, report: &watane_host::Installed) {
+        let Some(main) = self.main.get() else { return };
+        if main.get().is_some() {
+            return;
+        }
+        let Some(host) = self.host.get().and_then(Weak::upgrade) else {
+            return;
+        };
+        // No host catalog calls or event-loop work on the host's install thread.
+        for local in &report.new {
+            if crate::main_mod::proposes(&host, local.as_ref()) {
+                if let Err(error) = main.adopt(local.as_ref()) {
+                    eprintln!("{}", error.message);
+                }
+                break;
+            }
+        }
+    }
+
     fn manage(
         &self,
         request: watane_host::ManageRequest,
@@ -616,6 +636,81 @@ mod tests {
         host.install(plan, Requester::App).await.unwrap();
     }
     #[tokio::test]
+    async fn ac1_installed_adopts_only_first_new_proposal_for_every_requester() {
+        for requester in [
+            Requester::App,
+            Requester::LocalApi,
+            Requester::Mod(LocalName::parse("manager").unwrap()),
+        ] {
+            let (_home, host) = preview();
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+            let other = tempfile::tempdir().unwrap();
+            std::fs::create_dir(other.path().join("wit")).unwrap();
+            std::fs::create_dir(other.path().join("ui")).unwrap();
+            std::fs::write(
+                other.path().join("mod.toml"),
+                "name = \"Other desk\"\nsummary = \"Desk\"\nmain = true\n",
+            )
+            .unwrap();
+            std::fs::write(
+                other.path().join("wit/world.wit"),
+                "package mods:zdesk@0.1.0; world zdesk {}",
+            )
+            .unwrap();
+            std::fs::write(other.path().join("ui/index.html"), "<h1>Other desk</h1>").unwrap();
+            let plan = host
+                .plan(vec![
+                    watane_host::Source::Folder(root.join("desk")),
+                    watane_host::Source::Folder(root.join("reading-list")),
+                    watane_host::Source::Folder(other.path().into()),
+                ])
+                .unwrap();
+            host.install(plan, Requester::App).await.unwrap();
+            let main = Arc::new(crate::main_mod::MainMod::open(&host).unwrap());
+            let confirm = HostConfirm {
+                broker: consent::Broker::new(),
+                parties: Arc::new(Parties::new()),
+                host: OnceLock::from(Arc::downgrade(&host)),
+                core: OnceLock::new(),
+                main: OnceLock::from(main.clone()),
+                notices: Arc::new(ManagerNotices::default()),
+            };
+            let report = watane_host::Installed {
+                requester,
+                new: vec![
+                    LocalName::parse("reading-list").unwrap(),
+                    LocalName::parse("zdesk").unwrap(),
+                    LocalName::parse("desk").unwrap(),
+                ],
+                updated: vec![],
+            };
+            confirm.installed(&report);
+            assert_eq!(main.get().as_deref(), Some("zdesk"));
+            assert_eq!(
+                std::fs::read_to_string(host.home().join("app/main")).unwrap(),
+                "zdesk\n"
+            );
+            main.set(&host, Some("reading-list")).unwrap();
+            confirm.installed(&report);
+            assert_eq!(main.get().as_deref(), Some("reading-list"));
+            main.set(&host, None).unwrap();
+            let update = host
+                .plan(vec![watane_host::Source::Folder(root.join("desk"))])
+                .unwrap();
+            assert_eq!(main.proposed(&host, update.entries()).unwrap(), None);
+            confirm.installed(&watane_host::Installed {
+                requester: report.requester,
+                new: vec![],
+                updated: report.new,
+            });
+            assert_eq!(main.get(), None);
+            assert!(!host.home().join("app/main").exists());
+            assert!(!crate::main_mod::proposes(&host, "absent"));
+            std::fs::write(host.home().join("mods/desk/mod.toml"), "invalid").unwrap();
+            assert!(!crate::main_mod::proposes(&host, "desk"));
+        }
+    }
+    #[tokio::test]
     async fn ac3_cancelled_manager_request_leaves_no_consent() {
         let broker = consent::Broker::new();
         let queued = broker.clone();
@@ -759,6 +854,7 @@ mod tests {
             parties: Arc::new(Parties::new()),
             host: OnceLock::from(Arc::downgrade(&host)),
             core: OnceLock::new(),
+            main: OnceLock::new(),
             notices: notices.clone(),
         });
         let local = LocalName::parse("reading-list").unwrap();

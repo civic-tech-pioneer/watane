@@ -1,6 +1,9 @@
 use crate::{AppState, CmdError, consent::Answer};
 use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+pub const DROP_ENTER_JS: &str = "document.body.classList.add('dropping')";
+pub const DROP_LEAVE_JS: &str = "document.body.classList.remove('dropping')";
+
 // Apply last, so a consent builder's focused(true) cannot override quiet mode.
 fn screen_builder<'a>(
     app: &tauri::AppHandle,
@@ -52,11 +55,29 @@ fn main_window_at(app: &tauri::AppHandle, hash: &str) -> tauri::Result<()> {
     let drop_window = w.clone();
     let handle = app.clone();
     w.on_window_event(move |event| {
-        if let WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-            let _ = drop_window.eval(format!(
-                "window.wataneDropped({})",
-                serde_json::json!(paths)
-            ));
+        match event {
+            WindowEvent::DragDrop(tauri::DragDropEvent::Enter { .. }) => {
+                let _ = drop_window.eval(DROP_ENTER_JS);
+            }
+            WindowEvent::DragDrop(tauri::DragDropEvent::Leave) => {
+                let _ = drop_window.eval(DROP_LEAVE_JS);
+            }
+            WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                let _ = drop_window.eval(DROP_LEAVE_JS);
+                let window = drop_window.clone();
+                let app = handle.clone();
+                let paths = paths.clone();
+                tauri::async_runtime::spawn(async move {
+                    match crate::commands::install_paths(window.as_ref().clone(), app.state(), paths).await {
+                        Ok(_) => { let _ = window.eval("window.dispatchEvent(new Event('focus'))"); }
+                        Err(error) => {
+                            eprintln!("{}", error.message);
+                            let _ = window.eval(format!("document.querySelector('#error').textContent = {}; document.querySelector('#error').hidden = false", serde_json::json!(error.message)));
+                        }
+                    }
+                });
+            }
+            _ => {}
         }
         if matches!(event, WindowEvent::Destroyed) {
             unloaded(&handle, "main");
@@ -242,22 +263,54 @@ pub(crate) fn menu(app: &tauri::AppHandle, id: &str) -> tauri::Result<()> {
 pub(crate) fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, SubmenuBuilder};
     let submenu = SubmenuBuilder::new(app, "watane")
-        .about(None)
+        .about_with_text("About watane", None)
+        .separator()
         .text("mods", "Mods…")
         .text("settings", "Settings…")
         .separator()
-        .quit()
+        .quit_with_text("Quit watane")
         .build()?;
     for (id, accelerator) in [("mods", "CmdOrCtrl+Shift+M"), ("settings", "CmdOrCtrl+,")] {
         if let Some(item) = submenu.get(id).and_then(|i| i.as_menuitem().cloned()) {
             item.set_accelerator(Some(accelerator))?;
         }
     }
-    app.set_menu(Menu::with_items(app, &[&submenu])?)?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let window = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .close_window()
+        .build()?;
+    app.set_menu(Menu::with_items(app, &[&submenu, &edit, &window])?)?;
     app.on_menu_event(|app, event| {
         if let Err(error) = menu(app, event.id().as_ref()) {
             eprintln!("{error}");
         }
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ac6_drop_scripts_are_constant_class_changes_without_path_formatting() {
+        assert_eq!(
+            super::DROP_ENTER_JS,
+            "document.body.classList.add('dropping')"
+        );
+        assert_eq!(
+            super::DROP_LEAVE_JS,
+            "document.body.classList.remove('dropping')"
+        );
+        for script in [super::DROP_ENTER_JS, super::DROP_LEAVE_JS] {
+            assert!(!script.contains(['{', '}']));
+        }
+    }
 }

@@ -192,8 +192,9 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
 ```rust
 pub fn grant_line(grant: &Grant, parties: &Parties, granted: bool, new: bool) -> GrantLine;
 // W37: grant_line leaves `short` empty; Core sets it with grant_short for ModView.grants and
-// ModView.offerGrants. names: the installed mods' names by local name
-pub fn grant_short(grant: &Grant, parties: &Parties, names: &BTreeMap<LocalName, String>) -> String;
+// ModView.offerGrants. names: installed mod names by provider identity (<publisher>/<slug> or local/<slug>),
+// so a bind can name two providers of the same slug from different publishers.
+pub fn grant_short(grant: &Grant, parties: &Parties, names: &BTreeMap<String, String>) -> String;
 // step 5: grant_line_bound(grant, binds: &[Bind], parties, granted, new); grant_line is it with no binds
 pub fn party(publisher: &str, parties: &Parties) -> Party;
 ```
