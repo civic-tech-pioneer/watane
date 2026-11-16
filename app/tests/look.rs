@@ -1,4 +1,43 @@
 #[test]
+fn ac1_ac2_ac3_ac5_find_and_updates_rendering() {
+    let result = std::process::Command::new("node")
+        .args(["tests/support/manager_dom.mjs", "find-updates"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn ac1_search_reads_one_publisher_and_interface() {
+    let script = r#"
+      import assert from 'node:assert/strict';
+      import {searchWords} from './ui/words.js';
+      const parties = [{channel:'ivy-key',name:'Ivy',fingerprint:'IVYFP'}, {channel:'alice-key',name:'Alice Smith',fingerprint:'alicefp'}];
+      assert.deepEqual(searchWords('book ivy', parties), {text:'book',publisher:'ivy-key',interface:null});
+      assert.deepEqual(searchWords('IVYFP book mods:books/list@1.2.3 ivy mods:other/api',parties), {text:'book ivy mods:other/api',publisher:'ivy-key',interface:'mods:books/list@1.2.3'});
+      assert.deepEqual(searchWords('Alice Smith book',parties), {text:'book',publisher:'alice-key',interface:null});
+      assert.deepEqual(searchWords('book nonsense: /bad@1',parties), {text:'book nonsense: /bad@1',publisher:null,interface:null});
+      for (const word of ['mods:books/list@01.2.3','mods:books/list@1.2.3-beta','mods:books/list@18446744073709551616.0.0','mods:book-1/list', 'a'.repeat(120)+':books/list']) assert.deepEqual(searchWords(word,[]),{text:word,publisher:null,interface:null});
+      assert.deepEqual(searchWords('mods:books/list',[]), {text:'',publisher:null,interface:'mods:books/list'});
+    "#;
+    let result = std::process::Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
 fn ac3_order_badges_filters_and_monogram() {
     let script = r#"
       import assert from 'node:assert/strict';
@@ -77,6 +116,182 @@ mod windows {
             "main",
             &format!("document.querySelector({}).click(); null", json!(selector)),
         );
+    }
+    fn snapshot(app: &App, script: &str) {
+        app.eval("main", &format!("window.__snapshot=null; import('./app.js').then(page=>{{window.__snapshot=(()=>{{{script}}})()}}); null"));
+        check(app, "window.__snapshot !== null");
+        assert_eq!(app.eval("main", "window.__snapshot"), json!(true));
+    }
+    #[test]
+    fn ac1_ac3_ac5_find_words_results_and_light_dark() {
+        use super::support::publish::{Site, choose, dist};
+        let publisher_home = tempfile::tempdir().unwrap();
+        let publisher = dist(publisher_home.path());
+        publisher.set_name("Ivy").unwrap();
+        let site = Site::serve(publisher.site_dir());
+        publisher.set_site_url(&site.base).unwrap();
+        let package = watane_host::watane_pkg::pack(&fixture("reading-list"), false).unwrap();
+        publisher.publish(package.into_bytes()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[]);
+        choose(&app, &publisher.own_link(None).unwrap().to_string());
+        area(&app, "#find");
+        app.eval("main", "window.__searches=[]; window.__invoke=window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke=(cmd,args)=>{if(cmd==='search') window.__searches.push(args); return window.__invoke(cmd,args)}; document.querySelector('#search-text').value='book ivy'; document.querySelector('#search').click(); null");
+        check(
+            &app,
+            &format!(
+                "window.__searches.some(q=>q.text==='book' && q.publisher==={})",
+                json!(publisher.identity().unwrap().to_string())
+            ),
+        );
+        check(
+            &app,
+            "document.querySelector('#search-reading').textContent==='By Ivy'",
+        );
+        app.eval("main", "document.querySelector('#search-text').value='mods:reading-list/books'; document.querySelector('#search-text').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); null");
+        check(
+            &app,
+            "window.__searches.some(q=>q.interface==='mods:reading-list/books' && q.text==='' && q.publisher===null)",
+        );
+        click(&app, "#add-mod");
+        check(
+            &app,
+            "document.activeElement.id==='install-link' && !document.querySelector('#add-menu').hidden",
+        );
+        let indexes = invoke(&app, "indexes_list", json!({}));
+        let hits = invoke(
+            &app,
+            "search",
+            json!({"text":"","publisher":null,"interface":null}),
+        );
+        let hit = &hits[0];
+        let mut compromised = hit.clone();
+        compromised["status"] = json!("compromised");
+        compromised["verified"] = json!(false);
+        let mut installed_hit = hit.clone();
+        installed_hit["installed"] = json!("reading-list");
+        let mut older_hit = installed_hit.clone();
+        older_hit["version"] = json!("0.2.0");
+        let mods = json!([{"local":"reading-list","slug":"reading-list","name":"Reading list","version":"0.1.0","enabled":true,"grants":[],"links":[],"page":null}]);
+        for theme in ["light", "dark"] {
+            app.theme(Some(theme));
+            snapshot(
+                &app,
+                &format!(
+                    r#"
+              const $=s=>document.querySelector(s);
+              page.modsView({mods}); page.renderIndexes({indexes}); page.renderResults({});
+              const cards=Array.from(document.querySelectorAll('article.result'));
+              return document.querySelectorAll('#search-text').length===1 &&
+                !$('#search-publisher') && !$('#search-interface') && !$('#refresh-find') &&
+                !!$('.ix[data-channel] .index-dot') && !!$('.ix .drop-index[aria-label]') &&
+                $('#result-count').textContent==='4 mods found' &&
+                cards[0].querySelector('.install-release').textContent==='Install…' &&
+                cards[1].querySelector('a.installed-link').textContent==='Installed' &&
+                cards[2].textContent.includes('You have 0.1.0') &&
+                cards[3].querySelector('.blocked').textContent==="Can't install: Ivy's channel no longer matches what it said before, so watane can't trust it. Ask Ivy for the link to a new channel." &&
+                !cards[3].querySelector('button') && !!$('#follow-link') && !!$('#follow-channel') && !!$('#channels') &&
+                $('#find').textContent.includes('Channels you follow') &&
+                $('#find').textContent.includes('Install opens the plan in the consent view. Nothing installs from here.');
+            "#,
+                    json!([hit, installed_hit, older_hit, compromised])
+                ),
+            );
+        }
+        app.theme(None);
+        assert!(app.quit().success());
+    }
+    #[test]
+    fn ac2_ac3_ac5_updates_cards_and_held_check() {
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[]);
+        check(&app, "document.body.dataset.ready==='true'");
+        area(&app, "#updates");
+        for theme in ["light", "dark"] {
+            app.theme(Some(theme));
+            snapshot(
+                &app,
+                r#"
+              const $=s=>document.querySelector(s), now=Date.now();
+              const mod=(local,extra={})=>({local,slug:local,name:local,version:'1.0.0',enabled:true,links:[],offer:null,offerGrants:[],...extra});
+              const mods=[mod('Reading list',{offer:'key/reading-list@2.0.0',offerGrants:[{kind:'network',short:'Connect to books.test',text:'Full exact grant'}]}),mod('Tags',{notice:'Withdrawn by the publisher: loses tags',offer:'key/tags@2.0.0',release:'key/tags@1.0.0'}),mod('Notes',{links:[{kind:'call',provider:'Tags',granted:true}]}),mod('Bad',{notice:"The publisher's channel is compromised"})];
+              page.renderUpdates(mods,[{local:'old',name:'Old',from:'1',to:'2',at:now-86400000},{local:'new',name:'New',from:'1',to:'2',at:now}], [{channel:'key',name:'Bob',fingerprint:'bobfp',cause:'whole: nested cause',readAt:now-172800000}],[]);
+              const labels=Array.from(document.querySelectorAll('#updates h2'),n=>n.textContent).join('|');
+              const first=$('#update-offers .card');
+              const valid=labels==='Needs you|Channels|Updated by itself' && $('#updates h1').textContent==='Updates' &&
+                first.querySelector('.newgrant').textContent==='◎ Connect to books.test' && first.querySelector('.newgrant').title==='Full exact grant' &&
+                first.textContent.includes('Not now keeps 1.0.0 and hides this until the offer changes or watane restarts.') &&
+                first.querySelector('.offer').textContent==='Review…' && $('#updates-count').textContent==='3' &&
+                $('#update-offers').textContent.includes('Notes uses it.') && $('#update-offers').textContent.includes('2.0.0 is the newest version that is not withdrawn and asks for nothing new.') &&
+                !$('#update-offers [data-local=Bad]').querySelector('button') &&
+                $('#update-channels').textContent.includes("Couldn't read Bob's channel") &&
+                $('#update-channels').textContent.includes('Tags comes from it, so its updates wait. watane tries again at the next check. Last read 2 days ago.') &&
+                $('#update-channels').textContent.includes('Cause: whole: nested cause') && $('#update-channels button').textContent==='Try again' &&
+                $('#update-done .done-row').dataset.local==='new' && $('#update-done').textContent.includes('today, ');
+              first.querySelector('.not-now').click();
+              window.__dismissCheck=()=>$('#updates-count').textContent==='2' && !$('#update-offers [data-local="Reading list"]');
+              return valid;
+            "#,
+            );
+            check(&app, "window.__dismissCheck()");
+            // A changed offer must be shown again; dismissal stays in page memory.
+            snapshot(
+                &app,
+                r#"page.renderUpdates([],[],[],[]); return document.querySelector('#update-offers').textContent==='Nothing needs you.' && document.querySelector('#failed-channels').hidden && document.querySelector('#update-done').textContent==='None since the app started.';"#,
+            );
+        }
+        app.eval("main", "window.__invoke=window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke=(cmd,args)=>cmd==='channels_refresh' ? new Promise(resolve=>{window.__finishCheck=resolve}) : window.__invoke(cmd,args); document.querySelector('#refresh-channels').click(); null");
+        check(
+            &app,
+            "document.querySelector('#refresh-channels').disabled && document.querySelector('#refresh-channels .refresh-label').textContent==='Checking…' && document.querySelector('#refresh-channels .refresh-glyph').classList.contains('spin') && /^Reading [0-9]+ channels?…$/.test(document.querySelector('#checked-at').textContent) && document.querySelector('#checked-at').getAttribute('role')==='status'",
+        );
+        app.eval("main", "window.__finishCheck([]); null");
+        check(
+            &app,
+            "!document.querySelector('#refresh-channels').disabled && document.querySelector('#refresh-channels .refresh-label').textContent==='Check now' && document.querySelector('#checked-at').textContent==='Checked just now' && !document.querySelector('#refresh-channels .refresh-glyph').classList.contains('spin')",
+        );
+        app.theme(None);
+        assert!(app.quit().success());
+    }
+    #[test]
+    fn ac2_ac5_review_opens_real_consent() {
+        use super::support::publish::{Site, consent, dist, update_package};
+        let publisher_home = tempfile::tempdir().unwrap();
+        let publisher = dist(publisher_home.path());
+        let site = Site::serve(publisher.site_dir());
+        publisher.set_site_url(&site.base).unwrap();
+        let published = publisher.publish(update_package("0.1.0", true)).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[]);
+        check(&app, "document.body.dataset.ready==='true'");
+        invoke(
+            &app,
+            "channel_follow",
+            json!({"link":publisher.own_link(None).unwrap().to_string()}),
+        );
+        area(&app, "#updates");
+        snapshot(
+            &app,
+            &format!(
+                r#"
+          page.renderUpdates([{{local:'reading-list',slug:'reading-list',name:'Reading list',version:'0.0.0',links:[],offer:{},offerGrants:[{{kind:'network',text:'Connect to example.org'}}]}}],[],[],[]);
+          return document.querySelector('#update-offers .offer').textContent==='Review…';
+        "#,
+                json!(published.info.reference.to_string())
+            ),
+        );
+        click(&app, "#update-offers .offer");
+        consent(&app);
+        assert!(
+            app.eval(
+                "consent",
+                "document.body.textContent.includes('Connect to example.org')"
+            )
+            .as_bool()
+            .unwrap()
+        );
+        super::support::journey::deny(&app);
+        assert!(app.quit().success());
     }
     #[test]
     fn ac2_ac5_ac7_header_first_start_settings_and_drop() {

@@ -1029,3 +1029,30 @@ fn ac2_s82_read_and_stop_page_dom() {
             .success()
     );
 }
+
+#[test]
+fn ac4_time_and_count_words_with_fixed_now() {
+    let script = r#"
+      import assert from 'node:assert/strict';
+      import {ago, when, modCount, foundCount} from './ui/words.js';
+      const now = new Date(2026, 10, 16, 12, 0).getTime();
+      for (const [age, text] of [[30000,'just now'],[180000,'3 min ago'],[7200000,'2 h ago'],[86400000,'1 day ago'],[172800000,'2 days ago']]) assert.equal(ago(now-age,now),text);
+      assert.equal(ago(now+1000,now),'just now');
+      assert.equal(when(new Date(2026,10,16,8,12).getTime(),now),'today, 08:12');
+      assert.equal(when(new Date(2026,10,15,23,59).getTime(),now),'yesterday');
+      const old = new Date(2026,9,1,8,12);
+      assert.equal(when(old.getTime(),now),old.toLocaleDateString());
+      assert.equal(modCount(1),'1 mod'); assert.equal(modCount(6),'6 mods');
+      assert.equal(foundCount(1),'1 mod found'); assert.equal(foundCount(6),'6 mods found'); assert.equal(foundCount(0),'No mods found');
+    "#;
+    let result = std::process::Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}

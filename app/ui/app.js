@@ -1,7 +1,7 @@
 import { call } from './ipc.js';
 import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
-import { ownWithdrawal, offerLabel, partyLabel, modCount, checkedLabel, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, monogram } from './words.js';
+import { ownWithdrawal, offerLabel, partyLabel, modCount, viaLabels, emptySearch, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -217,7 +217,7 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape') { ca
 document.addEventListener('click', event => { if (!event.target.closest('#add-menu, #add-mod')) closeAdd(); });
 $('#install').onclick = $('#first-folder').onclick = () => action('install_folders').catch(showError);
 $('#first-link-go').onclick = () => action('install_link', {link:$('#first-link').value}).catch(showError);
-$('#first-index').onclick = () => { location.hash = '#find'; route(); $('#index-link').focus(); };
+$('#first-index').onclick = () => { location.hash = '#find'; route(); $('#index-entry').hidden = false; $('#show-index').setAttribute('aria-expanded','true'); $('#index-link').focus(); };
 launcher.addEventListener('keydown', event => {
   if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return;
   const tiles = Array.from(launcher.children).filter(tile => !tile.hidden);
@@ -274,14 +274,15 @@ function refresh() {
   if (refreshing) return rerun = refreshing.catch(() => {}).then(() => { rerun = null; return refresh(); });
   refreshing = (async () => {
     const status = await call('status');
+    checkedAt = status.checkedAt ?? checkedAt; renderCheck();
     if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
     for (const mark of document.querySelectorAll('.mark')) mark.textContent = status.mark;
     const machines = await machinesView(status);
     identityView(status, machines);
     await channelsView();
-    await findView();
     const mods = await call('mods_list');
     modsView(mods);
+    await findView();
     await updatesView(mods);
     await agentsView();
     document.body.dataset.ready = 'true';
@@ -319,14 +320,16 @@ function identityView(status, machines) {
     }
   }
 }
-let lastChannels = '';
+let lastChannels = '', knownChannels = [], knownIndexes = [];
+
 async function channelsView() {
   const channels = await call('channels_list');
+  knownChannels = channels;
   const mods = await Promise.all(channels.map(channel => call('search', {text: '', publisher: channel.channel, interface: null})));
   const signature = JSON.stringify([channels, mods, canSign]); if (signature === lastChannels) return;
   lastChannels = signature; $('#channels').replaceChildren();
   for (const [i, channel] of channels.entries()) {
-    const row = element('div', `${partyLabel(channel)} · ${channel.base || ''} · ${channel.status}${channel.cause ? ': ' + channel.cause : ''} `, $('#channels'));
+    const row = element('div', `${partyLabel(channel)} · ${channel.base || ''} · ${channel.status}${channel.cause ? ': ' + channel.cause : ''} `, $('#channels'), 'card channel-card');
     row.dataset.channel = channel.channel;
     button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));
     if (!channel.base) continue;
@@ -350,61 +353,105 @@ function noteInput(parent, label, className) {
 }
 
 let query = null, lastIndexes = '', lastHits = '';
-async function findView() {
-  const indexes = await call('indexes_list');
-  $('#no-index').hidden = indexes.some(index => !index.own);
+export function renderIndexes(indexes) {
+  knownIndexes = indexes;
   const signature = JSON.stringify(indexes);
-  if (signature !== lastIndexes) {
-    lastIndexes = signature; $('#indexes').replaceChildren();
-    for (const index of visibleIndexes(indexes)) {
-      const row = element('div', '', $('#indexes'), 'index-row'); row.dataset.index = index.channel;
-      if (index.own) row.dataset.own = 'true';
-      element('h3', index.own ? `Your index · ${partyLabel(index)}` : partyLabel(index), row);
-      element('p', `${index.status}${index.cause ? ': ' + index.cause : ''} · ${modCount(index.mods)}`, row);
-      for (const included of index.included) element('p', `Includes ${partyLabel(included)}`, row);
-      for (const skipped of index.skipped) element('p', `Skipped ${partyLabel(skipped.party)}: ${skipped.cause}`, row, 'skipped');
-      if (!index.own) button(row, 'Stop using as index', 'drop-index', () => action('index_drop', {channel: index.channel}));
-      for (const listing of index.listings) {
-        const entry = element('div', `${listing.kind} ${listing.target} · ${listing.note}`, row); entry.dataset.entry = listing.entry;
-        button(entry, 'End a listing', 'unlist', () => action('index_unlist', {entry: listing.entry}));
-      }
+  if (signature === lastIndexes) return;
+  lastIndexes = signature;
+  const shown = visibleIndexes(indexes);
+  $('#no-index').hidden = !!shown.length;
+  $('#indexes').replaceChildren(); $('#index-notices').replaceChildren();
+  for (const index of shown) {
+    const name = index.own ? 'You' : index.name || index.fingerprint;
+    const chip = element('span', '', $('#indexes'), `ix${index.status === 'ok' ? '' : ' failed'}`);
+    chip.dataset.channel = index.channel; chip.dataset.index = index.channel;
+    if (index.own) chip.dataset.own = 'true';
+    chip.title = `${partyLabel(index)} · ${index.status}`;
+    element('span', '', chip, 'index-dot').setAttribute('aria-hidden','true');
+    element('span', `${name} · ${index.status === 'compromised' ? 'compromised' : index.status === 'failed' ? 'could not be read' : modCount(index.mods)}`, chip);
+    element('span', ` (${index.fingerprint}) · ${index.status}`, chip, 'sr-only');
+    if (!index.own) {
+      const drop = button(chip, '×', 'quiet drop-index', () => action('index_drop', {channel:index.channel}));
+      drop.setAttribute('aria-label', `Stop using ${name} as index`);
     }
-  }
-  if (query === null) return;
-  const hits = await call('search', query);
-  const rendered = hits.map(hit => ({...hit, checked: checkedLabel(hit)}));
-  const hitSignature = JSON.stringify(rendered);
-  if (hitSignature === lastHits) return;
-  lastHits = hitSignature; $('#results').replaceChildren();
-  if (!hits.length) element('p', emptySearch(), $('#results'));
-  for (const hit of rendered) {
-    const row = element('article', '', $('#results')); row.dataset.release = hit.release;
-    element('h3', `${hit.name} (${hit.slug}) ${hit.version}`, row);
-    element('p', hit.summary, row);
-    if (hit.publisher) element('p', partyLabel(hit.publisher), row);
-    element('p', hit.status === 'compromised' ? 'compromised' : (hit.verified ? 'signature verified' : hit.status), row);
-    if (hit.from?.length) element('p', `From your machines: ${hit.from.join(', ')}`, row);
-    for (const via of viaLabels(hit.via)) element('p', via, row);
-    if (hit.checked) element('p', hit.checked, row, 'checked');
-    for (const [label, values] of [['Offers', hit.offers], ['Events', hit.events], ['Uses', hit.uses]]) {
-      if (values.length) element('p', `${label}: ${values.join(', ')}`, row);
+    const notes = element('div', '', $('#index-notices')); notes.dataset.index = index.channel;
+    if (index.own) notes.dataset.own = 'true';
+    if (index.cause) element('p', index.cause.startsWith('Could not read ') ? index.cause : `Could not read ${name}: ${index.cause}`, notes);
+    for (const included of index.included) element('p', `Includes ${partyLabel(included)}`, notes);
+    for (const skipped of index.skipped) element('p', `Skipped ${partyLabel(skipped.party)}: ${skipped.cause}`, notes, 'skipped');
+    for (const listing of index.listings) {
+      const entry = element('div', `${listing.kind} ${listing.target} · ${listing.note}`, notes); entry.dataset.entry = listing.entry;
+      button(entry, 'End a listing', 'unlist', () => action('index_unlist', {entry:listing.entry}));
     }
-    if (hit.installed) element('p', `Installed as ${hit.installed}`, row);
-    if (hit.status !== 'compromised' && hit.verified && !hit.installed) button(row, 'Install', 'install-release', () => action('install_release', {release: hit.release, link: hit.link}));
   }
 }
+export function renderResults(hits) {
+  const signature = JSON.stringify([hits, currentMods.map(m=>[m.local,m.version]), hits.map(h=>[h.checkedAt == null ? null : ago(h.checkedAt), h.uncheckedSince == null ? null : ago(h.uncheckedSince)])]);
+  if (signature === lastHits) return;
+  lastHits = signature;
+  $('#result-count').textContent = foundCount(hits.length);
+  $('#results').replaceChildren();
+  // Keep the empty result message in the live region as well as the count.
+  if (!hits.length) element('p', emptySearch(), $('#results'), 'sr-only');
+  for (const hit of hits) {
+    const compromised = hit.status === 'compromised';
+    const row = element('article', '', $('#results'), `result${compromised ? ' compromised' : ''}`); row.dataset.release = hit.release;
+    row.append(monogram(hit, 48));
+    const body = element('div', '', row, 'result-body');
+    const head = element('div', '', body, 'result-head');
+    const name = element('h2', hit.name, head); name.title = hit.slug;
+    element('span', hit.version, head, 'version');
+    const installed = currentMods.find(m => m.local === hit.installed);
+    const exact = installed && installed.version === hit.version;
+    if (installed && !exact) element('span', `You have ${installed.version}`, head, 'badge b-update');
+    if (compromised) element('span', 'Compromised', head, 'badge b-problem');
+    element('p', hit.summary, body, 'result-summary');
+    const publisher = hit.publisher, label = publisher?.name || publisher?.fingerprint || '';
+    const metadata = element('div', '', body, 'result-meta');
+    const pub = element('p', '', metadata, 'publisher');
+    const shield = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    shield.setAttribute('viewBox','0 0 24 24'); shield.setAttribute('aria-hidden','true');
+    shield.setAttribute('class',`shield ${compromised ? 'bad' : 'verified'}`);
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6z'); shield.append(path); pub.append(shield);
+    element('strong', publisher?.you ? 'you' : label, pub);
+    element('span', ` (${publisher?.fingerprint || ''}) · ${compromised ? 'channel compromised' : hit.verified ? 'signature verified' : hit.status}`, pub);
+    for (const via of viaLabels(hit.via)) element('p', via, metadata, 'hint');
+    if (hit.uncheckedSince != null) element('p', `not read since ${ago(hit.uncheckedSince)}`, metadata, 'checked hint');
+    else if (hit.checkedAt != null) element('p', `read ${ago(hit.checkedAt)}`, metadata, 'checked hint');
+    if (hit.from?.length) element('p', `From your machines: ${hit.from.join(', ')}`, body, 'hint');
+    if (compromised) element('div', `Can't install: ${label}'s channel no longer matches what it said before, so watane can't trust it. Ask ${label} for the link to a new channel.`, body, 'blocked');
+    else if (exact) {
+      const link = element('a', 'Installed', row, 'btn installed-link'); link.href = '#mods';
+      link.onclick = () => { $('#library-filter').value = ''; sourceFilter = ''; location.hash = '#mods'; route(); filterLibrary(); selectMod(installed.local, true); };
+    } else if (hit.verified) button(row, 'Install…', 'primary install-release', () => action('install_release', {release:hit.release,link:hit.link}));
+  }
+}
+async function findView() {
+  renderIndexes(await call('indexes_list'));
+  if (query !== null) renderResults(await call('search', query));
+}
+$('#show-index').onclick = () => {
+  const open = $('#index-entry').hidden; $('#index-entry').hidden = !open;
+  $('#show-index').setAttribute('aria-expanded',String(open)); if (open) $('#index-link').focus();
+};
 $('#add-index').onclick = () => action('index_choose', {link: $('#index-link').value}).catch(showError);
 $('#search').onclick = () => {
   errors.begin();
-  query = {text: $('#search-text').value, publisher: null, interface: null};
+  const parties = [...knownIndexes, ...knownChannels];
+  query = searchWords($('#search-text').value, parties);
+  const publisher = parties.find(p => p.channel === query.publisher);
+  const reading = [publisher ? `By ${publisher.name || publisher.fingerprint}` : '', query.interface ? `Offering ${query.interface}` : ''].filter(Boolean);
+  $('#search-reading').textContent = reading.join(' · '); $('#search-reading').hidden = !reading.length;
   readRefresh().catch(showError);
 };
+$('#search-text').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); $('#search').click(); } };
 $('#install-from-link').onclick = () => action('install_link', {link: $('#install-link').value}).catch(showError);
 $('#set-name').onclick = () => action('identity_set_name', {name: $('#profile-name').value}).catch(showError);
 $('#set-site').onclick = () => action('site_set_url', {url: $('#site-url').value}).catch(showError);
 $('#copy-link').onclick = () => runAction(() => navigator.clipboard.writeText($('#own-link').textContent)).catch(showError);
 $('#follow-channel').onclick = () => action('channel_follow', {link: $('#follow-link').value}).catch(showError);
-$('#refresh-channels').onclick = () => action('channels_refresh').catch(showError);
+$('#refresh-channels').onclick = () => refreshChannels().catch(showError);
 $('#identity-backup').onclick = async () => {
   errors.begin();
   const passphrase = $('#passphrase').value;
@@ -440,11 +487,12 @@ function headerView() {
   document.body.classList.toggle('settings', settings);
   $('#manager-header').hidden = settings; $('#settings-header').hidden = !settings;
   $('#refresh-channels').hidden = managerTab !== 'updates';
+  $('#checked-at').hidden = managerTab !== 'updates';
   $('#filter-control').hidden = managerTab !== 'library' || !currentMods.length;
   $('#add-mod').hidden = managerTab === 'updates' || managerTab === 'library' && !currentMods.length;
   $('#add-mod').textContent = managerTab === 'find' ? '↗ Install from a link' : '＋ Install a mod';
   $('#add-mod').classList.toggle('primary', managerTab === 'library');
-  $('[data-tab=updates]').hidden = !currentMods.length && !$('#updates-count').textContent && !$('#update-channels').children.length && !$('#update-done').children.length;
+  $('[data-tab=updates]').hidden = !currentMods.length && !$('#updates-count').textContent && !$('#update-channels .card') && !$('#update-done .done-row');
 }
 function route() {
   const settings = location.hash === '#settings';
@@ -461,27 +509,90 @@ function route() {
 window.addEventListener('hashchange', route);
 if (!location.hash) location.hash = '#mods';
 route();
-let lastUpdates = '';
-async function updatesView(mods) {
-  const [done, channels, indexes] = await Promise.all([call('updates_done'), call('channels_list'), call('indexes_list')]);
-  const offers = updateOffers(mods);
-  $('#updates-count').textContent = offers.length ? String(offers.length) : ''; $('#updates-count').hidden = !offers.length;
-  const signature = JSON.stringify([offers, channels, indexes, done]);
-  if (signature === lastUpdates) return;
+const dismissedOffers = new Map();
+let updateData = null, lastUpdates = '';
+const offerKey = mod => JSON.stringify([mod.offer, mod.offerGrants, mod.notice?.startsWith('Withdrawn by the publisher: ') ? mod.notice : null]);
+export function renderUpdates(mods, done, channels, indexes) {
+  updateData = [mods, done, channels, indexes];
+  const allOffers = updateOffers(mods);
+  for (const [local, key] of dismissedOffers) if (!allOffers.some(m => m.local === local && offerKey(m) === key)) dismissedOffers.delete(local);
+  const offers = allOffers.filter(m => dismissedOffers.get(m.local) !== offerKey(m));
+  const signature = JSON.stringify([mods, offers, done, channels, indexes, [...channels,...indexes].map(c=>c.readAt == null ? null : ago(c.readAt)), done.map(u=>when(u.at))]);
+  if (signature === lastUpdates) { renderCheck(); return; }
   lastUpdates = signature;
-  for (const selector of ['#update-offers', '#update-channels', '#update-done']) $(selector).replaceChildren();
+  $('#updates-count').textContent = offers.length ? String(offers.length) : ''; $('#updates-count').hidden = !offers.length;
+  for (const selector of ['#update-offers','#update-channels','#update-done']) $(selector).replaceChildren();
+  if (!offers.length) element('p','Nothing needs you.',$('#update-offers'),'hint');
   for (const mod of offers) {
-    const row = element('p', `${mod.name}: ${mod.notice || ''}`, $('#update-offers'));
-    if (mod.offer) button(row, offerLabel(mod.offer, mod.offerGrants), 'offer', () => action('release_install', {release:mod.offer}));
+    const compromised = mod.notice === "The publisher's channel is compromised";
+    const withdrawn = mod.notice?.startsWith('Withdrawn by the publisher: ');
+    const row = element('article','',$('#update-offers'),`card update-card${withdrawn || compromised ? ' problem' : ''}`); row.dataset.local = mod.local;
+    row.append(monogram(mod,44));
+    const body = element('div','',row,'update-body');
+    const head = element('div','',body,'update-head'); element('strong',mod.name,head);
+    const version = mod.offer?.slice(mod.offer.lastIndexOf('@')+1);
+    element('span', withdrawn || compromised ? mod.version : `${mod.version} → ${version}`,head,'version');
+    if (withdrawn || compromised) element('p',mod.notice,body,'bad');
+    if (withdrawn) {
+      const users = [...new Set([...dependents(mod,mods).usedBy,...dependents(mod,mods).extendedBy])].map(local=>mods.find(m=>m.local===local).name);
+      if (users.length) element('p',`${users.join(' and ')} ${users.length === 1 ? 'uses' : 'use'} it.`,body,'hint');
+      if (mod.offer) element('p',`${version} is the newest version that is not withdrawn${mod.offerGrants.length ? '.' : ' and asks for nothing new.'}`,body,'hint');
+    } else if (!compromised) {
+      const grants = element('div','Asks for something new:',body,'grant-chips hint');
+      for (const grant of mod.offerGrants) {
+        const chip = element('span',`${{storage:'▤',network:'◎',call:'→',subscribe:'⇄',manage:'⚙'}[grant.kind] || '→'} ${grant.short || grant.text}`,grants,'newgrant'); chip.title=grant.text;
+      }
+      element('p',`Not now keeps ${mod.version} and hides this until the offer changes or watane restarts.`,body,'later-hint');
+    }
+    if (!compromised) {
+      const actions = element('div','',row,'update-actions');
+      button(actions,'Not now','not-now',()=>{dismissedOffers.set(mod.local,offerKey(mod)); renderUpdates(...updateData);});
+      if (mod.offer) button(actions,withdrawn ? offerLabel(mod.offer,mod.offerGrants) : 'Review…','primary offer',()=>action('release_install',{release:mod.offer}));
+    }
   }
   const seen = new Set();
-  for (const channel of [...channels, ...indexes]) {
-    if (channel.cause && !seen.has(channel.channel)) { seen.add(channel.channel); element('p', `${partyLabel(channel)}: ${channel.cause}`, $('#update-channels')); }
+  for (const channel of [...channels,...indexes]) {
+    if (!channel.cause || seen.has(channel.channel)) continue; seen.add(channel.channel);
+    const row = element('article','',$('#update-channels'),'card update-card'); row.dataset.channel=channel.channel;
+    element('span','⚠',row,'channel-warning').setAttribute('aria-hidden','true');
+    const body = element('div','',row,'update-body');
+    element('strong',channel.name ? `Couldn't read ${channel.name}'s channel` : `Couldn't read channel ${channel.fingerprint}`,body);
+    const names = mods.filter(m=>m.release?.split('/')[0] === channel.channel).map(m=>m.name);
+    const comes = names.length ? `${names.join(' and ')} ${names.length === 1 ? 'comes from it, so its' : 'come from it, so their'} updates wait. ` : '';
+    element('p',`${comes}watane tries again at the next check.${channel.readAt == null ? '' : ` Last read ${ago(channel.readAt)}.`}`,body,'hint');
+    element('p',`Cause: ${channel.cause}`,body,'channel-cause');
+    button(row,'Try again','retry-channel',()=>refreshChannels());
   }
-  for (const update of done) element('p', `${update.name}: ${update.from} → ${update.to} · ${new Date(update.at).toLocaleString()}`, $('#update-done'));
-  headerView();
+  $('#failed-channels').hidden = !seen.size;
+  if (!done.length) element('p','None since the app started.',$('#update-done'),'hint');
+  for (const update of [...done].sort((a,b)=>b.at-a.at)) {
+    const row=element('div','',$('#update-done'),'done-row'); row.dataset.local=update.local;
+    row.append(monogram(update,28)); element('strong',update.name,row); element('span',`${update.from} → ${update.to}`,row,'version'); element('span',when(update.at),row,'done-when hint');
+  }
+  headerView(); renderCheck();
 }
-
+async function updatesView(mods) {
+  const [done, channels, indexes] = await Promise.all([call('updates_done'),call('channels_list'),call('indexes_list')]);
+  renderUpdates(mods,done,channels,indexes);
+}
+let checking = false, checkedAt = null;
+function renderCheck() {
+  $('#refresh-channels').disabled = checking;
+  $('#refresh-channels .refresh-label').textContent = checking ? 'Checking…' : 'Check now';
+  $('#refresh-channels .refresh-glyph').classList.toggle('spin',checking);
+  const count = new Set([...knownChannels,...knownIndexes.filter(i=>!i.own)].map(c=>c.channel)).size;
+  $('#checked-at').textContent = checking ? `Reading ${count} ${count === 1 ? 'channel' : 'channels'}…` : checkedAt == null ? 'Not checked yet' : `Checked ${ago(checkedAt)}`;
+  for (const retry of document.querySelectorAll('.retry-channel')) retry.disabled = checking;
+}
+async function refreshChannels() {
+  if (checking) return;
+  checking = true; renderCheck();
+  await runAction(async () => {
+    try {
+      const result = await call('channels_refresh'); checkedAt=Date.now(); return result;
+    } finally { checking=false; renderCheck(); }
+  });
+}
 
 window.wataneDropped = paths => action('install_paths', {paths}).catch(showError);
 

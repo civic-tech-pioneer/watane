@@ -1405,9 +1405,10 @@ consent, including the release and withdrawal reason.
 
 ### 9.6 Indexes and search (step 4)
 
-The main window gets a view **find**: the chosen indexes on top, a search
-form (words, publisher, interface) and the results below. With no chosen
-index it says: "Add an index from a link that someone shared with you."
+The main window gets a view **find**: the single search box, chosen-index
+chips and results of 5.3.5. The page reads publisher and interface words
+from that box; the command still takes the three separate fields. With no
+chosen index it says: "Add an index from a link that someone shared with you."
 When the own channel is the only index and has no live listings or includes,
 its row is hidden and the hint shows alone. Any live own listing or include,
 or another chosen index, makes the own row visible again.
@@ -1445,9 +1446,9 @@ sign-title wording functions, shared by the pages and their wording tests.
 - `search`: as 8.2, mapped to `HitView`. `verified` is `status == ok`
   (every hit comes from a verified channel; a compromised one is not
   shown as verified); `installed` from `host.list()` by `ReleaseRef`
-  publisher and slug. The page shows `checkedAt` as an age ("checked 5 min
-  ago"), and for `uncheckedSince` the mark "could not check since <local
-  time>". A `compromised` hit shows "compromised" and no install button.
+  publisher and slug. The page shows `checkedAt` as `read <ago>`, and
+  `uncheckedSince` as `not read since <ago>`, as in 5.3.5. A compromised
+  hit shows the compromised tag and explanation, with no install button.
 - `install_release(release, link)`: `ReleaseRef::from_str`,
   `Link::from_str`; then dist 5.10 "Install a hit" (follow the link when
   it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the

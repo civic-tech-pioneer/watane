@@ -249,7 +249,10 @@ fn ac2_find_skipped_channel_and_cause() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     f.add(&app);
-    let row = format!("[data-index='{}']", f.ivy.identity().unwrap());
+    let row = format!(
+        "#index-notices [data-index='{}']",
+        f.ivy.identity().unwrap()
+    );
     contains(&app, &row, &skipped.fingerprint().unwrap());
     contains(&app, &row, "local address");
     assert!(app.quit().success());
@@ -290,7 +293,7 @@ fn ac1_find_list_in_my_index() {
         0
     );
     approve(&app);
-    contains(&app, "#indexes [data-own]", NOTE);
+    contains(&app, "#index-notices [data-own]", NOTE);
     assert_eq!(
         app.eval("main", "document.querySelectorAll('#indexes img').length"),
         0
@@ -315,7 +318,7 @@ fn ac1_find_list_in_my_index() {
     assert_eq!(entries(&home.path().join("dist/site")), 1);
     app.eval(
         "main",
-        "document.querySelector('#indexes [data-own] .unlist').click(); null",
+        "document.querySelector('#index-notices [data-own] .unlist').click(); null",
     );
     consent(&app);
     assert_eq!(
@@ -326,7 +329,7 @@ fn ac1_find_list_in_my_index() {
     until(
         &app,
         "main",
-        "document.querySelectorAll('#indexes [data-own] .unlist').length === 0",
+        "document.querySelectorAll('#index-notices [data-own] .unlist').length === 0",
     );
     assert_eq!(entries(&home.path().join("dist/site")), 2);
     app.eval("main", "document.querySelector('#channels .include-note').value = 'more books'; document.querySelector('#channels .include-index').click(); null");
@@ -336,18 +339,18 @@ fn ac1_find_list_in_my_index() {
         "Include in your index"
     );
     approve(&app);
-    contains(&app, "#indexes [data-own]", "more books");
+    contains(&app, "#index-notices [data-own]", "more books");
     assert_eq!(entries(&home.path().join("dist/site")), 3);
     app.eval(
         "main",
-        "document.querySelector('#indexes [data-own] .unlist').click(); null",
+        "document.querySelector('#index-notices [data-own] .unlist').click(); null",
     );
     consent(&app);
     approve(&app);
     until(
         &app,
         "main",
-        "document.querySelectorAll('#indexes [data-own] .unlist').length === 0",
+        "document.querySelectorAll('#index-notices [data-own] .unlist').length === 0",
     );
     assert_eq!(entries(&home.path().join("dist/site")), 4);
     app.eval(
@@ -417,7 +420,7 @@ fn ac1_find_no_index() {
     assert_eq!(
         app.eval(
             "main",
-            "document.querySelectorAll('#indexes [data-own]').length"
+            "document.querySelectorAll('#index-notices [data-own]').length"
         ),
         0
     );

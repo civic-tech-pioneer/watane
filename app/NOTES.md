@@ -1152,3 +1152,69 @@ Validator native run (outside the sandbox): driver suite with
 J5, J10 and the four look window tests included. A first full run hit
 `app did not become ready` in j5 `ac2_j5_github`, j8, j9 and look while
 another worktree ran window tests; each passes when rerun alone.
+
+
+## S84-4 — Find and Updates
+
+Find now uses the 5.3.5 search box and pure `searchWords` parser in
+`ui/words.js`. It recognises one publisher (including multiword profile
+names and case-insensitive fingerprints) and one interface, retaining a
+second match as text. The interface grammar follows dist's InterfaceQuery
+and pkg's decimal-u64 versions, identifiers and 128-byte qualified limit.
+The last parsed query reruns after refresh. Index chips retain fingerprints
+and status for assistive reading and in their title; failure causes, includes,
+skips and own-index listing controls sit below the chips in `#index-notices`.
+Existing listing and skipped-channel tests change their selectors to that
+container; no assertion is removed.
+
+Find results and the three Updates sections use the shared card, monogram
+and theme tokens. Installed links select their Library entry; another
+installed version gets a `You have` tag and may be installed. Compromised
+results explain the block and have no action. Not now is a page-memory map
+of offer fingerprints; unchanged polls preserve the cards and focus. An
+unrelated refresh/install failure does not reshow a dismissed offer.
+`renderIndexes`, `renderResults` and `renderUpdates` export the page's own
+renderers for the literal dist-state tests allowed by section 11.
+
+Checking disables Check now and retry controls and turns the glyph until
+`channels_refresh` returns, independently of the subsequent UI read. The
+existing reduced-motion rule disables its animation. Missing S84-2
+`checkedAt` and `readAt` are supported: the initial header says `Not checked
+yet`, a successful manual check supplies its completion time, and absent
+channel read times omit Last read. Empty `GrantLine.short` uses `text`.
+No dependencies were added.
+
+Changed fact: 5.3.5 requires `read <ago>` / `not read since <ago>`; 9.6
+still described the old checked/local-time wording and now cites 5.3.5.
+The existing `tests/find.rs::ac1_find_search_install` still asserts a slug
+and `checked` in result text, and `ac1_find_stale_mark` still asserts
+`could not check since` and a local timestamp. Those assertions contradict
+the new board/5.3.5. They are left intact as the task explicitly permits
+only selector changes and forbids weakening contradictory tests. The old
+`checkedLabel` pure helper and its wording tests are unchanged.
+
+Validation: the new pure-word tests were run red (missing exports, then
+invalid interface-version recognition) and green. The production renderer
+harness was run red for absent renderers, publisher matching, poll focus
+preservation, dismissal across unrelated failures, and Checking ending at
+command completion, then green. Native tests cover both appearances,
+real search command arguments, Review opening real consent, and a held
+channels_refresh. The sandbox cannot start native app windows: readiness
+times out with `Connection Invalid error for service
+com.apple.hiservices-xpcservice`. Thus AC1/AC2/AC3 native interaction,
+AC5 native appearance/consent and AC6 driver regressions remain PARTIAL.
+The full normal suite also encounters the pre-existing
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`
+netmon startup failure (`Failed to create netmon monitor`); the remaining
+normal suite passes with that one test excluded. The four screen-taking
+tests are never run.
+
+Final checks: cargo build passes (the existing compact-unwind linker
+warning remains); clippy with all targets and driver, cargo fmt --check,
+and git diff --check pass. Release plus driver fails at the intended
+compile_error. The normal suite excluding the single netmon test passes
+150 tests; look/static_config/static_style pass 10 tests; the fixed-now
+words test passes with driver. Targeted look, find, build_on, j4 and j5
+native runs all stop at HIServices startup, including all three new look
+window tests. The full include-ignored driver run (front four excluded)
+stops in the unit suite at the same netmon test (109 passed, 1 failed).

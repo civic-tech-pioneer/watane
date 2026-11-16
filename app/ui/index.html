@@ -3,7 +3,7 @@
 <nav aria-label="Manager"><a class="tab" href="#mods" data-tab="library">Library</a><a class="tab" href="#find" data-tab="find">Find</a><a class="tab" href="#updates" data-tab="updates">Updates <span id="updates-count" hidden></span></a></nav>
 <div class="view-controls"><label class="filter" id="filter-control"><span aria-hidden="true">⌕</span><input id="library-filter" type="search" placeholder="Filter your mods" aria-label="Filter your mods"></label>
 <button id="add-mod" class="btn primary" aria-expanded="false" aria-controls="add-menu">＋ Install a mod</button>
-<button id="refresh-channels" class="btn" hidden>Check now</button>
+<span id="checked-at" class="hint" role="status" hidden></span><button id="refresh-channels" class="btn" hidden><span class="refresh-glyph" aria-hidden="true">↻</span><span class="refresh-label">Check now</span></button>
 <div id="add-menu" hidden><input id="install-link" placeholder="Paste the link" aria-label="Mod or channel link"><button class="btn primary" id="install-from-link">Continue</button><hr><button class="btn" id="install">Choose a folder</button><p>Or drop mod folders on this window.</p></div></div><span class="mark" aria-label="Consent mark of this home" title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane."></span></header>
 <header id="settings-header" hidden><div class="header-title">Settings</div><a class="btn quiet" href="#mods">Back to mods</a><span class="mark" aria-label="Consent mark of this home" title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane."></span></header>
 <p id="error" role="alert"></p>
@@ -18,15 +18,20 @@
 <div class="library-layout" id="library-content"><div class="library-list"><div class="library-heading"><h1>Library</h1><span id="library-count"></span><div class="pills" role="group" aria-label="Show"><button class="pill" data-source="" aria-pressed="true">All</button><button class="pill" data-source="published" aria-pressed="false">Published</button><button class="pill" data-source="local" aria-pressed="false">Local</button></div></div>
 <div id="installed-note" class="toast" role="status" hidden></div>
 <p id="no-matches" hidden>No mod matches. <a href="#find">Look in Find</a></p><main id="launcher"></main></div><aside id="mod-details" aria-label="Mod details"></aside></div></section>
-<section id="find"><h2>Find</h2>
-<label>Index link <input id="index-link"></label><button id="add-index">Add index</button>
-<p id="no-index">Add an index from a link that someone shared with you.</p><div id="indexes"></div>
-<label>Words <input id="search-text" type="search"></label>
-
-<button id="search">Search</button><div id="results" aria-live="polite"></div>
-<h2>Channels</h2><label>Channel link <input id="follow-link"></label><button id="follow-channel">Follow channel</button><div id="channels"></div>
+<section id="find">
+<div class="search-box"><span aria-hidden="true">⌕</span><input id="search-text" type="search" placeholder="Search by words, publisher or interface" aria-label="Search mods"><button id="search" class="btn primary">Search</button></div>
+<p id="search-reading" class="hint" hidden></p>
+<div class="index-controls"><h2 class="label">Searching</h2><div id="indexes"></div><button id="show-index" class="btn" aria-expanded="false" aria-controls="index-entry">＋ Add an index</button></div>
+<div id="index-entry" hidden><input id="index-link" aria-label="Index link" placeholder="Paste the index link"><button id="add-index" class="btn">Add</button></div>
+<p id="no-index" class="hint">Add an index from a link that someone shared with you.</p><div id="index-notices" class="hint"></div>
+<p id="result-count" class="hint" role="status">No mods found</p><div id="results" aria-live="polite"></div>
+<p class="hint">Install opens the plan in the consent view. Nothing installs from here.</p>
+<section class="followed"><h2 class="label">Channels you follow</h2><div class="follow-entry"><input id="follow-link" aria-label="Channel link" placeholder="Paste the channel link"><button id="follow-channel" class="btn">Follow channel</button></div><div id="channels"></div></section>
 </section>
-<section id="updates" hidden><h1>Updates</h1><div id="update-offers"></div><h2>Channels that could not be read</h2><div id="update-channels"></div><h2>Installed without a question</h2><div id="update-done"></div></section>
+<section id="updates" hidden><h1>Updates</h1>
+<section aria-labelledby="needs-label"><h2 id="needs-label" class="label">Needs you</h2><div id="update-offers"></div></section>
+<section id="failed-channels" aria-labelledby="channels-label" hidden><h2 id="channels-label" class="label">Channels</h2><div id="update-channels"></div></section>
+<section aria-labelledby="done-label"><h2 id="done-label" class="label">Updated by itself</h2><p class="hint">These asked for nothing new, so they installed without a question.</p><div id="update-done"></div></section></section>
 </div>
 <div id="settings" data-area="settings" hidden><section id="distribution">
 <section id="identity"><h1>Identity</h1><p id="identity-info"></p><div id="identity-controls"><div id="releases"></div><label>Profile name <input id="profile-name"></label><button id="set-name">Set name</button>

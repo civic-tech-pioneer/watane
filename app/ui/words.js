@@ -80,3 +80,43 @@ export function monogram(mod, size) {
   node.setAttribute('aria-hidden', 'true');
   return node;
 }
+
+export function ago(ms, now = Date.now()) {
+  const minutes = Math.max(0, Math.floor((now - ms) / 60000));
+  if (!minutes) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+export function when(ms, now = Date.now()) {
+  const date = new Date(ms), today = new Date(now);
+  if (date.toDateString() === today.toDateString()) return `today, ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+  today.setDate(today.getDate() - 1);
+  return date.toDateString() === today.toDateString() ? 'yesterday' : date.toLocaleDateString();
+}
+export function foundCount(count) { return count ? `${modCount(count)} found` : emptySearch(); }
+
+export function searchWords(value, parties) {
+  const words = value.trim().split(/\s+/).filter(Boolean), rest = [];
+  const query = {text:'', publisher:null, interface:null};
+  const id = '[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*';
+  const number = '(?:0|[1-9][0-9]*)';
+  const iface = new RegExp(`^${id}:${id}/${id}(?:@${number}\\.${number}\\.${number})?$`);
+  const isInterface = word => {
+    if (!iface.test(word)) return false;
+    const qualified = word.includes('@') ? word : `${word}@0.0.0`;
+    return qualified.length <= 128 && qualified.split('@')[1].split('.').every(n => BigInt(n) <= 18446744073709551615n);
+  };
+  for (let i = 0; i < words.length; i++) {
+    if (!query.interface && isInterface(words[i])) { query.interface = words[i]; continue; }
+    const match = !query.publisher && parties.flatMap(party => [party.name, party.fingerprint].filter(Boolean).map(label => ({party, words:label.split(/\s+/)})))
+      .sort((a,b) => b.words.length - a.words.length)
+      .find(candidate => candidate.words.every((word,j) => word.toLowerCase() === words[i+j]?.toLowerCase()));
+    if (match) { query.publisher = match.party.channel; i += match.words.length - 1; }
+    else rest.push(words[i]);
+  }
+  query.text = rest.join(' ');
+  return query;
+}
