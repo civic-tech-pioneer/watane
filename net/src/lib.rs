@@ -213,9 +213,10 @@ impl Core {
             .collect()
     }
     /// Why a dial failed (5.10).
-    pub(crate) fn no_path_cause(&self) -> String {
+    pub(crate) fn no_path_cause(&self, node: &NodeKey) -> String {
+        let known = self.addrs_of(node).len();
         let options = lock(&self.options);
-        reach::no_path_cause(!options.relays.is_empty(), options.dht)
+        reach::no_path_cause(!options.relays.is_empty(), options.dht, known)
     }
     pub(crate) fn addrs_of(&self, node: &NodeKey) -> Vec<SocketAddr> {
         lock(&self.addrs).get(node).cloned().unwrap_or_default()

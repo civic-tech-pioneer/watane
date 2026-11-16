@@ -49,17 +49,29 @@ pub(crate) fn services(
 }
 
 /// Why a dial failed (NET-F-28, NET-F-32): the cause names what the
-/// participant has not yet chosen, a relay, the DHT or both.
-pub(crate) fn no_path_cause(relays: bool, dht: bool) -> String {
-    match (relays, dht) {
-        (false, false) => "no direct path; choose a relay or turn on the DHT",
-        (true, false) => "no direct path and no answer through the relay; turn on the DHT",
-        (false, true) => "no direct path and no answer through the DHT; choose a relay",
-        (true, true) => {
-            "the machine did not answer at any known address, by the relay or by the DHT"
+/// participant has not yet chosen, a relay, the DHT or both. With `known`
+/// direct addresses of the machine that did not answer, it says so and does
+/// not say there is no direct path.
+pub(crate) fn no_path_cause(relays: bool, dht: bool, known: usize) -> String {
+    if known == 0 {
+        return match (relays, dht) {
+            (false, false) => "no direct path; choose a relay or turn on the DHT",
+            (true, false) => "no direct path and no answer through the relay; turn on the DHT",
+            (false, true) => "no direct path and no answer through the DHT; choose a relay",
+            (true, true) => "no direct path and no answer by the relay or by the DHT",
         }
+        .to_owned();
     }
-    .to_owned()
+    let at = format!(
+        "did not answer at its {known} known address{}",
+        if known == 1 { "" } else { "es" }
+    );
+    match (relays, dht) {
+        (false, false) => format!("{at}; choose a relay or turn on the DHT"),
+        (true, false) => format!("{at} or through the relay; turn on the DHT"),
+        (false, true) => format!("{at} or through the DHT; choose a relay"),
+        (true, true) => format!("{at}, by the relay or by the DHT"),
+    }
 }
 
 /// The switches of `book.json`: `on`, `relays`, `dht`.
@@ -272,21 +284,40 @@ mod tests {
     #[test]
     fn ac7_the_cause_follows_what_is_chosen() {
         assert_eq!(
-            no_path_cause(false, false),
+            no_path_cause(false, false, 0),
             "no direct path; choose a relay or turn on the DHT"
         );
         assert_eq!(
-            no_path_cause(true, false),
+            no_path_cause(true, false, 0),
             "no direct path and no answer through the relay; turn on the DHT"
         );
         assert_eq!(
-            no_path_cause(false, true),
+            no_path_cause(false, true, 0),
             "no direct path and no answer through the DHT; choose a relay"
         );
         assert_eq!(
-            no_path_cause(true, true),
-            "the machine did not answer at any known address, by the relay or by the DHT"
+            no_path_cause(true, true, 0),
+            "no direct path and no answer by the relay or by the DHT"
         );
+    }
+
+    /// S80 AC3: with known addresses the cause says they did not answer, and
+    /// never "no direct path"; the advice comes once.
+    #[test]
+    fn ac3_known_addresses_that_did_not_answer() {
+        assert_eq!(
+            no_path_cause(false, false, 1),
+            "did not answer at its 1 known address; choose a relay or turn on the DHT"
+        );
+        assert_eq!(
+            no_path_cause(true, false, 2),
+            "did not answer at its 2 known addresses or through the relay; turn on the DHT"
+        );
+        for (r, d) in [(false, true), (true, true)] {
+            let text = no_path_cause(r, d, 3);
+            assert!(text.starts_with("did not answer at its 3 known addresses"));
+            assert!(!text.contains("no direct path"), "{text}");
+        }
     }
 
     /// AC4: the stored addresses round trip, at most four per machine, only

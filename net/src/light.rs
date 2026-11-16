@@ -117,6 +117,8 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
     }
     let channel = *channel;
     net.runtime()?.block_on(async move {
+        // the last machine that refused this machine
+        let mut refused = None;
         for node in core.full_machines() {
             match need_from(&core, &node, &channel).await {
                 Ok(None) => return Ok(()),
@@ -138,13 +140,15 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
                     });
                 }
                 Err(e) => {
-                    if let Some(e) = judge(&core, &node, e) {
+                    if let NetError::Refused { .. } = e {
+                        refused = Some(e);
+                    } else if let Some(e) = judge(&core, &node, e) {
                         return Err(e);
                     }
                 }
             }
         }
-        Err(NetError::NoFullMachine)
+        Err(refused.unwrap_or(NetError::NoFullMachine))
     })
 }
 
@@ -163,6 +167,8 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
     net.runtime()?.block_on(async move {
         // the last machine that answered without the package, and why
         let mut last = None;
+        // the last machine that refused this machine
+        let mut refused = None;
         for node in machines {
             match blobs::fetch_via(&core, &node, id, size).await {
                 Ok(()) => return Ok(()),
@@ -172,9 +178,16 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
                         core.refuse(&node, cause.clone());
                         return Err(e);
                     }
-                    last = Some((node, e));
+                    if let NetError::Refused { .. } = e {
+                        refused = Some(e);
+                    } else {
+                        last = Some((node, e));
+                    }
                 }
             }
+        }
+        if let Some(e) = refused {
+            return Err(e);
         }
         match last {
             Some((node, e)) => Err(NetError::Unreachable {
@@ -182,10 +195,7 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
                 cause: format!(
                     "package {} was not fetched: {}",
                     blobs::hex8(&id),
-                    match e {
-                        NetError::Unreachable { cause, .. } => cause,
-                        other => other.to_string(),
-                    }
+                    e.cause_text()
                 ),
             }),
             None => Err(NetError::NoFullMachine),

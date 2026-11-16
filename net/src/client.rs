@@ -97,8 +97,8 @@ pub(crate) async fn connect_within(
     );
     let connection = tokio::time::timeout(within, endpoint.connect(addr, alpn))
         .await
-        .map_err(|_| unreachable(core.no_path_cause()))?
-        .map_err(|_| unreachable(core.no_path_cause()))?;
+        .map_err(|_| unreachable(core.no_path_cause(node)))?
+        .map_err(|_| unreachable(core.no_path_cause(node)))?;
     if let Some(addr) = ip_of(&connection) {
         core.learn_addr(node, addr);
     }
@@ -145,7 +145,7 @@ pub(crate) async fn call_async(
         if connecting.load(std::sync::atomic::Ordering::Relaxed) {
             NetError::Unreachable {
                 node: *node,
-                cause: core.no_path_cause(),
+                cause: core.no_path_cause(node),
             }
         } else {
             NetError::Timeout { node: *node }
@@ -208,7 +208,8 @@ fn join_with(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceList, Ne
         core.limits().pair_deadline,
     )?;
     let bytes = wire::parse_pair(&answer).map_err(|e| match e {
-        AnswerError::Refused(Code::BadCode) => NetError::BadCode,
+        // the anchor says bad_code for a secret it cannot use: spent, expired or wrong
+        AnswerError::Refused(Code::BadCode) => NetError::CodeSpent,
         AnswerError::Refused(Code::Declined) => NetError::Declined,
         other => answer_error(&code.anchor, other),
     })?;

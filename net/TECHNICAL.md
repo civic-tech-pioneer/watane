@@ -203,7 +203,12 @@ pub enum NetError {
 ```
 
 Every message names the node in its short form (NET-F-32). `Unreachable`
-also covers a connection that failed or broke, with the cause. A `Corrupt`
+also covers a connection that failed or broke, with the cause. A cause that
+nests another error never repeats the node's short key, or a phrase the outer
+text has (`NetError::cause_text` gives an error without its `node <short>`).
+`CodeSpent` reads "the pairing code was used or has expired; make a new one
+on the anchor"; `BadCode` ("not a pairing code") is only a text that does not
+parse as a code. A `Corrupt`
 `node.key` is a wrong length, a mode that lets others in, or a link.
 
 ## 4. Formats
@@ -485,7 +490,8 @@ On the anchor (`holdings.is_anchor()`):
    hints. Without a device list, the anchor first signs one with itself
    only, as full.
 2. `pair` from a node: compare the secret in constant time. A bad, spent
-   or expired code is `bad_code`, and changes nothing. A good code is spent
+   or expired code is `bad_code`, and changes nothing; the joiner maps that
+answer to `CodeSpent`, not `BadCode`. A good code is spent
    at once. Emit `JoinAsked`, and wait for `answer_join` up to the code's
    deadline; no answer is a no (`declined`).
 3. On yes: add the node with the code's role, seq + 1, sign, store, answer
@@ -626,7 +632,12 @@ a full machine.
   other full replicas (dialed), then the anchor. `need`, `need_blob` and
   `query` use the first that answers (node Q5). With no list, or none
   reachable, `need` and `need_blob` give `NoFullMachine`; `query` returns the
-  own hits only. With net off, `need` and `need_blob` give `Off`; `query`
+  own hits only. A full machine that answers `not_allowed` (this machine
+  was removed from the list) gives `Refused { node, code: NotAllowed }` from
+  `need` and `need_blob` (the last such answer when several refused and none
+  succeeded; for a package, the machine closing the connection as "not
+  allowed" counts), not `Unreachable`; a bad object keeps priority. With net
+  off, `need` and `need_blob` give `Off`; `query`
   returns the own hits only and `own_heads` is empty.
 - `query(q)`: run `holdings.search(q)` and ask `query` (4.2) of one full
   machine (5 s). Return `(own node, own hits)` first, then `(machine, its
@@ -676,14 +687,19 @@ answer (a machine of its list, each text a socket address, else `BadObject`)
 and adds them after the ones it knows. The dial adds the chosen relays to the address
 it dials, so two machines that share a relay meet there.
 
-With no relay and no DHT, a failure to connect across networks is
-`Unreachable` with the cause "no direct path; choose a relay or turn on the
-DHT" (NET-F-28); the error and the keeper's `Event::Unreachable` (once for a
-machine until it connects again; the event's cause starts "node <short>: ")
-carry it. With only a relay chosen the cause is "no direct path and no answer
-through the relay; turn on the DHT"; with only the DHT on, "no direct path and
-no answer through the DHT; choose a relay"; with both, "the machine did not
-answer at any known address, by the relay or by the DHT". A dial gives up
+With no relay and no DHT, a failure to connect to a machine whose direct
+address is not known is `Unreachable` with the cause "no direct path; choose
+a relay or turn on the DHT" (NET-F-28); the error and the keeper's
+`Event::Unreachable` (once for a machine until it connects again; the event's
+cause starts "node <short>: ") carry it. With only a relay chosen the cause is
+"no direct path and no answer through the relay; turn on the DHT"; with only
+the DHT on, "no direct path and no answer through the DHT; choose a relay";
+with both, "no direct path and no answer by the relay or by the DHT". When
+this machine knows `n` direct addresses of the machine and none answered, the
+cause says that instead and never "no direct path": "did not answer at its
+`n` known address(es)" followed by the same advice, once (for example "...;
+choose a relay or turn on the DHT", "... or through the relay; turn on the
+DHT", "..., by the relay or by the DHT"). A dial gives up
 within the request deadline.
 
 `watane-node` with `relay_server` runs iroh-relay for the participant's own

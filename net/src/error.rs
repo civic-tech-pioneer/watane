@@ -72,7 +72,7 @@ pub enum NetError {
     NoFullMachine,
     #[error("not a pairing code")]
     BadCode,
-    #[error("the pairing code was used")]
+    #[error("the pairing code was used or has expired; make a new one on the anchor")]
     CodeSpent,
     #[error("the participant declined")]
     Declined,
@@ -84,4 +84,57 @@ pub enum NetError {
     Corrupt { path: PathBuf, cause: String },
     #[error("{}: {cause}", path.display())]
     Io { path: PathBuf, cause: String },
+}
+
+impl NetError {
+    /// What this error says once the node is named by an outer message: the
+    /// text without its `node <short>` (NET-F-32), to nest in a cause.
+    pub(crate) fn cause_text(&self) -> String {
+        match self {
+            NetError::Unreachable { cause, .. } => cause.clone(),
+            NetError::Refused { code, .. } => format!("refused: {code}"),
+            NetError::Timeout { .. } => "did not answer in time".to_owned(),
+            NetError::TooLarge { .. } => "a message is over its byte limit".to_owned(),
+            NetError::BadObject { cause, .. } => format!("sent a bad object: {cause}"),
+            other => other.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// AC4: a nested error names no node.
+    #[test]
+    fn ac4_cause_text_has_no_node() {
+        let node = NodeKey::from_bytes([3; 32]);
+        let short = node.short();
+        for e in [
+            NetError::Unreachable {
+                node,
+                cause: "x".into(),
+            },
+            NetError::Refused {
+                node,
+                code: Code::NotAllowed,
+            },
+            NetError::Timeout { node },
+            NetError::TooLarge { node },
+            NetError::BadObject {
+                node,
+                cause: "y".into(),
+            },
+        ] {
+            assert!(!e.cause_text().contains(&short), "{e:?}");
+        }
+        assert_eq!(
+            NetError::Refused {
+                node,
+                code: Code::NotAllowed
+            }
+            .cause_text(),
+            "refused: not_allowed"
+        );
+    }
 }

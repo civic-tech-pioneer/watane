@@ -190,23 +190,50 @@ fn mismatch(node: &NodeKey, id: &BlobId) -> NetError {
 fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
     match e {
         get::GetError::Decode { .. } => mismatch(node, id),
+        // the machine closed the connection as "not allowed" (allow.rs)
+        e if closed_as_not_allowed(&e) => NetError::Refused {
+            node: *node,
+            code: crate::Code::NotAllowed,
+        },
         e => NetError::Unreachable {
             node: *node,
             cause: if e.iroh_error_code().is_some() {
                 format!(
-                    "package {} is not served by {}: it does not have it, or its copy failed its check",
-                    hex8(id),
-                    node.short()
+                    "package {} is not served: it does not have it, or its copy failed its check",
+                    hex8(id)
                 )
             } else {
                 format!(
-                    "package {} could not be read from {}: the connection failed",
-                    hex8(id),
-                    node.short()
+                    "package {} could not be read: the connection failed",
+                    hex8(id)
                 )
             },
         },
     }
+}
+
+/// Whether the machine closed the connection as "not allowed" (allow.rs): a
+/// 403 close anywhere under `e`, also inside the `io::Error` that iroh-blobs
+/// wraps it in.
+fn closed_as_not_allowed(e: &(dyn std::error::Error + 'static)) -> bool {
+    let mut next = Some(e);
+    while let Some(err) = next {
+        if let Some(iroh::endpoint::ConnectionError::ApplicationClosed(close)) =
+            err.downcast_ref::<iroh::endpoint::ConnectionError>()
+            && u64::from(close.error_code) == 403
+        {
+            return true;
+        }
+        if let Some(inner) = err
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+            && closed_as_not_allowed(inner)
+        {
+            return true;
+        }
+        next = err.source();
+    }
+    false
 }
 
 async fn fetch_inner(

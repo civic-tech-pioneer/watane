@@ -119,7 +119,7 @@ fn s3_bad_codes_and_a_no_change_nothing() {
     ));
     let other = node(MemHoldings::new(fx), None);
     let r = other.net.join(&code, false);
-    assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
+    assert!(matches!(r, Err(NetError::CodeSpent)), "{r:?}");
     assert!(other.net.devices().is_none());
     laptop.net.answer_join(&joiner.key, false);
     let r = pending.join().unwrap();
@@ -132,7 +132,7 @@ fn s3_bad_codes_and_a_no_change_nothing() {
     assert!(matches!(r, Err(NetError::Declined)), "{r:?}");
     unchanged("no");
     let r = try_pair(&laptop, &joiner, code.clone(), false, None);
-    assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
+    assert!(matches!(r, Err(NetError::CodeSpent)), "{r:?}");
     unchanged("spent");
 
     // a wrong secret
@@ -140,14 +140,14 @@ fn s3_bad_codes_and_a_no_change_nothing() {
     let mut wrong = fresh.clone();
     wrong.secret[0] ^= 1;
     let r = try_pair(&laptop, &joiner, wrong, false, None);
-    assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
+    assert!(matches!(r, Err(NetError::CodeSpent)), "{r:?}");
     unchanged("wrong");
 
     // an expired code
     // the code lives as long as the (shortened) pair deadline
     std::thread::sleep(Duration::from_millis(650));
     let r = try_pair(&laptop, &joiner, fresh, false, None);
-    assert!(matches!(r, Err(NetError::BadCode)), "{r:?}");
+    assert!(matches!(r, Err(NetError::CodeSpent)), "{r:?}");
     unchanged("expired");
 
     // nobody answers within the deadline
