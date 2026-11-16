@@ -13,6 +13,8 @@ let interrupted = page?.hash === pendingHash;
 markPending(false);
 if (interrupted) show({code: 'page_reloaded', message: 'The page reloaded before the call returned.'});
 let request = null;
+// Calls may overlap: the marker stays until the last outstanding one settles.
+let pending = 0;
 const read = async () => {
   try {
     field('mods-result').textContent = JSON.stringify(await watane.call('api.mods'));
@@ -22,6 +24,7 @@ const read = async () => {
 for (const button of document.querySelectorAll('button')) {
   button.onclick = async () => {
     interrupted = false;
+    pending += 1;
     markPending(true);
     request = null;
     result.textContent = '';
@@ -43,7 +46,7 @@ for (const button of document.querySelectorAll('button')) {
         await read();
       }
     } catch (error) { failed(error); }
-    finally { markPending(false); }
+    finally { pending -= 1; if (pending === 0) markPending(false); }
   };
 }
 watane.on(read);

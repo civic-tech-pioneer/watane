@@ -967,3 +967,10 @@ No dependencies added.
   commands encounter the existing netmon pairing failure; the direct quiet
   reload test stops at HIServices readiness. The release-driver build fails
   at the required debug-only compile guard. Logs: `/tmp/s81-r2-*.log`.
+- Round 2 validator: the URL marker alone passed 7/20 natively. The cause
+  was overlapping calls, not storage: the first pass's post-reload `mods`
+  check could be satisfied by the load-time `read()` showing the same
+  `not_granted`, and the still-running `mods` click then cleared the marker
+  set by the next pass's held call. Desk now counts outstanding button calls
+  and clears the marker only when the last settles; the test waits for the
+  cleared marker after each post-reload call. Native: **20/20 pass**.

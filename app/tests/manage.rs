@@ -520,6 +520,9 @@ fn ac1_manage_calls_settle_across_grant_reload() {
                 "recommendations"
             },
         );
+        // A load-time read can show the same error: the cleared marker proves
+        // the clicked call itself settled before the next pass clicks again.
+        until(&app, DESK, "location.hash === ''");
     }
     click(&app, "request", json!({"request-id":cancelled}));
     outcome(&app, "denied");
