@@ -261,10 +261,9 @@ impl Node {
                 refused = refused.or(self.need_package(&info.release.package, info.release.size));
             }
         }
-        match self.dist.confirm_own_head(head.seq, &head.id) {
-            Err(_) if refused.is_some() => Err(NodeError::Net(refused.unwrap_or(NetError::Off))),
-            result => Ok(result?),
-        }
+        self.dist
+            .confirm_own_head(head.seq, &head.id)
+            .map_err(|e| refused.map_or(NodeError::Dist(e), NodeError::Net))
     }
 }
 
