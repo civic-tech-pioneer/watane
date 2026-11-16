@@ -257,9 +257,11 @@ Only when `machine()` is `Light` (NODE-F-9). Every `need` and `need_blob`
 error is ignored (`Off`, `NoFullMachine`, an unreachable machine) except a
 refusal (`NetError::Refused`, the full machine no longer lists this one):
 dist then reads from the link location as before (net 5.9), and when that
-call fails too, the refusal is returned in its place, as the cause of a
-`DistError::Io` (`node <short> refused: not_allowed`), not dist's "is not
-followed" (NO-14).
+call fails with a missing source (`NotFollowed`, `NoRelease`,
+`UnknownRelease`, `StaleBases`), the refusal is returned in its place, as the
+cause of a `DistError::Io` (`node <short> refused: not_allowed`), not dist's
+"is not followed" (NO-14). Any other dist error (`Compromised`, `Withdrawn`,
+`BadKey`, `NoIdentity`, a web host's `Network`/`Http`/`BadLink`) is returned as it is.
 
 | Wrapper | Before dist's call |
 |---|---|
@@ -574,4 +576,4 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
 | NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |
 | NO-13 | `status` beside a running `run` reads `net`'s files alone and says that the channel and package lines are `run`'s. | `run` holds dist's lock for as long as it runs; net's files are read without the lock and the command writes nothing. Undo: cheap. |
-| NO-14 | A refusal of `need`/`need_blob` is kept; if dist's call then fails, the wrapper returns `DistError::Io { path: "the server", source: <the refusal> }`. | A removed light machine learns that the server refused it (the participant must re-pair), where dist alone says the channel is not followed. A wrapper keeps its `DistError` type, so the app and dist callers are unchanged; the chain carries the net text. Undo: cheap. |
+| NO-14 | A refusal of `need`/`need_blob` is kept; if dist's call then fails with `NotFollowed`, `NoRelease`, `UnknownRelease` or `StaleBases` (no source), the wrapper returns `DistError::Io { path: "the server", source: <the refusal> }`. | A removed light machine learns that the server refused it (the participant must re-pair), where dist alone says the channel is not followed. A wrapper keeps its `DistError` type, so the app and dist callers are unchanged; the chain carries the net text. Undo: cheap. |

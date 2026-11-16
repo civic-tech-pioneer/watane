@@ -16,15 +16,24 @@ fn refusal(result: Result<(), NetError>) -> Refusal {
         .filter(|e| matches!(e, NetError::Refused { .. }))
 }
 
-/// A failed dist call after a refused `need`: the refusal is the cause, not dist's
-/// "is not followed" (5.3). The chain reads `<what was asked>: node K refused: not_allowed`.
+/// A failed dist call after a refused `need`: when dist found no source (`NotFollowed`,
+/// `NoRelease`, `UnknownRelease`, `StaleBases`), the refusal is the cause (5.3). Every
+/// other verdict of dist (`Compromised`, `Withdrawn`, web-host errors) stands.
+/// The chain reads `the server: node K refused: not_allowed`.
 fn refused_or(refused: Refusal, error: DistError) -> DistError {
+    let no_source = matches!(
+        error,
+        DistError::NotFollowed { .. }
+            | DistError::NoRelease { .. }
+            | DistError::UnknownRelease { .. }
+            | DistError::StaleBases { .. }
+    );
     match refused {
-        Some(net) => DistError::Io {
+        Some(net) if no_source => DistError::Io {
             path: "the server".into(),
             source: std::io::Error::other(net),
         },
-        None => error,
+        _ => error,
     }
 }
 
@@ -270,6 +279,48 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refused_or_replaces_only_a_missing_source() {
+        use std::error::Error;
+        let node = watane_net::NodeKey::from_bytes([7; 32]);
+        let refused = || {
+            Some(NetError::Refused {
+                node,
+                code: watane_net::Code::NotAllowed,
+            })
+        };
+        let channel = (1..=255u8)
+            .find_map(|m| PublicKey::from_bytes(&[m; 32]).ok())
+            .unwrap();
+        let kept = refused_or(refused(), DistError::Compromised { channel, seq: 1 });
+        assert!(matches!(kept, DistError::Compromised { .. }));
+        let replaced = refused_or(
+            refused(),
+            DistError::NotFollowed {
+                channel,
+                local_only: false,
+            },
+        );
+        let mut chain = vec![replaced.to_string()];
+        let mut at = replaced.source();
+        while let Some(e) = at {
+            chain.push(e.to_string());
+            at = e.source();
+        }
+        assert_eq!(
+            chain.join(": "),
+            format!("the server: node {} refused: not_allowed", node.short())
+        );
+        let none = refused_or(
+            None,
+            DistError::NotFollowed {
+                channel,
+                local_only: false,
+            },
+        );
+        assert!(matches!(none, DistError::NotFollowed { .. }));
+    }
 
     #[test]
     fn ac7_raised_heads_come_in_key_order_and_only_when_higher() {
