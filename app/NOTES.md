@@ -1337,3 +1337,25 @@ remains outstanding in a GUI session. No test was weakened.
 
 Supplemental serial normal run excluding only the netmon test: 157 passed,
 1 filtered out. The final normal look run passes all eight tests.
+
+
+### S84 — details head follow-up
+
+Applied the PO's updated TECHNICAL 5.3.4 item 1: only the tile draws the
+Off/Problem/Update status badge; the details retain their notice and local
+publisher marker. Removed the duplicate drawBadge call in the head.
+Searched look.rs, manager_dom.mjs, j2.rs, gui_isolation.rs and manager.rs:
+only j2's disabled-entry assertion still expected Off inside details; it now
+checks the tile badge while retaining its enable/open checks. Extended the
+existing DOM scenario to check no b-off in details and the unchanged notice;
+it failed on the duplicate badge before the renderer change and passes after.
+The test files are additional to the original slice list because the updated
+acceptance location needs regression coverage. No spec or dependency changed.
+
+Follow-up validation: build, driver all-target clippy with -D warnings, fmt,
+all eight normal look checks and static_style pass. Full normal tests again
+stop at the netmon failure (111 unit tests pass). Driver look: ten pass, seven
+native tests fail before readiness with the same macOS hiservices error.
+All four J2 native tests also fail at that startup boundary, including the
+updated ac7 assertion; no assertion is reached. Native suites were limited
+to look and the changed j2 file.

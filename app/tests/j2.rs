@@ -119,7 +119,7 @@ fn ac7_idle_polling_disabled_entry_and_consent_focus() {
     until(
         &app,
         "main",
-        "document.querySelector('[data-local=reading-list]').textContent.includes('Off') && !!document.querySelector('[data-local=reading-list] button.enable') && !document.querySelector('[data-local=reading-list] button.open')",
+        "document.querySelector('[data-tile=reading-list] .badge')?.textContent === 'Off' && !!document.querySelector('[data-local=reading-list] button.enable') && !document.querySelector('[data-local=reading-list] button.open')",
     );
     app.eval(
         "main",

@@ -124,7 +124,7 @@ export function modsView(mods) {
     const head = element('div', '', entry, 'detail-head'); head.append(monogram(mod, 56));
     const heading = element('div', '', head);
     const h2 = element('h2', mod.name, heading); h2.tabIndex = -1;
-    element('div', `Version ${mod.version}`, heading, 'version'); drawBadge(mod, heading);
+    element('div', `Version ${mod.version}`, heading, 'version');
     const publisher = element('div', '', heading, 'publisher');
     if (mod.publisher) {
       const shield = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

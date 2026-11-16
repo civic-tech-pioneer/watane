@@ -155,6 +155,8 @@ if (which === 'look') {
   render([a,b]); assert.equal($('#first-start').hidden,true); assert.equal(launcher.children[0],tile('b'));
   assert.equal(tile('a').querySelector('.tile-name').textContent,'Alpha'); assert.equal(tile('a').querySelector('.tile-by').textContent,'Alice · 1.0.0'); assert.equal(tile('b').querySelector('.tile-by').textContent,'local · 1.0.0'); assert.ok(tile('a').querySelector('.mono'));
   assert.equal(tile('b').querySelectorAll('.badge').length,1); assert.equal(tile('b').querySelector('.badge').textContent,'Off');
+  assert.equal(entry('b').querySelector('.b-off'),null);
+  assert.equal(entry('b').querySelector('.notice span').textContent,'Withdrawn by the publisher: broken');
   assert.equal(entry('a').hidden,true); tile('a').click(); await tick(); assert.equal(entry('a').hidden,false);
   const grant=entry('a').querySelector('[data-key=storage]'); assert.equal(grant.querySelector('.grant-text').title,'Exact full words'); assert.equal(grant.querySelector('.grant-text').textContent,'Short words');
   assert.equal(grant.querySelector('.sw').getAttribute('aria-checked'),'true'); grant.querySelector('.withdraw').click(); await tick(); assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{cmd:'grant_withdraw',args:{local:'a',key:'storage'}});
