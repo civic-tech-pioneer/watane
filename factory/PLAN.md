@@ -669,7 +669,7 @@ is a step-7-style check, after S55.
   each item has a test on the real app. Touches: app. Local (the app).
   Delivered (merged as 6788eb6): the Library marks the main mod `Opens at start`; the install consent says when a mod becomes the start window; a connection link moves focus to the target's details; the warning separates `These mods use it` from `These mods extend it`; no "anchor · anchor" or "Last seen: unknown" for this machine; Join cannot be clicked twice; relay/DHT controls disabled while own machines are off; the first signature warns the home can then no longer join; a publish refused after a restore points to Settings › identity › From your machines; Desk gets `page_reloaded` for a call cut off by a grant change; ac3_s30 waits for its full text; no app test leaks temp folders. Decisions: `PlanMod.becomes_main` reads `Mod::main()` from host's staging layout (a `main: bool` on host's PlanEntry later); the restore refusal is dist's `OwnHeadUnconfirmed`, mapped in `From<DistError> for CmdError`; S81's built words sit at the end of app/TECHNICAL 5.3 for S84 to carry into the design, and S84 decides the extend wording of 5.3.4 item 5. Verified on the Mac: hakari clean; the app driver suite green with ignored (front tests not run). For a later slice: a host-side reload notice for a manager's in-flight call; the consent says "uses menu" for a mod that only extends it; the anchor's own row reads `Last pull: unknown`; a hidden anchor lists a new replica late and the replica shows the anchor offline right after pairing; the restore refusal names an empty From your machines while own machines are off, and "own head" is jargon; `Give back` on manage needs no consent (check against W35).
 
-- [~] **S82 Desk opens a page, asks to read a new link, and Alice stops its asks (Q30 b, Q31 b, Q32 b).**
+- [x] **S82 Desk opens a page, asks to read a new link, and Alice stops its asks (Q30 b, Q31 b, Q32 b).**
   Branch `slice/s82`. Builds the human's answers: host 6.10 gains `open-page(local)` (a direct call:
   the app opens or focuses that mod's window, never while a consent is open) and dev's manage fake
   with it; `request-install` with a link of a channel the home does not read shows a first consent
@@ -677,6 +677,7 @@ is a step-7-style check, after S55.
   from <mod>", which withdraws `Manage`. Specs: host 6.4, 6.10, 18 (answered); app 17; dev 8.1.
   Outcome: tests for each on the real app and host; J10 and S43 to S48 still pass. Touches: host,
   dev, app. Local (the app). After S81 (app).
+  Delivered (merged as d3cdfed): Desk opens or focuses a mod's page, never over an open consent; installing from an unread link first shows "Desk asks to read <link>"; every consent a manager starts offers "Deny and stop asks from Desk", which withdraws Desk's manage grant. Decisions: Q31 rides `Reduction::OpenPage(LocalName)` through `Confirm::reduced` (no new Confirm method); `open-page` fails `no_mod` for an unknown mod, `bad_request` for one off or without a page; the app drops an OpenPage while a consent is open (no queue) and ignores one for a mod gone off; Q30 uses `node.read_link` (no follow; spec 17.3 corrected from `open_link`), the channel is followed only after the install succeeds; `consent_answer` takes an optional `stop` (deny, then `Core::grant(local, "manage", false)`), `stop` without asked_by is WrongAnswer, the button is not under the 800 ms rule and never has focus at load; the 15 short host.wit fixture copies are now the full HOST_WIT (shelf and recs hashes changed, checked independently). Verified on the Mac: hakari clean; host, dev and the app driver suite green with ignored (front four skipped), again after rebasing on the design revision 2c820c3. For a later slice: after "Deny and stop" the details show Manage granted until the window gets focus, and a manager install shows in the Library only after focus (refresh-on-focus); Desk cannot tell an open-page was dropped; focusing an open window was not checked (front mode).
 
 - [x] **S83 The manager's look is specified: the human's design becomes the app's spec (W37).** Branch
   `slice/s83`. The human chose (2026-11-16) to build their mod-manager design
@@ -691,14 +692,16 @@ is a step-7-style check, after S55.
   `/api/install` becomes main like the app's own installs, and the consent view says an install makes
   a mod the start window. Each change gets a test row for S84. Docs only. Cloud.
   Delivered (merged as 1941864): app/TECHNICAL 5.3.1 to 5.3.7 and 5.4 specify the manager as the design draws it (tokens light and dark under prefers-color-scheme; header with tabs and one Add mod popover; Library tiles with monogram and one badge Off > Problem > Update > Main; a side panel per mod with grant switches in plain words, connection chips, an inline confirm panel; Find with one box and index chips; Updates cards with Not now / Review…, Checked / Check now; the first-start view; menu separators), with test rows (section 11, stage K in 12). Rule wins over design, each said in 5.3: system-ui font (the CSP refuses Google Fonts), the two-word mark, Make/Unset main, Made from this, a drop button on index chips, followed channels stay in Find, whole failure causes, the window title's party label. Decisions: a short grant form in the details only (`GrantLine.short`), the consent keeps the exact words; one search box maps interface-shaped words and party names; dialog ids become #confirm-panel/-cancel/-continue (window tests change selectors only); Not now is page memory, `Status.checkedAt` and `ChannelRow.readAt` app memory; an update never makes a mod main; Edit and Window menus with Tauri's predefined items; monogram colour by slug sum mod 8; driver ops `menu_items` and `theme`; Find's "Adds commands to <main>" line left for later.
-- [ ] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds S83: the views,
-  Build from the originals: `spec/design/manager/*.dc.html` (the human's files, byte-identical) and their
-  renders in light, `spec/design/manager/render/1-5*.png` (captured 2026-11-16, 800 px wide); S83's spec
-  says where a rule wins over the design.
-  tokens and dark mode, the first-start view, the main-mod rule for `/api/install`; existing ids and
-  driver tests keep working. Outcome: S83's test rows pass; a screenshot of each view sits beside the
-  design. Touches: app (ui, src, tests), host (`Confirm::installed`, host 12.1). Local (the app). After S81
-  and S82.
+- [ ] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds app/TECHNICAL 5.3
+  and 5.4 (S83, and the human's revision of 2026-11-16, 2c820c3): the views, tokens and dark mode, the
+  first-start view, the Installed note after an install (APP-F-78), `Checking…` and the drop target
+  (APP-F-79), the library order (APP-F-68), the main-mod rule for `/api/install`. Build from the
+  originals: `spec/design/manager/*.dc.html` and `canvas.json` (the human's files; `Installed.dc.html`
+  is new). The renders `render/1-5*.png` predate the revision: where they differ, the `.dc.html` wins.
+  The spec says where a rule wins over the design. Existing ids and driver tests keep working, except
+  the selector changes 5.3 lists. Outcome: the test rows of section 11 (stage K) and S49 to S52 pass;
+  a screenshot of each view sits beside the design. Touches: app (ui, src, tests), host
+  (`Confirm::installed`, host 12.1). Local (the app). After S81 and S82.
 
 ### Step 9: Extension points (J9)
 
@@ -1617,6 +1620,10 @@ The human may veto each one.
 - S75: `--skip front:` skips nothing (front tests are marked only by their ignore reason); a
   validator's run took the screen before it stopped. Briefs and commands skip the four by name.
 - S81: briefs must not ask for tests that grep spec text (two broke on S83's respec).
+- S82: Sol's sandbox cannot start window tests (HIServices) or the pairing test (netmon), so app tasks
+  come back PARTIAL and validators run them natively; Sol left one task uncommitted; validator scratch
+  folders in the shared target cannot be removed under the rm guard; rebuilt fixtures give other bytes
+  for menu and item-* logic.wasm than the committed ones (predates S82).
 
 ## Digest
 
