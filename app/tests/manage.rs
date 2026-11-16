@@ -39,7 +39,14 @@ fn ac2_s43_grant_words() {
     begin_install(&app, std::slice::from_ref(&f.desk));
     let text = consent_text(&app);
     assert!(text.contains(MANAGE), "{text}");
-    assert!(text.contains("new"), "{text}");
+    assert_eq!(
+        app.eval(
+            "consent",
+            "Array.from(document.querySelectorAll('main label')).some(e => e.textContent.includes('Manage your mods:') && e.textContent.includes('new'))"
+        ),
+        true,
+        "{text}"
+    );
     approve(&app);
     installed(&app, "manager");
     until(
