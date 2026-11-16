@@ -295,6 +295,14 @@ mod tests {
             .unwrap();
         let kept = refused_or(refused(), DistError::Compromised { channel, seq: 1 });
         assert!(matches!(kept, DistError::Compromised { .. }));
+        let web = DistError::Network {
+            url: "https://example.invalid/".into(),
+            cause: "reset".into(),
+        };
+        assert!(matches!(
+            refused_or(refused(), web),
+            DistError::Network { .. }
+        ));
         let replaced = refused_or(
             refused(),
             DistError::NotFollowed {
