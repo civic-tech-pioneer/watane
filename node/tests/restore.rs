@@ -56,10 +56,19 @@ fn s9_alice_restores_and_picks_the_servers_hint() {
     let published = old.publish(package("1.0.0")).unwrap();
     let alice = old.dist().identity().unwrap();
     let (seq, id) = (published.entry.seq(), published.entry.id());
-    // the server holds the head (a later sync, if the first hint was lost)
-    assert!(wait_for(10, || head(&server, &alice) == Some((seq, id))
+    // The server holds the head and the package. A hint that was lost is made up for by
+    // `need`, which stores the entry but never fetches its package (only a sync does, and
+    // that is 10 minutes away): so ask for the package too. Without it the restore
+    // below finds "missing package" (SiteNotWritten) in about 1 run of 12.
+    let pid = published.info.release.package;
+    let blob = watane_net::BlobId(*pid.as_bytes());
+    let size = published.info.release.size;
+    let holds =
+        || head(&server, &alice) == Some((seq, id)) && server.dist().package_file(&pid).is_some();
+    assert!(wait_for(30, || holds()
         || (server.net().need(&alice).is_ok()
-            && head(&server, &alice) == Some((seq, id)))));
+            && server.net().need_blob(&blob, size).is_ok()
+            && holds())));
     let backup = old.dist().backup("pass").unwrap();
     old.close();
 

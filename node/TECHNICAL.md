@@ -254,8 +254,12 @@ caused the pull already spread through the topic (net 5.7), and the
 ### 5.3 A light machine
 
 Only when `machine()` is `Light` (NODE-F-9). Every `need` and `need_blob`
-error is ignored (`Off`, `NoFullMachine`, an unreachable machine): dist
-then reads from the link location as before (net 5.9).
+error is ignored (`Off`, `NoFullMachine`, an unreachable machine) except a
+refusal (`NetError::Refused`, the full machine no longer lists this one):
+dist then reads from the link location as before (net 5.9), and when that
+call fails too, the refusal is returned in its place, as the cause of a
+`DistError::Io` (`node <short> refused: not_allowed`), not dist's "is not
+followed" (NO-14).
 
 | Wrapper | Before dist's call |
 |---|---|
@@ -346,8 +350,8 @@ as an `OwnHint` (NET-F-30). The app shows them as hints; nothing is
 confirmed (W18).
 
 `confirm_own_hint(hint)` (NODE-F-13): `hint.head` is `None`:
-`EmptyHint`. `net.need(own)` from a full machine (an error is kept and
-returned only if the next step fails). For each live own release whose
+`EmptyHint`. `net.need(own)` from a full machine (a refusal, here or of a package, is kept and
+returned as `NodeError::Net` only if the next step fails). For each live own release whose
 package `dist.package_file` lacks: `net.need_blob`. Then
 `dist.confirm_own_head(seq, &id)` (dist 5.12): it refuses with
 `HeadNotStored` unless the stored own head is exactly that seq and id and
@@ -561,7 +565,7 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-1 | The app's open decides keyless from `net`'s device list: `Net` opens first, with an empty holder, then `Dist`. | No new file and no new mark: `net` already stores the anchor; `dist` and `log` stay unaware of `net`. Undo: cheap (a mark of dist's own). |
 | NO-2 | A home joins only while its identity signed nothing, and drops that key before it joins. | A replica holds no key (W33), and a key that signed nothing loses nothing; a key that signed is the participant's and is never deleted. |
 | NO-3 | `told` only for own statements and heads raised by a web read; heads that `net` pulled are not told again. | Gossip already spread the hint (net 5.7); a second hint per machine only adds traffic. Undo: cheap. |
-| NO-4 | A light machine asks `net` before dist reads and ignores its failure. | dist then reads from the link location as before, so `net` is never a requirement (NET-F-31). |
+| NO-4 | A light machine asks `net` before dist reads and ignores its failure, except a refusal (NO-14). | dist then reads from the link location as before, so `net` is never a requirement (NET-F-31). |
 | NO-5 | A remote hit counts only when its entry is stored here; the shown hit is dist's view of it. | One verifier, the same filters as a local hit (F-FIND-4, PEERS 8.2). |
 | NO-6 | An install from a remote hit with no link gives the channel a `kept` record on a replica. | Updates keep coming through the full machines, as a follow does through a web host (DD-24); it is net Q2's answer. |
 | NO-7 | The consent texts live in `node`, used by the app and the program. | One text per choice, wherever it is made (W32). |
@@ -570,3 +574,4 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
 | NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |
 | NO-13 | `status` beside a running `run` reads `net`'s files alone and says that the channel and package lines are `run`'s. | `run` holds dist's lock for as long as it runs; net's files are read without the lock and the command writes nothing. Undo: cheap. |
+| NO-14 | A refusal of `need`/`need_blob` is kept; if dist's call then fails, the wrapper returns `DistError::Io { path: "the server", source: <the refusal> }`. | A removed light machine learns that the server refused it (the participant must re-pair), where dist alone says the channel is not followed. A wrapper keeps its `DistError` type, so the app and dist callers are unchanged; the chain carries the net text. Undo: cheap. |

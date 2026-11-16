@@ -5,7 +5,28 @@ use std::collections::BTreeMap;
 use watane_dist::{
     DistError, Entry, EntryId, Fetched, Link, PublicKey, Published, RefreshReport, ReleaseRef,
 };
-use watane_net::{DeviceList, PairCode};
+use watane_net::{DeviceList, NetError, PairCode};
+
+/// The refusal a full machine answered a light machine's `need` with, if any (5.3).
+type Refusal = Option<NetError>;
+
+fn refusal(result: Result<(), NetError>) -> Refusal {
+    result
+        .err()
+        .filter(|e| matches!(e, NetError::Refused { .. }))
+}
+
+/// A failed dist call after a refused `need`: the refusal is the cause, not dist's
+/// "is not followed" (5.3). The chain reads `<what was asked>: node K refused: not_allowed`.
+fn refused_or(refused: Refusal, error: DistError) -> DistError {
+    match refused {
+        Some(net) => DistError::Io {
+            path: "the server".into(),
+            source: std::io::Error::other(net),
+        },
+        None => error,
+    }
+}
 
 type Heads = BTreeMap<PublicKey, (u64, EntryId)>;
 
@@ -56,38 +77,44 @@ impl Node {
         self.machine() == Machine::Light
     }
 
-    fn need_channel(&self, channel: &PublicKey) {
+    /// `need` on a light machine; only a refusal is kept (5.3).
+    fn need_channel(&self, channel: &PublicKey) -> Refusal {
         if self.is_light() {
-            let _ = self.net.need(channel);
+            refusal(self.net.need(channel))
+        } else {
+            None
         }
     }
 
     /// The package of a stored release, from a full machine when this one lacks it.
-    fn need_package(&self, package: &watane_dist::PackageId, size: u64) {
+    fn need_package(&self, package: &watane_dist::PackageId, size: u64) -> Refusal {
         if self.dist.package_file(package).is_some() {
-            return;
+            return None;
         }
         let id = convert::blob_id(package);
         self.holdings.ask(id, size);
-        if self.net.need_blob(&id, size).is_ok() && self.dist.package_file(package).is_some() {
+        let result = self.net.need_blob(&id, size);
+        if result.is_ok() && self.dist.package_file(package).is_some() {
             self.holdings.asked_done(&id);
         }
+        refusal(result)
     }
 
-    fn need_release(&self, release: &ReleaseRef) {
+    fn need_release(&self, release: &ReleaseRef) -> Refusal {
         if !self.is_light() {
-            return;
+            return None;
         }
         let Ok(channel) = PublicKey::from_bytes(release.publisher.as_bytes()) else {
-            return;
+            return None;
         };
+        let mut refused = None;
         let stored = self
             .dist
             .channel(&channel)
             .ok()
             .and_then(|view| view.releases.into_iter().find(|r| r.reference == *release));
         let stored = stored.or_else(|| {
-            let _ = self.net.need(&channel);
+            refused = refusal(self.net.need(&channel));
             self.dist
                 .channel(&channel)
                 .ok()?
@@ -95,22 +122,28 @@ impl Node {
                 .into_iter()
                 .find(|r| r.reference == *release)
         });
-        if let Some(info) = stored {
-            self.need_package(&info.release.package, info.release.size);
+        match stored {
+            Some(info) => self
+                .need_package(&info.release.package, info.release.size)
+                .or(refused),
+            None => refused,
         }
     }
 
-    fn need_latest(&self, link: &Link) {
+    fn need_latest(&self, link: &Link) -> Refusal {
         if !self.is_light() {
-            return;
+            return None;
         }
         let channel = link.channel();
-        let _ = self.net.need(&channel);
+        let refused = refusal(self.net.need(&channel));
         if let Some(slug) = link.slug()
             && let Ok(Some(info)) = self.dist.latest(&channel, slug)
         {
-            self.need_package(&info.release.package, info.release.size);
+            return self
+                .need_package(&info.release.package, info.release.size)
+                .or(refused);
         }
+        refused
     }
 
     pub fn set_name(&self, name: &str) -> Result<Entry, DistError> {
@@ -145,39 +178,46 @@ impl Node {
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
-        self.need_channel(&link.channel());
+        let refused = self.need_channel(&link.channel());
         self.reading(|| self.dist.follow(link))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn refresh(&self) -> Vec<RefreshReport> {
         self.reading(|| self.dist.refresh())
     }
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError> {
-        self.need_channel(channel);
+        let refused = self.need_channel(channel);
         self.reading(|| self.dist.refresh_channel(channel))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
-        self.need_channel(&link.channel());
+        let refused = self.need_channel(&link.channel());
         self.reading(|| self.dist.choose_index(link))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError> {
-        self.need_release(release);
+        let refused = self.need_release(release);
         self.reading(|| self.dist.fetch(release))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn fetch_for(
         &self,
         release: &ReleaseRef,
         consumer: Option<&PublicKey>,
     ) -> Result<Fetched, DistError> {
-        self.need_release(release);
+        let refused = self.need_release(release);
         self.reading(|| self.dist.fetch_for(release, consumer))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
-        self.need_latest(link);
+        let refused = self.need_latest(link);
         self.reading(|| self.dist.open_link(link))
+            .map_err(|e| refused_or(refused, e))
     }
     pub fn read_link(&self, link: &Link) -> Result<Fetched, DistError> {
-        self.need_latest(link);
+        let refused = self.need_latest(link);
         self.reading(|| self.dist.read_link(link))
+            .map_err(|e| refused_or(refused, e))
     }
 
     /// After an install of `fetched` (NODE-F-11): a replica keeps a channel that has no link.
@@ -215,13 +255,16 @@ impl Node {
     pub fn confirm_own_hint(&self, hint: &OwnHint) -> Result<(), NodeError> {
         let head = hint.head.ok_or(NodeError::EmptyHint)?;
         let own = self.dist.identity().ok_or(DistError::NoIdentity)?;
-        let _ = self.net.need(&own);
+        let mut refused = refusal(self.net.need(&own));
         if let Ok(view) = self.dist.own() {
             for info in view.releases.iter().filter(|r| r.withdrawn.is_none()) {
-                self.need_package(&info.release.package, info.release.size);
+                refused = refused.or(self.need_package(&info.release.package, info.release.size));
             }
         }
-        Ok(self.dist.confirm_own_head(head.seq, &head.id)?)
+        match self.dist.confirm_own_head(head.seq, &head.id) {
+            Err(_) if refused.is_some() => Err(NodeError::Net(refused.unwrap_or(NetError::Off))),
+            result => Ok(result?),
+        }
     }
 }
 
