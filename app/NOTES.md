@@ -563,3 +563,6 @@
   at the required debug-only guard. The driver suite again fails before API
   consent-window readiness with macOS `hiservices-xpcservice` /
   `_LSModifyNotification` error -50. Real GitHub J3 was not run (no token).
+  The foreman's real GitHub J3 on b12b373 passed in 89 s; that run's edge
+  answered `S54 missing base: not found`, so the 5xx branch is still unproven
+  against the real host.

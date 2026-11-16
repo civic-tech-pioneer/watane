@@ -470,22 +470,18 @@ fn ac3_j3_real_github() {
     assert!(started.elapsed() < Duration::from_secs(60), "{failed}");
     assert_eq!(failed["error"]["code"], "dist", "{failed}");
     let message = failed["error"]["message"].as_str().unwrap();
-    let http_error = message.as_bytes().windows(13).find(|answer| {
-        answer.starts_with(b"HTTP 5")
-            && answer[6].is_ascii_digit()
-            && answer[7].is_ascii_digit()
-            && &answer[8..] == b" from"
+    // Pages answers a missing path with 404 or 5xx depending on the edge.
+    let http_5xx = message.split_once("HTTP 5").and_then(|(_, rest)| {
+        let (digits, tail) = rest.split_at_checked(2)?;
+        (digits.bytes().all(|b| b.is_ascii_digit()) && tail.starts_with(" from"))
+            .then(|| format!("HTTP 5{digits}"))
     });
-    assert!(
-        message.contains("not found") || http_error.is_some(),
-        "{message}"
-    );
-    if message.contains("not found") {
-        eprintln!("S54 missing base: not found");
+    let answer = if message.contains("not found") {
+        "not found".to_string()
     } else {
-        let status = std::str::from_utf8(&http_error.unwrap()[..8]).unwrap();
-        eprintln!("S54 missing base: {status}");
-    }
+        http_5xx.unwrap_or_else(|| panic!("{message}"))
+    };
+    eprintln!("S54 missing base: {answer}");
     assert!(
         message.contains(&format!("{missing_base}head")),
         "{message}"
