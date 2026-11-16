@@ -673,9 +673,9 @@
   in a fresh home. AC3 polls the actual server package file against the
   packed fixture bytes with a five-second deadline starting at approval;
   no static server has been created at that point.
-- AC4 creates Ivy with watane_dist only after AC3. Ivy lists Alice's mod
-  at Alice's local API origin, which serves no channel/site. Alice owns
-  those entries already, so choosing Ivy needs no publisher web host.
+- AC4 creates Ivy with watane_dist only after AC3. Ivy's `list` reads
+  Alice's head at the link's location (the API origin gave 404 natively),
+  so Alice's site folder is served only now, and stopped with Ivy's.
   The server's printed verified pull proves it holds Ivy's listing.
   Ivy's site is stopped and Alice's net turned off before the light app
   searches and installs, so the server is its only full machine. The hit

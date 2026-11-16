@@ -191,11 +191,12 @@ fn ac1_journey_j8() {
         .unwrap()
         .parse()
         .unwrap();
-    // A listing needs an HTTP location. Use Alice's actual local API origin,
-    // which serves no channel/site; Alice already owns these signed entries.
+    // Ivy's listing reads Alice's head at the link's location, so Alice's
+    // site is served only now, after AC3, and stopped before the light search.
+    let alice_site = Site::serve(alice_home.path().join("dist/site"));
     let listed = watane_dist::Link::new(
         publisher,
-        &format!("http://localhost:{}/", alice.port),
+        &alice_site.base,
         Some(&"reading-list".parse().unwrap()),
     )
     .unwrap();
@@ -214,6 +215,7 @@ fn ac1_journey_j8() {
         listing.seq()
     ));
     drop(ivy_site);
+    drop(alice_site);
     on(&alice, false); // Only the server can answer the light laptop now.
     let hit = find_on(&light, reference, &server_key);
     assert_eq!(hit["from"], json!([server_key]));
