@@ -771,3 +771,37 @@ assert.equal(refreshes, 2, 'returning to Settings must read the latest identity 
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// S75 acceptance: a home whose identity signed a release (here the anchor
+// itself) clicks Join. APP-F-54 asks the "unused identity" question only of a
+// home that signed nothing; this one must be refused with the cause, never
+// told that its identity "has signed nothing" and will be deleted.
+#[test]
+fn regress_s75_join_question_on_signed_home() {
+    let home = tempfile::tempdir().unwrap();
+    let app = start(home.path());
+    let publishing = publish(&app, bytes());
+    consent(&app);
+    approve(&app);
+    assert_eq!(publishing.join().unwrap().0, 200);
+    on(&app);
+    area(&app, "#settings");
+    app.eval(
+        "main",
+        "document.querySelector('#join-code').value = 'watane-pair:x'; document.querySelector('#join').click(); null",
+    );
+    until(
+        &app,
+        "main",
+        "document.querySelector('#join-question').open || document.querySelector('#error').textContent !== ''",
+    );
+    let question = app.eval(
+        "main",
+        "document.querySelector('#join-question').open ? document.querySelector('#join-question').textContent : ''",
+    );
+    assert!(
+        !question.as_str().unwrap().contains("has signed nothing"),
+        "a home with a published release is told: {question}"
+    );
+    assert!(app.quit().success());
+}
