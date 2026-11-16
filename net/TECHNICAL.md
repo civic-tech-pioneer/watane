@@ -491,8 +491,7 @@ On the anchor (`holdings.is_anchor()`):
    only, as full.
 2. `pair` from a node: compare the secret in constant time. A bad, spent
    or expired code is `bad_code`, and changes nothing; the joiner maps that
-answer to `CodeSpent`, not `BadCode`. A good code is spent
-   at once. Emit `JoinAsked`, and wait for `answer_join` up to the code's
+   answer to `CodeSpent`, not `BadCode`. A good code is spent at once. Emit `JoinAsked`, and wait for `answer_join` up to the code's
    deadline; no answer is a no (`declined`).
 3. On yes: add the node with the code's role, seq + 1, sign, store, answer
    the `pair` request with the list, and send it with `devices` to every
@@ -881,10 +880,12 @@ N3 notes (built):
 N4 part 1 notes (built, S67):
 
 - A fetch that fails gives a cause in watane's words (NET-F-32), never iroh's
-  text: a request the serving machine cut or refused reads "package <hex8> is
-  not served by <short>: it does not have it, or its copy failed its check";
-  any other transport failure reads "package <hex8> could not be read from
-  <short>: the connection failed" (`failed()` in `blobs.rs`).
+  text: a request the serving machine cut or refused reads "not served: it
+  does not have it, or its copy failed its check"; any other transport
+  failure reads "could not be read: the connection failed" (`failed()` in
+  `blobs.rs`); `need_blob` puts "package <hex8> was not fetched: " before
+  it, and the error names the machine (S80). A connection the machine closed
+  as "not allowed" is `Refused { code: NotAllowed }`.
 
 - Light machines (5.9): `light.rs` holds the choice of a full machine (`order`,
   a pure function over the list, this node and the set of connected machines),

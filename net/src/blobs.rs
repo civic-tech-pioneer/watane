@@ -198,15 +198,9 @@ fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
         e => NetError::Unreachable {
             node: *node,
             cause: if e.iroh_error_code().is_some() {
-                format!(
-                    "package {} is not served: it does not have it, or its copy failed its check",
-                    hex8(id)
-                )
+                "not served: it does not have it, or its copy failed its check".to_owned()
             } else {
-                format!(
-                    "package {} could not be read: the connection failed",
-                    hex8(id)
-                )
+                "could not be read: the connection failed".to_owned()
             },
         },
     }

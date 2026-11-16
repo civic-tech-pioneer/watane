@@ -2,8 +2,8 @@
 //! machine, `need`, `need_blob`, `query` and `own_heads`.
 
 use crate::{
-    BlobId, Core, DeviceList, HeadInfo, Hit, Ingested, Net, NetError, Query, Role, blobs, client,
-    key::NodeKey, lock, sync,
+    BlobId, Code, Core, DeviceList, HeadInfo, Hit, Ingested, Net, NetError, Query, Role, blobs,
+    client, key::NodeKey, lock, sync,
 };
 use std::{
     collections::HashSet,
@@ -140,7 +140,11 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
                     });
                 }
                 Err(e) => {
-                    if let NetError::Refused { .. } = e {
+                    if let NetError::Refused {
+                        code: Code::NotAllowed,
+                        ..
+                    } = e
+                    {
                         refused = Some(e);
                     } else if let Some(e) = judge(&core, &node, e) {
                         return Err(e);
@@ -178,7 +182,11 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
                         core.refuse(&node, cause.clone());
                         return Err(e);
                     }
-                    if let NetError::Refused { .. } = e {
+                    if let NetError::Refused {
+                        code: Code::NotAllowed,
+                        ..
+                    } = e
+                    {
                         refused = Some(e);
                     } else {
                         last = Some((node, e));

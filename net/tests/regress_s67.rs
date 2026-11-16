@@ -17,6 +17,9 @@ fn regress_s67_a_missing_package_has_a_cause_in_watanes_words() {
         Err(NetError::Unreachable { node, cause }) => {
             assert_eq!(node, anchor.key);
             assert!(cause.contains(&hex(&none.0[..4])), "{cause}");
+            // S80 AC4: the cause names neither the node nor the package twice
+            assert!(!cause.contains(&anchor.key.short()), "{cause}");
+            assert_eq!(cause.matches(&hex(&none.0[..4])).count(), 1, "{cause}");
             assert!(
                 !cause.contains("stream reset") && !cause.contains("io:"),
                 "iroh's words, not watane's: {cause}"
