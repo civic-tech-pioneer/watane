@@ -18,7 +18,7 @@ fn regress_s78_child_builds_cache() {
 /// every test binary left a folder of GBs in `$TMPDIR`. It lives under
 /// `CARGO_TARGET_TMPDIR` now (S78-1 AC2).
 #[test]
-#[ignore = "slow: builds the warm template cache cold"]
+#[ignore = "slow: builds the template cold; only it proves the warm cache leaves nothing in TMPDIR after exit"]
 fn regress_s78_warm_cache_leaves_temp_dir_empty() {
     let tmp = tempfile::tempdir().unwrap();
     let out = Command::new(std::env::current_exe().unwrap())
