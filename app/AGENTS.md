@@ -14,7 +14,8 @@ window per mod page, and the consent view for every confirmation.
 
 ```bash
 cargo build && cargo test                   # app, unit and static tests
-cargo test --features driver                # also window tests (macOS GUI session)
+cargo test --features driver --test <file> -- --include-ignored   # a task's window tests: only the files it touched
+cargo test --features driver                # every window test (macOS GUI session): once per slice, by the foreman
 cargo clippy --all-targets --features driver -- -D warnings && cargo fmt --check
 cargo build --release --features driver     # must FAIL: no driver in a release
 ```

@@ -127,8 +127,12 @@ Rules:
 - App GUI tests run hidden (`App::start`) or in the background (`App::background`): no window on
   screen, no Dock icon, no focus taken. Only `front` tests take the screen.
 - Who runs what: Sol runs the default tests. The validator runs the default tests and the slow
-  tests of its task's files (by name), not the whole slow set, and never `front` tests. The
-  foreman runs everything once, `front` tests included, before it delivers. The user-sim runs no suite; it uses the programs.
+  tests of its task's files (by name), not the whole slow set, and never `front` tests; for the
+  app that means `--features driver --test <file>` for each touched test file, never the whole
+  driver suite. The
+  foreman runs everything once, `front` tests included, before it delivers. The product owner
+  reruns a suite only for what changed after that run (a rebase on a newer `main`, a flake), plus
+  the tests the cloud could not run. The user-sim runs no suite; it uses the programs.
 - A failure the user-sim finds becomes a test at the lowest level that shows it.
 
 ## Timing tests

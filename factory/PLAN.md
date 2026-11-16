@@ -1095,6 +1095,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- The human (2026-11-16), test time: an app slice ran the whole window suite about six times
+  (each validator, the foreman, the PO). Now a validator runs only its touched test files
+  (`--features driver --test <file>`, app/AGENTS.md), the foreman the whole suite once, the PO only
+  what changed since. Next, measured after S84: (1) the driver suite without `--test-threads=1`;
+  (3) `app/scripts/linux-test.sh` (Docker, xvfb) as a way to run app slices off the Mac or in the cloud.
 - S83 (2026-11-16): the app learns of an install over POST /api/install through host
   `Confirm::installed(&Installed{requester,new,updated})`, a default no-op method called once after each
   install that wrote the catalog (host 12.1); the app applies the main-mod rule there for every requester.
