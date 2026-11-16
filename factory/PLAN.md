@@ -692,7 +692,7 @@ is a step-7-style check, after S55.
   `/api/install` becomes main like the app's own installs, and the consent view says an install makes
   a mod the start window. Each change gets a test row for S84. Docs only. Cloud.
   Delivered (merged as 1941864): app/TECHNICAL 5.3.1 to 5.3.7 and 5.4 specify the manager as the design draws it (tokens light and dark under prefers-color-scheme; header with tabs and one Add mod popover; Library tiles with monogram and one badge Off > Problem > Update > Main; a side panel per mod with grant switches in plain words, connection chips, an inline confirm panel; Find with one box and index chips; Updates cards with Not now / Review…, Checked / Check now; the first-start view; menu separators), with test rows (section 11, stage K in 12). Rule wins over design, each said in 5.3: system-ui font (the CSP refuses Google Fonts), the two-word mark, Make/Unset main, Made from this, a drop button on index chips, followed channels stay in Find, whole failure causes, the window title's party label. Decisions: a short grant form in the details only (`GrantLine.short`), the consent keeps the exact words; one search box maps interface-shaped words and party names; dialog ids become #confirm-panel/-cancel/-continue (window tests change selectors only); Not now is page memory, `Status.checkedAt` and `ChannelRow.readAt` app memory; an update never makes a mod main; Edit and Window menus with Tauri's predefined items; monogram colour by slug sum mod 8; driver ops `menu_items` and `theme`; Find's "Adds commands to <main>" line left for later.
-- [ ] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds app/TECHNICAL 5.3
+- [~] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds app/TECHNICAL 5.3
   and 5.4 (S83, and the human's revision of 2026-11-16, 2c820c3): the views, tokens and dark mode, the
   first-start view, the Installed note after an install (APP-F-78), `Checking…` and the drop target
   (APP-F-79), the library order (APP-F-68), the main-mod rule for `/api/install`. Build from the
@@ -1066,6 +1066,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S83: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S81: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S82: `75eab872` (sessionId `75eab872-4a9f-4f3b-9cfc-c99497768b74`), worktree `.claude/worktrees/s82` (local: the app; builds in main's `target/`).
+- S84: `a2ce600f` (sessionId `a2ce600f-dee1-40fa-99fa-9a31f4de06d0`), worktree `.claude/worktrees/s84` (local: the app; builds in main's `target/`).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: delivered 2026-11-16 and merged; routine finished, branches removed.
