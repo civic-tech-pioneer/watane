@@ -1067,10 +1067,11 @@ No dependencies added.
   test asserts the labels, including `Close Window`. No differing native
   label could be observed here because the sandbox cannot start the app.
 - Main-window drag Enter/Leave/Drop use exported constant class scripts.
-  Drop paths stay in Rust and call install_paths directly; successful
-  installs refresh the manager and failures show textContent. No page
-  receives serialized drop paths. No UI, command ACL, permission or
-  dependency changed.
+  The drop still hands its paths to the page's `wataneDropped`, which
+  calls `install_paths` (5.3); the class scripts carry no path.
+  (Validator: Sol's Rust-side install with a DOM-coupled error script was
+  reverted; the brief said drops still go to install_paths.) No UI,
+  command ACL, permission or dependency changed.
 - The driver theme op applies light/dark/system to every open window.
   `ac7_s39_w37_quiet_theme_changes_prefers_color_scheme` asserts the actual
   matchMedia result after dark and light and does not skip on failure.

@@ -64,18 +64,10 @@ fn main_window_at(app: &tauri::AppHandle, hash: &str) -> tauri::Result<()> {
             }
             WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
                 let _ = drop_window.eval(DROP_LEAVE_JS);
-                let window = drop_window.clone();
-                let app = handle.clone();
-                let paths = paths.clone();
-                tauri::async_runtime::spawn(async move {
-                    match crate::commands::install_paths(window.as_ref().clone(), app.state(), paths).await {
-                        Ok(_) => { let _ = window.eval("window.dispatchEvent(new Event('focus'))"); }
-                        Err(error) => {
-                            eprintln!("{}", error.message);
-                            let _ = window.eval(format!("document.querySelector('#error').textContent = {}; document.querySelector('#error').hidden = false", serde_json::json!(error.message)));
-                        }
-                    }
-                });
+                let _ = drop_window.eval(format!(
+                    "window.wataneDropped({})",
+                    serde_json::json!(paths)
+                ));
             }
             _ => {}
         }
