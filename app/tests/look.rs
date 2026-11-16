@@ -156,7 +156,7 @@ mod windows {
         );
     }
     fn snapshot(app: &App, script: &str) {
-        app.eval("main", &format!("window.__snapshot=null; import('./app.js').then(page=>{{window.__snapshot=(()=>{{{script}}})()}}); null"));
+        app.eval("main", &format!("window.__snapshot=null; import('./app.js').then(page=>(()=>{{{script}}})()).then(value=>{{window.__snapshot=value}}); null"));
         check(app, "window.__snapshot !== null");
         assert_eq!(app.eval("main", "window.__snapshot"), json!(true));
     }
@@ -405,12 +405,11 @@ mod windows {
                 $('#update-channels').textContent.includes('Tags comes from it, so its updates wait. watane tries again at the next check. Last read 2 days ago.') &&
                 $('#update-channels').textContent.includes('Cause: whole: nested cause') && $('#update-channels button').textContent==='Try again' &&
                 $('#update-done .done-row').dataset.local==='new' && $('#update-done').textContent.includes('today, ');
+              // Read the dismissal right after Not now's microtask, before a page poll can repaint real state.
               first.querySelector('.not-now').click();
-              window.__dismissCheck=()=>$('#updates-count').textContent==='2' && !$('#update-offers [data-local="Reading list"]');
-              return valid;
+              return Promise.resolve().then(()=>valid && $('#updates-count').textContent==='2' && !$('#update-offers [data-local="Reading list"]'));
             "#,
             );
-            check(&app, "window.__dismissCheck()");
             // Empty lists show their placeholders and hide the Channels section.
             snapshot(
                 &app,
