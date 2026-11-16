@@ -677,6 +677,23 @@ is a step-7-style check, after S55.
   Outcome: tests for each on the real app and host; J10 and S43 to S48 still pass. Touches: host,
   dev, app. Local (the app). After S81 (app).
 
+- [~] **S83 The manager's look is specified: the human's design becomes the app's spec (W37).** Branch
+  `slice/s83`. The human chose (2026-11-16) to build their mod-manager design
+  (`spec/design/manager/*.dc.html`, the launch rule and design rules in its `canvas.json` notes). A
+  demo found the app has nearly every function but none of the look: app/TECHNICAL 5.3 lists elements
+  and ids but no layout (`spec/design/manager/COMPARISON-2026-11-16.md`). A design slice: app/TECHNICAL
+  5.3 and 5.4 (and FUNCTIONAL where words change) specify the views as drawn: tiles with monograms and
+  badges, a side panel for details with grant switches and words in plain language, one search box and
+  index chips in Find, cards in Updates with Review…/Not now and Check now, the first-start view, tokens
+  for light and dark (prefers-color-scheme), the app menu's separator; where the design and an existing
+  APP-F rule disagree, the rule wins and the spec says so. Also: a `main = true` mod installed through
+  `/api/install` becomes main like the app's own installs, and the consent view says an install makes
+  a mod the start window. Each change gets a test row for S84. Docs only. Cloud.
+- [ ] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds S83: the views,
+  tokens and dark mode, the first-start view, the main-mod rule for `/api/install`; existing ids and
+  driver tests keep working. Outcome: S83's test rows pass; a screenshot of each view sits beside the
+  design. Touches: app (ui, src, tests). Local (the app). After S81, S82 and S83.
+
 ### Step 9: Extension points (J9)
 
 The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and

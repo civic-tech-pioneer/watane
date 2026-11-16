@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mods: updates</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.root{--bg:#F6F6F4;--panel:#FFFFFF;--ink:#18181B;--muted:#5D5E66;--line:#E3E3DF;--hover:#EFEFEC;--accent:#3355D6;--accent-ink:#FFFFFF;--accent-weak:#ECF0FD;--warn:#8A5300;--warn-bg:#FFF3DC;--bad:#B42318;--bad-bg:#FDECEA;--ok:#1B7346;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.root.dark{--bg:#111113;--panel:#19191C;--ink:#EDEDEF;--muted:#A3A3AC;--line:#2B2B30;--hover:#222226;--accent:#8EA4FF;--accent-ink:#0D1330;--accent-weak:#1D2340;--warn:#F2B65A;--warn-bg:#2B2112;--bad:#FF8A80;--bad-bg:#2E1615;--ok:#6FD39E}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.tab{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.tab:hover{background:var(--hover);color:var(--ink)}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.count{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.btn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 14px Inter,system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{display:inline-flex;align-items:center;justify-content:center;color:#FFFFFF;font-weight:600;flex-shrink:0}
+.label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0}
+.card{display:flex;flex-wrap:wrap;align-items:center;gap:14px 16px;padding:16px 18px;border-radius:14px;border:1px solid var(--line);background:var(--panel)}
+.newgrant{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:7px;background:var(--warn-bg);color:var(--warn);font-size:13px;font-weight:500}
+</style>
+</helmet>
+<div class="root {{themeClass}}" style="min-height: 820px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 24px; border-bottom: 1px solid var(--line)">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><path d="M17 13v8M13 17h8"></path></svg>
+      Mods
+    </div>
+    <nav aria-label="Manager" style="display: flex; gap: 4px; flex-wrap: wrap">
+      <a class="tab" href="Main.dc.html">Library</a>
+      <a class="tab" href="Find.dc.html">Find</a>
+      <a class="tab on" href="Updates.dc.html" aria-current="page">Updates <span class="count">2</span></a>
+    </nav>
+    <div style="flex: 1 1 0"></div>
+    <span style="font-size: 13px; color: var(--muted)">Checked 3 min ago</span>
+    <button class="btn" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg>
+      Check now
+    </button>
+    <span aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
+    </span>
+  </header>
+
+  <main style="width: 100%; max-width: 860px; margin: 0 auto; padding: 36px 24px 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 30px">
+    <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Updates</h1>
+
+    <section aria-labelledby="h-need" style="display: flex; flex-direction: column; gap: 10px">
+      <h2 id="h-need" class="label">Needs you</h2>
+
+      <div class="card">
+        <span class="mono" style="width: 44px; height: 44px; border-radius: 12px; font-size: 18px; background: #3355D6">R</span>
+        <div style="flex: 999 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 15px; font-weight: 600">Reading list <span style="font-weight: 400; color: var(--muted)">0.3.1 → 0.4.0</span></div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted)">
+            Asks for something new:
+            <span class="newgrant">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+              Connect to openlibrary.org
+            </span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button class="btn" type="button">Not now</button>
+          <button class="btn primary" type="button">Review…</button>
+        </div>
+      </div>
+
+      <div class="card" style="border-color: var(--bad)">
+        <span class="mono" style="width: 44px; height: 44px; border-radius: 12px; font-size: 18px; background: #B45309">T</span>
+        <div style="flex: 999 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+          <div style="font-size: 15px; font-weight: 600">Tags <span style="font-weight: 400; color: var(--muted)">1.0.2</span></div>
+          <div style="font-size: 14px; color: var(--bad)">Withdrawn by the publisher: loses tags on rename.</div>
+          <div style="font-size: 13px; color: var(--muted)">Notes uses it. 1.1.0 is the newest version that is not withdrawn and asks for nothing new.</div>
+        </div>
+        <button class="btn primary" type="button">Install 1.1.0</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-chan" style="display: flex; flex-direction: column; gap: 10px">
+      <h2 id="h-chan" class="label">Channels</h2>
+      <div class="card">
+        <span aria-hidden="true" style="width: 44px; height: 44px; border-radius: 12px; background: var(--warn-bg); color: var(--warn); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+        </span>
+        <div style="flex: 999 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+          <div style="font-size: 15px; font-weight: 600">Could not read Bob's channel</div>
+          <div style="font-size: 13px; color: var(--muted)">connection refused · last read 2 days ago · Weather comes from it</div>
+        </div>
+        <button class="btn" type="button">Try again</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-done" style="display: flex; flex-direction: column; gap: 10px">
+      <h2 id="h-done" class="label">Updated by itself</h2>
+      <p style="margin: 0 0 4px; font-size: 13px; color: var(--muted)">These asked for nothing new, so they installed without a question.</p>
+      <div style="border-radius: 14px; border: 1px solid var(--line); background: var(--panel)">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 14px">
+          <span class="mono" style="width: 28px; height: 28px; border-radius: 8px; font-size: 12px; background: #7C3AED">N</span>
+          <span style="font-weight: 500">Notes</span><span style="color: var(--muted)">1.1.4 → 1.2.0</span>
+          <span style="flex: 1 1 auto"></span><span style="color: var(--muted); font-size: 13px">today, 08:12</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 18px; font-size: 14px">
+          <span class="mono" style="width: 28px; height: 28px; border-radius: 8px; font-size: 12px; background: #475569">D</span>
+          <span style="font-weight: 500">Desk</span><span style="color: var(--muted)">1.3.2 → 1.4.0</span>
+          <span style="flex: 1 1 auto"></span><span style="color: var(--muted); font-size: 13px">yesterday</span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>

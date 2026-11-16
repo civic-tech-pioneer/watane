@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mods: find</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.root{--bg:#F6F6F4;--panel:#FFFFFF;--ink:#18181B;--muted:#5D5E66;--line:#E3E3DF;--hover:#EFEFEC;--accent:#3355D6;--accent-ink:#FFFFFF;--accent-weak:#ECF0FD;--bad:#B42318;--bad-bg:#FDECEA;--ok:#1B7346;--off-bg:#ECECE9;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.root.dark{--bg:#111113;--panel:#19191C;--ink:#EDEDEF;--muted:#A3A3AC;--line:#2B2B30;--hover:#222226;--accent:#8EA4FF;--accent-ink:#0D1330;--accent-weak:#1D2340;--bad:#FF8A80;--bad-bg:#2E1615;--ok:#6FD39E;--off-bg:#26262A}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.tab{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.tab:hover{background:var(--hover);color:var(--ink)}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.count{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.btn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 14px Inter,system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.mono{display:inline-flex;align-items:center;justify-content:center;color:#FFFFFF;font-weight:600;flex-shrink:0}
+.badge{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:600}
+.label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.ix{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--line);background:var(--panel);font-size:13px;font-weight:500;color:var(--ink)}
+.big{height:52px;width:100%;box-sizing:border-box;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0 16px 0 48px;font:16px Inter,system-ui,sans-serif}
+.big:focus,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</helmet>
+<div class="root {{themeClass}}" style="min-height: 820px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 24px; border-bottom: 1px solid var(--line)">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><path d="M17 13v8M13 17h8"></path></svg>
+      Mods
+    </div>
+    <nav aria-label="Manager" style="display: flex; gap: 4px; flex-wrap: wrap">
+      <a class="tab" href="Main.dc.html">Library</a>
+      <a class="tab on" href="Find.dc.html" aria-current="page">Find</a>
+      <a class="tab" href="Updates.dc.html">Updates <span class="count">2</span></a>
+    </nav>
+    <div style="flex: 1 1 0"></div>
+    <button class="btn" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
+      Install from a link
+    </button>
+    <span aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
+    </span>
+  </header>
+
+  <main style="width: 100%; max-width: 920px; margin: 0 auto; padding: 36px 24px 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px">
+    <div style="position: relative">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 16px; top: 16px; color: var(--muted)"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <label for="fq" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search mods</label>
+      <input id="fq" class="big" type="search" value="book" placeholder="Search by words, publisher or interface">
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+      <span class="label" style="margin-right: 4px">Searching</span>
+      <span class="ix"><span style="width: 8px; height: 8px; border-radius: 4px; background: var(--ok)" aria-hidden="true"></span>Alice's picks · 24 mods</span>
+      <span class="ix"><span style="width: 8px; height: 8px; border-radius: 4px; background: var(--ok)" aria-hidden="true"></span>Ivy · 9 mods</span>
+      <span class="ix"><span style="width: 8px; height: 8px; border-radius: 4px; background: var(--bad)" aria-hidden="true"></span>Bob · not read since 2 days</span>
+      <button class="btn" type="button" style="height: 32px; border-radius: 16px; font-size: 13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        Add an index
+      </button>
+    </div>
+
+    <div style="font-size: 14px; color: var(--muted)">4 mods found</div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <sc-for list="{{results}}" as="r" hint-placeholder-count="4">
+        <article style="display: flex; flex-wrap: wrap; gap: 16px; padding: 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel)">
+          <span class="mono" style="width: 48px; height: 48px; border-radius: 13px; font-size: 19px; background: {{r.color}}; opacity: {{r.opacity}}">{{r.initial}}</span>
+          <div style="flex: 999 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px">
+              <h2 style="margin: 0; font-size: 16px; font-weight: 600">{{r.name}}</h2>
+              <span style="font-size: 13px; color: var(--muted)">{{r.version}}</span>
+              <sc-if value="{{r.hasTag}}" hint-placeholder-val="{{ false }}">
+                <span class="badge" style="background: {{r.tagBg}}; color: {{r.tagInk}}">{{r.tag}}</span>
+              </sc-if>
+            </div>
+            <p style="margin: 0; font-size: 14px; line-height: 1.5">{{r.summary}}</p>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: var(--muted)">
+              <span style="display: inline-flex; align-items: center; gap: 6px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{r.shield}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"></path></svg>
+                <span style="color: var(--ink); font-weight: 500">{{r.pub}}</span> {{r.fp}} · {{r.trust}}
+              </span>
+              <span>{{r.listed}}</span>
+              <span>{{r.read}}</span>
+            </div>
+            <sc-if value="{{r.hasWorks}}" hint-placeholder-val="{{ false }}">
+              <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 2px">
+                <span class="mono" style="width: 20px; height: 20px; border-radius: 6px; font-size: 10px; background: #475569">D</span>
+                <span>{{r.works}}</span>
+              </div>
+            </sc-if>
+          </div>
+          <div style="display: flex; align-items: flex-start">
+            <sc-if value="{{r.canInstall}}" hint-placeholder-val="{{ true }}">
+              <button class="btn primary" type="button">Install…</button>
+            </sc-if>
+            <sc-if value="{{r.installed}}" hint-placeholder-val="{{ false }}">
+              <a class="btn" href="Main.dc.html" style="text-decoration: none">Installed</a>
+            </sc-if>
+            <sc-if value="{{r.blocked}}" hint-placeholder-val="{{ false }}">
+              <button class="btn" type="button" disabled="{{ true }}">Can't install</button>
+            </sc-if>
+          </div>
+        </article>
+      </sc-for>
+    </div>
+    <p style="margin: 0; font-size: 13px; color: var(--muted)">Install opens the plan in the consent view. Nothing installs from here.</p>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const verified = { shield: 'var(--ok)', trust: 'signature verified' };
+    const results = [
+      Object.assign({ name: 'Book club', initial: 'B', color: '#0E7490', version: '0.2.0',
+        summary: 'Read along with friends: shared shelves and a weekly pick.',
+        pub: 'Ivy', fp: '(p2w8hd5tqe)', listed: 'listed by Alice through Ivy', read: 'read 4 min ago',
+        hasWorks: true, works: 'Adds commands to Desk, which you use as your main mod', canInstall: true }, verified),
+      Object.assign({ name: 'Reading list', initial: 'R', color: '#3355D6', version: '0.4.0',
+        summary: 'Keep the books you want to read, and mark the ones you finished.',
+        pub: 'Alice', fp: '(k7f3q9m2xa)', listed: 'listed by Alice', read: 'read 4 min ago',
+        installed: true, hasTag: true, tag: 'You have 0.3.1', tagBg: 'var(--accent-weak)', tagInk: 'var(--accent)' }, verified),
+      Object.assign({ name: 'Bookmarks', initial: 'B', color: '#4D7C0F', version: '1.0.0',
+        summary: 'Save links and find them again by words.',
+        pub: 'you', fp: '', listed: 'listed by you', read: 'your own channel', canInstall: true }, verified),
+      { name: 'Book swap', initial: 'B', color: '#9F1239', opacity: 0.5, version: '0.9.1',
+        summary: 'Trade books with people nearby.',
+        pub: 'Bob', fp: '(q8d1zr4nyo)', shield: 'var(--bad)', trust: 'channel compromised',
+        listed: 'listed by Alice', read: 'not read since 2 days', blocked: true,
+        hasTag: true, tag: 'Compromised', tagBg: 'var(--bad-bg)', tagInk: 'var(--bad)' }
+    ].map((r) => Object.assign({ opacity: 1, hasTag: false, hasWorks: false, canInstall: false, installed: false, blocked: false }, r));
+    return { themeClass: this.props.dark ? 'dark' : '', results };
+  }
+}
+</script>
+</body>
+</html>

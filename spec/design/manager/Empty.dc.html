@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mods: first start</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.root{--bg:#F6F6F4;--panel:#FFFFFF;--ink:#18181B;--muted:#5D5E66;--line:#E3E3DF;--hover:#EFEFEC;--accent:#3355D6;--accent-ink:#FFFFFF;--accent-weak:#ECF0FD;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.root.dark{--bg:#111113;--panel:#19191C;--ink:#EDEDEF;--muted:#A3A3AC;--line:#2B2B30;--hover:#222226;--accent:#8EA4FF;--accent-ink:#0D1330;--accent-weak:#1D2340}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.tab{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.tab:hover{background:var(--hover);color:var(--ink)}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.btn{height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 14px Inter,system-ui,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:focus-visible,.field:focus{outline:2px solid var(--accent);outline-offset:2px}
+.way{display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:16px;border:1px solid var(--line);background:var(--panel);box-sizing:border-box}
+.ico{width:40px;height:40px;border-radius:11px;background:var(--accent-weak);color:var(--accent);display:inline-flex;align-items:center;justify-content:center}
+.field{height:40px;width:100%;box-sizing:border-box;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:0 12px;font:14px Inter,system-ui,sans-serif}
+</style>
+</helmet>
+<div class="root {{themeClass}}" style="min-height: 820px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 24px; border-bottom: 1px solid var(--line)">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><path d="M17 13v8M13 17h8"></path></svg>
+      Mods
+    </div>
+    <nav aria-label="Manager" style="display: flex; gap: 4px">
+      <a class="tab on" href="Empty.dc.html" aria-current="page">Library</a>
+      <a class="tab" href="Find.dc.html">Find</a>
+    </nav>
+    <div style="flex: 1 1 0"></div>
+    <span aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
+    </span>
+  </header>
+
+  <main style="flex: 1 1 auto; width: 100%; max-width: 980px; margin: 0 auto; padding: 72px 24px 48px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 40px">
+    <div style="text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center">
+      <div style="display: grid; grid-template-columns: repeat(2, 28px); gap: 6px; margin-bottom: 12px" aria-hidden="true">
+        <span style="height: 28px; border-radius: 8px; border: 2px dashed var(--line)"></span>
+        <span style="height: 28px; border-radius: 8px; border: 2px dashed var(--line)"></span>
+        <span style="height: 28px; border-radius: 8px; border: 2px dashed var(--line)"></span>
+        <span style="height: 28px; border-radius: 8px; background: var(--accent)"></span>
+      </div>
+      <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em">Add your first mod</h1>
+      <p style="margin: 0; font-size: 16px; color: var(--muted); max-width: 460px; line-height: 1.5">watane is empty until you add mods. Each one asks before it gets anything.</p>
+    </div>
+
+    <div style="width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px">
+      <div class="way">
+        <span class="ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg></span>
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">From a link</h2>
+        <p style="margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5">Someone sent you a link to a mod or to their channel.</p>
+        <label for="link" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Link</label>
+        <input id="link" class="field" type="url" placeholder="Paste the link">
+        <button class="btn primary" type="button">Continue</button>
+      </div>
+
+      <div class="way">
+        <span class="ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">From an index</h2>
+        <p style="margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5">An index is someone's list of mods. watane adds none by itself; add one you trust.</p>
+        <div style="flex: 1 1 auto"></div>
+        <a class="btn" href="Find.dc.html" style="text-decoration: none">Add an index</a>
+      </div>
+
+      <div class="way" style="border-style: dashed">
+        <span class="ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></span>
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">From a folder</h2>
+        <p style="margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5">A mod you or your agent made on this device. Drop the folder here.</p>
+        <div style="flex: 1 1 auto"></div>
+        <button class="btn" type="button">Choose a folder</button>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>

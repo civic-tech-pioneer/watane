@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Launch with a main mod</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.root{--desk:#D9DCD6;--bar:rgba(246,246,244,.92);--panel:#FFFFFF;--bg:#F6F6F4;--ink:#18181B;--muted:#5D5E66;--line:#E3E3DF;--accent:#3355D6;--accent-ink:#FFFFFF;font-family:Inter,system-ui,sans-serif;color:var(--ink)}
+.root.dark{--desk:#2A2C30;--bar:rgba(25,25,28,.92);--panel:#19191C;--bg:#111113;--ink:#EDEDEF;--muted:#A3A3AC;--line:#2B2B30;--accent:#8EA4FF;--accent-ink:#0D1330}
+.mi{display:flex;align-items:center;gap:24px;height:28px;padding:0 12px;border-radius:6px;font-size:14px}
+.mi span:last-child{margin-left:auto;color:var(--muted);font-size:13px}
+.cmd{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 13px Inter,system-ui,sans-serif}
+.mono{display:inline-flex;align-items:center;justify-content:center;color:#FFFFFF;font-weight:600;flex-shrink:0}
+</style>
+</helmet>
+<div class="root {{themeClass}}" style="width: 1280px; height: 820px; position: relative; overflow: hidden; background: var(--desk)">
+
+  <div style="height: 30px; background: var(--bar); display: flex; align-items: center; gap: 22px; padding: 0 18px; font-size: 14px; border-bottom: 1px solid var(--line)">
+    <span style="font-weight: 700; background: var(--accent); color: var(--accent-ink); padding: 3px 10px; border-radius: 5px">watane</span>
+    <span>File</span><span>Edit</span><span>View</span><span>Window</span>
+  </div>
+
+  <div role="menu" aria-label="watane menu" style="position: absolute; top: 34px; left: 10px; width: 270px; padding: 6px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0,0,0,.18); z-index: 2">
+    <div class="mi" role="menuitem"><span>About watane</span><span></span></div>
+    <div style="height: 1px; background: var(--line); margin: 5px 6px"></div>
+    <div class="mi" role="menuitem" style="background: var(--accent); color: var(--accent-ink)"><span>Mods…</span><span style="color: var(--accent-ink)">⇧⌘M</span></div>
+    <div class="mi" role="menuitem"><span>Settings…</span><span>⌘,</span></div>
+    <div style="height: 1px; background: var(--line); margin: 5px 6px"></div>
+    <div class="mi" role="menuitem"><span>Quit watane</span><span>⌘Q</span></div>
+  </div>
+
+  <div style="position: absolute; top: 74px; left: 150px; width: 980px; height: 680px; border-radius: 12px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.22); display: flex; flex-direction: column">
+    <div style="height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel)">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #FF5F57"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #FEBC2E"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #28C840"></span>
+      <span style="flex: 1 1 auto; text-align: center; font-size: 13px; font-weight: 500; color: var(--muted); margin-right: 52px">Desk — Alice</span>
+    </div>
+
+    <div style="padding: 28px 32px; display: flex; flex-direction: column; gap: 22px">
+      <div style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em">Good morning</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <span class="cmd"><span class="mono" style="width: 20px; height: 20px; border-radius: 6px; font-size: 10px; background: #3355D6">R</span>Add a book</span>
+        <span class="cmd"><span class="mono" style="width: 20px; height: 20px; border-radius: 6px; font-size: 10px; background: #7C3AED">N</span>New note</span>
+        <span class="cmd"><span class="mono" style="width: 20px; height: 20px; border-radius: 6px; font-size: 10px; background: #7C3AED">N</span>Search notes</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+        <div style="height: 300px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); padding: 18px; box-sizing: border-box">
+          <div style="font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 14px">READING NOW</div>
+          <div style="height: 14px; width: 70%; background: var(--line); border-radius: 4px; margin-bottom: 10px"></div>
+          <div style="height: 14px; width: 55%; background: var(--line); border-radius: 4px; margin-bottom: 10px"></div>
+          <div style="height: 14px; width: 62%; background: var(--line); border-radius: 4px"></div>
+        </div>
+        <div style="height: 300px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); padding: 18px; box-sizing: border-box">
+          <div style="font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 14px">LATEST NOTES</div>
+          <div style="height: 14px; width: 80%; background: var(--line); border-radius: 4px; margin-bottom: 10px"></div>
+          <div style="height: 14px; width: 45%; background: var(--line); border-radius: 4px"></div>
+        </div>
+      </div>
+      <div style="font-size: 12px; color: var(--muted)">The commands come from Reading list and Notes: Desk collects them (step 9). Weather is off, so it adds none.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>
