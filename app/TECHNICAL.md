@@ -356,7 +356,8 @@ glyph). Find: `Install from a link` (link glyph). Updates: `Checked <ago>`
 (`#refresh-channels`, `channels_refresh`). While the refresh runs (from
 the click until `channels_refresh` returns), the button reads `Checking…`,
 is disabled and its glyph turns, and `#checked-at` (`role="status"`)
-reads `Reading <n> channels…` (`1 channel`); then `Checked just now`.
+reads `Reading <n> channels…` (`1 channel`; with no followed channel,
+`Checking…`); then `Checked just now`.
 
 **Dropping** (APP-F-79): while files are dragged over the main window,
 `#drop-target` covers the manager view: 10 px inset, a 2 px dashed
@@ -412,7 +413,9 @@ Library shows `#first-start` instead of the count, pills, grid and panel,
 and the header hides the filter, `Install a mod` and the Updates tab:
 the four-squares picture, `<h1>Install your first mod</h1>`, `watane is
 empty until you install mods. Each one asks before it gets anything.`, and
-three cards in a grid of `minmax(260px, 1fr)`, each with a 40 px accent
+three cards in a grid of `minmax(260px, 1fr)` (h1 30 px, the line under
+it 16 px; in this view buttons and fields are 40 px with radius 10, as the
+Empty board draws them), each with a 40 px accent
 icon, a heading, a line, and its control:
 
 | Card | Line | Control |
@@ -436,7 +439,8 @@ a `.btn.quiet` `✕` with `aria-label` `Dismiss`. It has no Open button: the
 details beside it hold the one primary. The note goes on `✕`, on selecting
 another tile, and on the next install. Of several new mods, the first is
 selected and the note names them all (`Book club and Notes are
-installed.`). Installs by a local program or a managing mod change
+installed.`, `Book club, Notes and Stats are installed.`) and has no
+`It adds to` line (S84: it would read as the selected mod's). Installs by a local program or a managing mod change
 nothing in the view (only the grid).
 
 #### 5.3.4 Details
@@ -474,7 +478,8 @@ entry; the panel is the details. In order:
    opens it when it starts, in place of the manager.`; when another mod is
    `Turn on to open it at start, in place of <that name>.`; else `Turn on
    to open it at start, in place of the manager.`
-5. The confirmation, inline in place of the actions (rule wins over the
+5. The confirmation, inline in place of the action buttons (the start row
+   stays, as the Main board draws it; rule wins over the
    old modal dialogs; APP-F-24 and APP-F-67 still hold):
    `div#confirm-panel[role=group]` on `--bg`, radius 14, with the title
    `Disable <name>?` or `Remove <name>?`; when there is anything to say,
@@ -564,7 +569,8 @@ The view is a column of at most 920 px, centred, padding 36 × 24, gap 22:
    words of APP-F-43 and the read mark of APP-F-44 (`read <ago>`, or
    `not read since <ago>`); and at the right `Install…` (primary,
    `button.install-release`), `Installed` (a link that selects it in
-   Library), or for a compromised result no button and, under the line,
+   Library; also when another version is installed, beside the `You have`
+   tag, as the Find board draws it: updates go through Updates), or for a compromised result no button and, under the line,
    `.blocked` in 13 px `--bad` on `--bad-bg`, radius 10: `Can't install:
    <publisher>'s channel no longer matches what it said before, so watane
    can't trust it. Ask <publisher> for the link to a new channel.`
