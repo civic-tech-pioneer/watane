@@ -24,6 +24,9 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.danger{color:var(--bad)}
+.btn.quiet{background:transparent;border-color:transparent}
+.btn.quiet:hover{background:var(--hover)}
+.toast{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px 12px 16px;margin-bottom:18px;border-radius:12px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.08);font-size:14px}
 .icon-btn{width:36px;padding:0;justify-content:center}
 .pill{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--line);background:transparent;color:var(--muted);font:500 13px Inter,system-ui,sans-serif;cursor:pointer}
 .pill.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
@@ -69,9 +72,9 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
     </div>
     <button class="btn primary" type="button">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-      Add mod
+      Install a mod
     </button>
-    <span title="Consent mark of this home" aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+    <span title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane." aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
       <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
@@ -81,6 +84,13 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
   <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start">
 
     <main style="flex: 999 1 560px; min-width: 0; padding: 28px 24px 40px; box-sizing: border-box">
+      <sc-if value="{{fresh}}" hint-placeholder-val="{{ false }}">
+        <div class="toast" role="status">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+          <span style="flex: 1 1 240px"><b style="font-weight: 600">Book club is installed.</b> <span style="color: var(--muted)">It adds to Desk.</span></span>
+          <button class="btn quiet" type="button" aria-label="Dismiss" onClick="{{dismiss}}">✕</button>
+        </div>
+      </sc-if>
       <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 18px">
         <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Library</h1>
         <span style="color: var(--muted); font-size: 14px">{{countText}}</span>
@@ -102,7 +112,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
               <span class="badge {{m.badgeCls}}" style="position: absolute; top: 16px; right: 16px">{{m.badge}}</span>
             </sc-if>
             <sc-if value="{{m.isMain}}" hint-placeholder-val="{{ false }}">
-              <span class="badge b-local" style="position: absolute; top: 16px; right: 16px">Main</span>
+              <span style="display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--accent)"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"></path></svg>Opens at start</span>
             </sc-if>
           </button>
         </sc-for>
@@ -146,17 +156,17 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
             <button class="btn primary" type="button" style="flex: 1 1 auto; justify-content: center">Open</button>
           </sc-if>
           <button class="btn" type="button" onClick="{{askToggle}}">{{sel.toggleLabel}}</button>
-          <button class="btn danger" type="button" onClick="{{askRemove}}">Remove</button>
+          <button class="btn danger quiet" type="button" onClick="{{askRemove}}" style="margin-left: auto">Remove</button>
         </div>
       </sc-if>
 
       <sc-if value="{{confirming}}" hint-placeholder-val="{{ false }}">
-        <div role="group" aria-label="{{confirmTitle}}" style="border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg)">
+        <div role="group" aria-label="{{confirmTitle}}" onKeyDown="{{confirmKey}}" style="border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg)">
           <div style="font-weight: 600; font-size: 15px">{{confirmTitle}}</div>
           <sc-if value="{{sel.hasUsers}}" hint-placeholder-val="{{ true }}">
             <div style="display: flex; gap: 8px; font-size: 14px; color: var(--warn); background: var(--warn-bg); padding: 10px 12px; border-radius: 10px">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
-              <span>{{sel.usersWarning}}</span>
+              <span style="display: flex; flex-direction: column; gap: 4px"><sc-for list="{{sel.warnings}}" as="w" hint-placeholder-count="1"><span>{{w}}</span></sc-for></span>
             </div>
           </sc-if>
           <sc-if value="{{confirmRemove}}" hint-placeholder-val="{{ false }}">
@@ -167,9 +177,19 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
             </fieldset>
           </sc-if>
           <div style="display: flex; gap: 8px; justify-content: flex-end">
-            <button class="btn" type="button" onClick="{{cancel}}">Cancel</button>
+            <button class="btn" type="button" autofocus="{{ true }}" onClick="{{cancel}}">Cancel</button>
             <button class="btn danger" type="button" onClick="{{confirm}}">{{confirmVerb}}</button>
           </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{sel.hasPage}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line)">
+          <span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px">
+            <span id="l-start" style="font-size: 14px; font-weight: 600">Opens at start</span>
+            <span style="font-size: 13px; color: var(--muted)">{{sel.startHint}}</span>
+          </span>
+          <button type="button" class="sw {{sel.mainCls}}" role="switch" aria-checked="{{sel.isMain}}" aria-labelledby="l-start" onClick="{{toggleMain}}"></button>
         </div>
       </sc-if>
 
@@ -220,12 +240,12 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"afterInstall":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
-      sel: 'reading-list', filter: 'all', q: '', confirm: null, keepData: true,
+      sel: null, main: 'desk', dismissed: false, filter: 'all', q: '', confirm: null, keepData: true,
       off: { weather: true },
       withdrawn: { 'weather/menu': true }
     };
@@ -235,13 +255,13 @@ class Component extends DCLogic {
       { id: 'desk', name: 'Desk', initial: 'D', color: '#475569', pub: 'Alice', fp: '(k7f3q9m2xa)', version: '1.4.0', main: true,
         summary: 'Your start page. It shows the commands and panels that your other mods add to it.',
         grants: [{ k: 'storage', glyph: '▤', text: 'Keep its own data on this device' }],
-        uses: [], adds: [], origin: 'its own source', pkg: '4be1 9c07 52fa … 0e3d' },
+        links: [], origin: 'its own source', pkg: '4be1 9c07 52fa … 0e3d' },
       { id: 'reading-list', name: 'Reading list', initial: 'R', color: '#3355D6', pub: 'Alice', fp: '(k7f3q9m2xa)', version: '0.3.1',
         summary: 'Keep the books you want to read, and mark the ones you finished.',
         grants: [
           { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
           { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
-        uses: [], adds: ['desk'], notice: 'Version 0.4.0 asks to connect to openlibrary.org.', noticeAction: 'Review', noticeKind: 'update',
+        links: [['subscribe', 'desk', 'menu']], notice: 'Version 0.4.0 asks to connect to openlibrary.org.', noticeAction: 'Review', noticeKind: 'update',
         origin: 'its own source', pkg: '0866 e9df 4332 … f87b' },
       { id: 'recommendations', name: 'Recommendations', initial: 'R', color: '#0F766E', pub: null, version: '0.1.0',
         summary: 'Suggests your next book from the ones you finished.',
@@ -249,26 +269,32 @@ class Component extends DCLogic {
           { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
           { k: 'books', glyph: '→', text: 'Call books of Reading list by Alice' },
           { k: 'events', glyph: '⇄', text: 'Receive the events of Reading list by Alice' }],
-        uses: ['reading-list'], adds: [], origin: 'Reading list 0.3.1 by Alice', pkg: 'local build' },
+        links: [['call', 'reading-list', 'books'], ['subscribe', 'reading-list', 'events']], origin: 'Reading list 0.3.1 by Alice', pkg: 'local build' },
       { id: 'notes', name: 'Notes', initial: 'N', color: '#7C3AED', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '1.2.0',
         summary: 'Short notes, tagged and searchable.',
         grants: [
           { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
           { k: 'tags', glyph: '→', text: 'Call api of Tags by Ivy' },
           { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
-        uses: ['tags'], adds: ['desk'], origin: 'its own source', pkg: '9a10 33cd e871 … 44b2' },
+        links: [['call', 'tags', 'tags'], ['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: '9a10 33cd e871 … 44b2' },
       { id: 'weather', name: 'Weather', initial: 'W', color: '#C2410C', pub: 'Bob', fp: '(q8d1zr4nyo)', version: '0.2.0',
         summary: 'The forecast for the places you choose.',
         grants: [
           { k: 'http', glyph: '◎', text: 'Connect to api.open-meteo.com' },
           { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
-        uses: [], adds: ['desk'], origin: 'its own source', pkg: 'c3f2 0b19 aa64 … 7e01' },
+        links: [['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: 'c3f2 0b19 aa64 … 7e01' },
       { id: 'tags', name: 'Tags', initial: 'T', color: '#B45309', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '1.0.2',
         summary: 'Tags that other mods can share.',
         grants: [{ k: 'storage', glyph: '▤', text: 'Keep its own data on this device' }],
-        uses: [], adds: [], notice: 'Withdrawn by the publisher: loses tags on rename.', noticeAction: 'Install 1.1.0', noticeKind: 'problem',
+        links: [], page: false, notice: 'Withdrawn by the publisher: loses tags on rename.', noticeAction: 'Install 1.1.0', noticeKind: 'problem',
         origin: 'its own source', pkg: '17bd 8e02 cc95 … 3a6f' }
-    ];
+    ].concat(this.props.afterInstall ? [
+      { id: 'book-club', name: 'Book club', initial: 'B', color: '#0E7490', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '0.2.0',
+        summary: 'Read along with friends: shared shelves and a weekly pick.',
+        grants: [
+          { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
+          { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
+        links: [['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: '5d21 07ae 9b3c … 61f0' }] : []);
   }
   renderVals() {
     const s = this.state;
@@ -277,8 +303,13 @@ class Component extends DCLogic {
     all.forEach((m) => { byId[m.id] = m; });
     const pick = (id) => () => this.setState({ sel: id, confirm: null, keepData: true });
     const ref = (id) => ({ name: byId[id].name, initial: byId[id].initial, color: byId[id].color, pick: pick(id) });
+    // Only granted links count (APP-F-66); warnings count only enabled mods (APP-F-67).
+    const granted = (m, kind) => m.links.filter((l) => l[0] === kind && !s.withdrawn[m.id + '/' + l[2]]).map((l) => l[1]);
+    const uniq = (xs) => xs.filter((x, i) => xs.indexOf(x) === i);
+    all.forEach((m) => { m.uses = uniq(granted(m, 'call')); m.adds = uniq(granted(m, 'subscribe')); m.main = s.main === m.id; });
     const usedBy = (id) => all.filter((m) => m.uses.indexOf(id) >= 0).map((m) => m.id);
     const extBy = (id) => all.filter((m) => m.adds.indexOf(id) >= 0).map((m) => m.id);
+    const enabled = (id) => !s.off[id];
     const q = s.q.trim().toLowerCase();
 
     const tiles = all.map((m) => {
@@ -291,22 +322,33 @@ class Component extends DCLogic {
       return {
         id: m.id, name: m.name, initial: m.initial, color: m.color, version: m.version,
         pubShort: m.pub || 'local', local: !m.pub,
-        hasBadge: !!badge, badge, badgeCls, isMain: !!m.main && !badge,
+        hasBadge: !!badge, badge, badgeCls, isMain: m.main,
+        rank: m.main ? 0 : m.noticeKind === 'problem' ? 1 : m.noticeKind === 'update' ? 2 : 3,
         selected, cls: (selected ? 'sel ' : '') + (on ? '' : 'dim'), pick: pick(m.id)
       };
     });
+    // Order: the main mod, then mods that need you, then A–Z (serial position).
+    tiles.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
     const shown = tiles.filter((t) =>
       (s.filter === 'all' || (s.filter === 'local') === t.local) &&
       (!q || t.name.toLowerCase().indexOf(q) >= 0 || t.pubShort.toLowerCase().indexOf(q) >= 0));
 
-    const m = byId[s.sel];
+    const fresh = !!this.props.afterInstall && !s.dismissed;
+    const m = byId[s.sel] || byId[fresh ? 'book-club' : 'reading-list'];
     const on = !s.off[m.id];
-    const users = usedBy(m.id).concat(extBy(m.id)).map((id) => byId[id].name);
+    const callers = usedBy(m.id).filter(enabled).map((id) => byId[id].name);
+    const subs = extBy(m.id).filter(enabled).map((id) => byId[id].name);
+    const remove = s.confirm === 'remove';
+    const warnings = [];
+    if (callers.length) warnings.push('These mods use it: ' + callers.join(', ') + '.');
+    if (subs.length) warnings.push('These mods extend it: ' + subs.join(', ') + '.');
+    if (m.main) warnings.push(remove ? 'No mod will open at start.' : 'Until you enable it, the manager opens at start.');
+    const mainMod = byId[s.main];
     const rels = [];
-    if (m.uses.length) rels.push({ label: 'Uses', hint: 'it calls', items: m.uses.map(ref) });
-    if (m.adds.length) rels.push({ label: 'Adds to', hint: 'it answers', items: m.adds.map(ref) });
-    if (usedBy(m.id).length) rels.push({ label: 'Used by', hint: 'they call it', items: usedBy(m.id).map(ref) });
-    if (extBy(m.id).length) rels.push({ label: 'Extended by', hint: 'they answer it', items: extBy(m.id).map(ref) });
+    if (m.uses.length) rels.push({ label: 'Uses', hint: 'it needs them', items: m.uses.map(ref) });
+    if (m.adds.length) rels.push({ label: 'Adds to', hint: 'it puts things in them', items: m.adds.map(ref) });
+    if (usedBy(m.id).length) rels.push({ label: 'Used by', hint: 'they need it', items: usedBy(m.id).map(ref) });
+    if (extBy(m.id).length) rels.push({ label: 'Extended by', hint: 'they put things in it', items: extBy(m.id).map(ref) });
 
     const grants = m.grants.map((g) => {
       const key = m.id + '/' + g.k;
@@ -325,12 +367,14 @@ class Component extends DCLogic {
       hasNotice: !!m.notice, notice: m.notice, noticeAction: m.noticeAction,
       noticeBg: problem ? 'var(--bad-bg)' : 'var(--accent-weak)', noticeInk: problem ? 'var(--bad)' : 'var(--accent)',
       grants, rels, noRels: rels.length === 0,
-      hasUsers: users.length > 0,
-      usersWarning: users.join(' and ') + (users.length > 1 ? ' use it and stop working' : ' uses it and stops working') + ' until it is back.',
+      hasUsers: warnings.length > 0, warnings,
+      hasPage: m.page !== false, isMain: m.main, mainCls: m.main ? 'on' : '',
+      startHint: m.main ? 'watane opens it when it starts, in place of the manager.'
+        : mainMod ? 'Turn on to open it at start, in place of ' + mainMod.name + '.'
+        : 'Turn on to open it at start, in place of the manager.',
       origin: m.origin, pageOrigin: 'http://' + m.id + '.localhost:4717', pkg: m.pkg
     };
     const confirming = !!s.confirm;
-    const remove = s.confirm === 'remove';
     return {
       themeClass: this.props.dark ? 'dark' : '',
       q: s.q,
@@ -340,15 +384,18 @@ class Component extends DCLogic {
       })),
       shown, noneShown: shown.length === 0,
       countText: all.length + ' mods',
-      sel,
+      sel, fresh,
+      dismiss: () => this.setState({ dismissed: true }),
+      toggleMain: () => this.setState({ main: m.main ? null : m.id }),
+      confirmKey: (e) => { if (e.key === 'Escape') this.setState({ confirm: null }); },
       noConfirm: !confirming, confirming, confirmRemove: remove,
-      confirmTitle: remove ? 'Remove ' + m.name + '?' : 'Turn ' + m.name + ' off?',
-      confirmVerb: remove ? 'Remove' : 'Turn off',
+      confirmTitle: (remove ? 'Remove ' : 'Disable ') + m.name + '?',
+      confirmVerb: remove ? (s.keepData ? 'Remove' : 'Remove and delete data') : 'Disable',
       keepData: s.keepData, dropData: !s.keepData,
       pickKeep: () => this.setState({ keepData: true }),
       pickDrop: () => this.setState({ keepData: false }),
       askToggle: () => {
-        if (on && users.length) this.setState({ confirm: 'disable' });
+        if (on && warnings.length) this.setState({ confirm: 'disable' });
         else this.setState({ off: Object.assign({}, s.off, { [m.id]: on }) });
       },
       askRemove: () => this.setState({ confirm: 'remove', keepData: true }),

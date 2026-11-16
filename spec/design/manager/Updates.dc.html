@@ -26,6 +26,7 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
 .mono{display:inline-flex;align-items:center;justify-content:center;color:#FFFFFF;font-weight:600;flex-shrink:0}
 .label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0}
 .card{display:flex;flex-wrap:wrap;align-items:center;gap:14px 16px;padding:16px 18px;border-radius:14px;border:1px solid var(--line);background:var(--panel)}
+@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .9s linear infinite}
 .newgrant{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:7px;background:var(--warn-bg);color:var(--warn);font-size:13px;font-weight:500}
 </style>
 </helmet>
@@ -42,12 +43,12 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
       <a class="tab on" href="Updates.dc.html" aria-current="page">Updates <span class="count">2</span></a>
     </nav>
     <div style="flex: 1 1 0"></div>
-    <span style="font-size: 13px; color: var(--muted)">Checked 3 min ago</span>
-    <button class="btn" type="button">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg>
-      Check now
+    <span role="status" style="font-size: 13px; color: var(--muted)">{{checkedText}}</span>
+    <button class="btn" type="button" onClick="{{check}}" disabled="{{checking}}" style="opacity: {{checkOpacity}}">
+      <svg class="{{spinCls}}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg>
+      {{checkLabel}}
     </button>
-    <span aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+    <span title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane." aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
       <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
@@ -71,6 +72,7 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
               Connect to openlibrary.org
             </span>
           </div>
+          <div style="font-size: 12px; color: var(--muted)">Not now keeps 0.3.1 and hides this until the offer changes or watane restarts.</div>
         </div>
         <div style="display: flex; gap: 8px">
           <button class="btn" type="button">Not now</button>
@@ -96,8 +98,9 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
         </span>
         <div style="flex: 999 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 4px">
-          <div style="font-size: 15px; font-weight: 600">Could not read Bob's channel</div>
-          <div style="font-size: 13px; color: var(--muted)">connection refused · last read 2 days ago · Weather comes from it</div>
+          <div style="font-size: 15px; font-weight: 600">Couldn't read Bob's channel</div>
+          <div style="font-size: 13px; color: var(--muted)">Weather comes from it, so its updates wait. watane tries again at the next check. Last read 2 days ago.</div>
+          <div style="font-size: 12px; color: var(--muted)">Cause: connection refused</div>
         </div>
         <button class="btn" type="button">Try again</button>
       </div>
@@ -124,8 +127,19 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":820}}'>
 class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { checking: false, checked: '3 min ago' }; }
   renderVals() {
-    return { themeClass: this.props.dark ? 'dark' : '' };
+    const s = this.state;
+    return {
+      themeClass: this.props.dark ? 'dark' : '',
+      checking: s.checking, checkOpacity: s.checking ? 0.7 : 1, spinCls: s.checking ? 'spin' : '',
+      checkLabel: s.checking ? 'Checking…' : 'Check now',
+      checkedText: s.checking ? 'Reading 3 channels…' : 'Checked ' + s.checked,
+      check: () => {
+        this.setState({ checking: true });
+        setTimeout(() => this.setState({ checking: false, checked: 'just now' }), 1600);
+      }
+    };
   }
 }
 </script>

@@ -314,7 +314,8 @@ its layout is not part of this slice.
   with radius 15 px; tiles and cards radius 14 px; badges 22 px with
   radius 6 px, 12 px weight 600.
 - Buttons: `.btn` (`--panel`, `--line` border), `.btn.primary`
-  (`--accent`, `--accent-ink`), `.btn.danger` (text `--bad`). Focus:
+  (`--accent`, `--accent-ink`), `.btn.danger` (text `--bad`), `.btn.quiet` (no fill and no border
+  until hover, then `--hover`). Focus:
   2 px `--accent` outline, offset 2 px, on every control.
 - **Monogram**: a square with the first letter of the mod's name in upper
   case, white, weight 600, on one of eight colours `#475569`, `#3355D6`,
@@ -328,7 +329,11 @@ its layout is not part of this slice.
 - **Mark** (rule wins): the boards draw the consent mark as three coloured
   shapes; the mark is the two words of 6.4, because the consent view must
   show the same mark. In the header it is the two words in a 1 px `--line`
-  box with radius 9, `aria-label` `Consent mark of this home`.
+  box with radius 9, `aria-label` `Consent mark of this home` and the
+  `title` `Your consent mark. The consent view always shows it; a page
+  that asks for consent without it is not watane.`
+- Motion: a glyph that turns while work runs stops under
+  `prefers-reduced-motion: reduce`; the words carry the state either way.
 
 #### 5.3.2 Header
 
@@ -344,12 +349,25 @@ has `aria-current="page"`, `--panel` and a 1 px `--line` ring. The link row
 the header as a `--bad-bg` band, hidden when empty.
 
 View controls: Library: the filter `#library-filter` (240 px, a search
-glyph, placeholder `Filter your mods`) and `Add mod` (primary, plus
+glyph, placeholder `Filter your mods`) and `Install a mod` (primary, plus
 glyph). Find: `Install from a link` (link glyph). Updates: `Checked <ago>`
 (`#checked-at`, from `Status.checkedAt`) and `Check now`
-(`#refresh-channels`, `channels_refresh`).
+(`#refresh-channels`, `channels_refresh`). While the refresh runs (from
+the click until `channels_refresh` returns), the button reads `Checking…`,
+is disabled and its glyph turns, and `#checked-at` (`role="status"`)
+reads `Reading <n> channels…` (`1 channel`); then `Checked just now`.
 
-`Add mod` and `Install from a link` open one popover `#add-menu` under
+**Dropping** (APP-F-79): while files are dragged over the main window,
+`#drop-target` covers the manager view: 10 px inset, a 2 px dashed
+`--accent` border, radius 18, `--bg` at 85 %, centred a 56 px accent icon
+with a down arrow, `Drop to install` (20 px, 700) and `watane reads the
+mod in this folder and asks before it gets anything.` Tauri's drag-drop
+handler stays in Rust (5.3): on `Enter` it evaluates
+`document.body.classList.add('dropping')` in `main`, on `Leave` and
+`Drop` `remove('dropping')`; constant scripts only, no path reaches the
+page this way. Settings shows no drop target.
+
+`Install a mod` and `Install from a link` open one popover `#add-menu` under
 the button: a link field `#install-link` (placeholder `Paste the link`)
 with `Continue` (`#install-from-link`, primary, `install_link`), and
 `Choose a folder` (`#install`, `install_folders`) with the line `Or drop
@@ -365,18 +383,22 @@ one is `--ink` on `--bg`). They replace `#library-source`. The filter of
 APP-F-68 combines the words of `#library-filter` with the pill.
 
 `#launcher` is a grid, `repeat(auto-fill, minmax(196px, 1fr))`, gap 14 px,
-of one tile per shown mod in `mods_list` order: a `button.tile` with
+of one tile per shown mod, in the order of APP-F-68: the main mod, then
+Problem, then Update, then the rest by name (`localeCompare`, case
+ignored): a `button.tile` with
 `data-tile="<local>"` and `aria-pressed` (selected), min height 150 px,
 padding 18, holding the monogram, the name and `<publisher name, else
-fingerprint, or local> · <version>`. At the top right one badge, the first
-that applies:
+fingerprint, or local> · <version>`; for the main mod, under that,
+`span.main-mark`: a play glyph and `Opens at start` (12 px, 600,
+`--accent`). At the top right one badge, the first that applies:
 
 | Badge | Class | When |
 |---|---|---|
 | `Off` | `b-off` | not `enabled`; the monogram is dimmed to .45 |
 | `Problem` | `b-problem` | `error` is set, or `notice` is a withdrawal, a compromised channel, a failed update or a channel that could not be read (9.5) |
 | `Update` | `b-update` | `offer` is set |
-| `Main` | `b-local` | `main` |
+
+The main mark is not a badge, so a main mod with a badge shows both.
 
 The selected tile has an `--accent` border and a 3 px `--accent-weak`
 halo. Clicking a tile selects it; arrow keys move between tiles. On
@@ -386,9 +408,9 @@ matches. Look in Find` (the link goes to `#find`), and the panel is empty.
 
 **First start** (the Empty board): when no mod is installed, the
 Library shows `#first-start` instead of the count, pills, grid and panel,
-and the header hides the filter, `Add mod` and the Updates tab:
-the four-squares picture, `<h1>Add your first mod</h1>`, `watane is
-empty until you add mods. Each one asks before it gets anything.`, and
+and the header hides the filter, `Install a mod` and the Updates tab:
+the four-squares picture, `<h1>Install your first mod</h1>`, `watane is
+empty until you install mods. Each one asks before it gets anything.`, and
 three cards in a grid of `minmax(260px, 1fr)`, each with a 40 px accent
 icon, a heading, a line, and its control:
 
@@ -400,6 +422,21 @@ icon, a heading, a line, and its control:
 
 The window keeps its drop handler in this view. The Updates tab comes back
 once a mod is installed or any Updates list is not empty.
+
+**After an install** (APP-F-78, the Installed board): when
+`install_link`, `install_folders`, `install_paths` or `install_release`,
+called from this window, returns with a mod that is new, the view
+switches to Library, clears the filter, selects that mod, and shows
+`#installed-note` (`role="status"`) above the grid: a `.toast` (`--panel`,
+1 px `--line` border, radius 12, a soft shadow) with a `--ok` check glyph,
+`<name> is installed.` (600) and, in `--muted`, ` It adds to <A>.` or
+` It adds to <A> and <B>.` when it has `Adds to` connections; at the right
+a `.btn.quiet` `✕` with `aria-label` `Dismiss`. It has no Open button: the
+details beside it hold the one primary. The note goes on `✕`, on selecting
+another tile, and on the next install. Of several new mods, the first is
+selected and the note names them all (`Book club and Notes are
+installed.`). Installs by a local program or a managing mod change
+nothing in the view (only the grid).
 
 #### 5.3.4 Details
 
@@ -425,22 +462,34 @@ entry; the panel is the details. In order:
    the Updates card carry).
 4. The actions: `Open` (`button.open`, primary, the row's widest; only
    when enabled with a page), `Disable` or `Enable` (`button.disable`,
-   `button.enable`), `Remove` (`button.remove`, danger), and `Make main` or
-   `Unset main` (`button.main-set`, only with a page; rule wins: APP-F-63
-   needs it, the board leaves it out).
+   `button.enable`), and `Remove` (`button.remove`, `.btn.danger.quiet`,
+   last, pushed to the right end).
+   Then, only for a mod with a page, the start row `div.start-row`
+   (1 px `--line` border, radius 12, padding 12 × 14): `Opens at start`
+   (`#start-label-<local>`, 14 px, 600), a hint in 13 px `--muted`, and a
+   switch `button.sw.main-set` (`role="switch"`, `aria-checked`,
+   `aria-labelledby` the label) that calls `main_set` with the local name,
+   or with `null` when it is on. The hint: when it is the main mod `watane
+   opens it when it starts, in place of the manager.`; when another mod is
+   `Turn on to open it at start, in place of <that name>.`; else `Turn on
+   to open it at start, in place of the manager.`
 5. The confirmation, inline in place of the actions (rule wins over the
    old modal dialogs; APP-F-24 and APP-F-67 still hold):
    `div#confirm-panel[role=group]` on `--bg`, radius 14, with the title
-   `Turn <name> off?` or `Remove <name>?`; when enabled mods use it
-   (`dependents`), `#dependency-warning` in `--warn` on `--warn-bg` with
-   the warning glyph: `<A> uses it and stops working until it is back.`
-   or `<A> and <B> use it and stop working until it is back.` (mod names;
-   the local names in `data-locals`); for a removal the radios `Keep its
-   data` (`#keep-data`, checked) and `Delete its data` (`#delete-data`)
-   under `Its data on this device`; then `Cancel` (`#confirm-cancel`,
-   focused when the panel opens; Escape too) and `Turn off` or `Remove`
-   (`#confirm-continue`, danger). Disabling a mod that nothing uses asks
-   nothing, as before; Remove always opens the panel. The ids
+   `Disable <name>?` or `Remove <name>?`; when there is anything to say,
+   `#dependency-warning` in `--warn` on `--warn-bg` with the warning
+   glyph and one line each, in this order (APP-F-67): `These mods use it:
+   <names>.` (enabled callers), `These mods extend it: <names>.` (enabled
+   subscribers), and for the main mod `Until you enable it, the manager
+   opens at start.` (disable) or `No mod will open at start.` (remove);
+   names are mod names, joined by `, `, the local names in `data-locals`;
+   for a removal the radios `Keep its data` (`#keep-data`, checked) and
+   `Delete its data` (`#delete-data`) under `Its data on this device`;
+   then `Cancel` (`#confirm-cancel`, focused when the panel opens; Escape
+   too) and `Disable`, `Remove` or, with `#delete-data` checked, `Remove
+   and delete data` (`#confirm-continue`, danger). Disabling a mod that no
+   enabled mod uses or extends and that is not the main mod asks nothing,
+   as before; Remove always opens the panel. The ids
    `#dependency-dialog`, `#dependency-cancel`, `#dependency-continue` and
    `#remove-dialog` are gone.
 6. `What it may do` (label): one row per grant, `[data-key=<key>]`: a
@@ -454,7 +503,8 @@ entry; the panel is the details. In order:
 7. `Connections` (label), from `ModView.links` as below: one row per
    non-empty group, `[data-rel=uses|adds-to|used-by|extended-by]`, with
    the label `Uses`, `Adds to`, `Used by`, `Extended by` and under it the
-   hint `it calls`, `it answers`, `they call it`, `they answer it`; then
+   hint `it needs them`, `it puts things in them`, `they need it`, `they
+   put things in it`; then
    one `button.chip[data-target=<local>]` per mod: its 24 px monogram and
    its name. A chip selects that mod and moves the focus to its `h2`.
    With no group: `Works on its own: it uses no mod and no mod uses it.`
@@ -513,7 +563,11 @@ The view is a column of at most 920 px, centred, padding 36 × 24, gap 22:
    words of APP-F-43 and the read mark of APP-F-44 (`read <ago>`, or
    `not read since <ago>`); and at the right `Install…` (primary,
    `button.install-release`), `Installed` (a link that selects it in
-   Library), or a disabled `Can't install` (compromised). The board's
+   Library), or for a compromised result no button and, under the line,
+   `.blocked` in 13 px `--bad` on `--bad-bg`, radius 10: `Can't install:
+   <publisher>'s channel no longer matches what it said before, so watane
+   can't trust it. Ask <publisher> for the link to a new channel.`
+   (APP-F-44; the fingerprint stands in for a missing name). The board's
    line `Adds commands to <main>, which you use as your main mod` is not
    built: `ModView` does not carry the main mod's interfaces (later).
 5. `Install opens the plan in the consent view. Nothing installs from
@@ -537,8 +591,10 @@ sections with a label each, in the order of APP-F-69:
    - a new grant: the 44 px monogram; `<name>` and `<installed> →
      <offer version>` in `--muted`; `Asks for something new:` and one chip
      per `offerGrants` line (glyph and `short`, `--warn` on `--warn-bg`);
-     `Not now` (`button.not-now`) and `Review…` (primary, the offer button
-     of 9.5: `release_install`, which opens the consent view);
+     under them, 12 px `--muted`, `Not now keeps <installed> and hides
+     this until the offer changes or watane restarts.`; `Not now`
+     (`button.not-now`) and `Review…` (primary, the offer button of 9.5:
+     `release_install`, which opens the consent view);
    - a withdrawal: a `--bad` border; `<name> <version>`; the notice in
      `--bad`; in `--muted`, `<A> uses it.` / `<A> and <B> use it.` when
      `dependents` is not empty, and `<version> is the newest version that
@@ -550,11 +606,13 @@ sections with a label each, in the order of APP-F-69:
    (page memory only; nothing is stored) and lowers `#updates-count`; the
    tile keeps its badge. With no card: `Nothing needs you.`
 2. `Channels` (`#update-channels`): one card per failed channel: the
-   warning glyph on `--warn-bg`; `Could not read <name, else
-   fingerprint>`; in `--muted` the whole cause (APP-F-37; rule wins over
-   the board's short `connection refused`), `last read <ago>` when
-   `ChannelRow.readAt` is set, and `<A> comes from it` / `<A> and <B> come
-   from it` for installed mods of that publisher; `Try again`
+   warning glyph on `--warn-bg`; `Couldn't read <name>'s channel`
+   (`Couldn't read channel <fingerprint>` without a name); in `--muted`
+   one line: `<A> comes from it, so its updates wait.` / `<A> and <B> come
+   from it, so their updates wait.` for installed mods of that publisher,
+   then `watane tries again at the next check.`, then `Last read <ago>.`
+   when `ChannelRow.readAt` is set; under it, 12 px `--muted`, `Cause:
+   <cause>` with the whole cause (APP-F-37); `Try again`
    (`channels_refresh`). Hidden when empty.
 3. `Updated by itself` (`#update-done`): `These asked for nothing new, so
    they installed without a question.`, then one row per `updates_done`
@@ -599,14 +657,9 @@ against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
 disabling or removing; Cancel is focused and Escape cancels.
 
-Built by S81, in the layout before 5.3.1 to 5.3.7 (S84 carries these facts
-into that design): only the main mod's library entry has a `.main-mark`
-reading `Opens at start`; a connection link opens the target's details and
-moves keyboard focus to its heading control; the dependency warning reads
-`Disable <name>?` or `Remove <name>?`, then `These mods use it: <locals>.`
-for enabled callers and `These mods extend it: <locals>.` for enabled
-subscribers (granted links only; an empty sentence is omitted; uses first),
-so a mod that only extends it is never called a user.
+S81 built `.main-mark`, the focus move of a connection and the two warning
+sentences in the layout before 5.3.1; 5.3.3 and 5.3.4 now hold them, with
+mod names in place of local names in the sentences.
 
 ### 5.4 Menu and the main mod (stage I)
 
@@ -1716,9 +1769,9 @@ real approval gate. No production security check changes.
 | `words::tests` (K, W37) | `grant_short` of each grant kind: `Call books of Reading list by Alice`, `Receive the events of Reading list (local)` (interface `events`), a bound provider, `you`, a provider not installed (slug); storage, http and manage equal `text` | literal strings |
 | `ui/words.js` in `gui_shell` (K) | `ago(ms, now)`: 30 s `just now`, 3 min `3 min ago`, 2 h `2 h ago`, 1 day, 2 days; `when(ms, now)`: same day `today, HH:MM`, the day before `yesterday`, else the date; the count words `1 mod`, `6 mods`, `1 mod found`, `No mods found` | literal strings; fixed `now` |
 | `tests/static_style.rs` (K) | `ui/style.css` defines every token of 5.3.1 on `:root` with the light value and again inside `@media (prefers-color-scheme: dark)` with the dark value; it names no URL other than `'self'`-relative ones and no `@import` or `@font-face` of another origin; `.mono-0` to `.mono-7` carry the eight colours in order; no `style=` attribute in `ui/*.html` | the table of 5.3.1 as literals in the test; a text parse of the CSS |
-| `tests/look.rs` (K, W37) | S49; quiet window tests with fake catalogs (stage A style, `WATANE_APP_FAKE`) and the real fixtures: (1) Library: one `button.tile[data-tile]` per mod in `mods_list` order with monogram, name and `<publisher> · <version>`; the badge table of 5.3.3 for a disabled, a withdrawn, an offered and the main mod, one badge each, in that priority; the count; the pills filter with the words; `No mod matches. Look in Find`; (2) details: one `section.mod-details[data-local]` each, only the selected one visible; a tile click selects; the order of 5.3.4; `Open` is the only primary; the grant switch's class, `aria-checked` and `title` (the full text) and a click that withdraws then gives back; the connection rows and chips, a chip selecting its mod and focusing its `h2`; `Technical details` closed with its five labels; (3) the inline confirm: disable with a dependent shows `#confirm-panel` with the warning naming it and focus on `#confirm-cancel`; Escape closes it with both mods enabled; remove shows `#keep-data` checked and `Cancel` focused; disabling a mod nothing uses opens no panel; (4) first start: an empty home shows `#first-start` with its three cards and words, no filter, no `Add mod`, no Updates tab; a folder installed through `#first-folder`'s command leaves it; (5) Find: one `#search-text`; `book ivy` with a chosen index named Ivy calls `search` with Ivy's key as `publisher` and `book` as `text`; an interface word goes to `interface`; index chips with counts and `×`; the count line; `Install…`, `Installed`, `Can't install` and `You have <version>`; the channels section present; (6) Updates: the three labels in order; an offer card's grant chips, `Not now` hiding it and lowering `#updates-count`, `Review…` opening the consent view; a withdrawal card's dependents and newest-version line; a failed channel card with its whole cause and `Try again`; `Checked <ago>` and `Check now`; (7) the header: no `Mods \| Settings` row; the popover's `#install-link`, `#install-from-link` and `#install`; the mark's two words | the DOM through the driver's `eval`; the driver's command log (which command, which arguments); the 5.3 words as literals; `getComputedStyle` only for `hidden`/`display` and the selected tile's border colour against `--accent` |
+| `tests/look.rs` (K, W37) | S49, S52, S53; quiet window tests with fake catalogs (stage A style, `WATANE_APP_FAKE`) and the real fixtures: (1) Library: one `button.tile[data-tile]` per mod in the order of 5.3.3 (main, Problem, Update, by name) with monogram, name and `<publisher> · <version>`; the badge table of 5.3.3 for a disabled, a withdrawn and an offered mod, one badge each, in that priority, and the main mod's `.main-mark` `Opens at start` beside its badge; the count; the pills filter with the words; `No mod matches. Look in Find`; (2) details: one `section.mod-details[data-local]` each, only the selected one visible; a tile click selects; the order of 5.3.4; `Open` is the only primary and `Remove` is last with `.quiet`; the start row only for a mod with a page, its three hints, and its switch calling `main_set` with the local name or `null`; the grant switch's class, `aria-checked` and `title` (the full text) and a click that withdraws then gives back; the connection rows and chips, a chip selecting its mod and focusing its `h2`; `Technical details` closed with its five labels; (3) the inline confirm: disable with a dependent shows `#confirm-panel` with the warning naming it and focus on `#confirm-cancel`; Escape closes it with both mods enabled; remove shows `#keep-data` checked and `Cancel` focused; the title `Disable <name>?` and the use and extend lines with mod names; disabling the main mod with nothing using it opens the panel with `Until you enable it, the manager opens at start.`; `#delete-data` turns `#confirm-continue` into `Remove and delete data`; disabling a mod nothing uses opens no panel; (4) first start: an empty home shows `#first-start` with `Install your first mod`, its three cards and words, no filter, no `Install a mod`, no Updates tab; a folder installed through `#first-folder`'s command leaves it; (5) Find: one `#search-text`; `book ivy` with a chosen index named Ivy calls `search` with Ivy's key as `publisher` and `book` as `text`; an interface word goes to `interface`; index chips with counts and `×`; the count line; `Install…`, `Installed`, a compromised result's `.blocked` words with no button, and `You have <version>`; the channels section present; (6) Updates: the three labels in order; an offer card's grant chips and its `Not now keeps …` line, `Not now` hiding it and lowering `#updates-count`, `Review…` opening the consent view; a withdrawal card's dependents and newest-version line; a failed channel card with `Couldn't read <name>'s channel`, its line, `Cause: <cause>` and `Try again`; `Checked <ago>` and `Check now`, which reads `Checking…` and is disabled until `channels_refresh` returns, with `Reading <n> channels…` meanwhile; (7) the header: no `Mods \| Settings` row; the popover's `#install-link`, `#install-from-link` and `#install`; the mark's two words and its `title`; (8) after `install_release` from Find returns a new mod: Library shown, the filter cleared, that mod selected, `#installed-note` with `<name> is installed.`, and `✕`, another tile or the next install removing it; an install over `POST /api/install` leaves the selection and shows no note; (9) the drag-drop handler's two constant scripts, run through the driver's `eval`, show and hide `#drop-target` with its words | the DOM through the driver's `eval`; the driver's command log (which command, which arguments); the 5.3 words as literals; `getComputedStyle` only for `hidden`/`display` and the selected tile's border colour against `--accent` |
 | `tests/look.rs` dark (K) | S50: the main window under a dark appearance: `getComputedStyle(document.body).backgroundColor` is `rgb(17, 17, 19)` and a tile's is `rgb(25, 25, 28)`; light gives `rgb(246, 246, 244)` and `rgb(255, 255, 255)` | the driver op `theme` (section 10), no system change; if the platform gives no dark appearance the test fails, not skips, and `NOTES.md` records it |
-| `tests/manager.rs` (K, W37) | S51: `watane-dev install` of `desk` (`main = true`) into a running app with no main, approved in the consent view (which shows the start-window line), writes `<home>/app/main` = `desk\n`, and a restart opens `mod-desk` only; an update of `desk` after `Unset main` leaves the file absent; S39 (W37): the app submenu's items and separators in the order of 5.4, and the `Edit` and `Window` submenus | `<home>/app/main` with `std::fs`; the consent DOM text; the driver's `windows`; the driver op `menu_items` |
+| `tests/manager.rs` (K, W37) | S51: `watane-dev install` of `desk` (`main = true`) into a running app with no main, approved in the consent view (which shows the start-window line), writes `<home>/app/main` = `desk\n`, and a restart opens `mod-desk` only; an update of `desk` after the start switch is turned off leaves the file absent; S39 (W37): the app submenu's items and separators in the order of 5.4, and the `Edit` and `Window` submenus | `<home>/app/main` with `std::fs`; the consent DOM text; the driver's `windows`; the driver op `menu_items` |
 | Changed window tests (K) | selectors only, same facts: `[data-local=X] details` → `[data-local=X]` (the panel section) in `manager.rs`, `build_on.rs`, `manage.rs`, and `.open = true` → a click on `[data-tile=X]`; `#dependency-dialog`/`-cancel`/`-continue` and `#remove-dialog` → `#confirm-panel`, `#confirm-cancel`, `#confirm-continue` in `j2.rs` and `manager.rs` (`.open` → `!hidden`; j2's removal now checks the radios and that `#confirm-cancel` has the focus, where it checked two buttons and `#keep-data` focused: Keep is still the default, now as the checked radio); `'Disabled'` in `j2.rs` → the `Off` badge; S40's `Uses: reading-list` → the `uses` row holding the chip `[data-target=reading-list]` named `Reading list`; `build_on.rs`'s `Made from …` → the `Made from` value of `Technical details`; `tests/support`'s `#refresh-find` → `#refresh-channels` | as before |
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
@@ -1773,7 +1826,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | G Own machines (step 8) | 9.8; 3 (`Node::open`); 6.2 `Join`, `Reach`; the stage G commands; the router on `node` (8); `HitView.from`; the replica identity view; `tests/machines.rs`, `tests/j8.rs` | node stages 2 and 3 (and through them net N4, dist S8, log L6) | none: the `Join` and `Reach` views are tested in stage A through the driver's `ask` | S28 to S36 and J8 pass; every earlier suite passes with own machines off; `static_config` lists the new commands |
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/manage.rs`, `tests/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
-| K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the driver ops `menu_items` and `theme`; `tests/look.rs`, `tests/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
+| K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the drag-drop handler's `dropping` scripts (5.3.2); the driver ops `menu_items` and `theme`; `tests/look.rs`, `tests/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, the installed note, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 

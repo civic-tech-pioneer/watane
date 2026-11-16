@@ -1,22 +1,107 @@
 {
   "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-11-15T10:30:00Z"},
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-15T10:30:00Z"
+  },
   "title": "watane mod manager",
-  "launch": {"view": "canvas"},
+  "launch": {
+    "view": "canvas"
+  },
   "pages": [],
   "boards": {
-    "Main.dc.html": {"x": 0, "y": 0, "w": 1280, "h": 820, "title": "Library and mod details", "expand": "fill", "is_interactive": true},
-    "Find.dc.html": {"x": 1360, "y": 0, "w": 1280, "h": 820, "title": "Find", "expand": "fill", "is_interactive": true},
-    "Updates.dc.html": {"x": 2720, "y": 0, "w": 1280, "h": 820, "title": "Updates and notices", "expand": "fill", "is_interactive": true},
-    "Empty.dc.html": {"x": 0, "y": 1240, "w": 1280, "h": 820, "title": "Launch: no mod with a main UI", "expand": "fill", "is_interactive": true},
-    "Shell.dc.html": {"x": 1360, "y": 1240, "w": 1280, "h": 820, "title": "Launch: a shell mod is the main UI"}
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 820,
+      "title": "Library and mod details",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Find.dc.html": {
+      "x": 1360,
+      "y": 0,
+      "w": 1280,
+      "h": 820,
+      "title": "Find",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Updates.dc.html": {
+      "x": 2720,
+      "y": 0,
+      "w": 1280,
+      "h": 820,
+      "title": "Updates and notices",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Empty.dc.html": {
+      "x": 0,
+      "y": 1240,
+      "w": 1280,
+      "h": 820,
+      "title": "Launch: no mod with a main UI",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Shell.dc.html": {
+      "x": 1360,
+      "y": 1240,
+      "w": 1280,
+      "h": 820,
+      "title": "Launch: a shell mod is the main UI"
+    },
+    "Installed.dc.html": {
+      "x": 4080,
+      "y": 0,
+      "w": 1280,
+      "h": 820,
+      "title": "After install: the new mod is selected",
+      "expand": "fill",
+      "is_interactive": true
+    }
   },
-  "order": ["Main.dc.html", "Find.dc.html", "Updates.dc.html", "Empty.dc.html", "Shell.dc.html"],
+  "order": [
+    "Main.dc.html",
+    "Find.dc.html",
+    "Updates.dc.html",
+    "Installed.dc.html",
+    "Empty.dc.html",
+    "Shell.dc.html"
+  ],
   "notes": {
-    "t1": {"x": 0, "y": -300, "text": "Mod manager: the built-in UI on the native management interfaces", "kind": "title1", "maxW": 4000},
-    "t2": {"x": 0, "y": 960, "text": "What opens at launch", "kind": "title1", "maxW": 2640},
-    "n1": {"x": 2720, "y": 1240, "w": 520, "fill": "orange", "size": "m", "text": "Launch rule\n\n• A main mod is set → the app opens it. The manager stays one menu item away: watane › Mods… (⇧⌘M).\n• None is set → the app opens the manager.\n• A mod with main = true in mod.toml becomes main when installed, if none is set. \"Make main\" in the details chooses any mod with a page.\n\nThe manager is one view on native functions; from step 10 a shell mod reaches them through watane:host/manage. Approvals stay in the consent view. (W35, W36)"},
-    "n2": {"x": 3320, "y": 1240, "w": 520, "fill": "blue", "size": "m", "text": "Design rules\n\n• Two levels: a list (Library, Find, Updates), then one mod.\n• One primary action per view; destructive actions never default.\n• Quiet chrome, so the consent view stands out.\n• Grant switches act at once here; a managing mod's requests for more open the consent view.\n• Light and dark: the Tweaks toggle on each artboard."}
+    "t1": {
+      "x": 0,
+      "y": -300,
+      "text": "Mod manager: the built-in UI on the native management interfaces",
+      "kind": "title1",
+      "maxW": 5400
+    },
+    "t2": {
+      "x": 0,
+      "y": 960,
+      "text": "What opens at launch",
+      "kind": "title1",
+      "maxW": 2640
+    },
+    "n1": {
+      "x": 2720,
+      "y": 1240,
+      "w": 520,
+      "fill": "orange",
+      "size": "m",
+      "text": "Launch rule\n\n• A main mod is set → the app opens it. The manager stays one menu item away: watane › Mods… (⇧⌘M).\n• None is set → the app opens the manager.\n• A mod with main = true in mod.toml becomes main when installed, if none is set. \"Make main\" in the details chooses any mod with a page.\n\nThe manager is one view on native functions; from step 10 a shell mod reaches them through watane:host/manage. Approvals stay in the consent view. (W35, W36)"
+    },
+    "n2": {
+      "x": 3320,
+      "y": 1240,
+      "w": 520,
+      "fill": "blue",
+      "size": "m",
+      "text": "Design rules\n\n• Two levels: a list (Library, Find, Updates), then one mod.\n• One primary action per view; destructive actions are quiet, never the default, and name their consequence.\n• Library order: the main mod, then mods that need you, then A–Z.\n• Quiet chrome, so the consent view stands out.\n• Grant switches act at once here; a managing mod's requests for more open the consent view.\n• Tweaks on each artboard: dark; on First start, dropping shows the drop state."
+    }
   },
   "designSystems": []
 }

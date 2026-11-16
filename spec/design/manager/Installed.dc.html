@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>After install — Mods: library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.root{--bg:#F6F6F4;--panel:#FFFFFF;--ink:#18181B;--muted:#5D5E66;--line:#E3E3DF;--hover:#EFEFEC;--accent:#3355D6;--accent-ink:#FFFFFF;--accent-weak:#ECF0FD;--warn:#8A5300;--warn-bg:#FFF3DC;--bad:#B42318;--bad-bg:#FDECEA;--ok:#1B7346;--off:#5D5E66;--off-bg:#ECECE9;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.root.dark{--bg:#111113;--panel:#19191C;--ink:#EDEDEF;--muted:#A3A3AC;--line:#2B2B30;--hover:#222226;--accent:#8EA4FF;--accent-ink:#0D1330;--accent-weak:#1D2340;--warn:#F2B65A;--warn-bg:#2B2112;--bad:#FF8A80;--bad-bg:#2E1615;--ok:#6FD39E;--off:#A3A3AC;--off-bg:#26262A}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.tab{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.tab:hover{background:var(--hover);color:var(--ink)}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.count{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.btn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 14px Inter,system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.quiet{background:transparent;border-color:transparent}
+.btn.quiet:hover{background:var(--hover)}
+.toast{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px 12px 16px;margin-bottom:18px;border-radius:12px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.08);font-size:14px}
+.icon-btn{width:36px;padding:0;justify-content:center}
+.pill{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--line);background:transparent;color:var(--muted);font:500 13px Inter,system-ui,sans-serif;cursor:pointer}
+.pill.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:18px;min-height:150px;box-sizing:border-box;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-align:left;font:inherit;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.tile:hover{border-color:var(--muted)}
+.tile.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+.tile.dim .mono{opacity:.45}
+.mono{display:inline-flex;align-items:center;justify-content:center;color:#FFFFFF;font-weight:600;flex-shrink:0}
+.badge{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:600}
+.b-update{background:var(--accent-weak);color:var(--accent)}
+.b-off{background:var(--off-bg);color:var(--off)}
+.b-problem{background:var(--bad-bg);color:var(--bad)}
+.b-local{background:var(--off-bg);color:var(--muted)}
+.sw{position:relative;width:40px;height:24px;border-radius:12px;border:0;background:var(--line);cursor:pointer;flex-shrink:0;padding:0}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:9px;background:#FFFFFF;transition:left .15s}
+.sw.on{background:var(--accent)}
+.sw.on::after{left:19px}
+.chip{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 10px 0 4px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px Inter,system-ui,sans-serif;cursor:pointer}
+.chip:hover{border-color:var(--muted)}
+.label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.search{height:36px;width:240px;max-width:100%;box-sizing:border-box;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0 12px 0 34px;font:14px Inter,system-ui,sans-serif}
+.search:focus,.btn:focus-visible,.tile:focus-visible,.sw:focus-visible,.chip:focus-visible,.pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:500}
+</style>
+</helmet>
+<div class="root {{themeClass}}" style="min-height: 820px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 24px; border-bottom: 1px solid var(--line)">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><path d="M17 13v8M13 17h8"></path></svg>
+      Mods
+    </div>
+    <nav aria-label="Manager" style="display: flex; gap: 4px; flex-wrap: wrap">
+      <a class="tab on" href="Main.dc.html" aria-current="page">Library</a>
+      <a class="tab" href="Find.dc.html">Find</a>
+      <a class="tab" href="Updates.dc.html">Updates <span class="count">2</span></a>
+    </nav>
+    <div style="flex: 1 1 0"></div>
+    <div style="position: relative">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 11px; top: 10px; color: var(--muted)"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Filter your mods</label>
+      <input id="q" class="search" type="search" placeholder="Filter your mods" value="{{q}}" onChange="{{onQ}}">
+    </div>
+    <button class="btn primary" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Install a mod
+    </button>
+    <span title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane." aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
+    </span>
+  </header>
+
+  <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start">
+
+    <main style="flex: 999 1 560px; min-width: 0; padding: 28px 24px 40px; box-sizing: border-box">
+      <sc-if value="{{fresh}}" hint-placeholder-val="{{ false }}">
+        <div class="toast" role="status">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+          <span style="flex: 1 1 240px"><b style="font-weight: 600">Book club is installed.</b> <span style="color: var(--muted)">It adds to Desk.</span></span>
+          <button class="btn quiet" type="button" aria-label="Dismiss" onClick="{{dismiss}}">✕</button>
+        </div>
+      </sc-if>
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 18px">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Library</h1>
+        <span style="color: var(--muted); font-size: 14px">{{countText}}</span>
+        <div style="flex: 1 1 0"></div>
+        <div role="group" aria-label="Show" style="display: flex; gap: 6px">
+          <sc-for list="{{filters}}" as="f" hint-placeholder-count="3">
+            <button type="button" class="pill {{f.cls}}" aria-pressed="{{f.on}}" onClick="{{f.pick}}">{{f.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px">
+        <sc-for list="{{shown}}" as="m" hint-placeholder-count="6">
+          <button type="button" class="tile {{m.cls}}" aria-pressed="{{m.selected}}" onClick="{{m.pick}}">
+            <span class="mono" style="width: 44px; height: 44px; border-radius: 12px; font-size: 18px; background: {{m.color}}">{{m.initial}}</span>
+            <span style="margin-top: 10px; font-size: 15px; font-weight: 600">{{m.name}}</span>
+            <span style="font-size: 13px; color: var(--muted)">{{m.pubShort}} · {{m.version}}</span>
+            <sc-if value="{{m.hasBadge}}" hint-placeholder-val="{{ false }}">
+              <span class="badge {{m.badgeCls}}" style="position: absolute; top: 16px; right: 16px">{{m.badge}}</span>
+            </sc-if>
+            <sc-if value="{{m.isMain}}" hint-placeholder-val="{{ false }}">
+              <span style="display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--accent)"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"></path></svg>Opens at start</span>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+      <sc-if value="{{noneShown}}" hint-placeholder-val="{{ false }}">
+        <p style="color: var(--muted); font-size: 14px; margin-top: 24px">No mod matches. <a href="Find.dc.html">Look in Find</a></p>
+      </sc-if>
+    </main>
+
+    <aside aria-label="Mod details" style="flex: 1 1 380px; max-width: 460px; min-width: 0; box-sizing: border-box; align-self: stretch; background: var(--panel); border-left: 1px solid var(--line); padding: 28px 24px 40px; display: flex; flex-direction: column; gap: 26px">
+
+      <div style="display: flex; gap: 14px; align-items: flex-start">
+        <span class="mono" style="width: 56px; height: 56px; border-radius: 15px; font-size: 22px; background: {{sel.color}}">{{sel.initial}}</span>
+        <div style="min-width: 0; flex: 1 1 auto">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em">{{sel.name}}</h2>
+          <div style="font-size: 13px; color: var(--muted); margin-top: 2px">Version {{sel.version}}</div>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 6px">
+            <sc-if value="{{sel.local}}" hint-placeholder-val="{{ false }}">
+              <span class="badge b-local">local</span><span style="color: var(--muted)">made on this device</span>
+            </sc-if>
+            <sc-if value="{{sel.published}}" hint-placeholder-val="{{ true }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+              <span style="font-weight: 500">{{sel.pub}}</span><span style="color: var(--muted)">{{sel.fp}} · signature verified</span>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+
+      <p style="margin: -10px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted)">{{sel.summary}}</p>
+
+      <sc-if value="{{sel.hasNotice}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 12px; background: {{sel.noticeBg}}; color: {{sel.noticeInk}}; font-size: 14px">
+          <span style="flex: 1 1 auto">{{sel.notice}}</span>
+          <a class="btn" href="Updates.dc.html" style="text-decoration: none">{{sel.noticeAction}}</a>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{noConfirm}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <sc-if value="{{sel.on}}" hint-placeholder-val="{{ true }}">
+            <button class="btn primary" type="button" style="flex: 1 1 auto; justify-content: center">Open</button>
+          </sc-if>
+          <button class="btn" type="button" onClick="{{askToggle}}">{{sel.toggleLabel}}</button>
+          <button class="btn danger quiet" type="button" onClick="{{askRemove}}" style="margin-left: auto">Remove</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{confirming}}" hint-placeholder-val="{{ false }}">
+        <div role="group" aria-label="{{confirmTitle}}" onKeyDown="{{confirmKey}}" style="border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg)">
+          <div style="font-weight: 600; font-size: 15px">{{confirmTitle}}</div>
+          <sc-if value="{{sel.hasUsers}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; gap: 8px; font-size: 14px; color: var(--warn); background: var(--warn-bg); padding: 10px 12px; border-radius: 10px">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+              <span style="display: flex; flex-direction: column; gap: 4px"><sc-for list="{{sel.warnings}}" as="w" hint-placeholder-count="1"><span>{{w}}</span></sc-for></span>
+            </div>
+          </sc-if>
+          <sc-if value="{{confirmRemove}}" hint-placeholder-val="{{ false }}">
+            <fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px">
+              <legend style="padding: 0; margin-bottom: 6px; color: var(--muted)">Its data on this device</legend>
+              <label style="display: flex; gap: 8px; align-items: center"><input type="radio" name="data" checked="{{keepData}}" onChange="{{pickKeep}}"> Keep its data</label>
+              <label style="display: flex; gap: 8px; align-items: center"><input type="radio" name="data" checked="{{dropData}}" onChange="{{pickDrop}}"> Delete its data</label>
+            </fieldset>
+          </sc-if>
+          <div style="display: flex; gap: 8px; justify-content: flex-end">
+            <button class="btn" type="button" autofocus="{{ true }}" onClick="{{cancel}}">Cancel</button>
+            <button class="btn danger" type="button" onClick="{{confirm}}">{{confirmVerb}}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{sel.hasPage}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line)">
+          <span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px">
+            <span id="l-start" style="font-size: 14px; font-weight: 600">Opens at start</span>
+            <span style="font-size: 13px; color: var(--muted)">{{sel.startHint}}</span>
+          </span>
+          <button type="button" class="sw {{sel.mainCls}}" role="switch" aria-checked="{{sel.isMain}}" aria-labelledby="l-start" onClick="{{toggleMain}}"></button>
+        </div>
+      </sc-if>
+
+      <section aria-labelledby="h-grants" style="display: flex; flex-direction: column; gap: 4px">
+        <h3 id="h-grants" class="label" style="margin: 0 0 6px">What it may do</h3>
+        <sc-for list="{{sel.grants}}" as="g" hint-placeholder-count="2">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line)">
+            <span style="width: 32px; height: 32px; border-radius: 9px; background: var(--bg); display: inline-flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0; font-size: 14px" aria-hidden="true">{{g.glyph}}</span>
+            <span style="flex: 1 1 auto; font-size: 14px; line-height: 1.4; color: {{g.ink}}">{{g.text}}</span>
+            <button type="button" class="sw {{g.cls}}" role="switch" aria-checked="{{g.on}}" aria-label="{{g.text}}" onClick="{{g.toggle}}"></button>
+          </div>
+        </sc-for>
+        <p style="margin: 6px 0 0; font-size: 12px; color: var(--muted)">A change here takes effect now. A mod that asks for more goes through the consent view.</p>
+      </section>
+
+      <section aria-labelledby="h-conn" style="display: flex; flex-direction: column; gap: 12px">
+        <h3 id="h-conn" class="label" style="margin: 0">Connections</h3>
+        <sc-for list="{{sel.rels}}" as="r" hint-placeholder-count="2">
+          <div style="display: flex; gap: 12px; align-items: flex-start">
+            <div style="width: 96px; flex-shrink: 0; padding-top: 7px">
+              <div style="font-size: 13px; font-weight: 600">{{r.label}}</div>
+              <div style="font-size: 12px; color: var(--muted)">{{r.hint}}</div>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <sc-for list="{{r.items}}" as="x" hint-placeholder-count="1">
+                <button type="button" class="chip" onClick="{{x.pick}}">
+                  <span class="mono" style="width: 24px; height: 24px; border-radius: 7px; font-size: 11px; background: {{x.color}}">{{x.initial}}</span>{{x.name}}
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{sel.noRels}}" hint-placeholder-val="{{ false }}">
+          <p style="margin: 0; font-size: 14px; color: var(--muted)">Works on its own: it uses no mod and no mod uses it.</p>
+        </sc-if>
+      </section>
+
+      <details style="font-size: 13px">
+        <summary>Technical details</summary>
+        <dl style="display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; margin: 12px 0 0; color: var(--muted)">
+          <dt>Made from</dt><dd style="margin: 0; color: var(--ink)">{{sel.origin}}</dd>
+          <dt>Page origin</dt><dd style="margin: 0; color: var(--ink); font-family: ui-monospace, monospace; font-size: 12px">{{sel.pageOrigin}}</dd>
+          <dt>Package</dt><dd style="margin: 0; color: var(--ink); font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all">{{sel.pkg}}</dd>
+          <dt>Publisher key</dt><dd style="margin: 0; color: var(--ink); font-family: ui-monospace, monospace; font-size: 12px">{{sel.fpFull}}</dd>
+        </dl>
+      </details>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"afterInstall":{"editor":"boolean","default":true},"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      sel: null, main: 'desk', dismissed: false, filter: 'all', q: '', confirm: null, keepData: true,
+      off: { weather: true },
+      withdrawn: { 'weather/menu': true }
+    };
+  }
+  mods() {
+    return [
+      { id: 'desk', name: 'Desk', initial: 'D', color: '#475569', pub: 'Alice', fp: '(k7f3q9m2xa)', version: '1.4.0', main: true,
+        summary: 'Your start page. It shows the commands and panels that your other mods add to it.',
+        grants: [{ k: 'storage', glyph: '▤', text: 'Keep its own data on this device' }],
+        links: [], origin: 'its own source', pkg: '4be1 9c07 52fa … 0e3d' },
+      { id: 'reading-list', name: 'Reading list', initial: 'R', color: '#3355D6', pub: 'Alice', fp: '(k7f3q9m2xa)', version: '0.3.1',
+        summary: 'Keep the books you want to read, and mark the ones you finished.',
+        grants: [
+          { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
+          { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
+        links: [['subscribe', 'desk', 'menu']], notice: 'Version 0.4.0 asks to connect to openlibrary.org.', noticeAction: 'Review', noticeKind: 'update',
+        origin: 'its own source', pkg: '0866 e9df 4332 … f87b' },
+      { id: 'recommendations', name: 'Recommendations', initial: 'R', color: '#0F766E', pub: null, version: '0.1.0',
+        summary: 'Suggests your next book from the ones you finished.',
+        grants: [
+          { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
+          { k: 'books', glyph: '→', text: 'Call books of Reading list by Alice' },
+          { k: 'events', glyph: '⇄', text: 'Receive the events of Reading list by Alice' }],
+        links: [['call', 'reading-list', 'books'], ['subscribe', 'reading-list', 'events']], origin: 'Reading list 0.3.1 by Alice', pkg: 'local build' },
+      { id: 'notes', name: 'Notes', initial: 'N', color: '#7C3AED', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '1.2.0',
+        summary: 'Short notes, tagged and searchable.',
+        grants: [
+          { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
+          { k: 'tags', glyph: '→', text: 'Call api of Tags by Ivy' },
+          { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
+        links: [['call', 'tags', 'tags'], ['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: '9a10 33cd e871 … 44b2' },
+      { id: 'weather', name: 'Weather', initial: 'W', color: '#C2410C', pub: 'Bob', fp: '(q8d1zr4nyo)', version: '0.2.0',
+        summary: 'The forecast for the places you choose.',
+        grants: [
+          { k: 'http', glyph: '◎', text: 'Connect to api.open-meteo.com' },
+          { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
+        links: [['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: 'c3f2 0b19 aa64 … 7e01' },
+      { id: 'tags', name: 'Tags', initial: 'T', color: '#B45309', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '1.0.2',
+        summary: 'Tags that other mods can share.',
+        grants: [{ k: 'storage', glyph: '▤', text: 'Keep its own data on this device' }],
+        links: [], page: false, notice: 'Withdrawn by the publisher: loses tags on rename.', noticeAction: 'Install 1.1.0', noticeKind: 'problem',
+        origin: 'its own source', pkg: '17bd 8e02 cc95 … 3a6f' }
+    ].concat(this.props.afterInstall ? [
+      { id: 'book-club', name: 'Book club', initial: 'B', color: '#0E7490', pub: 'Ivy', fp: '(p2w8hd5tqe)', version: '0.2.0',
+        summary: 'Read along with friends: shared shelves and a weekly pick.',
+        grants: [
+          { k: 'storage', glyph: '▤', text: 'Keep its own data on this device' },
+          { k: 'menu', glyph: '⇄', text: 'Receive the menu events of Desk by Alice and answer its requests' }],
+        links: [['subscribe', 'desk', 'menu']], origin: 'its own source', pkg: '5d21 07ae 9b3c … 61f0' }] : []);
+  }
+  renderVals() {
+    const s = this.state;
+    const all = this.mods();
+    const byId = {};
+    all.forEach((m) => { byId[m.id] = m; });
+    const pick = (id) => () => this.setState({ sel: id, confirm: null, keepData: true });
+    const ref = (id) => ({ name: byId[id].name, initial: byId[id].initial, color: byId[id].color, pick: pick(id) });
+    // Only granted links count (APP-F-66); warnings count only enabled mods (APP-F-67).
+    const granted = (m, kind) => m.links.filter((l) => l[0] === kind && !s.withdrawn[m.id + '/' + l[2]]).map((l) => l[1]);
+    const uniq = (xs) => xs.filter((x, i) => xs.indexOf(x) === i);
+    all.forEach((m) => { m.uses = uniq(granted(m, 'call')); m.adds = uniq(granted(m, 'subscribe')); m.main = s.main === m.id; });
+    const usedBy = (id) => all.filter((m) => m.uses.indexOf(id) >= 0).map((m) => m.id);
+    const extBy = (id) => all.filter((m) => m.adds.indexOf(id) >= 0).map((m) => m.id);
+    const enabled = (id) => !s.off[id];
+    const q = s.q.trim().toLowerCase();
+
+    const tiles = all.map((m) => {
+      const on = !s.off[m.id];
+      let badge = '', badgeCls = '';
+      if (!on) { badge = 'Off'; badgeCls = 'b-off'; }
+      else if (m.noticeKind === 'problem') { badge = 'Problem'; badgeCls = 'b-problem'; }
+      else if (m.noticeKind === 'update') { badge = 'Update'; badgeCls = 'b-update'; }
+      const selected = s.sel === m.id;
+      return {
+        id: m.id, name: m.name, initial: m.initial, color: m.color, version: m.version,
+        pubShort: m.pub || 'local', local: !m.pub,
+        hasBadge: !!badge, badge, badgeCls, isMain: m.main,
+        rank: m.main ? 0 : m.noticeKind === 'problem' ? 1 : m.noticeKind === 'update' ? 2 : 3,
+        selected, cls: (selected ? 'sel ' : '') + (on ? '' : 'dim'), pick: pick(m.id)
+      };
+    });
+    // Order: the main mod, then mods that need you, then A–Z (serial position).
+    tiles.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    const shown = tiles.filter((t) =>
+      (s.filter === 'all' || (s.filter === 'local') === t.local) &&
+      (!q || t.name.toLowerCase().indexOf(q) >= 0 || t.pubShort.toLowerCase().indexOf(q) >= 0));
+
+    const fresh = !!this.props.afterInstall && !s.dismissed;
+    const m = byId[s.sel] || byId[fresh ? 'book-club' : 'reading-list'];
+    const on = !s.off[m.id];
+    const callers = usedBy(m.id).filter(enabled).map((id) => byId[id].name);
+    const subs = extBy(m.id).filter(enabled).map((id) => byId[id].name);
+    const remove = s.confirm === 'remove';
+    const warnings = [];
+    if (callers.length) warnings.push('These mods use it: ' + callers.join(', ') + '.');
+    if (subs.length) warnings.push('These mods extend it: ' + subs.join(', ') + '.');
+    if (m.main) warnings.push(remove ? 'No mod will open at start.' : 'Until you enable it, the manager opens at start.');
+    const mainMod = byId[s.main];
+    const rels = [];
+    if (m.uses.length) rels.push({ label: 'Uses', hint: 'it needs them', items: m.uses.map(ref) });
+    if (m.adds.length) rels.push({ label: 'Adds to', hint: 'it puts things in them', items: m.adds.map(ref) });
+    if (usedBy(m.id).length) rels.push({ label: 'Used by', hint: 'they need it', items: usedBy(m.id).map(ref) });
+    if (extBy(m.id).length) rels.push({ label: 'Extended by', hint: 'they put things in it', items: extBy(m.id).map(ref) });
+
+    const grants = m.grants.map((g) => {
+      const key = m.id + '/' + g.k;
+      const gon = !s.withdrawn[key];
+      return {
+        text: g.text, glyph: g.glyph, on: gon, cls: gon ? 'on' : '', ink: gon ? 'var(--ink)' : 'var(--muted)',
+        toggle: () => this.setState({ withdrawn: Object.assign({}, s.withdrawn, { [key]: gon }) })
+      };
+    });
+    const problem = m.noticeKind === 'problem';
+    const sel = {
+      name: m.name, initial: m.initial, color: m.color, version: m.version, summary: m.summary,
+      local: !m.pub, published: !!m.pub, pub: m.pub, fp: m.fp,
+      fpFull: m.pub ? m.fp.replace(/[()]/g, '') + '…' : 'none (local)',
+      on, toggleLabel: on ? 'Disable' : 'Enable',
+      hasNotice: !!m.notice, notice: m.notice, noticeAction: m.noticeAction,
+      noticeBg: problem ? 'var(--bad-bg)' : 'var(--accent-weak)', noticeInk: problem ? 'var(--bad)' : 'var(--accent)',
+      grants, rels, noRels: rels.length === 0,
+      hasUsers: warnings.length > 0, warnings,
+      hasPage: m.page !== false, isMain: m.main, mainCls: m.main ? 'on' : '',
+      startHint: m.main ? 'watane opens it when it starts, in place of the manager.'
+        : mainMod ? 'Turn on to open it at start, in place of ' + mainMod.name + '.'
+        : 'Turn on to open it at start, in place of the manager.',
+      origin: m.origin, pageOrigin: 'http://' + m.id + '.localhost:4717', pkg: m.pkg
+    };
+    const confirming = !!s.confirm;
+    return {
+      themeClass: this.props.dark ? 'dark' : '',
+      q: s.q,
+      onQ: (e) => this.setState({ q: e.target.value }),
+      filters: [['all', 'All'], ['published', 'Published'], ['local', 'Local']].map(([id, label]) => ({
+        label, on: s.filter === id, cls: s.filter === id ? 'on' : '', pick: () => this.setState({ filter: id })
+      })),
+      shown, noneShown: shown.length === 0,
+      countText: all.length + ' mods',
+      sel, fresh,
+      dismiss: () => this.setState({ dismissed: true }),
+      toggleMain: () => this.setState({ main: m.main ? null : m.id }),
+      confirmKey: (e) => { if (e.key === 'Escape') this.setState({ confirm: null }); },
+      noConfirm: !confirming, confirming, confirmRemove: remove,
+      confirmTitle: (remove ? 'Remove ' : 'Disable ') + m.name + '?',
+      confirmVerb: remove ? (s.keepData ? 'Remove' : 'Remove and delete data') : 'Disable',
+      keepData: s.keepData, dropData: !s.keepData,
+      pickKeep: () => this.setState({ keepData: true }),
+      pickDrop: () => this.setState({ keepData: false }),
+      askToggle: () => {
+        if (on && warnings.length) this.setState({ confirm: 'disable' });
+        else this.setState({ off: Object.assign({}, s.off, { [m.id]: on }) });
+      },
+      askRemove: () => this.setState({ confirm: 'remove', keepData: true }),
+      cancel: () => this.setState({ confirm: null }),
+      confirm: () => this.setState(remove
+        ? { confirm: null }
+        : { confirm: null, off: Object.assign({}, s.off, { [m.id]: true }) })
+    };
+  }
+}
+</script>
+</body>
+</html>

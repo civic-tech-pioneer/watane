@@ -48,7 +48,7 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
       Install from a link
     </button>
-    <span aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
+    <span title="Your consent mark. The consent view always shows it; a page that asks for consent without it is not watane." aria-label="Consent mark of this home" role="img" style="display: inline-flex; gap: 3px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line)">
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #C2410C"></span>
       <span style="width: 8px; height: 8px; border-radius: 4px; background: #0F766E"></span>
       <span style="width: 8px; height: 8px; border-radius: 2px; background: #7C3AED; transform: rotate(45deg)"></span>
@@ -96,6 +96,9 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
               <span>{{r.listed}}</span>
               <span>{{r.read}}</span>
             </div>
+            <sc-if value="{{r.blocked}}" hint-placeholder-val="{{ false }}">
+              <div style="font-size: 13px; line-height: 1.5; color: var(--bad); padding: 8px 12px; border-radius: 10px; background: var(--bad-bg); margin-top: 2px">Can't install: Bob's channel no longer matches what it said before, so watane can't trust it. Ask Bob for the link to a new channel.</div>
+            </sc-if>
             <sc-if value="{{r.hasWorks}}" hint-placeholder-val="{{ false }}">
               <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 2px">
                 <span class="mono" style="width: 20px; height: 20px; border-radius: 6px; font-size: 10px; background: #475569">D</span>
@@ -109,9 +112,6 @@ a{color:var(--accent)}a:hover{color:var(--ink)}
             </sc-if>
             <sc-if value="{{r.installed}}" hint-placeholder-val="{{ false }}">
               <a class="btn" href="Main.dc.html" style="text-decoration: none">Installed</a>
-            </sc-if>
-            <sc-if value="{{r.blocked}}" hint-placeholder-val="{{ false }}">
-              <button class="btn" type="button" disabled="{{ true }}">Can't install</button>
             </sc-if>
           </div>
         </article>
