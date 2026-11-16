@@ -339,7 +339,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   S65 owns the rest of dev/ (src, tests) until it merges: a fix needed in dev/src goes to the product
   owner as a question.
   Delivered (8fa245b, merged rebased): J3 and J5 pass against real GitHub in `minmax-fund` with the real `gh` (`cargo test -p watane-app --features driver,real-github --test j3 --test j5 -- --ignored real_github`, with `CLAUDE_GH_TOKEN`). Behind the `real-github` app feature, so no cloud run reaches GitHub; test processes drop the token. No difference from fake-gh came up apart from publishing under an org (Waiting on the human); Carol's fork is not exercised. Verified on the Mac: hakari clean, app and J2 to J5 green, both real journeys green (77 s, 73 s), the org left with only OpenMLOps.
-- [~] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
+- [x] **S54 A real static host.** Alice's channel is served from GitHub Pages over real TLS and dist
   fetches from it, in place of `tiny_http` on `127.0.0.1`: real certificates, real latency, a CDN's
   404 rather than a test server's instant one. Checks DD-26 (a listed base on localhost or a local
   IP literal is skipped) against a base that is neither. The human chose (2026-11-15) GitHub Pages in
@@ -350,6 +350,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Branch `slice/s54`. Touches: a new app test file (`app/tests/pages.rs` or a new `real_github` test
   in a file S74 does not own), app/tests/support/github.rs and pages.rs, dist only if a finding needs
   it. S74 (local) owns app/src, app/ui, app/tests/support/journey.rs and driver.rs, j2, j4, manager.
+  Delivered (merged as b514a89): Bob installs Alice's mod from her channel served by GitHub Pages over real TLS (`https://minmax-fund.github.io/watane-j-<r>/`), finds it through Ivy's listing with that public base (DD-26 does not skip it), and a fresh home given a never-published Pages path gets a clear `dist` error naming the URL. Decisions: the real J3 itself serves from Pages (no second journey); harness `RealGithub::pages` and `wait_served`/`wait_status` (ureq 3.5.1 with rustls as an app dev-dependency, polling every 10 s, a deadline panic with the last status); the missing-base check runs from a fresh home, since dist reads a known channel from its recorded bases; the test accepts `not found` or `HTTP 5xx` (Pages answered 503 for a missing path on a fresh site) after waiting for one 404. Verified on the Mac: hakari clean; the app driver suite green with ignored (front tests not run); dist green; the real J3 green (101 s); minmax-fund held only OpenMLOps.
 - [x] **S71 Alice publishes under her GitHub organisation (`publish --push --owner`).** The human
   chose (2026-11-15) option (a) of S53's finding. `watane-dev publish --push --owner <account>`:
   derived repositories become `<owner>/<slug>` and `<owner>/watane-channel`, and a fork adds
@@ -719,6 +720,12 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   runtime. Folds in Q31 (b) and Q32 (b) if the human takes them. Outcome: app S43 to S48 and J10 pass;
   J2 to J5, J8, J9 still pass. Touches: app (src, ui, tests/manage.rs, tests/j10.rs, fixtures,
   TECHNICAL 17). Local (the app). After S75, which changes the same app/src and app/ui.
+- [~] **S79 Bob installs from a site published minutes ago, and a new base sticks (dist).** Branch
+  `slice/s79`. Builds the S54 deputy decision: dist retries an HTTP 5xx twice with a short backoff within
+  the fetch timeouts (4.5), and a link's base for a known channel is appended to its record's bases
+  (5.9). Outcome: a test server that answers 503 then 200 installs; one that always answers 503 fails
+  naming the URL after three tries, within its deadline; a follow through a link with a second base
+  reads both bases. Touches: dist (src/http.rs and the follow path, its tests, TECHNICAL 4.5, 5.9). Cloud.
 - [~] **S78 A full test run leaves nothing behind in the temp folder.** Branch `slice/s78`. Tests leaked
   186 GB of `.tmp*` folders on the Mac (Friction, S76): dev's build caches (`build`, `cargo-home`,
   `counter`: 359 folders), copies (124), and a few from host, net and dist. Find what keeps each (a
@@ -812,6 +819,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+- S54: dev's publish still suggests raw.githubusercontent.com as the base; GitHub Pages is a real static host and could be offered.
 
 Every deferred note in "Slices" audited against main on 2026-11-14: 95 items from 27 notes.
 57 were already fixed by a later slice and are gone from here; the per-slice notes are kept as
@@ -999,7 +1007,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: cloud routine (handed out 2026-11-16), branch `slice/s78`.
-- S54: `71fd3eb5` (sessionId `71fd3eb5-d288-4b30-88d3-f43f009adf27`), worktree `.claude/worktrees/s54` (local: the token; builds in main's `target/`).
+- S54: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S69: delivered 2026-11-15 and merged; routine finished, branch removed.
 - S43: `dede2f86` (sessionId `dede2f86-53e1-4c26-afb4-81282077d13d`), worktree `.claude/worktrees/s43` (exited, removed).
 - S42: `9e8c18fd` (sessionId `9e8c18fd-b2e9-4414-833c-1ecae7c77718`), worktree `.claude/worktrees/s42` (stopped, removed).
@@ -1031,6 +1039,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S54 (2026-11-16): dist retries an HTTP 5xx twice with a short backoff, within the fetch timeouts (a
+  Pages site published minutes ago answers 503); a link naming a new base for a channel dist knows adds
+  that base to the record's bases (5.9: learned bases are appended; every base is checked). Built in S79.
 - S64 (2026-11-15): a `Kept` ingest that fails with a gap and stores nothing removes its `kept`
   record, since nothing is kept; `DistHoldings::set` a second time is an error. Built in S70.
 - S53 (2026-11-15): with the publish-under-an-org question open, S53 ran J5 up to Carol's publish and
