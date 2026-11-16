@@ -1026,6 +1026,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S74: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S75: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S77: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
+- S80: cloud routine `trig_011cnuAqxqaK7exaVG7qiFkR` (handed out 2026-11-16), branch `slice/s80`.
+- S81: `d3a8edfc` (sessionId `d3a8edfc-25fe-47a3-8b8d-4cd54f52c1f2`), worktree `.claude/worktrees/s81` (local: the app; builds in main's `target/`).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S78: delivered 2026-11-16 and merged; routine finished, branches removed.
