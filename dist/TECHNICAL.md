@@ -919,7 +919,8 @@ empty it first becomes `[base]`), the record keeps at most 4 (the oldest
 learned base after the front one goes), and the channel is read from every
 base as below, so the base with the highest head leads and `base` equals it.
 A base the record already has changes nothing (`open_link` does not even
-read it). A record with no base (kept only) takes the link's base as `base`.
+read it). A record with no base (kept only) takes the link's base as `base`
+on `follow` and `choose_index`; `open_link` of such a record reads it locally (5.12).
 `read_link` learns nothing.
 
 **Read of a followed, chosen or listed channel.** `read_channel` (5.4) from every base in
