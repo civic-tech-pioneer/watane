@@ -200,7 +200,12 @@ fn once(text: &str) -> String {
             .collect();
         if key.len() == 8 && out.contains(&key) {
             let tail = &after[8..];
-            rest = tail.strip_prefix(' ').unwrap_or(tail);
+            // `K: node K: cause` keeps one `: `
+            rest = tail
+                .strip_prefix(": ")
+                .filter(|_| out.ends_with(": "))
+                .or_else(|| tail.strip_prefix(' '))
+                .unwrap_or(tail);
         } else {
             out.push_str("node ");
             rest = after;
@@ -863,6 +868,15 @@ mod tests {
         };
         let text = line(&event).unwrap();
         assert_eq!(text.matches(&node.short()).count(), 1, "{text}");
+        // net's own form of an unreachable cause (sync: `node K: cause`)
+        let event = Event::Unreachable {
+            node,
+            cause: format!("node {}: timed out", node.short()),
+        };
+        assert_eq!(
+            line(&event).unwrap(),
+            format!("unreachable {}: timed out", node.short())
+        );
     }
 
     #[test]
