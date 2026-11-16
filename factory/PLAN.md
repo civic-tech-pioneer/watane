@@ -1105,6 +1105,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   skipped) in 5 min (cold build 4 min more); 393 passed, 4 failed on Linux only: j10 ac3, s44 ac2 and
   s39 ac3 (the main window never reaches its area), machines s28 ac1. linux-test.sh had no
   `site.localhost` since S54 (fixed). The 4 are a later app slice (Linux, stage F).
+  Measured (1), native, quiet Mac, 26a728a: the app driver suite with ignored (front skipped), 277
+  tests, takes 340 s with `--test-threads=1` and 265 to 270 s in parallel, green 3 of 3. So no one runs
+  the app suite with `--test-threads=1`. The gain is small because cargo runs the test files one after
+  another and a few journeys take 30 to 40 s each; the big gain was running the whole suite once per slice.
 - S83 (2026-11-16): the app learns of an install over POST /api/install through host
   `Confirm::installed(&Installed{requester,new,updated})`, a default no-op method called once after each
   install that wrote the catalog (host 12.1); the app applies the main-mod rule there for every requester.
