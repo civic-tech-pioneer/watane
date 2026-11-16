@@ -721,3 +721,35 @@
   that one netmon failure. J8's dedicated driver compile (`--no-run`)
   succeeds. These results do not establish AC1–AC8 or AC9's journey
   regression requirement; a native macOS validator must still run them.
+
+### S75-2 validator round 1 — strengthen AC6
+
+- Preserved validator commit `6037ae2`: Alice's static site starts only
+  after AC3 so Ivy can read her head when listing the mod. The validator
+  established AC1–AC3 natively; AC4 is blocked by net's missing server
+  address on the newly joined light machine. No address-book workaround
+  was added to J8.
+- AC6 keeps the byte-equal successful fetch and the removal refusal in
+  the same light app session. The AC5 recovery restart occurs before
+  both fetches. Alice's net and both static sites are off for the positive
+  fetch; its cached package is removed before removal and the retry.
+- A 502 alone no longer satisfies AC6. The light's problems must contain
+  `node == <server short key>` and exactly
+  `refused <server>: node <server> refused: not_allowed`, absent before
+  removal. This independent literal uses net's untrusted-caller answer
+  `Code::NotAllowed` and NetError's Display text, rather than an app
+  formatting function. Neither `unreachable <server>:` nor the earlier
+  hash-mismatch refusal can pass. The test still requires locally Light,
+  the server's printed devices-change event, and no cached package.
+- Interface observation for native validation: `node::words` currently
+  supplies consent texts only, with no untrusted-caller refusal formatter.
+  Also, the current net light-client code emits Refused for a bad object,
+  but discards ordinary `NetError::Refused` diagnostics; blob-protocol
+  permission denial is currently mapped to Unreachable. The stronger
+  oracle intentionally does not accept those weaker diagnostics or change
+  sibling code. The native validator/net task must establish the required
+  refusal evidence after the address defect is fixed.
+- Validation: J8's driver `--no-run` compile and all-targets driver clippy
+  with `-D warnings` pass; formatting is clean after rustfmt. No native J8
+  run was attempted in this sandbox, per the validator's return
+  instructions. The strengthened removal assertion awaits native validation.

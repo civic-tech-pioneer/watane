@@ -265,15 +265,28 @@ fn ac1_journey_j8() {
     });
     assert!(!light_package.exists(), "AC5: corrupt bytes were cached");
 
-    // AC6: a hash refusal drops a peer for that session. A fresh session and
-    // a byte-equal positive control rule out that drop as the removal oracle.
+    // AC6: a hash refusal drops a peer for that session. Restart only before
+    // the positive control; the successful and refused fetches below must
+    // use the same light app session, with only the server able to serve.
     assert!(light.quit().success());
     std::fs::write(&server_package, &bytes).unwrap();
     let light = start(light_home.path());
     find_on(&light, reference, &server_key);
+    // net's untrusted-caller answer is NotAllowed (net/serve.rs), rendered
+    // by NetError as "node <server> refused: not_allowed". Require that
+    // precise refusal, not a connection failure or AC5's hash refusal.
+    // This literal is independent of the app's problem-rendering code.
+    let refused_by_server = format!("refused {server_key}: node {server_key} refused: not_allowed");
+    assert!(
+        machines(&light)["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| { p["node"] != server_key || p["text"] != refused_by_server })
+    );
     fetched(&light, reference, &bytes);
-    on(&light, false); // Keep its old list until its next request to the server.
     std::fs::remove_file(&light_package).unwrap();
+    on(&light, false); // Keep its old list until its next request to the server.
     on(&alice, true);
     let removed = invoke(&alice, "machine_remove", json!({"node":light_key}));
     let event = server.until(&format!("machines {}: ", removed["seq"]));
@@ -288,9 +301,15 @@ fn ac1_journey_j8() {
         response.json::<Value>().unwrap()["error"]["code"],
         "fetch_failed"
     );
+    let refused = wait_machines(&light, |v| {
+        v["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["node"] == server_key && p["text"] == refused_by_server)
+    });
     assert_eq!(
-        machines(&light)["machine"],
-        "light",
+        refused["machine"], "light",
         "AC6: refusal must come from the server, not a local Removed state"
     );
     assert!(!light_package.exists());
