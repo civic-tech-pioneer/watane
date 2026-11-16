@@ -18,3 +18,6 @@ pub mod github;
 
 #[allow(dead_code)]
 pub mod node;
+
+#[allow(dead_code)]
+pub mod manage;

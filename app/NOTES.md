@@ -795,3 +795,50 @@
   This run followed the final default build, with no concurrent build
   overwriting the shared app binary. Logs: `/tmp/s77-driver-final.log`,
   `/tmp/s77-default-final.log`, `/tmp/s77-confirm-final.log`.
+
+
+## S77-2 — Desk page, management scenarios and J10
+
+- Added `tests/fixtures/desk-ui/ui/`, `tests/support/manage.rs`, six quiet
+  window scenarios S43–S48 in `tests/manage.rs`, and ignored slow J10 in
+  `tests/j10.rs`. The S74 `desk` fixture and `tests/manager.rs` are unchanged.
+  No dependency, product code, security check or spec changed.
+- Desk copies host's prebuilt `manager` (local name `manager`, window
+  `mod-manager`), keeps its Desk name/summary and adds `main = true` and the
+  button page. Weather and Notes copy the existing app fixtures. Book club
+  uses host's prebuilt counter, published by Ivy and discoverable through
+  her chosen index. Dist includes an index owner's own releases and refuses
+  an explicit self-listing; the fixture check independently chooses Ivy and
+  searches for Book club. No new mod is compiled. The grant-free update
+  edits equal-length WIT interface version strings as the existing publishing
+  helper does. S46 re-reads the chosen index with `index_choose`, avoiding
+  the automatic update that `channels_refresh` would otherwise start.
+- The page has one button for every manager API export, including its three
+  diagnostic functions; grant JSON and delete-data/request-id controls are
+  explicit. It writes results, failure codes and catalog/request notifications
+  with `textContent`. S45 checks the first consent paragraph, deny/approve
+  outcomes and mods on disk, then strictly requires WouldBlock from an unread
+  channel's non-blocking loopback listener after the failed outcome. S47
+  proves Notes received private state before deletion and has none after
+  reinstall. J10 attempts a valid current consent answer from Desk, checks
+  the ACL refusal and pending state, and withdraws manage during a removal
+  to check cancellation, preserved Notes and the next not_granted error.
+- Red/green: the first AC1 test failed on absent desk-ui/index.html; the
+  fixture/package test then caught a missing required summary in the copied
+  manifest. Both AC1 tests now pass, including all page button arguments,
+  result/error rendering, proposed-main metadata and actual index search.
+- Validation: cargo build passes. cargo test --no-fail-fast has 137 passes
+  and the existing pairing test failure at consent.rs:1074: `Failed to create
+  netmon monitor`. The default driver command stops at that same existing
+  failure (102 library passes). All driver test targets compile with
+  --no-run. Strict all-targets/driver clippy, fmt --check and diff --check
+  pass. The release-with-driver build fails at the intended compile_error.
+- All six S43–S48 cases and J10 were attempted; none reaches a scenario
+  assertion. Native macOS reports `_LSModifyNotification` error -50 and
+  `com.apple.hiservices-xpcservice` Connection Invalid, then driver readiness
+  times out, as in S77-1. The exact requested combined command also fails
+  before J10 startup; --no-fail-fast is used to attempt both final targets.
+  The four front tests are always excluded by their exact names. Docker's
+  socket is absent, so the Linux runner is unavailable. AC2/AC3 runtime
+  behavior and AC4 green acceptance still need a working native GUI session.
+  No participant-free refusal was observed: startup never reached manage.
