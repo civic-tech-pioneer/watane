@@ -552,7 +552,7 @@ fn ac4_s81_disable_remove_warning_distinguishes_connections() {
             assert_eq!(
                 app.eval(
                     "main",
-                    "document.querySelector('#confirm-title').textContent + ' ' + Array.from(document.querySelector('#dependency-warning').children,n=>n.textContent).join(' ')"
+                    "document.querySelector('#confirm-title').textContent + ' ' + Array.from(document.querySelector('#dependency-warning .warning-lines').children,n=>n.textContent).join(' ')"
                 ),
                 format!("{verb} Reading list? {sentences}")
             );
