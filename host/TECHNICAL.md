@@ -753,6 +753,8 @@ interface manage {
   disable: func(local: string) -> result<_, failure>;
   withdraw: func(local: string, grant: grant) -> result<_, failure>;
   close-page: func(local: string) -> result<_, failure>;
+  /// Open or focus the page of a mod (Q31). Gives no authority.
+  open-page: func(local: string) -> result<_, failure>;
   /// Ask the participant. Each returns the id of the request.
   request-install: func(release: string, link: option<string>) -> result<string, failure>;
   request-update: func(local: string) -> result<string, failure>;
@@ -937,7 +939,8 @@ does not parse is the failure `bad_request`.
 | `disable(local)` | reduction | `Host::disable` (4.4), after `Confirm::reduced` (12.1); a disabled mod stays disabled (ok) | `no_mod` |
 | `withdraw(local, grant)` | reduction | `Host::revoke` (4.4), after `Confirm::reduced`; an ungranted grant stays ungranted (ok) | `no_mod`, `not_declared` |
 | `close-page(local)` | reduction | `Confirm::reduced` with `ClosePage`: the app closes the mod's window, if one is open; the host itself has nothing to close | `no_mod` |
-| `request-install(release, link)` | request | asks the app to install the release (`Ask::Install`) | `bad_request`, `request_open`, `refused` |
+| `open-page(local)` | direct (Q31) | `Confirm::reduced` with `Reduction::OpenPage`: the app opens or focuses the window `mod-<local>`, and opens none while a consent request is open; the call gives no authority | `no_mod`, `bad_request` (the mod is off or has no page) |
+| `request-install(release, link)` | request | asks the app to install the release (`Ask::Install`); a `link` of a channel the home does not read gets a first consent to read it (Q30, app 17.3) | `bad_request`, `request_open`, `refused` |
 | `request-update(local)` | request | asks the app to install the update that it offers for the mod (`Ask::Update`) | `no_mod`, `request_open`, `refused` |
 | `request-enable(local)` | request | asks to enable a disabled mod (`Ask::Enable`) | `no_mod`, `bad_request` (enabled), `request_open`, `refused` |
 | `request-grant(local, grant)` | request | asks to give a declared, ungranted grant (`Ask::Grant`) | `no_mod`, `not_declared`, `bad_request` (granted), `request_open`, `refused` |
@@ -1017,9 +1020,9 @@ enabled mod.
 **In a harness** (2.6), the manage import is linked to fakes:
 `mods` and `request` return the file's fake for
 `watane:host/manage`, else `[]` and `pending`; every reduction returns
-`ok` and every request `ok("r1")`, `ok("r2")`, ... in call order across
+`ok` (`open-page` too) and every request `ok("r1")`, `ok("r2")`, ... in call order across
 the calls of one harness (a failed call takes no number), unless
-the file fakes it. Each reduction and request is recorded in
+the file fakes it. Each reduction, `open-page` and request is recorded in
 `Outcome.manages` as a `ManageRecord`, in call order; reads are not
 recorded. A failed call records none.
 
@@ -1432,7 +1435,7 @@ pub enum Ask {
     Remove { local: LocalName, delete_data: bool },
 }
 pub enum ManageOutcome { Approved, Denied, Failed(String) }
-pub enum Reduction { Disable(LocalName), Withdraw { local: LocalName, grant: Grant }, ClosePage(LocalName) }
+pub enum Reduction { Disable(LocalName), Withdraw { local: LocalName, grant: Grant }, ClosePage(LocalName), OpenPage(LocalName) }   // OpenPage: S82, Q31
 ```
 
 The default bodies keep an earlier `Confirm` compiling; a host whose app
@@ -1905,21 +1908,21 @@ or whether one is shown.
   (c) Direct always. Recommended: (a); revisit if shells find it heavy.
   Cost to undo: (b) adds an in-memory or `installed.json` field; (c)
   drops a consent. Neither changes the WIT.
-- **Q30** Install from a channel that the home does not read yet. A link
+- **Q30** Answered (b) by the human, 2026-11-16; built in S82 (app 17.3, 17.4). Install from a channel that the home does not read yet. A link
   would make the app fetch a URL that the manager chose, which is a path
   to a host that no grant names. (a) Only a release that the home can
   fetch through the channels and bases it already reads (built; the app
   refuses others, app 17.3). (b) Any link, after a first consent "Desk
   asks to read <link>". Recommended: (a). Cost to undo: (b) adds one
   consent kind in the app; `request-install` keeps its arguments.
-- **Q31** Open a page. A shell launches mods, but W35 does not list it.
+- **Q31** Answered (b) by the human, 2026-11-16; built in S82 as `open-page` (6.4, 6.10), carried by `Reduction::OpenPage` through `Confirm::reduced`. Open a page. A shell launches mods, but W35 does not list it.
   (a) Not in this step (built). (b) A direct `open-page(local)`: the app
   opens or focuses the mod window, and never while a consent request is
   open (app 5.1). Recommended: (b), in the slice that builds app stage J,
   if the human agrees: it gives no authority, only a window of a mod the
   participant installed. Cost: one added function in `manage` and one
   `Reduction`-like hook; existing managers are unaffected.
-- **Q32** Asking again after a deny. One request is open at a time, but a
+- **Q32** Answered (b) by the human, 2026-11-16; built in S82 (app 17.4). Asking again after a deny. One request is open at a time, but a
   manager may ask again at once; only withdrawing `Manage` stops it, the
   same bound that a local program has over `/api/install`. (a) No more
   (built). (b) The consent view offers "Deny and stop asks from <mod>",

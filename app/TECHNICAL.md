@@ -2093,7 +2093,7 @@ second app runtime is created.
 
 | `Ask` | The app |
 |---|---|
-| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), `Failed("<asker> named a channel this home does not read: <link>")`, with no network request (host Q30). Else the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`. dist fetches only through the bases it already holds (dist 5.11), so no new host is read. |
+| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), first `Request::Read` (17.4), with no network request before the answer (host Q30, answered b). A deny ends the request `Denied` and reads nothing. On approve, the app reads the link as its own install from a link does (`Core::plan_link`'s `open_link`), so dist learns that channel's bases. Then, for every request, the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`, whose consent shows as for any manager install. After an install from a link that was read this way, the channel is followed as `install_link` follows it (`follow_fetched`); a read that leads to no install follows nothing. Without a link, or with a link of a channel already read, dist fetches only through the bases it already holds (dist 5.11). |
 | `Update(local)` | The offer of that mod (`ModView.offer`, 9.5); none gives `Failed("no update is offered for <name>")`. Else install it as `Install` does, with `Requester::Mod(by)`. |
 | `Enable(local)` | `Request::Manage` with `Enable`; on approve, `host.enable`. |
 | `Grant { local, grant }` | `Request::Manage` with `Grant` and the grant line; on approve, `host.grant`. |
@@ -2104,7 +2104,10 @@ with `asked_by` set (17.4); the host asks it for every such plan (host
 12.1), so an update with no new grant shows too (APP-F-72).
 
 `reduced(by, reduction)` must not block: it posts to the main thread and
-returns. `Disable(local)` and `ClosePage(local)` close `mod-<local>`
+returns. `OpenPage(local)` (host Q31) opens or focuses `mod-<local>` as the
+Library's Open does (`views::open_mod`), unless a consent request is open
+(`Broker::current` is some): then it opens nothing and is dropped, not
+kept for later. `Disable(local)` and `ClosePage(local)` close `mod-<local>`
 (`views::close_mod`); `Disable` also keeps the notice `Turned off by
 <asker>` for `local` in memory, which `ModView.notice` shows until the app
 restarts or the mod is enabled. `Withdraw` keeps `Grant withdrawn by
@@ -2121,6 +2124,8 @@ pub enum Request {
     /// Step 10 (17.3): an enable, a grant or a removal that a manager asks for.
     Manage { asked_by: Asker, action: ManageAction, target: Target,
              grant: Option<GrantLine>, users: Vec<String> },
+    /// S82 (host Q30): a manager names a link of a channel this home does not read.
+    Read { asked_by: Asker, link: String, release: String },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Asker { pub local: String, pub name: String, pub publisher: Option<Party> }   // None = local
@@ -2149,6 +2154,22 @@ lines for `manage`.
 | `manage`, `grant` | `<asker name> asks to give <target name> a grant` | the target; the grant line, with no checkbox |
 | `manage`, `remove` | `<asker name> asks to remove <target name>` | the target; `Its data is kept. Installing it again brings it back.`; `Used by: <users>` when not empty |
 | `manage`, `remove_data` | `<asker name> asks to remove <target name> and delete its data` | the target; `Its data is deleted. This cannot be undone.`; `Used by: <users>` when not empty |
+| `read` (S82) | `<asker name> asks to read <link>` | the first line; `To install <release>, this home reads the channel of this link. It has not read it before.` |
+
+A `Read` request takes only `Approve` with no `withheld`, or `Deny`, as
+`Manage` does.
+
+**Stop asks** (S82, host Q32, answered b). Every request with `asked_by`
+(`install`, `pick`, `manage`, `read`) shows a third button, `Deny and stop
+asks from <asker name>`, after `Deny`. It is not gated by the 800 ms rule
+(it only reduces) and never has the focus at load. A click sends
+`consent_answer({id, approve: false, withheld: [], choice: null, stop: true})`:
+the app answers `Deny`, then withdraws the asker's `manage` grant with
+`host.revoke(<asker local>, Grant::Manage)`, as the details switch does. So
+the request reads `denied`, and the manager's next request traps
+`not_granted` until the participant gives the grant back. `stop: true` on a
+request without `asked_by` is `WrongAnswer`. `stop` is optional and false
+by default, so earlier callers are unchanged.
 
 The buttons, the focus rule, the 800 ms gate and the mark are those of
 6.3 and 6.4: a manager cannot cover, imitate or answer the consent view
@@ -2205,8 +2226,7 @@ Scenarios of `tests/manage.rs`:
   by Desk (local), which manages your mods`; a deny leaves `<home>/mods/`
   unchanged and Desk's page shows `denied`; a second ask and an approve
   install it, and Desk's page shows `approved`. A link to a channel this
-  home does not read gives `failed`, and a loopback test listener at that
-  link gets no connection.
+  home does not read first asks to read it (S82 Read asked).
 - **S46 Update asked** (APP-F-72). With an update of Book club offered that
   adds no grant, Desk's `request-update` shows the consent view with the
   `Update ... to ...` title and the asked-by line.
@@ -2215,6 +2235,18 @@ Scenarios of `tests/manage.rs`:
   no `Used by` line, because no mod uses Notes; after approve, `<home>/mods/recommendations/` is gone and its state does not
   come back on a reinstall. Desk asks to remove Weather, which Notes uses:
   the `Used by: Notes` line shows; a deny keeps Weather.
+- **S82 Read asked** (host Q30). Desk asks to install a release with the
+  link of a channel this home does not read, served by a loopback
+  listener: the first consent reads `Desk asks to read <link>`; a deny
+  ends `denied` and the listener gets no connection; a second ask, approved
+  twice (read, then the install's own consent with the asked-by line),
+  installs it, and the channel is then followed.
+- **S82 Stop asks** (host Q32). Desk asks to enable Weather; `Deny and stop
+  asks from Desk` ends it `denied`, Desk's `manage` grant reads withdrawn
+  in its details, and Desk's next request shows `not_granted`.
+- **S82 Open page** (host Q31). Desk's `api.open-page` with `reading-list`
+  opens the window `mod-reading-list`; with a consent request open it opens
+  no window; for a mod with no page it shows `bad_request`.
 - **S48 Enable and grant** (APP-F-71). With Weather off, Desk's
   `request-enable` shows `Desk asks to turn on Weather`; approve enables it.
   With Notes's call grant withdrawn, `request-grant` shows the grant line;
@@ -2234,5 +2266,6 @@ Stage J is listed in section 12; its row is repeated here for reference:
 |---|---|---|
 | A manager adds nothing without the participant | every `Ask` goes through the broker; an install with `Requester::Mod` always asks (host 12.1); a `Manage` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
 | The participant sees who asks | `asked_by` and `Manage.asked_by`, from the host's `by`, never from the manager's arguments | S45, `gui_shell` |
-| A manager's install reads no new host | `link` must name a channel dist already reads; dist fetches through known bases only | S45 |
+| A manager's install reads no new host without the participant | a `link` of a channel dist does not read waits for an approved `Read` request (17.4); otherwise dist fetches through known bases only | S45, S82 Read asked |
+| A manager cannot open a window over a consent | `OpenPage` opens nothing while `Broker::current` is some | S82 Open page |
 | A manager has no app command | it has no window of its own beyond `mod-<local>`; section 14 holds for it as for any mod | S6 |

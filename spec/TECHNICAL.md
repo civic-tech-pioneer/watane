@@ -204,7 +204,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Builder | The maker's device from mod source | offline build, locked dependencies from a reviewed allowlist, no build script or procedural macro in the mod; unit tests run as Wasm with no capabilities |
 | Verification | The participant from web hosts and other people | signatures, a hash chain, package hashes; fork detection |
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
-| Manager (step 10) | Mods and the participant from a managing mod | the `Manage` grant checked at each function and before each effect; reads and three reductions (disable, withdraw a grant, close a page) only; every install, update, enable, grant and removal is a request that the app decides in the consent view, which names the manager, one open at a time; effects only when the manager's call succeeds; no signature, no consent answer, no identity (W35; host 6.10, app 17) |
+| Manager (step 10) | Mods and the participant from a managing mod | the `Manage` grant checked at each function and before each effect; reads, three reductions (disable, withdraw a grant, close a page) and opening a page only; every install, update, enable, grant and removal is a request that the app decides in the consent view, which names the manager, one open at a time; effects only when the manager's call succeeds; no signature, no consent answer, no identity (W35; host 6.10, app 17) |
 | Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
@@ -332,15 +332,14 @@ take effect, the request table, the `catalog` page message, `Confirm::
 and its release encoding in `pkg/TECHNICAL.md` 4.5, 5.1 and 7.2 (pkg stage
 11); the manage fake and `manages` in `dev/TECHNICAL.md` 8.1 (dev stage
 13); the words, the consent requests and J10's tests in `app/TECHNICAL.md`
-17 (app stage J). J10 lives in `app/tests/j10.rs`. Six choices are open
-for the human, each built so that either answer keeps the interface
-(`host/TECHNICAL.md` 18, Q28 to Q33): whether a removal that keeps the
-data, and an enable, are requests (built: yes); whether a manager may
-install from a channel the home does not read (built: no); whether a
-manager may open a page (built: no); how to stop a manager that asks
-again after each deny (built: only by withdrawing `Manage`); and whether
-only a manager's own page may drive its grant (built: no, like every
-grant).
+17 (app stage J). J10 lives in `app/tests/j10.rs`. The human answered
+the six choices on 2026-11-16 (`host/TECHNICAL.md` 18, Q28 to Q33): a
+removal that keeps the data, and an enable, are requests; a manager may
+install from a channel the home does not read, after a first consent to
+read its link; a manager may open or focus a page (`open-page`), never
+while a consent is open; the consent view offers "Deny and stop asks
+from <mod>", which withdraws `Manage`; and every party that may call a
+manager uses its grant, like every grant (S82 builds Q30 to Q32).
 
 The main mod (W36) and the manager of the app are not a step: they are
 app stage I (`app/TECHNICAL.md` 5.3, 5.4), with the `main` key in
