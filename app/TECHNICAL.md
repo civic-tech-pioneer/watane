@@ -599,6 +599,15 @@ against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
 disabling or removing; Cancel is focused and Escape cancels.
 
+Built by S81, in the layout before 5.3.1 to 5.3.7 (S84 carries these facts
+into that design): only the main mod's library entry has a `.main-mark`
+reading `Opens at start`; a connection link opens the target's details and
+moves keyboard focus to its heading control; the dependency warning reads
+`Disable <name>?` or `Remove <name>?`, then `These mods use it: <locals>.`
+for enabled callers and `These mods extend it: <locals>.` for enabled
+subscribers (granted links only; an empty sentence is omitted; uses first),
+so a mod that only extends it is never called a user.
+
 ### 5.4 Menu and the main mod (stage I)
 
 `<home>/app/main` holds the local name of the main mod and a newline, or
