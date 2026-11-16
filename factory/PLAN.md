@@ -677,7 +677,7 @@ is a step-7-style check, after S55.
   Outcome: tests for each on the real app and host; J10 and S43 to S48 still pass. Touches: host,
   dev, app. Local (the app). After S81 (app).
 
-- [~] **S83 The manager's look is specified: the human's design becomes the app's spec (W37).** Branch
+- [x] **S83 The manager's look is specified: the human's design becomes the app's spec (W37).** Branch
   `slice/s83`. The human chose (2026-11-16) to build their mod-manager design
   (`spec/design/manager/*.dc.html`, the launch rule and design rules in its `canvas.json` notes). A
   demo found the app has nearly every function but none of the look: app/TECHNICAL 5.3 lists elements
@@ -689,10 +689,12 @@ is a step-7-style check, after S55.
   APP-F rule disagree, the rule wins and the spec says so. Also: a `main = true` mod installed through
   `/api/install` becomes main like the app's own installs, and the consent view says an install makes
   a mod the start window. Each change gets a test row for S84. Docs only. Cloud.
+  Delivered (merged as 1941864): app/TECHNICAL 5.3.1 to 5.3.7 and 5.4 specify the manager as the design draws it (tokens light and dark under prefers-color-scheme; header with tabs and one Add mod popover; Library tiles with monogram and one badge Off > Problem > Update > Main; a side panel per mod with grant switches in plain words, connection chips, an inline confirm panel; Find with one box and index chips; Updates cards with Not now / Review…, Checked / Check now; the first-start view; menu separators), with test rows (section 11, stage K in 12). Rule wins over design, each said in 5.3: system-ui font (the CSP refuses Google Fonts), the two-word mark, Make/Unset main, Made from this, a drop button on index chips, followed channels stay in Find, whole failure causes, the window title's party label. Decisions: a short grant form in the details only (`GrantLine.short`), the consent keeps the exact words; one search box maps interface-shaped words and party names; dialog ids become #confirm-panel/-cancel/-continue (window tests change selectors only); Not now is page memory, `Status.checkedAt` and `ChannelRow.readAt` app memory; an update never makes a mod main; Edit and Window menus with Tauri's predefined items; monogram colour by slug sum mod 8; driver ops `menu_items` and `theme`; Find's "Adds commands to <main>" line left for later.
 - [ ] **S84 The manager looks like the design (app).** Branch `slice/s84`. Builds S83: the views,
   tokens and dark mode, the first-start view, the main-mod rule for `/api/install`; existing ids and
   driver tests keep working. Outcome: S83's test rows pass; a screenshot of each view sits beside the
-  design. Touches: app (ui, src, tests). Local (the app). After S81, S82 and S83.
+  design. Touches: app (ui, src, tests), host (`Confirm::installed`, host 12.1). Local (the app). After S81
+  and S82.
 
 ### Step 9: Extension points (J9)
 
@@ -1054,7 +1056,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S75: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S77: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S80: delivered 2026-11-16 and merged; routine finished, branches removed.
-- S83: cloud routine (handed out 2026-11-16), branch `slice/s83`.
+- S83: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S81: `d3a8edfc` (sessionId `d3a8edfc-25fe-47a3-8b8d-4cd54f52c1f2`), worktree `.claude/worktrees/s81` (local: the app; builds in main's `target/`).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
@@ -1082,6 +1084,11 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S83 (2026-11-16): the app learns of an install over POST /api/install through host
+  `Confirm::installed(&Installed{requester,new,updated})`, a default no-op method called once after each
+  install that wrote the catalog (host 12.1); the app applies the main-mod rule there for every requester.
+  Additive: undo is removing one default method. Not (b) app memory (lost if the app quits, decides before
+  success) or (c) an exception for programs. Built in S84.
 - The human (2026-11-16) answered step 10's questions (host/TECHNICAL 18): Q28 (a) every removal is a
   request; Q29 (a) enable is a request; Q30 (b) a manager may ask to install from any link, after a
   first consent "<mod> asks to read <link>"; Q31 (b) a direct `open-page(local)` that opens no window
