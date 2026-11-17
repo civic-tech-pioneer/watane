@@ -1084,6 +1084,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S83: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S81: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S82: `75eab872` (sessionId `75eab872-4a9f-4f3b-9cfc-c99497768b74`), worktree `.claude/worktrees/s82` (local: the app; builds in main's `target/`).
+- S85: `73adea8f` (sessionId `73adea8f-b026-48f9-9cfc-e634ed31c2ce`), worktree `.claude/worktrees/s85` (local: Docker and the Mac).
 - S84: `a2ce600f` (sessionId `a2ce600f-dee1-40fa-99fa-9a31f4de06d0`), worktree `.claude/worktrees/s84` (local: the app; builds in main's `target/`).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
 - S76: delivered 2026-11-16 and merged; routine finished, branches removed.
