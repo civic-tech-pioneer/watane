@@ -1,3 +1,6 @@
+//! `add_provider` (TECHNICAL 4.8): adds a provider's WIT and `deps.json` entry
+//! to a mod folder without following any link that appears during the write.
+
 use crate::folder::{invalid, io, read_file};
 use crate::open::{self, Dir, Kind};
 use crate::{Deps, Mod, ModError, PublisherKey, Rule};

@@ -1,3 +1,6 @@
+//! The program `watane` (TECHNICAL 12.2): parses the arguments, opens the home
+//! or a preview, and serves it until shutdown.
+
 use std::io::Write;
 use std::path::PathBuf;
 use watane_host::{DEFAULT_PORT, Host, Mode, default_home};

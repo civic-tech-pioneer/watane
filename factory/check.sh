@@ -33,6 +33,8 @@ step build cargo build
 step test cargo test --no-fail-fast
 step clippy "${CLIPPY[@]}"
 step fmt cargo +nightly fmt --check  # nightly: rustfmt.toml sets nightly-only options
+# every source file opens with a `//!` line: what it is for, and its TECHNICAL section
+step moddoc sh -c 'r=0; for f in $(find src -name "*.rs"); do head -1 "$f" | grep -q "^//!" || { echo "no //! module doc: $f"; r=1; }; done; exit $r'
 for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/[^/]+\.rs$'); do
   p=$W/$f; [ -f "$p" ] || continue
   SLOW=$(names "$p" slow); [ -n "$SLOW" ] || continue

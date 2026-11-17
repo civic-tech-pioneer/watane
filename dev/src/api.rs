@@ -1,3 +1,6 @@
+//! Client of the local API of a running watane app (TECHNICAL 9.1). dev opens
+//! no connection except HTTP to `localhost`.
+
 use crate::outcome::{Code, Problem};
 use serde::Deserialize;
 use serde_json::{Value, json};

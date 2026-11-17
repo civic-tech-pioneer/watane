@@ -1,3 +1,6 @@
+//! `doctor`: reports every gap in the maker's environment, not only the first
+//! (TECHNICAL 2.4).
+
 use crate::allowlist::{self, Allowlist};
 use crate::api::Client;
 use crate::env::Env;

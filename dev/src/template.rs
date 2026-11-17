@@ -1,3 +1,5 @@
+//! The files of a new mod, embedded in the binary, and `new` (TECHNICAL 4).
+
 use crate::outcome::{Code, Problem};
 use serde::Serialize;
 use std::fs;

@@ -1,3 +1,6 @@
+//! The package (TECHNICAL 6): its content, paths and byte format, and pack,
+//! decode and unpack. Untrusted bytes are parsed only after their size is checked.
+
 use crate::{Mod, ModError, PackageId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

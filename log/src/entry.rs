@@ -1,3 +1,6 @@
+//! `Entry` and `EntryId` (TECHNICAL 4.2-4.6): the entry encoding, the signed
+//! bytes and the strict decode. No public constructor but `decode` and append.
+
 use std::fmt;
 use std::str::FromStr;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

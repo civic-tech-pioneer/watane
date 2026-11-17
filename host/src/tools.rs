@@ -1,3 +1,6 @@
+//! Tools and MCP (TECHNICAL 10): toolsets, tokens and the MCP endpoint that
+//! exposes mod functions to agents.
+
 use crate::{Caller, Host, HostError, LocalName, api, home};
 use axum::Json;
 use axum::body::{Body, to_bytes};

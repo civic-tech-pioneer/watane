@@ -1,3 +1,6 @@
+//! JSON encoding of WIT values (TECHNICAL 6.9): JSON to and from component
+//! values, JSON Schema and WIT type text for each callable function.
+
 use crate::{CallCode, CallError};
 use serde_json::{Value, json};
 use wasmtime::component::types::ComponentFunc;

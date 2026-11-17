@@ -1,3 +1,6 @@
+//! Builds a checked mod to `logic.wasm` in a cache copy of its sources
+//! (TECHNICAL 6). No mod code runs natively; every cargo run keeps `env_clear()`.
+
 use crate::allowlist::{self, Allowlist};
 use crate::env::Env;
 use crate::outcome::{Code, Problem};

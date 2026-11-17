@@ -1,3 +1,6 @@
+//! Reading the WIT (TECHNICAL 4.4, 4.5): parses a mod's world and classifies its
+//! imports and exports into `World`.
+
 use crate::folder::read_file;
 use crate::{InterfaceName, ModError, Rule, Slug, Version, Violation};
 use serde::Serialize;

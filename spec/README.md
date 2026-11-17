@@ -26,7 +26,7 @@ sketch.
 | [log](../log/VISION.md) | Makes statements that others can verify. |
 | [dist](../dist/VISION.md) | Moves releases between people. |
 | [net](../net/VISION.md) | Connects machines directly, by the class of each peer ([PEERS.md](PEERS.md), step 8). |
-| node | Joins `dist` and `net`, and runs `watane-node` (step 8; its folder comes with the step's design slice). |
+| [node](../node/VISION.md) | Joins `dist` and `net`, and runs `watane-node` (step 8). |
 
 ## Rules
 
@@ -37,8 +37,8 @@ sketch.
    subsystems. A signature is only in the `TECHNICAL.md` of the subsystem that owns it.
    Another subsystem cites it and never redefines it.
 3. **Design one step ahead of the code.** Steps 1 to 5 are designed
-   (step 4: S26; step 5: S32). Step 8's architecture is decided
-   (`PEERS.md`, `../net/`); its design slice completes it. A later step
+   (step 4: S26; step 5: S32), and so are step 8 (S59: `PEERS.md`,
+   `../net/`, `../node/`) and step 10 (S73: `design/manager/`). A later step
    gets only what keeps it open, marked as such, not a guess.
 4. **A step is done when its journey passes** on the real programs.
 5. **`../colos` is reference.** Code is written new here.

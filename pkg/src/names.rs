@@ -1,3 +1,6 @@
+//! Text forms (TECHNICAL 3): slugs, versions, interface names, HTTP hosts,
+//! publisher keys and release references, each parsed by its grammar.
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::str::FromStr;

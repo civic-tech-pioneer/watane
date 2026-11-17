@@ -1,3 +1,6 @@
+//! Build on (TECHNICAL 9.7): find the candidates for a missing provider, let
+//! the participant pick one, and bind the plan to the choice.
+
 use watane_dist::{Hit, Status};
 use watane_host::watane_pkg::{Grant, Provider};
 

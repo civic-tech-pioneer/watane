@@ -1,3 +1,5 @@
+//! The app (TECHNICAL 3): Config, run, AppState, startup and exit.
+
 mod build_on;
 #[cfg(all(feature = "driver", not(debug_assertions)))]
 compile_error!("the driver feature is only for debug test builds");

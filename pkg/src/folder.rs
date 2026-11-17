@@ -1,3 +1,6 @@
+//! The mod folder (TECHNICAL 4.6, 4.7): `Mod::read`, its parts, and the rules it
+//! enforces. Every refusal is a value that names the rule, never a panic.
+
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};

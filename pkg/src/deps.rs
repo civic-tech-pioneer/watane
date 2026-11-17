@@ -1,3 +1,6 @@
+//! `deps.json` (TECHNICAL 4.3): `Deps`, which maps each provider slug to its
+//! optional publisher key, and its reading and writing.
+
 use crate::folder::{invalid, io, read_file};
 use crate::{ModError, PublisherKey, Rule, Slug};
 use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};

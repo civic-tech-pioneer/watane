@@ -1,3 +1,6 @@
+//! Mod state (TECHNICAL 7): the redb store keyed by identity, with per-call
+//! transactions that enforce the storage limit and commit only on success.
+
 use crate::{CallError, HostError, Limit, Limits};
 use redb::{
     Database, ReadTransaction, ReadableDatabase, ReadableTable, TableDefinition, TableError,

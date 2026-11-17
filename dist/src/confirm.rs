@@ -1,3 +1,6 @@
+//! The consent boundary: the `Confirm` trait and the statements it is shown.
+//! Every signature waits on a `Decision` from the participant in the app.
+
 use crate::{EntryId, Link, PublicKey, Release, ReleaseRef};
 pub trait Confirm: Send + Sync {
     /// Blocks until the participant answers in the app. dist holds its

@@ -1,3 +1,6 @@
+//! `Harness` (TECHNICAL 2.6): runs one built mod on a temporary preview home
+//! with faked imports, for the contract tests of `dev`.
+
 use crate::{CallError, Caller, Host, HostError, Limits, LocalName};
 use serde_json::Value;
 use std::collections::BTreeMap;

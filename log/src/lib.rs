@@ -1,3 +1,7 @@
+//! `watane-log`: identity and signed, hash-chained channels. `Log`, `Error`
+//! and the limits (TECHNICAL 2); no network code, and no knowledge of what a
+//! body means.
+
 mod entry;
 mod identity;
 mod key;

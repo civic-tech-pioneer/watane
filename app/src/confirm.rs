@@ -1,3 +1,6 @@
+//! HostConfirm and DistConfirm (TECHNICAL 9.2): adapters that turn host's and
+//! dist's confirmations into requests on the consent Broker.
+
 use crate::consent;
 use crate::words::{self, Parties};
 use std::pin::Pin;

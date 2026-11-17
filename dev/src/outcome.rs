@@ -1,3 +1,7 @@
+//! The result of every command: `Outcome`, `Problem` and the error codes with
+//! their classes, as one JSON object or as text (TECHNICAL 2.1-2.3). Every error
+//! has a code, a file and line where known, and a fix.
+
 use serde::Serialize;
 use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

@@ -1,3 +1,5 @@
+//! `mod.toml` (TECHNICAL 4.2): reads and checks a mod's metadata.
+
 use crate::folder::{invalid, read_file};
 use crate::{HttpHost, ModError, ReleaseRef, Rule};
 use serde::Deserialize;

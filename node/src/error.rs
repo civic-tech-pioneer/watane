@@ -1,3 +1,5 @@
+//! NodeError: node's own errors, and dist's and net's passed through.
+
 use std::path::PathBuf;
 use watane_dist::DistError;
 use watane_net::NetError;

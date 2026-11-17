@@ -1,3 +1,6 @@
+//! Statement bodies (TECHNICAL 4.1): the CBOR encoding of profile, withdraw,
+//! list, include and unlist bodies, and the text rules their fields obey.
+
 use crate::{EntryId, Listing, Profile, Withdraw};
 use minicbor::{Decoder, Encoder};
 impl Profile {

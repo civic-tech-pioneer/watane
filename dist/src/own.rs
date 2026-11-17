@@ -1,3 +1,7 @@
+//! The own channel: identity, publish, withdraw, listings, backup and restore.
+//! `sign_and_append` (TECHNICAL 5.2) is the only caller of `Log::append`, and
+//! it asks `Confirm` first.
+
 use crate::{
     ChannelView, Decision, Dist, DistError, Entry, EntryId, Exported, Link, Listing, Outcome,
     Package, Profile, PublicKey, Published, PublisherKey, Release, ReleaseError, ReleaseInfo,

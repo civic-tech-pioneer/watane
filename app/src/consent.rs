@@ -1,3 +1,6 @@
+//! The consent Broker and Request, its view model (TECHNICAL 6.1, 6.2): one
+//! request at a time, each answered once.
+
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;

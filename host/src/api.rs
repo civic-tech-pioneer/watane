@@ -1,3 +1,6 @@
+//! The local API (TECHNICAL 11): JSON routes on the API host that install,
+//! manage and inspect mods, with errors mapped to their HTTP status.
+
 use crate::HostError;
 use std::sync::Arc;
 #[derive(Clone)]

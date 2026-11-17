@@ -1,3 +1,6 @@
+//! Export to the site folder (TECHNICAL 4.3), the files a web host serves,
+//! with atomic file writes.
+
 use crate::{Dist, DistError, Entry, Exported, Link, Slug, view};
 use std::fs;
 use std::io::Write;

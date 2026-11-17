@@ -1,3 +1,6 @@
+//! `derive`: turn a channel's verified entries into a `ChannelView` by the
+//! statement rules (TECHNICAL 4.1).
+
 use crate::{
     BadStatement, ChannelView, Entry, Listing, ListingInfo, Profile, PublicKey, PublisherKey,
     Release, ReleaseInfo, ReleaseRef, Status, Withdraw, Withdrawal, body,

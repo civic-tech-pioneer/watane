@@ -26,6 +26,8 @@ pkg/
   src/component.rs  Mod::check_component                             (section 4.9)
   src/package.rs    pack, Package, PackageError                      (section 6)
   src/release.rs    Release, RELEASE_KIND, ReleaseError              (section 7)
+  src/open.rs       open below a root without following child links  (section 6.4)
+  src/refusal.rs    causes and next steps for a link or special file
   tests/            integration tests; tests/fixtures/<case>/ folders
 ```
 

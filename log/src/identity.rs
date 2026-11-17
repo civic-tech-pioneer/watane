@@ -1,3 +1,6 @@
+//! The key file and its backup (TECHNICAL 4.9, 5.4): create, read and replace
+//! the signing key, and the passphrase-encrypted backup format.
+
 use crate::Error;
 use ed25519_dalek::SigningKey;
 use std::fs::{self, DirBuilder, File, OpenOptions};

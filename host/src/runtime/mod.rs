@@ -1,3 +1,6 @@
+//! The runtime (TECHNICAL 6): the engine, and compiling a mod with the host's
+//! own import check (TECHNICAL 5.3), which runs even when pkg already checked.
+
 pub(crate) mod call;
 mod json;
 pub(crate) mod limits;

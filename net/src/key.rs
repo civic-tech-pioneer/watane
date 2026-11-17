@@ -1,3 +1,6 @@
+//! NodeKey, its zbase32 text form, and the node key file `<home>/net/node.key`
+//! (TECHNICAL 4.1, 4.5).
+
 use crate::error::NetError;
 use ed25519_dalek::SigningKey;
 use std::fmt;

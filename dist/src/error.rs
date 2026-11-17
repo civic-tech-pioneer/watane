@@ -1,3 +1,6 @@
+//! `DistError` (TECHNICAL 3.1): every failure the crate reports. Text from a
+//! remote host is escaped before it reaches a message.
+
 use crate::{
     EntryId, KeyTextError, PackageError, PackageId, PublicKey, PublisherKey, ReleaseError,
     ReleaseRef, Slug,

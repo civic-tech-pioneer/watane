@@ -1,3 +1,6 @@
+//! Unit tests of a mod: built for Wasm and run in Wasmtime, never natively, with
+//! the libtest output read back into failures (TECHNICAL 7).
+
 use crate::builder::{self, BuildCtx};
 use crate::outcome::{Code, Problem};
 use serde::Serialize;

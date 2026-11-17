@@ -1,3 +1,6 @@
+//! The command line: clap types and one function per command, each giving an
+//! `Outcome` (TECHNICAL 2).
+
 use crate::allowlist::{self, Allowlist};
 use crate::builder::{self, BuildCtx};
 use crate::env::Env;

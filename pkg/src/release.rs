@@ -1,3 +1,6 @@
+//! The release body (TECHNICAL 7): `Release`, its canonical encoding and
+//! decoding, and the check of a release against its mod and package.
+
 use crate::{
     Grant, InterfaceName, Mod, NameError, Package, PackageId, Provider, PublisherKey, ReleaseRef,
     Slug, Version,

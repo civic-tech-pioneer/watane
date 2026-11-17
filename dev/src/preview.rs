@@ -1,3 +1,6 @@
+//! `serve` and `serve --stop`: a preview host for a mod, and finding the
+//! program `watane` (TECHNICAL 9.1, 9.3, 9.4).
+
 use crate::api::Client;
 use crate::env::Env;
 use crate::outcome::{Code, Problem};

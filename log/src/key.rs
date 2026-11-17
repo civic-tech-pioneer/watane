@@ -1,3 +1,6 @@
+//! `PublicKey` (TECHNICAL 4.1): its z-base-32 text form and the strict check
+//! of a key.
+
 use ed25519_dalek::VerifyingKey;
 use std::fmt;
 use std::str::FromStr;

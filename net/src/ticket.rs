@@ -1,3 +1,6 @@
+//! Ticket and PairCode: parse and format the pairing and node texts
+//! (TECHNICAL 4.1).
+
 use crate::error::NetError;
 use crate::key::{NodeKey, unzbase32, zbase32};
 use std::fmt;

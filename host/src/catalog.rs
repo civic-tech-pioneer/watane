@@ -1,3 +1,6 @@
+//! The catalog (TECHNICAL 4): sources, plans, install, update, remove, grants,
+//! binds and `installed.json`, the record of what this home has installed.
+
 use crate::{HostError, LocalName, VerifyCheck, home};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

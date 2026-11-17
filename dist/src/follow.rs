@@ -1,3 +1,6 @@
+//! Following channels (TECHNICAL 5.4): `follows.json`, reading a channel
+//! from its web base, and follow, unfollow and refresh.
+
 use crate::{
     Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
     RefreshReport, http, site, view,

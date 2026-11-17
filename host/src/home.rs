@@ -1,3 +1,6 @@
+//! The home (TECHNICAL 3): its layout and lock, `home.json`, `run.json`, the
+//! local name grammar and `default_home`.
+
 use crate::{HostError, Mode};
 use serde::{Deserialize, Serialize};
 use std::io::Write;

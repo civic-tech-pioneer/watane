@@ -1,3 +1,6 @@
+//! Fetch (TECHNICAL 5.7): get a package from a channel's bases, verify it
+//! against its release before use, and keep it in the package cache.
+
 use crate::{
     ChannelView, Dist, DistError, Fetched, Link, Outcome, Package, PackageError, PackageId,
     PublicKey, RefreshReport, ReleaseInfo, ReleaseRef, Status, http, index, site, view,

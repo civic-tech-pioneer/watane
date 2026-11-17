@@ -1,3 +1,6 @@
+//! Grants, providers and requirements (TECHNICAL 5): what a mod may be given and
+//! the version rule a provider must satisfy.
+
 use crate::{HttpHost, InterfaceName, PublisherKey, Slug, Version, compatible};
 use serde::{Deserialize, Serialize};
 use std::fmt;

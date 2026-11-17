@@ -1,3 +1,5 @@
+//! `watane_dev`, the maker tools of watane; every module is public (TECHNICAL 1).
+
 pub mod allowlist;
 pub mod api;
 pub mod build_on;

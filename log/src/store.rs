@@ -1,3 +1,6 @@
+//! The SQLite channel store (TECHNICAL 4.8): append, ingest, reads and fork
+//! detection over `channels.db`.
+
 use crate::{Entry, Error, Fork, Ingest, MAX_SEQ, PublicKey, Status, entry};
 use ed25519_dalek::SigningKey;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};

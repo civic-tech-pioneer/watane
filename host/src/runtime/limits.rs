@@ -1,3 +1,6 @@
+//! Limits (TECHNICAL 6.2) and error classification (TECHNICAL 6.7): `Limits`,
+//! the memory limiter and the mapping of wasmtime errors to `CallError`.
+
 use std::time::Duration;
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,6 @@
+//! The crates a mod may depend on: the embedded allowlist, and finding and
+//! verifying its vendor folder (TECHNICAL 6.2).
+
 use crate::outcome::{Code, Problem};
 use semver::Version;
 use std::collections::BTreeMap;

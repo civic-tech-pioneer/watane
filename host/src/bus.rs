@@ -1,3 +1,6 @@
+//! Events to pages (TECHNICAL 9.3): the page bus and its SSE adapter, which
+//! turns lag into one `changed` message and ends streams on shutdown.
+
 use crate::LocalName;
 use axum::response::sse::{Event, KeepAlive};
 use axum::response::{IntoResponse, Response, Sse};

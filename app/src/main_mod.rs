@@ -1,3 +1,6 @@
+//! The main mod (TECHNICAL 5.4): its local name in `<home>/app/main`, read at
+//! startup and written after an install adds a mod that proposes itself.
+
 use crate::CmdError;
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -1,3 +1,7 @@
+//! Core: every call into host and dist, mapped to the view types the windows
+//! show. No rule of installing, running, signing or verifying lives here; a
+//! sibling whose API differs is adapted here or in confirm.rs only.
+
 use crate::consent::{GrantLine, Party};
 use crate::words::{self, Parties};
 use crate::{CmdError, views};

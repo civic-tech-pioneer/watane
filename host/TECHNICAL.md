@@ -61,13 +61,13 @@ target `wasm32-wasip2`.
 | `src/lib.rs` | `Host`, re-exports, `HOST_WIT`, `WATANE_JS`, `DEFAULT_PORT` |
 | `src/error.rs` | `HostError`, `CallError`, codes (section 2.2) |
 | `src/home.rs` | home layout, lock, `home.json`, `run.json`, `LocalName`, `default_home` (section 3) |
-| `src/catalog.rs` | sources, plan, install, update, remove, grants, `installed.json` (section 4) |
-| `src/verify.rs` | package, release and import checks (section 5) |
-| `src/runtime/mod.rs` | engine, registry snapshot, the call algorithm (section 6) |
+| `src/catalog.rs` | sources, plan, install, update, remove, grants, `installed.json` (section 4); package and release checks (5.1, 5.2) |
+| `src/manage.rs` | the manager's functions, request table, manage effects (6.10) |
+| `src/runtime/mod.rs` | engine, registry snapshot, the import check (sections 5.3, 6) |
+| `src/runtime/call.rs` | the call algorithm (6.6), event delivery (9.2) |
 | `src/runtime/linker.rs` | host interfaces, links, stubs, outlets, fakes |
 | `src/runtime/limits.rs` | `Limits`, epoch ticker, limiter, error classification |
 | `src/runtime/json.rs` | JSON to WIT values, JSON Schema, WIT type text |
-| `src/runtime/http.rs` | the network grant hooks |
 | `src/state.rs` | redb store and transactions (section 7) |
 | `src/bus.rs` | outbox records, delivery, page bus and SSE adapter (section 9) |
 | `src/server.rs` | bind, routing by `Host` header, guards, `Served` (section 8) |

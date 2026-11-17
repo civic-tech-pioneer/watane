@@ -1,3 +1,6 @@
+//! Reads from a web host (TECHNICAL 4.5): GET with a body limit and a
+//! whole-request timeout on every request. Outgoing only; nothing listens.
+
 use crate::{Dist, DistError, Entry, PublicKey};
 use std::time::{Duration, Instant};
 

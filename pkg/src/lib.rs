@@ -1,3 +1,6 @@
+//! `watane-pkg`: what a mod, a package and a release are (TECHNICAL 1).
+//! Re-exports only; no logic.
+
 mod add;
 pub use add::add_provider;
 mod component;

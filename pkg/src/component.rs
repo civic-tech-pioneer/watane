@@ -1,3 +1,6 @@
+//! `Mod::check_component` (TECHNICAL 4.9): checks a mod's `logic.wasm` against
+//! its world, after checking its size.
+
 use crate::folder::{invalid, read_file};
 use crate::{InterfaceName, Mod, ModError, Rule, Violation};
 use std::collections::BTreeSet;

@@ -1,3 +1,6 @@
+//! Equality of two JSON values for tests: object members in any order, numbers
+//! by value (TECHNICAL 8.1).
+
 use serde_json::Value;
 
 pub fn json_eq(a: &Value, b: &Value) -> bool {

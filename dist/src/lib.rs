@@ -1,3 +1,7 @@
+//! `watane-dist`: signed channels of mod releases, published to and read from
+//! plain web hosts. `Dist` and the public API (TECHNICAL 3); the only module
+//! that exports anything.
+
 mod link;
 pub use link::Link;
 pub use watane_log::PublicKey;

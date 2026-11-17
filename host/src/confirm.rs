@@ -1,3 +1,6 @@
+//! Confirmation (TECHNICAL 12.1): the `Confirm` trait the app implements, and
+//! the requests and answers that pass through it.
+
 use crate::{LocalName, PlanEntry};
 use std::pin::Pin;
 use watane_pkg::{Grant, ReleaseRef};

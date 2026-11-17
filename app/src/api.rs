@@ -1,3 +1,6 @@
+//! The local API routes that need dist (TECHNICAL 8). No route calls
+//! `Broker::answer`; consent is answered only in the consent window.
+
 use crate::CmdError;
 use axum::body::Bytes;
 use axum::extract::rejection::BytesRejection;

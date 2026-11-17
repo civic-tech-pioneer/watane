@@ -1,3 +1,5 @@
+//! NetError and the wire's error codes (TECHNICAL 3.2, 4.2).
+
 use crate::key::NodeKey;
 use std::fmt;
 use std::path::PathBuf;

@@ -1,3 +1,6 @@
+//! `Link` (TECHNICAL 4.2): parse and format the text that points at a channel,
+//! its web base and, optionally, one mod.
+
 use crate::{DistError, PublicKey, Slug};
 use std::fmt;
 use std::str::FromStr;

@@ -1,3 +1,7 @@
+//! A mod's page host (TECHNICAL 8.2 to 8.4): files with their security headers,
+//! `POST /call` and `GET /events`. The caller comes from the entry point, never
+//! from a request field.
+
 use crate::{Caller, Host, LocalName, api};
 use axum::Json;
 use axum::body::{Body, to_bytes};

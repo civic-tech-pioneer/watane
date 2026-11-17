@@ -1,3 +1,6 @@
+//! Host interfaces and the linker (TECHNICAL 6.4): links WASI, `state`,
+//! `caller`, `manage`, outlets, providers and fakes into a mod's instance.
+
 use super::Ctx;
 use super::limits::Limiter;
 use crate::{CallError, HostError, Limits};

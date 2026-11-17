@@ -1,3 +1,6 @@
+//! The server (TECHNICAL 8.1): binds the port, routes each request by its `Host`
+//! header to a page, the API or MCP, and owns `Served` and `run.json`.
+
 use crate::{Host, HostError, LocalName, Ready, ReadyMod, RunInfo, api, home, pages};
 use axum::Router;
 use axum::body::Body;

@@ -1,3 +1,6 @@
+//! The find view's search (TECHNICAL 9.6): the query it takes and the rows and
+//! API results it makes from dist's and node's hits.
+
 use crate::CmdError;
 use crate::words::{self, Parties};
 use serde_json::{Value, json};

@@ -1,3 +1,6 @@
+//! The test driver (TECHNICAL 10): drives the windows from the Rust side for
+//! window tests. Only with feature `driver`, never in a release build.
+
 use crate::AppState;
 use crate::consent::{Answer, Request};
 use serde_json::{Value, json};

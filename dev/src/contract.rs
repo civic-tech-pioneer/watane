@@ -1,3 +1,6 @@
+//! Contract tests: reads a mod's contract test files and runs their steps on
+//! the host `Harness` (TECHNICAL 8).
+
 use crate::json_eq::json_eq;
 use crate::outcome::{Code, Problem};
 use serde::{Deserialize, Serialize};

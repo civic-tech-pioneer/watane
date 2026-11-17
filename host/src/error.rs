@@ -1,3 +1,6 @@
+//! Errors (TECHNICAL 2.2): `HostError` for host operations and `CallError` for
+//! calls, with their codes, HTTP statuses and JSON form.
+
 use serde_json::{Value, json};
 use std::path::PathBuf;
 

@@ -1,3 +1,7 @@
+//! The Tauri commands of the main and consent windows (TECHNICAL 7). Only
+//! `consent_answer` here and the consent window's `Destroyed` handler call
+//! `Broker::answer`.
+
 use crate::consent::{AskId, Withheld};
 use crate::core::{ModView, ToolRow};
 use crate::{AppState, CmdError, views};

@@ -1,3 +1,6 @@
+//! The providers of a mod: `add <mod folder>`, `.watane-dev.json`, and local
+//! and released providers in order (TECHNICAL 3, 9.2, 9.5).
+
 use crate::outcome::{Code, Problem};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

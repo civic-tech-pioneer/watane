@@ -1,3 +1,6 @@
+//! The environment dev runs in: the cache folder and the unit test time limit
+//! (TECHNICAL 3).
+
 use crate::outcome::Problem;
 use std::fs;
 use std::path::PathBuf;

@@ -1,3 +1,6 @@
+//! Grant words (TECHNICAL 4) and the parties cache (TECHNICAL 9.2): how grants
+//! and parties read in the consent view and the manager.
+
 use crate::consent::{GrantKind, GrantLine, Party};
 use std::collections::BTreeMap;
 use watane_host::watane_pkg::{Grant, Provider};

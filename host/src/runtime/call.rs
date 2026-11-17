@@ -1,3 +1,6 @@
+//! The call algorithm (TECHNICAL 6.6) and event delivery (TECHNICAL 9.2): runs
+//! a top-level call and its chain, then delivers the events it emitted.
+
 use super::{json, limits};
 use crate::{CallCode, CallError, Caller, EventRecord, Host, Limit, LinkKind, LocalName, Outcome};
 use serde_json::Value;

@@ -1,3 +1,6 @@
+//! Checks a mod folder against the pkg rules plus the builder's constraints,
+//! before anything is built (TECHNICAL 5).
+
 use crate::allowlist::Allowlist;
 use crate::outcome::{Code, Problem};
 use serde::Serialize;

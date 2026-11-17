@@ -31,6 +31,7 @@ dist/
     fetch.rs      package cache, unpacked() (section 5.2), fetch, open_link
     index.rs      the read set (5.9); choose_index, drop_index, indexes             (step 4)
     search.rs     Query, InterfaceQuery, Hit; search (5.10)                       (step 4)
+    holder.rs     the holder for own machines (5.12)                              (step 8)
   tests/
     support/mod.rs  TestHost, RecordingConfirm, fixtures
     fixtures/reading-list/   a page-only mod folder (mod.toml, wit/world.wit, ui/index.html)

@@ -1,3 +1,6 @@
+//! `watane-host`, the security core that installs and runs mods (TECHNICAL 2.1):
+//! `Host`, its modes and the crate's re-exports.
+
 pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 

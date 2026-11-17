@@ -1,3 +1,6 @@
+//! The `watane-dev` program: parses the command line, runs the command, prints
+//! its result and exits with the status of its class (TECHNICAL 2.2).
+
 use clap::Parser;
 use watane_dev::cli::Cli;
 use watane_dev::outcome::{Code, Outcome, Problem};

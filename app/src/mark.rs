@@ -1,3 +1,6 @@
+//! The consent mark (TECHNICAL 6.4): two words in `<home>/app/mark` that a mod
+//! cannot know.
+
 use std::path::Path;
 pub const WORDS: [&str; 64] = [
     "amber", "anchor", "apple", "arrow", "aspen", "badge", "basil", "beacon", "birch", "bison",

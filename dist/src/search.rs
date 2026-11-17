@@ -1,3 +1,6 @@
+//! Search (TECHNICAL 5.10): find releases by name or interface across the
+//! own, followed and indexed channels, and order the hits.
+
 use crate::{Dist, DistError, Link, PublicKey, Release, ReleaseInfo, Slug, Status, Version, view};
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;

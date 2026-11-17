@@ -1,3 +1,6 @@
+//! Indexes and the read set (TECHNICAL 5.9): choosing and dropping index
+//! channels, and walking listings into the channels a search may read.
+
 use crate::{
     ChannelView, Dist, DistError, Follow, Link, ListingInfo, Outcome, PublicKey, RefreshReport,
     Slug, follow, view,

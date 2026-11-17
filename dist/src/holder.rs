@@ -1,3 +1,6 @@
+//! The holder for own machines (TECHNICAL 5.12): heads, entries and packages
+//! that `node` serves to and stores from other machines. Takes no read lock.
+
 use crate::{
     Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, follow,
     site, view,

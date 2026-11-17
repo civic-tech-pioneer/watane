@@ -1,3 +1,7 @@
+//! Window labels and builders: main, consent and mod windows (TECHNICAL 5).
+//! The consent window's `Destroyed` handler is one of the two callers of
+//! `Broker::answer`.
+
 use crate::consent::Answer;
 use crate::{AppState, CmdError};
 use tauri::webview::{DownloadEvent, NewWindowResponse};

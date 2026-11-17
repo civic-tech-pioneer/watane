@@ -1,3 +1,6 @@
+//! Finds cargo, rustc and the sysroot, and checks that the `wasm32-wasip2`
+//! target is installed (TECHNICAL 6.1).
+
 use crate::env::Env;
 use crate::outcome::{Code, Problem};
 use std::fs;
