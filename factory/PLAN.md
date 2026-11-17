@@ -706,7 +706,7 @@ is a step-7-style check, after S55.
   (`Confirm::installed`, host 12.1). Local (the app). After S81 and S82.
   Delivered (merged as 26a728a): Alice gets the manager as the human's design draws it, light and dark: first start, the Library grid with a details side panel, the inline confirm panel, the Installed note, the drop target, Find, Updates with Checking…, Settings in the same tokens; a `main = true` mod installed any way (watane-dev install, a managing mod) becomes the start window (host `Confirm::installed`). Side by side: three foreman rounds (about 30, then 7 gaps, fixed in fix1 and fix2), then the PO's own check of all 11 views found one more (the update band said "An update is available." with a full-width button), fixed in fix3 and fix4; every remaining difference is (a) a rule (two-word mark, monogram by slug, offerLabel in Updates, Search button, chip drop, "Adds commands to <main>" not built) or (b) just as good (selected tile outlined, 400 px panel, system-font wrap, Try again disabled while checking). Screens in spec/design/manager/screens (the app's live DOM re-rendered in headless Chromium: macOS refuses screen capture). Decisions: three app tasks (Rust; Library and shell; Find and Updates); look.rs renders dist states through the page (WATANE_APP_FAKE gone); the spec follows the board where no rule decided (start row stays during confirm, first-start controls 40/10, Installed for any version, "A, B and C are installed.", zero channels "Checking…", no badge in the details head); one primary per Settings section; grant_short keys providers by identity; drops reach the page's wataneDropped and Rust only toggles body.dropping; `Confirm::installed` only from Host::install after commit_plan, not when all entries are Unchanged; the details band reads `Version <v> asks to <grants>.` with an `Install <v>…` button (PO, 5.3.4.3), Updates keeps offerLabel. Verified on the Mac: the foreman's whole suite once (host, app default and driver, front skipped); the PO reran j4 and gui_shell (they read the band) after fix3/fix4. For a later slice (user-sim): a program's install shows in the open Library only after focus and leaves the earlier Installed note; a new home flashes the full Library before first start; a search with no index says only "No mods found"; the consent view still shows the long technical grant lines; manager.rs ac5_s81 reads TECHNICAL/FUNCTIONAL (spec grep, remove).
 
-- [~] **S85 The app's suite is green on Linux (stage F), so app slices can run off the Mac.** Branch
+- [x] **S85 The app's suite is green on Linux (stage F), so app slices can run off the Mac.** Branch
   `slice/s85`. The human agreed (2026-11-17) after the test-time measurements. `app/scripts/linux-test.sh`
   (Docker arm64, xvfb, Openbox) runs the whole app suite with the front four skipped; 4 tests fail on
   Linux only: `j10` ac3_journey_j10 (DOM timed out: `body.dataset.ready === 'true' && location.hash ===
@@ -720,6 +720,7 @@ is a step-7-style check, after S55.
   linux.Dockerfile, NOTES.md). Local (needs Docker and the Mac's native run). No user-sim story
   beyond the two green runs. Next, not in this slice: a cloud environment with WebKitGTK and xvfb
   (the human's).
+  Delivered (merged as 0277e15): `bash app/scripts/linux-test.sh` runs the whole app suite green (436 tests, twice in a row), so app slices can run off the Mac. Causes: a tauri-runtime-wry 2.12.3 Linux bug (protocols registered once per data_directory key; an incognito mod window built first left main without `tauri://`), fixed by giving mod windows the key `<home>/app/mod-webview-context` (still ephemeral; gui_isolation passes); no `lsof` in the image; GTK mnemonics in predefined menu labels (now `*_with_text`); a hidden GTK window has no size (one look test uses `App::background`); a race in manager ac3_s81 (waits for `#installed-note`). Decisions: WebKit leaves bookkeeping files in mod-webview-context (TECHNICAL 3, 5.1). Verified on the Mac: rebased on the Google style commit e8265e8, app clippy, fmt, default and the touched window files green; manager.rs failed 3 of 6 at first, but the foreman showed main failing the same way when both ran at once under load (load average 11 to 24), and the branch 7 of 7 alone. Not run after the rebase: the Linux runner (the rebase changed only style).
 
 ### Step 9: Extension points (J9)
 
@@ -1084,7 +1085,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S83: delivered 2026-11-16 and merged; routine finished, branches removed.
 - S81: delivered 2026-11-16 and merged; foreman stopped, worktree and branches removed.
 - S82: `75eab872` (sessionId `75eab872-4a9f-4f3b-9cfc-c99497768b74`), worktree `.claude/worktrees/s82` (local: the app; builds in main's `target/`).
-- S85 fix: `e9fa2917` (sessionId `e9fa2917-4c33-4d1f-a490-22c54f425f97`): after the rebase on e8265e8, manager.rs fails 3 of 6 native runs on the branch (app not ready), main 3 of 3 green.
+- S85 (delivered, merged; foremen stopped, worktree and branches removed). Fix: `e9fa2917` (sessionId `e9fa2917-4c33-4d1f-a490-22c54f425f97`): after the rebase on e8265e8, manager.rs fails 3 of 6 native runs on the branch (app not ready), main 3 of 3 green.
 - S85: `73adea8f` (sessionId `73adea8f-b026-48f9-9cfc-e634ed31c2ce`), worktree `.claude/worktrees/s85` (local: Docker and the Mac).
 - S84: `a2ce600f` (sessionId `a2ce600f-dee1-40fa-99fa-9a31f4de06d0`), worktree `.claude/worktrees/s84` (local: the app; builds in main's `target/`).
 - S71: delivered 2026-11-15 and merged; foreman stopped, worktree and branches removed.
@@ -1355,6 +1356,9 @@ The human may veto each one.
   "Fix the cause" prefix; the message reads `<command> failed: <stderr>` (dev 2.2, 10.4.1).
 
 ## Friction
+
+- (S85) macOS window tests miss the app's 30 s ready timeout when the Mac is loaded (load 11 to 24 from parallel jobs); compare slice and main only when both run at once. Options: a longer driver TIMEOUT, or one GUI suite at a time.
+- (S85) factory/check.sh's app clippy failed on sibling log/pkg code under clippy 1.99 (check again after e8265e8).
 
 - S60: a test that reads `/proc/self/fd` passed in the cloud and panicked on the Mac. The cloud is
   Linux and the human's machine is macOS: a test that leans on a Linux-only path passes where it is
