@@ -706,6 +706,21 @@ is a step-7-style check, after S55.
   (`Confirm::installed`, host 12.1). Local (the app). After S81 and S82.
   Delivered (merged as 26a728a): Alice gets the manager as the human's design draws it, light and dark: first start, the Library grid with a details side panel, the inline confirm panel, the Installed note, the drop target, Find, Updates with Checking…, Settings in the same tokens; a `main = true` mod installed any way (watane-dev install, a managing mod) becomes the start window (host `Confirm::installed`). Side by side: three foreman rounds (about 30, then 7 gaps, fixed in fix1 and fix2), then the PO's own check of all 11 views found one more (the update band said "An update is available." with a full-width button), fixed in fix3 and fix4; every remaining difference is (a) a rule (two-word mark, monogram by slug, offerLabel in Updates, Search button, chip drop, "Adds commands to <main>" not built) or (b) just as good (selected tile outlined, 400 px panel, system-font wrap, Try again disabled while checking). Screens in spec/design/manager/screens (the app's live DOM re-rendered in headless Chromium: macOS refuses screen capture). Decisions: three app tasks (Rust; Library and shell; Find and Updates); look.rs renders dist states through the page (WATANE_APP_FAKE gone); the spec follows the board where no rule decided (start row stays during confirm, first-start controls 40/10, Installed for any version, "A, B and C are installed.", zero channels "Checking…", no badge in the details head); one primary per Settings section; grant_short keys providers by identity; drops reach the page's wataneDropped and Rust only toggles body.dropping; `Confirm::installed` only from Host::install after commit_plan, not when all entries are Unchanged; the details band reads `Version <v> asks to <grants>.` with an `Install <v>…` button (PO, 5.3.4.3), Updates keeps offerLabel. Verified on the Mac: the foreman's whole suite once (host, app default and driver, front skipped); the PO reran j4 and gui_shell (they read the band) after fix3/fix4. For a later slice (user-sim): a program's install shows in the open Library only after focus and leaves the earlier Installed note; a new home flashes the full Library before first start; a search with no index says only "No mods found"; the consent view still shows the long technical grant lines; manager.rs ac5_s81 reads TECHNICAL/FUNCTIONAL (spec grep, remove).
 
+- [~] **S85 The app's suite is green on Linux (stage F), so app slices can run off the Mac.** Branch
+  `slice/s85`. The human agreed (2026-11-17) after the test-time measurements. `app/scripts/linux-test.sh`
+  (Docker arm64, xvfb, Openbox) runs the whole app suite with the front four skipped; 4 tests fail on
+  Linux only: `j10` ac3_journey_j10 (DOM timed out: `body.dataset.ready === 'true' && location.hash ===
+  '#mods'`), `s44` ac2_s44_disable_closes_page_and_restart_clears_notice (`body.dataset.ready`), `s39`
+  ac3_s39_menu_and_last_window_exit (`location.hash === '#settings'`), all three in
+  app/tests/support/journey.rs:14, and machines.rs:115 ac1_s28_off_by_default_and_publish (NotFound, a
+  path that exists on macOS only). Find each cause (a real app bug on Linux, or a test that assumes
+  macOS) and fix it at that level; never weaken a test or skip it on Linux without a reason that
+  names what Linux cannot do. Outcome: `bash app/scripts/linux-test.sh` passes with 0 failures twice
+  in a row; the native driver suite stays green. Touches: app (src, tests, scripts/linux-test.sh,
+  linux.Dockerfile, NOTES.md). Local (needs Docker and the Mac's native run). No user-sim story
+  beyond the two green runs. Next, not in this slice: a cloud environment with WebKitGTK and xvfb
+  (the human's).
+
 ### Step 9: Extension points (J9)
 
 The human decided (2026-11-15) that step 9 runs beside step 8: its files are disjoint from net and
