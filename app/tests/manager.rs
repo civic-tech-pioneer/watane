@@ -480,6 +480,12 @@ fn ac3_s81_used_by_link_opens_details_and_moves_focus() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     install(&app, &["reading-list", "recommendations"]);
+    // Panels appear before the install action finishes selecting its new mod.
+    until(
+        &app,
+        "main",
+        "!document.querySelector('#installed-note').hidden",
+    );
     app.eval("main", "document.querySelector('[data-tile=reading-list]').click(); document.querySelector('[data-local=reading-list] .connections .chip').click(); null");
     until(
         &app,

@@ -1414,7 +1414,7 @@ This prevents tauri-runtime-wry 2.12.3's once-per-key Linux protocol
 registration for an ephemeral mod from consuming the main window's
 `tauri://` handler. The builder comment records why the key is necessary.
 The Linux image also installs `lsof`, used by machines S28. No Rust
-dependency or test changed. The builder options live in TECHNICAL 5.1,
+dependency was added; round 1 changed no tests. The builder options live in TECHNICAL 5.1,
 not section 10 (which describes the driver); that owning list is updated.
 
 Linux filesystem check: a throwaway driver probe installed Desk, quit,
@@ -1436,9 +1436,9 @@ with `new_ephemeral()` for an incognito view (`webkitgtk/mod.rs:259`).
 The unused bookkeeping context creates these files; the mod's actual
 view still uses the ephemeral context. The unchanged Linux regression
 `gui_isolation::ac3_reopened_hostile_window_has_fresh_storage` also passes. No cleanup or change to the
-isolation boundary was added to disguise this observation. Acceptance
-of these bookkeeping files, or a different upstream solution, remains
-a question; the no-writes part of AC1 is unfulfilled.
+isolation boundary was added to disguise this observation. Round 2 D1
+accepts these unused-context bookkeeping files under amended AC1; mods
+never use that context.
 
 Validation: all four requested targeted Linux runner commands pass:
 manager::ac3_s39_menu_and_last_window_exit,
@@ -1470,7 +1470,7 @@ geometry assertion (right edge within 1 px, short button under half the row
 width, and the text and button overlapping vertically). Its expected text
 is `Version 2.0.0 asks to connect to example.org.` and the button is
 `Install 2.0.0…`. No assertion, skip, platform branch or layout code was
-changed. AC3's zero-failure full-suite requirement remains unmet.
+changed in round 1. Round 2 D3 addresses this failure as described below.
 
 Native macOS: the one `cargo test -p watane-app` run reports 111 passing
 unit tests and one failure in
@@ -1482,3 +1482,77 @@ pkg/src/world.rs:191. Those siblings were not edited. `cargo fmt --check`
 passes (stable rustfmt warns about existing nightly-only settings). Native
 manager/manage/j10 GUI tests were not run, per the task's sandbox execution
 instructions; they still require external macOS validation.
+
+
+#### S85 round 2 — foreman decisions
+
+D1 accepts the observed bookkeeping files above: they belong to Tauri's
+unused context, while the mod view remains ephemeral. D2 confirms that
+the newer-Clippy failures in log/pkg are pre-existing on main; those
+siblings and lint settings remain unchanged.
+
+D3 changes only the constructor of
+`look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`
+from `App::start` to `App::background` on every platform. Hidden GTK
+windows are never mapped and have `innerWidth === 0` (the foreman's probe
+measured the notice at left -130 with width 280). The test asserts layout
+at the default window size, so it requires a mapped background window,
+as permitted by TECHNICAL 11. Every assertion remains unchanged; no CSS,
+platform branch, ignore attribute or skip was added. The round 1 failing
+Linux run above is the red regression evidence for this constructor fix.
+
+Round 2 validation: the targeted Linux look test passes with the background
+constructor. Native `cargo test -p watane-app` again reports 111 passing
+unit tests and only the known netmon pairing failure. The requested
+`cargo test -p watane-app --features driver --test look -- --include-ignored`
+was attempted: 11 tests pass, while seven window tests (including the
+changed one) time out before app readiness. Their stderr reports
+`Connection Invalid error for service com.apple.hiservices-xpcservice`
+and notification tracker error -50. Native GUI validation is unavailable
+in this sandbox and needs an external macOS GUI session. No test was
+filtered or weakened in response. Round 2 `cargo fmt --check` passes.
+
+The first round 2 full Linux run passes all 18 look tests, then reveals
+a later existing manager failure:
+`ac5_s39_w37_menu_items_and_separators` receives GTK predefined menu labels
+`Cu&t`, `&Copy`, `&Paste`, `Select &All`, `&Minimize`, `C&lose Window`,
+which differ from the literal labels specified in TECHNICAL 5.4 and asserted
+by the test. `views::install_menu` now supplies those six labels explicitly
+through Tauri's predefined-item builder methods. Their native actions and
+accelerators remain predefined; the test and its assertion stay unchanged.
+This run is the red evidence for the additional Linux suite fix.
+
+After explicit menu labels, a full Linux run exits 0. The next full run
+passes look but fails manager's existing
+`ac3_s81_used_by_link_opens_details_and_moves_focus` waiting for target
+heading focus. Source inspection shows the setup race: `install` waits for
+mod panels, which `refresh()` draws before it finishes its other awaited
+work; the install action then selects the newly installed mod after the
+test may already have clicked its connection. That later selection can
+overwrite the connection selection and focus. The targeted test passes
+alone, consistent with timing-dependent setup.
+
+Unlisted file `tests/manager.rs`: this one test now waits for the existing
+installed notice (set after the install action selects its new mod) before
+clicking the connection. It retains hidden mode and its exact assertion;
+there is no fixed delay, retry of the interaction, skip or platform branch.
+The targeted Linux runner passes after adding this prerequisite wait.
+
+Final round 2 validation: two consecutive complete Linux runner invocations
+on the same code both exit 0, with zero failures in the default and driver
+suites (`/tmp/watane-s85-r2-linux-final-1.log` and
+`/tmp/watane-s85-r2-linux-final-2.log`). The runner retains its established
+front-test skips; no skip was added. The original four S85 regressions,
+fresh-storage regression, mapped look test, explicit menu-label test, and
+synchronized connection-focus test all pass in both full runs.
+
+Native macOS `cargo test -p watane-app`, rerun after the menu fix, reports
+111 passing unit tests and only the known sandbox netmon pairing failure.
+`cargo test --features driver --test look -- --include-ignored` was attempted:
+11 tests pass, seven window tests time out before app readiness, including
+the changed background test. App stderr reports invalid connections to
+`com.apple.hiservices-xpcservice` and `_LSModifyNotification` error -50.
+Native window validation is unavailable in this sandbox and still needs
+an external GUI session. No test was skipped to hide these failures.
+`cargo fmt --check` and `git diff --check` pass. D2's pre-existing sibling
+Clippy failures remain unchanged. No dependency was added.

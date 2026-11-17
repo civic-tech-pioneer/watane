@@ -718,7 +718,8 @@ treated as absent and the file deleted.
 - W37: after the app submenu, an `Edit` submenu of Tauri's predefined
   items (`Undo`, `Redo`, separator, `Cut`, `Copy`, `Paste`, `Select All`)
   and a `Window` submenu (`Minimize`, `Close Window`), so that the usual
-  keys work in every field and page on macOS. The board's `File` and
+  keys work in every field and page on macOS. Supply these labels explicitly
+  rather than inheriting GTK's mnemonic-marked defaults. The board's `File` and
   `View` have no items in any design or rule, so there are none (an empty
   menu would be noise). Predefined items act natively and send no menu
   event; they give no page a new reach.

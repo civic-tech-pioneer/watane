@@ -286,14 +286,14 @@ pub(crate) fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .undo()
         .redo()
         .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
+        .cut_with_text("Cut")
+        .copy_with_text("Copy")
+        .paste_with_text("Paste")
+        .select_all_with_text("Select All")
         .build()?;
     let window = SubmenuBuilder::new(app, "Window")
-        .minimize()
-        .close_window()
+        .minimize_with_text("Minimize")
+        .close_window_with_text("Close Window")
         .build()?;
     app.set_menu(Menu::with_items(app, &[&submenu, &edit, &window])?)?;
     app.on_menu_event(|app, event| {

@@ -569,7 +569,7 @@ mod windows {
     #[test]
     fn ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges() {
         let home = tempfile::tempdir().unwrap();
-        let app = App::start(home.path(), &[]);
+        let app = App::background(home.path(), &[]);
         install(&app, &["reading-list", "recommendations", "desk"]);
         check(
             &app,
