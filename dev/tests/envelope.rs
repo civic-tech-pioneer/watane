@@ -1,5 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{fs, path::Path, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
     let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .current_dir(dir)
@@ -204,10 +208,8 @@ fn regress_s56_missing_argument_message_names_the_argument() {
 
 #[test]
 fn ac1_ac3_public_reports_are_typed() {
-    use watane_dev::{
-        check::{CheckReport, ProviderReport},
-        template::{NewReport, new_mod},
-    };
+    use watane_dev::check::{CheckReport, ProviderReport};
+    use watane_dev::template::{NewReport, new_mod};
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().join("hello");
     let created: NewReport = new_mod(&dir, "hello").unwrap();

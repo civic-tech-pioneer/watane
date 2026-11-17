@@ -1,8 +1,13 @@
 #![cfg(feature = "driver")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::{Value, json};
 use std::time::Instant;
-use support::{driver::App, journey::*, node::NodeProc, publish::*};
+use support::driver::App;
+use support::journey::*;
+use support::node::NodeProc;
+use support::publish::*;
 
 fn start(home: &std::path::Path) -> App {
     let app = App::start(home, &[("WATANE_DRIVER_NET_BIND", "127.0.0.1:0")]);

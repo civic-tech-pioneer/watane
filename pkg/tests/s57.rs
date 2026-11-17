@@ -1,5 +1,8 @@
 #![cfg(unix)]
-use std::{fs, path::Path};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::Path;
 use watane_pkg::{Mod, ModError, PackageError, Rule, pack};
 
 const LINK_ENTRY: &str = "a symbolic link; replace it with a regular file or directory";
@@ -106,10 +109,8 @@ fn ac7_s57_mod_toml_link() {
 // ("<mod>/ui: No such file or directory"), though `ui` is there.
 #[test]
 fn regress_s57_entry_gone_between_list_and_stat() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     let dir = hello();
     let ui = dir.path().join("ui");
     fs::create_dir_all(&ui).unwrap();
@@ -118,7 +119,7 @@ fn regress_s57_entry_gone_between_list_and_stat() {
     }
     let stop = Arc::new(AtomicBool::new(false));
     let churn = {
-        let stop = stop.clone();
+        let stop = Arc::clone(&stop);
         let ui = ui.clone();
         std::thread::spawn(move || {
             while !stop.load(Ordering::Relaxed) {

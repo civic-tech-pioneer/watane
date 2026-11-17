@@ -1,14 +1,15 @@
 #![cfg(feature = "driver")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 
 use serde_json::{Value, json};
-use std::{fs, path::Path};
-use support::{
-    dev::{dev_run, workspace_dev},
-    driver::App,
-    journey::*,
-    publish::*,
-};
+use std::fs;
+use std::path::Path;
+use support::dev::{dev_run, workspace_dev};
+use support::driver::App;
+use support::journey::*;
+use support::publish::*;
 
 fn body(app: &App) -> String {
     app.eval("consent", "document.body.textContent")

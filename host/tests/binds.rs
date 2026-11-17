@@ -1,9 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use watane_host::watane_log::Log;
 use watane_host::watane_pkg::{self as pkg, Mod, Provider, PublisherKey, RELEASE_KIND, Release};
 use watane_host::{
@@ -195,7 +195,7 @@ async fn ac3_bind_only_update_confirms_and_keeps_directory_and_pick() {
     let r = Releases::new();
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(ConfirmFake::default());
-    let host = home(dir.path(), fake.clone());
+    let host = home(dir.path(), Arc::clone(&fake));
     host.install(
         host.plan(vec![
             r.recs(),
@@ -369,7 +369,7 @@ async fn ac3_pick_for_installed_consumer_without_source_is_confirmed() {
     let r = Releases::new();
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(ConfirmFake::default());
-    let host = home(dir.path(), fake.clone());
+    let host = home(dir.path(), Arc::clone(&fake));
     host.install(
         host.plan(vec![r.recs(), r.source(&r.k1, &fixture("shelf"))])
             .unwrap(),

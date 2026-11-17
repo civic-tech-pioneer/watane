@@ -36,3 +36,6 @@ required-features = ["fake-host"]
 name = "fake-gh"
 path = "src/bin/fake-gh.rs"
 required-features = ["fake-host"]
+
+[lints]
+workspace = true

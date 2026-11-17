@@ -1,8 +1,8 @@
-use axum::{
-    Router,
-    body::{Body, to_bytes},
-    http::Request,
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::Request;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -47,7 +47,7 @@ async fn ac6_publish_http_rows_without_window() {
         watane_dist::Dist::open(home.path(), Arc::new(Answer(true)), Default::default()).unwrap(),
     );
     dist.set_site_url("http://127.0.0.1:1/").unwrap();
-    let router = watane_app::api::router(Some(dist.clone()));
+    let router = watane_app::api::router(Some(Arc::clone(&dist)));
     for (content, bytes, status, code) in [
         ("text/plain", vec![1], 400, "bad_request"),
         ("application/octet-stream", vec![], 400, "bad_request"),
@@ -107,7 +107,7 @@ async fn ac6_publish_http_rows_without_window() {
     );
     let before = tree(&denied.site_dir());
     let (status, body) = post(
-        watane_app::api::router(Some(denied.clone())),
+        watane_app::api::router(Some(Arc::clone(&denied))),
         "application/octet-stream",
         bytes.clone(),
     )
@@ -175,7 +175,9 @@ mod support;
 #[cfg(feature = "driver")]
 #[test]
 fn ac6_publish_through_consent_window_and_host_guards() {
-    use support::{driver::App, journey::*, publish::*};
+    use support::driver::App;
+    use support::journey::*;
+    use support::publish::*;
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     invoke(&app, "site_set_url", json!({"url":"http://127.0.0.1:1/"}));
@@ -239,7 +241,7 @@ async fn ac2_search_http_rows_and_own_release_shape() {
     );
     dist.set_name("Alice").unwrap();
     let published = dist.publish(package()).unwrap();
-    let router = watane_app::api::router(Some(dist.clone()));
+    let router = watane_app::api::router(Some(Arc::clone(&dist)));
     for query in [
         json!({"text":"reading"}),
         json!({"text":"", "publisher":dist.identity().unwrap().to_string(), "interface":"mods:reading-list/books"}),
@@ -334,11 +336,11 @@ async fn ac1_fetch_link_verified_without_follow_or_consent() {
     let published = carol.publish(package()).unwrap();
     let home = tempfile::tempdir().unwrap();
     let confirm = Recording::new(true);
-    let dist = open(home.path(), confirm.clone(), true);
+    let dist = open(home.path(), Arc::clone(&confirm), true);
     let follows = home.path().join("dist/follows.json");
     let before = std::fs::read(&follows).ok();
     let (status, headers, bytes) = fetch(
-        Some(dist.clone()),
+        Some(Arc::clone(&dist)),
         json!({"link":published.link.unwrap().to_string()}),
     )
     .await;
@@ -368,9 +370,9 @@ async fn ac2_fetch_release_followed_and_unknown() {
     let published = carol.publish(package()).unwrap();
     let home = tempfile::tempdir().unwrap();
     let confirm = Recording::new(true);
-    let dist = open(home.path(), confirm.clone(), true);
+    let dist = open(home.path(), Arc::clone(&confirm), true);
     let query = json!({"release":published.info.reference.to_string()});
-    let (status, _, bytes) = fetch(Some(dist.clone()), query.clone()).await;
+    let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), query.clone()).await;
     assert_eq!(status, 502);
     assert_eq!(
         serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
@@ -378,7 +380,7 @@ async fn ac2_fetch_release_followed_and_unknown() {
     );
     dist.follow(published.link.as_ref().unwrap()).unwrap();
     let before = std::fs::read(home.path().join("dist/follows.json")).unwrap();
-    let (status, headers, bytes) = fetch(Some(dist.clone()), query).await;
+    let (status, headers, bytes) = fetch(Some(Arc::clone(&dist)), query).await;
     assert_eq!(status, 200);
     assert_eq!(
         headers["Watane-Release"],
@@ -414,7 +416,7 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         (r#"{"link":"a","release":"b"}"#, "give link or release"),
     ] {
         let (status, _, bytes) = api_request(
-            Some(dist.clone()),
+            Some(Arc::clone(&dist)),
             "/api/fetch",
             body.as_bytes().to_vec(),
             None,
@@ -444,14 +446,15 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         br#"{"release":"bad"}"#.to_vec(),
         serde_json::to_vec(&json!({"link":carol.own_link(None).unwrap().to_string()})).unwrap(),
     ] {
-        let (status, _, bytes) = api_request(Some(dist.clone()), "/api/fetch", bytes, None).await;
+        let (status, _, bytes) =
+            api_request(Some(Arc::clone(&dist)), "/api/fetch", bytes, None).await;
         assert_eq!(status, 400);
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
             "bad_request"
         );
     }
-    let (status, _, bytes) = fetch(Some(dist.clone()), json!({"link":link.to_string()})).await;
+    let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), json!({"link":link.to_string()})).await;
     assert_eq!(status, 502);
     assert_eq!(
         serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
@@ -512,10 +515,10 @@ async fn ac4_publish_lists_provider_after_release_and_denial_keeps_release() {
     for approve in [true, false] {
         let home = tempfile::tempdir().unwrap();
         let confirm = Recording::new(approve);
-        let dave = open(home.path(), confirm.clone(), true);
+        let dave = open(home.path(), Arc::clone(&confirm), true);
         dave.follow(&link).unwrap();
         let (status, _, bytes) = api_request(
-            Some(dave.clone()),
+            Some(Arc::clone(&dave)),
             "/api/publish",
             api_support::consumer(&carol.identity().unwrap()),
             Some(&link.to_string()),
@@ -570,9 +573,9 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
     ] {
         let home = tempfile::tempdir().unwrap();
         let confirm = Recording::new(true);
-        let dave = open(home.path(), confirm.clone(), true);
+        let dave = open(home.path(), Arc::clone(&confirm), true);
         let (status, _, bytes) = api_request(
-            Some(dave.clone()),
+            Some(Arc::clone(&dave)),
             "/api/publish",
             consumer.clone(),
             Some(&header),
@@ -597,7 +600,7 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
     ] {
         let home = tempfile::tempdir().unwrap();
         let confirm = Recording::new(true);
-        let dave = open(home.path(), confirm.clone(), true);
+        let dave = open(home.path(), Arc::clone(&confirm), true);
         if case == "followed" {
             dave.follow(&link).unwrap();
         }
@@ -627,7 +630,7 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
             _ => None,
         };
         let (status, _, bytes) = api_request(
-            Some(dave.clone()),
+            Some(Arc::clone(&dave)),
             "/api/publish",
             consumer.clone(),
             header.as_deref(),
@@ -650,7 +653,7 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
     }
     let home = tempfile::tempdir().unwrap();
     let confirm = Recording::new(true);
-    let dave = open(home.path(), confirm.clone(), true);
+    let dave = open(home.path(), Arc::clone(&confirm), true);
     let (status, _, bytes) = api_request(
         Some(dave),
         "/api/publish",
@@ -670,11 +673,11 @@ async fn ac5_publish_provider_header_validation_and_resolution() {
 async fn ac5_publish_own_provider_needs_no_listing() {
     let home = tempfile::tempdir().unwrap();
     let confirm = Recording::new(true);
-    let dist = open(home.path(), confirm.clone(), true);
+    let dist = open(home.path(), Arc::clone(&confirm), true);
     dist.publish(package()).unwrap();
     confirm.requests.lock().unwrap().clear();
     let (status, _, bytes) = api_request(
-        Some(dist.clone()),
+        Some(Arc::clone(&dist)),
         "/api/publish",
         api_support::consumer(&dist.identity().unwrap()),
         None,
@@ -708,7 +711,7 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
         json!({"link":null,"release":null}),
         json!({"link":"bad","release":"bad"}),
     ] {
-        let (status, _, bytes) = fetch(Some(dist.clone()), body).await;
+        let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), body).await;
         assert_eq!(status, 400);
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap()["error"],
@@ -721,7 +724,7 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
         ("/api/search", "GET"),
         ("/api/releases", "POST"),
     ] {
-        let response = watane_app::api::router(Some(dist.clone()))
+        let response = watane_app::api::router(Some(Arc::clone(&dist)))
             .oneshot(
                 Request::builder()
                     .method(method)

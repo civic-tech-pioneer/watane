@@ -1,12 +1,11 @@
 #![cfg(feature = "fake-host")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
 
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{BufRead, BufReader},
-    path::Path,
-    process::{Child, Command, Stdio},
-};
+use std::fs;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 
 #[test]
 fn ac3_search_help_describes_arguments_without_dir() {

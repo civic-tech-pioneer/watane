@@ -1,9 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::driver::App;
 use serde_json::Value;
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 // Build the maker program, never a mod. Read Cargo's artifact message so a
 // custom target directory still selects this checkout's binary, not PATH.

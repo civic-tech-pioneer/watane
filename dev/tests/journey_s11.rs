@@ -1,12 +1,12 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{BufRead, BufReader, Read, Write},
-    net::TcpStream,
-    path::Path,
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
+use std::path::Path;
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 struct Journey {
     temp: tempfile::TempDir,

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use iroh::endpoint::Connection;
 use std::time::Duration;

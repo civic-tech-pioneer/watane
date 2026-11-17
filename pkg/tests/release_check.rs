@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use watane_pkg::*;
 #[path = "support/release.rs"]
 mod support;
@@ -83,7 +85,7 @@ fn ac6_round_trip_and_changed_package() {
             assert_eq!(r.package, p.id());
             let tmp = tempfile::tempdir().unwrap();
             let unpacked = p.unpack(&tmp.path().join("mod")).unwrap();
-            assert!(r.check(&unpacked, &p).is_ok());
+            r.check(&unpacked, &p).unwrap();
             let mut bytes = p.as_bytes().to_vec();
             // Change one UI byte without changing the package grammar or mod metadata.
             let i = bytes

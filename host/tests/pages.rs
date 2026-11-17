@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::*;
 use std::io::Write;
 

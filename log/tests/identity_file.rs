@@ -1,8 +1,8 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod oracle;
-use std::{
-    fs,
-    os::unix::fs::{PermissionsExt, symlink},
-};
+use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use watane_log::{Error, Log};
 fn mode(p: &std::path::Path) -> u32 {
     fs::metadata(p).unwrap().permissions().mode() & 0o777

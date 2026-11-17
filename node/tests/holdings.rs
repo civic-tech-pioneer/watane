@@ -1,5 +1,6 @@
 mod support;
-use std::{fs, sync::Arc};
+use std::fs;
+use std::sync::Arc;
 use support::*;
 use watane_dist::{Dist, Entry};
 use watane_net::{BlobId, Holdings, Ingested, Why};
@@ -20,7 +21,7 @@ fn s3_holder_answers_from_what_dist_stored() {
     bob.fetch(&release.reference).unwrap();
 
     let h = DistHoldings::empty();
-    h.set(bob.dist().clone()).unwrap();
+    h.set(Arc::clone(bob.dist())).unwrap();
     let head = expected.last().unwrap();
     let want = Some(watane_net::HeadInfo {
         seq: head.seq(),
@@ -53,14 +54,14 @@ fn s3_keyless_home_ingests_and_stores_only_verified() {
     let dir = tempfile::tempdir().unwrap();
     let node = Node::open_keyless(dir.path(), Options::default()).unwrap();
     let h = DistHoldings::empty();
-    h.set(node.dist().clone()).unwrap();
+    h.set(Arc::clone(node.dist())).unwrap();
 
     // a changed byte no longer decodes (the signature covers every byte), so it cannot
     // reach the holder; what can reach it unverified is a list under the wrong channel
     // or with a gap, and neither stores anything.
     let mut bytes = entries[0].bytes().to_vec();
     bytes[10] ^= 1;
-    assert!(Entry::decode(&bytes).is_err());
+    Entry::decode(&bytes).unwrap_err();
     let other = Alice::new();
     let r = h.ingest(&other.key, entries.clone(), Why::Kept);
     assert!(matches!(r, Ingested::Failed(_)), "{r:?}");

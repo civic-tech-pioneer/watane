@@ -1,0 +1,4 @@
+# Google Rust style. These options need nightly rustfmt (`cargo +nightly fmt`); stable ignores them.
+imports_granularity = "Module"
+hex_literal_case = "Lower"
+format_macro_matchers = true

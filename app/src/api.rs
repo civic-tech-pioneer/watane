@@ -1,12 +1,11 @@
 use crate::CmdError;
-use axum::{
-    Extension, Json, Router,
-    body::Bytes,
-    extract::{DefaultBodyLimit, State, rejection::BytesRejection},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
+use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use std::sync::Arc;
 use watane_dist::{Dist, DistError};
 fn error(status: StatusCode, code: &'static str, message: impl Into<String>) -> Response {
@@ -80,7 +79,7 @@ pub(crate) fn router_node(
 ) -> Router {
     routes(
         node.map(|node| Home {
-            dist: node.dist().clone(),
+            dist: Arc::clone(node.dist()),
             node: Some(node),
         }),
         parties,
@@ -358,6 +357,10 @@ enum FetchQuery {
         #[serde(rename = "release")]
         _release: serde_json::Value,
     },
+    #[expect(
+        clippy::empty_enum_variants_with_brackets,
+        reason = "untagged serde: `Empty {}` matches the JSON `{}`, a unit variant does not"
+    )]
     Empty {},
 }
 enum FetchTarget {
@@ -477,10 +480,8 @@ async fn search(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::{Body, to_bytes},
-        http::{Method, Request},
-    };
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request};
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
@@ -575,7 +576,7 @@ mod tests {
         dist.set_name("Carol").unwrap();
         let published = dist.publish(package()).unwrap();
         let parties = Arc::new(crate::words::Parties::new());
-        let response = router_with_parties(Some(dist.clone()), parties.clone())
+        let response = router_with_parties(Some(Arc::clone(&dist)), Arc::clone(&parties))
             .oneshot(
                 Request::post("/api/fetch")
                     .header("content-type", "application/json")
@@ -636,7 +637,7 @@ mod tests {
         )
         .unwrap();
         let second = dist.publish(page.into_bytes()).unwrap();
-        let app = router(Some(dist.clone()));
+        let app = router(Some(Arc::clone(&dist)));
         let (_, _, body) = request(app.clone(), Method::GET, "/api/releases", vec![]).await;
         assert_eq!(
             body,
@@ -665,7 +666,7 @@ mod tests {
     async fn ac2_duplicate_version_has_its_own_code_and_dist_message() {
         let home = tempfile::tempdir().unwrap();
         let dist = open(&home);
-        let app = router(Some(dist.clone()));
+        let app = router(Some(Arc::clone(&dist)));
         let bytes = package();
         let (status, _, first) =
             request(app.clone(), Method::POST, "/api/publish", bytes.clone()).await;
@@ -707,7 +708,7 @@ mod tests {
         bytes[offset] ^= 1;
         let package = watane_host::watane_pkg::Package::from_bytes(bytes.clone()).unwrap();
         let dest = tempfile::tempdir().unwrap();
-        assert!(package.unpack(&dest.path().join("mod")).is_err());
+        package.unpack(&dest.path().join("mod")).unwrap_err();
         assert!(matches!(
             dist.publish(bytes.clone()),
             Err(DistError::Package(_))

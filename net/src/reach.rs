@@ -2,17 +2,13 @@
 //! switches and addresses kept in `book.json`, the cause of a failed dial and
 //! the relay server.
 
-use crate::{
-    NodeKey,
-    error::NetError,
-    pairing::{read_book, write_atomic},
-};
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    path::Path,
-    sync::{Mutex, PoisonError},
-};
+use crate::NodeKey;
+use crate::error::NetError;
+use crate::pairing::{read_book, write_atomic};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::Mutex;
 
 /// At most this many addresses are kept of one machine.
 pub(crate) const MAX_ADDRS: usize = 4;
@@ -162,7 +158,9 @@ pub(crate) fn update_book(
     dir: &Path,
     change: impl FnOnce(&mut serde_json::Value),
 ) -> Result<(), NetError> {
-    let _guard = BOOK.lock().unwrap_or_else(PoisonError::into_inner);
+    let _guard = BOOK
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it");
     let mut book = read_book(dir)?;
     let before = book.clone();
     change(&mut book);

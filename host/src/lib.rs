@@ -30,11 +30,11 @@ pub use harness::{EventRecord, Fakes, Harness, ManageRecord, Outcome};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
 pub use server::Served;
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, atomic::AtomicBool},
-};
-pub use {watane_log, watane_pkg};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+pub use watane_log;
+pub use watane_pkg;
 
 pub const DEFAULT_PORT: u16 = 47341;
 
@@ -92,7 +92,7 @@ impl Host {
         let state = state::State::open(&home.path)?;
         let tools = tools::Tools::open(&home.path)?;
         let host = Arc::new_cyclic(|weak| Self {
-            weak: weak.clone(),
+            weak: std::sync::Weak::<Host>::clone(weak),
             events: runtime::call::Deliveries::default(),
             fakes: Mutex::new(None),
             requests: Mutex::new(manage::Requests::default()),
@@ -153,7 +153,7 @@ impl Host {
         function: String,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, CallError> {
-        let host = self.clone();
+        let host = Arc::clone(self);
         let (tx, rx) = tokio::sync::oneshot::channel();
         std::thread::Builder::new()
             .name("watane-call".into())
@@ -191,14 +191,17 @@ impl Host {
         self.plan_with(sources, vec![])
     }
     pub fn plan_with(&self, sources: Vec<Source>, binds: Vec<Bind>) -> Result<Plan, HostError> {
-        self.catalog.lock().unwrap().plan_with(
-            self.home(),
-            &sources,
-            &self.engine,
-            self.is_preview(),
-            false,
-            &binds,
-        )
+        self.catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .plan_with(
+                self.home(),
+                &sources,
+                &self.engine,
+                self.is_preview(),
+                false,
+                &binds,
+            )
     }
     pub async fn install(
         &self,
@@ -214,7 +217,10 @@ impl Host {
         plan: Plan,
         requester: Requester,
     ) -> Result<Vec<InstalledMod>, HostError> {
-        self.catalog.lock().unwrap().validate(&plan, self.home())?;
+        self.catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .validate(&plan, self.home())?;
         // Step 10 (6.10): a manager's install is always asked.
         let manager = match &requester {
             Requester::Mod(by) => {
@@ -297,11 +303,11 @@ impl Host {
             .filter(|e| matches!(e.change, Change::Update { .. }))
             .map(|e| e.local.clone())
             .collect();
-        let installed =
-            self.catalog
-                .lock()
-                .unwrap()
-                .commit(self.home(), plan, withhold, self.is_preview())?;
+        let installed = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .commit(self.home(), plan, withhold, self.is_preview())?;
         for local in updates {
             self.bus.send(&local, bus::RELOAD);
         }
@@ -318,7 +324,12 @@ impl Host {
         m
     }
     pub fn mods(&self) -> Vec<InstalledMod> {
-        let mut mods = self.catalog.lock().unwrap().mods.clone();
+        let mut mods = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .mods
+            .clone();
         mods.sort_by(|a, b| a.local.cmp(&b.local));
         let port = self.port.load(std::sync::atomic::Ordering::Acquire);
         mods.into_iter().map(|m| self.mod_view(m, port)).collect()
@@ -331,7 +342,10 @@ impl Host {
         local: &LocalName,
         change: impl FnOnce(&mut InstalledMod) -> Result<(), HostError>,
     ) -> Result<(), HostError> {
-        let mut catalog = self.catalog.lock().unwrap();
+        let mut catalog = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = catalog.clone();
         let m = next
             .mods
@@ -394,15 +408,20 @@ impl Host {
             .get(local)
             .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?
             .identity;
-        let lock = self
-            .call_locks
+        let lock = Arc::clone(
+            self.call_locks
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .entry(identity.clone())
+                .or_default(),
+        );
+        let _call = lock
             .lock()
-            .unwrap()
-            .entry(identity.clone())
-            .or_default()
-            .clone();
-        let _call = lock.lock().unwrap();
-        let mut catalog = self.catalog.lock().unwrap();
+            .expect("lock poisoned: another thread panicked while holding it");
+        let mut catalog = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         if !catalog
             .mods
             .iter()

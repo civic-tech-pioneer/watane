@@ -29,7 +29,7 @@ fn ac3_grants_json_order_and_authority() {
         r#"{"kind":"call","interface":"wasi:reading-list/books@0.1.0","provider":{"slug":"reading-list","publisher":null}}"#,
         r#"{"kind":"subscribe","interface":"mods:tags/events@0.1.0","provider":{"slug":"reading-list","publisher":null}}"#,
     ] {
-        assert!(serde_json::from_str::<Grant>(bad).is_err());
+        serde_json::from_str::<Grant>(bad).unwrap_err();
     }
     let local = Provider {
         slug: "reading-list".parse().unwrap(),

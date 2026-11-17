@@ -3,7 +3,7 @@ use watane_log::{DecodeError as D, Entry, KeyTextError};
 #[test]
 fn ac7_strict_signature_rule() {
     let valid = oracle::entry(0, None, 0, "a", b"");
-    assert!(Entry::decode(&valid).is_ok());
+    Entry::decode(&valid).unwrap();
     let mut malleable = valid.clone();
     let l =
         oracle::hex_array::<32>("edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010");

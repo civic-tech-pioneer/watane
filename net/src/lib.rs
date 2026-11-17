@@ -25,18 +25,14 @@ pub use ticket::{Hint, PairCode};
 pub use watane_log::{Entry, EntryId, PublicKey};
 pub use wire::{Hello, Limits};
 
-use iroh::{
-    Endpoint, NetReportConfig, RelayMode,
-    address_lookup::AddrFilter,
-    endpoint::{PortmapperConfig, presets},
-    protocol::Router,
-};
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
-};
+use iroh::address_lookup::AddrFilter;
+use iroh::endpoint::{PortmapperConfig, presets};
+use iroh::protocol::Router;
+use iroh::{Endpoint, NetReportConfig, RelayMode};
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
 use zeroize::Zeroizing;
 
 /// How long turning net off waits for the router and endpoint to finish closing.
@@ -193,7 +189,8 @@ pub(crate) struct Core {
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    m.lock()
+        .expect("lock poisoned: another thread panicked while holding it")
 }
 
 impl Core {
@@ -279,6 +276,12 @@ struct Shared {
 pub struct Net {
     core: Arc<Core>,
     shared: Arc<Shared>,
+}
+// Core and Shared hold the endpoint, runtime and locks, none worth printing.
+impl std::fmt::Debug for Net {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Net").finish_non_exhaustive()
+    }
 }
 
 /// The builder of every endpoint of `net`: no default relay, no address
@@ -455,7 +458,7 @@ impl Net {
             {
                 let server = self
                     .runtime()?
-                    .block_on(reach::start_relay(addr, self.core.clone()))
+                    .block_on(reach::start_relay(addr, Arc::clone(&self.core)))
                     .map_err(|cause| NetError::Io {
                         path: self.core.dir.clone(),
                         cause,
@@ -469,7 +472,7 @@ impl Net {
                         cause,
                     }
                 })?;
-            let core = self.core.clone();
+            let core = Arc::clone(&self.core);
             let blobs_dir = self.core.dir.join("blobs");
             let (router, tasks) = self
                 .runtime()?
@@ -486,21 +489,23 @@ impl Net {
                     }
                     let gossip = iroh_gossip::Gossip::builder().spawn(endpoint.clone());
                     *lock(&core.gossip) = Some(gossip::Hub::new(gossip.clone()));
-                    let (store, events, hook) = blobs::open(core.clone(), &blobs_dir).await?;
+                    let (store, events, hook) = blobs::open(Arc::clone(&core), &blobs_dir).await?;
                     let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
-                    let serve = serve::Serve { core: core.clone() };
+                    let serve = serve::Serve {
+                        core: Arc::clone(&core),
+                    };
                     let router = Router::builder(endpoint)
                         .accept(
                             wire::ALPN,
-                            allow::Gate::new(core.clone(), serve, wire::ALPN),
+                            allow::Gate::new(Arc::clone(&core), serve, wire::ALPN),
                         )
                         .accept(
                             iroh_blobs::ALPN,
-                            allow::Gate::new(core.clone(), blobs, iroh_blobs::ALPN),
+                            allow::Gate::new(Arc::clone(&core), blobs, iroh_blobs::ALPN),
                         )
                         .accept(
                             iroh_gossip::ALPN,
-                            allow::Gate::new(core.clone(), gossip, iroh_gossip::ALPN),
+                            allow::Gate::new(Arc::clone(&core), gossip, iroh_gossip::ALPN),
                         )
                         .spawn();
                     *lock(&core.endpoint) = Some(router.endpoint().clone());
@@ -567,7 +572,7 @@ impl Net {
     pub fn told(&self, channel: &PublicKey, seq: u64, id: &EntryId) {
         if let Some(runtime) = self.shared.runtime.get() {
             let message = gossip::encode_hint(channel, seq, id);
-            runtime.spawn(gossip::broadcast(self.core.clone(), message));
+            runtime.spawn(gossip::broadcast(Arc::clone(&self.core), message));
         }
     }
 
@@ -694,7 +699,7 @@ impl Net {
     ) -> Result<DeviceList, NetError> {
         let (list, _) = self.core.sign_next(f)?;
         if let Some(runtime) = self.shared.runtime.get() {
-            runtime.spawn(pairing::push(self.core.clone(), list.clone(), None));
+            runtime.spawn(pairing::push(Arc::clone(&self.core), list.clone(), None));
         }
         Ok(list)
     }
@@ -709,7 +714,7 @@ impl Net {
         &self.core
     }
     pub(crate) fn core_arc(&self) -> Arc<Core> {
-        self.core.clone()
+        Arc::clone(&self.core)
     }
 }
 

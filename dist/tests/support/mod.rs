@@ -1,4 +1,7 @@
-use std::{collections::VecDeque, sync::Mutex};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use watane_dist::{Confirm, Decision, SignRequest};
 #[derive(Default)]
 pub struct RecordingConfirm {
@@ -24,7 +27,10 @@ impl Confirm for RecordingConfirm {
     }
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn fixture(version: &str, source: bool) -> Vec<u8> {
     let tmp = tempfile::tempdir().unwrap();
     copy_fixture("reading-list", tmp.path());
@@ -35,7 +41,10 @@ pub fn fixture(version: &str, source: bool) -> Vec<u8> {
     .unwrap();
     watane_pkg::pack(tmp.path(), source).unwrap().into_bytes()
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn copy_fixture(name: &str, dest: &std::path::Path) {
     fn copy(src: &std::path::Path, dst: &std::path::Path) {
         std::fs::create_dir_all(dst).unwrap();
@@ -56,7 +65,10 @@ pub fn copy_fixture(name: &str, dest: &std::path::Path) {
     );
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn fast_options() -> watane_dist::Options {
     watane_dist::Options {
         entry_timeout: std::time::Duration::from_secs(10),
@@ -65,7 +77,10 @@ pub fn fast_options() -> watane_dist::Options {
         ..Default::default()
     }
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn open(home: &std::path::Path) -> watane_dist::Dist {
     watane_dist::Dist::open(
         home,
@@ -77,14 +92,20 @@ pub fn open(home: &std::path::Path) -> watane_dist::Dist {
     )
     .unwrap()
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[derive(Clone)]
 pub enum Mode {
     Files,
     Stall(std::time::Duration),
     Oversize(usize),
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub struct TestHost {
     pub url: String,
     pub mode: std::sync::Arc<Mutex<Mode>>,
@@ -94,7 +115,10 @@ pub struct TestHost {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 impl TestHost {
     pub fn serve(dir: &std::path::Path) -> Self {
         let server = std::sync::Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
@@ -102,9 +126,14 @@ impl TestHost {
         let mode = std::sync::Arc::new(Mutex::new(Mode::Files));
         let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
         let request_times = std::sync::Arc::new(Mutex::new(Vec::new()));
-        let times = request_times.clone();
+        let times = Arc::clone(&request_times);
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (s, m, r, quit) = (server.clone(), mode.clone(), requests.clone(), stop.clone());
+        let (s, m, r, quit) = (
+            Arc::clone(&server),
+            Arc::clone(&mode),
+            Arc::clone(&requests),
+            Arc::clone(&stop),
+        );
         let dir = dir.to_owned();
         let worker = std::thread::spawn(move || {
             while !quit.load(std::sync::atomic::Ordering::SeqCst) {
@@ -161,14 +190,20 @@ impl Drop for TestHost {
 }
 
 /// A separate home and static host for search journeys.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub struct SearchHome {
     pub dist: watane_dist::Dist,
     pub host: Option<TestHost>,
     pub dir: tempfile::TempDir,
     pub url: String,
 }
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 impl SearchHome {
     pub fn new(name: &str) -> Self {
         let mut home = Self::offline(name);
@@ -209,7 +244,10 @@ impl SearchHome {
     }
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn named_fixture(slug: &str, name: &str) -> Vec<u8> {
     let tmp = tempfile::tempdir().unwrap();
     copy_fixture("reading-list", tmp.path());
@@ -226,7 +264,10 @@ pub fn named_fixture(slug: &str, name: &str) -> Vec<u8> {
     watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn interface_fixture(kind: &str, publisher: watane_dist::PublicKey) -> Vec<u8> {
     let (slug, items) = match kind {
         "offer" => ("reading-list", "export books;"),
@@ -263,7 +304,10 @@ pub fn interface_fixture(kind: &str, publisher: watane_dist::PublicKey) -> Vec<u
     watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 pub fn origin_fixture(
     slug: &str,
     version: &str,

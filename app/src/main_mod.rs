@@ -1,6 +1,8 @@
 use crate::CmdError;
-use std::{path::PathBuf, sync::Mutex};
-use watane_host::{Host, InstalledMod, LocalName, watane_pkg::Mod};
+use std::path::PathBuf;
+use std::sync::Mutex;
+use watane_host::watane_pkg::Mod;
+use watane_host::{Host, InstalledMod, LocalName};
 
 pub(crate) struct MainMod {
     path: PathBuf,
@@ -63,7 +65,10 @@ impl MainMod {
             .map(|e| e.local.to_string()))
     }
     pub fn get(&self) -> Option<String> {
-        self.local.lock().unwrap().clone()
+        self.local
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone()
     }
     pub fn startup(&self, host: &Host) -> Option<InstalledMod> {
         let local = LocalName::parse(&self.get()?).ok()?;
@@ -84,13 +89,19 @@ impl MainMod {
                 ));
             }
         }
-        let mut current = self.local.lock().unwrap();
+        let mut current = self
+            .local
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         self.write(local)?;
         *current = local.map(str::to_owned);
         Ok(())
     }
     pub fn removed(&self, local: &str) -> Result<(), CmdError> {
-        let mut current = self.local.lock().unwrap();
+        let mut current = self
+            .local
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         if current.as_deref() == Some(local) {
             self.write(None)?;
             *current = None;
@@ -99,7 +110,11 @@ impl MainMod {
     }
     fn write(&self, local: Option<&str>) -> Result<(), CmdError> {
         if let Some(local) = local {
-            std::fs::create_dir_all(self.path.parent().unwrap())?;
+            std::fs::create_dir_all(
+                self.path
+                    .parent()
+                    .expect("the state file path has a parent"),
+            )?;
             std::fs::write(&self.path, format!("{local}\n"))?;
         } else {
             match std::fs::remove_file(&self.path) {
@@ -111,7 +126,10 @@ impl MainMod {
         Ok(())
     }
     pub fn adopt(&self, local: &str) -> Result<(), CmdError> {
-        let mut current = self.local.lock().unwrap();
+        let mut current = self
+            .local
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         if current.is_none() {
             self.write(Some(local))?;
             *current = Some(local.to_owned());

@@ -32,7 +32,7 @@ esac
 step build cargo build
 step test cargo test --no-fail-fast
 step clippy "${CLIPPY[@]}"
-step fmt cargo fmt --check
+step fmt cargo +nightly fmt --check  # nightly: rustfmt.toml sets nightly-only options
 for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/[^/]+\.rs$'); do
   p=$W/$f; [ -f "$p" ] || continue
   SLOW=$(names "$p" slow); [ -n "$SLOW" ] || continue

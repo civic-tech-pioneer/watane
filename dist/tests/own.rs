@@ -6,7 +6,12 @@ use watane_dist::*;
 fn ac6_own_refuse_set_name() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Refuse]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let key = dist.identity().unwrap();
     assert!(matches!(dist.set_name("Alice"), Err(DistError::Refused)));
     assert_eq!(c.requests.lock().unwrap().len(), 1);
@@ -19,7 +24,12 @@ fn ac6_own_refuse_set_name() {
 fn ac7_own_request_set_name() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let key = dist.identity().unwrap();
     let entry = dist.set_name("Alice").unwrap();
     let expected = vec![0x81, 0x65, 0x41, 0x6c, 0x69, 0x63, 0x65];
@@ -47,7 +57,12 @@ fn ac7_own_request_set_name() {
 fn ac8_own_bad_name_before_confirm() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     assert!(matches!(
         dist.set_name("Al\u{202e}ice"),
         Err(DistError::BadName { .. })
@@ -70,7 +85,12 @@ fn ac9_corrupt_chain_refused_before_confirm() {
     db.execute("UPDATE entries SET raw=?", [bytes]).unwrap();
     drop(db);
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     assert!(matches!(
         dist.set_name("Bob"),
         Err(DistError::Log(watane_log::Error::CorruptStore { .. }))
@@ -82,7 +102,12 @@ fn ac9_corrupt_chain_refused_before_confirm() {
 fn ac10_own_refuse_unknown_withdraw() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let reference = ReleaseRef {
         publisher: PublisherKey::from_bytes(*dist.identity().unwrap().as_bytes()),
         slug: "reading-list".parse().unwrap(),
@@ -115,7 +140,12 @@ fn ac11_error_text_escapes_controls() {
 fn ac1_own_refuse_publish() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Refuse]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let bytes = support::fixture("1.0.0", false);
     let id = blake3::hash(&bytes).to_hex().to_string();
     let key = dist.identity().unwrap();
@@ -137,7 +167,12 @@ fn ac2_own_request_publish() {
     for source in [false, true] {
         let home = tempfile::tempdir().unwrap();
         let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
-        let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+        let dist = Dist::open(
+            home.path(),
+            Arc::<RecordingConfirm>::clone(&c),
+            Options::default(),
+        )
+        .unwrap();
         let bytes = support::fixture("1.2.3", source);
         let size = bytes.len() as u64;
         let published = dist.publish(bytes).unwrap();
@@ -172,7 +207,12 @@ fn ac2_own_request_publish() {
 fn ac3_own_request_version_exists_before_confirm() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Approve]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     dist.publish(support::fixture("1.0.0", false)).unwrap();
     assert!(matches!(
         dist.publish(support::fixture("1.0.0", true)),
@@ -184,7 +224,12 @@ fn ac3_own_request_version_exists_before_confirm() {
 fn ac4_own_request_unreleased_provider_before_confirm() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let tmp = tempfile::tempdir().unwrap();
     support::copy_fixture("recommendations", tmp.path());
     let bytes = watane_pkg::pack(tmp.path(), false).unwrap().into_bytes();
@@ -199,7 +244,7 @@ fn ac5_own_request_package_too_large_before_parsing() {
     let c = Arc::new(RecordingConfirm::new([]));
     let dist = Dist::open(
         home.path(),
-        c.clone(),
+        Arc::<RecordingConfirm>::clone(&c),
         Options {
             max_package: 3,
             ..Options::default()

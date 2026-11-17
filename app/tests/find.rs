@@ -1,7 +1,11 @@
 #![cfg(feature = "driver")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::{Value, json};
-use support::{driver::App, journey::*, publish::*};
+use support::driver::App;
+use support::journey::*;
+use support::publish::*;
 use watane_dist::{Dist, Link};
 
 const NOTE: &str = "good for books <img src=x onerror=alert(1)>";

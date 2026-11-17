@@ -1,7 +1,9 @@
 #![cfg(feature = "driver")]
 mod support;
 use serde_json::json;
-use support::{driver::App, journey::*, publish::*};
+use support::driver::App;
+use support::journey::*;
+use support::publish::*;
 #[test]
 #[ignore = "slow: journey J3"]
 fn ac7_journey_j3_identity_publish_install_and_tamper() {
@@ -283,7 +285,8 @@ fn ac2_j3_github() {
 #[ignore = "real: GitHub minmax-fund"]
 fn ac3_j3_real_github() {
     use std::time::{Duration, Instant};
-    use support::{dev::workspace_dev, github::RealGithub};
+    use support::dev::workspace_dev;
+    use support::github::RealGithub;
     use watane_dist::Link;
 
     assert_ne!(

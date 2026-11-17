@@ -1,4 +1,11 @@
-use std::{fs, path::Path};
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
+use std::fs;
+use std::path::Path;
 use watane_pkg::{Mod, ModError, Rule, Violation};
 use wit_component::{ComponentEncoder, StringEncoding, dummy_module, embed_component_metadata};
 use wit_parser::{ManglingAndAbi, Resolve};
@@ -74,7 +81,7 @@ fn violations(m: &Mod) -> Vec<Violation> {
 #[test]
 fn ac1_page_only_passes() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hello");
-    assert!(Mod::read(&path).unwrap().check_component().is_ok());
+    Mod::read(&path).unwrap().check_component().unwrap();
 }
 
 #[test]
@@ -82,7 +89,7 @@ fn ac2_declared_host_and_own_imports_pass() {
     let items = "import watane:host/state@0.1.0; import changes; export api;";
     let dir = folder(items);
     put(dir.path(), "logic.wasm", component(items, &[]));
-    assert!(Mod::read(dir.path()).unwrap().check_component().is_ok());
+    Mod::read(dir.path()).unwrap().check_component().unwrap();
 }
 
 #[test]
@@ -246,7 +253,7 @@ fn subscriptions_are_expected_exports() {
     put(dir.path(), "deps.json", r#"{"mods:other": null}"#);
     put(dir.path(), "logic.wasm", component(items, &[other]));
     let m = Mod::read(dir.path()).unwrap();
-    assert!(m.check_component().is_ok());
+    m.check_component().unwrap();
     put(dir.path(), "logic.wasm", component("export api;", &[]));
     let v = violations(&m);
     assert_eq!(v.len(), 1, "{v:?}");

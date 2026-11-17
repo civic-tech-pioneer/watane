@@ -1,4 +1,7 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::*;
+use std::sync::Arc;
 use watane_host::{Caller, Host, Limits, LocalName};
 
 struct Stream {
@@ -39,11 +42,9 @@ impl Stream {
         .unwrap()
     }
     async fn quiet(&mut self) {
-        assert!(
-            tokio::time::timeout(Duration::from_millis(500), self.frame())
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_millis(500), self.frame())
+            .await
+            .unwrap_err();
     }
 }
 
@@ -279,10 +280,8 @@ async fn ac4_s23_update_keeps_count_local_and_reloads_only_changed_builds() {
     // A failed catalog commit must never announce a revision.
     fs::write(folder.path().join("ui/index.html"), "uncommitted").unwrap();
     fs::create_dir(host.home().join("installed.json.tmp")).unwrap();
-    assert!(
-        host.install_folders(&[folder.path().to_owned()], served.port)
-            .is_err()
-    );
+    host.install_folders(&[folder.path().to_owned()], served.port)
+        .unwrap_err();
     stream.quiet().await;
     served.shutdown().await;
 }
@@ -432,7 +431,7 @@ async fn ac1_validator_concurrent_commits_keep_page_order() {
     let mut stream = Stream::open(&client, &origin).await;
     let mut calls = tokio::task::JoinSet::new();
     for _ in 0..8 {
-        let host = host.clone();
+        let host = Arc::clone(&host);
         calls.spawn(async move {
             host.call_async(
                 Caller::Page,
@@ -478,7 +477,7 @@ async fn ac1_validator_nested_calls_and_event_delivery_do_not_deadlock() {
             ("shelf", "items.add", json!(["Dune"])),
             ("recs", "api.suggest", Value::Null),
         ] {
-            let host = host.clone();
+            let host = Arc::clone(&host);
             calls.spawn(async move {
                 host.call_async(
                     Caller::Page,

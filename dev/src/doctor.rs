@@ -1,10 +1,8 @@
-use crate::{
-    allowlist::{self, Allowlist},
-    api::Client,
-    env::Env,
-    outcome::{Outcome, Problem},
-    preview, toolchain,
-};
+use crate::allowlist::{self, Allowlist};
+use crate::api::Client;
+use crate::env::Env;
+use crate::outcome::{Outcome, Problem};
+use crate::{preview, toolchain};
 use serde_json::{Value, json};
 use std::path::Path;
 

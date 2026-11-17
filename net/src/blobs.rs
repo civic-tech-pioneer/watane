@@ -4,29 +4,22 @@
 //! path. Fetch: download by hash, verified while it streams, to a temp file,
 //! check again, hand to the holder, remove the temp file.
 
-use crate::{BlobId, Core, NetError, client, key::NodeKey, sync};
-use iroh_blobs::{
-    BlobFormat, Hash,
-    api::{
-        Store,
-        blobs::{AddPathOptions, ImportMode},
-    },
-    get::{
-        self,
-        request::{get_blob, get_verified_size},
-    },
-    provider::events::{AbortReason, EventMask, EventSender, ProviderMessage, RequestMode},
-    store::fs::FsStore,
+use crate::key::NodeKey;
+use crate::{BlobId, Core, NetError, client, sync};
+use iroh_blobs::api::Store;
+use iroh_blobs::api::blobs::{AddPathOptions, ImportMode};
+use iroh_blobs::get::request::{get_blob, get_verified_size};
+use iroh_blobs::get::{self};
+use iroh_blobs::provider::events::{
+    AbortReason, EventMask, EventSender, ProviderMessage, RequestMode,
 };
-use std::{
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-};
+use iroh_blobs::store::fs::FsStore;
+use iroh_blobs::{BlobFormat, Hash};
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Open the store of `dir` and the hook that decides each request.
 pub(crate) async fn open(
@@ -45,16 +38,18 @@ pub(crate) async fn open(
     let api: Store = store.clone().into();
     let task = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
-            let (core, api) = (core.clone(), api.clone());
+            let (core, api) = (Arc::clone(&core), api.clone());
             tokio::spawn(async move {
                 match message {
                     ProviderMessage::GetRequestReceived(msg) => {
                         let ok = admit(&core, &api, &[msg.inner.request.hash]).await;
-                        msg.tx.send(verdict(ok)).await.ok();
+                        // The requester may have gone; there is no one left to tell.
+                        let _ = msg.tx.send(verdict(ok)).await;
                     }
                     ProviderMessage::GetManyRequestReceived(msg) => {
                         let ok = admit(&core, &api, &msg.inner.request.hashes).await;
-                        msg.tx.send(verdict(ok)).await.ok();
+                        // The requester may have gone; there is no one left to tell.
+                        let _ = msg.tx.send(verdict(ok)).await;
                     }
                     _ => {}
                 }

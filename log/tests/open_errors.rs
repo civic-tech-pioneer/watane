@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use std::os::unix::fs::{PermissionsExt, symlink};
 use watane_log::{Error, Log};
 

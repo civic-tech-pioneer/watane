@@ -1,8 +1,15 @@
 #![cfg(feature = "driver")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 mod support;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
-use support::{driver::App, journey::*};
+use support::driver::App;
+use support::journey::*;
 static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn both() -> Vec<std::path::PathBuf> {
     vec![fixture("recommendations"), fixture("reading-list")]

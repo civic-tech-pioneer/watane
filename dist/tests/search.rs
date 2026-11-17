@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use support::*;
 use watane_dist::*;
@@ -167,14 +169,12 @@ fn ac4_search_bad_query() {
         }),
         Err(DistError::BadQuery { .. })
     ));
-    assert!(
-        home.dist
-            .search(&Query {
-                text: "é".repeat(128),
-                ..Default::default()
-            })
-            .is_ok()
-    );
+    home.dist
+        .search(&Query {
+            text: "é".repeat(128),
+            ..Default::default()
+        })
+        .unwrap();
 }
 #[test]
 fn ac5_search_offline() {

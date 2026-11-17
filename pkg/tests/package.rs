@@ -1,9 +1,13 @@
-use std::{
-    collections::BTreeMap,
-    fs::{self, FileTimes},
-    path::{Path, PathBuf},
-    time::{Duration, SystemTime},
-};
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
+use std::collections::BTreeMap;
+use std::fs::{self, FileTimes};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 use watane_pkg::{MAX_PACKAGE_BYTES, Mod, ModError, Package, PackageError, PackageId, Rule, pack};
 
 const HELLO: [(&str, &[u8]); 3] = [
@@ -201,7 +205,7 @@ fn ac3_pack_content_links_and_fifo() {
     fs::remove_file(dir.path().join("ui/pipe")).unwrap();
     // Source parents must be checked before descending through them as well.
     symlink(outside.path().parent().unwrap(), dir.path().join("logic")).unwrap();
-    assert!(pack(dir.path(), false).is_ok());
+    pack(dir.path(), false).unwrap();
     assert!(
         matches!(pack(dir.path(), true), Err(PackageError::Symlink { path }) if path == "logic")
     );
@@ -354,7 +358,7 @@ fn ac4_decode_refusals() {
     path_error(raw(&[(&long, b"")]), &long);
     let mut non_ascii = raw(&[("ui/x", b"")]);
     non_ascii[18] = 255;
-    assert!(Package::from_bytes(non_ascii).is_err());
+    Package::from_bytes(non_ascii).unwrap_err();
 }
 
 #[test]
@@ -404,7 +408,7 @@ fn ac5_unpack() {
         matches!(invalid.unpack(&failed), Err(PackageError::Mod(ModError::Invalid(v))) if v.iter().any(|v| v.rule == Rule::ModToml && v.file == "mod.toml"))
     );
     assert!(!failed.exists());
-    assert!(p.unpack(&tmp.path().join("missing/child")).is_err());
+    p.unpack(&tmp.path().join("missing/child")).unwrap_err();
     assert!(!tmp.path().join("missing").exists());
 }
 

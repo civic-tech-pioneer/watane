@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use watane_pkg::*;
 #[path = "support/release.rs"]
 mod support;

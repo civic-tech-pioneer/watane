@@ -1,10 +1,10 @@
 #![cfg(feature = "driver")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::json;
-use support::{
-    driver::App,
-    journey::{TIMEOUT, approve, begin_install, fixture, installed, invoke, until},
-};
+use support::driver::App;
+use support::journey::{TIMEOUT, approve, begin_install, fixture, installed, invoke, until};
 
 fn install(app: &App, names: &[&str]) {
     begin_install(app, &names.iter().map(|n| fixture(n)).collect::<Vec<_>>());

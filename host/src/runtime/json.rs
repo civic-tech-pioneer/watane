@@ -1,6 +1,7 @@
 use crate::{CallCode, CallError};
 use serde_json::{Value, json};
-use wasmtime::component::{Type, Val, types::ComponentFunc};
+use wasmtime::component::types::ComponentFunc;
+use wasmtime::component::{Type, Val};
 
 fn bad(path: &str, reason: impl std::fmt::Display) -> CallError {
     CallError::new(CallCode::BadRequest, format!("{path}: {reason}"))
@@ -94,7 +95,7 @@ pub(super) fn decode(ty: &Type, value: &Value, path: &str) -> Result<Val, CallEr
         )
     };
     macro_rules! unsigned {
-        ($native:ty,$variant:ident) => {
+        ($native:ty, $variant:ident) => {
             Val::$variant(
                 value
                     .as_u64()
@@ -104,7 +105,7 @@ pub(super) fn decode(ty: &Type, value: &Value, path: &str) -> Result<Val, CallEr
         };
     }
     macro_rules! signed {
-        ($native:ty,$variant:ident) => {
+        ($native:ty, $variant:ident) => {
             Val::$variant(
                 value
                     .as_i64()
@@ -607,7 +608,8 @@ mod tests {
     }
     #[test]
     fn ac8_resource_and_async_values_are_not_callable() {
-        use wasmtime::component::{Component, ResourceType, types::ComponentItem};
+        use wasmtime::component::types::ComponentItem;
+        use wasmtime::component::{Component, ResourceType};
         for ty in [
             Type::Own(ResourceType::host::<u32>()),
             Type::Borrow(ResourceType::host::<u32>()),

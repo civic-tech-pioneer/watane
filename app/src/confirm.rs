@@ -1,12 +1,7 @@
-use crate::{
-    consent,
-    words::{self, Parties},
-};
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{Arc, OnceLock, Weak},
-};
+use crate::consent;
+use crate::words::{self, Parties};
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock, Weak};
 use watane_host::{Answer, Change, Confirm, InstallRequest, Requester};
 
 pub(crate) struct HostConfirm {
@@ -22,7 +17,13 @@ pub(crate) struct HostConfirm {
 pub(crate) struct ManagerNotices(std::sync::Mutex<std::collections::BTreeMap<String, String>>);
 impl ManagerNotices {
     pub fn get(&self, local: &str, release: Option<String>) -> Option<String> {
-        release.or_else(|| self.0.lock().unwrap().get(local).cloned())
+        release.or_else(|| {
+            self.0
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .get(local)
+                .cloned()
+        })
     }
     pub fn enable(
         &self,
@@ -30,7 +31,10 @@ impl ManagerNotices {
         local: &watane_host::LocalName,
     ) -> Result<(), crate::CmdError> {
         host.enable(local)?;
-        self.0.lock().unwrap().remove(local.as_ref());
+        self.0
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .remove(local.as_ref());
         Ok(())
     }
 }
@@ -313,13 +317,17 @@ impl Confirm for HostConfirm {
             && let Some(m) = host.get(by)
             && let Some(notice) = notice
         {
-            self.notices.0.lock().unwrap().insert(
-                local.to_string(),
-                format!(
-                    "{notice} by {}",
-                    words::asker_label(&asker(&m, &self.parties))
-                ),
-            );
+            self.notices
+                .0
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .insert(
+                    local.to_string(),
+                    format!(
+                        "{notice} by {}",
+                        words::asker_label(&asker(&m, &self.parties))
+                    ),
+                );
         }
         if close && let Some(core) = self.core.get().and_then(Weak::upgrade) {
             core.post_close(local.to_string());
@@ -331,7 +339,7 @@ impl Confirm for HostConfirm {
         }
     }
     fn install(&self, request: InstallRequest) -> Pin<Box<dyn Future<Output = Answer> + Send>> {
-        let broker = self.broker.clone();
+        let broker = Arc::clone(&self.broker);
         let host = self.host.get().and_then(Weak::upgrade);
         let mut view = request_view(&request, &self.parties, host.as_deref());
         let core = self.core.get().and_then(Weak::upgrade);
@@ -612,10 +620,8 @@ fn sign_view(request: &watane_dist::SignRequest, parties: &Parties) -> consent::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use watane_host::{
-        LocalName, PlanEntry,
-        watane_pkg::{Grant, Provider},
-    };
+    use watane_host::watane_pkg::{Grant, Provider};
+    use watane_host::{LocalName, PlanEntry};
     fn preview() -> (tempfile::TempDir, Arc<watane_host::Host>) {
         let home = tempfile::tempdir().unwrap();
         let host =
@@ -672,7 +678,7 @@ mod tests {
                 parties: Arc::new(Parties::new()),
                 host: OnceLock::from(Arc::downgrade(&host)),
                 core: OnceLock::new(),
-                main: OnceLock::from(main.clone()),
+                main: OnceLock::from(Arc::clone(&main)),
                 notices: Arc::new(ManagerNotices::default()),
             };
             let report = watane_host::Installed {
@@ -713,7 +719,7 @@ mod tests {
     #[tokio::test]
     async fn ac3_cancelled_manager_request_leaves_no_consent() {
         let broker = consent::Broker::new();
-        let queued = broker.clone();
+        let queued = Arc::clone(&broker);
         let request: consent::Request = serde_json::from_value(serde_json::json!({"kind":"manage","asked_by":{"local":"desk","name":"Desk","publisher":null},"action":"enable","target":{"local":"weather","name":"Weather","version":"1.0.0","publisher":null},"grant":null,"users":[]})).unwrap();
         let task = ManageTask(tauri::async_runtime::spawn(async move {
             manage_answer(queued.ask(request).await)
@@ -855,7 +861,7 @@ mod tests {
             host: OnceLock::from(Arc::downgrade(&host)),
             core: OnceLock::new(),
             main: OnceLock::new(),
-            notices: notices.clone(),
+            notices: Arc::clone(&notices),
         });
         let local = LocalName::parse("reading-list").unwrap();
         let by = LocalName::parse("recommendations").unwrap();
@@ -879,7 +885,7 @@ mod tests {
             assert_eq!(reduction_effect(&reduction).0, &local);
             assert_eq!(reduction_effect(&reduction).2, close);
             let previous_notice = notices.get(local.as_ref(), None);
-            let c = confirm.clone();
+            let c = Arc::clone(&confirm);
             let b = by.clone();
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
@@ -1176,15 +1182,20 @@ mod tests {
             }
             let broker = consent::Broker::new();
             let confirm = Arc::new(DistConfirm {
-                broker: broker.clone(),
+                broker: Arc::clone(&broker),
                 parties: Arc::new(Parties::new()),
                 dist: OnceLock::new(),
             });
             let dist = Arc::new(
-                watane_dist::Dist::open(home.path(), confirm.clone(), Default::default()).unwrap(),
+                watane_dist::Dist::open(
+                    home.path(),
+                    Arc::<DistConfirm>::clone(&confirm),
+                    Default::default(),
+                )
+                .unwrap(),
             );
             confirm.dist.set(Arc::downgrade(&dist)).unwrap();
-            let signing = dist.clone();
+            let signing = Arc::clone(&dist);
             let hostile = package("hostile");
             let pending = std::thread::spawn(move || signing.publish(hostile));
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -1196,7 +1207,7 @@ mod tests {
                 std::thread::yield_now();
             };
             broker.deny_all();
-            assert!(pending.join().unwrap().is_err());
+            pending.join().unwrap().unwrap_err();
             let consent::Request::Sign { details, .. } = request else {
                 panic!()
             };

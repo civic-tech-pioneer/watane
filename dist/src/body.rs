@@ -3,7 +3,10 @@ use minicbor::{Decoder, Encoder};
 impl Profile {
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut e = Encoder::new(Vec::new());
-        e.array(1).unwrap().str(&self.name).unwrap();
+        e.array(1)
+            .expect("encoding into a Vec cannot fail")
+            .str(&self.name)
+            .expect("encoding into a Vec cannot fail");
         e.into_writer()
     }
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, &'static str> {
@@ -27,11 +30,11 @@ impl Withdraw {
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut e = Encoder::new(Vec::new());
         e.array(2)
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .bytes(self.release.as_bytes())
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .str(&self.reason)
-            .unwrap();
+            .expect("encoding into a Vec cannot fail");
         e.into_writer()
     }
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, &'static str> {
@@ -60,7 +63,6 @@ impl Withdraw {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EntryId;
     #[test]
     fn ac2_body_vectors() {
         let profile = Profile {
@@ -75,9 +77,15 @@ mod tests {
         w.extend([0x11; 32]);
         w.extend([0x63, 0x62, 0x75, 0x67]);
         assert_eq!(profile.encode(), p);
-        assert_eq!(Profile::decode(&p).unwrap(), profile);
+        assert_eq!(
+            Profile::decode(&p).expect("encoding into a Vec cannot fail"),
+            profile
+        );
         assert_eq!(withdraw.encode(), w);
-        assert_eq!(Withdraw::decode(&w).unwrap(), withdraw);
+        assert_eq!(
+            Withdraw::decode(&w).expect("encoding into a Vec cannot fail"),
+            withdraw
+        );
         for (bytes, is_profile) in [(&p, true), (&w, false)] {
             let mut bad = Vec::new();
             let mut b = bytes.clone();
@@ -165,7 +173,7 @@ mod text_tests {
                 assert!(text(&format!("{c}Alice"), max).is_err());
                 assert!(text(&format!("Alice{c}"), max).is_err());
             }
-            assert!(text("Alice Bob", max).is_ok());
+            text("Alice Bob", max).unwrap();
         }
     }
 }
@@ -173,7 +181,6 @@ mod text_tests {
 #[cfg(test)]
 mod index_tests {
     use super::*;
-    use crate::Listing;
     const LINK: &str = "watane:47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy@https://alice.example.org/mods/#reading-list";
     #[test]
     fn ac1_body_vectors_step4() {
@@ -186,11 +193,14 @@ mod index_tests {
             bytes.push(note_head);
             bytes.extend(note.as_bytes());
             let listing = Listing {
-                link: link.parse().unwrap(),
+                link: link.parse().expect("encoding into a Vec cannot fail"),
                 note: note.into(),
             };
             assert_eq!(listing.encode(), bytes);
-            assert_eq!(Listing::decode(&bytes).unwrap(), listing);
+            assert_eq!(
+                Listing::decode(&bytes).expect("encoding into a Vec cannot fail"),
+                listing
+            );
             let mut bad = vec![];
             let mut b = bytes.clone();
             b[0] = 0x83;
@@ -216,7 +226,10 @@ mod index_tests {
         bytes.extend([0x22; 32]);
         let id = EntryId::from_bytes([0x22; 32]);
         assert_eq!(encode_unlist(&id), bytes);
-        assert_eq!(decode_unlist(&bytes).unwrap(), id);
+        assert_eq!(
+            decode_unlist(&bytes).expect("encoding into a Vec cannot fail"),
+            id
+        );
         for b in [
             [vec![0x82], bytes[1..].to_vec()].concat(),
             [vec![0x9f], bytes[1..].to_vec(), vec![0xff]].concat(),
@@ -224,13 +237,13 @@ mod index_tests {
             [vec![0x98, 1], bytes[1..].to_vec()].concat(),
             [vec![0x81, 0x59, 0, 32], bytes[3..].to_vec()].concat(),
         ] {
-            assert!(decode_unlist(&b).is_err());
+            decode_unlist(&b).unwrap_err();
         }
         let text = &LINK[..90]; // missing trailing slash
         let mut bytes = vec![0x82, 0x78, 90];
         bytes.extend(text.as_bytes());
         bytes.push(0x60);
-        assert!(Listing::decode(&bytes).is_err());
+        Listing::decode(&bytes).unwrap_err();
     }
     #[test]
     fn ac2_text_rules_note() {
@@ -257,11 +270,11 @@ impl Listing {
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut e = Encoder::new(Vec::new());
         e.array(2)
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .str(&self.link.to_string())
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .str(&self.note)
-            .unwrap();
+            .expect("encoding into a Vec cannot fail");
         e.into_writer()
     }
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, &'static str> {
@@ -288,7 +301,10 @@ impl Listing {
 }
 pub(crate) fn encode_unlist(id: &EntryId) -> Vec<u8> {
     let mut e = Encoder::new(Vec::new());
-    e.array(1).unwrap().bytes(id.as_bytes()).unwrap();
+    e.array(1)
+        .expect("encoding into a Vec cannot fail")
+        .bytes(id.as_bytes())
+        .expect("encoding into a Vec cannot fail");
     e.into_writer()
 }
 pub(crate) fn decode_unlist(bytes: &[u8]) -> Result<EntryId, &'static str> {

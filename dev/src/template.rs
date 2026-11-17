@@ -1,10 +1,8 @@
 use crate::outcome::{Code, Problem};
 use serde::Serialize;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use watane_pkg::Slug;
 const FILES: &[(&str, &str)] = &[
     (".gitignore", include_str!("../template/.gitignore")),
@@ -44,7 +42,7 @@ pub fn render(text: &str, slug: &Slug) -> String {
                 .join("\n"),
         )
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct NewReport {
     pub slug: String,
     pub dir: PathBuf,
@@ -63,7 +61,7 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
     let write = || -> Result<(), std::io::Error> {
         for (name, text) in FILES {
             let path = dir.join(name);
-            fs::create_dir_all(path.parent().unwrap())?;
+            fs::create_dir_all(path.parent().expect("template paths have a parent"))?;
             fs::write(path, render(text, &slug))?;
         }
         Ok(())

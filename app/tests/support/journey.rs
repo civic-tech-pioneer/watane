@@ -1,9 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::driver::App;
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub fn until(app: &App, label: &str, js: &str) {
     let end = Instant::now() + TIMEOUT;

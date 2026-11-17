@@ -3,22 +3,17 @@
 //! list between machines. A list moves only forward, and only when the
 //! stored anchor signed it.
 
-use crate::{
-    Class, Core, DeviceList, Event, Role, client,
-    error::{Code, NetError},
-    key::{NodeKey, zbase32},
-    lock,
-    ticket::{Hint, PairCode},
-    wire::{self, Request},
-};
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, Write},
-    os::unix::fs::OpenOptionsExt,
-    path::Path,
-    sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
-};
+use crate::error::{Code, NetError};
+use crate::key::{NodeKey, zbase32};
+use crate::ticket::{Hint, PairCode};
+use crate::wire::{self, Request};
+use crate::{Class, Core, DeviceList, Event, Role, client, lock};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const DAY_MS: u64 = 86_400_000;
 /// `anchor_seen` is written to disk at most this often.
@@ -372,7 +367,7 @@ pub(crate) async fn handle_pair(core: &Arc<Core>, caller: NodeKey, secret: [u8; 
     });
     match signed {
         Ok((list, bytes)) => {
-            tokio::spawn(push(core.clone(), list, Some(caller)));
+            tokio::spawn(push(Arc::clone(core), list, Some(caller)));
             wire::pair_answer(&bytes)
         }
         Err(_) => wire::err_answer(Code::Busy, "the list could not be signed"),
@@ -387,7 +382,7 @@ pub(crate) async fn push(core: Arc<Core>, list: DeviceList, skip: Option<NodeKey
         if *node == core.key || Some(*node) == skip || core.addrs_of(node).is_empty() {
             continue;
         }
-        let (core, node, seq) = (core.clone(), *node, list.seq);
+        let (core, node, seq) = (Arc::clone(&core), *node, list.seq);
         tokio::spawn(async move {
             let limits = core.limits();
             if let Ok(answer) = client::call_async(
@@ -530,10 +525,8 @@ mod tests {
         let (anchor, seed) = key(1);
         let (_, bytes) = list(&seed, 5, &[net.node_key()]);
         let c = net.core();
-        assert!(
-            c.install(&bytes, DeviceList::verify(&bytes).unwrap(), false)
-                .is_ok()
-        );
+        c.install(&bytes, DeviceList::verify(&bytes).unwrap(), false)
+            .unwrap();
         (net, seed, anchor)
     }
 
@@ -560,7 +553,7 @@ mod tests {
         let (_, other) = list(&other_seed, 9, &[me]);
         let n = forged.len();
         forged[n - 64..].copy_from_slice(&other[other.len() - 64..]);
-        assert!(core.accept_list(&forged).is_err());
+        core.accept_list(&forged).unwrap_err();
         assert_eq!(net.devices().unwrap(), before);
         // a list that does not name the stored anchor
         let (_, bytes) = list(&other_seed, 9, &[me]);

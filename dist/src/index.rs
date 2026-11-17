@@ -1,4 +1,7 @@
-use crate::*;
+use crate::{
+    ChannelView, Dist, DistError, Follow, Link, ListingInfo, Outcome, PublicKey, RefreshReport,
+    Slug, follow, view,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Keep the channel attached to failures until refresh builds its report.
@@ -43,7 +46,7 @@ impl Dist {
         let records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .clone();
         let mut admitted = BTreeSet::new();
         for key in self.index_keys() {
@@ -157,7 +160,7 @@ impl Dist {
         keys.extend(
             self.follows
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .expect("lock poisoned: another thread panicked while holding it")
                 .iter()
                 .filter(|(_, r)| r.index)
                 .map(|(k, _)| *k),
@@ -184,7 +187,7 @@ impl Dist {
                     if self
                         .follows
                         .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .expect("lock poisoned: another thread panicked while holding it")
                         .contains_key(&m.channel)
                         && self
                             .stored_view(m.channel)?
@@ -208,11 +211,11 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let record = next
             .get_mut(channel)
@@ -236,7 +239,7 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let report = self.read_channel(link.channel(), link.base())?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -251,7 +254,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let time = follow::now();
         let r = next.entry(link.channel()).or_insert(Follow {
@@ -288,7 +291,7 @@ impl Dist {
         let explicit: BTreeSet<_> = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .iter()
             .filter(|(_, r)| r.followed || r.index)
             .map(|(key, _)| *key)
@@ -344,7 +347,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let record = next.entry(key).or_insert(Follow {
             base: bases[0].clone(),
@@ -375,7 +378,7 @@ impl Dist {
         let record = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
             .cloned()
             .ok_or(DistError::NotFollowed {
@@ -443,7 +446,7 @@ impl Dist {
             let mut records = self
                 .follows
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                .expect("lock poisoned: another thread panicked while holding it");
             let mut next = records.clone();
             let r = next.get_mut(&key).expect("listed record");
             if let Some((_, base)) = highest.filter(|_| !r.bases.is_empty()) {
@@ -477,7 +480,7 @@ impl Dist {
         let stored: BTreeSet<_> = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .keys()
             .copied()
             .collect();
@@ -490,7 +493,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let removed = next
             .iter()
@@ -547,7 +550,12 @@ impl Walk {
         } else {
             set.mods.push(ListedMod {
                 channel: key,
-                slug: l.listing.link.slug().unwrap().clone(),
+                slug: l
+                    .listing
+                    .link
+                    .slug()
+                    .expect("a mod listing links to a slug")
+                    .clone(),
                 through,
                 note: l.listing.note.clone(),
             });

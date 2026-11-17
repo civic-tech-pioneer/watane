@@ -1,4 +1,8 @@
-use crate::*;
+use crate::{
+    ChannelView, Decision, Dist, DistError, Entry, EntryId, Exported, Link, Listing, Outcome,
+    Package, Profile, PublicKey, Published, PublisherKey, Release, ReleaseError, ReleaseInfo,
+    ReleaseRef, SignRequest, Slug, Statement, Status, Withdraw, body, http, site, view,
+};
 impl Dist {
     pub fn set_name(&self, name: &str) -> Result<Entry, DistError> {
         self.require_identity()?;
@@ -6,7 +10,7 @@ impl Dist {
         let guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         self.sign_and_append(
             guard,
             "profile",
@@ -135,7 +139,7 @@ impl Dist {
         let guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if let Some(info) = self
             .own()?
             .releases
@@ -173,7 +177,7 @@ impl Dist {
         let guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let info = self
             .own()?
             .releases
@@ -216,12 +220,12 @@ impl Dist {
             view.base = self
                 .base
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .expect("lock poisoned: another thread panicked while holding it")
                 .clone();
         } else if let Some(record) = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .get(key)
         {
             view.base = (!record.base.is_empty()).then(|| record.base.clone());
@@ -273,12 +277,12 @@ impl Dist {
         let _guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let key = self.log.restore_identity(backup, passphrase)?;
         let mut base = self
             .base
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let path = self.home.join("dist/site.json");
         match std::fs::remove_file(&path) {
             Ok(()) => {}
@@ -293,11 +297,11 @@ impl Dist {
         let _guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let _read = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if let Some(link) = own {
             let key = self.require_identity()?;
             if link.channel() != key {
@@ -364,7 +368,7 @@ impl Dist {
         let guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if let Some(old) = self.own()?.listings.iter().find(|l| {
             l.unlisted.is_none()
                 && l.include == include
@@ -377,7 +381,7 @@ impl Dist {
             let _read = self
                 .read_mutex
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                .expect("lock poisoned: another thread panicked while holding it");
             if self.log.head(&key)?.is_none() {
                 match self.read_channel(key, link.base())?.outcome {
                     Outcome::Current { .. } | Outcome::Behind { .. } => {}
@@ -420,7 +424,7 @@ impl Dist {
         let guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if !self
             .own()?
             .listings
@@ -439,7 +443,7 @@ impl Dist {
         let _guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         self.require_identity()?;
         self.log.drop_identity()?;
         let path = self.home.join("dist/site.json");
@@ -451,7 +455,7 @@ impl Dist {
         *self
             .base
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            .expect("lock poisoned: another thread panicked while holding it") = None;
         for item in std::fs::read_dir(self.site_dir()).map_err(|e| site::io(&self.site_dir(), e))? {
             let path = item.map_err(|e| site::io(&self.site_dir(), e))?.path();
             let result = if path
@@ -471,7 +475,7 @@ impl Dist {
         let _guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let key = self.require_identity()?;
         if self.log.own_head_confirmed()? {
             return Ok(());

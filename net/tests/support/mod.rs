@@ -1,18 +1,19 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 //! Test support: a hand-written CBOR builder, an Ed25519 oracle
 //! (`ed25519-compact`), signed fixture entries, an in-memory holder, a raw
 //! QUIC client and a fake callee. Nothing here uses `watane_net`'s codecs.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    net::SocketAddr,
-    path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::collections::{BTreeMap, HashMap};
+use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use watane_log::{Entry, Log, PublicKey};
 use watane_net::{BlobId, HeadInfo, Hit, Holdings, Ingested, NodeKey, Query, Role, Why};
 
@@ -528,7 +529,11 @@ pub struct Node {
 /// A node on loopback, on, paired with nobody.
 pub fn node(holdings: Arc<MemHoldings>, limits: Option<watane_net::Limits>) -> Node {
     let dir = tempfile::tempdir().unwrap();
-    let net = open_on(&dir.path().join("net"), holdings.clone(), options(limits));
+    let net = open_on(
+        &dir.path().join("net"),
+        Arc::clone(&holdings),
+        options(limits),
+    );
     let key = net.node_key();
     Node {
         dir,
@@ -558,8 +563,12 @@ pub fn node_trusting(
     let dir = tempfile::tempdir().unwrap();
     let net_dir = dir.path().join("net");
     let key = {
-        let net = watane_net::Net::open(&net_dir, holdings.clone(), watane_net::Options::default())
-            .unwrap();
+        let net = watane_net::Net::open(
+            &net_dir,
+            Arc::<MemHoldings>::clone(&holdings),
+            watane_net::Options::default(),
+        )
+        .unwrap();
         net.node_key()
     };
     let seed: [u8; 32] = std::fs::read(net_dir.join("node.key"))
@@ -577,7 +586,7 @@ pub fn node_trusting(
         devices,
     };
     std::fs::write(net_dir.join("devices"), list.sign(&seed).unwrap()).unwrap();
-    let net = open_on(&net_dir, holdings.clone(), options(limits));
+    let net = open_on(&net_dir, Arc::clone(&holdings), options(limits));
     Node {
         dir,
         net,
@@ -745,7 +754,7 @@ pub fn fake_machine(
     let accept = ep.clone();
     rt.spawn(async move {
         while let Some(incoming) = accept.accept().await {
-            let reply = reply.clone();
+            let reply = Arc::clone(&reply);
             let blob = blob.clone();
             tokio::spawn(async move {
                 let Ok(conn) = incoming.await else { return };

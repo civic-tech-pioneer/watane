@@ -1,9 +1,8 @@
-use crate::*;
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::{DirBuilderExt, PermissionsExt},
-};
+use crate::{Dist, DistError, Entry, Exported, Link, Slug, view};
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 pub(crate) fn io(path: &Path, source: std::io::Error) -> DistError {
     DistError::Io {
@@ -66,7 +65,7 @@ impl Dist {
         let mut base = self
             .base
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let bytes = serde_json::to_vec(&serde_json::json!({"version":1,"url":link.base()}))
             .expect("site JSON");
         write_equal(&self.home.join("dist/site.json"), &bytes, 0o600)?;
@@ -78,7 +77,7 @@ impl Dist {
         let base = self
             .base
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         Link::new(key, base.as_deref().ok_or(DistError::NoSiteUrl)?, slug)
     }
     pub fn export(&self, dir: &Path) -> Result<Exported, DistError> {
@@ -86,7 +85,7 @@ impl Dist {
         let _guard = self
             .own_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         self.export_unlocked(dir)
     }
     pub(crate) fn export_unlocked(&self, dir: &Path) -> Result<Exported, DistError> {

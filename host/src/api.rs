@@ -5,12 +5,10 @@ pub(crate) struct ApiState {
     pub host: Arc<crate::server::ServingHost>,
     pub port: u16,
 }
-use axum::{
-    Json,
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
-    response::{IntoResponse, Response},
-};
+use axum::Json;
+use axum::body::{Body, to_bytes};
+use axum::http::{Method, Request, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -103,7 +101,7 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
     } else {
         None
     };
-    let planner = host.clone();
+    let planner = Arc::clone(&host);
     let plan = match tokio::task::spawn_blocking(move || {
         planner.plan(
             install

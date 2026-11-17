@@ -1,10 +1,10 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod oracle;
-use std::{
-    collections::BTreeMap,
-    fs,
-    os::unix::fs::{PermissionsExt, symlink},
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
 use watane_log::{Entry, Error, Log, PublicKey, Status};
 
 fn snapshot(dir: &Path) -> BTreeMap<PathBuf, (u32, Vec<u8>)> {

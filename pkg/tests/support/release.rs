@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::Path;
 use wit_component::{ComponentEncoder, StringEncoding, dummy_module, embed_component_metadata};
 use wit_parser::{ManglingAndAbi, Resolve};
 

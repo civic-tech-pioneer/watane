@@ -1,8 +1,6 @@
 mod oracle;
-use chacha20poly1305::{
-    KeyInit, XChaCha20Poly1305,
-    aead::{Aead, Payload},
-};
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use watane_log::{Error, Log};
 #[test]
 fn ac6_backup_roundtrip_and_independent_decryption() {

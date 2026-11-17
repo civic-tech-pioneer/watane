@@ -2,18 +2,14 @@
 //! stream. Order: byte limit before decoding, decode, allowance of the op,
 //! then the op, answered from the holder.
 
-use crate::{
-    Class, Core, HeadInfo,
-    error::Code,
-    key::NodeKey,
-    lock, pairing,
-    wire::{self, Request},
-};
-use iroh::{
-    endpoint::{Connection, RecvStream, SendStream},
-    protocol::{AcceptError, ProtocolHandler},
-};
-use std::{sync::Arc, time::Duration};
+use crate::error::Code;
+use crate::key::NodeKey;
+use crate::wire::{self, Request};
+use crate::{Class, Core, HeadInfo, lock, pairing};
+use iroh::endpoint::{Connection, RecvStream, SendStream};
+use iroh::protocol::{AcceptError, ProtocolHandler};
+use std::sync::Arc;
+use std::time::Duration;
 use watane_log::{Entry, PublicKey};
 
 pub(crate) struct Serve {
@@ -33,14 +29,14 @@ impl ProtocolHandler for Serve {
         // a trusted machine that called us: keep the connection (5.2)
         if connection.side().is_server() && self.core.class_of(&caller) == Class::Trusted {
             tokio::spawn(crate::sync::adopt(
-                self.core.clone(),
+                Arc::clone(&self.core),
                 caller,
                 connection.clone(),
                 caller,
             ));
         }
         while let Ok((send, recv)) = connection.accept_bi().await {
-            let core = self.core.clone();
+            let core = Arc::clone(&self.core);
             let class = core.class_of(&caller);
             // an unknown caller's streams and bytes are budgeted (4.2)
             let budget = if class == Class::Trusted {
@@ -174,13 +170,13 @@ async fn respond(core: &Arc<Core>, caller: NodeKey, class: Class, request: Reque
             let newer = own.filter(|own| *own > seq).map(|_| bytes.as_slice());
             let answer = wire::devices_answer(newer, &addrs);
             if own.is_some_and(|own| seq > own) {
-                tokio::spawn(pairing::pull(core.clone(), caller));
+                tokio::spawn(pairing::pull(Arc::clone(core), caller));
             }
             return answer;
         }
         _ => {}
     }
-    let core = core.clone();
+    let core = Arc::clone(core);
     let work = tokio::task::spawn_blocking(move || run(&core, class, request));
     work.await
         .unwrap_or_else(|_| wire::err_answer(Code::Busy, "the holder failed"))

@@ -1,10 +1,10 @@
-use std::{
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::{OnceLock, mpsc},
-    time::Duration,
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::{OnceLock, mpsc};
+use std::time::Duration;
 
 pub fn watane_node_bin() -> PathBuf {
     static BIN: OnceLock<PathBuf> = OnceLock::new();

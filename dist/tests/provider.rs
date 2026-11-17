@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use support::*;
 use watane_dist::*;

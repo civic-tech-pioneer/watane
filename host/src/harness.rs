@@ -1,11 +1,9 @@
 use crate::{CallError, Caller, Host, HostError, Limits, LocalName};
 use serde_json::Value;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use watane_pkg::InterfaceName;
 
 /// Interface without version -> function -> JSON result.
@@ -46,18 +44,25 @@ impl Harness {
     pub fn open(built_mod: &Path, fakes: Fakes) -> Result<Self, HostError> {
         let home = TemporaryHome::new()?;
         let host = Host::open(&home.0, crate::Mode::Preview, Limits::default())?;
-        *host.fakes.lock().unwrap() = Some(fakes);
-        let plan = host.catalog.lock().unwrap().plan(
-            host.home(),
-            &[crate::Source::Folder(built_mod.to_path_buf())],
-            &host.engine,
-            true,
-            true,
-        )?;
+        *host
+            .fakes
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it") = Some(fakes);
+        let plan = host
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .plan(
+                host.home(),
+                &[crate::Source::Folder(built_mod.to_path_buf())],
+                &host.engine,
+                true,
+                true,
+            )?;
         let installed = host
             .catalog
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .commit(host.home(), plan, &[], true)?;
         let local = installed
             .into_iter()
@@ -92,7 +97,11 @@ impl Harness {
             ));
         }
         let provider = {
-            let catalog = self.host.catalog.lock().unwrap();
+            let catalog = self
+                .host
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let compiled = catalog.components.get(&self.local).ok_or_else(|| {
                 CallError::new(crate::CallCode::NoFunction, "mod has no logic part")
             })?;

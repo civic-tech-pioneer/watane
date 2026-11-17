@@ -1,9 +1,9 @@
 //! One cache at its original path: copying changes Cargo's rustflags fingerprint.
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-    sync::OnceLock,
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 pub fn cache() -> &'static Path {
     // A `static` is never dropped, so the cache cannot live in `$TMPDIR`: it sits

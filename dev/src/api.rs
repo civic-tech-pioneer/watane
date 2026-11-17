@@ -1,10 +1,8 @@
 use crate::outcome::{Code, Problem};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use watane_host::{InstalledMod, RunInfo};
 const FETCH_FIX: &str =
     "Pass a mod link watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>";
@@ -12,6 +10,7 @@ fn bad_fetch_answer(detail: impl std::fmt::Display) -> Problem {
     Problem::new(Code::HostRefused, format!("[bad_answer] {detail}"))
         .fix("The watane app answered with a package that does not match the request; ask the person to update the watane app, then run this command again")
 }
+#[derive(Debug)]
 pub struct Client {
     port: u16,
     home: PathBuf,

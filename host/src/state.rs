@@ -2,11 +2,9 @@ use crate::{CallError, HostError, Limit, Limits};
 use redb::{
     Database, ReadTransaction, ReadableDatabase, ReadableTable, TableDefinition, TableError,
 };
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 const SIZES: TableDefinition<&str, u64> = TableDefinition::new("sizes");
 #[derive(Debug)]
@@ -30,7 +28,10 @@ impl State {
         })
     }
     pub fn delete(&self, identity: &str) -> Result<(), HostError> {
-        let db = self.db.lock().unwrap();
+        let db = self
+            .db
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let Some(db) = db.as_ref() else {
             return Ok(());
         };
@@ -40,6 +41,10 @@ impl State {
             .map_err(|e| HostError::Internal(e.to_string()))?;
         txn.delete_table(TableDefinition::<&str, &[u8]>::new(&format!("s/{id}")))
             .map_err(|e| HostError::Internal(e.to_string()))?;
+        #[expect(
+            clippy::semicolon_outside_block,
+            reason = "the block ends the table borrow before txn.commit()"
+        )]
         {
             let mut sizes = txn
                 .open_table(SIZES)
@@ -56,7 +61,7 @@ impl State {
         let mut db = self
             .db
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if db.is_none() {
             std::fs::create_dir_all(self.path.parent().expect("database parent"))
                 .map_err(CallError::internal)?;
@@ -65,7 +70,7 @@ impl State {
             ));
         }
         Ok(Transaction {
-            db: db.as_ref().expect("opened database").clone(),
+            db: Arc::clone(db.as_ref().expect("opened database")),
             id: blake3::hash(identity.as_bytes()).to_hex()[..32].into(),
             read: None,
             overlay: BTreeMap::new(),
@@ -131,6 +136,10 @@ impl Transaction {
         }
         let mut changed = false;
         let txn = self.db.begin_write().map_err(CallError::internal)?;
+        #[expect(
+            clippy::semicolon_outside_block,
+            reason = "the block ends the table borrow before txn.commit()"
+        )]
         {
             let name = format!("s/{}", self.id);
             let mut table = txn

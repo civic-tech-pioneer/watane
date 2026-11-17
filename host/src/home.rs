@@ -1,10 +1,8 @@
 use crate::{HostError, Mode};
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt, fs,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String")]

@@ -1,4 +1,9 @@
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::Command;
 
 fn executable(path: &Path, text: &str) {
     fs::write(path, text).unwrap();

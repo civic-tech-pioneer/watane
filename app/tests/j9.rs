@@ -3,7 +3,8 @@ mod support;
 use redb::ReadableDatabase;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use support::{driver::App, journey::*};
+use support::driver::App;
+use support::journey::*;
 use watane_host::watane_pkg::PackageId;
 
 fn host_fixture(name: &str) -> PathBuf {

@@ -1,5 +1,9 @@
-use super::{driver::App, journey::*};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use super::driver::App;
+use super::journey::*;
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 pub struct Approve;
 impl watane_dist::Confirm for Approve {
@@ -107,11 +111,11 @@ impl Site {
     }
     pub fn serve(dir: std::path::PathBuf) -> Self {
         let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let count = requests.clone();
+        let count = Arc::clone(&requests);
         let (gate, _) = tokio::sync::watch::channel(false);
         let request_gate = gate.clone();
         let held_requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let waiting = held_requests.clone();
+        let waiting = Arc::clone(&held_requests);
         let (stop, rx) = tokio::sync::oneshot::channel();
         let (tx, ready) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
@@ -128,7 +132,7 @@ impl Site {
                             .layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
                                 count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                                 let mut gate = request_gate.subscribe();
-                                let waiting = waiting.clone();
+                                let waiting = Arc::clone(&waiting);
                                 async move {
                                     if *gate.borrow() {
                                         waiting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

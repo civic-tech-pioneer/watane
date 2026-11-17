@@ -1,11 +1,9 @@
 use crate::{Mod, ModError, PackageId};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    io::{Read, Write},
-    ops::Range,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::{Read, Write};
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 
 pub const MAX_PACKAGE_BYTES: u64 = 67_108_864;
 const MAX_FILES: usize = 4096;
@@ -217,8 +215,10 @@ impl Package {
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
-    // The fixed package API has no is_empty: the format requires at least one record.
-    #[allow(clippy::len_without_is_empty)]
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "the fixed package API has no is_empty: the format requires at least one record"
+    )]
     pub fn len(&self) -> u64 {
         self.bytes.len() as u64
     }
@@ -265,8 +265,8 @@ impl Package {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::OpenOptionsExt;
-                    options.mode(0o644);
-                }
+                    options.mode(0o644)
+                };
                 let mut file = options.open(&path).map_err(|e| io(&path, e))?;
                 permissions(&path, 0o644)?;
                 file.write_all(&self.bytes[range.clone()])
@@ -327,8 +327,8 @@ fn create_dir(path: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o755);
-    }
+        builder.mode(0o755)
+    };
     builder.create(path)
 }
 
@@ -337,8 +337,8 @@ fn permissions(path: &Path, mode: u32) -> Result<(), PackageError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|e| io(path, e))?;
-    }
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|e| io(path, e))?
+    };
     #[cfg(not(unix))]
     let _ = (path, mode);
     Ok(())
@@ -555,7 +555,7 @@ mod tests {
         }
         let root = tmp.path().join("root");
         symlink(real.path(), &root).unwrap();
-        assert!(open_pack_file(&root, "index.html").is_ok());
+        open_pack_file(&root, "index.html").unwrap();
     }
 
     #[cfg(unix)]
@@ -563,7 +563,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join("ui")).unwrap();
         fs::write(tmp.path().join("ui/file"), b"content").unwrap();
-        assert!(open_pack_file(tmp.path(), "ui/file").is_ok());
+        open_pack_file(tmp.path(), "ui/file").unwrap();
         tmp
     }
 

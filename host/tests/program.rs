@@ -1,14 +1,14 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{BufRead, BufReader, Read},
-    net::{IpAddr, SocketAddr},
-    path::{Path, PathBuf},
-    process::{Child, ChildStdout, Command, Stdio},
-    sync::mpsc,
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::io::{BufRead, BufReader, Read};
+use std::net::{IpAddr, SocketAddr};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use watane_host::{Ready, RunInfo};
 
@@ -278,10 +278,8 @@ fn ac6_program_arguments_lock_and_sigterm() {
     preview.stop();
     assert!(!home.path().join("run.json").exists());
     for ip in ["127.0.0.1", "::1"] {
-        assert!(
-            std::net::TcpStream::connect(SocketAddr::new(ip.parse().unwrap(), preview.ready.port))
-                .is_err()
-        );
+        std::net::TcpStream::connect(SocketAddr::new(ip.parse().unwrap(), preview.ready.port))
+            .unwrap_err();
     }
     let mut restarted = Preview::start(home.path());
     restarted.stop();
@@ -397,7 +395,7 @@ fn ac7_public_types_validate_and_round_trip() {
         let error: HostError = LocalName::parse(name).unwrap_err();
         assert_eq!(error.code(), "bad_name");
         assert_eq!(error.status(), 400);
-        assert!(serde_json::from_value::<LocalName>(json!(name)).is_err());
+        serde_json::from_value::<LocalName>(json!(name)).unwrap_err();
     }
     fn serde_type<T: serde::Serialize + serde::de::DeserializeOwned>() {}
     serde_type::<InstalledMod>();

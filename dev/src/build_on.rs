@@ -1,21 +1,16 @@
 //! Build on published packages without executing their sources or trusting their paths.
-use crate::{
-    api::Client,
-    check, deps,
-    env::Env,
-    outcome::{Code, Problem},
-    template,
-};
+use crate::api::Client;
+use crate::env::Env;
+use crate::outcome::{Code, Problem};
+use crate::{check, deps, template};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_pkg::{Deps, Mod, Package, PackageId, PublisherKey, ReleaseRef, Slug};
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct ReleaseProvider {
     pub release: ReleaseRef,
     pub package: PackageId,

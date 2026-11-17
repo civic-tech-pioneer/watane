@@ -1,5 +1,10 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 #[path = "support/release.rs"]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 mod support;
 
 use std::fs;

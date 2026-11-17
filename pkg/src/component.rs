@@ -1,12 +1,8 @@
-use crate::{
-    InterfaceName, Mod, ModError, Rule, Violation,
-    folder::{invalid, read_file},
-};
+use crate::folder::{invalid, read_file};
+use crate::{InterfaceName, Mod, ModError, Rule, Violation};
 use std::collections::BTreeSet;
-use wit_parser::{
-    Resolve, WorldItem, WorldKey,
-    decoding::{DecodedWasm, decode},
-};
+use wit_parser::decoding::{DecodedWasm, decode};
+use wit_parser::{Resolve, WorldItem, WorldKey};
 
 const MAX_COMPONENT_BYTES: u64 = 67_108_864;
 const FILE: &str = "logic.wasm";
@@ -56,6 +52,10 @@ impl Mod {
                 "logic.wasm is not a WebAssembly component",
             ));
         }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "defense in depth: wit-component may panic on untrusted bytes"
+        )]
         let decoded = std::panic::catch_unwind(|| decode(&bytes));
         let Ok(Ok(DecodedWasm::Component(resolve, world))) = decoded else {
             return Err(invalid(

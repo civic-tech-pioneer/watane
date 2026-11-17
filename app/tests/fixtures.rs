@@ -1,6 +1,6 @@
 //! Validates the committed components, without compiling mods or starting a GUI.
 use serde_json::json;
-use std::{future::Future, pin::Pin};
+use std::pin::Pin;
 use watane_host::{
     Answer, Confirm, Host, InstallRequest, Limits, LocalName, Mode, Requester, Source,
 };

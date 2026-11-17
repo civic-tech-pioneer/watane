@@ -1,10 +1,8 @@
 //! Deliberately fake consent and installation for local maker-tool tests.
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use tiny_http::{Response, Server};
 use watane_host::{InstalledMod, LocalName, Ready, RunInfo};
 use watane_pkg::Mod;
@@ -164,18 +162,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 "Content-Type",
                                 "application/octet-stream",
                             )
-                            .unwrap(),
+                            .expect("header names and values are ASCII"),
                         )
                         .with_header(
                             tiny_http::Header::from_bytes(
                                 "Watane-Release",
                                 entry["release"].as_str().ok_or("missing release")?,
                             )
-                            .unwrap(),
+                            .expect("header names and values are ASCII"),
                         )
                         .with_header(
                             tiny_http::Header::from_bytes("Watane-Package", id.to_string())
-                                .unwrap(),
+                                .expect("header names and values are ASCII"),
                         ),
                 )?;
             } else {

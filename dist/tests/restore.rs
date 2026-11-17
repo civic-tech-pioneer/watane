@@ -1,4 +1,5 @@
 mod support;
+use std::sync::Arc;
 use support::*;
 use watane_dist::*;
 
@@ -38,7 +39,12 @@ fn ac11_restore_confirms_published_head_before_signing() {
     let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     bob.follow(&link).unwrap();
     let confirm = std::sync::Arc::new(RecordingConfirm::new([Decision::Approve]));
-    let restored = Dist::open(r.path(), confirm.clone(), fast_options()).unwrap();
+    let restored = Dist::open(
+        r.path(),
+        Arc::<RecordingConfirm>::clone(&confirm),
+        fast_options(),
+    )
+    .unwrap();
     assert_eq!(
         restored
             .restore(&alice.backup("secret").unwrap(), "secret")

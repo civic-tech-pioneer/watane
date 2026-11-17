@@ -1,14 +1,13 @@
 use crate::outcome::{Code, Problem};
 use semver::Version;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub const MANIFEST: &str = include_str!("../allowlist/Cargo.toml");
 pub const LOCK: &str = include_str!("../allowlist/Cargo.lock");
 
+#[derive(Debug)]
 pub struct Allowlist {
     direct: BTreeMap<String, Version>,
     packages: BTreeMap<(String, String), String>,
@@ -18,13 +17,13 @@ impl Allowlist {
         let manifest: toml::Table = toml::from_str(MANIFEST).expect("embedded allowlist manifest");
         let direct = manifest["dependencies"]
             .as_table()
-            .unwrap()
+            .expect("embedded allowlist has a dependencies table")
             .iter()
             .map(|(name, value)| {
                 let version = value
                     .as_str()
                     .or_else(|| value.get("version").and_then(toml::Value::as_str))
-                    .unwrap();
+                    .expect("embedded allowlist pins every dependency's version");
                 (
                     name.clone(),
                     version
@@ -37,16 +36,25 @@ impl Allowlist {
         let lock: toml::Table = toml::from_str(LOCK).expect("embedded allowlist lock");
         let packages = lock["package"]
             .as_array()
-            .unwrap()
+            .expect("embedded allowlist lock has packages")
             .iter()
             .filter(|p| p.get("source").is_some())
             .map(|p| {
                 (
                     (
-                        p["name"].as_str().unwrap().into(),
-                        p["version"].as_str().unwrap().into(),
+                        p["name"]
+                            .as_str()
+                            .expect("Cargo.lock packages have a name, version and checksum")
+                            .into(),
+                        p["version"]
+                            .as_str()
+                            .expect("Cargo.lock packages have a name, version and checksum")
+                            .into(),
                     ),
-                    p["checksum"].as_str().unwrap().into(),
+                    p["checksum"]
+                        .as_str()
+                        .expect("Cargo.lock packages have a name, version and checksum")
+                        .into(),
                 )
             })
             .collect();

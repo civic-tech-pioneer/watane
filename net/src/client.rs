@@ -2,16 +2,16 @@
 //! limit and deadline, and check the answer before it is returned
 //! (NET-F-23, NET-F-24).
 
-use crate::{
-    Core, DeviceList, HeadInfo, Hit, Net, NetError, Query,
-    error::Code,
-    key::NodeKey,
-    lock,
-    ticket::{Hint, PairCode},
-    wire::{self, AnswerError, Hello, Request},
-};
-use iroh::{EndpointAddr, TransportAddr, endpoint::Connection};
-use std::{collections::HashSet, time::Duration};
+use crate::error::Code;
+use crate::key::NodeKey;
+use crate::ticket::{Hint, PairCode};
+use crate::wire::{self, AnswerError, Hello, Request};
+use crate::{Core, DeviceList, HeadInfo, Hit, Net, NetError, Query, lock};
+use iroh::endpoint::Connection;
+use iroh::{EndpointAddr, TransportAddr};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 use watane_log::{Entry, MAX_SEQ, PublicKey};
 
 fn bad_object(node: &NodeKey, cause: impl Into<String>) -> NetError {
@@ -230,7 +230,7 @@ fn join_with(net: &Net, code: &PairCode, replace: bool) -> Result<DeviceList, Ne
 
 pub(crate) fn hello(net: &Net, node: &NodeKey) -> Result<Hello, NetError> {
     net.runtime()?
-        .block_on(hello_async(&net.core.clone(), node, None))
+        .block_on(hello_async(&Arc::clone(&net.core), node, None))
 }
 
 /// `hello` on `connection` (a new kept connection) or, with none, as any
@@ -272,7 +272,7 @@ pub(crate) async fn hello_async(
         && theirs > own
         && core.class_of(node) == crate::Class::Trusted
     {
-        crate::pairing::pull(core.clone(), *node).await;
+        crate::pairing::pull(Arc::clone(core), *node).await;
     }
     Ok(hello)
 }

@@ -1,5 +1,8 @@
 //! Open below a caller-supplied root without following any child link.
-use std::{ffi::OsString, fs::File, io, path::Path};
+use std::ffi::OsString;
+use std::fs::File;
+use std::io;
+use std::path::Path;
 
 pub(crate) fn is_link(error: &io::Error) -> bool {
     #[cfg(unix)]
@@ -153,8 +156,8 @@ pub(crate) fn child_or_create(dir: &Dir, name: &str) -> io::Result<Dir> {
     #[cfg(unix)]
     {
         use rustix::fs::{Mode, mkdirat};
-        mkdirat(&dir.fd, name, Mode::from_raw_mode(0o755))?;
-    }
+        mkdirat(&dir.fd, name, Mode::from_raw_mode(0o755))?
+    };
     #[cfg(not(unix))]
     std::fs::create_dir(dir.path.join(name))?;
     child(dir, name)

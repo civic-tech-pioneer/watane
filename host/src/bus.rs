@@ -1,21 +1,15 @@
 use crate::LocalName;
-use axum::response::{
-    IntoResponse, Response, Sse,
-    sse::{Event, KeepAlive},
-};
+use axum::response::sse::{Event, KeepAlive};
+use axum::response::{IntoResponse, Response, Sse};
 use serde_json::{Value, json};
-use std::{
-    convert::Infallible,
-    pin::Pin,
-    sync::{Arc, Mutex, MutexGuard},
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::convert::Infallible;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::sync::{broadcast, watch};
-use tokio_stream::{
-    Stream,
-    wrappers::{BroadcastStream, WatchStream},
-};
+use tokio_stream::Stream;
+use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 
 type Message = (LocalName, Arc<str>);
 pub(crate) const CLOSE: &str = "";
@@ -43,7 +37,7 @@ impl PageBus {
     pub fn publication(&self) -> MutexGuard<'_, broadcast::Sender<Message>> {
         self.sender
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
     }
     pub fn send(&self, local: &LocalName, message: impl Into<Arc<str>>) {
         let _ = self.publication().send((local.clone(), message.into()));
@@ -137,11 +131,9 @@ mod tests {
                 expected.as_bytes()
             );
         }
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), body.next())
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_millis(20), body.next())
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -153,21 +145,17 @@ mod tests {
             .response(local.clone(), rx, Duration::from_millis(80))
             .into_body()
             .into_data_stream();
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), body.next())
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_millis(20), body.next())
+            .await
+            .unwrap_err();
         bus.send(&local, r#"{"type":"changed"}"#);
         assert_eq!(
             body.next().await.unwrap().unwrap().as_ref(),
             b"data: {\"type\":\"changed\"}\n\n"
         );
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), body.next())
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_millis(20), body.next())
+            .await
+            .unwrap_err();
         assert_eq!(
             tokio::time::timeout(Duration::from_millis(150), body.next())
                 .await

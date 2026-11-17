@@ -1,12 +1,10 @@
 use crate::{Entry, Error, Fork, Ingest, MAX_SEQ, PublicKey, Status, entry};
 use ed25519_dalek::SigningKey;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use std::{
-    fs::OpenOptions,
-    os::unix::fs::OpenOptionsExt,
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
+use std::time::{Duration, Instant};
 pub(crate) fn open(dir: &Path) -> Result<Connection, Error> {
     let path = dir.join("channels.db");
     match OpenOptions::new()

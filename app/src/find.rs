@@ -1,7 +1,5 @@
-use crate::{
-    CmdError,
-    words::{self, Parties},
-};
+use crate::CmdError;
+use crate::words::{self, Parties};
 use serde_json::{Value, json};
 use watane_dist::{Hit, Query, Via};
 
@@ -94,7 +92,9 @@ pub(crate) fn hit_view(
     parties: &Parties,
 ) -> Value {
     let mut view = api_result(hit);
-    let row = view.as_object_mut().unwrap();
+    let row = view
+        .as_object_mut()
+        .expect("a view row serializes as an object");
     row.remove("checked_at");
     row.remove("unchecked_since");
     row.insert("checkedAt".into(), json!(hit.checked_at));
@@ -126,7 +126,9 @@ pub(crate) fn hit_view(
             via(hit, Some(parties))
                 .into_iter()
                 .map(|mut v| {
-                    let object = v.as_object_mut().unwrap();
+                    let object = v
+                        .as_object_mut()
+                        .expect("a view row serializes as an object");
                     object.entry("index").or_insert(Value::Null);
                     object.entry("through").or_insert(Value::Null);
                     object.entry("note").or_insert(json!(""));

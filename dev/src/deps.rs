@@ -1,13 +1,11 @@
 use crate::outcome::{Code, Problem};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_pkg::{Deps, Mod};
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct AddReport {
     pub slug: String,
     pub version: String,

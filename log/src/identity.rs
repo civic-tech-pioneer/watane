@@ -1,11 +1,9 @@
 use crate::Error;
 use ed25519_dalek::SigningKey;
-use std::{
-    fs::{self, DirBuilder, File, OpenOptions},
-    io::{self, Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::path::Path;
 use zeroize::Zeroizing;
 fn io_error(path: &Path, source: io::Error) -> Error {
     Error::Io {
@@ -153,10 +151,8 @@ pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
     }
     result
 }
-use chacha20poly1305::{
-    KeyInit, XChaCha20Poly1305,
-    aead::{Aead, Payload},
-};
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use unicode_normalization::UnicodeNormalization;
 fn password(passphrase: &str) -> Result<Zeroizing<String>, Error> {
     let p = Zeroizing::new(passphrase.nfc().collect::<String>());
@@ -200,7 +196,7 @@ pub(crate) fn export(seed: &[u8; 32], passphrase: &str) -> Result<Vec<u8>, Error
     let cipher = XChaCha20Poly1305::new((&*key).into());
     let encrypted = cipher
         .encrypt(
-            <&chacha20poly1305::XNonce>::try_from(&header[36..60]).unwrap(),
+            <&chacha20poly1305::XNonce>::try_from(&header[36..60]).expect("the slice is 24 bytes"),
             Payload {
                 msg: seed,
                 aad: &header,
@@ -241,7 +237,8 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
     let plain = Zeroizing::new(
         XChaCha20Poly1305::new((&*key).into())
             .decrypt(
-                <&chacha20poly1305::XNonce>::try_from(&backup[36..60]).unwrap(),
+                <&chacha20poly1305::XNonce>::try_from(&backup[36..60])
+                    .expect("the slice is 24 bytes"),
                 Payload {
                     msg: &backup[60..],
                     aad: &backup[..60],

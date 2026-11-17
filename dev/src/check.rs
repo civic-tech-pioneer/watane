@@ -1,9 +1,8 @@
-use crate::{
-    allowlist::Allowlist,
-    outcome::{Code, Problem},
-};
+use crate::allowlist::Allowlist;
+use crate::outcome::{Code, Problem};
 use serde::Serialize;
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
 use watane_pkg::{Mod, ModError};
 fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
     let mut stack = vec![root.to_path_buf()];
@@ -14,14 +13,19 @@ fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
             let kind = entry.file_type().map_err(Problem::internal)?;
             let path = entry.path();
             if kind.is_symlink() {
-                let file = path.strip_prefix(root).unwrap().to_string_lossy();
+                let file = path
+                    .strip_prefix(root)
+                    .expect("walked paths are under the root")
+                    .to_string_lossy();
                 errors.push(
                     Problem::new(Code::ModSymlink, format!("{file} is a symbolic link"))
                         .at(file.to_string(), None, None)
                         .fix("Replace it with a file"),
                 );
             } else {
-                let relative = path.strip_prefix(root).unwrap();
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("walked paths are under the root");
                 if relative.starts_with("logic")
                     && relative != Path::new("logic")
                     && !relative.starts_with("logic/target")
@@ -71,13 +75,13 @@ fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
     errors.sort_by(|a, b| a.file.cmp(&b.file));
     Ok(errors)
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ProviderReport {
     pub slug: String,
     pub publisher: Option<String>,
     pub path: Option<String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct CheckReport {
     pub slug: String,
     pub version: String,
@@ -182,7 +186,7 @@ fn mod_problems_for_slug(
                     Code::ModInvalid,
                     format!(
                         "[{}] {}",
-                        serde_json::to_value(v.rule).unwrap().as_str().unwrap(),
+                        serde_json::to_value(v.rule).expect("a rule serializes").as_str().expect("a rule serializes as a string"),
                         v.message
                     ),
                 )
@@ -217,7 +221,8 @@ pub fn check(dir: &Path) -> Result<(Mod, CheckReport), Vec<Problem>> {
     }
     let host_wit = dir.join("wit/deps/watane-host/host.wit");
     if fs::read(&host_wit).ok().as_deref() != Some(watane_host::HOST_WIT.as_bytes()) {
-        fs::create_dir_all(host_wit.parent().unwrap()).map_err(|e| vec![Problem::internal(e)])?;
+        fs::create_dir_all(host_wit.parent().expect("the host WIT path has a parent"))
+            .map_err(|e| vec![Problem::internal(e)])?;
         fs::write(host_wit, watane_host::HOST_WIT).map_err(|e| vec![Problem::internal(e)])?;
     }
     let errors = files(dir).map_err(|e| vec![e])?;
@@ -1046,7 +1051,7 @@ mod tests {
             "changed",
         )
         .unwrap();
-        assert!(check(temp.as_path()).is_ok());
+        check(temp.as_path()).unwrap();
         assert_eq!(
             fs::read_to_string(temp.as_path().join("wit/deps/watane-host/host.wit")).unwrap(),
             watane_host::HOST_WIT
@@ -1073,6 +1078,6 @@ mod tests {
             "package mods:counter@0.1.0;\nworld counter {}\n",
         )
         .unwrap();
-        assert!(check(temp.as_path()).is_ok());
+        check(temp.as_path()).unwrap();
     }
 }

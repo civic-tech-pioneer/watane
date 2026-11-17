@@ -1,5 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use support::*;
 use watane_net::{Net, NetError, Options};
 

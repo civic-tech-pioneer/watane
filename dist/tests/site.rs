@@ -1,5 +1,11 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path, sync::Arc};
+use std::collections::BTreeMap;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::sync::Arc;
 use support::{RecordingConfirm, fixture};
 use watane_dist::*;
 fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
@@ -29,7 +35,12 @@ fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
 fn ac6_site_releases_and_withdrawal() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([Decision::Approve; 3]));
-    let d = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let d = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let a = d.publish(fixture("1.0.0", false)).unwrap();
     let bytes = fixture("2.0.0", false);
     d.publish(bytes.clone()).unwrap();

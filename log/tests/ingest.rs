@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod oracle;
 use watane_log::{Entry, Error, Log, PublicKey, Status};
 fn fixture() -> (tempfile::TempDir, Log, PublicKey, Vec<Entry>) {

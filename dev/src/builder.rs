@@ -1,27 +1,24 @@
-use crate::{
-    allowlist::{self, Allowlist},
-    env::Env,
-    outcome::{Code, Problem},
-    toolchain::Toolchain,
-};
+use crate::allowlist::{self, Allowlist};
+use crate::env::Env;
+use crate::outcome::{Code, Problem};
+use crate::toolchain::Toolchain;
 use serde::Serialize;
 use serde_json::Value;
-use std::{
-    collections::BTreeSet,
-    fs,
-    path::{Component, Path, PathBuf},
-    process::Command,
-    time::{Instant, SystemTime},
-};
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+use std::process::Command;
+use std::time::{Instant, SystemTime};
 use watane_pkg::{Mod, ModError, Slug};
 
+#[derive(Debug)]
 pub struct BuildCtx<'a> {
     pub env: &'a Env,
     pub toolchain: &'a Toolchain,
     pub vendor: &'a Path,
     pub allow: &'a Allowlist,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct Built {
     pub wasm: String,
     pub bytes: u64,
@@ -40,7 +37,11 @@ pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
             "PATH",
             format!(
                 "{}:/usr/bin:/bin",
-                ctx.toolchain.cargo.parent().unwrap().display()
+                ctx.toolchain
+                    .cargo
+                    .parent()
+                    .expect("the cargo binary sits in a directory")
+                    .display()
             ),
         )
         .env("RUSTC", &ctx.toolchain.rustc)
@@ -482,7 +483,7 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
                     .peek()
                     .is_some_and(|c| c.is_whitespace() || *c == '\\' || *c == '#')
             {
-                word.push(chars.next().unwrap());
+                word.push(chars.next().expect("the condition peeked this char"));
             } else if ch.is_whitespace() {
                 if !word.is_empty() {
                     paths.push(std::mem::take(&mut word));
@@ -556,7 +557,7 @@ mod tests {
                     allow: &allow,
                 };
                 for args in [&["build", "--release"][..], &["test", "--no-run"][..]] {
-                    assert!(compile(&ctx, &copy, &"counter".parse().unwrap(), args).is_err());
+                    compile(&ctx, &copy, &"counter".parse().unwrap(), args).unwrap_err();
                 }
             }
             // `exit` runs no destructors: drop the temp folder first.

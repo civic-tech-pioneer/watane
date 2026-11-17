@@ -1,12 +1,16 @@
 #![cfg(feature = "fake-host")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 mod support;
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-};
+use std::fs;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 
 struct Host(Child);
 impl Drop for Host {
@@ -213,8 +217,8 @@ fn ac3_exists_precedes_fetch_and_absent_app_writes_nothing() {
         let (code, v) = f.run(&["new", "ratings", "--from", &link("reading-list")]);
         assert_eq!(code, 2, "{v}");
         assert_eq!(v["errors"][0]["code"], "usage.exists");
-        assert!(!f.home.join("requests").exists());
-    }
+        assert!(!f.home.join("requests").exists())
+    };
     let (code, v) = f.run(&["new", "other", "--from", &link("reading-list")]);
     assert_eq!(code, 3, "{v}");
     assert_eq!(v["errors"][0]["code"], "env.host_not_running");

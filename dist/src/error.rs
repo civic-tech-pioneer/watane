@@ -1,4 +1,7 @@
-use crate::*;
+use crate::{
+    EntryId, KeyTextError, PackageError, PackageId, PublicKey, PublisherKey, ReleaseError,
+    ReleaseRef, Slug,
+};
 use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum DistError {

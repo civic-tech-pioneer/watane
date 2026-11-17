@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use support::*;
 use watane_log::{Entry, PublicKey};
@@ -148,7 +150,7 @@ fn ac5_an_unknown_node_gets_hello_only() {
     );
     refused(c.net.fork_of(&a.key, &fx.cf), &a.key, Code::NotAllowed);
     assert_eq!(a.holdings.calls(), before, "the holder was called");
-    assert!(c.net.hello(&a.key).is_ok());
+    c.net.hello(&a.key).unwrap();
 }
 
 #[test]
@@ -184,7 +186,7 @@ fn err_code(answer: &[u8]) -> String {
     use cbor::*;
     let head = array(&[text("err"), text("x"), text("y")]);
     assert_eq!(answer[0], head[0], "{answer:02x?}");
-    assert_eq!(&answer[1..5], &text("err")[..], "{answer:02x?}");
+    assert_eq!(&answer[1..5], &*text("err"), "{answer:02x?}");
     let len = (answer[5] & 31) as usize;
     String::from_utf8(answer[6..6 + len].to_vec()).unwrap()
 }

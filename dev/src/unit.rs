@@ -1,20 +1,19 @@
-use crate::{
-    builder::{self, BuildCtx},
-    outcome::{Code, Problem},
-};
+use crate::builder::{self, BuildCtx};
+use crate::outcome::{Code, Problem};
 use serde::Serialize;
-use std::{path::Path, sync::mpsc, thread, time::Duration};
-use wasmtime::{
-    Config, Engine, Store, StoreLimits, StoreLimitsBuilder, Trap,
-    component::{Component, Linker, ResourceTable, types::ComponentItem},
-};
-use wasmtime_wasi::{
-    WasiCtx, WasiCtxView, WasiView,
-    p2::{bindings::sync::Command, pipe::MemoryOutputPipe},
-};
+use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+use wasmtime::component::types::ComponentItem;
+use wasmtime::component::{Component, Linker, ResourceTable};
+use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder, Trap};
+use wasmtime_wasi::p2::bindings::sync::Command;
+use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use watane_pkg::Slug;
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Debug)]
 pub struct UnitReport {
     pub passed: u32,
     pub failed: u32,
@@ -22,7 +21,7 @@ pub struct UnitReport {
     pub not_run: u32,
     pub failures: Vec<UnitFailure>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct UnitFailure {
     pub test: String,
     pub message: String,
@@ -105,7 +104,7 @@ pub fn parse_libtest(stdout: &str, stderr: &str, slug: &str) -> UnitReport {
             "FAILED" => {
                 report.failed += 1;
                 report.failures.push(UnitFailure {
-                    test: current.take().unwrap().into(),
+                    test: current.take().expect("a status line names its test").into(),
                     message: "unit test failed".into(),
                     file: None,
                     line: None,

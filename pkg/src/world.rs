@@ -1,9 +1,8 @@
-use crate::{InterfaceName, ModError, Rule, Slug, Version, Violation, folder::read_file};
+use crate::folder::read_file;
+use crate::{InterfaceName, ModError, Rule, Slug, Version, Violation};
 use serde::Serialize;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use wit_parser::{
     Resolve, SourceMap, Type, TypeDefKind, UnresolvedPackageGroup, WorldItem, WorldKey,
 };
@@ -188,6 +187,10 @@ pub(crate) fn read(
     if !safe {
         return Ok(None);
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "defense in depth: wit-parser may panic on untrusted WIT"
+    )]
     let parsed = std::panic::catch_unwind(|| -> Result<_, String> {
         // Feed only bytes read and bounded above to the parser, never a path to reopen.
         let text = std::str::from_utf8(&world_bytes).unwrap_or("");

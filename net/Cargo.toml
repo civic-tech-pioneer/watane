@@ -33,5 +33,5 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 tempfile = "3.27"
 ed25519-compact = "2.6"
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true

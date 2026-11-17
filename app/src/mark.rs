@@ -9,10 +9,8 @@ pub const WORDS: [&str; 64] = [
     "spruce", "tulip", "walnut", "willow",
 ];
 pub fn read_or_create(home: &Path) -> std::io::Result<String> {
-    use std::{
-        fs,
-        io::{self, Write},
-    };
+    use std::fs;
+    use std::io::{self, Write};
     let directory = home.join("app");
     let path = directory.join("mark");
     match fs::read(&path) {
@@ -42,14 +40,14 @@ pub fn read_or_create(home: &Path) -> std::io::Result<String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+        options.mode(0o600)
+    };
     let mut file = options.open(path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(0o600))?;
-    }
+        file.set_permissions(fs::Permissions::from_mode(0o600))?
+    };
     writeln!(file, "{mark}")?;
     Ok(mark)
 }
@@ -57,7 +55,8 @@ pub fn read_or_create(home: &Path) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{collections::HashSet, fs};
+    use std::collections::HashSet;
+    use std::fs;
 
     fn valid(home: &Path) -> String {
         let mark = read_or_create(home).unwrap();
@@ -80,8 +79,8 @@ mod tests {
                     .mode()
                     & 0o777,
                 0o600
-            );
-        }
+            )
+        };
         mark
     }
 

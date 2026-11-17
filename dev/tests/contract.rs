@@ -1,6 +1,10 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::{Value, json};
-use std::{fs, path::PathBuf, process::Command};
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 
 struct Fixture {
     _temp: tempfile::TempDir,

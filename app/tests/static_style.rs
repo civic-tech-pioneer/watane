@@ -1,4 +1,5 @@
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
 #[test]
 fn ac1_tokens_themes_monograms_and_local_styles() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::*;
 
 // Python framed WATANEPK v1 records with big-endian path and content lengths;
@@ -355,7 +357,10 @@ async fn ac2_home_serves_existing_mods_and_ac3_keeps_quiet_updates() {
 
 #[tokio::test]
 async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
-    use axum::{Router, body::Bytes, extract::DefaultBodyLimit, routing::post};
+    use axum::Router;
+    use axum::body::Bytes;
+    use axum::extract::DefaultBodyLimit;
+    use axum::routing::post;
     let home = tempfile::tempdir().unwrap();
     let host = watane_host::Host::open(
         home.path(),
@@ -455,11 +460,8 @@ fn ac1_s84_installed_is_public_and_confirm_defaults_to_noop() {
 
 mod s84 {
     use super::*;
-    use std::{
-        future::Future,
-        pin::Pin,
-        sync::{Arc, Mutex, Weak},
-    };
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex, Weak};
     use watane_host::{
         Answer, Confirm, Host, InstallRequest, Installed, Limits, LocalName, Mode, Requester,
         Source,
@@ -510,7 +512,7 @@ mod s84 {
         let host = Host::open(
             dir.path(),
             Mode::Home {
-                app: Some(app.clone()),
+                app: Some(Arc::<App>::clone(&app)),
             },
             Limits::default(),
         )

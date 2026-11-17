@@ -66,7 +66,7 @@ fn s2_net_off_follow_and_fetch_without_a_udp_socket() {
     let fetched = bob.fetch(&alice.published.info.reference).unwrap();
     assert_eq!(
         fetched.package.as_bytes(),
-        &alice.package_bytes()[..],
+        &*alice.package_bytes(),
         "package bytes equal Alice's"
     );
     bob.close();

@@ -1,15 +1,16 @@
-use crate::{
-    json_eq::json_eq,
-    outcome::{Code, Problem},
-};
+use crate::json_eq::json_eq;
+use crate::outcome::{Code, Problem};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
 
+#[derive(Debug)]
 pub struct ContractFile {
     pub fakes: watane_host::Fakes,
     pub steps: Vec<Step>,
 }
+#[derive(Debug)]
 pub struct Step {
     pub target: Target,
     pub args: Value,
@@ -17,30 +18,32 @@ pub struct Step {
     pub emits: Option<Vec<ExpectedEvent>>,
     pub manages: Option<Vec<ExpectedManage>>,
 }
+#[derive(Debug)]
 pub enum Target {
     Call(String),
     Deliver(String),
 }
+#[derive(Debug)]
 pub enum Expect {
     Success,
     Returns(Value),
     Fails(Option<String>),
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExpectedEvent {
     pub event: String,
     pub args: Value,
 }
 /// A reduction or request of `watane:host/manage`: `fn` is the WIT function name.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExpectedManage {
     #[serde(rename = "fn")]
     pub function: String,
     pub args: Value,
 }
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Debug)]
 pub struct ContractReport {
     pub files: u32,
     pub passed: u32,
@@ -201,7 +204,10 @@ pub fn run_steps(
                             ExpectedEvent {
                                 event: format!(
                                     "{}.{}",
-                                    interface.split('@').next().unwrap(),
+                                    interface
+                                        .split('@')
+                                        .next()
+                                        .expect("split always yields a first part"),
                                     e.function
                                 ),
                                 args: e.args.clone(),
@@ -308,7 +314,8 @@ fn step_lines(text: &str) -> Vec<u32> {
 /// the interface name without its version. Empty when there is no readable
 /// logic.wasm: the harness then reports the real problem.
 fn imported_functions(dir: &Path) -> std::collections::BTreeMap<String, Vec<String>> {
-    use wasmtime::component::{Component, types::ComponentItem};
+    use wasmtime::component::Component;
+    use wasmtime::component::types::ComponentItem;
     let mut found = std::collections::BTreeMap::new();
     let engine = wasmtime::Engine::default();
     let Ok(component) = Component::from_file(&engine, dir.join("logic.wasm")) else {
@@ -368,7 +375,12 @@ pub fn contract_tests(
     let mut imported = None;
     for path in paths {
         report.files += 1;
-        let file = format!("tests/{}", path.file_name().unwrap().to_string_lossy());
+        let file = format!(
+            "tests/{}",
+            path.file_name()
+                .expect("a test file path has a file name")
+                .to_string_lossy()
+        );
         let text = fs::read_to_string(&path)
             .map_err(|e| vec![Problem::internal(e).at(&file, None, None)])?;
         let contract = match parse(&text) {
@@ -459,7 +471,7 @@ mod tests {
             {"call":"api.get", "returns":"}\"["}
           ]
         }"#;
-        assert!(parse(text).is_ok());
+        parse(text).unwrap();
         assert_eq!(step_lines(text), vec![4, 5]);
     }
 
@@ -472,7 +484,7 @@ mod tests {
             json!({"deliver":3}),
             json!({"call":"api.get","deliver":"events.added"}),
         ] {
-            assert!(parse(&json!({"steps":[invalid]}).to_string()).is_err());
+            parse(&json!({"steps":[invalid]}).to_string()).unwrap_err();
         }
         let mut delivered = false;
         let (passed, failures) = run_steps(

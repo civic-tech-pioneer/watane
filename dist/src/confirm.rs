@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{EntryId, Link, PublicKey, Release, ReleaseRef};
 pub trait Confirm: Send + Sync {
     /// Blocks until the participant answers in the app. dist holds its
     /// own-channel lock during the call, so an implementation must not call

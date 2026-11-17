@@ -1,5 +1,5 @@
 use crate::{LocalName, PlanEntry};
-use std::{future::Future, pin::Pin};
+use std::pin::Pin;
 use watane_pkg::{Grant, ReleaseRef};
 
 pub trait Confirm: Send + Sync + 'static {

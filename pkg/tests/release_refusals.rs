@@ -1,3 +1,9 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 use watane_pkg::*;
 fn hex(s: &str) -> Vec<u8> {
     data_encoding::HEXLOWER.decode(s.as_bytes()).unwrap()
@@ -124,7 +130,7 @@ fn ac4_truncation_types_and_hostile_lengths() {
             field..field + 1,
             [0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
         );
-        assert!(Release::decode(&bad).is_err());
+        Release::decode(&bad).unwrap_err();
     }
 }
 

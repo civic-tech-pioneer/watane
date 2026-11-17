@@ -1,14 +1,11 @@
-use crate::{
-    env::Env,
-    outcome::{Code, Problem},
-};
-use std::{
-    fs,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use crate::env::Env;
+use crate::outcome::{Code, Problem};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
+#[derive(Debug)]
 pub struct Toolchain {
     pub cargo: PathBuf,
     pub rustc: PathBuf,

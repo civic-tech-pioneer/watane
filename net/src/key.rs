@@ -1,13 +1,11 @@
 use crate::error::NetError;
 use ed25519_dalek::SigningKey;
-use std::{
-    fmt,
-    fs::{self, DirBuilder, File, OpenOptions},
-    io::{self, Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
-    path::Path,
-    str::FromStr,
-};
+use std::fmt;
+use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::path::Path;
+use std::str::FromStr;
 use watane_log::{KeyTextError, PublicKey};
 use zeroize::Zeroizing;
 
@@ -68,7 +66,7 @@ impl NodeKey {
         self.to_string()[..8].to_owned()
     }
     /// The same key as log's `PublicKey`, when it is a valid one.
-    pub fn to_public(&self) -> Result<PublicKey, KeyTextError> {
+    pub fn to_public(self) -> Result<PublicKey, KeyTextError> {
         PublicKey::from_bytes(&self.0)
     }
 }

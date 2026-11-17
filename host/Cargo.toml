@@ -69,5 +69,5 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 tempfile = "3"
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true

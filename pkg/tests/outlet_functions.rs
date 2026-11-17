@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use std::fs;
 use watane_pkg::{Mod, ModError, Rule};
 

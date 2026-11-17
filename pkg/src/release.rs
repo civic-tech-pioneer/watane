@@ -2,7 +2,8 @@ use crate::{
     Grant, InterfaceName, Mod, NameError, Package, PackageId, Provider, PublisherKey, ReleaseRef,
     Slug, Version,
 };
-use minicbor::{Decoder, Encoder, data::Type};
+use minicbor::data::Type;
+use minicbor::{Decoder, Encoder};
 use std::convert::Infallible;
 
 pub const RELEASE_KIND: &str = "release";

@@ -1,6 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
+use std::time::Duration;
 use support::*;
 use watane_log::PublicKey;
 use watane_net::{BlobId, Code, Limits, NetError, Role};

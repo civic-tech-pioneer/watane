@@ -1,5 +1,6 @@
-use crate::*;
-use std::{fmt, str::FromStr};
+use crate::{DistError, PublicKey, Slug};
+use std::fmt;
+use std::str::FromStr;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
     channel: PublicKey,
@@ -142,7 +143,7 @@ mod tests {
                 ..
             })
         ));
-        assert!(Link::new(channel, "https://@example.org", None).is_err());
+        Link::new(channel, "https://@example.org", None).unwrap_err();
         let invalid = [
             (
                 format!("{KEY}@https://example.org"),

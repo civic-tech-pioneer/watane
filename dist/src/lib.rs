@@ -66,12 +66,10 @@ pub enum Status {
 
 mod view;
 
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct Options {
     pub connect_timeout: Duration, // default 10 s
@@ -115,6 +113,14 @@ pub struct Dist {
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
     read_mutex: Mutex<()>,
     agent: ureq::Agent,
+}
+// The confirm callback has no Debug, and the rest is lock and cache state.
+impl std::fmt::Debug for Dist {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dist")
+            .field("home", &self.home)
+            .finish_non_exhaustive()
+    }
 }
 impl Dist {
     pub fn open(
@@ -292,7 +298,7 @@ impl Dist {
 }
 mod own;
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Follow {
     base: String,
     #[serde(default = "default_followed")]
@@ -338,10 +344,8 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, D
     }
 }
 fn private_dir(path: &Path) -> Result<(), DistError> {
-    use std::{
-        fs,
-        os::unix::fs::{DirBuilderExt, PermissionsExt},
-    };
+    use std::fs;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let io = |source| DistError::Io {
         path: path.to_owned(),
         source,

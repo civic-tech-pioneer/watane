@@ -5,8 +5,12 @@
 //! itself again in a child process started by `sh` after `umask 077`. This file
 //! holds this one test so no other test shares the child's umask.
 #![cfg(unix)]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
 
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::Command;
 use watane_pkg::Package;
 
 const CHILD: &str = "WATANE_PKG_UMASK_CHILD";

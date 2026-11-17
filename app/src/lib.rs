@@ -15,10 +15,8 @@ pub mod mark;
 pub mod views;
 mod words;
 use consent::{AskId, Broker};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex, OnceLock},
-};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Manager;
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -115,8 +113,7 @@ fn node_options(dist: watane_dist::Options) -> watane_node::Options {
         ..Default::default()
     };
     options.net.on = true; // The persisted book decides whether to start an endpoint.
-    #[cfg(feature = "driver")]
-    {
+    if cfg!(feature = "driver") {
         options.net.bind = std::env::var("WATANE_DRIVER_NET_BIND")
             .ok()
             .and_then(|v| v.parse().ok());
@@ -124,6 +121,7 @@ fn node_options(dist: watane_dist::Options) -> watane_node::Options {
     options
 }
 
+#[derive(Debug)]
 pub struct Config {
     pub home: PathBuf,
     pub port: u16,
@@ -204,8 +202,8 @@ pub fn run(config: Config) -> Result<(), AppError> {
     let broker = Broker::new();
     let parties = Arc::new(words::Parties::new());
     let confirm = Arc::new(confirm::HostConfirm {
-        broker: broker.clone(),
-        parties: parties.clone(),
+        broker: Arc::clone(&broker),
+        parties: Arc::clone(&parties),
         host: OnceLock::new(),
         core: OnceLock::new(),
         main: OnceLock::new(),
@@ -214,7 +212,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
     let host = watane_host::Host::open(
         &config.home,
         watane_host::Mode::Home {
-            app: Some(confirm.clone()),
+            app: Some(Arc::<confirm::HostConfirm>::clone(&confirm)),
         },
         watane_host::Limits::default(),
     );
@@ -229,18 +227,18 @@ pub fn run(config: Config) -> Result<(), AppError> {
         let home = config.home.clone();
         let options = dist_options(listed_local_env().as_deref());
         let confirm = Arc::new(confirm::DistConfirm {
-            broker: broker.clone(),
-            parties: parties.clone(),
+            broker: Arc::clone(&broker),
+            parties: Arc::clone(&parties),
             dist: OnceLock::new(),
         });
         tauri::async_runtime::block_on(async move {
             tauri::async_runtime::spawn_blocking(move || {
                 let node = Arc::new(watane_node::Node::open(
                     &home,
-                    confirm.clone(),
+                    Arc::<confirm::DistConfirm>::clone(&confirm),
                     node_options(options),
                 )?);
-                let dist = node.dist().clone();
+                let dist = Arc::clone(node.dist());
                 let _ = confirm.dist.set(Arc::downgrade(&dist));
                 Ok::<_, watane_node::NodeError>(node)
             })
@@ -344,11 +342,11 @@ pub fn run(config: Config) -> Result<(), AppError> {
                 'startup: {
                     let core = match core::Core::new(
                         h.clone(),
-                        host.clone(),
-                        node.clone(),
-                        parties.clone(),
-                        state.broker.clone(),
-                        confirm.notices.clone(),
+                        Arc::clone(&host),
+                        Arc::clone(&node),
+                        Arc::clone(&parties),
+                        Arc::clone(&state.broker),
+                        Arc::clone(&confirm.notices),
                     ) {
                         Ok(core) => Arc::new(core),
                         Err(error) => {
@@ -356,19 +354,22 @@ pub fn run(config: Config) -> Result<(), AppError> {
                             break 'startup;
                         }
                     };
-                    let _ = confirm.main.set(core.main.clone());
+                    let _ = confirm.main.set(Arc::clone(&core.main));
                     let _ = confirm.core.set(Arc::downgrade(&core));
-                    let initial = core.clone();
+                    let initial = Arc::clone(&core);
                     let result = tauri::async_runtime::block_on(async move {
                         tauri::async_runtime::spawn_blocking(move || initial.channels()).await
                     });
                     match result {
-                        Ok(Ok(_)) => match tauri::async_runtime::block_on(
-                            host.serve(config.port, api::router_node(Some(node), parties.clone())),
-                        ) {
+                        Ok(Ok(_)) => match tauri::async_runtime::block_on(host.serve(
+                            config.port,
+                            api::router_node(Some(node), Arc::clone(&parties)),
+                        )) {
                             Ok(served) => {
-                                *core.served.lock().unwrap() = Some(served);
-                                let _ = state.core.set(core.clone());
+                                *core.served.lock().expect(
+                                    "lock poisoned: another thread panicked while holding it",
+                                ) = Some(served);
+                                let _ = state.core.set(Arc::clone(&core));
                                 let weak = Arc::downgrade(&core);
                                 tauri::async_runtime::spawn(async move {
                                     let mut timer =
@@ -418,7 +419,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
                 views::open_mod(
                     &h,
                     m.local.as_ref(),
-                    m.page.as_deref().unwrap(),
+                    m.page
+                        .as_deref()
+                        .expect("startup returns only mods with a page"),
                     &format!("{} — {party}", m.name),
                 )
                 .map_err(|e| e.message)?;
@@ -440,7 +443,11 @@ pub fn run(config: Config) -> Result<(), AppError> {
         if matches!(event, tauri::RunEvent::Exit)
             && let Some(core) = h.state::<AppState>().core.get()
         {
-            let served = core.served.lock().unwrap().take();
+            let served = core
+                .served
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .take();
             if let Some(served) = served {
                 tauri::async_runtime::block_on(served.shutdown());
             }

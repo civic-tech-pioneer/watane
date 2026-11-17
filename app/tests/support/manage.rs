@@ -1,4 +1,8 @@
-use super::{driver::App, journey::*, publish::*};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use super::driver::App;
+use super::journey::*;
+use super::publish::*;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 

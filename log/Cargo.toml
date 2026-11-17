@@ -28,5 +28,5 @@ tempfile = "3.27"
 proptest = "1.12"
 ed25519-compact = "2.6"
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true

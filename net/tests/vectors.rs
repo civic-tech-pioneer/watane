@@ -1,7 +1,8 @@
 //! The signed form of TECHNICAL 4.3, pinned by vectors made with
 //! `ed25519-compact` from the seed of RFC 8032 test 1.
 mod support;
-use support::{cbor::*, *};
+use support::cbor::*;
+use support::*;
 use watane_net::{DeviceList, NetError, NodeKey, Role};
 
 const SEED: [u8; 32] = hex32("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
@@ -115,7 +116,7 @@ fn ac7_refused_forms() {
     unsorted.reverse();
     let ok = |items: Vec<Vec<u8>>| object(DEVICES, SEED, &items);
     // sanity: the construction itself verifies
-    assert!(DeviceList::verify(&ok(items(&ANCHOR, 1, TIME, 0, &sorted))).is_ok());
+    DeviceList::verify(&ok(items(&ANCHOR, 1, TIME, 0, &sorted))).unwrap();
     // unsorted, duplicate, no anchor, role 2 (all correctly signed)
     refused(&ok(items(&ANCHOR, 1, TIME, 0, &unsorted)));
     refused(&ok(items(
@@ -127,7 +128,9 @@ fn ac7_refused_forms() {
     )));
     refused(&ok(items(&ANCHOR, 1, TIME, 0, &[(other(), 0)])));
     let mut role2 = sorted.clone();
-    role2.iter_mut().for_each(|d| d.1 = 2);
+    for d in &mut role2 {
+        d.1 = 2;
+    }
     refused(&ok(items(&ANCHOR, 1, TIME, 0, &role2)));
     // a signature over the entry prefix of the same items
     refused(&object(
@@ -172,12 +175,12 @@ fn ac7_refused_forms() {
 fn ac7_sign_refuses_a_bad_list_or_the_wrong_key() {
     let mut l = list();
     l.devices.reverse();
-    assert!(l.sign(&SEED).is_err());
+    l.sign(&SEED).unwrap_err();
     let mut l = list();
     l.devices.push(l.devices[0]);
-    assert!(l.sign(&SEED).is_err());
+    l.sign(&SEED).unwrap_err();
     let mut l = list();
     l.devices.retain(|d| d.0 != l.anchor);
-    assert!(l.sign(&SEED).is_err());
-    assert!(list().sign(&OTHER_SEED).is_err());
+    l.sign(&SEED).unwrap_err();
+    list().sign(&OTHER_SEED).unwrap_err();
 }

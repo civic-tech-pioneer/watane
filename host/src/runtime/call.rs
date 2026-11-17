@@ -1,14 +1,10 @@
 use super::{json, limits};
 use crate::{CallCode, CallError, Caller, EventRecord, Host, Limit, LinkKind, LocalName, Outcome};
 use serde_json::Value;
-use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
-    sync::{
-        Arc, Condvar, Mutex, MutexGuard,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-    },
-    time::Instant,
-};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Instant;
 use watane_pkg::{Grant, InterfaceName};
 
 #[derive(Default)]
@@ -51,7 +47,9 @@ pub(super) fn lock_until<T>(
         }
         match lock.try_lock() {
             Ok(guard) => return Ok(guard),
-            Err(std::sync::TryLockError::Poisoned(e)) => return Ok(e.into_inner()),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                panic!("mod lock poisoned: another thread panicked while holding it")
+            }
             Err(std::sync::TryLockError::WouldBlock) => {
                 std::thread::sleep((deadline - now).min(std::time::Duration::from_millis(1)))
             }
@@ -77,7 +75,7 @@ pub(crate) fn run(
     let snapshot = Arc::new(
         host.catalog
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .clone(),
     );
     let chain = Arc::new(Chain {
@@ -89,7 +87,7 @@ pub(crate) fn run(
         fakes: host
             .fakes
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .clone(),
         deadline,
         effects: Mutex::new(Effects::default()),
@@ -99,13 +97,18 @@ pub(crate) fn run(
         failed_fuel: AtomicU64::new(0),
     });
     let invocation = Invocation {
-        chain: chain.clone(),
+        chain: Arc::clone(&chain),
         local: local.clone(),
         depth: 0,
         hop: 0,
     };
     let result = invocation.invoke(caller, function, args, host.limits.fuel, subscription);
-    let effects = std::mem::take(&mut *chain.effects.lock().unwrap());
+    let effects = std::mem::take(
+        &mut *chain
+            .effects
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it"),
+    );
     let events = effects
         .events
         .iter()
@@ -137,7 +140,12 @@ pub(crate) fn run(
 
 impl Invocation {
     pub(super) fn storage(&self) -> Result<(), CallError> {
-        let catalog = self.chain.host.catalog.lock().unwrap();
+        let catalog = self
+            .chain
+            .host
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         if catalog.mods.iter().any(|m| {
             m.local == self.local
                 && m.grants
@@ -166,7 +174,13 @@ impl Invocation {
                 serial,
             )
         });
-        let chain = self.chain.effects.lock().unwrap().manages.clone();
+        let chain = self
+            .chain
+            .effects
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .manages
+            .clone();
         self.chain.host.manage_call(
             &self.local,
             fake.as_ref().map(|(fakes, serial)| (fakes, *serial)),
@@ -199,7 +213,13 @@ impl Invocation {
                 })?;
             return Ok((value, fuel));
         }
-        let current = self.chain.host.catalog.lock().unwrap().clone();
+        let current = self
+            .chain
+            .host
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone();
         let consumer = current
             .mods
             .iter()
@@ -222,7 +242,7 @@ impl Invocation {
                 ),
             ));
         }
-        let provider = provider.unwrap();
+        let provider = provider.expect("provider.is_none() returned above");
         let target = current
             .mods
             .iter()
@@ -240,7 +260,7 @@ impl Invocation {
                 CallError::new(CallCode::NotGranted, "no provider interface is linked")
             })?;
         let nested = Self {
-            chain: self.chain.clone(),
+            chain: Arc::clone(&self.chain),
             local: provider.clone(),
             depth: self.depth.saturating_add(1),
             hop: self.hop,
@@ -276,7 +296,13 @@ impl Invocation {
                 .unwrap_or_else(|| Value::Array(Vec::new()));
             return Ok((value, fuel));
         }
-        let current = self.chain.host.catalog.lock().unwrap().clone();
+        let current = self
+            .chain
+            .host
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone();
         let mut subscribers: Vec<_> = current
             .mods
             .iter()
@@ -294,7 +320,7 @@ impl Invocation {
                     continue;
                 }
                 let nested = Self {
-                    chain: self.chain.clone(),
+                    chain: Arc::clone(&self.chain),
                     local: m.local.clone(),
                     depth: self.depth.saturating_add(1),
                     hop: self.hop,
@@ -369,16 +395,19 @@ impl Invocation {
             .ok_or_else(|| CallError::new(CallCode::NoFunction, "mod has no logic part"))?;
         let function = compiled.find(name, subscription)?;
         let params = json::arguments(&function.ty, args)?;
-        let lock = host
-            .call_locks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(m.identity.clone())
-            .or_default()
-            .clone();
+        let lock = Arc::clone(
+            host.call_locks
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .entry(m.identity.clone())
+                .or_default(),
+        );
         let _guard = lock_until(&lock, chain.deadline)?;
         {
-            let current = host.catalog.lock().unwrap();
+            let current = host
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let active = current
                 .mods
                 .iter()
@@ -478,7 +507,10 @@ impl Invocation {
             .collect::<Result<Vec<_>, CallError>>()?;
         let manages = ctx.manages;
         let changed = ctx.state.commit()?;
-        let mut effects = chain.effects.lock().unwrap();
+        let mut effects = chain
+            .effects
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         effects.manages.extend(manages);
         if chain.publish {
             // Enqueue before releasing the mod lock; no invocation waits here.
@@ -552,7 +584,10 @@ struct Publication {
 impl Deliveries {
     fn enqueue(&self, invocation: &Invocation, events: &[EventRecord], changed: bool) {
         let chain = &invocation.chain;
-        let mut pending = self.pending.lock().unwrap();
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let emitter = pending
             .emitters
             .entry(invocation.local.clone())
@@ -562,11 +597,11 @@ impl Deliveries {
         for event in events {
             let accepted = Arc::new(AtomicBool::new(false));
             messages.push((
-                accepted.clone(),
+                Arc::clone(&accepted),
                 crate::bus::event_message(&invocation.local, event),
             ));
             emitter.events.push_back(Delivery {
-                chain: chain.clone(),
+                chain: Arc::clone(chain),
                 emitter: invocation.local.clone(),
                 event: event.clone(),
                 hop: invocation.hop,
@@ -578,13 +613,13 @@ impl Deliveries {
                 .job
                 .changed
                 .lock()
-                .unwrap()
+                .expect("lock poisoned: another thread panicked while holding it")
                 .insert(invocation.local.clone());
         }
         if changed || !messages.is_empty() {
             chain.job.publications.fetch_add(1, Ordering::Release);
             emitter.pages.push_back(Publication {
-                job: chain.job.clone(),
+                job: Arc::clone(&chain.job),
                 messages,
             });
         }
@@ -592,13 +627,19 @@ impl Deliveries {
     }
 
     fn ready(&self, chain: &Chain) {
-        let _pending = self.pending.lock().unwrap();
+        let _pending = self
+            .pending
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         chain.ready.store(true, Ordering::Release);
         self.wake.notify_all();
     }
 
     fn finish(&self, host: &Host, chain: &Arc<Chain>) {
-        let mut pending = self.pending.lock().unwrap();
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         chain.ready.store(true, Ordering::Release);
         chain.job.pending.fetch_sub(1, Ordering::Release);
         self.wake.notify_all();
@@ -607,14 +648,22 @@ impl Deliveries {
             // Read-only calls with no effects do not wait for another job.
             for (local, emitter) in &mut pending.emitters {
                 while emitter.pages.front().is_some_and(|p| p.job.complete()) {
-                    let publication = emitter.pages.pop_front().unwrap();
+                    let publication = emitter
+                        .pages
+                        .pop_front()
+                        .expect("the loop checked the front page");
                     // Coalesce changed at the last commit of this mod in the
                     // original call's completed event chain (9.2 step 6).
                     let changed = !emitter
                         .pages
                         .iter()
                         .any(|p| Arc::ptr_eq(&p.job, &publication.job))
-                        && publication.job.changed.lock().unwrap().remove(local);
+                        && publication
+                            .job
+                            .changed
+                            .lock()
+                            .expect("lock poisoned: another thread panicked while holding it")
+                            .remove(local);
                     let sender = host.bus.publication();
                     for (accepted, message) in publication.messages {
                         if accepted.load(Ordering::Acquire) {
@@ -644,13 +693,23 @@ impl Deliveries {
                 emitter.events.pop_front()
             });
             let Some(delivery) = next else {
-                pending = self.wake.wait(pending).unwrap();
+                pending = self
+                    .wake
+                    .wait(pending)
+                    .expect("lock poisoned: another thread panicked while holding it");
                 continue;
             };
             drop(pending);
             process(&delivery);
-            pending = self.pending.lock().unwrap();
-            pending.emitters.get_mut(&delivery.emitter).unwrap().active = false;
+            pending = self
+                .pending
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            pending
+                .emitters
+                .get_mut(&delivery.emitter)
+                .expect("a delivery names a registered emitter")
+                .active = false;
             delivery.chain.job.pending.fetch_sub(1, Ordering::Release);
             self.wake.notify_all();
         }
@@ -672,7 +731,11 @@ fn process(delivery: &Delivery) {
         return;
     }
     delivery.accepted.store(true, Ordering::Release);
-    let current = host.catalog.lock().unwrap().clone();
+    let current = host
+        .catalog
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it")
+        .clone();
     let mut subscribers: Vec<_> = current
         .mods
         .iter()
@@ -696,18 +759,18 @@ fn process(delivery: &Delivery) {
                 continue;
             };
             let subscriber = Arc::new(Chain {
-                host: host.clone(),
+                host: Arc::clone(host),
                 snapshot: Arc::new(current.clone()),
                 fakes: None,
                 deadline,
                 effects: Mutex::new(Effects::default()),
                 publish: true,
                 ready: AtomicBool::new(false),
-                job: job.clone(),
+                job: Arc::clone(job),
                 failed_fuel: AtomicU64::new(0),
             });
             let invocation = Invocation {
-                chain: subscriber.clone(),
+                chain: Arc::clone(&subscriber),
                 local: m.local.clone(),
                 depth: 0,
                 hop: delivery.hop + 1,
@@ -720,7 +783,13 @@ fn process(delivery: &Delivery) {
                 true,
             );
             // The effects of a delivery apply after its invoke (6.10).
-            let manages = std::mem::take(&mut subscriber.effects.lock().unwrap().manages);
+            let manages = std::mem::take(
+                &mut subscriber
+                    .effects
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .manages,
+            );
             host.apply_manage(manages);
             // Nested calls have also released their locks before these events run.
             host.events.ready(&subscriber);
@@ -738,7 +807,8 @@ fn process(delivery: &Delivery) {
 mod tests {
     use super::*;
     use crate::{Limits, Mode};
-    use std::{path::Path, time::Duration};
+    use std::path::Path;
+    use std::time::Duration;
 
     #[test]
     fn ac7_s12a_subscription_rechecks_grant_after_waiting_for_its_lock() {
@@ -764,10 +834,12 @@ mod tests {
         let lock = Arc::new(Mutex::new(()));
         host.call_locks
             .lock()
-            .unwrap()
-            .insert("local/recs".into(), lock.clone());
-        let guard = lock.lock().unwrap();
-        let emitter = host.clone();
+            .expect("lock poisoned: another thread panicked while holding it")
+            .insert("local/recs".into(), Arc::clone(&lock));
+        let guard = lock
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let emitter = Arc::clone(&host);
         let thread = std::thread::Builder::new()
             .stack_size(16 << 20)
             .spawn(move || {
@@ -789,7 +861,7 @@ mod tests {
         host.revoke(&recs, &grant).unwrap();
         drop(guard);
         assert_eq!(thread.join().unwrap().unwrap(), Value::Null);
-        let reader = host.clone();
+        let reader = Arc::clone(&host);
         let received = std::thread::Builder::new()
             .stack_size(16 << 20)
             .spawn(move || reader.call(&Caller::Page, &recs, "api.received", Value::Null))

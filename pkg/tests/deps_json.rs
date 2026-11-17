@@ -56,14 +56,14 @@ fn ac2_deps_json() {
         );
     }
     fs::write(dir.path().join("deps.json"), " ".repeat(65537)).unwrap();
-    assert!(Deps::read(dir.path()).is_err());
+    Deps::read(dir.path()).unwrap_err();
     let members: Vec<_> = (0..33).map(|i| format!("\"mods:p{i}\":null")).collect();
     fs::write(
         dir.path().join("deps.json"),
         format!("{{{}}}", members.join(",")),
     )
     .unwrap();
-    assert!(Deps::read(dir.path()).is_err());
+    Deps::read(dir.path()).unwrap_err();
     fs::write(
         dir.path().join("deps.json"),
         format!("{{{}}}", members[..32].join(",")),

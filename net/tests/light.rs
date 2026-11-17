@@ -1,12 +1,17 @@
 //! Stage N4, part 1: a light machine asks a full one (S8, the query part of
 //! S9, S12), the anchor that keeps only what its holder asks for (NET-F-21)
 //! and the follow-ups of S63 (NET-F-32). Entries are signed by hand.
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 mod support;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, mpsc::Receiver},
-    time::Duration,
-};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
 use support::*;
 use watane_log::{Entry, PublicKey};
 use watane_net::{BlobId, Event, Limits, NetError, Options, Query, Role, Why};
@@ -224,8 +229,8 @@ fn s8_a_light_laptop_searches_and_installs_through_the_server() {
     }
     assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
     // `need` of a channel the server holds, and of one nobody holds
-    assert!(light.net.need(&x).is_ok());
-    assert!(light.net.need(&chan([99u8; 32])).is_ok());
+    light.net.need(&x).unwrap();
+    light.net.need(&chan([99u8; 32])).unwrap();
 }
 
 /// S9, the query part: a light machine's query reaches the server and no
@@ -418,7 +423,7 @@ fn ac12_a_package_over_the_limit_gets_a_cause_and_no_transfer() {
     }));
     assert!(b.holdings.stored_blobs.lock().unwrap().is_empty());
     // the machine is not dropped
-    assert!(b.net.heads_of(&a.key, &[]).is_ok());
+    b.net.heads_of(&a.key, &[]).unwrap();
 }
 
 /// NET-F-32 (c): every error that names a node names its short key.

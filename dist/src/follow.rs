@@ -1,4 +1,7 @@
-use crate::*;
+use crate::{
+    Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
+    RefreshReport, http, site, view,
+};
 use std::collections::BTreeMap;
 
 pub(crate) fn now() -> u64 {
@@ -53,7 +56,7 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let report = self.read_channel(link.channel(), link.base())?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -68,7 +71,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let time = now();
         let record = next.entry(link.channel()).or_insert(Follow {
@@ -99,12 +102,12 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let key = link.channel();
         let unknown = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
             .is_some_and(|r| {
                 !r.base.is_empty()
@@ -126,7 +129,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         if let Some(record) = next.get_mut(&key) {
             learn_base(record, link.base());
@@ -155,11 +158,11 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let record = next
             .get_mut(channel)
@@ -175,7 +178,7 @@ impl Dist {
         let keys: Vec<_> = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .iter()
             .filter(|(_, r)| r.followed)
             .map(|(k, _)| *k)
@@ -186,11 +189,11 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let keys: Vec<_> = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .iter()
             .filter(|(_, r)| r.followed || r.index)
             .map(|(k, _)| *k)
@@ -219,7 +222,7 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         self.read_record(*channel)
     }
     pub(crate) fn read_channel(
@@ -249,7 +252,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if records.contains_key(&key) {
             let mut next = records.clone();
             let record = next.get_mut(&key).expect("followed key");

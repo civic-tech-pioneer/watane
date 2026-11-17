@@ -1,16 +1,14 @@
 //! `DistHoldings`: net's `Holdings` over a `Dist` (TECHNICAL 4.1).
-use crate::NodeError;
-use crate::convert;
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
-};
+use crate::{NodeError, convert};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use watane_dist::{Dist, Entry, PublicKey, Reason};
 use watane_net::{BlobId, HeadInfo, Hit, Holdings, Ingested, Query, Role, Why};
 
 /// Answers `net`'s questions only from what dist stored and verified. Made before
 /// the `Dist` exists; until `set`, it answers as an empty holder.
+#[derive(Debug)]
 pub struct DistHoldings {
     dist: OnceLock<Arc<Dist>>,
     /// Packages that `need_blob` asked for and that are not stored yet (5.3).
@@ -33,7 +31,7 @@ impl DistHoldings {
     fn asked(&self) -> std::sync::MutexGuard<'_, BTreeMap<[u8; 32], u64>> {
         self.asked
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
     }
 
     pub(crate) fn ask(&self, id: BlobId, size: u64) {
@@ -167,7 +165,7 @@ mod tests {
         let first = Arc::new(Dist::open_keyless(a.path(), Default::default()).unwrap());
         let second = Arc::new(Dist::open_keyless(b.path(), Default::default()).unwrap());
         let h = DistHoldings::empty();
-        h.set(first.clone()).unwrap();
+        h.set(Arc::clone(&first)).unwrap();
         assert!(matches!(h.set(second), Err(NodeError::HolderSet)));
         assert!(Arc::ptr_eq(h.dist.get().unwrap(), &first));
     }

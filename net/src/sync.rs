@@ -6,20 +6,14 @@
 //! before the holder sees it; a machine that sends a bad object is dropped
 //! for the session.
 
-use crate::{
-    Class, Core, Event, HeadInfo, Holdings, Ingested, NetError, Role, Why,
-    client::{self},
-    gossip,
-    key::NodeKey,
-    lock,
-    serve::Serve,
-};
+use crate::client::{self};
+use crate::key::NodeKey;
+use crate::serve::Serve;
+use crate::{Class, Core, Event, HeadInfo, Holdings, Ingested, NetError, Role, Why, gossip, lock};
 use iroh::endpoint::Connection;
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use watane_log::PublicKey;
 
 const TICK: Duration = Duration::from_millis(250);
@@ -244,9 +238,9 @@ fn maybe_dial(core: &Arc<Core>, node: NodeKey) {
         if core.key > node && dial.since.elapsed() < DIAL_GRACE {
             return;
         }
-        dial.busy = true;
-    }
-    let core = core.clone();
+        dial.busy = true
+    };
+    let core = Arc::clone(core);
     tokio::spawn(async move {
         let outcome = dial(&core, node).await;
         let up = matches!(outcome, Ok(true));
@@ -290,13 +284,15 @@ async fn dial(core: &Arc<Core>, node: NodeKey) -> Result<bool, String> {
         Err(_) => return Ok(false),
     };
     // the machine may call us on the connection we dialed
-    let serve = Serve { core: core.clone() };
+    let serve = Serve {
+        core: Arc::clone(core),
+    };
     let for_serve = conn.clone();
     tokio::spawn(async move {
         use iroh::protocol::ProtocolHandler;
         let _ = serve.accept(for_serve).await;
     });
-    Ok(adopt(core.clone(), node, conn, core.key).await)
+    Ok(adopt(Arc::clone(core), node, conn, core.key).await)
 }
 
 /// Keep `conn` as the connection to `node` when it is the one to keep: call
@@ -366,7 +362,7 @@ pub(crate) async fn adopt(
         core.emit(Event::PeerUp(node));
     }
     {
-        let core = core.clone();
+        let core = Arc::clone(&core);
         let conn = conn.clone();
         tokio::spawn(async move {
             conn.closed().await;
@@ -382,8 +378,8 @@ pub(crate) async fn adopt(
             if gone {
                 core.emit(Event::PeerDown(node));
             }
-        });
-    }
+        })
+    };
     if announce {
         request(&core, node, Want::Everything);
     }
@@ -429,9 +425,9 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
         if slot.running {
             return;
         }
-        slot.running = true;
-    }
-    let core = core.clone();
+        slot.running = true
+    };
+    let core = Arc::clone(core);
     tokio::spawn(async move {
         loop {
             let (full, hints) = {
@@ -459,7 +455,7 @@ pub(crate) fn request(core: &Arc<Core>, node: NodeKey, want: Want) {
                 for (channel, (seq, id, tries)) in hints {
                     match sync_channel(&core, &node, &channel, seq, id, tries).await {
                         Ok(hinted) if again(&hinted, tries) => {
-                            let core = core.clone();
+                            let core = Arc::clone(&core);
                             tokio::spawn(async move {
                                 tokio::time::sleep(HINT_RETRY).await;
                                 let next = next_machine(&core, node);
@@ -484,7 +480,7 @@ pub(crate) async fn holder<T: Send + 'static>(
     core: &Core,
     f: impl FnOnce(&dyn Holdings) -> T + Send + 'static,
 ) -> Result<T, NetError> {
-    let holdings = core.holdings.clone();
+    let holdings = Arc::clone(&core.holdings);
     tokio::task::spawn_blocking(move || f(holdings.as_ref()))
         .await
         .map_err(|_| NetError::Io {

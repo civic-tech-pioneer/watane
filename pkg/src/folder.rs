@@ -1,8 +1,6 @@
 use serde::Serialize;
-use std::{
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModError {

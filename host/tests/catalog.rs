@@ -1,8 +1,8 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::Value;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_host::{Host, Limits};
 
 fn fixture(name: &str) -> PathBuf {
@@ -266,12 +266,9 @@ async fn ac2_s11_participant_pin_never_links_to_a_local_provider() {
 mod participant {
     use super::*;
     use serde_json::json;
-    use std::{
-        collections::VecDeque,
-        future::Future,
-        pin::Pin,
-        sync::{Arc, Mutex},
-    };
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
     use watane_host::{
         Answer, Caller, Change, Confirm, InstallRequest, LocalName, Mode, Requester, Source,
     };
@@ -378,7 +375,7 @@ mod participant {
     #[tokio::test]
     async fn ac2_s12a_missing_provider_never_asks_or_installs() {
         let fake = Fake::new(vec![]);
-        let (dir, host) = home(fake.clone());
+        let (dir, host) = home(Arc::clone(&fake));
         let p = plan(&host, &["recs"]);
         assert_eq!(
             serde_json::to_value(p.missing()).unwrap(),
@@ -417,7 +414,7 @@ mod participant {
                 withhold: vec![(local("counter"), Grant::Storage)],
             },
         ]);
-        let (dir, host) = home(fake.clone());
+        let (dir, host) = home(Arc::clone(&fake));
         assert_eq!(
             host.install(plan(&host, &["counter"]), Requester::App)
                 .await
@@ -442,7 +439,7 @@ mod participant {
     #[tokio::test]
     async fn ac5_s12a_local_api_reaches_confirm() {
         let fake = Fake::new(vec![approve()]);
-        let (_dir, host) = home(fake.clone());
+        let (_dir, host) = home(Arc::clone(&fake));
         let served = host.serve(0, axum::Router::new()).await.unwrap();
         let r = reqwest::Client::new()
             .post(format!("http://127.0.0.1:{}/api/install", served.port))
@@ -464,7 +461,7 @@ mod participant {
     #[tokio::test]
     async fn ac6_s12a_update_keeps_state_and_withdrawn_grants_without_asking() {
         let fake = Fake::new(vec![approve()]);
-        let (_dir, host) = home(fake.clone());
+        let (_dir, host) = home(Arc::clone(&fake));
         install(&host, &["counter"]).await;
         call(&host, "counter", "api.add", Value::Null).await;
         call(&host, "counter", "api.add", Value::Null).await;
@@ -598,7 +595,7 @@ mod participant {
         let extra = axum::Router::new().route(
             "/api/held",
             axum::routing::get(move || {
-                let gates = gates.clone();
+                let gates = Arc::clone(&gates);
                 async move {
                     let (entered, release) = gates.lock().await.take().unwrap();
                     let _ = entered.send(());
@@ -625,7 +622,7 @@ mod participant {
         });
         entered.await.unwrap();
         let released = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let flag = released.clone();
+        let flag = Arc::clone(&released);
         let releaser = tokio::spawn(async move {
             tokio::time::sleep(delay).await;
             flag.store(true, std::sync::atomic::Ordering::Release);
@@ -771,7 +768,7 @@ mod participant {
     #[tokio::test]
     async fn ac10_s12a_disable_enable_and_restart() {
         let fake = Fake::new(vec![approve()]);
-        let (dir, mut host) = home(fake.clone());
+        let (dir, mut host) = home(Arc::clone(&fake));
         install(&host, &["shelf", "recs"]).await;
         call(&host, "shelf", "items.add", json!({"title":"Dune"})).await;
         for enabled in [false, true] {
@@ -784,7 +781,7 @@ mod participant {
             host = Host::open(
                 dir.path(),
                 Mode::Home {
-                    app: Some(fake.clone()),
+                    app: Some(Arc::<Fake>::clone(&fake)),
                 },
                 Limits::default(),
             )
@@ -839,11 +836,9 @@ mod participant {
     }
     #[tokio::test]
     async fn ac11_s12a_extra_routes_have_guards_and_their_own_body_limit() {
-        use axum::{
-            Router,
-            extract::DefaultBodyLimit,
-            routing::{get, post},
-        };
+        use axum::Router;
+        use axum::extract::DefaultBodyLimit;
+        use axum::routing::{get, post};
         let (_dir, host) = home(Fake::default().into());
         let extra = Router::new()
             .route("/api/hello", get(|| async { "hello" }))
@@ -903,7 +898,7 @@ mod participant {
     #[tokio::test]
     async fn ac4_s12a_stale_plan_never_asks_or_overwrites_catalog() {
         let fake = Fake::new(vec![approve()]);
-        let (_dir, host) = home(fake.clone());
+        let (_dir, host) = home(Arc::clone(&fake));
         let pending = plan(&host, &["counter"]);
         install(&host, &["shelf"]).await;
         assert_eq!(
@@ -925,7 +920,7 @@ mod participant {
     #[tokio::test]
     async fn ac5_s12a_api_plan_and_mods_are_read_only() {
         let fake = Fake::new(vec![]);
-        let (_dir, host) = home(fake.clone());
+        let (_dir, host) = home(Arc::clone(&fake));
         let served = host.serve(0, axum::Router::new()).await.unwrap();
         let client = reqwest::Client::new();
         let url = format!("http://127.0.0.1:{}", served.port);

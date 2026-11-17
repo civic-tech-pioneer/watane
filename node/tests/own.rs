@@ -1,13 +1,11 @@
 //! S4 and S5: the laptop publishes and the server keeps (node 2, stage 2).
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    fs,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use support::*;
 use watane_dist::{Link, Reason};
 use watane_net::Role;
@@ -117,7 +115,7 @@ impl SlowHost {
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
         let url = format!("http://{}/", server.server_addr());
         let stop = Arc::new(AtomicBool::new(false));
-        let (s, quit) = (server.clone(), stop.clone());
+        let (s, quit) = (Arc::clone(&server), Arc::clone(&stop));
         let worker = std::thread::spawn(move || {
             while !quit.load(Ordering::SeqCst) {
                 if let Ok(Some(req)) = s.recv_timeout(Duration::from_millis(50)) {

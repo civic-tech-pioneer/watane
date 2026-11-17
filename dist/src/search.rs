@@ -1,8 +1,6 @@
-use crate::*;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    str::FromStr,
-};
+use crate::{Dist, DistError, Link, PublicKey, Release, ReleaseInfo, Slug, Status, Version, view};
+use std::collections::{BTreeMap, BTreeSet};
+use std::str::FromStr;
 use watane_pkg::{Grant, InterfaceName};
 
 #[derive(Clone, Debug, Default)]
@@ -95,7 +93,7 @@ impl Dist {
         let records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .clone();
         let sets = if stored.is_none() {
             self.read_sets()?
@@ -316,6 +314,7 @@ fn interfaces(release: &Release) -> Vec<&InterfaceName> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{EntryId, PackageId, ReleaseRef};
 
     #[test]
     fn ac6_search_cap_after_ordering() {

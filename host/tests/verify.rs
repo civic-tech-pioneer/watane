@@ -1,9 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::json;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use watane_host::watane_log::{Entry, Log};
 use watane_host::watane_pkg::{self as pkg, Mod, Package, RELEASE_KIND, Release};
 use watane_host::{
@@ -93,7 +93,7 @@ fn ac2_changed_package_entry_and_summary_are_refused() {
     );
     let mut bytes = entry.bytes().to_vec();
     *bytes.last_mut().unwrap() ^= 1;
-    assert!(Entry::decode(&bytes).is_err());
+    Entry::decode(&bytes).unwrap_err();
     body.summary = "Another summary.".into();
     let entry = log.append(RELEASE_KIND, &body.encode()).unwrap();
     let error = host

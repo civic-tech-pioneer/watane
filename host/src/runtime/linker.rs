@@ -1,10 +1,10 @@
-use super::{Ctx, limits::Limiter};
+use super::Ctx;
+use super::limits::Limiter;
 use crate::{CallError, HostError, Limits};
 use std::time::Instant;
-use wasmtime::{
-    Engine, Store, UpdateDeadline,
-    component::{Component, Linker, types::ComponentItem},
-};
+use wasmtime::component::types::ComponentItem;
+use wasmtime::component::{Component, Linker};
+use wasmtime::{Engine, Store, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use watane_pkg::Mod;
 impl WasiView for Ctx {

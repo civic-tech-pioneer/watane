@@ -1,5 +1,6 @@
 use ed25519_dalek::VerifyingKey;
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum KeyTextError {

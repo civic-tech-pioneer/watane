@@ -1,5 +1,9 @@
-use crate::*;
+use crate::{
+    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, follow,
+    site, view,
+};
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeadState {
@@ -26,7 +30,7 @@ impl Dist {
             .chain(
                 self.follows
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .expect("lock poisoned: another thread panicked while holding it")
                     .keys()
                     .copied(),
             )
@@ -150,7 +154,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         self.mark_kept(channel, &mut records)
     }
     pub fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, reason: Reason) -> Ingested {
@@ -163,7 +167,7 @@ impl Dist {
                 (reason == Reason::Kept && Some(*channel) != self.identity()).then(|| {
                     self.follows
                         .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .expect("lock poisoned: another thread panicked while holding it")
                 });
             if records.as_ref().is_some_and(|records| {
                 !records.get(channel).is_some_and(|r| r.kept)
@@ -215,7 +219,7 @@ impl Dist {
         let mut records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         match next.get_mut(channel) {
             // A follow between step 2 and here keeps the record, not the mark.

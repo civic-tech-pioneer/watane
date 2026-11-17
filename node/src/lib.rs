@@ -13,7 +13,8 @@ pub use holdings::DistHoldings;
 pub use watane_dist as dist;
 pub use watane_net as net;
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
+use std::sync::Arc;
 use watane_dist::Dist;
 use watane_net::Net;
 
@@ -67,6 +68,7 @@ pub struct OwnHint {
 }
 
 /// One per home. Every method blocks.
+#[derive(Debug)]
 pub struct Node {
     dist: Arc<Dist>,
     net: Net,
@@ -81,7 +83,11 @@ impl Node {
         options: Options,
     ) -> Result<Node, NodeError> {
         let holdings = Arc::new(DistHoldings::empty());
-        let net = Net::open(&home.join("net"), holdings.clone(), options.net)?;
+        let net = Net::open(
+            &home.join("net"),
+            Arc::<DistHoldings>::clone(&holdings),
+            options.net,
+        )?;
         let replica = net.devices().is_some_and(|l| l.anchor != net.node_key());
         let dist = if replica {
             Dist::open_keyless(home, options.dist)?
@@ -99,7 +105,11 @@ impl Node {
             });
         }
         let holdings = Arc::new(DistHoldings::empty());
-        let net = Net::open(&home.join("net"), holdings.clone(), options.net)?;
+        let net = Net::open(
+            &home.join("net"),
+            Arc::<DistHoldings>::clone(&holdings),
+            options.net,
+        )?;
         let dist = Dist::open_keyless(home, options.dist)?;
         Ok(Self::done(dist, net, holdings))
     }
@@ -107,7 +117,7 @@ impl Node {
     fn done(dist: Dist, net: Net, holdings: Arc<DistHoldings>) -> Node {
         let dist = Arc::new(dist);
         holdings
-            .set(dist.clone())
+            .set(Arc::clone(&dist))
             .expect("a new holder holds no home yet");
         Node {
             dist,

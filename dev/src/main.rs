@@ -1,8 +1,6 @@
 use clap::Parser;
-use watane_dev::{
-    cli::Cli,
-    outcome::{Code, Outcome, Problem},
-};
+use watane_dev::cli::Cli;
+use watane_dev::outcome::{Code, Outcome, Problem};
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
     let json = args.iter().any(|s| s == "--json");

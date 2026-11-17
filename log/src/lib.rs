@@ -5,10 +5,8 @@ mod store;
 use ed25519_dalek::SigningKey;
 pub use entry::{DecodeError, Entry, EntryId, IdTextError};
 pub use key::{KeyTextError, PublicKey};
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::fmt;
+use std::path::{Path, PathBuf};
 pub const MAX_KIND: usize = 32;
 pub const MAX_BODY: usize = 65_536;
 pub const MAX_ENTRY: usize = 65_728;
@@ -166,7 +164,7 @@ impl Log {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
     }
     pub fn append(&self, kind: &str, body: &[u8]) -> Result<Entry, Error> {
         let mut inner = self.lock();

@@ -1,4 +1,5 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EntryId([u8; 32]);
 impl EntryId {
@@ -93,24 +94,29 @@ struct Fields {
 impl Fields {
     fn encode(&self, signature: Option<&[u8; 64]>) -> Vec<u8> {
         let mut e = Encoder::new(Vec::new());
-        e.array(if signature.is_some() { 7 } else { 6 }).unwrap();
-        e.bytes(&self.author).unwrap().u64(self.seq).unwrap();
+        e.array(if signature.is_some() { 7 } else { 6 })
+            .expect("encoding into a Vec cannot fail");
+        e.bytes(&self.author)
+            .expect("encoding into a Vec cannot fail")
+            .u64(self.seq)
+            .expect("encoding into a Vec cannot fail");
         match self.prev {
             Some(p) => {
-                e.bytes(p.as_bytes()).unwrap();
+                e.bytes(p.as_bytes())
+                    .expect("encoding into a Vec cannot fail");
             }
             None => {
-                e.null().unwrap();
+                e.null().expect("encoding into a Vec cannot fail");
             }
         }
         e.u64(self.time)
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .str(&self.kind)
-            .unwrap()
+            .expect("encoding into a Vec cannot fail")
             .bytes(&self.body)
-            .unwrap();
+            .expect("encoding into a Vec cannot fail");
         if let Some(sig) = signature {
-            e.bytes(sig).unwrap();
+            e.bytes(sig).expect("encoding into a Vec cannot fail");
         }
         e.into_writer()
     }

@@ -1,7 +1,12 @@
 use crate::key::NodeKey;
-use std::{fmt, path::PathBuf};
+use std::fmt;
+use std::path::PathBuf;
 
 /// The error codes of the wire (TECHNICAL 4.2).
+#[expect(
+    clippy::enum_variant_names,
+    reason = "BadCode is a bad pairing code, not a bad Code; its wire name is bad_code"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Code {
     NotAllowed,

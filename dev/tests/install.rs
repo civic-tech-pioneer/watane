@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::Value;
 use std::process::Command;
 
@@ -98,12 +100,10 @@ fn regress_s12b_no_host_next_keeps_dir() {
 mod fake {
     use super::*;
     use serde_json::json;
-    use std::{
-        fs,
-        io::{BufRead, BufReader},
-        path::{Path, PathBuf},
-        process::{Child, Stdio},
-    };
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    use std::path::{Path, PathBuf};
+    use std::process::{Child, Stdio};
     #[test]
     fn ac2_fake_help_and_wrong_arguments() {
         for args in [

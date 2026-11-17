@@ -1,7 +1,9 @@
 #![cfg(feature = "driver")]
 mod support;
 use serde_json::json;
-use support::{driver::App, journey::*, manage::*};
+use support::driver::App;
+use support::journey::*;
+use support::manage::*;
 
 #[test]
 #[ignore = "slow: journey J10"]

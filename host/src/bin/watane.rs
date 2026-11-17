@@ -1,4 +1,5 @@
-use std::{io::Write, path::PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 use watane_host::{DEFAULT_PORT, Host, Mode, default_home};
 
 struct Args {

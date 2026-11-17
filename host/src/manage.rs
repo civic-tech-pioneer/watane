@@ -5,10 +5,8 @@ use crate::{
     ManageRequest, Reduction, RequestId, bus,
 };
 use serde_json::{Value, json};
-use std::{
-    collections::{BTreeMap, VecDeque},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 use watane_pkg::Grant;
 
@@ -129,7 +127,10 @@ fn grant_from(value: &Value) -> Result<Grant, String> {
         Value::String(s) if s == "storage" => Ok(Grant::Storage),
         Value::String(s) if s == "manage" => Ok(Grant::Manage),
         Value::Object(map) if map.len() == 1 => {
-            let (case, payload) = map.iter().next().unwrap();
+            let (case, payload) = map
+                .iter()
+                .next()
+                .expect("the map was checked to hold one entry");
             match case.as_str() {
                 "http" => Ok(Grant::Http {
                     host: payload
@@ -190,14 +191,19 @@ fn local_arg(args: &Value, key: &str) -> Result<LocalName, Value> {
 impl Host {
     /// True when `local` is enabled and holds `Manage` granted, now.
     pub(crate) fn is_manager(&self, local: &LocalName) -> bool {
-        self.catalog.lock().unwrap().mods.iter().any(|m| {
-            &m.local == local
-                && m.enabled
-                && m.error.is_none()
-                && m.grants
-                    .iter()
-                    .any(|g| g.granted && matches!(g.grant, Grant::Manage))
-        })
+        self.catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .mods
+            .iter()
+            .any(|m| {
+                &m.local == local
+                    && m.enabled
+                    && m.error.is_none()
+                    && m.grants
+                        .iter()
+                        .any(|g| g.granted && matches!(g.grant, Grant::Manage))
+            })
     }
     fn app(&self) -> Option<Arc<dyn crate::Confirm>> {
         match &self.home.mode {
@@ -264,7 +270,12 @@ impl Host {
         }
         match function {
             "mods" => {
-                let mut mods = self.catalog.lock().unwrap().mods.clone();
+                let mut mods = self
+                    .catalog
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .mods
+                    .clone();
                 mods.sort_by(|a, b| a.local.cmp(&b.local));
                 return Ok(Value::Array(mods.iter().map(mod_info).collect()));
             }
@@ -276,7 +287,11 @@ impl Host {
                 if queued_here {
                     return Ok(json!("pending"));
                 }
-                return Ok(self.requests.lock().unwrap().state(by, id));
+                return Ok(self
+                    .requests
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .state(by, id));
             }
             _ => {}
         }
@@ -317,7 +332,7 @@ impl Host {
             Some(local) => Some(
                 self.catalog
                     .lock()
-                    .unwrap()
+                    .expect("lock poisoned: another thread panicked while holding it")
                     .mods
                     .iter()
                     .find(|m| &m.local == local)
@@ -330,7 +345,7 @@ impl Host {
             grant_from(args.get("grant").unwrap_or(&Value::Null)).map_err(|e| bad("$.grant", e))
         };
         let declared = |grant: &Grant| -> Result<bool, Value> {
-            let target = target.as_ref().unwrap();
+            let target = target.as_ref().expect("only request-install has no target");
             target
                 .grants
                 .iter()
@@ -343,7 +358,11 @@ impl Host {
                     )
                 })
         };
-        let local = || local.clone().unwrap();
+        let local = || {
+            local
+                .clone()
+                .expect("only request-install has no local name")
+        };
         let effect = |action: Action| Effect {
             by: by.clone(),
             record: ManageRecord {
@@ -357,7 +376,7 @@ impl Host {
                 "disable" => Reduction::Disable(local()),
                 "close-page" => Reduction::ClosePage(local()),
                 "open-page" => {
-                    let target = target.as_ref().unwrap();
+                    let target = target.as_ref().expect("only request-install has no target");
                     if !target.enabled || target.page.is_none() {
                         return Err(failure(
                             "bad_request",
@@ -390,7 +409,11 @@ impl Host {
             },
             "request-update" => Ask::Update(local()),
             "request-enable" => {
-                if target.as_ref().unwrap().enabled {
+                if target
+                    .as_ref()
+                    .expect("only request-install has no target")
+                    .enabled
+                {
                     return Err(failure("bad_request", format!("{} is enabled", local())));
                 }
                 Ask::Enable(local())
@@ -416,7 +439,7 @@ impl Host {
         let open = self
             .requests
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .pending(by)
             .cloned()
             .or_else(|| {
@@ -470,15 +493,21 @@ impl Host {
             eprintln!("watane: request {id} of {by} dropped");
             self.requests
                 .lock()
-                .unwrap()
+                .expect("lock poisoned: another thread panicked while holding it")
                 .finish(&by, id, Finished::Denied);
             self.catalog_written();
             return;
         };
-        if self.requests.lock().unwrap().pending(&by).is_some() {
+        if self
+            .requests
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .pending(&by)
+            .is_some()
+        {
             self.requests
                 .lock()
-                .unwrap()
+                .expect("lock poisoned: another thread panicked while holding it")
                 .finish(&by, id, Finished::Denied);
             return;
         }
@@ -490,12 +519,12 @@ impl Host {
         let (cancel, cancelled) = oneshot::channel::<()>();
         self.requests
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .0
             .entry(by.clone())
             .or_default()
             .pending = Some((id.clone(), cancel));
-        let weak = self.weak.clone();
+        let weak = std::sync::Weak::<Host>::clone(&self.weak);
         let (thread_by, thread_id) = (by.clone(), id);
         let spawned = std::thread::Builder::new()
             .name("watane-request".into())
@@ -517,18 +546,27 @@ impl Host {
                 }
             });
         if spawned.is_err() {
-            self.requests.lock().unwrap().cancel(&by);
+            self.requests
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .cancel(&by);
         }
         // The manager may have lost its grant since the check above.
         if !self.is_manager(&by) {
-            self.requests.lock().unwrap().cancel(&by);
+            self.requests
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .cancel(&by);
         }
         self.catalog_written();
     }
 
     fn finish_request(&self, by: &LocalName, id: &RequestId, outcome: ManageOutcome) {
         {
-            let mut requests = self.requests.lock().unwrap();
+            let mut requests = self
+                .requests
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let manager = requests.0.entry(by.clone()).or_default();
             if manager.pending.as_ref().is_none_or(|(p, _)| p != id) {
                 return;
@@ -542,8 +580,8 @@ impl Host {
                     ManageOutcome::Denied => Finished::Denied,
                     ManageOutcome::Failed(message) => Finished::Failed(message),
                 },
-            );
-        }
+            )
+        };
         self.catalog_written();
     }
 
@@ -554,7 +592,7 @@ impl Host {
         let managers: Vec<LocalName> = self
             .catalog
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .mods
             .iter()
             .filter(|m| {
@@ -567,7 +605,10 @@ impl Host {
             .map(|m| m.local.clone())
             .collect();
         {
-            let mut requests = self.requests.lock().unwrap();
+            let mut requests = self
+                .requests
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let lost: Vec<_> = requests
                 .0
                 .iter()
@@ -627,7 +668,10 @@ mod tests {
         assert!(!host.is_manager(&manager));
         assert!(host.get(&counter).unwrap().enabled);
         assert_eq!(
-            host.requests.lock().unwrap().state(&manager, id.as_str()),
+            host.requests
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .state(&manager, id.as_str()),
             json!("denied")
         );
     }

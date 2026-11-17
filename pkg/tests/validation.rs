@@ -1,7 +1,7 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_pkg::*;
 
 fn fixture(name: &str) -> PathBuf {
@@ -136,7 +136,7 @@ fn ac3_rules_symlinks_never_followed() {
         fs::read_to_string(dir.path().join("deps.json")).unwrap(),
         "{}\n"
     );
-    assert!(fs::symlink_metadata(dir.path().join("deps.json.tmp")).is_err());
+    fs::symlink_metadata(dir.path().join("deps.json.tmp")).unwrap_err();
 }
 
 #[test]

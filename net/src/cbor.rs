@@ -77,15 +77,17 @@ impl<'a> Reader<'a> {
             0..=23 => return Ok(info as u64),
             24 => (self.take(1)?[0] as u64, 24),
             25 => (
-                u16::from_be_bytes(self.take(2)?.try_into().unwrap()) as u64,
+                u16::from_be_bytes(self.take(2)?.try_into().expect("take(2) returns 2 bytes"))
+                    as u64,
                 0x100,
             ),
             26 => (
-                u32::from_be_bytes(self.take(4)?.try_into().unwrap()) as u64,
+                u32::from_be_bytes(self.take(4)?.try_into().expect("take(4) returns 4 bytes"))
+                    as u64,
                 0x1_0000,
             ),
             27 => (
-                u64::from_be_bytes(self.take(8)?.try_into().unwrap()),
+                u64::from_be_bytes(self.take(8)?.try_into().expect("take(8) returns 8 bytes")),
                 0x1_0000_0000,
             ),
             31 => return Err("indefinite length"),

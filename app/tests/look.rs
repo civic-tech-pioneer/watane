@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 // S84 behaviour checks use the production renderer without a native window.
 fn manager_criterion(scenario: &str) {
     let result = std::process::Command::new("node")
@@ -169,9 +171,9 @@ fn ac3_channel_site_holds_a_real_read_until_released() {
 
 #[cfg(feature = "driver")]
 mod windows {
-    use super::support::{
-        driver::App,
-        journey::{approve, area, begin_install, fixture, installed, invoke, until},
+    use super::support::driver::App;
+    use super::support::journey::{
+        approve, area, begin_install, fixture, installed, invoke, until,
     };
     use serde_json::json;
     fn install(app: &App, names: &[&str]) {

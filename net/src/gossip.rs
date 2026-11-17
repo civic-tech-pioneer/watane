@@ -1,26 +1,17 @@
 //! Hints over iroh-gossip (TECHNICAL 5.7): the own-machines topic, the hint
 //! codec and the rule that decides when a hint is acted on.
 
-use crate::{
-    Core, EntryId, HeadInfo, Role,
-    cbor::{self, Item, Reader},
-    key::NodeKey,
-    lock,
-    sync::{self, Want},
-};
-use iroh_gossip::{
-    Gossip, TopicId,
-    api::{Event as GossipEvent, GossipSender},
-};
+use crate::cbor::{self, Item, Reader};
+use crate::key::NodeKey;
+use crate::sync::{self, Want};
+use crate::{Core, EntryId, HeadInfo, Role, lock};
+use iroh_gossip::api::{Event as GossipEvent, GossipSender};
+use iroh_gossip::{Gossip, TopicId};
 use n0_future::StreamExt;
-use std::{
-    collections::BTreeSet,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use watane_log::PublicKey;
 
 /// How long `told` waits for a neighbor on the topic before it gives up (the
@@ -178,7 +169,7 @@ pub(crate) async fn maintain(core: &Arc<Core>) {
     let (sender, mut receiver) = topic.split();
     let neighbors = Arc::new(AtomicUsize::new(0));
     let task = {
-        let (core, neighbors) = (core.clone(), neighbors.clone());
+        let (core, neighbors) = (Arc::clone(core), Arc::clone(&neighbors));
         tokio::spawn(async move {
             while let Some(event) = receiver.next().await {
                 match event {
@@ -216,7 +207,7 @@ fn received(core: &Arc<Core>, from: NodeKey, content: &[u8]) {
     if core.class_of(&from) != crate::Class::Trusted || core.is_dropped(&from) {
         return;
     }
-    let core = core.clone();
+    let core = Arc::clone(core);
     tokio::spawn(async move {
         let role = sync::role_of(&core).await;
         let channel = hint.channel;

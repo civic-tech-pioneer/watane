@@ -2,11 +2,12 @@
 //! each other by the addresses they stored, and past that only by what the
 //! participant chose: a relay of her own. Nothing here reaches the internet,
 //! and no endpoint has mDNS or the DHT on.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    sync::mpsc::Receiver,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
+use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 use support::*;
 use watane_net::{Event, Limits, NetError, NodeKey, Options, Role};
 
@@ -36,7 +37,7 @@ fn reopened(
     options: Options,
 ) -> Node {
     let (dir, holdings, key) = home;
-    let net = open_on(&dir.path().join("net"), holdings.clone(), options);
+    let net = open_on(&dir.path().join("net"), Arc::clone(&holdings), options);
     assert_eq!(net.node_key(), key);
     Node {
         dir,
@@ -93,7 +94,7 @@ fn ac4_a_reopened_node_redials_a_machine_from_its_book() {
         peer_up(&events, b.key, 10),
         "no PeerUp from the stored address"
     );
-    assert!(a.net.hello(&b.key).is_ok());
+    a.net.hello(&b.key).unwrap();
 }
 
 /// S11: Alice's laptop and a second machine, each on another network now,
@@ -112,7 +113,11 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
     let server = {
         let dir = tempfile::tempdir().unwrap();
         let holdings = MemHoldings::empty();
-        let net = open_on(&dir.path().join("net"), holdings.clone(), server_options());
+        let net = open_on(
+            &dir.path().join("net"),
+            Arc::clone(&holdings),
+            server_options(),
+        );
         let key = net.node_key();
         Node {
             dir,
@@ -186,8 +191,8 @@ fn s11_machines_on_different_networks_connect_through_the_servers_relay() {
     second.net.set_options(with_relay(quick())).unwrap();
     assert!(peer_up(&laptop_events, second.key, 10), "laptop: no PeerUp");
     assert!(peer_up(&second_events, laptop.key, 10), "second: no PeerUp");
-    assert!(laptop.net.hello(&second.key).is_ok());
-    assert!(second.net.hello(&laptop.key).is_ok());
+    laptop.net.hello(&second.key).unwrap();
+    second.net.hello(&laptop.key).unwrap();
 
     // the relay is for her machines only: a stranger that chose the same
     // relay is not let in, so it cannot reach the second machine through it
@@ -237,7 +242,7 @@ fn ac5_machines_learn_each_others_addresses_from_a_devices_answer() {
         peer_up(&events, c.key, 10),
         "b did not reach c by the address the anchor passed on"
     );
-    assert!(b.net.hello(&c.key).is_ok());
+    b.net.hello(&c.key).unwrap();
 }
 
 /// A machine whose list is older than the caller's passes on no address: the
@@ -268,5 +273,5 @@ fn a_callee_with_an_older_list_passes_on_no_address() {
             "{event:?}"
         );
     }
-    assert!(anchor.net.hello(&b.key).is_ok());
+    anchor.net.hello(&b.key).unwrap();
 }

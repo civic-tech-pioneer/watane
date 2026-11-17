@@ -1,11 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use support::*;
 use watane_dist::*;
 
@@ -31,7 +29,12 @@ impl Host {
         let url = format!("http://{}/", server.server_addr());
         let gets: Arc<Mutex<Vec<String>>> = Arc::default();
         let stop = Arc::new(AtomicBool::new(false));
-        let (s, g, quit, dir) = (server.clone(), gets.clone(), stop.clone(), dir.to_owned());
+        let (s, g, quit, dir) = (
+            Arc::clone(&server),
+            Arc::clone(&gets),
+            Arc::clone(&stop),
+            dir.to_owned(),
+        );
         let worker = std::thread::spawn(move || {
             while !quit.load(Ordering::SeqCst) {
                 let Ok(Some(req)) = s.recv_timeout(Duration::from_millis(20)) else {
@@ -170,7 +173,7 @@ fn ac3_no_retry_starts_after_the_deadline() {
     let host = Host::serve(&alice.site_dir(), Behaviour::Always(503));
     let link = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
     let start = Instant::now();
-    assert!(bob.follow(&link).is_err());
+    bob.follow(&link).unwrap_err();
     assert!(
         start.elapsed() < Duration::from_millis(700),
         "{:?}",

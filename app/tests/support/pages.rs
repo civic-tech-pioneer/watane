@@ -1,20 +1,16 @@
 //! Stage A fixture origins and an independent TCP connection oracle.
-use axum::{
-    Router,
-    body::Body,
-    extract::{Request, State},
-    http::{HeaderValue, StatusCode, header},
-    response::{IntoResponse, Response},
-};
-use std::{
-    net::{Ipv4Addr, Ipv6Addr, TcpListener},
-    path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-    thread::{self, JoinHandle},
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use axum::Router;
+use axum::body::Body;
+use axum::extract::{Request, State};
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use std::net::{Ipv4Addr, Ipv6Addr, TcpListener};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread::{self, JoinHandle};
 use tokio::sync::oneshot;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
@@ -134,7 +130,7 @@ impl Listener {
         let port = socket.local_addr().unwrap().port();
         socket.set_nonblocking(true).unwrap();
         let count = Arc::new(AtomicUsize::new(0));
-        let accepted = count.clone();
+        let accepted = Arc::clone(&count);
         let (stop, mut stopped) = oneshot::channel();
         let thread = thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()

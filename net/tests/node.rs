@@ -1,7 +1,11 @@
 //! S1. This binary holds one test, so that no other test opens a socket
 //! while it counts them.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{fs, os::unix::fs::PermissionsExt, time::Duration};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
 use support::*;
 use watane_net::{Net, Options};
 
@@ -24,7 +28,8 @@ fn sockets() -> usize {
 }
 
 fn unix(path: &std::path::Path) -> bool {
-    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
     // macOS: opening `/dev/fd/<n>` copies the descriptor, and a Unix socket has a Unix address.
     if let Ok(file) = fs::File::open(path) {
         return UnixStream::from(OwnedFd::from(file)).local_addr().is_ok();

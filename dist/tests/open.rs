@@ -1,5 +1,6 @@
 mod support;
-use std::{os::unix::fs::PermissionsExt, sync::Arc};
+use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use support::RecordingConfirm;
 use watane_dist::{Dist, DistError, Options};
 #[test]
@@ -8,11 +9,20 @@ fn ac5_open_offline_locked_reopen_modes() {
     send_sync::<Dist>();
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let key = dist.identity().unwrap();
     assert_eq!(dist.fingerprint().unwrap(), key.to_string()[..10]);
     assert!(matches!(
-        Dist::open(home.path(), c.clone(), Options::default()),
+        Dist::open(
+            home.path(),
+            Arc::<RecordingConfirm>::clone(&c),
+            Options::default()
+        ),
         Err(DistError::Locked { .. })
     ));
     for (path, mode) in [
@@ -40,7 +50,12 @@ fn ac5_open_offline_locked_reopen_modes() {
     );
     std::fs::write(home.path().join("dist/tmp/stale"), b"old").unwrap();
     drop(dist);
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     assert_eq!(dist.identity().unwrap(), key);
     assert!(!home.path().join("dist/tmp/stale").exists());
     assert!(c.requests.lock().unwrap().is_empty());
@@ -50,7 +65,12 @@ fn ac5_open_offline_locked_reopen_modes() {
 fn ac5_open_metadata_and_corrupt_files() {
     let home = tempfile::tempdir().unwrap();
     let c = Arc::new(RecordingConfirm::new([]));
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     let own = dist.identity().unwrap();
     assert_eq!(dist.own().unwrap().base, None);
     assert_eq!(dist.site_dir(), home.path().join("dist/site"));
@@ -67,7 +87,12 @@ fn ac5_open_metadata_and_corrupt_files() {
         r#"{"version":1,"url":"https://own.example.org/mods"}"#,
     )
     .unwrap();
-    let dist = Dist::open(home.path(), c.clone(), Options::default()).unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&c),
+        Options::default(),
+    )
+    .unwrap();
     assert_eq!(
         dist.own().unwrap().base.as_deref(),
         Some("https://own.example.org/mods/")
@@ -94,7 +119,7 @@ fn ac5_open_metadata_and_corrupt_files() {
         ] {
             std::fs::write(&path, bad).unwrap();
             assert!(
-                matches!(Dist::open(home.path(),c.clone(),Options::default()),Err(DistError::Corrupt { path: found, .. }) if found == path)
+                matches!(Dist::open(home.path(),Arc::<RecordingConfirm>::clone(&c),Options::default()),Err(DistError::Corrupt { path: found, .. }) if found == path)
             );
         }
         std::fs::write(&path, original).unwrap();

@@ -1,8 +1,8 @@
-use crate::{
-    error::NetError,
-    key::{NodeKey, unzbase32, zbase32},
-};
-use std::{fmt, net::SocketAddr, str::FromStr};
+use crate::error::NetError;
+use crate::key::{NodeKey, unzbase32, zbase32};
+use std::fmt;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use url::Url;
 
 const PREFIX: &str = "watane-pair:";

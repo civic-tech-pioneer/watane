@@ -1,8 +1,16 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 #[path = "support/pages.rs"]
 mod pages;
 
 use pages::{Listener, Pages};
-use std::{fs, path::Path, time::Duration};
+use std::fs;
+use std::path::Path;
+use std::time::Duration;
 
 // Serializes tests that bind loopback ports, so a dropped port is not reused
 // by another test before a "stops on drop" check.
@@ -49,7 +57,7 @@ fn ac1_pages_serve_each_origin_on_both_loopbacks() {
     let port = pages.port;
     drop(pages);
     for address in ["127.0.0.1", "[::1]"] {
-        assert!(std::net::TcpStream::connect(format!("{address}:{port}")).is_err());
+        std::net::TcpStream::connect(format!("{address}:{port}")).unwrap_err();
     }
 }
 
@@ -118,7 +126,7 @@ fn ac3_listener_counts_connections_and_stops_on_drop() {
     let port = listener.port;
     drop(listener);
     drop(idle);
-    assert!(std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).is_err());
+    std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).unwrap_err();
 }
 
 #[test]
@@ -281,7 +289,10 @@ async function run(allowed, before, missing = false) {
 (async () => { await run(false, null); await run(true, 'previous'); await run(false, null, true); })().catch(e => { console.error(e); process.exitCode = 1; });
 "#;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/driver.rs"]
 mod driver;
 
@@ -320,7 +331,8 @@ fn ac1_screen_locked_parses_ioreg_sessions() {
 
 #[test]
 fn ac2_front_skips_locked_and_rejects_unknown_ioreg() {
-    use std::{os::unix::fs::PermissionsExt, process::Command};
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
     if std::env::var_os("S52_IOREG_CHILD").is_some() {
         let home = tempfile::tempdir().unwrap();
         assert!(driver::App::front(home.path(), &[]).is_none());
@@ -433,10 +445,16 @@ fn ac5_all_window_builders_and_focus_calls_share_screen_helpers() {
     assert!(views.contains("focus(&w, true)"));
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/journey.rs"]
 mod journey;
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/publish.rs"]
 mod publish;
 #[test]
@@ -446,7 +464,10 @@ fn ac8_prebuilt_j4_versions_and_grants_pack_without_building() {
     }
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/github.rs"]
 mod github;
 
@@ -459,7 +480,10 @@ fn ac1_real_github_redacts_token() {
 }
 
 #[cfg(feature = "real-github")]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/dev.rs"]
 mod dev;
 
@@ -479,7 +503,8 @@ fn ac4_real_github_requires_explicit_feature() {
 #[cfg(feature = "real-github")]
 #[test]
 fn ac1_real_github_child_environment_and_site_origin_without_network() {
-    use std::{ffi::OsStr, process::Command};
+    use std::ffi::OsStr;
+    use std::process::Command;
     let token = "made-up-github-harness-secret";
     let github = github::RealGithub::with_token(token.into());
     let mut command = Command::new("git");
@@ -521,12 +546,10 @@ fn ac1_real_github_child_environment_and_site_origin_without_network() {
 #[cfg(feature = "real-github")]
 mod github_harness {
     use super::github::{PREFIX, RealGithub};
-    use std::{
-        fs,
-        os::unix::fs::PermissionsExt,
-        process::Command,
-        time::{Duration, Instant},
-    };
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn ac2_pages_wait_status_requires_https_and_redacts_deadline_without_network() {
@@ -758,15 +781,13 @@ esac
             } else {
                 "minmax-fund/watane-j-unreserved"
             };
-            assert!(std::panic::catch_unwind(|| github.pages(name)).is_err());
+            std::panic::catch_unwind(|| github.pages(name)).unwrap_err();
         } else if scenario == "guard" {
             github.repos.push("minmax-fund/do-not-touch".into());
             assert!(std::panic::catch_unwind(|| drop(github)).is_err());
         } else if ["exists", "auth", "not-http"].contains(&scenario.as_str()) {
-            assert!(
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| github.reserve()))
-                    .is_err()
-            );
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| github.reserve()))
+                .unwrap_err();
             assert!(github.repos.is_empty());
         } else {
             let name = if scenario == "create" {

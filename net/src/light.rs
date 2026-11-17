@@ -1,14 +1,14 @@
 //! A light machine asks a full one (TECHNICAL 5.9, 5.11): the choice of the
 //! machine, `need`, `need_blob`, `query` and `own_heads`.
 
+use crate::key::NodeKey;
 use crate::{
     BlobId, Code, Core, DeviceList, HeadInfo, Hit, Ingested, Net, NetError, Query, Role, blobs,
-    client, key::NodeKey, lock, sync,
+    client, lock, sync,
 };
-use std::{
-    collections::HashSet,
-    time::{Duration, Instant},
-};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use watane_log::PublicKey;
 
 /// Channels one `Net` pulls for its queries in one window (node Q6).
@@ -284,7 +284,7 @@ pub(crate) fn own_heads(net: &Net, channel: &PublicKey) -> Vec<(NodeKey, Option<
     runtime.block_on(async move {
         let mut tasks = tokio::task::JoinSet::new();
         for (at, node) in core.full_machines().into_iter().enumerate() {
-            let core = core.clone();
+            let core = Arc::clone(&core);
             tasks.spawn(async move {
                 let answer = client::heads_async(&core, &node, &[channel]).await;
                 (at, node, answer)

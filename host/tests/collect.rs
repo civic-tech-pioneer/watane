@@ -1,13 +1,13 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use redb::ReadableDatabase;
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
+use watane_host::watane_pkg::Grant;
 use watane_host::{
     CallCode, Caller, EventRecord, Fakes, Harness, Host, Limit, Limits, LocalName, Mode, Source,
-    watane_pkg::Grant,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -25,7 +25,7 @@ fn install(home: &Path, limits: Limits, names: &[&str]) -> Arc<Host> {
     host
 }
 fn call(host: &Arc<Host>, name: &str, function: &str, args: Value) -> Result<Value, String> {
-    let host = host.clone();
+    let host = Arc::clone(host);
     let (name, function) = (local(name), function.to_owned());
     std::thread::Builder::new()
         .stack_size(16 << 20)

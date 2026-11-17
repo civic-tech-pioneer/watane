@@ -10,3 +10,43 @@ debug = "line-tables-only"
 # `cargo test -p` (with Cargo's default here, `-p` and `--workspace` built it twice).
 [profile.dev.build-override]
 debug = "line-tables-only"
+
+# Google Rust style (https://google.github.io/styleguide/rustguide.html), application crates.
+# app keeps its own copy of this table without unsafe_code, for its AppKit FFI.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unstable_features = "deny"
+ambiguous_negative_literals = "warn"
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
+
+[workspace.lints.clippy]
+ref_option = "deny"
+unwrap_used = "deny"
+wildcard_imports = "deny"
+needless_for_each = "deny"
+undocumented_unsafe_blocks = "deny"
+derive_partial_eq_without_eq = "allow"
+missing_const_for_fn = "allow"
+# Microsoft Pragmatic Rust Guidelines lints that agree with Google style (M-STATIC-VERIFICATION).
+allow_attributes_without_reason = "warn"
+as_pointer_underscore = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+deref_by_slicing = "warn"
+disallowed_script_idents = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+fn_to_numeric_cast_any = "warn"
+renamed_function_params = "warn"
+semicolon_outside_block = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unneeded_field_pattern = "warn"
+unused_result_ok = "warn"
+too_long_first_doc_paragraph = "warn"

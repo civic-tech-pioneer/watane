@@ -1,5 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{fs, time::Duration};
+use std::fs;
+use std::sync::Arc;
+use std::time::Duration;
 use support::*;
 use watane_net::{Class, DeviceList, Event, Hint, Limits, NetError, NodeKey, Role};
 
@@ -299,7 +303,7 @@ fn three(fx: &Fixture) -> (Node, Node, Node) {
 fn s10_removed_or_expired_machines_lose_trust() {
     let fx = fixture();
     let (laptop, server, second) = three(fx);
-    assert!(second.net.heads_of(&server.key, &[fx.c1]).is_ok());
+    second.net.heads_of(&server.key, &[fx.c1]).unwrap();
     let seq = laptop.net.devices().unwrap().seq;
 
     // a role and an expiry reach the server
@@ -347,9 +351,13 @@ fn s10_a_machine_that_has_not_seen_the_anchor_stops_trusting_the_others() {
     let dir = tempfile::tempdir().unwrap();
     let net_dir = dir.path().join("net");
     let holdings = MemHoldings::new(fx);
-    let key = watane_net::Net::open(&net_dir, holdings.clone(), Default::default())
-        .unwrap()
-        .node_key();
+    let key = watane_net::Net::open(
+        &net_dir,
+        Arc::<MemHoldings>::clone(&holdings),
+        Default::default(),
+    )
+    .unwrap()
+    .node_key();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -435,7 +443,12 @@ fn ac3_options_gives_the_switches_as_last_stored() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("net");
     let h = MemHoldings::new(fx);
-    let off = watane_net::Net::open(&home, h.clone(), watane_net::Options::default()).unwrap();
+    let off = watane_net::Net::open(
+        &home,
+        Arc::<MemHoldings>::clone(&h),
+        watane_net::Options::default(),
+    )
+    .unwrap();
     assert!(!off.options().on);
     let relay: url::Url = "http://127.0.0.1:9/".parse().unwrap();
     let wanted = watane_net::Options {
@@ -450,7 +463,7 @@ fn ac3_options_gives_the_switches_as_last_stored() {
     off.close();
 
     // reopened: the book's relays and switches; `on` false at open wins
-    let again = watane_net::Net::open(&home, h.clone(), options(None)).unwrap();
+    let again = watane_net::Net::open(&home, Arc::<MemHoldings>::clone(&h), options(None)).unwrap();
     assert_eq!(again.options().relays, vec![relay.clone()]);
     assert!(again.options().on);
     again.close();

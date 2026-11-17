@@ -1,7 +1,6 @@
 //! Conversions between net's and dist's types (TECHNICAL 4.3).
 use std::str::FromStr;
-use watane_dist::Grant;
-use watane_dist::{InterfaceQuery, PackageId, Release, Slug};
+use watane_dist::{Grant, InterfaceQuery, PackageId, Release, Slug};
 use watane_net::BlobId;
 
 pub(crate) fn package_id(id: &BlobId) -> PackageId {
@@ -94,8 +93,7 @@ pub(crate) fn hit(h: &watane_dist::Hit) -> watane_net::Hit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use watane_dist::PublicKey;
-    use watane_dist::{InterfaceName, Provider};
+    use watane_dist::{InterfaceName, Provider, PublicKey};
 
     fn key() -> PublicKey {
         (1..=255u8)

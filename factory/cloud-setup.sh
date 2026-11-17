@@ -4,5 +4,7 @@
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] || exit 0
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 rustup target add wasm32-wasip2 >/dev/null 2>&1
+# rustfmt.toml uses nightly-only options (Google Rust style); check.sh runs `cargo +nightly fmt`.
+rustup toolchain install nightly --profile minimal --component rustfmt >/dev/null 2>&1
 [ -d dev/allowlist/vendor ] || dev/scripts/vendor.sh >/dev/null 2>&1
 exit 0

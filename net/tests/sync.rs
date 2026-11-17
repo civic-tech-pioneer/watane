@@ -1,15 +1,13 @@
 //! Stage N3: kept connections, sync, hints and packages (scenarios S5, S6,
 //! S7, S9 and the gate around the other protocols). Entries are signed by
 //! hand with the oracle in `support`; nothing here uses `watane_net`'s codecs.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    collections::BTreeMap,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use support::*;
 use watane_log::{Entry, PublicKey};
 use watane_net::{BlobId, Event, Limits, NodeKey, Options, Role, Why};
@@ -281,9 +279,9 @@ fn ac1_a_hint_delivered_by_a_machine_that_lacks_the_channel_pulls_from_another()
         entries_answer_of(&raws(&entries[1..])),
     );
     let held = heads_answer_of(&cx, 0, entries[0].id().as_bytes());
-    let told = out.clone();
+    let told = Arc::clone(&out);
     let hellos = Arc::new(AtomicUsize::new(0));
-    let hello = hellos.clone();
+    let hello = Arc::clone(&hellos);
     let fake = fake_machine(
         [90u8; 32],
         move |request| match op_of(request) {
@@ -354,7 +352,7 @@ fn with_fake(
     blob: Option<Vec<u8>>,
 ) -> (Node, Fake, Arc<AtomicUsize>) {
     let count = Arc::new(AtomicUsize::new(0));
-    let counted = count.clone();
+    let counted = Arc::clone(&count);
     let fake = fake_machine(
         [seed; 32],
         move |request| {
@@ -436,7 +434,7 @@ fn s7_bad_objects_are_refused_and_the_machine_dropped() {
                 let heads = heads.clone();
                 let (n, fake, count) = with_fake(
                     60 + i as u8,
-                    holder.clone(),
+                    Arc::clone(&holder),
                     move |op, _| match op {
                         "heads" => Some(if wanted > 0 {
                             // nothing to pull: the channel is held up to date
@@ -510,7 +508,7 @@ fn s9_unasked_entries_are_not_stored_and_requests_are_not_forwarded() {
         let answer = entries_answer_of(&answer);
         let (n, fake, _) = with_fake(
             70 + i as u8,
-            holder.clone(),
+            Arc::clone(&holder),
             move |op, _| match op {
                 "heads" => Some(heads.clone()),
                 "entries" => Some(answer.clone()),

@@ -1,13 +1,13 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::Value;
-use std::{
-    fs,
-    io::{Read, Write},
-    net::TcpStream,
-    path::PathBuf,
-    process::Command,
-    time::Duration,
-};
+use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::path::PathBuf;
+use std::process::Command;
+use std::time::Duration;
 struct Mod {
     temp: tempfile::TempDir,
     dir: PathBuf,
@@ -176,7 +176,7 @@ fn ac6_stop_closes_port_and_removes_preview() {
         stopped["result"],
         serde_json::json!({"stopped":true,"home":v["home"]})
     );
-    assert!(TcpStream::connect(("127.0.0.1", port(&v))).is_err());
+    TcpStream::connect(("127.0.0.1", port(&v))).unwrap_err();
     assert!(
         !PathBuf::from(v["home"].as_str().unwrap())
             .parent()
@@ -240,7 +240,7 @@ fn ac6_stop_works_after_mod_files_are_broken() {
             value["result"],
             serde_json::json!({"stopped":true,"home":preview["home"]})
         );
-        assert!(TcpStream::connect(("127.0.0.1", port(&preview))).is_err());
+        TcpStream::connect(("127.0.0.1", port(&preview))).unwrap_err();
         assert!(
             !PathBuf::from(preview["home"].as_str().unwrap())
                 .parent()
@@ -252,7 +252,9 @@ fn ac6_stop_works_after_mod_files_are_broken() {
 
 #[test]
 fn ac6_stop_finishes_when_process_exits_with_run_json_left() {
-    use std::{net::TcpListener, process::Stdio, time::Instant};
+    use std::net::TcpListener;
+    use std::process::Stdio;
+    use std::time::Instant;
     let m = Mod::new(false);
     let hash = blake3::hash(m.dir.canonicalize().unwrap().as_os_str().as_encoded_bytes()).to_hex();
     let folder = m

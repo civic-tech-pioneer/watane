@@ -1,22 +1,16 @@
-use crate::{
-    api::Client,
-    check, deps,
-    env::Env,
-    outcome::{Code, Problem},
-};
+use crate::api::Client;
+use crate::env::Env;
+use crate::outcome::{Code, Problem};
+use crate::{check, deps};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{BufRead, BufReader, Write},
-    os::unix::{
-        fs::{OpenOptionsExt, PermissionsExt},
-        process::CommandExt,
-    },
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-    sync::mpsc,
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use watane_host::{Ready, RunInfo};
 pub fn find_watane() -> Result<PathBuf, Problem> {
     let executable = |p: &Path| {
@@ -324,7 +318,8 @@ mod tests {
 
     #[test]
     fn ac6_serve_posts_all_folders_once_in_provider_order() {
-        use std::{io::Read, net::TcpListener};
+        use std::io::Read;
+        use std::net::TcpListener;
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
         for slug in ["a", "b", "c"] {
@@ -449,7 +444,8 @@ mod tests {
 
     #[test]
     fn ac7_previous_warning_requires_answering_preview_and_names_page() {
-        use std::{io::Read, net::TcpListener};
+        use std::io::Read;
+        use std::net::TcpListener;
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("counter");
         fs::create_dir(&dir).unwrap();

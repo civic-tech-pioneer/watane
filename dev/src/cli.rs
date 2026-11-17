@@ -1,14 +1,11 @@
-use crate::{
-    allowlist::{self, Allowlist},
-    builder::{self, BuildCtx},
-    check, contract, deps,
-    env::Env,
-    outcome::{Outcome, Problem},
-    preview, template, toolchain, unit,
-};
+use crate::allowlist::{self, Allowlist};
+use crate::builder::{self, BuildCtx};
+use crate::env::Env;
+use crate::outcome::{Outcome, Problem};
+use crate::{check, contract, deps, preview, template, toolchain, unit};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(version, about = "Make and preview watane mods")]
 pub struct Cli {
     #[arg(long, global = true, help = "Print one JSON result object")]
@@ -22,7 +19,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Command {
     /// Create a mod from the counter template
     New {
@@ -874,8 +871,12 @@ fn publish(
         let prepared = if let Some(owner) = &owner
             && !no_source
         {
-            let (prepared, warnings) =
-                crate::share::prepare_mod(dir, owner, login.as_deref().unwrap(), &rerun)?;
+            let (prepared, warnings) = crate::share::prepare_mod(
+                dir,
+                owner,
+                login.as_deref().expect("an owner implies a login"),
+                &rerun,
+            )?;
             outcome.warnings.extend(warnings);
             Some(prepared)
         } else {
@@ -1052,10 +1053,7 @@ mod tests {
     fn ac1_publish_owner_cli_validation_and_help() {
         use clap::CommandFactory;
         for account in ["a", "Acme-123", &"a".repeat(39)] {
-            assert!(
-                Cli::try_parse_from(["watane-dev", "publish", "--push", "--owner", account])
-                    .is_ok()
-            );
+            Cli::try_parse_from(["watane-dev", "publish", "--push", "--owner", account]).unwrap();
         }
         let err = Cli::try_parse_from(["watane-dev", "publish", "--owner", "acme"])
             .err()

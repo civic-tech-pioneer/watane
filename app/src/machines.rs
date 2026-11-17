@@ -1,19 +1,13 @@
 //! Settings-only access to own machines. Local API routes never use this module.
-use crate::{
-    CmdError,
-    consent::{Answer, Broker, Reach, Request, Role},
-    core::Core,
-};
+use crate::CmdError;
+use crate::consent::{Answer, Broker, Reach, Request, Role};
+use crate::core::Core;
 use serde_json::{Value, json};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-use watane_node::{
-    Machine, Node,
-    net::{Event, NodeKey},
-};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use watane_node::net::{Event, NodeKey};
+use watane_node::{Machine, Node};
 
 pub(crate) type MachinesView = Value;
 #[derive(Default)]
@@ -71,7 +65,7 @@ impl Machines {
         let machines = Arc::new(Self::default());
         let events = node.net().events();
         let weak = Arc::downgrade(node);
-        let state = machines.clone();
+        let state = Arc::clone(&machines);
         std::thread::spawn(move || {
             loop {
                 let event = match events.recv_timeout(Duration::from_millis(250)) {
@@ -107,7 +101,10 @@ impl Machines {
         machines
     }
     fn event(&self, event: Event) {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         match event {
             Event::PeerUp(node) | Event::PeerDown(node) => {
                 let peer = state.peers.entry(node).or_default();
@@ -134,7 +131,10 @@ impl Machines {
         let me = net.node_key();
         let options = net.options();
         let list = net.devices();
-        let state = self.inner.lock().unwrap();
+        let state = self
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let machines:Vec<_>=list.iter().flat_map(|l|l.devices.iter().map(|(key,role)| {
             let peer=state.peers.get(key);
             json!({"node":key.short(),"role":role_text(*role),"you":*key==me,"anchor":*key==l.anchor,
@@ -160,7 +160,11 @@ impl Core {
     pub fn pair_code(&self, asked_role: Role) -> Result<Value, CmdError> {
         let code = self.node.net().pair_code(role(asked_role))?;
         let code = json!({"code":code.to_string(),"expiresAt":now()+600_000});
-        self.machines.inner.lock().unwrap().code = Some(code.clone());
+        self.machines
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .code = Some(code.clone());
         Ok(code)
     }
     pub fn machine_join(&self, text: &str, replace: bool) -> Result<MachinesView, CmdError> {
@@ -168,16 +172,24 @@ impl Core {
             .parse()
             .map_err(|e| CmdError::new("bad_input", crate::cause_chain(&e)))?;
         {
-            let mut state = self.machines.inner.lock().unwrap();
+            let mut state = self
+                .machines
+                .inner
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             if state.joining.is_some() {
                 return Err(CmdError::new("bad_input", "a join is already in progress"));
             }
             state.joining = Some(
                 json!({"node":self.node.net().node_key().short(),"anchor":code.anchor.short()}),
-            );
-        }
+            )
+        };
         let result = self.node.join(&code, replace);
-        self.machines.inner.lock().unwrap().joining = None;
+        self.machines
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .joining = None;
         result?;
         self.channels()?;
         Ok(self.machines_view())
@@ -297,7 +309,11 @@ mod tests {
             cause: "changed byte".into(),
         });
         assert_eq!(
-            machines.inner.lock().unwrap().problems[0]["text"],
+            machines
+                .inner
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .problems[0]["text"],
             format!("refused {}: changed byte", key.short())
         );
         for n in 0..25 {
@@ -306,7 +322,10 @@ mod tests {
                 cause: format!("choose a relay or turn on the DHT: {n}"),
             });
         }
-        let state = machines.inner.lock().unwrap();
+        let state = machines
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         assert_eq!(state.problems.len(), 20);
         assert_eq!(
             state.problems[0]["text"],
@@ -321,9 +340,19 @@ mod tests {
         let machines = Machines::default();
         let key = NodeKey::from_bytes([3; 32]);
         machines.event(Event::PeerUp(key));
-        assert!(machines.inner.lock().unwrap().peers[&key].online);
+        assert!(
+            machines
+                .inner
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .peers[&key]
+                .online
+        );
         machines.event(Event::PeerDown(key));
-        let state = machines.inner.lock().unwrap();
+        let state = machines
+            .inner
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         assert!(!state.peers[&key].online);
         assert!(state.peers[&key].last_seen.is_some());
     }

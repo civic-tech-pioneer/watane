@@ -1,19 +1,20 @@
 //! Opt-in GitHub journeys. Nothing in this module contacts GitHub on import.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 pub fn redact(token: &str, text: &str) -> String {
     text.replace(token, "[token]")
 }
 
 #[cfg(feature = "real-github")]
 mod real {
-    use super::super::{dev, driver::App};
+    use super::super::dev;
+    use super::super::driver::App;
     use super::redact;
     use serde_json::Value;
-    use std::{
-        fs,
-        path::Path,
-        process::{Command, Output},
-        time::{Duration, Instant},
-    };
+    use std::fs;
+    use std::path::Path;
+    use std::process::{Command, Output};
+    use std::time::{Duration, Instant};
 
     pub const PREFIX: &str = "minmax-fund/watane-j-";
 
@@ -295,5 +296,5 @@ mod real {
 }
 
 #[cfg(feature = "real-github")]
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "only some test binaries use this re-export")]
 pub use real::{PREFIX, RealGithub};

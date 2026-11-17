@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::Path;
 use watane_pkg::*;
 
 const HOST: &str = "package watane:host@0.1.0;

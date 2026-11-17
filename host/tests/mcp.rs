@@ -1,8 +1,8 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use watane_host::{Host, Limits, LocalName};
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -379,7 +379,7 @@ fn ac7_toolset_grammar_and_persistence() {
             watane_host::ToolsetName::parse(bad).unwrap_err().code(),
             "bad_name"
         );
-        assert!(serde_json::from_value::<watane_host::Handle>(json!(bad)).is_err());
+        serde_json::from_value::<watane_host::Handle>(json!(bad)).unwrap_err();
     }
     for bad in [
         "Counter:api",
@@ -409,9 +409,7 @@ fn ac7_toolset_grammar_and_persistence() {
     );
     drop(host);
     let reopened = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
-    assert!(
-        reopened
-            .issue_token(&name("t"), &watane_host::Handle::parse("alice").unwrap())
-            .is_ok()
-    );
+    reopened
+        .issue_token(&name("t"), &watane_host::Handle::parse("alice").unwrap())
+        .unwrap();
 }

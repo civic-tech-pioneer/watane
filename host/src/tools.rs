@@ -1,13 +1,14 @@
 use crate::{Caller, Host, HostError, LocalName, api, home};
-use axum::{
-    Json,
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
-    response::{IntoResponse, Response},
-};
+use axum::Json;
+use axum::body::{Body, to_bytes};
+use axum::http::{Method, Request, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, fmt, path::Path, sync::Arc};
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::Path;
+use std::sync::Arc;
 
 macro_rules! name_type {
     ($name:ident) => {
@@ -167,7 +168,7 @@ impl Host {
         let catalog = self
             .catalog
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if !catalog.mods.iter().any(|m| &m.local == local) {
             return Err(HostError::NoSuchMod(local.to_string()));
         }
@@ -182,7 +183,7 @@ impl Host {
         let mut tools = self
             .tools
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut sets = tools.sets.clone();
         sets.insert(name.clone(), entries);
         home::write_json(&self.home().join("toolsets.json"), &sets)?;
@@ -190,10 +191,17 @@ impl Host {
         Ok(())
     }
     pub fn toolsets(&self) -> BTreeMap<ToolsetName, Vec<String>> {
-        self.tools.lock().unwrap().sets.clone()
+        self.tools
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .sets
+            .clone()
     }
     pub fn remove_toolset(&self, name: &ToolsetName) -> Result<(), HostError> {
-        let mut tools = self.tools.lock().unwrap();
+        let mut tools = self
+            .tools
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut sets = tools.sets.clone();
         if sets.remove(name).is_none() {
             return Err(HostError::NoSuchToolset(name.to_string()));
@@ -203,7 +211,10 @@ impl Host {
         Ok(())
     }
     pub fn tokens(&self) -> Vec<TokenInfo> {
-        let tools = self.tools.lock().unwrap();
+        let tools = self
+            .tools
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         tools
             .tokens
             .iter()
@@ -218,7 +229,7 @@ impl Host {
         let mut tools = self
             .tools
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         if !(toolset.0 == "preview" && self.is_preview()) && !tools.sets.contains_key(toolset) {
             return Err(HostError::NoSuchToolset(toolset.to_string()));
         }
@@ -253,7 +264,7 @@ impl Host {
         let mut tools = self
             .tools
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let key = tools
             .tokens
             .keys()
@@ -265,7 +276,7 @@ impl Host {
         let entries = self
             .tools
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .sets
             .get(name)
             .cloned()
@@ -273,7 +284,7 @@ impl Host {
         let catalog = self
             .catalog
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let mut tools = BTreeMap::new();
         for m in catalog
             .mods
@@ -366,7 +377,7 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
         let tools = host
             .tools
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         token
             .and_then(|t| tools.tokens.get(blake3::hash(t.as_bytes()).as_bytes()))
             .cloned()
@@ -454,7 +465,7 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
                 Err(e) => {
                     let code = serde_json::to_value(&e).expect("CallError serializes")["code"]
                         .as_str()
-                        .unwrap()
+                        .expect("a CallError serializes its code as a string")
                         .to_owned();
                     json!({"content":[{"type":"text","text":format!("{code}: {}",e.message)}],"isError":true})
                 }

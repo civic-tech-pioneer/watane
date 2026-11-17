@@ -1,13 +1,13 @@
 use crate::{Caller, Host, LocalName, api};
-use axum::{
-    Json,
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
-    response::{IntoResponse, Response},
-};
+use axum::Json;
+use axum::body::{Body, to_bytes};
+use axum::http::{Method, Request, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{fs, path::Path, sync::Arc};
+use std::fs;
+use std::path::Path;
+use std::sync::Arc;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'";
 
@@ -139,7 +139,7 @@ async fn call_response(
 fn available(host: &Host, local: &LocalName) -> bool {
     host.catalog
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .expect("lock poisoned: another thread panicked while holding it")
         .mods
         .iter()
         .any(|m| &m.local == local && m.enabled && m.error.is_none())

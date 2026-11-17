@@ -1,11 +1,9 @@
 //! Sharing uses the maker's git and gh, with no credentials held by dev.
 use crate::outcome::{Code, Problem};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
 
 struct Run {
     program: &'static str,

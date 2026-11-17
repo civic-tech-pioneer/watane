@@ -1,16 +1,13 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    collections::HashMap,
-    io::{BufRead, BufReader, Write},
-    path::{Path, PathBuf},
-    process::{Child, ChildStdin, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-        mpsc,
-    },
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 const TIMEOUT: Duration = Duration::from_secs(30);
 type Replies = Arc<Mutex<HashMap<u64, mpsc::Sender<Value>>>>;
 pub struct App {
@@ -84,8 +81,10 @@ fn wait_for_idle() -> bool {
         if screen_locked(&String::from_utf8_lossy(&output.stdout)).expect(
             "front tests cannot read screen lock state: ioreg output has no console session",
         ) {
-            // Bypass libtest capture so a successful skip stays visible.
-            #[allow(clippy::explicit_write)]
+            #[allow(
+                clippy::explicit_write,
+                reason = "Bypass libtest capture so a successful skip stays visible"
+            )]
             writeln!(
                 std::io::stderr(),
                 "front test skipped: the screen is locked (CGSSessionScreenIsLocked)"
@@ -123,7 +122,10 @@ impl App {
     pub fn start(home: &Path, env: &[(&str, &str)]) -> App {
         Self::spawn(home, env, "hidden", 0)
     }
-    #[allow(dead_code)] // Shared support: gui_isolation uses only hidden/front.
+    #[allow(
+        dead_code,
+        reason = "Shared support: gui_isolation uses only hidden/front"
+    )]
     pub fn background(home: &Path, env: &[(&str, &str)]) -> App {
         Self::spawn(home, env, "background", 0)
     }
@@ -164,7 +166,7 @@ impl App {
         let input = Mutex::new(child.stdin.take().unwrap());
         let output = child.stdout.take().unwrap();
         let replies: Replies = Default::default();
-        let routes = replies.clone();
+        let routes = Arc::clone(&replies);
         let (ready_tx, ready_rx) = mpsc::channel();
         std::thread::spawn(move || {
             for line in BufReader::new(output).lines() {
@@ -234,15 +236,18 @@ impl App {
             .as_bool()
             .unwrap()
     }
-    #[allow(dead_code)] // Shared support: mode probes live in gui_shell.
+    #[allow(dead_code, reason = "Shared support: mode probes live in gui_shell")]
     pub fn screen(&self) -> Value {
         self.call(json!({"op":"screen"}))
     }
-    #[allow(dead_code)] // Shared support: inspected by manager's S39.
+    #[allow(dead_code, reason = "Shared support: inspected by manager's S39")]
     pub fn menu_items(&self) -> Value {
         self.call(json!({"op":"menu_items"}))
     }
-    #[allow(dead_code)] // Shared support: manager checks the actual media query.
+    #[allow(
+        dead_code,
+        reason = "Shared support: manager checks the actual media query"
+    )]
     pub fn theme(&self, theme: Option<&str>) {
         assert_eq!(self.call(json!({"op":"theme", "theme":theme})), true);
     }
@@ -258,7 +263,10 @@ impl App {
     pub fn close(&self, label: &str) {
         self.call(json!({"op":"close","label":label}));
     }
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "shared by several test binaries, each using only part of it"
+    )]
     pub fn pick(&self, paths: &[PathBuf]) {
         assert_eq!(self.call(json!({"op":"pick", "paths":paths})), true);
     }

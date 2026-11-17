@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
+use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AskId(String); // 32 lowercase hex characters from 16 random bytes
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +234,12 @@ impl FromStr for AskId {
 pub struct Broker {
     state: std::sync::Mutex<State>,
 }
+// The state holds listener callbacks, which have no Debug.
+impl std::fmt::Debug for Broker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Broker").finish_non_exhaustive()
+    }
+}
 
 type Listener = Arc<dyn Fn(Option<AskId>) + Send + Sync>;
 
@@ -253,8 +260,10 @@ struct Entry {
 impl State {
     fn head_changed(&mut self) {
         if let Some(listener) = &self.listener {
-            self.notifications
-                .push_back((listener.clone(), self.queue.front().map(|e| e.id.clone())));
+            self.notifications.push_back((
+                Arc::clone(listener),
+                self.queue.front().map(|e| e.id.clone()),
+            ));
         }
     }
 }
@@ -290,7 +299,10 @@ impl Broker {
             id: id.clone(),
         };
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self
+                .state
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let was_empty = state.queue.is_empty();
             state.queue.push_back(Entry { id, request, reply });
             if was_empty {
@@ -319,7 +331,7 @@ impl Broker {
     pub fn current(&self) -> Option<(AskId, Request)> {
         self.state
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .queue
             .front()
             .map(|entry| (entry.id.clone(), entry.request.clone()))
@@ -327,7 +339,10 @@ impl Broker {
 
     pub fn answer(&self, id: &AskId, answer: Answer) -> Result<(), ConsentError> {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self
+                .state
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let entry = state
                 .queue
                 .front()
@@ -375,36 +390,48 @@ impl Broker {
                     }
                 }
             }
-            let entry = state.queue.pop_front().unwrap();
+            let entry = state
+                .queue
+                .pop_front()
+                .expect("the front entry was matched above");
             let _ = entry.reply.send(answer);
-            state.head_changed();
-        }
+            state.head_changed()
+        };
         self.notify();
         Ok(())
     }
 
     pub fn deny_all(&self) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self
+                .state
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             if state.queue.is_empty() {
                 return;
             }
             for entry in state.queue.drain(..) {
                 let _ = entry.reply.send(Answer::Deny);
             }
-            state.head_changed();
-        }
+            state.head_changed()
+        };
         self.notify();
     }
 
     /// Replace the listener. Subsequent head changes are delivered in order.
     pub fn set_listener(&self, f: Box<dyn Fn(Option<AskId>) + Send + Sync>) {
-        self.state.lock().unwrap().listener = Some(Arc::from(f));
+        self.state
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .listener = Some(Arc::from(f));
     }
 
     fn remove(&self, id: &AskId) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self
+                .state
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             let Some(index) = state.queue.iter().position(|entry| &entry.id == id) else {
                 return;
             };
@@ -420,15 +447,21 @@ impl Broker {
     // read or answer the broker without taking its mutex recursively.
     fn notify(&self) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self
+                .state
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
             if state.notifying {
                 return;
             }
-            state.notifying = true;
-        }
+            state.notifying = true
+        };
         loop {
             let notification = {
-                let mut state = self.state.lock().unwrap();
+                let mut state = self
+                    .state
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it");
                 match state.notifications.pop_front() {
                     Some(notification) => notification,
                     None => {
@@ -446,7 +479,9 @@ impl Broker {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::{future::Future, pin::pin, task::Poll, time::Duration};
+    use std::pin::pin;
+    use std::task::Poll;
+    use std::time::Duration;
 
     #[test]
     fn ac1_s82_stop_denies_only_manager_requests() {
@@ -701,12 +736,14 @@ mod tests {
     async fn ac2_fifo_and_head_notifications() {
         let b = Broker::new();
         let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let log = events.clone();
+        let log = Arc::clone(&events);
         // Reading current from a listener must not deadlock.
         let weak = Arc::downgrade(&b);
         b.set_listener(Box::new(move |id| {
             assert_eq!(weak.upgrade().unwrap().current().map(|x| x.0), id);
-            log.lock().unwrap().push(id);
+            log.lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .push(id);
         }));
         let requests: Vec<_> = ["A", "B", "C"]
             .into_iter()
@@ -734,7 +771,9 @@ mod tests {
         let cid = b.current().unwrap().0;
         b.answer(&cid, Answer::Deny).unwrap();
         assert_eq!(
-            *events.lock().unwrap(),
+            *events
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
             vec![Some(aid), Some(bid), Some(cid), None]
         );
         assert_eq!(a.await, Answer::Deny);
@@ -750,7 +789,13 @@ mod tests {
         let aid = b.current().unwrap().0;
         let mut c = pin!(b.ask(install()));
         queue(c.as_mut()).await;
-        let bid = b.state.lock().unwrap().queue[1].id.clone();
+        let bid = b
+            .state
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .queue[1]
+            .id
+            .clone();
         for id in [bid, "anything".parse().unwrap()] {
             assert!(matches!(
                 b.answer(&id, Answer::Deny),
@@ -848,7 +893,7 @@ mod tests {
         b.set_listener(Box::new(move |id| {
             let _ = tx.send(id);
         }));
-        let worker = b.clone();
+        let worker = Arc::clone(&b);
         let thread = std::thread::spawn(move || worker.ask_blocking(install()));
         let id = rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
         let answer = Answer::Approve { withheld: vec![] };
@@ -1027,7 +1072,7 @@ mod stage_c_tests {
                 parties.insert(channel.to_string(), "Alice".into());
                 let adapter = crate::confirm::DistConfirm {
                     dist: std::sync::OnceLock::new(),
-                    broker: broker.clone(),
+                    broker: Arc::clone(&broker),
                     parties,
                 };
                 let request = SignRequest {
@@ -1137,7 +1182,7 @@ mod machines_broker_tests {
         ] {
             for allowed in [Answer::Approve { withheld: vec![] }, Answer::Deny] {
                 let broker = Broker::new();
-                let worker = broker.clone();
+                let worker = Arc::clone(&broker);
                 let request = request.clone();
                 let waiting = tokio::spawn(async move { worker.ask(request).await });
                 while broker.current().is_none() {
@@ -1201,7 +1246,7 @@ mod machines_pairing_tests {
         let home = tempfile::tempdir().unwrap();
         let anchor = open(home.path());
         let broker = Broker::new();
-        let _machines = crate::machines::Machines::start(&anchor, broker.clone());
+        let _machines = crate::machines::Machines::start(&anchor, Arc::clone(&broker));
         let mut used = None;
         for approve in [true, false] {
             let replica_home = tempfile::tempdir().unwrap();
@@ -1211,7 +1256,7 @@ mod machines_pairing_tests {
                 .pair_code(watane_node::net::Role::Full)
                 .unwrap();
             let before = anchor.net().devices();
-            let worker = replica.clone();
+            let worker = Arc::clone(&replica);
             let copy = code.clone();
             let joining = std::thread::spawn(move || worker.join(&copy, false));
             let end = Instant::now() + Duration::from_secs(10);
@@ -1264,7 +1309,7 @@ mod machines_pairing_tests {
         }
         let other_home = tempfile::tempdir().unwrap();
         let other = open(other_home.path());
-        assert!(other.join(&used.unwrap(), false).is_err());
+        other.join(&used.unwrap(), false).unwrap_err();
         assert!(broker.current().is_none());
     }
 }

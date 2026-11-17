@@ -1,8 +1,13 @@
 #![cfg(feature = "driver")]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use serde_json::{Value, json};
-use std::{path::Path, time::Instant};
-use support::{driver::App, journey::*, publish::*};
+use std::path::Path;
+use std::time::Instant;
+use support::driver::App;
+use support::journey::*;
+use support::publish::*;
 
 fn publish_version(app: &App, version: &str, network: bool) -> Value {
     let pending = publish(app, update_package(version, network));

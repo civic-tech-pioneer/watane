@@ -1,12 +1,10 @@
-use crate::{
-    CmdError,
-    consent::{GrantLine, Party},
-    views,
-    words::{self, Parties},
-};
+use crate::consent::{GrantLine, Party};
+use crate::words::{self, Parties};
+use crate::{CmdError, views};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-use watane_host::{GrantState, Host, LocalName, Served, watane_pkg::Grant};
+use watane_host::watane_pkg::Grant;
+use watane_host::{GrantState, Host, LocalName, Served};
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModView {
@@ -245,8 +243,8 @@ impl Core {
             app,
             host,
             served: Mutex::new(None),
-            dist: node.dist().clone(),
-            machines: crate::machines::Machines::start(&node, broker.clone()),
+            dist: Arc::clone(node.dist()),
+            machines: crate::machines::Machines::start(&node, Arc::clone(&broker)),
             node,
             broker,
             failures: Mutex::new(Default::default()),
@@ -313,7 +311,11 @@ impl Core {
         Ok(cache_channels(&self.dist, &self.parties, keys)?)
     }
     pub fn port(&self) -> u16 {
-        self.served.lock().unwrap().as_ref().map_or(0, |s| s.port)
+        self.served
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .as_ref()
+            .map_or(0, |s| s.port)
     }
     fn view(&self, m: watane_host::InstalledMod, followed: &[watane_dist::ChannelView]) -> ModView {
         let channel = m.publisher.as_ref().and_then(|p| {
@@ -321,13 +323,16 @@ impl Core {
                 .iter()
                 .find(|c| c.channel.to_string() == p.to_string())
         });
-        let failures = self.update_failures.lock().unwrap();
+        let failures = self
+            .update_failures
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let notice = release_notice(m.release.as_ref(), channel, failures.get(m.local.as_ref()))
             .or_else(|| {
                 m.publisher.as_ref().and_then(|p| {
                     self.failures
                         .lock()
-                        .unwrap()
+                        .expect("lock poisoned: another thread panicked while holding it")
                         .get(&p.to_string())
                         .map(|cause| words::channel_read(&p.to_string(), cause, &self.parties))
                 })
@@ -438,7 +443,7 @@ impl Core {
         }
     }
     pub fn post_open(self: &Arc<Self>, local: LocalName) {
-        let core = self.clone();
+        let core = Arc::clone(self);
         if let Err(error) = self.app.run_on_main_thread(move || {
             // Recheck at application time: the call's later effects may have
             // disabled or removed the target after OpenPage was posted.
@@ -452,7 +457,9 @@ impl Core {
             if let Err(error) = views::open_mod(
                 &core.app,
                 local.as_ref(),
-                m.page.as_deref().unwrap(),
+                m.page
+                    .as_deref()
+                    .expect("open_page_target returns only mods with a page"),
                 &format!("{} — {party}", m.name),
             ) {
                 eprintln!("{}", error.message);
@@ -648,7 +655,10 @@ impl Core {
     }
 
     pub fn checked_at(&self) -> Option<u64> {
-        self.refresh_times.lock().unwrap().checked_at
+        self.refresh_times
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .checked_at
     }
 
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
@@ -657,7 +667,10 @@ impl Core {
         if let Some(key) = self.dist.identity() {
             self.parties.set_own(key.to_string());
         }
-        let failures = self.failures.lock().unwrap();
+        let failures = self
+            .failures
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         Ok(followed
             .iter()
             .map(|v| {
@@ -665,7 +678,7 @@ impl Core {
                 row.read_at = self
                     .refresh_times
                     .lock()
-                    .unwrap()
+                    .expect("lock poisoned: another thread panicked while holding it")
                     .read_at
                     .get(&row.channel)
                     .copied();
@@ -679,7 +692,10 @@ impl Core {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        self.refresh_times.lock().unwrap().finish(&reports, at);
+        self.refresh_times
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .finish(&reports, at);
         let followed = self.dist.followed()?;
         let mut updates = Vec::new();
         for report in reports {
@@ -696,7 +712,10 @@ impl Core {
                 }
             }
             keep_outcome(
-                &mut self.failures.lock().unwrap(),
+                &mut self
+                    .failures
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it"),
                 report.channel,
                 report.outcome,
             );
@@ -704,11 +723,14 @@ impl Core {
         Ok((self.channels()?, updates))
     }
     pub fn updates_done(&self) -> Vec<UpdateDone> {
-        self.updates.lock().unwrap().clone()
+        self.updates
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone()
     }
     pub fn spawn_updates(self: &Arc<Self>, updates: Vec<watane_dist::ReleaseRef>) {
         for release in updates {
-            let core = self.clone();
+            let core = Arc::clone(self);
             tauri::async_runtime::spawn(async move {
                 let _ = core
                     .install_resolved(release, None, None, watane_host::Requester::App, None)
@@ -717,7 +739,10 @@ impl Core {
         }
     }
     pub fn clear_update_failures(&self, installed: &[watane_host::InstalledMod]) {
-        let mut failures = self.update_failures.lock().unwrap();
+        let mut failures = self
+            .update_failures
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         for m in installed {
             failures.remove(m.local.as_ref());
         }
@@ -730,7 +755,7 @@ impl Core {
         self.install_resolved(
             release,
             link,
-            Some(self.app.state::<crate::AppState>().broker.clone()),
+            Some(Arc::clone(&self.app.state::<crate::AppState>().broker)),
             watane_host::Requester::App,
             None,
         )
@@ -746,7 +771,7 @@ impl Core {
         self.install_resolved(
             release,
             read_link,
-            Some(self.broker.clone()),
+            Some(Arc::clone(&self.broker)),
             requester,
             Some(asked_by),
         )
@@ -760,7 +785,7 @@ impl Core {
         requester: watane_host::Requester,
         asked_by: Option<crate::consent::Asker>,
     ) -> Result<Vec<watane_host::InstalledMod>, CmdError> {
-        let planner = self.clone();
+        let planner = Arc::clone(self);
         let target = release.clone();
         let background = pick.is_none();
         let result = async {
@@ -788,7 +813,10 @@ impl Core {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64;
-                let mut updates = self.updates.lock().unwrap();
+                let mut updates = self
+                    .updates
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it");
                 for m in &installed {
                     if let Some(old) = before
                         .iter()
@@ -808,7 +836,7 @@ impl Core {
                 }
                 updates.truncate(50);
             }
-            let follower = self.clone();
+            let follower = Arc::clone(self);
             tauri::async_runtime::spawn_blocking(move || follower.follow_fetched(&fetched))
                 .await
                 .map_err(|e| CmdError::new("io", e.to_string()))?;
@@ -823,10 +851,13 @@ impl Core {
                         .as_ref()
                         .is_some_and(|r| r.publisher == release.publisher && r.slug == release.slug)
                 }) {
-                    self.update_failures.lock().unwrap().insert(
-                        m.local.to_string(),
-                        update_failure(&release.version.to_string(), error),
-                    );
+                    self.update_failures
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it")
+                        .insert(
+                            m.local.to_string(),
+                            update_failure(&release.version.to_string(), error),
+                        );
                 }
             }
         }
@@ -837,7 +868,7 @@ impl Core {
         map_follow(&self.dist, &self.parties, self.node.follow(&link))?;
         self.failures
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .remove(&link.channel().to_string());
         self.channels()?
             .into_iter()
@@ -1022,7 +1053,7 @@ impl Core {
             if let Err(error) = self.node.installed(item) {
                 self.failures
                     .lock()
-                    .unwrap()
+                    .expect("lock poisoned: another thread panicked while holding it")
                     .insert(item.info.channel.to_string(), CmdError::from(error).message);
             }
         }
@@ -1034,7 +1065,10 @@ impl Core {
             crate::build_on::follow_all(
                 links,
                 |link| self.node.follow(link).map(|_| ()).map_err(CmdError::from),
-                &mut self.failures.lock().unwrap(),
+                &mut self
+                    .failures
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it"),
             );
         }
         let _ = self.channels();
@@ -1903,8 +1937,11 @@ fn index_row(
     failure: Option<&String>,
     parties: &Parties,
 ) -> serde_json::Value {
-    let mut row = serde_json::to_value(channel_row(view, failure)).unwrap();
-    let object = row.as_object_mut().unwrap();
+    let mut row =
+        serde_json::to_value(channel_row(view, failure)).expect("a channel row serializes");
+    let object = row
+        .as_object_mut()
+        .expect("a channel row serializes as an object");
     object.insert("you".into(), serde_json::json!(own));
     if let Some(cause) = failure {
         object.insert(
@@ -2086,12 +2123,22 @@ fn held_indexes(
 }
 impl Core {
     pub fn indexes(&self) -> Result<Vec<serde_json::Value>, CmdError> {
-        held_indexes(&self.dist, &self.parties, &self.failures.lock().unwrap())
+        held_indexes(
+            &self.dist,
+            &self.parties,
+            &self
+                .failures
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
+        )
     }
     pub fn choose_index(&self, text: &str) -> Result<Vec<serde_json::Value>, CmdError> {
         for report in choose_index_with(&self.dist, text, |link| self.node.choose_index(link))? {
             keep_outcome(
-                &mut self.failures.lock().unwrap(),
+                &mut self
+                    .failures
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it"),
                 report.channel,
                 report.outcome,
             );

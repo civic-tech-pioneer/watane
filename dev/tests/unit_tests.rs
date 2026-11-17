@@ -1,12 +1,16 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 mod support;
 use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    process::Command,
-    sync::{Mutex, MutexGuard},
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 struct Fixture {
     _guard: MutexGuard<'static, ()>,

@@ -1,11 +1,15 @@
 #![cfg(feature = "driver")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::disallowed_methods,
+    reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
+)]
+
 mod support;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
-use support::{
-    driver::App,
-    journey::{approve, begin_install, copy_dir, fixture, installed},
-};
+use support::driver::App;
+use support::journey::{approve, begin_install, copy_dir, fixture, installed};
 static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const TIMEOUT: Duration = Duration::from_secs(30);
 fn until(app: &App, label: &str, js: &str) {

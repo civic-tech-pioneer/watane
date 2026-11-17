@@ -1,15 +1,11 @@
-use crate::{
-    AppState,
-    consent::{Answer, Request},
-};
+use crate::AppState;
+use crate::consent::{Answer, Request};
 use serde_json::{Value, json};
-use std::{
-    collections::HashSet,
-    io::{BufRead, Write},
-    sync::{Arc, Condvar, Mutex},
-    task::Poll,
-    time::Duration,
-};
+use std::collections::HashSet;
+use std::io::{BufRead, Write};
+use std::sync::{Arc, Condvar, Mutex};
+use std::task::Poll;
+use std::time::Duration;
 use tauri::Manager;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -41,7 +37,10 @@ pub(crate) struct DriverState {
 }
 impl DriverState {
     pub fn loaded(&self, label: &str, loaded: bool) {
-        let mut pages = self.pages.lock().unwrap();
+        let mut pages = self
+            .pages
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         if loaded {
             pages.insert(label.into());
         } else {
@@ -52,21 +51,24 @@ impl DriverState {
     pub fn command(&self, label: &str, cmd: &str) {
         self.commands
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .push(json!({"label":label,"cmd":cmd}));
     }
     pub fn blocked(&self, label: &str, kind: &str, url: &str) {
         self.blocked
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .push(json!({"label":label,"kind":kind,"url":url}));
     }
     fn wait(&self, label: &str, timeout: Duration) -> bool {
-        let pages = self.pages.lock().unwrap();
+        let pages = self
+            .pages
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let (pages, _) = self
             .changed
             .wait_timeout_while(pages, timeout, |pages| !pages.contains(label))
-            .unwrap();
+            .expect("lock poisoned: another thread panicked while holding it");
         pages.contains(label)
     }
 }
@@ -161,25 +163,40 @@ pub(crate) fn start(app: tauri::AppHandle) {
                     reply(id, Err(cause.clone()));
                     continue;
                 }
-                let broker = state.broker.clone();
+                let broker = Arc::clone(&state.broker);
                 let mut ask = Box::pin(async move { broker.ask(request).await });
                 // Poll once before reading the next line to preserve stdin FIFO.
                 tauri::async_runtime::block_on(std::future::poll_fn(|cx| {
                     assert!(ask.as_mut().poll(cx).is_pending());
                     Poll::Ready(())
                 }));
-                *pending.0.lock().unwrap() += 1;
-                let pending = pending.clone();
+                *pending
+                    .0
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it") += 1;
+                let pending = Arc::clone(&pending);
                 tauri::async_runtime::spawn(async move {
                     let answer: Answer = ask.await;
-                    reply(id, Ok(serde_json::to_value(answer).unwrap()));
-                    *pending.0.lock().unwrap() -= 1;
+                    reply(
+                        id,
+                        Ok(serde_json::to_value(answer).expect("a driver answer serializes")),
+                    );
+                    *pending
+                        .0
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it") -= 1;
                     pending.1.notify_all();
                 });
             } else if v["op"] == "quit" {
                 app.state::<AppState>().broker.deny_all();
-                let count = pending.0.lock().unwrap();
-                let _guard = pending.1.wait_while(count, |n| *n > 0).unwrap();
+                let count = pending
+                    .0
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it");
+                let _guard = pending
+                    .1
+                    .wait_while(count, |n| *n > 0)
+                    .expect("lock poisoned: another thread panicked while holding it");
                 app.exit(0);
                 return;
             } else {
@@ -261,7 +278,11 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
         "pick" => {
             let paths: Vec<std::path::PathBuf> =
                 serde_json::from_value(v["paths"].clone()).map_err(|e| e.to_string())?;
-            *state.driver.pick.lock().unwrap() = Some(paths);
+            *state
+                .driver
+                .pick
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it") = Some(paths);
             Ok(json!(true))
         }
         "wait" => {
@@ -312,7 +333,7 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
             Ok(json!(true))
         }
         "log" => Ok(
-            json!({"commands":*state.driver.commands.lock().unwrap(),"blocked":*state.driver.blocked.lock().unwrap()}),
+            json!({"commands":*state.driver.commands.lock().expect("lock poisoned: another thread panicked while holding it"),"blocked":*state.driver.blocked.lock().expect("lock poisoned: another thread panicked while holding it")}),
         ),
         op => Err(format!("unknown driver operation: {op}")),
     }

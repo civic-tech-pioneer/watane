@@ -1,17 +1,15 @@
 //! S10 to S13: Alice runs her server as the program `watane-node`. Each test runs the
 //! built binary and reads its stdout, stderr and exit code; the anchor is a `Node` of
 //! this process.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    io::{BufRead, BufReader},
-    path::Path,
-    process::{Child, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        mpsc::{Receiver, channel},
-    },
-    time::{Duration, Instant},
-};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{Receiver, channel};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use support::*;
 use watane_net::{
     BlobId, Entry, Event, Hit, Holdings, Ingested, Net, NodeKey, PublicKey, Role, Why,
@@ -73,7 +71,7 @@ impl Prog {
             }
         });
         let stderr = Arc::new(Mutex::new(String::new()));
-        let (err, pipe) = (stderr.clone(), child.stderr.take().unwrap());
+        let (err, pipe) = (Arc::clone(&stderr), child.stderr.take().unwrap());
         std::thread::spawn(move || {
             for line in BufReader::new(pipe).lines().map_while(Result::ok) {
                 err.lock().unwrap().push_str(&format!("{line}\n"));
@@ -269,7 +267,7 @@ fn s11_run_relay_serves_a_relay_and_two_homes_connect_through_it() {
     };
     assert!(peer_up(&laptop_events, second_key), "laptop: no PeerUp");
     assert!(peer_up(&second_events, laptop_key), "second: no PeerUp");
-    assert!(laptop.net().hello(&second_key).is_ok());
+    laptop.net().hello(&second_key).unwrap();
 
     prog.signal("TERM");
     assert_eq!(prog.code(10), 0);

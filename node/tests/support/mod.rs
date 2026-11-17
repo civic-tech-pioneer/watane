@@ -1,16 +1,17 @@
 //! Homes, signed fixture channels and a web host on loopback. Expectations come from
 //! a keyed `Dist` of another home, never from `watane_node`.
-#![allow(dead_code)]
-use std::{
-    fs,
-    path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread::JoinHandle,
-    time::Duration,
-};
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 use watane_dist::{Confirm, Decision, Dist, Entry, Link, PublicKey, SignRequest};
 
 pub struct Approve(pub Mutex<usize>);
@@ -71,7 +72,7 @@ impl Host {
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
         let url = format!("http://{}/", server.server_addr());
         let stop = Arc::new(AtomicBool::new(false));
-        let (s, quit, dir) = (server.clone(), stop.clone(), dir.to_owned());
+        let (s, quit, dir) = (Arc::clone(&server), Arc::clone(&stop), dir.to_owned());
         let worker = std::thread::spawn(move || {
             while !quit.load(Ordering::SeqCst) {
                 let Ok(Some(req)) = s.recv_timeout(Duration::from_millis(50)) else {

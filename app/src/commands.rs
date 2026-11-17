@@ -1,10 +1,8 @@
-use crate::{
-    AppState, CmdError,
-    consent::{AskId, Withheld},
-    core::{ModView, ToolRow},
-    views,
-};
+use crate::consent::{AskId, Withheld};
+use crate::core::{ModView, ToolRow};
+use crate::{AppState, CmdError, views};
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tauri::Manager;
 fn record(webview: &tauri::Webview, cmd: &str) {
     #[cfg(feature = "driver")]
@@ -51,7 +49,7 @@ pub(crate) async fn mods_list(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ModView>, CmdError> {
     record(&webview, "mods_list");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.mods()).await
 }
 #[tauri::command]
@@ -61,7 +59,7 @@ pub(crate) async fn mod_open(
     local: String,
 ) -> Result<(), CmdError> {
     record(&webview, "mod_open");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     let name = local.clone();
     let m = blocking(move || core.get(&name))
         .await?
@@ -175,9 +173,14 @@ pub(crate) async fn install_folders(
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, CmdError> {
     record(&webview, "install_folders");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     #[cfg(feature = "driver")]
-    let picked = state.driver.pick.lock().unwrap().take();
+    let picked = state
+        .driver
+        .pick
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it")
+        .take();
     #[cfg(not(feature = "driver"))]
     let picked: Option<Vec<std::path::PathBuf>> = None;
     let paths = if let Some(paths) = picked {
@@ -209,13 +212,13 @@ pub(crate) async fn install_paths(
     paths: Vec<std::path::PathBuf>,
 ) -> Result<Value, CmdError> {
     record(&webview, "install_paths");
-    install_selected(core(&state)?.clone(), paths).await
+    install_selected(Arc::clone(core(&state)?), paths).await
 }
 async fn install_selected(
     core: std::sync::Arc<crate::core::Core>,
     paths: Vec<std::path::PathBuf>,
 ) -> Result<Value, CmdError> {
-    let host = core.host.clone();
+    let host = Arc::clone(&core.host);
     if paths.iter().any(|path| !path.is_dir()) {
         return Err(CmdError::new(
             "bad_request",
@@ -225,7 +228,7 @@ async fn install_selected(
     if paths.is_empty() {
         return Ok(json!({"installed":[]}));
     }
-    let planner = core.clone();
+    let planner = Arc::clone(&core);
     let plan = tauri::async_runtime::spawn_blocking(move || {
         let plan = planner
             .host
@@ -307,7 +310,10 @@ pub(crate) fn token_issue(
     let token = core
         .host
         .issue_token(&toolset, &watane_host::Handle::parse(&handle)?)?;
-    let served = core.served.lock().unwrap();
+    let served = core
+        .served
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it");
     let served = served
         .as_ref()
         .ok_or_else(|| CmdError::new("unavailable", "server stopped"))?;
@@ -347,9 +353,9 @@ pub(crate) async fn install_link(
     link: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "install_link");
-    let core = core(&state)?.clone();
-    let planner = core.clone();
-    let host = planner.host.clone();
+    let core = Arc::clone(core(&state)?);
+    let planner = Arc::clone(&core);
+    let host = Arc::clone(&planner.host);
     let (plan, fetched) = blocking(move || planner.plan_link(&link)).await?;
     let installed = host.install(plan, watane_host::Requester::App).await?;
     core.clear_update_failures(&installed);
@@ -367,7 +373,7 @@ pub(crate) async fn identity_set_name(
     name: String,
 ) -> Result<(), CmdError> {
     record(&webview, "identity_set_name");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         core.node.set_name(&name)?;
         core.channels()?;
@@ -382,7 +388,7 @@ pub(crate) async fn site_set_url(
     url: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "site_set_url");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         core.dist.set_site_url(&url)?;
         Ok(())
@@ -397,7 +403,7 @@ fn picked_file(state: &AppState) -> Option<Option<std::path::PathBuf>> {
             .driver
             .pick
             .lock()
-            .unwrap()
+            .expect("lock poisoned: another thread panicked while holding it")
             .take()
             .map(|p| p.into_iter().next())
     }
@@ -420,7 +426,7 @@ pub(crate) async fn identity_backup(
             "passphrase needs at least 12 characters",
         ));
     }
-    let dist = core(&state)?.dist.clone();
+    let dist = Arc::clone(&core(&state)?.dist);
     let picked = picked_file(&state);
     let app = webview.app_handle().clone();
     blocking(move || {
@@ -440,10 +446,8 @@ pub(crate) async fn identity_backup(
             return Ok(Value::Null);
         };
         let bytes = dist.backup(&passphrase)?;
-        use std::{
-            io::Write,
-            os::unix::fs::{OpenOptionsExt, PermissionsExt},
-        };
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         let mut f = std::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -463,7 +467,7 @@ pub(crate) async fn identity_restore(
     passphrase: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "identity_restore");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     let picked = picked_file(&state);
     let app = webview.app_handle().clone();
     blocking(move || {
@@ -494,7 +498,7 @@ pub(crate) async fn identity_confirm_own(
     link: Option<String>,
 ) -> Result<Value, CmdError> {
     record(&webview, "identity_confirm_own");
-    let node = core(&state)?.node.clone();
+    let node = Arc::clone(&core(&state)?.node);
     blocking(move || {
         let link = link.map(|s| s.parse::<watane_dist::Link>()).transpose()?;
         node.confirm_own(link.as_ref())?;
@@ -509,7 +513,7 @@ pub(crate) async fn channels_list(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<crate::core::ChannelRow>, CmdError> {
     record(&webview, "channels_list");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.channels()).await
 }
 #[tauri::command]
@@ -519,7 +523,7 @@ pub(crate) async fn channel_follow(
     link: String,
 ) -> Result<crate::core::ChannelRow, CmdError> {
     record(&webview, "channel_follow");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.follow(&link)).await
 }
 #[tauri::command]
@@ -529,7 +533,7 @@ pub(crate) async fn channel_unfollow(
     channel: String,
 ) -> Result<(), CmdError> {
     record(&webview, "channel_unfollow");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         let key = channel
             .parse::<watane_dist::PublicKey>()
@@ -546,8 +550,8 @@ pub(crate) async fn channels_refresh(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<crate::core::ChannelRow>, CmdError> {
     record(&webview, "channels_refresh");
-    let core = core(&state)?.clone();
-    let refresher = core.clone();
+    let core = Arc::clone(core(&state)?);
+    let refresher = Arc::clone(&core);
     let (rows, updates) = blocking(move || refresher.refresh()).await?;
     core.spawn_updates(updates);
     Ok(rows)
@@ -585,7 +589,7 @@ pub(crate) async fn release_withdraw(
 ) -> Result<(), CmdError> {
     record(&webview, "release_withdraw");
     let release = parse_release(&release)?;
-    let node = core(&state)?.node.clone();
+    let node = Arc::clone(&core(&state)?.node);
     blocking(move || {
         node.withdraw(&release, &reason).map_err(withdraw_error)?;
         Ok(())
@@ -768,7 +772,7 @@ pub(crate) async fn indexes_list(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<Value>, CmdError> {
     record(&webview, "indexes_list");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.indexes()).await
 }
 #[tauri::command]
@@ -778,7 +782,7 @@ pub(crate) async fn index_choose(
     link: String,
 ) -> Result<Vec<Value>, CmdError> {
     record(&webview, "index_choose");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.choose_index(&link)).await
 }
 #[tauri::command]
@@ -788,7 +792,7 @@ pub(crate) async fn index_drop(
     channel: String,
 ) -> Result<(), CmdError> {
     record(&webview, "index_drop");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     let key = channel
         .parse::<watane_dist::PublicKey>()
         .map_err(|e| CmdError::new("bad_input", e.to_string()))?;
@@ -816,7 +820,7 @@ pub(crate) async fn search(
         origin,
     }
     .parse()?;
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.search(&query)).await
 }
 #[tauri::command]
@@ -841,7 +845,7 @@ pub(crate) async fn index_list(
 ) -> Result<(), CmdError> {
     record(&webview, "index_list");
     let link = parse_link(&link)?;
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         core.node.list(&link, &note).map_err(index_error)?;
         core.channels()?;
@@ -858,7 +862,7 @@ pub(crate) async fn index_include(
 ) -> Result<(), CmdError> {
     record(&webview, "index_include");
     let link = parse_link(&link)?;
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         core.node.include(&link, &note).map_err(|e| match e {
             watane_dist::DistError::AlreadyListed { .. } => {
@@ -879,7 +883,7 @@ pub(crate) async fn index_unlist(
 ) -> Result<(), CmdError> {
     record(&webview, "index_unlist");
     let entry = parse_entry(&entry)?;
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || {
         core.node.unlist(&entry)?;
         core.channels()?;
@@ -938,7 +942,7 @@ pub(crate) async fn machines(
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, CmdError> {
     record(&webview, "machines");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || Ok(core.machines_view())).await
 }
 
@@ -949,7 +953,7 @@ pub(crate) async fn machines_on(
     on: bool,
 ) -> Result<Value, CmdError> {
     record(&webview, "machines_on");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.machines_on(on)).await
 }
 
@@ -960,7 +964,7 @@ pub(crate) async fn pair_code(
     role: crate::consent::Role,
 ) -> Result<Value, CmdError> {
     record(&webview, "pair_code");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.pair_code(role)).await
 }
 
@@ -972,7 +976,7 @@ pub(crate) async fn machine_join(
     replace: bool,
 ) -> Result<Value, CmdError> {
     record(&webview, "machine_join");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.machine_join(&code, replace)).await
 }
 
@@ -983,7 +987,7 @@ pub(crate) async fn machine_remove(
     node: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "machine_remove");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.machine_remove(&node)).await
 }
 
@@ -995,7 +999,7 @@ pub(crate) async fn machine_role(
     role: crate::consent::Role,
 ) -> Result<Value, CmdError> {
     record(&webview, "machine_role");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.machine_role(&node, role)).await
 }
 
@@ -1006,7 +1010,7 @@ pub(crate) async fn machines_expiry(
     days: u32,
 ) -> Result<Value, CmdError> {
     record(&webview, "machines_expiry");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.machines_expiry(days)).await
 }
 
@@ -1017,7 +1021,7 @@ pub(crate) async fn relay_add(
     url: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "relay_add");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.relay(&url, true)).await
 }
 
@@ -1028,7 +1032,7 @@ pub(crate) async fn relay_remove(
     url: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "relay_remove");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.relay(&url, false)).await
 }
 
@@ -1039,7 +1043,7 @@ pub(crate) async fn dht_set(
     on: bool,
 ) -> Result<Value, CmdError> {
     record(&webview, "dht_set");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.dht_set(on)).await
 }
 
@@ -1049,7 +1053,7 @@ pub(crate) async fn own_hints(
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, CmdError> {
     record(&webview, "own_hints");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || Ok(core.own_hints())).await
 }
 
@@ -1062,7 +1066,7 @@ pub(crate) async fn identity_confirm_hint(
     id: String,
 ) -> Result<Value, CmdError> {
     record(&webview, "identity_confirm_hint");
-    let core = core(&state)?.clone();
+    let core = Arc::clone(core(&state)?);
     blocking(move || core.identity_confirm_hint(&node, seq, &id)).await?;
     status(webview, state).await
 }

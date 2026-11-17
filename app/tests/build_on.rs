@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use watane_host::watane_pkg::{self as pkg, Grant};
 #[test]
 fn ac4_build_on_fixtures_have_the_declared_contracts_and_page() {
@@ -55,7 +57,9 @@ async fn ac4_stats_calls_ratings_and_preserves_observable_state() {
 mod support;
 #[cfg(feature = "driver")]
 mod windows {
-    use super::support::{driver::App, journey::*, publish::*};
+    use super::support::driver::App;
+    use super::support::journey::*;
+    use super::support::publish::*;
     use serde_json::{Value, json};
     use watane_dist::{Dist, Link};
     struct Publisher {
@@ -335,8 +339,8 @@ mod windows {
         {
             let eve = dist(home.path());
             eve.follow(&alice.link()).unwrap();
-            eve.follow(&carol.link()).unwrap();
-        }
+            eve.follow(&carol.link()).unwrap()
+        };
         let app = start(home.path());
         begin_link(&app, reading.link.as_ref().unwrap());
         consent(&app);

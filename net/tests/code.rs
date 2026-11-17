@@ -113,15 +113,13 @@ fn ac3_refused() {
     // 9 hints
     let nine: String = (0..9).map(|i| format!(";addr=10.0.0.{i}:1")).collect();
     bad(&format!("{}{nine}", base()));
-    assert!(
-        format!(
-            "{}{}",
-            base(),
-            &nine[..nine.len() - ";addr=10.0.0.8:1".len()]
-        )
-        .parse::<PairCode>()
-        .is_ok()
-    );
+    format!(
+        "{}{}",
+        base(),
+        &nine[..nine.len() - ";addr=10.0.0.8:1".len()]
+    )
+    .parse::<PairCode>()
+    .unwrap();
     // over 1024 bytes
     let long = format!("{};relay=https://{}.example.org/", base(), "a".repeat(1100));
     assert!(long.len() > 1024);

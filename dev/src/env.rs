@@ -1,5 +1,7 @@
 use crate::outcome::Problem;
-use std::{fs, path::PathBuf};
+use std::fs;
+use std::path::PathBuf;
+#[derive(Debug)]
 pub struct Env {
     pub cache: PathBuf,
     pub unit_seconds: u64,

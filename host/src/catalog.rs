@@ -1,17 +1,18 @@
 use crate::{HostError, LocalName, VerifyCheck, home};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use watane_pkg::{
     Grant, InterfaceName, Mod, Package, PackageId, Provider, PublisherKey, RELEASE_KIND, Release,
     ReleaseRef, Slug, Version,
 };
 
-// The public source interface carries checked package and entry values directly.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the public source interface carries checked package and entry values directly"
+)]
 #[derive(Debug)]
 pub enum Source {
     Folder(PathBuf),
@@ -415,7 +416,12 @@ impl Catalog {
             };
             let input = match source {
                 Source::Folder(folder) => folder.clone(),
-                Source::Release { .. } => PathBuf::from(release.as_ref().unwrap().to_string()),
+                Source::Release { .. } => PathBuf::from(
+                    release
+                        .as_ref()
+                        .expect("a release source carries its release")
+                        .to_string(),
+                ),
             };
             let folder = input.as_path();
             let staging = Stage::new(home)?;
@@ -556,14 +562,25 @@ impl Catalog {
         }
         let missing = bind(&mut next, &worlds, &seen, harness, preview, true)?;
         let order = provider_order(&next, &worlds)?;
-        next.sort_by_key(|m| order.iter().position(|n| n == &m.local).unwrap());
+        next.sort_by_key(|m| {
+            order
+                .iter()
+                .position(|n| n == &m.local)
+                .expect("the order names every planned mod")
+        });
         for Prepared(_, installed, _, _) in &mut prepared {
-            let resolved = next.iter().find(|m| m.local == installed.local).unwrap();
+            let resolved = next
+                .iter()
+                .find(|m| m.local == installed.local)
+                .expect("the plan holds every installed mod");
             installed.links = resolved.links.clone();
             installed.binds = resolved.binds.clone();
         }
         for e in &mut entries {
-            let resolved = next.iter().find(|m| m.local == e.local).unwrap();
+            let resolved = next
+                .iter()
+                .find(|m| m.local == e.local)
+                .expect("the plan holds every entry");
             e.binds = resolved.binds.clone();
             if let Some(old) = self.mods.iter().find(|m| m.identity == e.identity)
                 && old.binds != e.binds
@@ -576,7 +593,7 @@ impl Catalog {
             e.providers = next
                 .iter()
                 .find(|m| m.local == e.local)
-                .unwrap()
+                .expect("the plan holds every entry")
                 .links
                 .iter()
                 .filter_map(|l| l.provider.clone())
@@ -584,8 +601,18 @@ impl Catalog {
                 .into_iter()
                 .collect();
         }
-        prepared.sort_by_key(|p| order.iter().position(|n| n == &p.1.local).unwrap());
-        entries.sort_by_key(|e| order.iter().position(|n| n == &e.local).unwrap());
+        prepared.sort_by_key(|p| {
+            order
+                .iter()
+                .position(|n| n == &p.1.local)
+                .expect("the order names every planned mod")
+        });
+        entries.sort_by_key(|e| {
+            order
+                .iter()
+                .position(|n| n == &e.local)
+                .expect("the order names every planned mod")
+        });
         let confirmation = !preview
             && entries.iter().any(|e| {
                 matches!(e.change, Change::New)
@@ -645,7 +672,7 @@ impl Catalog {
                 .next
                 .iter_mut()
                 .find(|m| m.local == installed.local)
-                .unwrap() = installed.clone();
+                .expect("the plan holds every installed mod") = installed.clone();
         }
         let prepared = plan.prepared;
         let next = plan.next;
@@ -706,7 +733,7 @@ impl Catalog {
                 self.components.remove(&installed.local);
                 if let Some(component) = component {
                     self.components
-                        .insert(installed.local.clone(), component.clone());
+                        .insert(installed.local.clone(), Arc::clone(component));
                 }
             }
         }
@@ -938,7 +965,7 @@ fn provider_order(
             .filter_map(|l| l.provider.as_ref())
             .collect();
         // A collect calls into the subscriber, so it is an edge too (4.2 step 8).
-        let collects = worlds.get(local).map(|w| &w.collects[..]).unwrap_or(&[]);
+        let collects = worlds.get(local).map(|w| &*w.collects).unwrap_or(&[]);
         providers.extend(mods.iter().filter_map(|s| {
             s.links
                 .iter()
@@ -972,7 +999,10 @@ fn provider_order(
     let mut ordered = Vec::new();
     while !remaining.is_empty() {
         let ready = |local: &&LocalName, calls_only: bool| {
-            let m = mods.iter().find(|m| &m.local == *local).unwrap();
+            let m = mods
+                .iter()
+                .find(|m| &m.local == *local)
+                .expect("remaining holds only names from mods");
             m.links
                 .iter()
                 .filter(|l| !calls_only || matches!(l.kind, LinkKind::Call))

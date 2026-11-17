@@ -2,16 +2,13 @@
 //! `Gate`, the wrapper every protocol handler sits in. Unknown peers share
 //! one pool: connections, streams and a byte bucket.
 
-use crate::{Class, Core, key::NodeKey, lock, wire};
-use iroh::{
-    endpoint::Connection,
-    protocol::{AcceptError, ProtocolHandler},
-};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use crate::key::NodeKey;
+use crate::{Class, Core, lock, wire};
+use iroh::endpoint::Connection;
+use iroh::protocol::{AcceptError, ProtocolHandler};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const POLL: Duration = Duration::from_millis(100);
 
@@ -121,7 +118,7 @@ impl Pool {
             },
         );
         Some(ConnGuard {
-            pool: self.clone(),
+            pool: Arc::clone(self),
             id,
         })
     }
@@ -164,7 +161,7 @@ impl Pool {
         }
         *open += 1;
         Some(StreamGuard {
-            pool: self.clone(),
+            pool: Arc::clone(self),
             peer,
         })
     }
@@ -251,11 +248,10 @@ mod tests {
     use crate::{
         BlobId, DeviceList, HeadInfo, Hit, Holdings, Ingested, Net, Options, Query, Role, Why,
     };
-    use iroh::{EndpointAddr, TransportAddr, protocol::Router};
-    use std::{
-        path::{Path, PathBuf},
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+    use iroh::protocol::Router;
+    use iroh::{EndpointAddr, TransportAddr};
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use watane_log::{Entry, PublicKey};
 
     struct Anchor;
@@ -312,7 +308,7 @@ mod tests {
             Options::default(),
         )
         .unwrap();
-        let core = net.core.clone();
+        let core = Arc::clone(&net.core);
         let trusted_seed = [21u8; 32];
         let trusted = crate::key::public_of(&trusted_seed);
         core.sign_next(|l| {
@@ -333,7 +329,10 @@ mod tests {
             server.bound_sockets().into_iter().map(TransportAddr::Ip),
         );
         let router = Router::builder(server)
-            .accept(TEST_ALPN, Gate::new(core, Dummy(calls.clone()), TEST_ALPN))
+            .accept(
+                TEST_ALPN,
+                Gate::new(core, Dummy(Arc::clone(&calls)), TEST_ALPN),
+            )
             .spawn();
 
         for (seed, passes) in [(22u8, false), (21u8, true)] {
@@ -372,8 +371,8 @@ mod tests {
         {
             let mut state = lock(&pool.state);
             state.refill(1000);
-            state.tokens = -1000.0;
-        }
+            state.tokens = -1000.0
+        };
         assert!(pool.over_bytes(&limits));
         std::thread::sleep(Duration::from_millis(1100));
         assert!(!pool.over_bytes(&limits));

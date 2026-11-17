@@ -1,4 +1,5 @@
 mod support;
+use std::sync::Arc;
 use support::*;
 use watane_dist::*;
 
@@ -71,7 +72,7 @@ fn ac10_fetch_cached_offline_without_request() {
     bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
         .unwrap();
     bob.fetch(&p.info.reference).unwrap();
-    let requests = host.requests.clone();
+    let requests = Arc::clone(&host.requests);
     let count = host.count();
     drop(host);
     assert_eq!(

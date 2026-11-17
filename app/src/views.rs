@@ -1,4 +1,5 @@
-use crate::{AppState, CmdError, consent::Answer};
+use crate::consent::Answer;
+use crate::{AppState, CmdError};
 use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 pub const DROP_ENTER_JS: &str = "document.body.classList.add('dropping')";
@@ -173,7 +174,12 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
     }
     let current = state.broker.current().map(|p| p.0);
     if let Some(w) = app.get_webview_window("consent") {
-        if *state.consent_id.lock().unwrap() != current {
+        if *state
+            .consent_id
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            != current
+        {
             let _ = w.close();
         }
         return;
@@ -181,7 +187,10 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
     let Some(id) = current else {
         return;
     };
-    *state.consent_id.lock().unwrap() = Some(id.clone());
+    *state
+        .consent_id
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it") = Some(id.clone());
     let builder = WebviewWindowBuilder::new(app, "consent", WebviewUrl::App("consent.html".into()))
         .title("watane — confirm")
         .inner_size(560., 640.)
@@ -199,7 +208,10 @@ pub(crate) fn sync_consent(app: &tauri::AppHandle) {
             w.on_window_event(move |event| {
                 if matches!(event, WindowEvent::Destroyed) {
                     unloaded(&h, "consent");
-                    *h.state::<AppState>().consent_id.lock().unwrap() = None;
+                    *h.state::<AppState>()
+                        .consent_id
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it") = None;
                     // Answer off the main thread: run_on_main_thread called on
                     // the main thread runs at once, which would open the
                     // successor while this window still owns the label.

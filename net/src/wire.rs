@@ -1,11 +1,9 @@
 //! Requests and answers of `watane/1` (TECHNICAL 4.2), as deterministic CBOR.
 
-use crate::{
-    HeadInfo, Hit, Query,
-    cbor::{self, Item, Reader},
-    error::Code,
-    key::NodeKey,
-};
+use crate::cbor::{self, Item, Reader};
+use crate::error::Code;
+use crate::key::NodeKey;
+use crate::{HeadInfo, Hit, Query};
 use std::time::Duration;
 use watane_log::{Entry, EntryId, MAX_ENTRY, PublicKey};
 

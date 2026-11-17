@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -103,7 +105,8 @@ async fn ac3_call_refuses_wrong_method_origin_type_size_and_body() {
     assert_eq!(response.json::<Value>().await.unwrap(), json!({"value":0}));
 }
 
-use std::{io::Write, net::TcpStream};
+use std::io::Write;
+use std::net::TcpStream;
 
 fn no_cors(headers: &reqwest::header::HeaderMap) {
     assert!(!headers.contains_key("access-control-allow-origin"));
@@ -487,11 +490,9 @@ async fn ac7_events_refuse_foreign_origins_and_do_not_leak_changes() {
     no_cors(stream.headers());
     assert_eq!(stream.headers()["content-type"], "text/event-stream");
     counter_call(&preview, "api.add", 1);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(500), stream.chunk())
-            .await
-            .is_err()
-    );
+    tokio::time::timeout(Duration::from_millis(500), stream.chunk())
+        .await
+        .unwrap_err();
 }
 
 #[test]
@@ -604,11 +605,9 @@ impl PageStream {
     }
 
     async fn quiet(&mut self) {
-        assert!(
-            tokio::time::timeout(Duration::from_millis(500), self.frame())
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_millis(500), self.frame())
+            .await
+            .unwrap_err();
     }
 }
 
@@ -727,7 +726,9 @@ async fn ac12_s11_page_cannot_call_a_subscription_function() {
 
 #[tokio::test]
 async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
-    use std::{future::Future, pin::Pin, sync::Arc};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
     use watane_host::{
         Answer, Caller, Confirm, Host, InstallRequest, Limits, LocalName, Mode, Requester, Source,
     };
@@ -755,7 +756,7 @@ async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
     let host = Host::open(
         dir.path(),
         Mode::Home {
-            app: Some(app.clone()),
+            app: Some(Arc::<App>::clone(&app)),
         },
         Limits::default(),
     )

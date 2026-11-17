@@ -1,4 +1,7 @@
-use crate::*;
+use crate::{
+    BadStatement, ChannelView, Entry, Listing, ListingInfo, Profile, PublicKey, PublisherKey,
+    Release, ReleaseInfo, ReleaseRef, Status, Withdraw, Withdrawal, body,
+};
 pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
     let mut view = ChannelView {
         channel,
@@ -116,6 +119,7 @@ pub(crate) fn derive(channel: PublicKey, entries: &[Entry]) -> ChannelView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PackageId;
     use watane_log::Log;
     #[test]
     fn ac4_derive_rules() {
@@ -216,6 +220,7 @@ mod tests {
 #[cfg(test)]
 mod index_tests {
     use super::*;
+    use crate::EntryId;
     #[test]
     fn ac3_derive_rules_step4() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,6 +1,9 @@
 //! S6 and S7: a light laptop searches and installs through the server.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{fs, sync::Arc};
+use std::fs;
+use std::sync::Arc;
 use support::*;
 use watane_dist::{PublicKey, Query};
 use watane_net::{BlobId, Entry, Hit, Holdings, Ingested, Role, Why};
@@ -79,7 +82,7 @@ fn s6_the_light_laptop_searches_and_installs_through_the_server() {
     // come from the server
     w.laptop.net().set_options(Default::default()).unwrap();
     let fetched = w.light.fetch(&hits[0].hit.info.reference).unwrap();
-    assert_eq!(fetched.package.as_bytes(), &want[..]);
+    assert_eq!(fetched.package.as_bytes(), &*want);
     assert!(fetched.link.is_none());
 }
 

@@ -1,13 +1,13 @@
 //! S80: Alice's server says what is wrong. The server is the built `watane-node`; the anchor
 //! and the light laptop are `Node`s of this process.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{
-    io::{BufRead, BufReader},
-    path::Path,
-    process::{Child, Command, Stdio},
-    sync::mpsc::{Receiver, channel},
-    time::{Duration, Instant},
-};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{Receiver, channel};
+use std::time::{Duration, Instant};
 use support::*;
 use watane_net::{Event, Role};
 use watane_node::Node;

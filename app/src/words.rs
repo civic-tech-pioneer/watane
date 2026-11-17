@@ -11,26 +11,45 @@ impl Parties {
         Self::default()
     }
     pub fn set_own(&self, key: String) {
-        *self.own.write().unwrap() = Some(key);
+        *self
+            .own
+            .write()
+            .expect("lock poisoned: another thread panicked while holding it") = Some(key);
     }
     #[cfg(test)]
     pub fn insert(&self, key: String, name: String) {
-        self.names.write().unwrap().insert(key, name);
+        self.names
+            .write()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .insert(key, name);
     }
     pub fn remember(&self, views: &[watane_dist::ChannelView]) {
-        self.names.write().unwrap().extend(
-            views
-                .iter()
-                .filter_map(|v| v.name.clone().map(|n| (v.channel.to_string(), n)))
-                .collect::<BTreeMap<_, _>>(),
-        );
+        self.names
+            .write()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .extend(
+                views
+                    .iter()
+                    .filter_map(|v| v.name.clone().map(|n| (v.channel.to_string(), n)))
+                    .collect::<BTreeMap<_, _>>(),
+            );
     }
 }
 
 pub fn party(publisher: &str, parties: &Parties) -> Party {
     Party {
-        name: parties.names.read().unwrap().get(publisher).cloned(),
-        you: parties.own.read().unwrap().as_deref() == Some(publisher),
+        name: parties
+            .names
+            .read()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .get(publisher)
+            .cloned(),
+        you: parties
+            .own
+            .read()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .as_deref()
+            == Some(publisher),
         fingerprint: publisher.chars().take(10).collect(), // PublicKey::fingerprint
     }
 }
@@ -218,7 +237,13 @@ pub fn grant_short_bound(
         None => pinned,
     };
     let text = interface.to_string();
-    let interface = text.split_once('/').unwrap().1.split('@').next().unwrap();
+    let interface = text
+        .split_once('/')
+        .expect("an interface id contains '/'")
+        .1
+        .split('@')
+        .next()
+        .expect("split always yields a first part");
     match grant {
         Grant::Call { .. } => format!("Call {interface} of {target}"),
         _ if interface == "events" => format!("Receive the events of {target}"),

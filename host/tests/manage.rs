@@ -1,17 +1,14 @@
 //! Step 10 (stage 11): S40 to S47 with the fixture `manager` (TECHNICAL 13.2).
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    collections::VecDeque,
-    fs,
-    future::Future,
-    path::{Path, PathBuf},
-    pin::Pin,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::collections::VecDeque;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use watane_host::watane_pkg::Grant;
 use watane_host::{
@@ -66,7 +63,7 @@ impl Confirm for AppRef {
     ) -> Pin<Box<dyn Future<Output = ManageOutcome> + Send>> {
         self.0.requests.lock().unwrap().push(request);
         let gate = self.0.gates.lock().unwrap().pop_front();
-        let guard = Guard(self.0.clone());
+        let guard = Guard(Arc::clone(&self.0));
         Box::pin(async move {
             let _guard = guard;
             match gate {
@@ -98,7 +95,7 @@ impl World {
         let host = Host::open(
             dir.path(),
             Mode::Home {
-                app: Some(Arc::new(AppRef(app.clone()))),
+                app: Some(Arc::new(AppRef(Arc::clone(&app)))),
             },
             Limits::default(),
         )
@@ -127,7 +124,7 @@ impl World {
         function: &str,
         args: Value,
     ) -> Result<Value, watane_host::CallError> {
-        let host = self.host.clone();
+        let host = Arc::clone(&self.host);
         let who = local(who);
         let function = function.to_owned();
         std::thread::Builder::new()
@@ -401,8 +398,8 @@ fn ac3_s42_a_request_is_pending_then_decided_by_the_app() {
         assert_eq!(requests[0].by, local("manager"));
         assert!(
             matches!(&requests[0].ask, Ask::Grant { local: l, grant: Grant::Call { .. } } if l == &local("recs"))
-        );
-    }
+        )
+    };
     assert_eq!(w.state(&id), json!("pending"));
     gate.send(ManageOutcome::Approved).unwrap();
     w.wait_state(&id, json!("approved"));
@@ -569,7 +566,7 @@ fn ac8_s47_a_preview_refuses_requests_but_reduces() {
     host.install_folders(&[fixture("manager"), fixture("counter")], 0)
         .unwrap();
     let call = |function: &'static str, args: Value| {
-        let host = host.clone();
+        let host = Arc::clone(&host);
         std::thread::Builder::new()
             .stack_size(16 << 20)
             .spawn(move || host.call(&Caller::Page, &local("manager"), function, args))
@@ -637,10 +634,8 @@ fn ac8_s47_harness_fakes_and_records() {
         json!({"ok":"r2"})
     );
     // A failed call records nothing and takes no number.
-    assert!(
-        h.call("api.disable-then-fail", json!({"local":"x"}))
-            .is_err()
-    );
+    h.call("api.disable-then-fail", json!({"local":"x"}))
+        .unwrap_err();
     assert_eq!(
         h.call("api.request-update", json!({"local":"x"}))
             .unwrap()
@@ -689,7 +684,7 @@ fn ac8_s47_a_served_manager_hears_catalog_after_a_disable() {
             .await
             .unwrap();
         assert_eq!(response.status(), 200);
-        let host = w.host.clone();
+        let host = Arc::clone(&w.host);
         let disabler = tokio::task::spawn_blocking(move || {
             std::thread::Builder::new()
                 .stack_size(16 << 20)
@@ -771,12 +766,12 @@ fn ac4_s43_a_manager_install_is_checked_again_before_the_commit() {
     let host = Host::open(
         dir.path(),
         Mode::Home {
-            app: Some(app.clone()),
+            app: Some(Arc::<Revoker>::clone(&app)),
         },
         Limits::default(),
     )
     .unwrap();
-    app.0.set(host.clone()).ok().unwrap();
+    app.0.set(Arc::clone(&host)).ok().unwrap();
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let plan = host
         .plan(vec![

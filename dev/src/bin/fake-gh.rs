@@ -1,9 +1,7 @@
 //! The GitHub stand-in: all repositories are local bare git repositories.
-use std::{
-    env, fs,
-    path::PathBuf,
-    process::{Command, ExitCode},
-};
+use std::path::PathBuf;
+use std::process::{Command, ExitCode};
+use std::{env, fs};
 fn run(args: &[String]) -> Result<(), (u8, String)> {
     let root =
         PathBuf::from(env::var_os("FAKE_GH_ROOT").ok_or((2, "FAKE_GH_ROOT is not set".into()))?);
@@ -74,11 +72,19 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             }
             let path = owner.join(&name[5..]);
             git_output(&["clone", "-q", "--bare"], &[&source, &path])?;
-            let branch = git_output(&["-C", path.to_str().unwrap(), "symbolic-ref", "HEAD"], &[])?;
+            let branch = git_output(
+                &[
+                    "-C",
+                    path.to_str().expect("test paths are UTF-8"),
+                    "symbolic-ref",
+                    "HEAD",
+                ],
+                &[],
+            )?;
             let branches = git_output(
                 &[
                     "-C",
-                    path.to_str().unwrap(),
+                    path.to_str().expect("test paths are UTF-8"),
                     "for-each-ref",
                     "--format=%(refname)",
                     "refs/heads",
@@ -87,7 +93,13 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             )?;
             for other in branches.lines().filter(|b| *b != branch.trim()) {
                 git_output(
-                    &["-C", path.to_str().unwrap(), "update-ref", "-d", other],
+                    &[
+                        "-C",
+                        path.to_str().expect("test paths are UTF-8"),
+                        "update-ref",
+                        "-d",
+                        other,
+                    ],
                     &[],
                 )?;
             }
@@ -101,7 +113,7 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             git_output(
                 &[
                     "-C",
-                    path.to_str().unwrap(),
+                    path.to_str().expect("test paths are UTF-8"),
                     "show-ref",
                     "--verify",
                     &reference,
@@ -111,7 +123,7 @@ fn run(args: &[String]) -> Result<(), (u8, String)> {
             git_output(
                 &[
                     "-C",
-                    path.to_str().unwrap(),
+                    path.to_str().expect("test paths are UTF-8"),
                     "symbolic-ref",
                     "HEAD",
                     &reference,

@@ -1,8 +1,8 @@
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_pkg::{Mod, ModError, PublisherKey, Rule, add_provider};
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

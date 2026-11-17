@@ -1,4 +1,8 @@
-use crate::*;
+use crate::{
+    ChannelView, Dist, DistError, Fetched, Link, Outcome, Package, PackageError, PackageId,
+    PublicKey, RefreshReport, ReleaseInfo, ReleaseRef, Status, http, index, site, view,
+};
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 impl Dist {
@@ -56,13 +60,13 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         let view = self.channel(&key)?;
         Self::check_channel(&view)?;
         let record = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
             .cloned();
         let stored = view.releases.iter().any(|r| r.reference == *reference);
@@ -196,7 +200,7 @@ impl Dist {
         let records = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .clone();
         let mut channels: Vec<_> = self.identity().into_iter().collect();
         channels.extend(consumer.copied());
@@ -345,12 +349,12 @@ impl Dist {
         let _guard = self
             .read_mutex
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         Self::check_channel(&self.channel(&key)?)?;
         let record = self
             .follows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
             .cloned();
         let mut base = (Some(key) != self.identity()).then(|| link.base().to_owned());
@@ -390,7 +394,7 @@ impl Dist {
             let followed = self
                 .follows
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .expect("lock poisoned: another thread panicked while holding it")
                 .contains_key(&link.channel());
             if followed {
                 if !self.learn_link_base(link)? {
@@ -413,6 +417,9 @@ impl Dist {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Confirm, Decision, Options, PublisherKey, Release, ReleaseError, SignRequest};
+    use std::path::Path;
+    use std::sync::Arc;
     struct NoSign;
     impl Confirm for NoSign {
         fn confirm(&self, _: &SignRequest) -> Decision {

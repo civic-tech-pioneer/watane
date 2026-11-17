@@ -1,5 +1,5 @@
-use crate::*;
-use std::time::Instant;
+use crate::{Dist, DistError, Entry, PublicKey};
+use std::time::{Duration, Instant};
 
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(250), Duration::from_millis(500)];
 

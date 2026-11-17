@@ -1,5 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{fs, path::Path, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
     let o = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .current_dir(dir)

@@ -1,20 +1,15 @@
 //! `watane-node`: a home with no window and no identity that joins the participant's
 //! machines (node TECHNICAL 6).
-use std::{
-    error::Error,
-    io::{BufRead, IsTerminal, Write},
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    process::ExitCode,
-    sync::Arc,
-    task::Poll,
-};
-use watane_node::{
-    DistHoldings, Machine, Node, NodeError, Options,
-    dist::DistError,
-    net::{DeviceList, Event, Net, NetError, NodeKey, PairCode, Role},
-    words,
-};
+use std::error::Error;
+use std::io::{BufRead, IsTerminal, Write};
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::sync::Arc;
+use std::task::Poll;
+use watane_node::dist::DistError;
+use watane_node::net::{DeviceList, Event, Net, NetError, NodeKey, PairCode, Role};
+use watane_node::{DistHoldings, Machine, Node, NodeError, Options, words};
 
 const USAGE: &str = "usage:
   watane-node --home <dir> join [--replace] [--bind <addr:port>] <code>
@@ -753,8 +748,8 @@ mod tests {
             parse(&args("--home h status"), env).unwrap().home,
             PathBuf::from("h")
         );
-        assert!(parse(&args("status"), None).is_err());
-        assert!(parse(&args("status"), Some(String::new())).is_err());
+        parse(&args("status"), None).unwrap_err();
+        parse(&args("status"), Some(String::new())).unwrap_err();
     }
 
     #[test]

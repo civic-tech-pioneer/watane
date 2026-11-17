@@ -1,7 +1,15 @@
 #![cfg(feature = "driver")]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "tests may catch panics and share lock-only mutexes that guard no data"
+)]
+
 mod support;
 use serde_json::json;
-use support::{driver::App, journey::*, manage::*, publish::*};
+use support::driver::App;
+use support::journey::*;
+use support::manage::*;
+use support::publish::*;
 static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]

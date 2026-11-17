@@ -1,9 +1,9 @@
-use crate::{
-    Deps, Mod, ModError, PublisherKey, Rule,
-    folder::{invalid, io, read_file},
-    open::{self, Dir, Kind},
-};
-use std::{collections::BTreeMap, io::ErrorKind, path::Path};
+use crate::folder::{invalid, io, read_file};
+use crate::open::{self, Dir, Kind};
+use crate::{Deps, Mod, ModError, PublisherKey, Rule};
+use std::collections::BTreeMap;
+use std::io::ErrorKind;
+use std::path::Path;
 
 type Files = BTreeMap<String, Vec<u8>>;
 const NOT_A_DIRECTORY: &str = "expected a directory without symbolic links";
@@ -158,9 +158,11 @@ pub(crate) mod hook {
 }
 
 #[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used, reason = "tests may panic")]
 mod tests {
     use super::*;
-    use std::{fs, os::unix::fs::symlink};
+    use std::fs;
+    use std::os::unix::fs::symlink;
 
     fn copy(from: &Path, to: &Path) {
         fs::create_dir_all(to).unwrap();

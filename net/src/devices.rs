@@ -2,12 +2,10 @@
 //! verify only. The node key signs nothing else (AGENTS rule 5): there is
 //! no general `sign`.
 
-use crate::{
-    Role,
-    cbor::{self, Item, Reader},
-    error::NetError,
-    key::{NodeKey, public_of},
-};
+use crate::Role;
+use crate::cbor::{self, Item, Reader};
+use crate::error::NetError;
+use crate::key::{NodeKey, public_of};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 
 const PREFIX: &[u8] = b"watane/devices/1\0";

@@ -1,6 +1,12 @@
-use std::{fs, path::Path};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::fs;
+use std::path::Path;
 use watane_pkg::*;
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
 #[path = "support/release.rs"]
 mod support;
 

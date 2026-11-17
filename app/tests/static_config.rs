@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
 use std::path::Path;
 fn root() -> &'static Path {
@@ -183,11 +185,11 @@ fn ac9_release_refuses_driver() {
 #[test]
 fn ac1_home_and_port_default_and_port_is_validated() {
     use watane_app::Config;
-    // The only test in this binary that reads these variables.
+    // SAFETY: this is the only test in this binary that reads or writes these variables.
     unsafe {
         std::env::remove_var("WATANE_PORT");
-        std::env::set_var("WATANE_HOME", "from-env");
-    }
+        std::env::set_var("WATANE_HOME", "from-env")
+    };
     let config = Config::from_args([].into_iter()).unwrap();
     assert_eq!(config.home, Path::new("from-env"));
     assert_eq!(config.port, watane_host::DEFAULT_PORT);
@@ -202,14 +204,17 @@ fn ac1_home_and_port_default_and_port_is_validated() {
         .to_string()
         .contains("bad argument")
     );
+    // SAFETY: as above.
     unsafe { std::env::set_var("WATANE_PORT", "4242") };
     let config = Config::from_args(["--home", "example"].map(Into::into).into_iter()).unwrap();
     assert_eq!(config.home, Path::new("example"));
     assert_eq!(config.port, 4242);
     let config = Config::from_args(["--port", "0"].map(Into::into).into_iter()).unwrap();
     assert_eq!(config.port, 0);
+    // SAFETY: as above.
     unsafe { std::env::set_var("WATANE_PORT", "nope") };
-    assert!(Config::from_args([].into_iter()).is_err());
+    Config::from_args([].into_iter()).unwrap_err();
+    // SAFETY: as above.
     unsafe {
         std::env::remove_var("WATANE_PORT");
         std::env::remove_var("WATANE_HOME");

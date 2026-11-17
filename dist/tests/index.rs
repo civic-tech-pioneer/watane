@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use std::sync::Arc;
 use support::*;
@@ -29,7 +31,12 @@ fn ac4_own_listing_refuse_and_requests() {
         Decision::Approve,
         Decision::Approve,
     ]));
-    let ivy = Dist::open(i.path(), confirm.clone(), fast_options()).unwrap();
+    let ivy = Dist::open(
+        i.path(),
+        Arc::<RecordingConfirm>::clone(&confirm),
+        fast_options(),
+    )
+    .unwrap();
     assert!(matches!(ivy.list(&link, "books"), Err(DistError::Refused)));
     assert_eq!(ivy.own().unwrap().head, None);
     assert_eq!(confirm.requests.lock().unwrap().len(), 1);
@@ -103,7 +110,12 @@ fn ac4_own_listing_invalid_before_confirm() {
         Decision::Approve,
         Decision::Approve,
     ]));
-    let ivy = Dist::open(i.path(), confirm.clone(), fast_options()).unwrap();
+    let ivy = Dist::open(
+        i.path(),
+        Arc::<RecordingConfirm>::clone(&confirm),
+        fast_options(),
+    )
+    .unwrap();
     let slug = "reading-list".parse().unwrap();
     let link = Link::new(alice.identity().unwrap(), &host.url, Some(&slug)).unwrap();
     let channel = Link::new(alice.identity().unwrap(), &host.url, None).unwrap();
@@ -195,7 +207,12 @@ fn ac4_own_listing_invalid_before_confirm() {
     alice.withdraw(&release.info.reference, "gone").unwrap();
     let k = tempfile::tempdir().unwrap();
     let no = Arc::new(RecordingConfirm::new([]));
-    let other = Dist::open(k.path(), no.clone(), fast_options()).unwrap();
+    let other = Dist::open(
+        k.path(),
+        Arc::<RecordingConfirm>::clone(&no),
+        fast_options(),
+    )
+    .unwrap();
     assert!(matches!(
         other.list(&link, ""),
         Err(DistError::NoRelease { .. })
@@ -366,7 +383,7 @@ fn ac1_index_choose() {
     let down_link = down.link();
     drop(down.host);
     let before = std::fs::read(carol.dir.path().join("dist/follows.json")).unwrap();
-    assert!(carol.dist.choose_index(&down_link).is_err());
+    carol.dist.choose_index(&down_link).unwrap_err();
     assert_eq!(
         std::fs::read(carol.dir.path().join("dist/follows.json")).unwrap(),
         before

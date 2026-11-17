@@ -1,12 +1,12 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::{Read, Write},
-    net::TcpStream,
-    path::PathBuf,
-    process::Command,
-    time::Duration,
-};
+use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::path::PathBuf;
+use std::process::Command;
+use std::time::Duration;
 
 struct Journey {
     temp: tempfile::TempDir,
@@ -229,6 +229,6 @@ watane.on(() => read().catch(fail));
     );
     let stopped = j.run(&["serve", "--stop"], 0);
     assert_eq!(stopped["result"]["stopped"], true);
-    assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+    TcpStream::connect(("127.0.0.1", port)).unwrap_err();
     assert!(!PathBuf::from(first["home"].as_str().unwrap()).exists());
 }

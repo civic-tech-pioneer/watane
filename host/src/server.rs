@@ -1,10 +1,15 @@
 use crate::{Host, HostError, LocalName, Ready, ReadyMod, RunInfo, api, home, pages};
-use axum::{Router, body::Body, extract::State, http::Request, response::Response};
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
-use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
+use axum::Router;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::Request;
+use axum::response::Response;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use tokio::net::TcpListener;
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
 #[derive(Clone)]
 pub(crate) struct ServerState {
@@ -77,11 +82,11 @@ impl Host {
         let (shutdown, rx) = watch::channel(false);
         let (finished_tx, finished) = watch::channel(());
         let host = Arc::new(ServingHost {
-            host: self.clone(),
+            host: Arc::clone(self),
             _finished: finished_tx,
         });
         let api_state = api::ApiState {
-            host: host.clone(),
+            host: Arc::clone(&host),
             port,
         };
         use axum::routing::MethodFilter as M;
@@ -137,7 +142,7 @@ impl Host {
         self.port.store(port, Ordering::Release);
         Ok(Served {
             port,
-            host: self.clone(),
+            host: Arc::clone(self),
             shutdown,
             tasks,
             finished,
@@ -160,7 +165,7 @@ impl Served {
             .host
             .catalog
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .expect("lock poisoned: another thread panicked while holding it");
         Ready {
             watane: 1,
             mode: self.host.home.mode.as_str().into(),

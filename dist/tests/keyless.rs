@@ -1,5 +1,9 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::Arc;
 use support::*;
 use watane_dist::*;
 fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
@@ -67,7 +71,12 @@ fn ac1_keyless_rejects_own_paths_without_changes() {
     // Retain a recording Confirm while exercising the same guards after dropping the key.
     let home = tempfile::tempdir().unwrap();
     let confirm = Arc::new(RecordingConfirm::default());
-    let d = Dist::open(home.path(), confirm.clone(), fast_options()).unwrap();
+    let d = Dist::open(
+        home.path(),
+        Arc::<RecordingConfirm>::clone(&confirm),
+        fast_options(),
+    )
+    .unwrap();
     d.drop_identity().unwrap();
     assert_keyless_own_paths(&d, home.path());
     assert!(confirm.requests.lock().unwrap().is_empty());

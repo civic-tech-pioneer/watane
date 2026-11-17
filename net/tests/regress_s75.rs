@@ -1,6 +1,10 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 
-use std::{collections::BTreeMap, fs, time::Duration};
+use std::collections::BTreeMap;
+use std::fs;
+use std::time::Duration;
 use support::*;
 use watane_net::{Limits, Query, Role};
 

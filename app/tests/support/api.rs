@@ -1,7 +1,7 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 pub struct Recording {
     pub requests: Mutex<Vec<watane_dist::SignRequest>>,
     pub approve_list: bool,
@@ -51,7 +51,7 @@ impl Site {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/", listener.local_addr().unwrap());
         let hits = Arc::new(AtomicUsize::new(0));
-        let count = hits.clone();
+        let count = Arc::clone(&hits);
         let router = axum::Router::new()
             .fallback_service(tower_http::services::ServeDir::new(dir))
             .layer(axum::middleware::from_fn(

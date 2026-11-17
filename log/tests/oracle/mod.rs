@@ -1,4 +1,9 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by several test binaries, each using only part of it"
+)]
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 pub const SEED: [u8; 32] =
     hex_array("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
 pub const PUBLIC: [u8; 32] =

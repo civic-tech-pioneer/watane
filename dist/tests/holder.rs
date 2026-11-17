@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
 use support::*;
 use watane_dist::*;
@@ -59,7 +61,7 @@ fn ac3_holder_stored_bytes_and_kept_record_survive() {
     assert!(d.channel(&key).unwrap().kept);
     let mut changed = expected[0].bytes().to_vec();
     changed[10] ^= 1;
-    assert!(Entry::decode(&changed).is_err());
+    Entry::decode(&changed).unwrap_err();
     bob.fetch(&published.info.reference).unwrap();
     assert!(bob.package_file(&published.info.release.package).is_some());
     alice.withdraw(&published.info.reference, "ended").unwrap();
@@ -272,10 +274,8 @@ fn ac8_holder_search_stored_and_kept_refresh() {
 }
 #[test]
 fn ac6_holder_returns_while_refresh_waits_on_host() {
-    use std::{
-        sync::{Arc, mpsc},
-        time::Duration,
-    };
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
     let a = tempfile::tempdir().unwrap();
     let alice = open(a.path());
     alice.set_name("Alice").unwrap();
@@ -311,11 +311,11 @@ fn ac6_holder_returns_while_refresh_waits_on_host() {
         let _ = request.respond(tiny_http::Response::from_data(bytes));
     });
     d.follow(&Link::new(key, &url, None).unwrap()).unwrap();
-    let reader = d.clone();
+    let reader = Arc::clone(&d);
     let refresh = std::thread::spawn(move || reader.refresh());
     blocked_rx.recv_timeout(Duration::from_secs(2)).unwrap();
     let (tx, rx) = mpsc::channel();
-    let holder = d.clone();
+    let holder = Arc::clone(&d);
     let holder_thread = std::thread::spawn(move || {
         let start = std::time::Instant::now();
         holder.heads(None).unwrap();
@@ -364,7 +364,7 @@ fn ac3_holder_fork_proof_and_rejected_batch() {
     assert!(!h.path().join("dist/follows.json").exists());
     let mut bad = one.bytes().to_vec();
     *bad.last_mut().unwrap() ^= 1;
-    assert!(Entry::decode(&bad).is_err());
+    Entry::decode(&bad).unwrap_err();
     assert!(d.entries(&key, 0, 10, 10000).unwrap().is_empty());
     assert!(matches!(
         d.ingest(&key, vec![zero, one.clone()], Reason::Kept),
@@ -395,8 +395,8 @@ fn ac5_holder_concurrent_package_writes() {
     let barrier = Arc::new(Barrier::new(8));
     let workers: Vec<_> = (0..8)
         .map(|_| {
-            let d = d.clone();
-            let barrier = barrier.clone();
+            let d = Arc::clone(&d);
+            let barrier = Arc::clone(&barrier);
             let id = p.info.release.package.clone();
             let file = alice.site_dir().join(format!("packages/{id}"));
             std::thread::spawn(move || {
@@ -444,7 +444,7 @@ fn ac1_ac2_ac3_failed_kept_ingest_leaves_no_record() {
     // that stores nothing: an empty list.
     let mut changed = all[0].bytes().to_vec();
     changed[10] ^= 1;
-    assert!(Entry::decode(&changed).is_err());
+    Entry::decode(&changed).unwrap_err();
     assert!(matches!(
         d.ingest(&key, Vec::new(), Reason::Kept),
         Ingested::Failed(_)

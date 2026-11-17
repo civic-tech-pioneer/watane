@@ -1,9 +1,8 @@
-use crate::{
-    HttpHost, ModError, ReleaseRef, Rule,
-    folder::{invalid, read_file},
-};
+use crate::folder::{invalid, read_file};
+use crate::{HttpHost, ModError, ReleaseRef, Rule};
 use serde::Deserialize;
-use std::{collections::BTreeSet, path::Path};
+use std::collections::BTreeSet;
+use std::path::Path;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,7 +132,6 @@ pub(crate) fn read(dir: &Path) -> Result<Meta, ModError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ModError, Rule};
     use std::fs;
 
     #[test]

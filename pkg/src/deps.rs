@@ -1,9 +1,9 @@
-use crate::{
-    ModError, PublisherKey, Rule, Slug,
-    folder::{invalid, io, read_file},
-};
+use crate::folder::{invalid, io, read_file};
+use crate::{ModError, PublisherKey, Rule, Slug};
 use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
-use std::{collections::BTreeMap, fmt, fs, path::Path};
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::{fmt, fs};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Deps(BTreeMap<Slug, Option<PublisherKey>>);
@@ -13,8 +13,8 @@ impl<'de> Deserialize<'de> for Deps {
         struct Members;
         impl<'de> Visitor<'de> for Members {
             type Value = Deps;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("an object of at most 32 mods:<slug> providers")
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an object of at most 32 mods:<slug> providers")
             }
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Deps, M::Error> {
                 let mut deps = Deps::default();

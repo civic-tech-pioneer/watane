@@ -1,4 +1,5 @@
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
+use std::str::FromStr;
 use watane_pkg::*;
 
 fn grammar<T: FromStr + Display>(valid: &[&str], invalid: &[&str]) {
@@ -68,11 +69,9 @@ fn ac1_names() {
             "mods:a/b@0.1.0@1.0.0",
         ],
     );
-    assert!(
-        format!("mods:{}/b@0.1.0", "a".repeat(120))
-            .parse::<InterfaceName>()
-            .is_err()
-    );
+    format!("mods:{}/b@0.1.0", "a".repeat(120))
+        .parse::<InterfaceName>()
+        .unwrap_err();
     grammar::<HttpHost>(
         &[
             "api.openlibrary.org",
@@ -100,18 +99,16 @@ fn ac1_names() {
             "a:80:90",
         ],
     );
-    assert!("a".repeat(64).parse::<HttpHost>().is_err());
-    assert!(
-        format!(
-            "{}.{}.{}.{}",
-            "a".repeat(63),
-            "b".repeat(63),
-            "c".repeat(63),
-            "d".repeat(63)
-        )
-        .parse::<HttpHost>()
-        .is_err()
-    );
+    "a".repeat(64).parse::<HttpHost>().unwrap_err();
+    format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(63)
+    )
+    .parse::<HttpHost>()
+    .unwrap_err();
     grammar::<PackageId>(
         &["0866e9df433265eaf0d959c589d82f1c2020d5b07faf7a530b012ec9f62ff87b"],
         &[

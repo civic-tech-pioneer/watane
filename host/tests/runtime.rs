@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 #[test]
 fn ac1_host_wit_is_the_canonical_package() {
     const EXPECTED: &str = "package watane:host@0.1.0;\n\n/// Private storage of this mod. The writes of a call become visible to\n/// other calls only when the call succeeds.\ninterface state {\n  get: func(key: string) -> option<list<u8>>;\n  put: func(key: string, value: list<u8>);\n  delete: func(key: string);\n}\n\n/// Who made the current call: \"page\", \"agent:<handle>\" or \"mod:<local name>\".\ninterface caller {\n  who: func() -> string;\n}\n\n/// Step 10: the management of mods (W35). Importing it is the grant\n/// `manage`. Reads and reductions act when the call succeeds; anything\n/// more is a request that the participant decides in the consent view.\n/// A mod is named by its local name.\ninterface manage {\n  /// A grant as pkg names it. `provider` is \"<publisher key>/<slug>\" or \"local/<slug>\".\n  record provided { %interface: string, provider: string }\n  variant grant { storage, http(string), call(provided), subscribe(provided), manage }\n  record grant-state { grant: grant, granted: bool }\n  enum link-kind { call, subscribe }\n  /// `provider` is the local name of the linked mod; none while unbound.\n  record link { kind: link-kind, %interface: string, provider: option<string>, provider-interface: option<string> }\n  /// Identities: the consumer, the provider that deps.json names, the picked mod.\n  record bind { consumer: string, provider: string, to: string }\n  record mod-info {\n    local: string, identity: string, slug: string, name: string, summary: string,\n    version: string, publisher: option<string>, release: option<string>, origin: option<string>,\n    enabled: bool, has-page: bool, has-logic: bool,\n    grants: list<grant-state>, links: list<link>, binds: list<bind>, error: option<string>,\n  }\n  /// `code`: bad_request, no_mod, not_declared, request_open or refused.\n  record failure { code: string, message: string }\n  variant request-state { pending, approved, denied, failed(string) }\n\n  /// Every installed mod, by local name.\n  mods: func() -> list<mod-info>;\n  /// Make things do less, at once.\n  disable: func(local: string) -> result<_, failure>;\n  withdraw: func(local: string, grant: grant) -> result<_, failure>;\n  close-page: func(local: string) -> result<_, failure>;\n  /// Open or focus the page of a mod (Q31). Gives no authority.\n  open-page: func(local: string) -> result<_, failure>;\n  /// Ask the participant. Each returns the id of the request.\n  request-install: func(release: string, link: option<string>) -> result<string, failure>;\n  request-update: func(local: string) -> result<string, failure>;\n  request-enable: func(local: string) -> result<string, failure>;\n  request-grant: func(local: string, grant: grant) -> result<string, failure>;\n  request-remove: func(local: string, delete-data: bool) -> result<string, failure>;\n  /// The state of a request of this mod; none for an unknown id.\n  request: func(id: string) -> option<request-state>;\n}\n";
@@ -5,10 +7,8 @@ fn ac1_host_wit_is_the_canonical_package() {
     assert_eq!(std::fs::read("wit/host.wit").unwrap(), EXPECTED.as_bytes());
 }
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
+use std::path::{Path, PathBuf};
 use watane_host::{Host, Limits};
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -80,10 +80,8 @@ fn ac2_install_checks_staged_component_and_grants_declarations() {
 }
 
 use serde_json::{Value, json};
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use watane_host::{CallCode, CallError, Caller, Limit, LocalName};
 async fn call(
     host: &Arc<Host>,
@@ -636,7 +634,7 @@ fn ac1_validator_busy_mod_does_not_stall_another_mod() {
         &["hog", "counter"],
     );
     let (started_tx, started_rx) = std::sync::mpsc::channel();
-    let spinner = host.clone();
+    let spinner = Arc::clone(&host);
     let thread = std::thread::Builder::new()
         .stack_size(16 << 20)
         .spawn(move || {
@@ -651,7 +649,7 @@ fn ac1_validator_busy_mod_does_not_stall_another_mod() {
         .unwrap();
     started_rx.recv().unwrap();
     std::thread::sleep(Duration::from_millis(200));
-    let reader = host.clone();
+    let reader = Arc::clone(&host);
     let read = std::thread::Builder::new()
         .stack_size(16 << 20)
         .spawn(move || {

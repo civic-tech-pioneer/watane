@@ -3,14 +3,12 @@ mod json;
 pub(crate) mod limits;
 mod linker;
 use crate::{CallCode, CallError, HostError};
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
-use wasmtime::{
-    Config, Engine,
-    component::{
-        Component, InstancePre,
-        types::{ComponentFunc, ComponentItem},
-    },
-};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Instant;
+use wasmtime::component::types::{ComponentFunc, ComponentItem};
+use wasmtime::component::{Component, InstancePre};
+use wasmtime::{Config, Engine};
 use watane_pkg::Mod;
 
 pub(crate) struct Ctx {
@@ -246,10 +244,8 @@ mod tests {
     #[test]
     fn ac6_wall_time_bounds_waiting_for_the_mod_lock() {
         use crate::{CallCode, Caller, Host, Limit, Limits, LocalName};
-        use std::{
-            sync::{Arc, Mutex, mpsc},
-            time::Duration,
-        };
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
         let home = tempfile::tempdir().unwrap();
         let host = Host::open(
             home.path(),
@@ -269,8 +265,10 @@ mod tests {
         host.call_locks
             .lock()
             .unwrap()
-            .insert("local/hog".into(), lock.clone());
-        let guard = lock.lock().unwrap();
+            .insert("local/hog".into(), Arc::clone(&lock));
+        let guard = lock
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let (tx, rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .stack_size(16 << 20)

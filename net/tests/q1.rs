@@ -1,26 +1,20 @@
 //! Net Q1, against the pinned releases (iroh 1.4.1, iroh-blobs 0.105.0,
 //! iroh-gossip 0.102.0): a file added by reference leaves no second copy, and
 //! a wrapper around a protocol handler admits a connection by its remote key.
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
+
 mod support;
-use iroh::{
-    Endpoint, EndpointAddr, EndpointId, TransportAddr,
-    endpoint::Connection,
-    protocol::{AcceptError, ProtocolHandler, Router},
-};
-use iroh_blobs::{
-    BlobFormat, BlobsProtocol,
-    api::blobs::{AddPathOptions, ImportMode},
-    store::fs::FsStore,
-};
+use iroh::endpoint::Connection;
+use iroh::protocol::{AcceptError, ProtocolHandler, Router};
+use iroh::{Endpoint, EndpointAddr, EndpointId, TransportAddr};
+use iroh_blobs::api::blobs::{AddPathOptions, ImportMode};
+use iroh_blobs::store::fs::FsStore;
+use iroh_blobs::{BlobFormat, BlobsProtocol};
 use iroh_gossip::net::Gossip;
-use std::{
-    collections::HashSet,
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path)
@@ -66,7 +60,7 @@ async fn q1a_blobs_by_reference_keep_no_second_copy() {
     assert_eq!(tag.hash.as_bytes(), blake3::hash(&data).as_bytes());
     // the bytes read back equal the file
     let back = store.blobs().get_bytes(tag.hash).await.unwrap();
-    assert_eq!(&back[..], &data[..]);
+    assert_eq!(&*back, &*data);
     // and the store keeps only the BLAKE3 tree, not a second copy
     store.shutdown().await.unwrap();
     let size = dir_size(&store_dir);
@@ -134,7 +128,7 @@ async fn q1b_a_wrapper_admits_a_connection_by_its_remote_key() {
         Gate {
             inner,
             allowed: HashSet::from([allowed]),
-            passed: passed.clone(),
+            passed: Arc::clone(passed),
         }
     }
     // the same wrapper type around Gossip compiles, and sits on the same router
@@ -156,7 +150,7 @@ async fn q1b_a_wrapper_admits_a_connection_by_its_remote_key() {
     let got = iroh_blobs::get::request::get_blob(conn, hash)
         .await
         .unwrap();
-    assert_eq!(&got[..], &data[..]);
+    assert_eq!(&*got, &*data);
     assert_eq!(passed.load(Ordering::SeqCst), 1);
 
     // a refused node's download fails, and the inner handler never sees it
