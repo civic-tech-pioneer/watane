@@ -50,8 +50,8 @@ parallel worktrees, and Opus reviewing and merging each one.
 | The skeptic's checklist (new mechanism, weaker boundary, second copy of a concept, abstraction with one user) | In the validator's fit and simplicity checks |
 | The "tripwire": stop when a fix needs a new mechanism | Implementer stops on costly-to-undo choices |
 | One line per friction; act at three | `Friction` in `PLAN.md` |
-| The adversary (found about 8 security defects) | Not yet. Add one run per step that touches a boundary (host sandbox, consent, signatures) |
-| Mutation tests (they killed real mutants) | Weekly on `pkg` (`.github/workflows/mutants.yml`, about 20-30 min). Add `cargo mutants --in-diff` (about 1 min) to the validator if weak tests slip through |
+| The adversary (found about 8 security defects) | `.claude/agents/adversary.md`, once per slice that touches a section 6 boundary (foreman skill, section 3) |
+| Mutation tests (they killed real mutants) | `cargo mutants --in-diff` on each task's diff, in the validator; weekly on all of `pkg` (`.github/workflows/mutants.yml`) |
 | Seatbelt profile for Sol | Not needed while watane has no iroh; Codex's own sandbox plus network and the cargo home |
 
 Dropped: OpenSpec, beads, the lineage checker, the gate, the council, the navigator, the tuner,
@@ -71,6 +71,8 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
        │    validator    Claude Opus 5.5                          .claude/agents/validator.md
        │       round 1: return findings -> Sol resumes the same session
        │       round 2+: fixes small things itself
+       ├─ adversary (Claude Opus 5.5) attacks the slice if it touches a security boundary
+       │    breach -> red test -> fix task, as for user-sim
        ├─ user-sim (Claude Opus 5.5) acts as the story's person on the real programs
        │    failure -> red regression test -> fix task (green, refactor) -> validator -> user-sim again
        └─ DELIVERED -> product owner merges --ff-only, removes the worktree, hands out the next slice
@@ -83,7 +85,9 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
 | `.claude/agents/validator.md` | Acceptance coverage, architectural fit, simplicity; fix or return |
 | `.claude/agents/user-sim.md` | Accepts a slice as its user; turns each failure into a red test |
 | `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback; then `check.sh` |
-| `factory/check.sh` | A task's tests outside Sol's sandbox: default, clippy, fmt, slow tests of touched files |
+| `factory/check.sh` | A task's tests outside Sol's sandbox: default, clippy, fmt, slow tests of touched files, `cargo deny` if `Cargo.lock` changed |
+| `factory/check-main.sh` | The whole workspace on `main` after each merge: build, tests, clippy, fmt, `cargo deny` (`deny.toml`) |
+| `.claude/agents/adversary.md` | Attacks a slice that touches a security boundary; each breach becomes a red test |
 | `factory/implementer.md` | Sol's standing instructions (test-first, fixed interface, report format) |
 | `.claude/agents/implementer.md` | Sonnet in Sol's place, for cloud foremen (no Codex there); same instructions |
 | `factory/cloud-setup.sh` | SessionStart hook: wasm target and vendor folder in a cloud container; no-op on the Mac |

@@ -10,7 +10,8 @@ You are the person in the slice's story, not a tester of internals. Input: the s
 1. Build the real programs (`cargo build` in each touched subsystem). Use them the way the
    story says: the CLI as a coding agent would call it, the page in a browser, the app with
    its test driver (`app` feature `driver`). Do not read the code first; read it only to
-   explain a failure.
+   explain a failure. First `export WATANE_HOME=$(mktemp -d)`: with no `--home`, `watane` and
+   the app open the person's real `~/.watane` (S58 created one on the human's Mac).
 2. Run no test suite: the foreman and validators did (`factory/README.md`, "Test pyramid").
    You prove the story on the real programs. Start the app hidden (`WATANE_DRIVER_SCREEN=hidden`,
    the default) unless the outcome is about focus or stacking; then use `front` once.

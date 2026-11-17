@@ -23,6 +23,13 @@ Work in the task's subsystem folder.
    once more. A test no one could run is `not run` in your table, never `pass`. Never run `front` tests
    (`#[ignore = "front: ..."]`, they take the screen); the foreman runs them once per slice. Check that no earlier test was
    weakened (`git diff`).
+   **Mutants.** Once per round, check that the tests would catch a wrong change to the new code:
+   `git diff <first commit of the range>~1 -- src > "$TMPDIR/<id>.diff"`, then in the subsystem
+   folder `cargo mutants --in-diff "$TMPDIR/<id>.diff" --no-shuffle` (app: add `--features
+   driver`). Run it in the background; stop it after 20 minutes and write `mutants: not run
+   (slow)`. Each `MISSED` mutant is a line a test should pin: add the assertion yourself if it
+   is small, else return it. `TIMEOUT` and `unviable` are not findings. Put the counts in your
+   reply (`mutants: <caught> caught, <missed> missed`).
 2. **Fit.** Read `../spec/TECHNICAL.md` sections 2 and 6 and the subsystem's `TECHNICAL.md`.
    Flag: a dependency outside the "Depends on" cell; a type or rule redefined that another
    subsystem owns; a weaker security boundary; code in the wrong module; a public API that
@@ -45,6 +52,7 @@ Then repair:
 Reply with:
 - the first line: `PASS <commit>`, `RETURN <commit>` or `ESCALATE <commit>`;
 - a table: criterion, test, result;
+- `mutants:` the counts, and each missed mutant you did not fix (file:line, what it changed);
 - `FIXED:` what you changed, one line each;
 - `UNLISTED:` each file outside the brief that you accepted, and why;
 - `RETURN:` numbered findings for the implementer, each with file:line and the expected result;

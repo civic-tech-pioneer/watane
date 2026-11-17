@@ -85,9 +85,35 @@ and by file, and fix the interface in both briefs' `## Interface` so neither wai
      of: split the task, raise the effort, or treat it as a question (section 4).
    - `ESCALATE`: section 4.
 
-## 3. Accept the slice
+## 3. Attack and accept the slice
 
-When every task passed, run the `user-sim` agent with the slice id and its outcomes.
+**The adversary rule.** When every task passed, decide whether the slice touches a security
+boundary. It does if any of these holds; check all three, do not judge "it is only a small change":
+- a brief has `Effort: high` (it decides something open at a boundary); or
+- the sketch or a brief names a row of `spec/TECHNICAL.md` section 6; or
+- `git diff --name-only main...slice/<id>` lists a file below, whatever the change in it:
+
+| Boundary (section 6) | Files |
+|---|---|
+| Sandbox, Linker | `host/src/runtime/` |
+| Origin, Broker, Toolset, Local API, Manager | `host/src/server.rs`, `api.rs`, `tools.rs`, `bus.rs`, `pages.rs`, `manage.rs`, `watane.js` |
+| Confirmation floor | `host/src/confirm.rs`, `pkg/src/grant.rs`, `app/src/confirm.rs`, `app/src/consent.rs`, `app/capabilities/` |
+| Builder | `dev/src/builder.rs`, `dev/src/allowlist.rs`, `dev/allowlist`, `dev/template/` |
+| Verification | `log/src/`, `dist/src/`, `pkg/src/package.rs`, `pkg/src/release.rs`, `pkg/src/folder.rs` |
+| Node | `net/src/` |
+
+If it does, run the `adversary` agent before user-sim, with the slice id, the branch, the
+boundaries that matched, and the base commit. If none holds, skip it and write `adversary: not
+run (no boundary)` in the report; never skip it for time.
+- `HELD`: go on to user-sim.
+- `BREACHED`: each red test becomes a fix task, exactly as for user-sim below. When they pass,
+  run the adversary once more on the fix commits only, with its earlier `HELD` list. The same
+  breach twice goes to section 4.
+- `RISK`: a section 4 question; a security boundary is the product owner's to decide.
+
+A file or boundary missing from the table: add it in the same commit as the code that made it.
+
+Then run the `user-sim` agent with the slice id and its outcomes.
 - `ACCEPTED`: go to section 5.
 - `REJECTED`: each red test becomes a fix task (`<slice>-fix<n>`, Effort usually `low` or
   `medium`; its acceptance is "the red test passes, nothing else changes"). Run section 2 on
@@ -118,6 +144,7 @@ product owner sees the turn end and needs nothing from it.
 2. Report to the product owner:
    - `DELIVERED <id>` and the branch;
    - what a person can now do (one line), and the user-sim result;
+   - the adversary result (`HELD`, the breaches fixed, or `not run (no boundary)`);
    - decisions you made, one line each;
    - friction: one line each, for anything in the process that got in the way;
    - Sol runs per task (from `factory/runs/ledger.jsonl`).

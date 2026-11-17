@@ -13,6 +13,8 @@ ID=$1 BASE=${2:-$(git -C "$W" merge-base HEAD main)} T=$F/tasks/$1.md  # no base
 SUB=$(sed -n 's/^Subsystem: *//p' "$T" | head -1)
 [ -n "$SUB" ] && [ -d "$W/$SUB" ] || { echo "no Subsystem in $T" >&2; exit 2; }
 mkdir -p "$R"; LOG=$R/$ID.check.log
+# Tests never touch the person's real home (S58 created ~/.watane on the Mac).
+WATANE_HOME=$(mktemp -d); export WATANE_HOME; trap 'rm -rf "$WATANE_HOME"' EXIT
 cd "$W/$SUB" || exit 2
 HEAD=$(git rev-parse --short HEAD); [ -n "$(git status --porcelain -- .)" ] && HEAD="$HEAD+dirty"
 FAILED=()
@@ -35,6 +37,8 @@ step clippy "${CLIPPY[@]}"
 step fmt cargo +nightly fmt --check  # nightly: rustfmt.toml sets nightly-only options
 # every source file opens with a `//!` line: what it is for, and its TECHNICAL section
 step moddoc sh -c 'r=0; for f in $(find src -name "*.rs"); do head -1 "$f" | grep -q "^//!" || { echo "no //! module doc: $f"; r=1; }; done; exit $r'
+# a new or changed dependency: licence, source and ban rules (deny.toml); advisories only on main
+[ -n "$(git diff --name-only "$BASE" -- "$W/Cargo.lock")" ] && step deny cargo deny check bans licenses sources
 for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/[^/]+\.rs$'); do
   p=$W/$f; [ -f "$p" ] || continue
   SLOW=$(names "$p" slow); [ -n "$SLOW" ] || continue
