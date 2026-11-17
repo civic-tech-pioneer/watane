@@ -1404,3 +1404,81 @@ required cargo test -p watane-app run stops at the existing pairing test
 (Failed to create netmon monitor); 111 unit tests pass. No window test ran,
 as required by the task execution instructions. External validation must run
 only driver look with --include-ignored for native layout coverage.
+
+
+### S85 — separate mod context key on Linux
+
+`open_mod` keeps `incognito(true)` and supplies the fixed context key
+`<home>/app/mod-webview-context`. Main and consent keep the default key.
+This prevents tauri-runtime-wry 2.12.3's once-per-key Linux protocol
+registration for an ephemeral mod from consuming the main window's
+`tauri://` handler. The builder comment records why the key is necessary.
+The Linux image also installs `lsof`, used by machines S28. No Rust
+dependency or test changed. The builder options live in TECHNICAL 5.1,
+not section 10 (which describes the driver); that owning list is updated.
+
+Linux filesystem check: a throwaway driver probe installed Desk, quit,
+restarted into mod-desk, opened Mods from the menu, observed
+`tauri://localhost/index.html#mods`, quit, and ran
+`ls -la /tmp/s85-context-home/app/mod-webview-context`. The listing was:
+
+```text
+WebKitCache/
+hsts-storage.sqlite  (12288 bytes)
+mediakeys/
+storage/
+```
+
+Thus AC1's expectation that nothing writes the key path is not true of
+this dependency stack (WebKitGTK 2.54.0, GLib 2.84.4, libsoup 3.6.5).
+Tauri constructs `WryWebContext::new(Some(path))` before Wry replaces it
+with `new_ephemeral()` for an incognito view (`webkitgtk/mod.rs:259`).
+The unused bookkeeping context creates these files; the mod's actual
+view still uses the ephemeral context. The unchanged Linux regression
+`gui_isolation::ac3_reopened_hostile_window_has_fresh_storage` also passes. No cleanup or change to the
+isolation boundary was added to disguise this observation. Acceptance
+of these bookkeeping files, or a different upstream solution, remains
+a question; the no-writes part of AC1 is unfulfilled.
+
+Validation: all four requested targeted Linux runner commands pass:
+manager::ac3_s39_menu_and_last_window_exit,
+manage::ac2_s44_disable_closes_page_and_restart_clears_notice,
+j10::ac3_journey_j10, machines::ac1_s28_off_by_default_and_publish.
+Buildx's default activity-file location is outside the sandbox; commands
+use `BUILDX_CONFIG=/tmp/watane-s85-buildx` without changing the runner.
+The initial manager run began before the edit but compiled against the
+live bind mount; it passed, so it is not claimed as a reproduced red run.
+The foreman's supplied failing Linux observations are the regression
+baseline. No new source-shape test was added (AC5).
+
+The single native `cargo test -p watane-app` run has 111 unit tests pass
+and the existing real-pairing test fail with `Failed to create netmon
+monitor`, as in S83/S84. Native driver/window tests were not run, per
+the task's sandbox instructions; manager, manage and j10 still require
+the external macOS GUI runner. Native all-target driver Clippy with
+`-D warnings` stops in unchanged sibling code: disallowed
+`PoisonError::into_inner` in log/src/lib.rs:169 and `catch_unwind` in
+pkg/src/component.rs:59 and pkg/src/world.rs:191. These were not changed
+or suppressed. `cargo fmt --check` passes (stable rustfmt warns about
+existing nightly-only configuration options).
+
+The one full Linux runner invocation exits 101: the default suite passes,
+then the driver suite stops at
+`look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`.
+Seventeen look tests pass; that test times out on the existing details-offer
+geometry assertion (right edge within 1 px, short button under half the row
+width, and the text and button overlapping vertically). Its expected text
+is `Version 2.0.0 asks to connect to example.org.` and the button is
+`Install 2.0.0…`. No assertion, skip, platform branch or layout code was
+changed. AC3's zero-failure full-suite requirement remains unmet.
+
+Native macOS: the one `cargo test -p watane-app` run reports 111 passing
+unit tests and one failure in
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`:
+`Failed to create netmon monitor`. The requested all-target driver clippy
+command fails in sibling code on disallowed methods: `PoisonError::into_inner`
+in log/src/lib.rs:169 and `catch_unwind` in pkg/src/component.rs:59 and
+pkg/src/world.rs:191. Those siblings were not edited. `cargo fmt --check`
+passes (stable rustfmt warns about existing nightly-only settings). Native
+manager/manage/j10 GUI tests were not run, per the task's sandbox execution
+instructions; they still require external macOS validation.

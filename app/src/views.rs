@@ -106,6 +106,9 @@ pub(crate) fn open_mod(
         .title(title)
         .inner_size(900., 680.)
         .incognito(true)
+        // tauri-runtime-wry registers Linux protocols once per data_directory key;
+        // keep ephemeral mod contexts separate from main/consent's default key.
+        .data_directory(app.state::<AppState>().home.join("app/mod-webview-context"))
         .disable_drag_drop_handler()
         .on_navigation(move |u| {
             let allowed = u.origin() == origin;

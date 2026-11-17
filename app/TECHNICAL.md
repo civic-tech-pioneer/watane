@@ -219,6 +219,7 @@ The app creates every window in code (`app.windows` is empty).
     `on_document_title_changed`.
   - `.incognito(true)`: a new non-persistent store for each window
     (APP-F-10; the colos probe showed one store per webview on macOS).
+  - `.data_directory(<home>/app/mod-webview-context)`: a separate context key, so tauri-runtime-wry's once-per-key Linux protocol registration does not consume main/consent's default key; mod storage stays ephemeral, though the unused bookkeeping context creates WebKit files there (NOTES S85).
   - `.on_navigation(|u| u.origin() == page.origin())`; record each refusal.
   - `.on_new_window(|_, _| NewWindowResponse::Deny)`; record it.
   - `.on_download(|_, _| false)`; record it.
