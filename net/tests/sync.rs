@@ -183,13 +183,16 @@ fn s5_alice_publishes_and_the_server_has_it_within_seconds() {
         server.holdings.stored_blobs.lock().unwrap().as_slice(),
         &[id]
     );
-    // no temp file is left in the home
-    let left: Vec<_> = std::fs::read_dir(server.dir.path().join("net"))
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
-        .collect();
-    assert!(left.is_empty(), "{left:?}");
+    // no temp file is left in the home; it goes just after the holder stores
+    // the package, on the fetch's thread, so wait for it rather than race it
+    let left = || -> Vec<_> {
+        std::fs::read_dir(server.dir.path().join("net"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect()
+    };
+    assert!(wait_for(5, || left().is_empty()), "{:?}", left());
 
     // forged hints: a seq above what the laptop has, then a head's seq with
     // an id that is not its head
