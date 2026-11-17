@@ -142,7 +142,8 @@ pub(crate) struct Core {
 }
 ```
 
-`<home>/app/` belongs to the app; host reserves it. It holds only `mark`, `main` (stage I, 5.4) (and `fetched/` in
+`<home>/app/` belongs to the app; host reserves it. It holds only `mark`, `main` (stage I, 5.4), `mod-webview-context/` (the mod
+views' context key, 5.1; WebKit may create files there) (and `fetched/` in
 step 5). dist keeps the site folder in `<home>/dist/site/`.
 
 ## 4. Grant words
