@@ -915,3 +915,38 @@ fn ac1_s86_header_and_resolve_errors_carry_location() {
         assert!(message.contains(&arrow), "{message}");
     }
 }
+
+#[test]
+fn adv_s86_wit_message_carries_no_control_characters() {
+    // Attack (Verification): WIT from another person's package. The S86 render
+    // copies the offending source line into the `wit` violation, so a control
+    // or bidi codepoint in that line reaches whoever displays the refusal raw
+    // (terminal escapes, a lone \r that overwrites the line, Trojan Source).
+    // Before S86 the message was the error kind alone, which escapes the char.
+    let mut found = Vec::new();
+    for line in [
+        "world hello { \u{1b}]0;owned\u{7}\u{1b}[2J }",
+        "world hello { @ }\r// looks fine",
+        "world hello { \u{202e}olleh dlrow }",
+    ] {
+        let dir = temporary("hello");
+        put(
+            dir.path(),
+            "wit/world.wit",
+            format!("package mods:hello@0.1.0;\n{line}\n"),
+        );
+        let message = wit_message(dir.path());
+        let bad: Vec<char> = message
+            .chars()
+            .filter(|&c| {
+                (c.is_control() && c != '\n')
+                    || ('\u{202a}'..='\u{202e}').contains(&c)
+                    || ('\u{2066}'..='\u{2069}').contains(&c)
+            })
+            .collect();
+        if !bad.is_empty() {
+            found.push(format!("raw {bad:?} in {message:?}"));
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}
