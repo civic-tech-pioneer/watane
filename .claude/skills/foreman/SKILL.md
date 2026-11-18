@@ -101,6 +101,7 @@ boundary. It does if any of these holds; check all three, do not judge "it is on
 | Builder | `dev/src/builder.rs`, `dev/src/allowlist.rs`, `dev/allowlist`, `dev/template/` |
 | Verification | `log/src/`, `dist/src/`, `pkg/src/package.rs`, `pkg/src/release.rs`, `pkg/src/folder.rs` |
 | Node | `net/src/` |
+| Install | `install/install.sh`, `install/package.sh`, `.github/workflows/release.yml` |
 
 If it does, run the `adversary` agent before user-sim, with the slice id, the branch, the
 boundaries that matched, and the base commit. If none holds, skip it and write `adversary: not
