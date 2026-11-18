@@ -1548,6 +1548,9 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
         "staging",
         "journal",
         "committed",
+        "commit_journal",
+        "remove",
+        "receipt_old",
         "stale",
     ] {
         let fx = Fx::new();
@@ -1557,13 +1560,17 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
                 &fx.share("watane/journal.42"),
                 &format!(
                     "{} {}\nmoved {}\n",
-                    if failure == "restore" { "old" } else { "new" },
+                    if matches!(failure, "restore" | "remove") {
+                        "old"
+                    } else {
+                        "new"
+                    },
                     fx.bin("watane").display(),
                     fx.bin("watane").display(),
                 ),
             );
         }
-        if failure != "committed" {
+        if !matches!(failure, "committed" | "commit_journal") {
             write_file(&fx.share("watane/receipt.new.42"), "pending");
         }
         match failure {
@@ -1588,7 +1595,16 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
                 write_file(&fx.bin("watane.new.42"), "staged");
                 fx.state_write("rm_fault", "fail\n*/bin/watane.new.42\n");
             }
-            "journal" => fx.state_write("rm_fault", "fail\n*/journal.42\n"),
+            "journal" | "commit_journal" => fx.state_write("rm_fault", "fail\n*/journal.42\n"),
+            "remove" => {
+                write_file(&fx.bin("watane"), "new");
+                write_file(&fx.bin("watane.old.42"), "old");
+                fx.state_write("rm_fault", "fail\n*/bin/watane\n");
+            }
+            "receipt_old" => {
+                write_file(&fx.share("watane/receipt.old.42"), "old");
+                fx.state_write("rm_fault", "fail\n*/receipt.old.42\n");
+            }
             "committed" => {
                 write_file(&fx.bin("watane.old.42"), "old");
                 fx.state_write("rm_fault", "fail\n*/bin/watane.old.42\n");
@@ -1607,8 +1623,15 @@ printf 'continued after recovery\n'
         fs::write(&fx.script, source).expect("recovery fixture");
         let out = fx.run(&[]);
         assert_eq!(out.code, 5, "{failure}: {out:?}");
+        let message = if failure == "stale" {
+            "watane install: could not recover stale install files"
+        } else {
+            "watane install: could not recover interrupted install (pid 42)"
+        };
+        assert!(out.stderr.contains(message), "{failure}: {out:?}");
         assert!(
-            out.stderr.contains("watane install: could not recover"),
+            out.stderr
+                .contains("Recovery stopped; fix the filesystem error and run this again."),
             "{failure}: {out:?}"
         );
         assert!(
