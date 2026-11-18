@@ -178,3 +178,57 @@ fn ac2_ctrl_c_in_staging_copy_has_no_cause() {
     assert!(!out.stderr.contains("watane install:"), "{out:?}");
     assert!(!fx.receipt().exists(), "{out:?}");
 }
+
+/// A fake `mv` first on the PATH: its body runs `rules` (a shell `case` on the arguments),
+/// and otherwise the real mv. `fire` sends INT to the whole group once (as Ctrl-C does) and
+/// exits 130, as a program that handles INT does.
+fn mv_fake(fx: &Fx, rules: &str) {
+    let real = which("mv");
+    let p = fx.fakes.join("mv");
+    fs::write(
+        &p,
+        format!(
+            "#!/bin/sh\nfire() {{ if [ ! -e \"$0.fired\" ]; then : >\"$0.fired\"; kill -s INT -- -\"$FAKE_INSTALL_PID\"; exit 130; fi; }}\n{rules}\nexec {} \"$@\"\n",
+            real.display()
+        ),
+    )
+    .expect("fake");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+/// 3.8: a Ctrl-C while recovery undoes a dead install's swap (step 0) is lost: undo_swap's
+/// subshell turns mv's 130 into `exit 1`, and recover prints "could not recover interrupted
+/// install" and exits 5, a cause line after the person stopped the run.
+#[test]
+fn adv_s50b_fix_ctrl_c_in_recovery_undo_prints_a_cause() {
+    let fx = Fx::new();
+    let bin = fx.bin("watane");
+    fs::create_dir_all(bin.parent().expect("bin")).expect("bin dir");
+    fs::create_dir_all(fx.receipt().parent().expect("share")).expect("share dir");
+    fs::write(bin.with_file_name("watane.old.42"), "old\n").expect("old");
+    fs::write(fx.receipt().with_file_name("receipt.new.42"), "pending\n").expect("new");
+    fs::write(
+        fx.receipt().with_file_name("journal.42"),
+        format!("old {}\n", bin.display()),
+    )
+    .expect("journal");
+    mv_fake(&fx, "case \"$1\" in *.old.42) fire ;; esac");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stderr.contains("watane install:"), "{out:?}");
+}
+
+/// 3.8: after a swap fails, a Ctrl-C during its undo is lost: the undo subshell exits (1, or
+/// 130 from its own check_signal), rollback drops that status, and install_files checks only
+/// the swap's status, so the run prints "could not put the files in place" and exits 5.
+#[test]
+fn adv_s50b_fix_ctrl_c_in_swap_undo_prints_a_cause() {
+    let fx = Fx::new();
+    mv_fake(
+        &fx,
+        "case \"$1\" in *watane.app.new.*) exit 1 ;; esac\ncase \"$2\" in *.new.*) fire ;; esac",
+    );
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stderr.contains("watane install:"), "{out:?}");
+}
