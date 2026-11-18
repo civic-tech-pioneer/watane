@@ -37,3 +37,8 @@ S50b-fix1: the closing `rmdir` loop of `do_uninstall` resolves each folder (`res
 the resolved home. Toolchain detection and the rustup commands of offer B run in a subshell from `$HOME` with
 `RUSTUP_AUTO_INSTALL=0` (3.7): rustup reads `rust-toolchain.toml` from the cwd. The fake rustup logs `pwd` and
 `RUSTUP_AUTO_INSTALL` per call in `rustup.pwd` / `rustup.auto`.
+
+S50b-fix2: the adversary's five RISK findings closed with the stricter option (IN-34 to IN-38). The pid of the
+script in a test is the `Command` child (perl execs sh), and a fake `chmod` (`chmod_wait`/`chmod_waiting` in the
+state folder) holds the staging so a test can plant a link at `journal.<pid>` first. `home_deletable` sets
+`HOME_OUT` for the outside-home case; the question and the `deleted:` line follow `tilde_r` of the resolved path.

@@ -65,6 +65,15 @@ tilde() {
   esac
 }
 
+# tilde_r <resolved path>: as tilde, against the resolved home
+tilde_r() {
+  case $1 in
+    "$HOME_R") printf '~' ;;
+    "$HOME_R"/*) printf '~%s' "${1#"$HOME_R"}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 exists() { [ -e "$1" ] || [ -L "$1" ]; }
 
 # in_list <newline separated list> <item>
@@ -121,16 +130,24 @@ in_home() {
 allowed() {
   plain_path "$1" || return 1
   case $1 in
-    "$HOME/Applications/watane.app") ;;
+    "$HOME/Applications/watane.app") al_root=$HOME/Applications ;;
     "$HOME"/.local/bin/watane*)
       al_n=${1#"$HOME"/.local/bin/}
-      case $al_n in */*) return 1 ;; esac
+      case $al_n in */* | *.mine) return 1 ;; esac
+      al_root=$HOME/.local/bin
       ;;
-    "$HOME"/.local/share/watane/?* | "$HOME"/.local/share/watane-dev/?*) ;;
+    "$HOME"/.local/share/watane/?*) al_root=$HOME/.local/share/watane ;;
+    "$HOME"/.local/share/watane-dev/?*) al_root=$HOME/.local/share/watane-dev ;;
     *) return 1 ;;
   esac
+  resolve_dir "$al_root" || return 1
+  in_home "$RES" || return 1
+  al_rr=$RES
   resolve_dir "${1%/*}" || return 1
-  in_home "$RES"
+  case $RES in
+    "$al_rr" | "$al_rr"/*) return 0 ;;
+  esac
+  return 1
 }
 
 # dest_of <rel>: DEST is where the entry goes
@@ -535,6 +552,13 @@ extract_archive() {
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
     die 5 "$ARCHIVE holds a file name that leaves its folder" "Nothing was installed."
   fi
+  # a link member (type l or h in the listing) could make a later chmod or copy reach a file
+  # outside the tree: refused before anything is unpacked (3.4 step 9)
+  tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null ||
+    die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  if grep -q '^[lh]' "$TMP/members.v"; then
+    die 5 "$ARCHIVE holds a symbolic or hard link, which a watane archive never does" "Nothing was installed."
+  fi
   mkdir "$TMP/x"
   tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" ||
     die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."
@@ -560,23 +584,32 @@ stage_files() {
     esac
   done
   mkdir -p "$SHAREW" || return 1
-  {
+  # a file the script creates is created new: nothing, a link included, may be at the name
+  # (noclobber on top of the check, for a link planted in between; 3.6 step 2)
+  ! exists "$RECEIPT.new.$$" || return 1
+  set -C
+  if {
     printf 'watane-receipt 1\nversion %s\ntarget %s\n' "$RELEASE" "$TARGET"
     while IFS= read -r sf_p; do printf 'path %s\n' "$sf_p"; done <<EOF
 $ENTRIES
 EOF
-  } >"$RECEIPT.new.$$" || return 1
-  return 0
+  } >"$RECEIPT.new.$$"; then sf_rc=0; else sf_rc=1; fi
+  set +C
+  return $sf_rc
 }
 
 write_journal() {
-  {
+  ! exists "$SHAREW/journal.$$" || return 1
+  set -C
+  if {
     while IFS= read -r wj_p; do
       if exists "$wj_p"; then printf 'old %s\n' "$wj_p"; else printf 'new %s\n' "$wj_p"; fi
     done <<EOF
 $ENTRIES_ALL
 EOF
-  } >"$SHAREW/journal.$$"
+  } >"$SHAREW/journal.$$"; then wj_rc=0; else wj_rc=1; fi
+  set +C
+  return $wj_rc
 }
 
 swap_entries() {
@@ -695,6 +728,8 @@ toolchain_step() {
     print_commands
     return 0
   fi
+  ts_src=https://sh.rustup.rs
+  if [ "$TC_STATE" = none_a ] && [ -n "${WATANE_RUSTUP_URL:-}" ]; then ts_src=$WATANE_RUSTUP_URL; fi
   case $TC_STATE in
     target)
       printf '%s\n%s [y/N] ' \
@@ -704,7 +739,7 @@ toolchain_step() {
     *)
       printf '%s\n%s [y/N] ' \
         'watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.' \
-        'Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)?'
+        "Install it with rustup (a few hundred MB, from $ts_src, into ~/.rustup and ~/.cargo)?"
       ;;
   esac
   ts_ans=""
@@ -856,7 +891,14 @@ home_deletable() {
   plain_path "$hd_r" || return 1
   case "$HOME_R/" in "$hd_r"/*) return 1 ;; esac
   HOME_DEL=$hd_r
+  # a home that resolves outside the home is the person's to delete (8.4 step 5)
+  if ! in_home "$hd_r"; then HOME_OUT=1; return 1; fi
   return 0
+}
+
+# shell_quote <text>: the text in single quotes, for a command the person runs
+shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
 do_uninstall() {
@@ -894,12 +936,19 @@ EOF
   fi
   du_h=${WATANE_HOME:-$HOME/.watane}
   [ -e "$du_h" ] || return 0
+  HOME_OUT=0
   if ! home_deletable "$du_h"; then
+    if [ "$HOME_OUT" = 1 ]; then
+      say "kept: $(tilde "$du_h") (not deleted: it resolves to $HOME_DEL, outside your home folder)"
+      say 'To delete it yourself, run:'
+      say "  rm -rf $(shell_quote "$HOME_DEL")"
+      return 0
+    fi
     say "kept: $(tilde "$du_h") (not deleted: not a folder that watane can delete)"
     return 0
   fi
   if ( : </dev/tty ) 2>/dev/null; then
-    printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde "$du_h")"
+    printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde_r "$HOME_DEL")"
     du_a=""
     IFS= read -r du_a </dev/tty || du_a=""
     if [ "$du_a" = delete ]; then

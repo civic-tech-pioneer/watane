@@ -75,6 +75,10 @@ fi
 mkdir -p "$out"
 archive=$top.tar.gz
 COPYFILE_DISABLE=1 tar -czf "$work/$archive" -C "$work" "$top" || die "tar failed"
+# install.sh refuses an archive with a link member (3.4 step 9): never make one
+if tar -tvzf "$work/$archive" | grep -q '^[lh]'; then
+  die "an input holds a symbolic or hard link: the archive would be refused by install.sh"
+fi
 mv "$work/$archive" "$out/$archive"
 cp "$t/share/watane/install.sh" "$out/install.sh"
 if command -v shasum >/dev/null 2>&1; then

@@ -1286,3 +1286,179 @@ fn inst_s34_command_line_tools_for_each_answer() {
         assert_no_xcode_call(&fx);
     }
 }
+
+// --- S50b-fix2 ---
+
+fn serve(fx: &Fx, bytes: Vec<u8>) {
+    fx.rel.put(&archive(), bytes.clone());
+    fx.rel.put(
+        "SHA256SUMS",
+        format!("{}  {}\n", sha256(&bytes), archive()).into_bytes(),
+    );
+}
+
+/// AC1 (3.4 step 9): an archive with a link member is refused before anything is moved.
+#[test]
+fn ac1_an_archive_with_a_link_member_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    for kind in ["symlink", "hardlink", "dirlink"] {
+        let fx = Fx::new();
+        let outside = fx.root.path().join("outside");
+        write_file(&outside, "outside\n");
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).expect("chmod");
+        let o = outside.clone();
+        let bytes = build_archive_with("0.1.0", &["serde-1.0.0"], &move |t| match kind {
+            "symlink" => {
+                fs::remove_file(t.join("bin/watane")).expect("rm");
+                symlink(&o, t.join("bin/watane")).expect("link");
+            }
+            "hardlink" => {
+                fs::remove_file(t.join("bin/watane")).expect("rm");
+                fs::hard_link(t.join("bin/watane-dev"), t.join("bin/watane")).expect("hard");
+            }
+            _ => {
+                symlink(&o, t.join("share/watane-dev/vendor/serde-1.0.0/elsewhere")).expect("link");
+            }
+        });
+        serve(&fx, bytes);
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 5, "{kind}: {out:?}");
+        assert!(out.stderr.contains("link"), "{kind}: {out:?}");
+        assert!(fx.home_tree().is_empty(), "{kind}: {:?}", fx.home_tree());
+        assert!(fx.tmp_tree().is_empty(), "{kind}: {:?}", fx.tmp_tree());
+        assert_eq!(fx.read(&outside), "outside\n", "{kind}");
+        let mode = fs::metadata(&outside).expect("meta").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "{kind}: mode of the outside file");
+    }
+}
+
+/// Runs a fresh install that waits at the first `chmod` of the staging, and returns the pid
+/// of the script (the child is the script itself: `perl` execs `sh`).
+fn install_held_at_staging(fx: &Fx) -> (std::process::Child, u32) {
+    fx.state_write("chmod_wait", "");
+    let child = spawn(&mut fx.cmd(&[]));
+    fx.wait_state("chmod_waiting");
+    let pid = child.id();
+    (child, pid)
+}
+
+/// AC2 (3.6 step 2): a link planted at a name the script creates is never written through.
+#[test]
+fn ac2_a_planted_link_is_not_written_through() {
+    for name in ["journal", "receipt.new"] {
+        let fx = Fx::new();
+        let victim = fx.root.path().join("victim");
+        write_file(&victim, "victim\n");
+        let (child, pid) = install_held_at_staging(&fx);
+        let sw = fx.share("watane");
+        fs::create_dir_all(&sw).expect("share");
+        symlink(&victim, sw.join(format!("{name}.{pid}"))).expect("plant");
+        fs::remove_file(fx.state.join("chmod_wait")).expect("release");
+        let out = finish(child);
+        assert_eq!(out.code, 5, "{name}: {out:?}");
+        assert_eq!(fx.read(&victim), "victim\n", "{name}: written through");
+        assert!(!fx.bin("watane").exists(), "{name}: nothing was swapped in");
+    }
+}
+
+/// AC5 (8.5 rule 2): a `bin/` name ending in `.mine` is not removed.
+#[test]
+fn ac5_a_bin_name_ending_in_mine_is_skipped() {
+    let fx = installed();
+    let h = fx.home.display().to_string();
+    write_file(&fx.bin("watane.mine"), "mine");
+    append(&fx.receipt(), &format!("path {h}/.local/bin/watane.mine\n"));
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(fx.bin("watane.mine").exists());
+    let line = format!(
+        "watane install: skipped {h}/.local/bin/watane.mine: not a path that watane installs"
+    );
+    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
+    assert!(!fx.bin("watane").exists());
+}
+
+/// AC5 (8.5 rule 3): the holding folder resolves inside the install folder, not just the home.
+#[test]
+fn ac5_a_link_inside_an_install_folder_does_not_reach_the_home() {
+    let fx = installed();
+    let h = fx.home.display().to_string();
+    write_file(&fx.home.join("Documents/marker"), "m");
+    symlink(&fx.home, fx.share("watane/x")).expect("link");
+    append(
+        &fx.receipt(),
+        &format!("path {h}/.local/share/watane/x/Documents\n"),
+    );
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(fx.home.join("Documents/marker").exists(), "{out:?}");
+    let line = format!(
+        "watane install: skipped {h}/.local/share/watane/x/Documents: not a path that watane installs"
+    );
+    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
+}
+
+/// AC4 (3.7): the question names the installer that `WATANE_RUSTUP_URL` points at.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac4_the_toolchain_question_names_the_rustup_url() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "n")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.stdout.contains(&format!("from {url}, into ~/.rustup")),
+        "{out:?}"
+    );
+    assert!(
+        !out.stdout.contains("from https://sh.rustup.rs, into"),
+        "{out:?}"
+    );
+}
+
+/// AC3 (8.4 step 5): a home that resolves outside the home is not deleted; the command is printed.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac3_a_home_that_resolves_outside_the_home_is_not_deleted() {
+    let fx = installed();
+    let other = tempfile::tempdir().expect("other");
+    let o = fs::canonicalize(other.path()).expect("canon");
+    write_file(&o.join("marker"), "m");
+    symlink(&o, fx.home.join("link")).expect("link");
+    let value = fx.home.join("link").display().to_string();
+    let out = fx.run_pty(
+        &["--uninstall"],
+        &[("WATANE_HOME", &value)],
+        &[("uninstalled watane 0.1.0", "delete")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!out.stdout.contains("Type delete"), "{out:?}");
+    assert!(o.join("marker").exists(), "{out:?}");
+    assert!(
+        out.has_line(&format!("  rm -rf '{}'", o.display())),
+        "{out:?}"
+    );
+    assert!(out.stdout.contains(&o.display().to_string()), "{out:?}");
+}
+
+/// AC3: the question names the resolved path.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac3_the_question_names_the_resolved_path() {
+    let fx = installed();
+    write_file(&fx.home.join("real/marker"), "m");
+    symlink(fx.home.join("real"), fx.home.join("link")).expect("link");
+    let value = fx.home.join("link").display().to_string();
+    let out = fx.run_pty(
+        &["--uninstall"],
+        &[("WATANE_HOME", &value)],
+        &[("keep it: ", "n")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.stdout
+            .contains("Delete the watane home ~/real? It holds"),
+        "{out:?}"
+    );
+    assert!(fx.home.join("real/marker").exists());
+}

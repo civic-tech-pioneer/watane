@@ -112,7 +112,7 @@ impl Fx {
         if let Some(k) = which_opt("kill") {
             symlink(k, tools.join("kill")).expect("link kill");
         }
-        for t in ["mv", "rm", "sleep", "mkdir"] {
+        for t in ["mv", "rm", "sleep", "mkdir", "chmod"] {
             symlink(which(t), real.join(t)).expect("link real");
         }
         let script = r.join("install.sh");
@@ -391,6 +391,11 @@ pub fn snapshot(root: &Path) -> Vec<(String, Vec<u8>)> {
 
 /// A fake archive of TECHNICAL 4.2: programs are shell scripts that print `<name> <version>`.
 pub fn build_archive(version: &str, vendor: &[&str]) -> Vec<u8> {
+    build_archive_with(version, vendor, &|_| {})
+}
+
+/// `build_archive`, with `tweak` run on the top folder before it is packed.
+pub fn build_archive_with(version: &str, vendor: &[&str], tweak: &dyn Fn(&Path)) -> Vec<u8> {
     let d = tempfile::tempdir().expect("tempdir");
     let top = format!("watane-{version}-{TARGET}");
     let t = d.path().join(&top);
@@ -427,6 +432,7 @@ pub fn build_archive(version: &str, vendor: &[&str]) -> Vec<u8> {
         "#!/bin/sh\n",
         0o755,
     );
+    tweak(&t);
     let o = Command::new(which("tar"))
         .args(["-czf", "-", "-C"])
         .arg(d.path())

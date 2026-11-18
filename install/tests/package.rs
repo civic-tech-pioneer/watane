@@ -303,3 +303,19 @@ fn ac4_install_upgrade_uninstall_of_packed_archives() {
         assert!(!p.exists(), "{} should be gone", p.display());
     }
 }
+
+/// AC1 (4.2): a link among the inputs is refused and no archive is made.
+#[test]
+fn ac1_a_link_among_the_inputs_is_refused() {
+    let co = Checkout::new(V, &["serde-1.0.0"]);
+    std::os::unix::fs::symlink(
+        "Info.plist",
+        co.path("target/release/bundle/macos/watane.app/Contents/link"),
+    )
+    .expect("link");
+    let out_dir = tempfile::tempdir().expect("out");
+    let out = co.pack(V, out_dir.path(), None);
+    assert_eq!(out.code, 1, "{out:?}");
+    assert!(out.stderr.contains("link"), "{out:?}");
+    assert!(!out_dir.path().join(archive_name(V)).exists());
+}

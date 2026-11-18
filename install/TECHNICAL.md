@@ -185,7 +185,7 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 | 6 | Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step. | exit 8 |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
-| 9 | Extract: refuse a member name that is absolute or holds `..`; `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
+| 9 | Extract: refuse a member name that is absolute or holds `..`, and any member that is a symbolic or hard link (a `tar -tvzf` line that starts with `l` or `h`; IN-34); `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
 | 10 | Replace the paths and the receipt in one swap (3.6 steps 0 to 4); the receipt is its last entry and the commit point. | exit 5 |
 | 11 | Remove the quarantine mark (6.1). | ignored |
 | 12 | Clean up after the commit (3.6 step 5): the `.old.<pid>` names, the journal, the paths that only the old receipt held. | a warning, ignored |
@@ -295,7 +295,9 @@ files (INST-F-20, INST-S-14, 32, 33).
 2. **Journal.** Write `<prefix>/share/watane/journal.<pid>`, one line for
    each entry, the receipt included: `old <path>` if `<path>` exists now
    (`-e` or `-L`), else `new <path>`. It is written directly, with no
-   temporary name: no entry is swapped before it is complete, and the undo
+   temporary name, and, like `receipt.new.<pid>`, only when nothing (a link included) is at that
+   name, with `set -C` (noclobber) around the write; if something is, the swap fails as any
+   failure of it does (undo, exit 5) and nothing is written through it (IN-35): no entry is swapped before it is complete, and the undo
    of step 4 touches only entries the swap reached, so a journal cut short
    by a kill undoes nothing.
 3. **Swap.** For each entry in the order of the list above, the receipt
@@ -387,7 +389,7 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 |---|---|---|---|
 | ok | rustc found and the target present | none | none; prints `toolchain: ok (rustup, wasm32-wasip2)` |
 | no target | rustup and rustc, no target | `rustup target add wasm32-wasip2` | `watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.` newline `Add the wasm32-wasip2 target with rustup? [y/N]` |
-| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]` |
+| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]`; when offer A is the one and `WATANE_RUSTUP_URL` is set, `https://sh.rustup.rs` is that URL (IN-37) |
 
 **Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
@@ -882,12 +884,13 @@ is a feature of `app`, not of `install` (Q11).
    the same holds for its resolved path `R` (`cd <home> && pwd -P`) against
    the resolved `$HOME`, so that `WATANE_HOME=~/link` with `link` pointing
    at `~` or `/` is refused. The deletion is `rm -rf -- "$R"`, then `rm`
-   of `<home>` when it is a link. Otherwise no question
+   of `<home>` when it is a link. When `R` is outside the resolved `$HOME` (a link to another disk), no question
+   is asked and nothing is deleted: it prints `kept: <home> (not deleted: it resolves to <R>, outside your home folder)`, `To delete it yourself, run:` and `  rm -rf '<R>'` (IN-36). Otherwise no question
    is asked and the kept line reads `kept: <home> (not deleted: not a
    folder that watane can delete)` (INST-S-28), so that a `WATANE_HOME` set
    to `~` by mistake cannot turn one typed word into the loss of every file
    of the person. The question:
-   `Delete the watane home ~/.watane? It holds your identity and your mods,
+   `Delete the watane home <R>? (R shown with `~` for the resolved home; `~/.watane` in the usual case) It holds your identity and your mods,
    and cannot be restored without a backup. Type delete to delete it, or
    press Enter to keep it: `. Only the exact text `delete` deletes it
    (`rm -rf`); then print `deleted: ~/.watane`. Anything else, an end of
@@ -911,10 +914,12 @@ no `.` or `..` component). A path is allowed only when:
    link/` deletes what the link points to), and no component is `.` or
    `..` (no `/./`, `/../`, and it does not end in `/.` or `/..`); and
 2. it is exactly `$HOME/Applications/watane.app`; or it is
-   `$HOME/.local/bin/<name>` where `<name>` starts with `watane` and holds
-   no `/`; or it lies strictly below `$HOME/.local/share/watane/` or
+   `$HOME/.local/bin/<name>` where `<name>` starts with `watane`, holds
+   no `/` and does not end in `.mine` (the name that 3.4.2 tells the person to give aside); or it lies strictly below `$HOME/.local/share/watane/` or
    `$HOME/.local/share/watane-dev/` (not the folder itself); and
-3. the folder that holds it resolves inside the resolved home, as in
+3. the folder that holds it resolves inside the resolved install folder it is listed under
+   (`~/.local/bin`, `~/.local/share/watane`, `~/.local/share/watane-dev`, `~/Applications`), and
+   that folder inside the resolved home, as in
    3.4.1 (`--uninstall` too checks this, so a link put at
    `share/watane-dev` after the install does not make it delete `vendor`
    elsewhere).
@@ -1261,3 +1266,8 @@ otherwise.
 | IN-31 | The app is built with `cargo tauri build ... -- --locked`, and INST-S-29 checks the workflow line. | A release must build the app from the reviewed lock, as the programs are (7.3). |
 | IN-32 | Dev's fix texts for the toolchain and the vendor folder are not changed in this design; a later `dev` slice points them at the installer (Q17). | `install` changes no code of another subsystem and INST-F-13 keeps `watane-dev` as it is. |
 | IN-33 | A live journal of another pid stops the run (exit 5); the message names the journal file to remove when that pid was reused by an unrelated program. The script never removes it itself, since it cannot tell a reused pid from a running install. | Undo: drop the line; or later add a lock with the start time. |
+| IN-34 | An archive with any symbolic-link or hard-link member is refused (exit 5) before it is unpacked, and `package.sh` refuses a link among its inputs. | A link to a file outside the tree would make `chmod` or a copy touch it; a watane archive has none. Undo: drop the check. |
+| IN-35 | `journal.<pid>` and `receipt.new.<pid>` are created only where nothing exists, under noclobber. | A link planted at a predictable name must not be written through. |
+| IN-36 | A home that resolves outside the resolved `$HOME` is never deleted by the script, even on a typed `delete`; the `rm -rf` command is printed. The question names the resolved path. | One typed word must not delete another disk's folder through a link. Undo: allow it with the question. |
+| IN-37 | With `WATANE_RUSTUP_URL` set, the offer-A question names that URL. | The question says where the download comes from. |
+| IN-38 | 8.5 rule 3 resolves the holding folder against its install folder, and rule 2 refuses a `bin/` name ending in `.mine`. | A link inside an install folder must not lead a removal into the rest of the home. |

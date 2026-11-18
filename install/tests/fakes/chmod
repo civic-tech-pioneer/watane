@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fake chmod: while the file chmod_wait of the test exists it writes chmod_waiting and waits,
+# so that a test can plant a file at a name the script is about to create; then the real one.
+if [ -f "$FAKE_STATE/chmod_wait" ]; then
+  echo "$*" > "$FAKE_STATE/chmod_waiting"
+  while [ -f "$FAKE_STATE/chmod_wait" ]; do "$FAKE_REAL/sleep" 0.05; done
+fi
+exec "$FAKE_REAL/chmod" "$@"
