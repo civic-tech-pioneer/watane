@@ -197,3 +197,35 @@ verify_archive
         }
     }
 }
+
+/// Validator R1 (3.8): only the checks before staging defer a signal; after the commit it ends the run.
+#[test]
+fn a_signal_after_the_commit_ends_the_run_at_once() {
+    for (signal, code) in [("INT", 130), ("TERM", 143)] {
+        let fx = Fx::new();
+        // The fake exits 1: only the trap, not a signalled status, can end the run with the code.
+        let fake = fx.fakes.join("rustup");
+        fs::write(
+            &fake,
+            format!("#!/bin/sh\nkill -s {signal} \"$FAKE_INSTALL_PID\"\nexit 1\n"),
+        )
+        .expect("fake rustup");
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let out = fx.run(&[]);
+        assert_eq!(out.code, code, "{signal}: {out:?}");
+        fx.assert_installed("0.1.0");
+        assert!(!out.stdout.contains("no terminal"), "{signal}: {out:?}");
+        assert!(!out.stdout.contains("is installed."), "{signal}: {out:?}");
+    }
+}
+
+/// Validator R1 (3.8): an uninstall is not deferred; a signal stops it before its last steps.
+#[test]
+fn a_signal_during_the_uninstall_ends_it_at_once() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&[]).code, 0);
+    fx.state_write("rm_fault", "term\n*watane-node\n");
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(!out.stdout.contains("uninstalled watane"), "{out:?}");
+}

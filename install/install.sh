@@ -29,6 +29,7 @@ TC_OK=0
 RUSTUP=""
 UPGRADED=0
 SIGNAL=0
+SIGNAL_DEFER=1
 
 usage() {
   printf '%s\n' \
@@ -401,7 +402,7 @@ on_signal() {
   SIGNAL=$1
   # Before staging, defer exit to a checkpoint: bash 3.2 can dispatch a trap
   # only after it has already entered the failed command's error path.
-  [ "$SWAP_ACTIVE" = 1 ] || return 0
+  if [ "$SIGNAL_DEFER" = 1 ] && [ "$SWAP_ACTIVE" != 1 ]; then return 0; fi
   trap '' HUP INT TERM PIPE
   rollback
   exit "$1"
@@ -702,6 +703,7 @@ EOF
 
 do_swap() {
   check_signal
+  SIGNAL_DEFER=0
   SWAP_PID=$$
   SWAP_ACTIVE=1
   stage_files || return 1
@@ -1129,6 +1131,7 @@ main() {
   set_entries
   if [ "$MODE" = install ]; then check_folders; fi
   check_signal
+  if [ "$MODE" != install ]; then SIGNAL_DEFER=0; fi
   case $MODE in
     status) do_status ;;
     uninstall) do_uninstall ;;
