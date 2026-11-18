@@ -387,23 +387,33 @@ fn ac5_missing_released_cache_has_actionable_fix() {
         json!({"mods:ratings":key()}).to_string(),
     )
     .unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .args(["serve", "--json", "--dir"])
-        .arg(&dir)
-        .env("WATANE_DEV_CACHE", &f.cache)
-        .output()
-        .unwrap();
-    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(out.status.code(), Some(1), "{v}");
-    assert_eq!(v["errors"][0]["code"], "mod.release_provider_missing");
-    assert_eq!(
-        v["errors"][0]["fix"],
-        format!(
-            "Start the watane app, then run: watane-dev add --release {} --dir {}",
+    // S86: serve carries the --dir and --home it was given.
+    let home = f.root.path().canonicalize().unwrap();
+    for given in [false, true] {
+        let mut run = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        run.args(["serve", "--json", "--dir"])
+            .arg(&dir)
+            .env("WATANE_DEV_CACHE", &f.cache);
+        if given {
+            run.arg("--home").arg(f.root.path().join("."));
+        }
+        let out = run.output().unwrap();
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(out.status.code(), Some(1), "{v}");
+        assert_eq!(v["errors"][0]["code"], "mod.release_provider_missing");
+        let home = if given {
+            format!(" --home {}", home.display())
+        } else {
+            String::new()
+        };
+        let fix = format!(
+            "Start the watane app, then run: watane-dev add --release {} --dir {}{home}",
             release("ratings"),
             dir.canonicalize().unwrap().display()
-        )
-    );
+        );
+        assert_eq!(v["errors"][0]["fix"], fix);
+        assert_eq!(v["next"], fix);
+    }
 }
 
 #[test]
