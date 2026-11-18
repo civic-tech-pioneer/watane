@@ -756,9 +756,8 @@ toolchain_step() {
   esac
   ts_ans=""
   IFS= read -r ts_ans </dev/tty || ts_ans=""
-  ts_ans=$(printf '%s' "$ts_ans" | tr '[:upper:]' '[:lower:]')
   case $ts_ans in
-    y | yes) ;;
+    [Yy] | [Yy][Ee][Ss]) ;;
     *)
       say 'toolchain: not installed'
       print_commands

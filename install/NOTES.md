@@ -102,3 +102,15 @@ with INT at its default). The launcher (`support::LAUNCH`) now sets HUP, INT, QU
 PIPE to their defaults after `setsid`, and `finish` kills the run's process group when the run
 has not ended and closed its pipes within the 600-second deadline, so no left-behind process
 can hold a test for ever.
+
+## S50b-fix-2: match toolchain consent as raw bytes
+
+The toolchain answer now uses shell case patterns for `y` and `yes` in any
+case, without passing the answer through `tr`. Invalid UTF-8 cannot become
+a yes prefix through partial conversion. The home deletion question already
+matches the literal `delete` directly and needs no change.
+
+The UTF-8-locale PTY regression typed `y\xffnope` and failed before the fix
+with `tr: Illegal byte sequence` and exit 1 on macOS. A second PTY test types
+`YeS` and checks the installer invocation. The PTY helper gained raw-byte
+input while preserving the existing string-answer API and assertions.

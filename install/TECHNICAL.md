@@ -396,8 +396,9 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 
 **Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
-stdin. After `tr 'A-Z' 'a-z'`, only `y` and `yes` count; an empty line, end of
-file, any other text, and no terminal are all `N` (INST-F-9, as `node` NO-10).
+stdin. Only `y` and `yes`, in any case, count; any other answer, an
+undecodable byte included, is no. An empty line, end of file and no terminal
+are all `N` (INST-F-9, as `node` NO-10).
 `--no-toolchain` is `N` with no question. No flag, variable or file means `y`:
 with no terminal (an agent, a pipe, a CI job) the toolchain is not installed,
 and the commands are printed for the person or the agent to run (F-GET-3,

@@ -15,6 +15,15 @@ fn quote(s: &str) -> String {
 /// Starts the script under `script(1)`; for each step waits until its marker appears in the output,
 /// then types the answer and Enter. Stdout and stderr arrive merged, with `\r` removed.
 pub fn run(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &str)]) -> Out {
+    let steps: Vec<_> = steps
+        .iter()
+        .map(|(marker, answer)| (*marker, answer.as_bytes()))
+        .collect();
+    run_bytes(fx, args, env, &steps)
+}
+
+/// Types raw bytes, including answers that are not UTF-8.
+pub fn run_bytes(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &[u8])]) -> Out {
     let mut inner = format!("exec /bin/sh {}", quote(&fx.script.display().to_string()));
     for a in args {
         inner.push(' ');
@@ -67,7 +76,8 @@ pub fn run(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &str)])
             thread::sleep(Duration::from_millis(20));
         }
         // a script that asked nothing has already ended: typing then is harmless
-        let _ = stdin.write_all(format!("{answer}\n").as_bytes());
+        let _ = stdin.write_all(answer);
+        let _ = stdin.write_all(b"\n");
         let _ = stdin.flush();
     }
     let status = child.wait().expect("wait");

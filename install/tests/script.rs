@@ -97,6 +97,57 @@ fn inst_s2_toolchain_answered_y() {
 }
 
 #[test]
+fn ac1_toolchain_matches_the_raw_answer() {
+    let script = fs::read_to_string(checkout_script()).expect("script");
+    let step = script.split("  ts_ans=\"\"").nth(1).expect("answer step");
+    let decision = step.split("  case $TC_STATE in").next().expect("decision");
+    assert!(decision.contains("case $ts_ans in\n    [Yy] | [Yy][Ee][Ss])"));
+    assert!(!decision.contains("tr "));
+}
+
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac2_toolchain_rejects_invalid_utf8_answer() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = support::pty::run_bytes(
+        &fx,
+        &[],
+        &[
+            ("WATANE_RUSTUP_URL", &url),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_ALL", "en_US.UTF-8"),
+        ],
+        &[("[y/N] ", b"y\xffnope")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fx.state_read("installer.log"), "", "{out:?}");
+    assert!(out.has_line("toolchain: not installed"), "{out:?}");
+}
+
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac2_toolchain_accepts_mixed_case_yes() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(
+        &[],
+        &[
+            ("WATANE_RUSTUP_URL", &url),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_ALL", "en_US.UTF-8"),
+        ],
+        &[("[y/N] ", "YeS")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(
+        fx.state_read("installer.log"),
+        "-y --profile minimal --no-modify-path -t wasm32-wasip2\n"
+    );
+    assert!(out.has_line("toolchain: installed"), "{out:?}");
+}
+
+#[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn inst_s3_toolchain_answered_n() {
     for answer in ["n", ""] {
