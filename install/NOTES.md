@@ -150,3 +150,29 @@ Final checks: `cargo test -p watane-install` passed (63 passed, 15 ignored),
 `cargo clippy --all-targets -- -D warnings`, `cargo +nightly fmt --check`
 and `shellcheck -s sh install.sh package.sh` all exited 0. No existing test
 assertion was removed or weakened.
+
+## S50b-fix-2 validator: the real cause of the half-undone swap
+
+The `:` handler of the follow-up above did not fix it; `inst_s33_pipe_in_the_swap_undoes_it`
+failed the same way in the next check run. The cause is not the handler that `on_signal` sets.
+macOS `sh` (bash 3.2) forks a subshell with a trapped signal still pending, resets the trap to
+its default in the child, and the child's first trap check kills it ("bad value in
+trap_list[15]: 0x0 ... resending 15 (SIGTERM) to myself"); a loop of `( : )` while a background
+`kill -TERM $$` lands shows it in about one run of fifteen. The group signal kills the fake `mv`
+first, so the swap's `mv` fails and `install_files` runs `undo_swap` in a subshell before the
+script's own signal is handled; that subshell dies, and `install_files` had already set
+`SWAP_ACTIVE=0`, so `on_signal` saw no swap and exited 141 or 143 with the home half swapped.
+The same holds for the `cleanup` path.
+
+`rollback` now clears `SWAP_ACTIVE` only when `undo_swap` ended well, and `install_files`,
+`cleanup` and `on_signal` all use it, so the handler that runs after a dead undo undoes again
+(`undo_swap` is safe to repeat: the next run's recovery repeats it the same way). `on_signal` is
+back to `trap ''`: an ignored signal stays ignored in the undo's subshell, where a `:` handler
+becomes the default again. `inst_s33_a_signal_that_kills_the_undo_is_undone_by_the_handler`
+pins it without a race: the fake `rm` sends TERM to the undo's subshell and to the script at the
+undo's first `rm`; it fails on the script before this fix with exit 143 and the home half swapped.
+The ignored `ac1_term_rollback_under_exec_load` is gone: it only repeated the race, which the
+test above now pins without one. `inst_s33_int_in_the_swap_undoes_it` joins the TERM and PIPE
+tests; under exec load macOS `sh` lost the INT in about one run of three (bash 3.2 ignores an INT
+that lands just after the child it waited on died of it), and those runs ended with exit 5 and
+the swap undone, which 3.8 now names.

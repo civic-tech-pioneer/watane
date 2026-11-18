@@ -377,24 +377,24 @@ EOF
   return 0
 }
 
+# rollback: undo the swap in progress (3.8). It counts as undone only when undo_swap ended well: a
+# subshell that macOS sh forks while a trapped signal is pending dies of that signal, and the
+# handler that runs next must then undo it again.
+rollback() {
+  if [ "$SWAP_ACTIVE" = 1 ] && undo_swap "$SWAP_PID"; then SWAP_ACTIVE=0; fi
+  return 0
+}
+
 on_signal() {
-  # macOS sh can resend a pending signal in a rollback subshell after
-  # trap '' replaces the active handler. Keep a no-op handler registered.
-  trap ':' HUP INT TERM PIPE
-  if [ "$SWAP_ACTIVE" = 1 ]; then
-    SWAP_ACTIVE=0
-    undo_swap "$SWAP_PID"
-  fi
+  trap '' HUP INT TERM PIPE
+  rollback
   exit "$1"
 }
 
 cleanup() {
   cl_rc=$?
   trap - EXIT
-  if [ "$SWAP_ACTIVE" = 1 ]; then
-    SWAP_ACTIVE=0
-    undo_swap "$SWAP_PID" || true
-  fi
+  rollback
   if [ -n "$TMP" ]; then rm -rf "$TMP" || true; fi
   exit "$cl_rc"
 }
@@ -661,8 +661,7 @@ install_files() {
 $ENTRIES_ALL
 EOF
   if ! do_swap; then
-    SWAP_ACTIVE=0
-    undo_swap "$$"
+    rollback
     die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
   fi
   return 0

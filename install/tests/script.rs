@@ -1165,17 +1165,33 @@ fn inst_s33_a_kill_at_the_app() {
     assert_all_new(&fx);
 }
 
-#[test]
-fn inst_s33_term_in_the_swap_undoes_it() {
+/// Sends `sig` to the run's group while the swap sleeps in its `mv` of the app; the home then holds
+/// every byte of before (3.6 step 4, 3.8). Returns the run for its exit code.
+fn signal_in_the_swap_undoes_it(sig: &str) -> Out {
     let (fx, before) = swap_start();
     fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
     let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
     fx.wait_state("mv_sleeping");
-    signal_group(child.id(), "TERM");
+    signal_group(child.id(), sig);
     let out = finish(child);
-    assert_eq!(out.code, 143, "{out:?}");
     assert_eq!(snapshot(&fx.home), before, "{out:?}");
     assert!(fx.tmp_tree().is_empty());
+    out
+}
+
+#[test]
+fn inst_s33_term_in_the_swap_undoes_it() {
+    let out = signal_in_the_swap_undoes_it("TERM");
+    assert_eq!(out.code, 143, "{out:?}");
+}
+
+#[test]
+fn inst_s33_int_in_the_swap_undoes_it() {
+    let out = signal_in_the_swap_undoes_it("INT");
+    // 3.8: macOS sh can lose an INT that lands just after the `mv` it waited on died of it; the
+    // run then ends as the failed swap it saw
+    let lost = out.code == 5 && out.stderr.contains("could not put the files in place");
+    assert!(out.code == 130 || lost, "{out:?}");
 }
 
 /// 3.8: signal rollback needs only a staged journal, not a download or package build.
@@ -1234,45 +1250,28 @@ mv "$HOME/Applications/watane.app.new.42" "$HOME/Applications/watane.app"
     assert_eq!(snapshot(&fx.home), before, "{out:?}");
 }
 
-/// Exercise TERM rollback while endpoint-security-like exec contention delays children.
-#[test]
-#[ignore = "slow: repeats the swap rollback under concurrent exec load"]
-fn ac1_term_rollback_under_exec_load() {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    struct StopWorkers<'a>(&'a AtomicBool);
-    impl Drop for StopWorkers<'_> {
-        fn drop(&mut self) {
-            self.0.store(true, Ordering::Relaxed);
-        }
-    }
-    let stop = AtomicBool::new(false);
-    std::thread::scope(|scope| {
-        for _ in 0..4 {
-            let stop = &stop;
-            scope.spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    let _ = Command::new("/bin/sh").args(["-c", "true"]).status();
-                }
-            });
-        }
-        let _stop_workers = StopWorkers(&stop);
-        for _ in 0..16 {
-            ac1_term_rollback_from_a_prebuilt_journal();
-        }
-    });
-}
-
 /// 3.6 step 4, 3.8: `PIPE` (the reader went away) in the swap undoes it as `TERM` does.
 #[test]
 fn inst_s33_pipe_in_the_swap_undoes_it() {
-    let (fx, before) = swap_start();
-    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
-    let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
-    fx.wait_state("mv_sleeping");
-    signal_group(child.id(), "PIPE");
-    let out = finish(child);
+    let out = signal_in_the_swap_undoes_it("PIPE");
     assert_eq!(out.code, 141, "{out:?}");
-    assert_eq!(snapshot(&fx.home), before);
+}
+
+/// 3.8: a signal that kills the undo's subshell (macOS sh forks it with the signal pending) leaves
+/// the swap in progress, so the handler that runs next undoes it again.
+#[test]
+fn inst_s33_a_signal_that_kills_the_undo_is_undone_by_the_handler() {
+    let (fx, before) = swap_start();
+    fx.state_write("mv_fault", "fail\n*receipt.new.*\n");
+    // the undo removes the new app before it moves the old one back: TERM the group there
+    fx.state_write("rm_fault", "term\n*/Applications/watane.app\n");
+    let out = fx.run(&["--release", "0.2.0"]);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(
+        !fx.state.join("rm_fault").exists(),
+        "the undo reached its rm"
+    );
+    assert_eq!(snapshot(&fx.home), before, "{out:?}");
     assert!(fx.tmp_tree().is_empty());
 }
 

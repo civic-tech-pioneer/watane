@@ -442,7 +442,7 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 ### 3.8 Cleanup
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
-`PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `PIPE` so its own messages cannot kill it. A `.new.<pid>` or `.old.<pid>`
+`PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. The swap counts as undone only when its undo ended: macOS `sh` forks a subshell with a trapped signal still pending and that subshell dies of it, so an undo that did not end leaves the swap in progress for the handler that runs next. macOS `sh` can also lose an `INT` that lands just after the child it waited on died of it; the run then ends as the failed swap it saw (exit 5, the swap undone). A `.new.<pid>` or `.old.<pid>`
 left by a kill between 3.6 steps 2 and 3 is found and removed (after its
 journal, if there is one, was undone) by the next run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or
