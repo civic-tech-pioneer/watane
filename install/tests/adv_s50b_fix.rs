@@ -81,3 +81,44 @@ fn adv_s50b_fix_term_after_the_swap_checkpoint_installs_and_reaches_the_toolchai
     assert!(!out.stdout.contains("is installed."), "{out:?}");
     assert!(!fx.receipt().exists(), "{out:?}");
 }
+
+/// Writes a fake `tool` first on the PATH: when its arguments match `when`, it sends `signal`
+/// to the whole process group (as Ctrl-C does) and exits with `code` itself, as a program
+/// that handles INT does; otherwise it runs `otherwise` (a shell body).
+fn group_signal_fake(fx: &Fx, tool: &str, when: &str, signal: &str, code: u8, otherwise: &str) {
+    let p = fx.fakes.join(tool);
+    fs::write(
+        &p,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in {when}) kill -s {signal} -- -\"$FAKE_INSTALL_PID\"; exit {code} ;; esac\n{otherwise}\n"
+        ),
+    )
+    .expect("fake");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+/// 3.8: "Signals end the run at once at every step". check_signal maps a child's 130 only on
+/// the failure paths that print a cause; where a status is dropped, macOS sh's lost INT is
+/// never seen. A Ctrl-C during the toolchain detection (`rustup which rustc` exits 130) is lost: the
+/// run reports the toolchain as missing, goes on, prints that watane is installed and exits 0.
+#[test]
+fn adv_s50b_fix_ctrl_c_in_toolchain_detection_finishes_with_success() {
+    let fx = Fx::new();
+    fx.add_rustup(true);
+    group_signal_fake(&fx, "rustup", "which*", "INT", 130, "exit 0");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stdout.contains("is installed."), "{out:?}");
+}
+
+/// 3.8: a Ctrl-C during quarantine removal (`xattr ... || true`, right after the commit) is
+/// lost: the run goes on to the toolchain step and exits 0.
+#[test]
+fn adv_s50b_fix_ctrl_c_in_xattr_reaches_the_toolchain_step() {
+    let fx = Fx::new();
+    group_signal_fake(&fx, "xattr", "-dr*", "INT", 130, "exit 0");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stdout.contains("no terminal to ask on"), "{out:?}");
+    assert!(!out.stdout.contains("is installed."), "{out:?}");
+}
