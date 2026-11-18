@@ -68,8 +68,10 @@ and by file, and fix the interface in both briefs' `## Interface` so neither wai
 1. `factory/impl.sh <task>` (in the background). Start every task whose `Depends on` is done (or
    `none`) at once; never run independent tasks one after another. At most one agent (Sol or a
    validator) works in a worktree at a time, so give each extra task its own worktree:
-   `git worktree add -b slice/<id>-<n> ../<id>-<n> && cp -c -R target ../<id>-<n>/target && cp -c -R dev/allowlist/vendor ../<id>-<n>/dev/allowlist/vendor`
-   (APFS clones of your build and of the git-ignored crate allowlist: instant, no disk), then run `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
+   `git worktree add -b slice/<id>-<n> ../<id>-<n> && mkdir -p ../<id>-<n>/target/debug && for d in deps build .fingerprint; do cp -c -R target/debug/$d ../<id>-<n>/target/debug/$d; done && cp -c -R dev/allowlist/vendor ../<id>-<n>/dev/allowlist/vendor`
+   (APFS clones of your build's compiled crates and of the git-ignored crate allowlist: no disk,
+   and only watane's crates rebuild; the rest of `target/`, `incremental/` above all, is not worth
+   its clone time), then run `impl.sh` and its validator there. After `PASS`, rebase that branch onto `slice/<id>`,
    fast-forward `slice/<id>` to it, and remove the worktree and branch (each worktree has its own
    `target/`).
 2. Read its last message. `BLOCKED` or `QUESTIONS` go to section 4 first. Its last line is

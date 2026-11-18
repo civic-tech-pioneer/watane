@@ -56,7 +56,8 @@ session's message started, and that is every turn while the human is away.
 
 ```bash
 git worktree add .claude/worktrees/<id> -b slice/<id> main
-cp -c -R target .claude/worktrees/<id>/target  # APFS clone of main's build: instant, no disk; only watane's crates rebuild
+mkdir -p .claude/worktrees/<id>/target/debug  # APFS clones of main's compiled crates: no disk; only watane's crates rebuild
+for d in deps build .fingerprint; do cp -c -R target/debug/$d .claude/worktrees/<id>/target/debug/$d; done  # not incremental/: 16 GB, slow to clone
 cp -c -R dev/allowlist/vendor .claude/worktrees/<id>/dev/allowlist/vendor  # git-ignored; without it every dev build test fails
 cd .claude/worktrees/<id> && claude --bg --model claude-opus-5-5 --permission-mode auto \
   "/foreman <id> ... (the sketch's place in PLAN.md, and: report to the session named '<your name>')"
