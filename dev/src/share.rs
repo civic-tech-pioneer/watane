@@ -9,8 +9,38 @@ struct Run {
     program: &'static str,
     args: Vec<String>,
 }
+/// A stand-in for git and gh (15.4): gets the program and its argument
+/// vector (git's folder is its `-C`) and answers as the child would.
+#[cfg(feature = "fake-host")]
+pub type Runner = Box<dyn FnMut(&str, &[String]) -> std::io::Result<Output>>;
+#[cfg(feature = "fake-host")]
+thread_local! {
+    static RUNNER: std::cell::RefCell<Option<Runner>> = const { std::cell::RefCell::new(None) };
+}
+/// Runs `f` with `runner` answering every git and gh command of this thread
+/// instead of a child process (test seam, 15.4).
+#[cfg(feature = "fake-host")]
+pub fn with_runner<T>(runner: Runner, f: impl FnOnce() -> T) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            RUNNER.set(None);
+        }
+    }
+    RUNNER.set(Some(runner));
+    let _reset = Reset;
+    f()
+}
 impl Run {
     fn output(&self) -> std::io::Result<Output> {
+        #[cfg(feature = "fake-host")]
+        if let Some(output) = RUNNER.with_borrow_mut(|runner| {
+            runner
+                .as_mut()
+                .map(|runner| runner(self.program, &self.args))
+        }) {
+            return output;
+        }
         Command::new(self.program)
             .args(&self.args)
             .env("GIT_TERMINAL_PROMPT", "0")
