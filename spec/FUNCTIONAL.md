@@ -198,7 +198,7 @@ watane release page into a terminal. It downloads the release, checks it
 against the release's checksums, and puts `watane`, `watane-dev` and
 `watane-node` in `~/.local/bin` and `watane.app` in `~/Applications`. It
 asks whether to install the Rust toolchain for the maker tools, and she
-answers yes. It tells her how to open the unsigned app if macOS asks. She
+answers yes. It tells her how to open the unsigned app if macOS asks, and, if her Mac lacks the macOS command line tools, the one command that installs them. She
 opens the app, and her coding agent runs `watane-dev new reading-list`
 straight after. A week later she pastes the line again and watane is
 upgraded, with her home as it was. A corrupted download installs nothing.

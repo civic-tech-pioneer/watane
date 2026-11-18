@@ -64,9 +64,10 @@ template is compiled in (`include_str!`). `watane-node` needs nothing.
 `watane.app` runs the host in process (it depends on `watane-host`), and
 needs nothing beside it. Of the system, the programs use only what macOS
 ships (`otool -L` lists only `/usr/lib` and `/System`, asserted in 12.4).
-`git` is needed by `publish` and `new --from`; on a Mac with no command
-line tools, macOS offers to install them when `git` first runs. The
-script neither installs nor checks it (Q10).
+`git` is needed by `publish` and `new --from`, and the allowlist's build
+needs a host linker (`cc`): both come with the macOS command line tools.
+The script checks only whether they are installed (`xcode-select -p`) and
+prints the command that installs them (3.9); it never runs it (IN-30, Q10).
 
 ## 3. The script `install.sh`
 
@@ -162,7 +163,7 @@ in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
 022`, and its whole body is one function `main` called on the last line
 (`main "$@"`), so that a download cut off half way runs nothing. Step 3 checks each tool with `command -v`; a missing one
-is exit 2 (INST-S-21). `sw_vers`, `sysctl` and `xattr` exist only on macOS, so step 3
+is exit 2 (INST-S-21). `sw_vers`, `sysctl`, `xattr` and `xcode-select` exist only on macOS, so step 3
 leaves them out and step 4 checks them once `uname -s` printed `Darwin`: on Linux the
 person reads `unsupported platform: Linux <arch>` (9), not that `sw_vers` is missing.
 
@@ -178,13 +179,13 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 | 3 | The tools of 3.3. | exit 2 |
 | 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. Each install folder resolves inside the home (3.4.1). | exit 2 |
 | 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset) and set the trap (3.8). | exit 1 |
-| 6 | Read the receipt, if any: the installed version, for the message of step 12. Then the foreign-file check (3.4.2). Nothing is removed or written in this step. | exit 8 |
+| 6 | Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step. | exit 8 |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
 | 9 | Extract: refuse a member name that is absolute or holds `..`; `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
-| 10 | Replace the paths (3.6). | exit 5 |
+| 10 | Replace the paths and the receipt in one swap (3.6 steps 0 to 4); the receipt is its last entry and the commit point. | exit 5 |
 | 11 | Remove the quarantine mark (6.1). | ignored |
-| 12 | Write the receipt (8.1). | exit 5 |
+| 12 | Clean up after the commit (3.6 step 5): the `.old.<pid>` names, the journal, the paths that only the old receipt held. | a warning, ignored |
 | 13 | The toolchain (3.7). | exit 6 |
 | 14 | Print `watane <v> is installed.`, then the next-step block (3.9). | |
 
@@ -222,9 +223,9 @@ The paths to install are the entries of 3.6. Step 6 reads the receipt, if
 there is one and it is a regular file whose first line is `watane-receipt 1`,
 as the set of paths that watane installed: its `path` lines that the rule of
 8.5 allows (a refused line is ignored here, so the INST-S-27 receipt still
-upgrades); a missing, unreadable or unrecognised receipt is the empty set.
+upgrades); a missing, unreadable or unrecognised receipt is the empty set. The `new <path>` lines of a journal left by a dead process (3.6) are added to the set: they are paths that an interrupted swap of this script put there.
 The receipt's own path counts as a foreign file when it exists (`-e` or `-L`)
-and is not a recognised receipt, since step 12's `mv` onto a folder would put
+and is not a recognised receipt, since step 10's `mv` onto a folder would put
 the receipt inside it. For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
 (a file, a folder or a link, even a broken one) the script collects it. If any
 was found it prints, to stderr, and exits 8 before it downloads anything:
@@ -245,8 +246,8 @@ deleted the receipt must move the files aside, or uninstall by hand first.
 
 A line `upgrading watane <old> to <new>` or `reinstalling watane <v>` is
 printed at step 6 when a receipt exists; the paths of the old receipt
-that the new archive no longer holds are removed in step 10 after the
-new ones are in place. Nothing outside the temporary folder is touched
+that the new archive no longer holds are removed in step 12, after the
+new receipt is in place. Nothing outside the temporary folder is touched
 before step 10.
 
 ### 3.5 Downloads
@@ -264,26 +265,65 @@ after that first line, so the first line of stderr is the script's.
 
 The paths are the entries of 8.1: `<prefix>/bin/watane`, `watane-dev`,
 `watane-node`; `<prefix>/share/watane-dev/vendor`;
-`<prefix>/share/watane/install.sh`, `VERSION`; `~/Applications/watane.app`.
+`<prefix>/share/watane/install.sh`, `VERSION`; `~/Applications/watane.app`;
+and, as the last entry, the receipt `<prefix>/share/watane/receipt`. The swap
+is one transaction: the receipt moves into place with the files, last, and
+that move is the commit point. Before it, the old version and the old
+receipt can be put back whole; after it, the new ones are in place and only
+cleanup is left. So a failure or a kill at any step before the commit leaves
+a state that the next run takes for the old install, never for foreign
+files (INST-F-20, INST-S-14, 32, 33).
 
-0. Remove the stale names of 3.8. If `<path>.new.<pid>` or
-   `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`),
-   exit 5 before any copy: `cp -R` onto an existing folder or link copies
-   into it, and `mv` onto one moves into it.
-1. For each entry, copy it from the extracted tree to `<path>.new.<pid>`
-   (same folder, so the move is a rename; `cp -R` keeps links inside the
-   app). Create parent folders with `mkdir -p`. `chmod 755` the three
-   programs and `install.sh`.
-2. For each entry: if `<path>` exists, `mv <path> <path>.old.<pid>`; then
-   `mv <path>.new.<pid> <path>`.
-3. Success: `rm -rf` each `.old.<pid>`; remove the paths of the old
-   receipt that are not in the new list, each only if the rule of 8.5
-   allows it (INST-S-27).
-4. Any failure in 1 or 2: undo the moves done (`rm -rf <path>` for a path
-   already replaced, `mv <path>.old.<pid> <path>`), remove each
-   `.new.<pid>`, exit 5 (INST-S-14). A running `watane` keeps its open
-   file; the next start uses the new one. The script prints
-   `If watane is open, quit it and open it again.` after an upgrade.
+0. **Recover and clean.** For each file `<prefix>/share/watane/journal.<n>`
+   (`<n>` digits only, a regular file) whose process is dead (`kill -0 <n>`
+   fails) or is this script's own pid: if `receipt.new.<n>` still exists,
+   undo it as in step 4 (below); if not, the commit happened, so only remove
+   its `.old.<n>` names; then remove the journal. Then remove the stale names of 3.8. If `<path>.new.<pid>` or
+   `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
+   5 before any copy: `cp -R` onto an existing folder or link copies into
+   it, and `mv` onto one moves into it.
+1. **Stage.** For each entry except the receipt, copy it from the extracted
+   tree to `<path>.new.<pid>` (same folder, so the move is a rename; `cp -R`
+   keeps links inside the app). Create parent folders with `mkdir -p`.
+   `chmod 755` the three programs and `install.sh`. Write the new receipt
+   (8.1) to `<prefix>/share/watane/receipt.new.<pid>`, in the same folder
+   as the receipt.
+2. **Journal.** Write `<prefix>/share/watane/journal.<pid>` (through a
+   temporary name and `mv`), one line for each entry, the receipt included:
+   `old <path>` if `<path>` exists now (`-e` or `-L`), else `new <path>`.
+3. **Swap.** For each entry in the order of the list above, the receipt
+   last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then
+   `mv <path>.new.<pid> <path>`. The move of `receipt.new.<pid>` onto the
+   receipt is the commit point.
+4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT` or `TERM` while
+   they run (the trap, 3.8), undoes the swap from the journal, or, if the
+   failure came before the journal was written, from the `.new` names alone:
+   for each `old <path>` line, `rm -rf <path>` if it exists, then
+   `mv <path>.old.<pid> <path>` if that exists; for each `new <path>` line,
+   `rm -rf <path>`, each only where the rule of 8.5 allows; then remove each
+   `.new.<pid>`, `receipt.new.<pid>` and the journal; exit 5 (or 129, 130,
+   143). A running `watane` keeps its open file; the next start uses the new
+   one. The old version and the old receipt are then as before the run
+   (INST-S-14, 32).
+5. **After the commit.** `rm -rf` each `.old.<pid>`; remove the paths of the
+   old receipt that are not in the new list, each only if the rule of 8.5
+   allows it (INST-S-27); remove the journal last. A removal that fails here
+   prints `watane install: could not remove <path>` on stderr and does not
+   change the exit status: the new version is installed, and the next run
+   removes a leftover `.old.<n>` of a dead pid (3.8). After an upgrade the
+   script prints `If watane is open, quit it and open it again.`
+
+A process that is killed by `SIGKILL` (or loses power) between steps 2 and
+3 leaves its journal, its `.old.<pid>` and its `.new.<pid>` names. The old
+receipt is still in place until the commit, so the paths that the swap
+already replaced are in the old receipt or in the journal's `new` lines,
+and the next run's foreign-file check (3.4.2) does not count them. The
+next run's step 0 undoes the journal, which puts the old version back, and
+then installs as if the killed run never happened (INST-S-33). After the
+commit, a kill leaves only `.old.<n>` names and the journal. Step 0 tells
+the two cases apart by `receipt.new.<n>`: while it exists the commit has not
+happened and the journal is undone; once it is gone the receipt is the new
+one, and step 0 only removes the `.old.<n>` names and the journal.
 
 ### 3.7 The toolchain
 
@@ -346,9 +386,9 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 ### 3.8 Cleanup
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`
-and `TERM` first exits with 129, 130 and 143. A `.new.<pid>` or `.old.<pid>`
-left by a kill between 3.6 steps 2 and 3 is found and removed by the next
-run, at 3.6 step 0 (after the checksum matched, so nothing outside the
+and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130 and 143. A `.new.<pid>` or `.old.<pid>`
+left by a kill between 3.6 steps 2 and 3 is found and removed (after its
+journal, if there is one, was undone) by the next run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or
 `<path>.old.<n>` where `<path>` is an entry of 3.6 that the rule of 8.5
 allows, `<n>` is one or more digits and nothing else, and `kill -0 <n>`
@@ -393,6 +433,22 @@ block of 3.10. When the toolchain is not `ok` at the end of step 13 (state `none
 or `no target`, not installed), one more line follows the three `Next:` lines:
 `  (install the toolchain first: see above)`.
 `watane-dev new` is the real command (`dev/src/cli.rs`).
+
+**Command line tools.** At the end of step 13 the script runs
+`xcode-select -p >/dev/null 2>&1`. If it fails (no tools), whatever the answer
+to the offer and whether or not the toolchain is `ok`, the script prints after
+the `Next:` lines, on stdout:
+
+```text
+watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:
+  xcode-select --install
+```
+
+If it succeeds, the script prints nothing about the tools. The script never
+runs `xcode-select --install` itself, since macOS opens its own dialog and
+the install is the person's to start (IN-30, INST-S-34). The check says
+nothing about whether `cc` works, only whether macOS has a developer
+directory.
 
 Errors: first line `watane install: <cause>`, then lines that say what to
 do. Exit codes:
@@ -647,8 +703,17 @@ that file; it asks the bundler for the app with a config override:
 ```sh
 cargo install tauri-cli --version '=<x.y.z>' --locked   # an exact version, not cached
 cd app && cargo tauri build --bundles app \
-  --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}'
+  --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}' \
+  -- --locked
 ```
+
+`tauri-cli` passes what follows `--` to `cargo build`, so the app is built
+with the lock like the three programs of step 4; without it cargo would
+resolve the dependencies of `app` anew and the release could carry crates
+that nobody reviewed. S50b checks it as INST-S-29 checks the rest of the
+file: the line of `release.yml` that holds `cargo tauri build` must hold a
+word `--` followed by `--locked`, and the line of step 4 must hold
+`--locked`.
 
 The version of `tauri-cli` is exact (S50b picks it and a person bumps it
 by hand): a range would let a new upload to crates.io run in the release
@@ -691,8 +756,9 @@ watane 0.1.0 (aarch64-apple-darwin)
 ~/Applications/watane.app
 ```
 
-The receipt, `<prefix>/share/watane/receipt`, text, written in step 12
-through a temporary name and `mv`:
+The receipt, `<prefix>/share/watane/receipt`, text, staged as
+`receipt.new.<pid>` in step 10 and moved into place as the last entry of the
+swap (3.6), so it is never half written and never ahead of its files:
 
 ```text
 watane-receipt 1
@@ -901,8 +967,11 @@ human is needed for stage 5 only.
   tool outside 3.3 fails with `command not found`);
 - fake tools in `tests/fakes/`: `uname`, `sw_vers`, `sysctl` (platform);
   `id` (root); `xattr` (records its arguments in a log); `rustup` and
-  `rustc` (state of the toolchain from files of the test); `mv` (fails when
-  an argument ends `watane.app` and a flag file exists: INST-S-14);
+  `rustc` (state of the toolchain from files of the test); `mv` (fails, or
+  sleeps until killed, when an argument matches a pattern that a file of the test
+  names: `watane.app` for INST-S-14, `receipt.new.` for INST-S-32 and 33);
+  `xcode-select` (`-p` fails or prints a path, and records any other call:
+  INST-S-34);
   `curl` is the real one;
 - `WATANE_RELEASE_BASE=http://127.0.0.1:<port>/release` served by a
   `tiny_http` thread of the test that logs each request path (the oracle of
@@ -977,7 +1046,7 @@ Options:
 | A VM (Tart, UTM, Parallels) with a fresh macOS image | a clean guest, snapshot per run | an image of macOS (licence, 15 to 20 GB), time to restore | everything, including a Mac with no command line tools; the strongest clean |
 | A GitHub `macos-14` runner | a clean VM per run; has rustup, Homebrew and Xcode preinstalled, so it is **not clean** until those are hidden | no setup; needs `PATH` and `HOME` to be reset by the script, which is what 12.4 does; no GUI session for Gatekeeper | the smoke of 7.2 step 7 only |
 
-S50b uses the second user for stage 5, and the runner for the smoke of the
+None of the three options except the VM shows a Mac without the command line tools (Q10): a second user and the runner share the machine's tools. S50b uses the second user for stage 5, and the runner for the smoke of the
 workflow (the fresh-`HOME` form of the same script). The VM is the upgrade
 path if a clean machine with no command line tools is wanted (Q10).
 
@@ -1086,13 +1155,14 @@ otherwise.
 | Q7 | Where the version comes from. Crates each say `0.1.0` today. | (a) The tag, checked equal to five places (7.2 step 2). (b) A `[workspace.package] version` that every crate inherits. (c) Computed from the tag, written into the files by the workflow. | (a) now, (b) as its own small slice if five places hurt. | (a) to (b): every `Cargo.toml` of the workspace, hakari, the lock; mechanical. |
 | Q8 | Where `install.sh` is served. | (a) A release asset with the version baked in (3.1). (b) `raw.githubusercontent.com/.../main/install/install.sh`. (c) A short URL on a domain that watane owns. | (a): pinned to a release, no moving `main`, no domain. The cost is a long URL, shown once in the README. | (a) to (c): a domain and a redirect; old URLs must keep working. |
 | Q9 | The 26 MB vendor folder in the archive. | (a) In the archive (4.2): the first `watane-dev test` builds offline. (b) A second asset `watane-dev-vendor-<v>.tar.gz`, fetched by the script. (c) `watane-dev` fetches it on first use. | (a). One download, one checksum, no first-use network (F-QUAL-1, DEV-F-14). | (a) to (b): a second file, a second checksum, a script step. (c) puts network and a trust step into `dev`. |
-| Q10 | `git` and the Xcode command line tools. `publish` and `new --from` run `git`; a Mac with none gets macOS's own install prompt on first use. The Rust build of the allowlist needs a linker for the host: `dev/allowlist/Cargo.lock` holds `proc-macro2` (a build script), `serde_derive`, `wit-bindgen-rust-macro` (proc macros), which rustc links for macOS with `cc`, and `cc` without the command line tools is only Apple's stub that asks to install them. `wasm32-wasip2` itself links with `rust-lld`. So a first `watane-dev test` on a Mac with no command line tools is expected to fail or to bring up macOS's prompt (S50a user-sim, from the lock; not yet seen on a Mac). | (a) Do nothing; S50b's clean-Mac run tells (the second user shares the machine's tools, so it will not). (b) Test also in a VM with no command line tools (12.3) and print a line about them in the output. (c) The script offers `xcode-select --install` with the same y/N rule. | (a) for S50b, (b) as a follow-up if a person hits it. | (a) to (b): a VM image and one test; (c): a question, no change to the rest. |
+| Q10 | **Question for the human.** Which machine proves J7 ("`watane-dev new` straight after") on a Mac with no command line tools? The allowlist needs a host linker: `dev/allowlist/Cargo.lock` holds `proc-macro2` (a build script), `serde_derive` and `wit-bindgen-rust-macro` (proc macros), which rustc links for macOS with `cc`, and `cc` without the tools is only Apple's stub that asks to install them (`wasm32-wasip2` itself links with `rust-lld`); `publish` and `new --from` also need `git`. The design prints `xcode-select --install` when `xcode-select -p` fails and never runs it (3.9, IN-30). A second macOS user shares the machine's tools and a fresh `HOME` does not remove them, so neither shows what happens without them; GitHub's `macos-14` runner has them. Not yet seen on a Mac (S50a user-sim, from the lock). | (a) Accept: S50b runs the clean-user run (12.3) and reports that J7's `watane-dev test` after the install is proved only with the tools present; the printed line is the remedy. (b) A VM (Tart, UTM) with a fresh macOS and no command line tools, snapshot per run: proves the whole of J7 including the line and the first build. (c) A second physical Mac, or a wiped one. (d) Remove the tools on the human's Mac (`sudo rm -rf /Library/Developer/CommandLineTools`): needs root, breaks the human's own `git` and `cc`, and Xcode may supply them anyway. | (b) once, as a one-time proof for S50b (a day), then (a) for later runs; if the human has no time for a VM, (a) and S50b says so in its report. (d) is not recommended. | (a) to (b): a VM image (15 to 20 GB, macOS licence terms for VMs) and one test script; (c): a machine; (d): reinstalling the tools. |
 | Q11 | Telling a person that a new version exists. | (a) Never, from `install` (VISION). (b) The app shows a link to the release page when the person asks. (c) The app checks GitHub in the background. | (a); (b) is `app`'s decision later. (c) contradicts "no auto-update behind the person's back" unless the person turns it on, as `net` is. | (b) is new `app` work; (c) a switch and a consent text. |
 | Q12 | How the home is deleted on uninstall. | (a) A typed `delete` on a real terminal, no flag, variable or file (8.4). (b) A flag `--delete-home` for scripts. (c) Never: the person deletes `~/.watane` by hand. | (a): the question is one deliberate act on a terminal, and a script or an agent without a terminal cannot answer it. It is not a protection against a program of the same user, which can delete `~/.watane` itself (spec/TECHNICAL 6, not protected); the identity is not recoverable without a backup (F-APP-6), which is why the act is slow. | (a) to (b): a flag; (c): remove the question. |
 | Q13 | A Homebrew tap or a `.pkg` as well. | (a) No. (b) A tap later. | (a): the human chose the one-liner; a tap is another place a version lives. | (b) is an additive stage; nothing here changes. |
 | Q14 | Linux. | (a) Out of scope (9). (b) A CLI-only archive. (c) Archive and app. | (a) now, (b) as stage 7. | (a) to (b): a target, a runner, a platform case, a Linux clean machine. |
 | Q15 | Where the receipt and script copy live (`~/.local/share/watane/`). | (a) There (2). (b) Inside the app. (c) `~/.watane` (the home). | (a): the home holds the person's data and an uninstall must not need it. | Change the path in 3 places of this document and the script. |
 | Q16 | Repository settings that the human sets before S50b's first release; nothing in the repository's files can set them. (1) Who can create a `v*` tag, since a tag push starts a release. (2) Who can run the workflow by hand and approve the publishing job. (3) Whether `main` is reviewed, since the workflow publishes only a tag on `main` (7.2 step 2). | (1) (a) a tag ruleset on `refs/tags/v*` (Settings, Rules): restrict creation, update and deletion to the maintainer role, no bypass but admin; (b) the legacy "protected tags" list; (c) nothing. (2) (a) a GitHub environment `release` (Settings, Environments) with required reviewers (the human) and deployment tags `v*` only, named by the `release` job (7.1); the dry run publishes nothing, so `workflow_dispatch` stays with whoever has write access; (b) restrict Actions to the repository's own and pinned actions, and the default `GITHUB_TOKEN` to read-only (Settings, Actions); (c) nothing. (3) (a) a branch ruleset on `main` that requires a pull request and blocks force pushes; (b) none. | (1) (a), (2) (a) with (b)'s read-only default token and "approve runs from outside collaborators", (3) (a). Without them anyone with write access can publish a release that `latest/download` serves; the checksums do not help, as they ride in the same release (5). S50b lists them in its report and does not cut the first release until the human says they are set. | Each is a setting that can be changed at any time; the cost of a missing one is a release that is already public: delete it and the tag (a published `latest` is then served by the previous release) and tell people. |
+| Q17 | **For a later `dev` slice, not S50b.** Two fix texts of `watane-dev` suit a build machine and not an installed one: the toolchain fix `Install rustup with your package manager, then run: rustup default stable` (`env.toolchain`, `dev 3`; an installed person has no package manager to ask and the installer offers rustup), and the missing-vendor fix `'<abs dev>/scripts/vendor.sh' '<path>'` (`env.allowlist`), whose `<abs dev>` is the compile-time path of the build machine's checkout (`CARGO_MANIFEST_DIR`) and does not exist on an installed Mac, where the vendor folder is `~/.local/share/watane-dev/vendor` from the archive. The installer cannot change what `watane-dev` prints (INST-F-13). | (a) Leave as is: `watane-dev doctor` tells an installed person to run a script that is not there. (b) Change `dev`'s texts to point at the installer: the toolchain fix prints the rustup command of 3.7 (still a printed command, DEV-F-13 holds), the vendor fix says `Reinstall watane: curl -fsSL <one-liner> \| sh` when the executable lives in a folder with `../share/watane-dev` (an installed layout) and keeps `vendor.sh` for a checkout. (c) Have the installer set `WATANE_DEV_VENDOR`: it cannot, it edits no shell file. | (b), as its own `dev` slice after S50b, with INST-S-25's literal fix text changed with it (INST-S-25 names dev's text today). | (a) to (b): `dev/src` text in two places, `dev/TECHNICAL.md` 3 and 6.2, and the tests that check the fix strings; a day. |
 
 ## 15. Decisions of this subsystem
 
@@ -1126,3 +1196,7 @@ otherwise.
 | IN-26 | A first install, or an upgrade onto a path that no receipt lists, stops with exit 8 if the path exists, and changes nothing; there is no flag that overwrites. | INST-F-19: the script replaces only what it installed (3.4.2). |
 | IN-27 | `~/.local/bin`, `~/.local/share` and `~/Applications` must resolve, with links followed, inside the home; else exit 2. | INST-F-5's intent: write only under the person's home, even if a link would lead elsewhere (3.4.1). |
 | IN-28 | S50b does not cut the first release before the human has set the repository settings of Q16 (tag ruleset for `v*`, environment `release` with a required reviewer, read-only default token, `main` reviewed). | The workflow's own rules (7) assume them; the repository, not the repository's files, enforces who may start a release. |
+| IN-29 | The receipt is the last entry of one swap and its move is the commit point; before it the old version and receipt can be put back whole (a journal and `.old.<pid>` names, undone on failure, on `HUP`/`INT`/`TERM` and by the next run after a `SIGKILL`); what only the old receipt held and the `.old` names are removed after it. | A rollback's exit 5 must be true, and a re-run must not meet its own half-swapped files as foreign (exit 8) (3.6, INST-S-14, 32, 33). |
+| IN-30 | The script checks `xcode-select -p` and, when the command line tools are missing, prints `xcode-select --install` with one line of why; it never runs it and prints nothing when the tools are present. | The maker tools need `cc` and `git`; macOS opens its own dialog, and the install is the person's to start (3.9, INST-S-34; Q10 asks the human how J7 is proved without them). |
+| IN-31 | The app is built with `cargo tauri build ... -- --locked`, and INST-S-29 checks the workflow line. | A release must build the app from the reviewed lock, as the programs are (7.3). |
+| IN-32 | Dev's fix texts for the toolchain and the vendor folder are not changed in this design; a later `dev` slice points them at the installer (Q17). | `install` changes no code of another subsystem and INST-F-13 keeps `watane-dev` as it is. |
