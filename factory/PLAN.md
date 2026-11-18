@@ -361,7 +361,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   rustup detection could take the same neutral-folder rule; dash's `printf: I/O error` on a closed
   pipe; no hint after a pipe closes past the commit point; "upgrading 0.2.0 to 0.1.0" for a
   downgrade; the no-terminal uninstall does not say how to delete the home.
-- [~] **S50b-fix install's tests pass on macOS.** In flight (local), branch `slice/s50b-fix`.
+- [~] **S50b-fix install's tests pass on macOS.** In flight (local), branch `slice/s50b-fix`, foreman `12428ef1` (sessionId `12428ef1-c5b7-4444-9986-9f7a1456143c`), worktree `.claude/worktrees/s50b-fix`.
   Two install tests fail on the Mac (the cloud could not run them): (1) `package.rs`
   ac1_the_archive_has_the_tree_of_4_2: package.sh ad-hoc signs watane.app on macOS, so the archive
   holds `Contents/_CodeSignature/{CodeDirectory,CodeRequirements,CodeResources,CodeSignature}`,
