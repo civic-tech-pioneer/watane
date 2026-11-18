@@ -157,7 +157,7 @@ Stock macOS 14 and later, found on the default `PATH`
 in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `shasum` (else `sha256sum`), `uname`, `sw_vers`, `sysctl`, `id`, `mktemp`,
 `mkdir`, `mv`, `cp`, `rm`, `rmdir`, `ls`, `cat`, `chmod`, `grep`, `sed`,
-`awk`, `tr`, `head`, `dirname`, `readlink`, `xattr`, `kill`, `printf`, `test`. It uses no
+`awk`, `tr`, `head`, `dirname`, `readlink`, `xattr`, `xcode-select`, `kill`, `printf`, `test`. It uses no
 `python`, `perl`, `jq`, `brew`, `git`, `openssl`, `wget`, `gh` or
 `codesign`, and no bash-only syntax (no `[[`, arrays, `local`, `echo -e`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
@@ -277,8 +277,10 @@ files (INST-F-20, INST-S-14, 32, 33).
 0. **Recover and clean.** For each file `<prefix>/share/watane/journal.<n>`
    (`<n>` digits only, a regular file) whose process is dead (`kill -0 <n>`
    fails) or is this script's own pid: if `receipt.new.<n>` still exists,
-   undo it as in step 4 (below); if not, the commit happened, so only remove
-   its `.old.<n>` names; then remove the journal. Then remove the stale names of 3.8. If `<path>.new.<pid>` or
+   undo it as in step 4 (below), with `<n>` in place of `<pid>`; if not, the
+   commit happened, so do step 5 with `<n>` in place of `<pid>` and the old
+   receipt at `receipt.old.<n>` (its paths that the receipt does not hold, if
+   it still exists, then its `.old.<n>` names); then remove the journal. Then remove the stale names of 3.8. If `<path>.new.<pid>` or
    `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
    5 before any copy: `cp -R` onto an existing folder or link copies into
    it, and `mv` onto one moves into it.
@@ -288,9 +290,12 @@ files (INST-F-20, INST-S-14, 32, 33).
    `chmod 755` the three programs and `install.sh`. Write the new receipt
    (8.1) to `<prefix>/share/watane/receipt.new.<pid>`, in the same folder
    as the receipt.
-2. **Journal.** Write `<prefix>/share/watane/journal.<pid>` (through a
-   temporary name and `mv`), one line for each entry, the receipt included:
-   `old <path>` if `<path>` exists now (`-e` or `-L`), else `new <path>`.
+2. **Journal.** Write `<prefix>/share/watane/journal.<pid>`, one line for
+   each entry, the receipt included: `old <path>` if `<path>` exists now
+   (`-e` or `-L`), else `new <path>`. It is written directly, with no
+   temporary name: no entry is swapped before it is complete, and the undo
+   of step 4 touches only entries the swap reached, so a journal cut short
+   by a kill undoes nothing.
 3. **Swap.** For each entry in the order of the list above, the receipt
    last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then
    `mv <path>.new.<pid> <path>`. The move of `receipt.new.<pid>` onto the
@@ -298,9 +303,13 @@ files (INST-F-20, INST-S-14, 32, 33).
 4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT` or `TERM` while
    they run (the trap, 3.8), undoes the swap from the journal, or, if the
    failure came before the journal was written, from the `.new` names alone:
-   for each `old <path>` line, `rm -rf <path>` if it exists, then
-   `mv <path>.old.<pid> <path>` if that exists; for each `new <path>` line,
-   `rm -rf <path>`, each only where the rule of 8.5 allows; then remove each
+   for each `old <path>` line, only if `<path>.old.<pid>` exists (the swap
+   reached this entry): `rm -rf <path>` if it exists, then
+   `mv <path>.old.<pid> <path>`; an `old` entry with no `.old.<pid>` was not
+   swapped and its `<path>` is the old file, which stays. For each
+   `new <path>` line, only if `<path>.new.<pid>` no longer exists (it was
+   moved in): `rm -rf <path>`. Each removal only where the rule of 8.5
+   allows; then remove each
    `.new.<pid>`, `receipt.new.<pid>` and the journal; exit 5 (or 129, 130,
    143). A running `watane` keeps its open file; the next start uses the new
    one. The old version and the old receipt are then as before the run
@@ -323,7 +332,8 @@ then installs as if the killed run never happened (INST-S-33). After the
 commit, a kill leaves only `.old.<n>` names and the journal. Step 0 tells
 the two cases apart by `receipt.new.<n>`: while it exists the commit has not
 happened and the journal is undone; once it is gone the receipt is the new
-one, and step 0 only removes the `.old.<n>` names and the journal.
+one, and step 0 finishes step 5 for it (the paths only the old receipt
+held, the `.old.<n>` names, the journal).
 
 ### 3.7 The toolchain
 
@@ -711,9 +721,9 @@ cd app && cargo tauri build --bundles app \
 with the lock like the three programs of step 4; without it cargo would
 resolve the dependencies of `app` anew and the release could carry crates
 that nobody reviewed. S50b checks it as INST-S-29 checks the rest of the
-file: the line of `release.yml` that holds `cargo tauri build` must hold a
-word `--` followed by `--locked`, and the line of step 4 must hold
-`--locked`.
+file: the command of `release.yml` that holds `cargo tauri build`, its
+`\`-continued lines joined, must hold a word `--` followed by `--locked`,
+and the command of step 4 must hold `--locked`.
 
 The version of `tauri-cli` is exact (S50b picks it and a person bumps it
 by hand): a range would let a new upload to crates.io run in the release
@@ -800,7 +810,10 @@ is a feature of `app`, not of `install` (Q11).
 
 `install.sh --uninstall` (INST-F-21, 22):
 
-1. Read the receipt; none is exit 7 (INST-S-18).
+1. Recover first, as 3.6 step 0 (a journal of a dead process is undone or
+   finished), so that a killed upgrade leaves neither a missing receipt nor
+   `.old.<n>` names behind. Then read the receipt; none is exit 7
+   (INST-S-18).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27); then the stale names of
@@ -969,7 +982,8 @@ human is needed for stage 5 only.
   `id` (root); `xattr` (records its arguments in a log); `rustup` and
   `rustc` (state of the toolchain from files of the test); `mv` (fails, or
   sleeps until killed, when an argument matches a pattern that a file of the test
-  names: `watane.app` for INST-S-14, `receipt.new.` for INST-S-32 and 33);
+  names: `watane.app` for INST-S-14 and 33, `receipt.new.` for INST-S-32 and 33);
+  `rm` (sleeps until killed on its first `.old.` argument: INST-S-33);
   `xcode-select` (`-p` fails or prints a path, and records any other call:
   INST-S-34);
   `curl` is the real one;
