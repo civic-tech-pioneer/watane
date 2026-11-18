@@ -8,6 +8,8 @@ autotests = false
 
 [lib]
 name = "watane_host"
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
 
 [[bin]]
 name = "watane"

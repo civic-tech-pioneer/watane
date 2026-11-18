@@ -7,6 +7,8 @@ rust-version = "1.91"
 
 [lib]
 name = "watane_node"
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
 
 [dependencies]
 watane-dist = { path = "../dist" }

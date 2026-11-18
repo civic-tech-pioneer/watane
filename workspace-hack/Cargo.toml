@@ -257,3 +257,7 @@ tower = { version = "0.5", default-features = false, features = ["log", "make", 
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
 
 ### END HAKARI SECTION
+
+# Outside the hakari section, so `cargo hakari generate` keeps it.
+[lints]
+workspace = true

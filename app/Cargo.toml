@@ -6,6 +6,8 @@ publish = false
 
 [lib]
 name = "watane_app"
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
 
 [features]
 driver = ["dep:webkit2gtk"]

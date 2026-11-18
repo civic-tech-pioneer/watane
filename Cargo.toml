@@ -11,6 +11,12 @@ debug = "line-tables-only"
 [profile.dev.build-override]
 debug = "line-tables-only"
 
+# Dependencies (wasmtime, cranelift, tauri) at opt-level 1: half the size of every test binary
+# (host: 1.49 GB -> 0.74 GB, less to link and for the Mac's virus scanner to read) and host's
+# tests ran 32-50% faster; their cold build takes ~60% longer. watane's own crates stay at 0.
+[profile.dev.package."*"]
+opt-level = 1
+
 # Google Rust style (https://google.github.io/styleguide/rustguide.html), application crates.
 # app keeps its own copy of this table without unsafe_code, for its AppKit FFI.
 [workspace.lints.rust]
@@ -23,6 +29,11 @@ redundant_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 unused_lifetimes = "warn"
+
+# Cargo 1.100: every member depends on workspace-hack on purpose (cargo hakari), and the hack
+# crate lists features, not code it uses; this lint warned ~35 times on every build.
+[workspace.lints.cargo]
+unused_dependencies = "allow"
 
 [workspace.lints.clippy]
 ref_option = "deny"

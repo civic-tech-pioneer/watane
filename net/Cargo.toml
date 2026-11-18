@@ -8,6 +8,8 @@ license = "MIT OR Apache-2.0"
 
 [lib]
 name = "watane_net"
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
 
 [dependencies]
 watane-log = { path = "../log" }

@@ -9,6 +9,10 @@ publish = false
 default = ["fake-host"]
 fake-host = ["dep:tiny_http"]
 
+[lib]
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
+
 [dependencies]
 tiny_http = { version = "0.12", optional = true }
 watane-pkg = { path = "../pkg" }
