@@ -730,3 +730,19 @@ fn ac4_ac5_the_answer_gets_its_own_line_and_a_change_is_confirmed() {
     assert_eq!(code, 0);
     assert_eq!(stdout, "relays none\n");
 }
+
+#[test]
+fn ac1_version_prints_name_and_crate_version_with_no_home() {
+    let bare = Command::new(env!("CARGO_BIN_EXE_watane-node"))
+        .env_remove("WATANE_NODE_HOME")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(bare.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(bare.stdout).unwrap(),
+        format!("watane-node {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    assert!(bare.stderr.is_empty());
+}

@@ -372,10 +372,12 @@ watane-node --home <dir> relay remove <url>
 watane-node --home <dir> dht on [--yes]             NODE-F-17
 watane-node --home <dir> dht off
 watane-node --help
+watane-node --version
 ```
 
 `--help` or `-h` anywhere, or `help` as the first word, prints this usage on
-stdout and exits 0; no home is needed. Any other unknown flag exits 2 with
+stdout and exits 0; no home is needed. `--version` alone prints
+`watane-node <crate version>` on stdout and exits 0, also with no home. Any other unknown flag exits 2 with
 `unknown flag <flag>` and the usage.
 
 `--home` is required; `WATANE_NODE_HOME` stands in for it. The home is

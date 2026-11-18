@@ -20,6 +20,7 @@ const USAGE: &str = "usage:
   watane-node --home <dir> dht on [--yes]
   watane-node --home <dir> dht off
   watane-node --help
+  watane-node --version
 WATANE_NODE_HOME stands in for --home.";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -625,8 +626,15 @@ fn wants_help(args: &[String]) -> bool {
     first_word.is_some_and(|a| a == "help") || args.iter().any(|a| a == "--help" || a == "-h")
 }
 
+/// The one text `--version` prints, name and crate version.
+const VERSION: &str = concat!("watane-node ", env!("CARGO_PKG_VERSION"));
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.as_slice() == ["--version"] {
+        out(VERSION);
+        return ExitCode::SUCCESS;
+    }
     if wants_help(&args) {
         out(USAGE);
         return ExitCode::SUCCESS;
@@ -888,5 +896,10 @@ mod tests {
         for no in ["status", "--home h status --wat", ""] {
             assert!(!wants_help(&args(no)), "{no}");
         }
+    }
+
+    #[test]
+    fn ac2_usage_lists_version() {
+        assert!(USAGE.contains("watane-node --version"));
     }
 }
