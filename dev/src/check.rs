@@ -555,9 +555,8 @@ mod manifest_tests {
         };
         assert_eq!(errors[0].code, Code::ModInvalid);
         assert_eq!(errors[0].file.as_deref(), Some("wit/world.wit"));
-        // pkg currently formats its WIT error without the parser location.
-        assert_eq!(errors[0].line, None, "{}", errors[0].message);
-        assert_eq!(errors[0].column, None);
+        assert_eq!(errors[0].line, Some(5), "{}", errors[0].message);
+        assert_eq!(errors[0].column, Some(1));
     }
 
     #[test]

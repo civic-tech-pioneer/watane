@@ -367,10 +367,7 @@ pub(crate) fn compile(
         outside.extend(outside_reads(&text, &allowed));
     }
     if !outside.is_empty() {
-        return Err(outside
-            .into_iter()
-            .map(|path| reads_outside_problem(&path))
-            .collect());
+        return Err(reads_outside_problems(outside.into_iter().collect()));
     }
     Ok(artifacts)
 }
@@ -453,12 +450,44 @@ fn normalized(path: &Path) -> PathBuf {
     })
 }
 
+/// One problem for all outside `.wit` paths, then one for each other path.
+fn reads_outside_problems(paths: Vec<PathBuf>) -> Vec<Problem> {
+    let (wit, other): (Vec<_>, Vec<_>) = paths
+        .into_iter()
+        .partition(|p| p.extension().is_some_and(|e| e == "wit"));
+    let mut problems = Vec::new();
+    match wit.as_slice() {
+        [] => {}
+        [one] => problems.push(reads_outside_problem(one)),
+        many => {
+            let mut folder = many[0].parent().unwrap_or(Path::new("")).to_path_buf();
+            for path in &many[1..] {
+                while !path.starts_with(&folder) && folder.pop() {}
+            }
+            let mut problem = reads_outside_problem(&folder);
+            problem.message = format!(
+                "the build read {} .wit files under {}, outside the mod",
+                many.len(),
+                folder.display()
+            );
+            problem.fix = Some(wit_fix(&folder));
+            problems.push(problem);
+        }
+    }
+    problems.extend(other.iter().map(|p| reads_outside_problem(p)));
+    problems
+}
+
+fn wit_fix(path: &Path) -> String {
+    format!(
+        "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at {}",
+        path.display()
+    )
+}
+
 fn reads_outside_problem(path: &Path) -> Problem {
     let fix = if path.extension().is_some_and(|e| e == "wit") {
-        format!(
-            "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at {}",
-            path.display()
-        )
+        wit_fix(path)
     } else {
         "Remove the include_bytes!, include_str!, include! or #[path] that names it".into()
     };
@@ -516,6 +545,40 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac2_outside_wit_paths_are_one_problem() {
+        let paths = [
+            "/x/other/wit/deps/a/b.wit",
+            "/x/other/wit/deps/c.wit",
+            "/x/other/wit/world.wit",
+            "/x/other/data.rs",
+        ]
+        .map(PathBuf::from)
+        .to_vec();
+        let problems = reads_outside_problems(paths);
+        assert_eq!(problems.len(), 2);
+        assert_eq!(
+            problems[0].message,
+            "the build read 3 .wit files under /x/other/wit, outside the mod"
+        );
+        assert!(
+            problems[0]
+                .fix
+                .as_deref()
+                .unwrap()
+                .ends_with("not at /x/other/wit")
+        );
+        assert_eq!(
+            problems[1].message,
+            "the build read /x/other/data.rs, outside the mod"
+        );
+        let one = reads_outside_problems(vec![PathBuf::from("/x/other/wit/world.wit")]);
+        assert_eq!(one.len(), 1);
+        assert_eq!(
+            one[0].message,
+            "the build read /x/other/wit/world.wit, outside the mod"
+        );
+    }
     #[test]
     fn ac6_reads_outside_fix_depends_on_the_path() {
         let wit = reads_outside_problem(Path::new("/x/other/wit/world.wit"));

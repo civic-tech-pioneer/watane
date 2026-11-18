@@ -103,7 +103,7 @@ mod fake {
     use std::fs;
     use std::io::{BufRead, BufReader};
     use std::path::{Path, PathBuf};
-    use std::process::{Child, Stdio};
+    use std::process::Stdio;
     #[test]
     fn ac2_fake_help_and_wrong_arguments() {
         for args in [
@@ -125,13 +125,6 @@ mod fake {
             assert!(text.contains("--home <dir>"), "{text}");
             assert!(text.contains("preview host"), "{text}");
             assert!(text.contains("home host"), "{text}");
-        }
-    }
-    struct Host(Child);
-    impl Drop for Host {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
         }
     }
     fn start(home: &Path, mode: &str) -> (Host, Value) {
@@ -247,6 +240,32 @@ mod fake {
             value["errors"][0]["message"],
             "The person declined installing counter in their watane app"
         );
+    }
+    #[test]
+    fn ac3_never_answer_is_no_answer() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join("fake.json"), r#"{"answer":"never"}"#).unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let dir = page(root.path(), "counter");
+        let started = std::time::Instant::now();
+        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&dir)
+            .env("WATANE_DEV_CACHE", home.path().join("build-cache"))
+            .args(["install", "--json", "--wait", "1", "--home"])
+            .arg(home.path())
+            .output()
+            .unwrap();
+        assert!(started.elapsed().as_secs() < 10);
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output.status.code(), Some(4), "{value}");
+        assert_eq!(value["errors"][0]["code"], "host.no_answer");
+        assert_eq!(
+            value["errors"][0]["message"],
+            "no answer from the home host in 1 s"
+        );
+        assert!(value["errors"][0]["fix"].is_string(), "{value}");
+        assert!(value["next"].is_string(), "{value}");
     }
     #[test]
     fn ac5_declined_next_is_first_fix() {
@@ -420,6 +439,13 @@ mod fake {
     }
 }
 
+struct Host(std::process::Child);
+impl Drop for Host {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 #[test]
 #[ignore = "slow: proves real home host without an app is refused before the pipeline"]
 fn ac2_real_home_without_app() {
@@ -436,14 +462,13 @@ fn ac2_real_home_without_app() {
     BufReader::new(child.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
+    let _host = Host(child);
     let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .current_dir(home.path())
         .args(["install", "--json", "--home"])
         .arg(home.path())
         .output()
         .unwrap();
-    child.kill().unwrap();
-    child.wait().unwrap();
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(output.status.code(), Some(3));
     assert_eq!(

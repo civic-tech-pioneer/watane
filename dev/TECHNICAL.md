@@ -217,7 +217,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.provider_missing` | 1 | a local provider has no folder in `.watane-dev.json`, or the folder is gone | `the local provider <slug> has no known folder` | `Run: watane-dev add <folder of <slug>>` |
 | `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>` |
 | `build.compile` | 1 | each rustc error | the rustc message, with its location | — |
-| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` |
+| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod`; for n > 1 outside `.wit` paths, one problem: `the build read <n> .wit files under <folder>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` (`<folder>`, their deepest common ancestor, for n > 1) |
 | `build.imports` | 1 | each `Violation` of `Mod::check_component` | `[component] <message>` | — |
 | `test.unit` | 1 | each failed unit test | the panic message | — |
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
@@ -1055,7 +1055,7 @@ The runs, in order:
 6. **Reads** (DEV-S-10): dev reads the new `deps/<crate>-*.d` and `deps/<crate>.d` files (make syntax:
    `target: dep dep ...`, with `\ ` for a space in a path). Every path in
    them must lie under the copy folder, the vendor folder, the sysroot or
-   `<cache>/target`. Else one `build.reads_outside` for each path, and dev
+   `<cache>/target`. Else one `build.reads_outside` for all outside paths ending in `.wit` (for n > 1: `the build read <n> .wit files under <folder>, outside the mod`, `<folder>` their deepest common ancestor) and one for each other path, and dev
    writes no `logic.wasm` (DEV-F-14). rustc lists the files of
    `include_bytes!`, `include_str!`, `include!` and `#[path]` there.
    Relative dependencies resolve from the copy's `logic/` working folder;

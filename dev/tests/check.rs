@@ -251,3 +251,20 @@ fn ac1_ac4_collect_outlet_named_like_slug() {
     assert_eq!(v["result"]["collects"], json!(["mods:menu/menu@0.1.0"]));
     assert_eq!(v["result"]["events"], json!(["mods:menu/menu@0.1.0"]));
 }
+#[test]
+fn ac1_wit_syntax_error_has_file_line_and_column() {
+    let t = tempfile::tempdir().unwrap();
+    assert_eq!(run(t.path(), &["new", "hello", "--json"]).0, 0);
+    let dir = t.path().join("hello");
+    fs::write(
+        dir.join("wit/world.wit"),
+        "package mods:hello@0.1.0;\n\nworld hello {\n  @\n}\n",
+    )
+    .unwrap();
+    let (c, v) = run(&dir, &["check", "--json"]);
+    assert_eq!(c, 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "mod.invalid");
+    assert_eq!(v["errors"][0]["file"], "wit/world.wit");
+    assert_eq!(v["errors"][0]["line"], 5, "{v}");
+    assert_eq!(v["errors"][0]["column"], 1, "{v}");
+}

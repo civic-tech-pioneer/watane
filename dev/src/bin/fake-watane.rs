@@ -187,6 +187,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             continue;
         }
+        if config["answer"] == "never" && matches!(path.as_str(), "/api/install" | "/api/publish") {
+            // Hold the request unanswered until the process is killed.
+            loop {
+                std::thread::park();
+            }
+        }
         if path == "/api/publish"
             && let Some(header) = request
                 .headers()
