@@ -2107,7 +2107,7 @@ The vendor-script integration runs offline only when registry metadata confirms
 that the local cache has the crates; otherwise its ignored
 `ac3_vendor_script_with_registry_downloads` counterpart runs the bootstrap.
 
-Cache experiment (S13): original cold 33.41 s, same path warm 6.78 s, copied cache 13.68 s; the cache-path remap changes Cargo's rustflags fingerprint, so `tests/support/mod.rs` builds one template per test binary and shares that original cache folder, never a copy. The folder is `<target>/tmp/watane-dev-warm-<crate>` (`CARGO_TARGET_TMPDIR`), removed and rebuilt at first use in each run, not a `TempDir`: a `static` is never dropped, so a `$TMPDIR` cache leaked GBs per run (S78). `cargo clean` removes it.
+Cache experiment (S13): original cold 33.41 s, same path warm 6.78 s, copied cache 13.68 s; the cache-path remap changes Cargo's rustflags fingerprint, so `tests/support/mod.rs` builds one template and every dev test binary shares that original cache folder, never a copy. The folder is `<target>/tmp/watane-dev-warm` (`CARGO_TARGET_TMPDIR`), built under a file lock and kept between runs until the `watane-dev` binary changes, not a `TempDir`: a `static` is never dropped, so a `$TMPDIR` cache leaked GBs per run (S78). `cargo clean` removes it.
 
 Tests keep their mod folders independent. The builder's per-slug lock guards
 source preparation and compilation; the unit fixture also serializes its

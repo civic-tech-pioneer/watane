@@ -43,7 +43,6 @@ fn regress_s78_warm_cache_leaves_temp_dir_empty() {
         .map(|e| e.unwrap().file_name())
         .collect();
     assert!(left.is_empty(), "temp folders left after exit: {left:?}");
-    let expected = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(concat!("watane-dev-warm-", env!("CARGO_CRATE_NAME")));
+    let expected = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("watane-dev-warm");
     assert!(expected.join("counter").is_dir(), "{expected:?}");
 }
