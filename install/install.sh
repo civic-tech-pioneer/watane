@@ -263,7 +263,7 @@ EOF
 
 # rm_path <path>: rm -rf with a warning
 rm_path() {
-  rm -rf "$1" || warn "could not remove $1"
+  rm -rf "$1" || { warn "could not remove $1"; return 1; }
   return 0
 }
 
@@ -274,13 +274,13 @@ undo_swap() {
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
       # the receipt moved into place: the commit happened, there is nothing to undo
-      if ! exists "$RECEIPT.new.$1"; then finish_commit "$1"; exit 0; fi
+      if ! exists "$RECEIPT.new.$1"; then finish_commit "$1" || exit 1; exit 0; fi
       read_journal "$ub_j"
       while IFS= read -r ub_p; do
         [ -n "$ub_p" ] || continue
         exists "$ub_p.old.$1" || continue
-        if [ "$ub_p" != "$RECEIPT" ]; then rm -rf "$ub_p"; fi
-        mv "$ub_p.old.$1" "$ub_p" || warn "could not put back $ub_p"
+        if [ "$ub_p" != "$RECEIPT" ]; then rm_path "$ub_p" || exit 1; fi
+        mv "$ub_p.old.$1" "$ub_p" || exit 1
       done <<EOF
 $J_OLD
 EOF
@@ -293,6 +293,8 @@ EOF
         if exists "$ub_p"; then
           mv "$ub_p" "$ub_p.new.$1" || exit 1
         else
+          # A removed parent leaves no entry at this path to protect on retry.
+          exists "${ub_p%/*}" || continue
           mkdir "$ub_p.new.$1" || exit 1
         fi
       done <<EOF
@@ -304,11 +306,11 @@ EOF
     rm -f "$SHAREW/journal.$1" || exit 1
     while IFS= read -r ub_p; do
       allowed "$ub_p" || continue
-      if exists "$ub_p.new.$1"; then rm -rf "$ub_p.new.$1"; fi
+      if exists "$ub_p.new.$1"; then rm_path "$ub_p.new.$1" || exit 1; fi
     done <<EOF
 $ENTRIES_ALL
 EOF
-    if exists "$RECEIPT.old.$1"; then rm -rf "$RECEIPT.old.$1"; fi
+    if exists "$RECEIPT.old.$1"; then rm_path "$RECEIPT.old.$1" || exit 1; fi
     exit 0
   )
 }
@@ -326,7 +328,7 @@ finish_commit() {
         fc_p=${fc_l#path }
         if in_list "$fc_cur" "$fc_l"; then continue; fi
         allowed "$fc_p" || continue
-        if exists "$fc_p"; then rm_path "$fc_p"; fi
+        if exists "$fc_p"; then rm_path "$fc_p" || return 1; fi
       done <<EOF
 $R_LINES
 EOF
@@ -334,12 +336,12 @@ EOF
   fi
   while IFS= read -r fc_p; do
     allowed "$fc_p" || continue
-    if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1"; fi
+    if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1" || return 1; fi
   done <<EOF
 $ENTRIES
 EOF
-  if exists "$fc_old"; then rm_path "$fc_old"; fi
-  rm -f "$SHAREW/journal.$1"
+  if exists "$fc_old"; then rm_path "$fc_old" || return 1; fi
+  rm -f "$SHAREW/journal.$1" || return 1
   return 0
 }
 
@@ -353,7 +355,7 @@ clean_stale() {
         cs_n=${cs_f#"$cs_e.$cs_k."}
         case $cs_n in '' | *[!0-9]*) continue ;; esac
         pid_gone "$cs_n" || continue
-        rm_path "$cs_f"
+        rm_path "$cs_f" || return 1
       done
     done
   done <<EOF
@@ -366,7 +368,7 @@ EOF
 recover() {
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
   if ! allowed "$RECEIPT"; then
-    clean_stale
+    clean_stale || die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."
     return 0
   fi
   find_journals
@@ -374,14 +376,14 @@ recover() {
     [ -n "$rc_n" ] || continue
     pid_gone "$rc_n" || continue
     if exists "$RECEIPT.new.$rc_n"; then
-      undo_swap "$rc_n"
+      undo_swap "$rc_n" || die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."
     else
-      finish_commit "$rc_n"
+      finish_commit "$rc_n" || die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."
     fi
   done <<EOF
 $JOURNALS
 EOF
-  clean_stale
+  clean_stale || die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."
   return 0
 }
 
@@ -644,7 +646,6 @@ EOF
   if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return 1; fi
   printf 'moved %s\n' "$RECEIPT" >>"$sw_j" || return 1
   mv "$RECEIPT.new.$$" "$RECEIPT" || return 1
-  SWAP_ACTIVE=0
   return 0
 }
 
@@ -913,7 +914,8 @@ do_install() {
   extract_archive
   install_files
   xattr -dr com.apple.quarantine "$HOME/Applications/watane.app" >/dev/null 2>&1 || true
-  finish_commit "$$"
+  finish_commit "$$" || true
+  SWAP_ACTIVE=0
   say 'installed:'
   for di_r in $RELS; do
     dest_of "$di_r"
@@ -964,14 +966,14 @@ do_uninstall() {
     case $du_l in 'path '*) ;; *) continue ;; esac
     du_p=${du_l#path }
     if allowed "$du_p"; then
-      if exists "$du_p"; then rm_path "$du_p"; fi
+      if exists "$du_p"; then rm_path "$du_p" || true; fi
     else
       warn "skipped $du_p: not a path that watane installs"
     fi
   done <<EOF
 $R_LINES
 EOF
-  clean_stale
+  clean_stale || true
   if allowed "$RECEIPT"; then
     rm -f "$RECEIPT" || warn "could not remove $RECEIPT"
   else

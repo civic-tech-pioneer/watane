@@ -1514,6 +1514,128 @@ set_entries
     }
 }
 
+/// Validator R1 (AC4): clearing both a fresh entry and its parent cannot wedge recovery.
+#[test]
+fn ac4_recovery_skips_a_fresh_entry_whose_parent_is_gone() {
+    let fx = Fx::new();
+    write_file(&fx.share("watane/receipt.new.42"), "pending");
+    write_file(
+        &fx.share("watane/journal.42"),
+        &format!(
+            "new {}\nmoved {}\n",
+            fx.bin("watane").display(),
+            fx.bin("watane").display()
+        ),
+    );
+    assert!(!fx.home.join(".local/bin").exists());
+    for _ in 0..2 {
+        let out = fx.run(&["--no-toolchain"]);
+        assert_eq!(out.code, 0, "{out:?}");
+        fx.assert_installed("0.1.0");
+        assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+    }
+}
+
+/// Validator R1 (AC4): recovery cannot continue after a real filesystem failure.
+#[test]
+fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for failure in [
+        "marker",
+        "move",
+        "restore",
+        "staging",
+        "journal",
+        "committed",
+        "stale",
+    ] {
+        let fx = Fx::new();
+        fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
+        if failure != "stale" {
+            write_file(
+                &fx.share("watane/journal.42"),
+                &format!(
+                    "{} {}\nmoved {}\n",
+                    if failure == "restore" { "old" } else { "new" },
+                    fx.bin("watane").display(),
+                    fx.bin("watane").display(),
+                ),
+            );
+        }
+        if failure != "committed" {
+            write_file(&fx.share("watane/receipt.new.42"), "pending");
+        }
+        match failure {
+            "marker" => {
+                let mkdir = fx.fakes.join("mkdir");
+                write_file(
+                    &mkdir,
+                    "#!/bin/sh\ncase $1 in *.new.42) exit 1 ;; esac\nexec \"$FAKE_REAL/mkdir\" \"$@\"\n",
+                );
+                fs::set_permissions(mkdir, fs::Permissions::from_mode(0o755)).expect("chmod");
+            }
+            "move" => {
+                write_file(&fx.bin("watane"), "new");
+                fx.state_write("mv_fault", "fail\n*/bin/watane.new.42\n");
+            }
+            "restore" => {
+                write_file(&fx.bin("watane"), "new");
+                write_file(&fx.bin("watane.old.42"), "old");
+                fx.state_write("mv_fault", "fail\n*/bin/watane.old.42\n");
+            }
+            "staging" | "stale" => {
+                write_file(&fx.bin("watane.new.42"), "staged");
+                fx.state_write("rm_fault", "fail\n*/bin/watane.new.42\n");
+            }
+            "journal" => fx.state_write("rm_fault", "fail\n*/journal.42\n"),
+            "committed" => {
+                write_file(&fx.bin("watane.old.42"), "old");
+                fx.state_write("rm_fault", "fail\n*/bin/watane.old.42\n");
+            }
+            _ => unreachable!(),
+        }
+        let source = baked_script("0.1.0").replace(
+            "main \"$@\"",
+            r#"
+HOME_R=$(cd "$HOME" && pwd -P)
+set_entries
+recover
+printf 'continued after recovery\n'
+"#,
+        );
+        fs::write(&fx.script, source).expect("recovery fixture");
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 5, "{failure}: {out:?}");
+        assert!(
+            out.stderr.contains("watane install: could not recover"),
+            "{failure}: {out:?}"
+        );
+        assert!(
+            !out.stdout.contains("continued after recovery"),
+            "{failure}: {out:?}"
+        );
+    }
+}
+
+/// Validator R1 (AC4): signals during xattr finish the committed swap's cleanup.
+#[test]
+fn ac4_signals_during_xattr_leave_the_new_version_without_a_journal() {
+    for (signal, code) in [("TERM", 143), ("INT", 130)] {
+        let (fx, _) = swap_start();
+        fx.state_write("xattr_fault", "sleep\n");
+        let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
+        fx.wait_state("xattr_sleeping");
+        assert!(fx.read(&fx.receipt()).contains("\nversion 0.2.0\n"));
+        assert!(has_leftover(&fx, "journal."));
+        signal_group(child.id(), signal);
+        let out = finish(child);
+        assert_eq!(out.code, code, "{signal}: {out:?}");
+        assert_all_new(&fx);
+        assert!(fx.tmp_tree().is_empty(), "{signal}: {out:?}");
+    }
+}
+
 fn plant_s35(fx: &Fx, n: u32) {
     let h = fx.home.display();
     let mut j = String::new();

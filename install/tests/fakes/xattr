@@ -1,3 +1,10 @@
 #!/bin/sh
 # Fake xattr: records its arguments in $FAKE_STATE/xattr.log.
 echo "$*" >> "$FAKE_STATE/xattr.log"
+# Sleep after the receipt commit so a test can signal during quarantine removal.
+if [ -f "$FAKE_STATE/xattr_fault" ]; then
+  read -r mode < "$FAKE_STATE/xattr_fault"
+  case $mode in
+    sleep) echo sleeping > "$FAKE_STATE/xattr_sleeping"; exec "$FAKE_REAL/sleep" 600 ;;
+  esac
+fi

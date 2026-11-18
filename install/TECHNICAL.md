@@ -324,9 +324,19 @@ files (INST-F-20, INST-S-14, 32, 33).
    `new <path>` line, only if the journal also holds `moved <path>` and
    `<path>.new.<pid>` no longer exists (it was moved in): rename `<path>`
    back to `<path>.new.<pid>` instead of deleting it in place. If the entry
-   is already absent, create an empty directory at that staging name as
-   evidence that undo reached it. A retry sees the staging name and leaves
-   a replacement at `<path>` alone.
+   is already absent and its parent still exists, create an empty directory
+   at that staging name as evidence that undo reached it. If the parent is
+   also absent, skip this entry successfully: there is no path there to guard.
+   A retry sees the staging name (or the absent parent) and leaves a
+   replacement at `<path>` alone. Any other failure to restore, rename,
+   create a marker or remove a journal or staging name fails the undo;
+   recovery must stop, never proceed with a new swap over an unknown state.
+   A failed journal recovery exits 5 with
+   `watane install: could not recover interrupted install (pid <n>)`;
+   failed stale-name cleanup exits 5 with
+   `watane install: could not recover stale install files`. Both are followed
+   by `Recovery stopped; fix the filesystem error and run this again.`
+   The filesystem tool's error, when present, identifies the failed operation.
    Only lines valid by 3.6.1 are used. Each removal only where the rule of 8.5
    allows; then remove
    the journal **before** deleting any `.new.<pid>` (including
@@ -345,8 +355,10 @@ files (INST-F-20, INST-S-14, 32, 33).
    `rm -rf` each `.old.<pid>`, `receipt.old.<pid>` last, since step 0 reads
    it if this step is cut short; remove the journal last. A removal that fails here
    prints `watane install: could not remove <path>` on stderr and does not
-   change the exit status: the new version is installed, and the next run
-   removes a leftover `.old.<n>` of a dead pid (3.8). After an upgrade to another version (not a reinstall of the same one) the
+   change the exit status of the installing run: the new version is installed.
+   Cleanup stops at that failure, preserving the journal and old receipt
+   needed by a later recovery; a failure during that recovery stops with
+   exit 5 as in step 4. The next run removes leftovers of a dead pid (3.8). After an upgrade to another version (not a reinstall of the same one) the
    script prints `If watane is open, quit it and open it again.`
 
 A process that is killed by `SIGKILL` (or loses power) between steps 2 and
@@ -463,6 +475,10 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).
+The swap remains active through quarantine removal (`xattr`) and the
+post-commit cleanup of 3.6 step 5; it is cleared only after that cleanup
+returns. A signal after the receipt commit therefore reaches undo's
+committed branch, which finishes cleanup without reverting the new version.
 A kill before journal removal leaves the evidence needed to repeat the
 undo; a kill afterwards leaves only staging cleanup, so recovery never
 removes a replacement that the person put at an entry path. The swap counts
@@ -540,7 +556,7 @@ do. Exit codes:
 | 2 | unsupported platform, a missing tool, or an install folder that resolves outside the home or to the home itself (3.4.1) |
 | 3 | a download failed |
 | 4 | the checksum does not match, or `SHA256SUMS` has no line for the archive |
-| 5 | the archive is not a watane archive, the files could not be put in place (rolled back), or another install is running (3.6.1) |
+| 5 | the archive is not a watane archive, the files could not be put in place (rolled back), interrupted-install recovery failed (3.6 step 4), or another install is running (3.6.1) |
 | 6 | the toolchain step failed (watane itself is installed) |
 | 7 | no receipt (`--status`, `--uninstall`) |
 | 8 | files that watane did not install are where it would install (3.4.2); nothing was changed |
@@ -1085,6 +1101,9 @@ to four per test binary. Deadlines start after admission.
   `shasum -a 256` or `sha256sum`; the crate adds no hash dependency) and a fake
   archive: `tar -czf` of a tree with the layout of 4.2 whose programs are
   small shell scripts that print `<name> <version>` for `--version`;
+- Fake `xattr` records arguments as usual; `xattr_fault` containing `sleep`
+  makes it write `xattr_sleeping` and sleep until signalled. This pauses
+  the real install after the receipt commit and before commit cleanup.
 - The test launcher supplies its own pid as `FAKE_INSTALL_PID` to fake `rm`:
   its `term` mode signals both the undo subshell and the installer without
   relying on `ps`, which the agent sandbox blocks. This variable belongs

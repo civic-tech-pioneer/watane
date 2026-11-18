@@ -219,3 +219,38 @@ AC4 regressions and all original default tests passed. `cargo clippy
 --all-targets -- -D warnings`, `cargo +nightly fmt --check`, and
 `shellcheck -s sh install.sh package.sh` exited 0. The existing manifest
 warnings about workspace-hack remain. No other ignored or GUI tests ran.
+
+
+## S50b-fix-3 validator return, round 1
+
+Kept validator commit `1451e3b`, including lost-tty denial, the stronger
+NUL/empty-marker regressions, and the reverted FUNCTIONAL mechanism text.
+A staged fresh-entry journal with both the entry and `.local/bin` removed
+reproduced the bare mkdir failure and exit 1. Undo now skips an absent
+entry whose parent is also absent, as decided by the foreman: there is
+nothing at that path to guard. The regression completes two real installs
+from that state and checks no journal or staging names remain.
+
+Other recovery failures remain fatal. Undo, committed cleanup and stale-name
+cleanup now propagate failed operations; recovery supplies a clear message
+and exit 5 instead of falling through or exposing an unlabelled exit 1.
+A prebuilt-journal regression exercises failed marker creation, fresh-entry
+rename, old-file restoration, staging removal, journal removal, committed
+backup removal and stale-file removal. Every case stops before subsequent
+work. Normal post-commit cleanup and uninstall retain their documented
+warning behavior; a later recovery stops if the filesystem still fails.
+
+The swap now remains active until post-commit cleanup returns, including
+while xattr runs. A fake xattr sleep pauses the actual upgrade after the
+receipt commit. The new TERM/INT regression went red with the new version
+installed but its journal and old backups left behind; the signal handler
+now reaches undo's committed branch to finish cleanup. It checks exit
+143/130, the new version in place, and no journal, backups or temporary
+folder left. The original adversary tests remain unchanged.
+
+Round 1 validation: `cargo test -p watane-install` passed (71 passed,
+16 ignored); the two NUL pty tests passed with `--ignored`, including the
+validator's stronger home-question assertions. `cargo clippy --all-targets
+-- -D warnings`, `cargo +nightly fmt --check` and `shellcheck -s sh
+install.sh package.sh` exited 0. All cargo tests ran without shell
+backgrounding. The existing workspace-hack manifest warnings remain.
