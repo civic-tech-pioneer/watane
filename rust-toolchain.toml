@@ -1,0 +1,4 @@
+# Pinned: the worktree seed in the foreman and product-owner skills depends on Cargo's build-dir layout.
+# Upgrade on purpose, then re-check that seed.
+[toolchain]
+channel = "1.100.0"
