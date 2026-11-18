@@ -22,13 +22,13 @@ local foreman.
    No bash-only syntax. Nothing is written before the checksum matched.
 2. No root, no `sudo`, no write outside `$HOME`, no telemetry, no
    background process, no shell file edited, no toolchain without a typed
-   yes or `--toolchain`. Each is a vision boundary; ask the human before
+   yes (no flag says yes). Each is a vision boundary; ask the human before
    weakening one.
 3. Names are defined in TECHNICAL.md only (archive, paths, flags,
    variables, exit codes, texts). Change one there and in every document
    that cites it, then in the script and the tests.
 4. The script has no test-only branch except `WATANE_RELEASE_BASE`,
-   `WATANE_RUSTUP_URL` and `WATANE_INSTALL_TTY` (TECHNICAL.md 3.2). A test
+   `WATANE_RUSTUP_URL` and `WATANE_INSTALL_TTY` (TECHNICAL.md 3.2; the last answers the toolchain offer only, never the uninstall question). A test
    fakes the platform with tools first on `PATH`.
 5. A test never reaches the internet. A test of the real release is the
    clean-Mac run, not `cargo test`.
