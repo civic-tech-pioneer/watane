@@ -103,7 +103,7 @@ fn ac1_the_archive_has_the_tree_of_4_2() {
 #[test]
 fn ac2_a_missing_part_is_refused_and_named() {
     type Spoil = fn(&Checkout);
-    let parts: [(&str, &str, Spoil); 6] = [
+    let parts: [(&str, &str, Spoil); 7] = [
         ("watane", "target/release/watane", |c| {
             fs::remove_file(c.path("target/release/watane")).expect("rm");
         }),
@@ -115,6 +115,10 @@ fn ac2_a_missing_part_is_refused_and_named() {
         }),
         ("the app", "watane.app", |c| {
             fs::remove_dir_all(c.path("target/release/bundle")).expect("rm");
+        }),
+        ("the app's Info.plist", "Info.plist", |c| {
+            fs::remove_file(c.path("target/release/bundle/macos/watane.app/Contents/Info.plist"))
+                .expect("rm");
         }),
         ("the vendor script", "vendor.sh", |c| {
             fs::remove_file(c.path("dev/scripts/vendor.sh")).expect("rm");
