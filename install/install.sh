@@ -790,7 +790,7 @@ toolchain_step() {
       ;;
   esac
   ts_ans=""
-  read_answer </dev/tty
+  read_answer </dev/tty || ANSWER=""
   ts_ans=$ANSWER
   case $ts_ans in
     [Yy] | [Yy][Ee][Ss]) ;;
@@ -1003,7 +1003,7 @@ EOF
   if ( : </dev/tty ) 2>/dev/null; then
     printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde_r "$HOME_DEL")"
     du_a=""
-    read_answer </dev/tty
+    read_answer </dev/tty || ANSWER=""
     du_a=$ANSWER
     if [ "$du_a" = delete ]; then
       rm -rf -- "$HOME_DEL"

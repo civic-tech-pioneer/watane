@@ -498,11 +498,25 @@ fn inst_s16_uninstall_home_deleted() {
 #[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn ac3_uninstall_nul_in_answer_keeps_home() {
-    let fx = uninstall_setup();
-    let out = support::pty::run_bytes(&fx, &["--uninstall"], &[], &[("keep it: ", b"de\0lete")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(fx.home.join(".watane/marker").is_file(), "{out:?}");
-    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
+    // 8.4 via 3.7's reader: a NUL anywhere, or a trailing space, is not `delete`
+    for answer in [
+        &b"de\0lete"[..],
+        &b"delete\0"[..],
+        &b"\0delete"[..],
+        &b"delete "[..],
+    ] {
+        let fx = uninstall_setup();
+        let out = support::pty::run_bytes(&fx, &["--uninstall"], &[], &[("keep it: ", answer)]);
+        assert_eq!(out.code, 0, "{answer:?}: {out:?}");
+        assert!(
+            fx.home.join(".watane/marker").is_file(),
+            "{answer:?}: {out:?}"
+        );
+        assert!(
+            out.has_line("kept: ~/.watane (your home: identity, mods, channels)"),
+            "{answer:?}"
+        );
+    }
 }
 
 #[test]
@@ -1455,37 +1469,49 @@ trap 'on_signal 143' TERM
 /// AC4: a fresh entry already removed by undo cannot claim a later replacement.
 #[test]
 fn ac4_recovery_keeps_replacement_at_an_undone_new_entry() {
-    let fx = Fx::new();
-    write_file(&fx.bin("watane"), "installed by this run");
-    write_file(&fx.share("watane/receipt.new.42"), "pending");
-    write_file(
-        &fx.share("watane/journal.42"),
-        &format!(
-            "new {}\nmoved {}\n",
-            fx.bin("watane").display(),
-            fx.bin("watane").display()
-        ),
-    );
-    let setup = r#"
+    // the fresh entry still in place at the undo (moved back to staging), and already
+    // gone (an empty staging directory stands in): both are proof for the retry
+    for present in [true, false] {
+        let fx = Fx::new();
+        if present {
+            write_file(&fx.bin("watane"), "installed by this run");
+        } else {
+            fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
+        }
+        write_file(&fx.share("watane/receipt.new.42"), "pending");
+        write_file(
+            &fx.share("watane/journal.42"),
+            &format!(
+                "new {}\nmoved {}\n",
+                fx.bin("watane").display(),
+                fx.bin("watane").display()
+            ),
+        );
+        let setup = r#"
 HOME_R=$(cd "$HOME" && pwd -P)
 set_entries
 "#;
-    fs::write(
-        &fx.script,
-        baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nundo_swap 42\n")),
-    )
-    .expect("undo fixture");
-    kill_at(&fx, "rm", "*/share/watane/journal.42", &[]);
-    write_file(&fx.bin("watane"), "mine");
-    fs::write(
-        &fx.script,
-        baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nrecover\n")),
-    )
-    .expect("recovery fixture");
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(fx.read(&fx.bin("watane")), "mine", "{out:?}");
-    assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+        fs::write(
+            &fx.script,
+            baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nundo_swap 42\n")),
+        )
+        .expect("undo fixture");
+        kill_at(&fx, "rm", "*/share/watane/journal.42", &[]);
+        write_file(&fx.bin("watane"), "mine");
+        fs::write(
+            &fx.script,
+            baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nrecover\n")),
+        )
+        .expect("recovery fixture");
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 0, "present {present}: {out:?}");
+        assert_eq!(
+            fx.read(&fx.bin("watane")),
+            "mine",
+            "present {present}: {out:?}"
+        );
+        assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+    }
 }
 
 fn plant_s35(fx: &Fx, n: u32) {
