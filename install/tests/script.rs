@@ -241,6 +241,24 @@ fn inst_s9_no_checksum_line() {
 }
 
 #[test]
+fn two_checksum_lines_are_refused() {
+    let fx = Fx::new();
+    let line = format!("{}  {}\n", "0".repeat(64), archive());
+    fx.rel
+        .put("SHA256SUMS", format!("{line}{line}").into_bytes());
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 4, "{out:?}");
+    assert_eq!(
+        out.first_err(),
+        format!(
+            "watane install: SHA256SUMS has more than one line for {}",
+            archive()
+        )
+    );
+    assert!(fx.home_tree().is_empty());
+}
+
+#[test]
 fn inst_s10_download_fails() {
     let fx = Fx::new();
     fx.rel.remove(&archive());
@@ -291,6 +309,18 @@ fn inst_s12_upgrade() {
     assert_eq!(fx.read(&fx.home.join(".watane/marker")), "marker");
     assert!(leftovers(&fx).is_empty());
     assert!(out.has_line("If watane is open, quit it and open it again."));
+}
+
+#[test]
+fn a_path_only_the_old_receipt_held_is_removed() {
+    let fx = installed();
+    write_file(&fx.bin("watane-gone"), "old");
+    let line = format!("path {}\n", fx.bin("watane-gone").display());
+    fs::write(fx.receipt(), fx.read(&fx.receipt()) + &line).expect("write");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!fx.bin("watane-gone").exists());
+    assert!(!fx.read(&fx.receipt()).contains("watane-gone"));
 }
 
 #[test]
