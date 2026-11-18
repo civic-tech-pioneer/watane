@@ -383,6 +383,22 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   on the VM network, so no shared filesystem. Prefer the macOS VM S50b sets up as its clean Mac, so
   one VM serves both. It proves two homes and two network stacks, not NAT across the internet; say
   so in the delivery.
+- [ ] **S86 dev says what is wrong (leftover sweep 3).** A maker's agent reads a real cause and a
+  `next` it can run at eleven places in dev where it now does not. Re-checked against main
+  2026-11-18 (`### dev` in Leftovers; the doctor item is fixed). Outcomes: (1) a WIT syntax error
+  gives a line number (pkg/src/world.rs renders wit-parser's error with its source map, :202, 226,
+  249); (2) `test` and `serve` take `--home`, and every `next` and fix for them carries `--dir`
+  when the maker passed one; (3) no fix is "run this command again" prose (api.rs:25, 255, 474;
+  cli.rs:711; build_on.rs:251), and `add --release`'s no_source fix names the known release
+  (build_on.rs:286); (4) the slug rename line drops its parenthetical when nothing has a dash
+  (cli.rs:332), `local_dependency` says where a local provider's folder is named (cli.rs:766), a
+  quoted multi-word search counts its words (cli.rs:564), `--help | head` exits quietly
+  (main.rs:17), and an outside `.wit` read is one problem, not one per file (builder.rs:369);
+  (5) fake-watane can be told never to answer, so `host.no_answer` has an integration test, and
+  `ac2_real_home_without_app` stops `watane` through the existing `Host` guard. Touches:
+  pkg/src/world.rs, dev/src/{cli,api,build_on,builder,main,preview}.rs, dev/src/bin/fake-watane.rs,
+  dev/tests/{check,install}.rs, dev/TECHNICAL.md. Not dev/src/share.rs, dev/tests/share.rs,
+  dev/tests/publish.rs or dev/tests/support/ (the human's test-speed session works there). Cloud.
 
 - [x] **S56 Leftover sweep (dev messages).** Delivered 2026-11-14 (cloud, merged to main `3a39a6f`). What a maker's coding agent reads
   at the moment something has already gone wrong. Fifteen items from "Leftovers", every one of them
