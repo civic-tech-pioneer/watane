@@ -573,6 +573,20 @@ fn ac5_help_into_a_closed_pipe_exits_quietly() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(!stderr.contains("panicked"), "{stderr}");
     }
+    // A command's result into a closed pipe keeps the command's status (usage: 2).
+    let temp = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .args(["check", "--json", "--dir"])
+        .arg(temp.path().join("missing"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
 }
 
 /// S86 AC4 (goal 7): a local provider with a known folder names it.

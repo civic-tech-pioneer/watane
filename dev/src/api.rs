@@ -271,12 +271,8 @@ impl Client {
             .post(format!("http://localhost:{}/api/fetch", self.port))
             .send_json(body)
             .map_err(|e| {
-                Problem::new(Code::HostNoAnswer, e.to_string()).fix(match &self.rerun {
-                    Some(rerun) => {
-                        format!("Check that the watane app is running, then run: {rerun}")
-                    }
-                    None => "Run this command again".into(),
-                })
+                Problem::new(Code::HostNoAnswer, e.to_string())
+                    .fix(self.then("Check that the watane app is running"))
             })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -1346,6 +1342,23 @@ mod tests {
             );
             thread.join().unwrap();
         }
+    }
+
+    #[test]
+    fn s86_fetch_without_an_answer_ends_in_the_rerun() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let e = client(port)
+            .fetch(&format!("{}/demo@0.2.3", "y".repeat(52)))
+            .unwrap_err();
+        assert_eq!(e.code, Code::HostNoAnswer);
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Check that the watane app is running, then run: watane-dev cmd --json")
+        );
     }
 
     #[test]

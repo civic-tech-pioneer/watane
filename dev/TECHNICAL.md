@@ -284,7 +284,8 @@ exported function is called by no contract step), `preview.previous` (a
 `serve` refused by the test pipeline while a preview for that folder still
 answers; message `the preview at <page url> still serves the previous build`
 (the API URL only when the served mod has no page),
-fix `Fix the errors, then run: watane-dev serve --json`). Warnings never
+fix `Fix the errors, then run: watane-dev serve --json`, plus the `--dir` and
+`--home` of the command as in 2.4). Warnings never
 change `ok` or the exit status.
 
 For a violation in managed `deps.json`, `wit/deps/` or `.watane-dev.json`,

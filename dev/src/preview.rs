@@ -489,14 +489,14 @@ mod tests {
             )
             .unwrap();
         });
-        let warning = previous_warning(&dir, &env, "").unwrap();
+        let warning = previous_warning(&dir, &env, " --dir /m --home /h").unwrap();
         assert_eq!(
             serde_json::to_value(warning).unwrap(),
             json!({
                 "code":"preview.previous",
                 "message":format!("the preview at http://counter.localhost:{port}/ still serves the previous build"),
                 "file":null,"line":null,"column":null,
-                "fix":"Fix the errors, then run: watane-dev serve --json"
+                "fix":"Fix the errors, then run: watane-dev serve --json --dir /m --home /h"
             })
         );
         server.join().unwrap();
