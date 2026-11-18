@@ -378,7 +378,11 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Delivered (merged as 8de79ae): an agent runs `watane-dev publish --push --owner <org>` and dev creates `<org>/<slug>` and `<org>/watane-channel`, and forks a derived mod into the org (`organization=<org>`, parent set, default branch `watane`); without `--owner` nothing changes. Real J5 passed twice against minmax-fund, which held only OpenMLOps afterwards. Decisions: GitHub forks into the org that owns the parent under a new name, so the real J5 forks inside minmax-fund, with Carol's slug a reserved `watane-j-<r>` (harness `reserve()` checks a 404 and records the name for deletion); `--owner` checks GitHub's account rule and requires `--push`; `organization` is sent only when the owner is not the login (case-insensitive), and fake-gh refuses `organization=<login>`; ac10 builds the endless source once untimed, then times the cached run against 7 s. Verified on the Mac: dev green with ignored except envelope ac5 (red on main since S73, see Friction), app J5 green. For a later slice (user-sim): `--owner` does not apply to a channel whose origin is already stored, silently; the `--owner` usage errors point to `watane-dev --help` instead of `publish --help`.
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
-  homes that did not share a filesystem. After S50, S53 and S54. Needs a second machine (the human).
+  homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
+  this Mac (the human, 2026-11-18, said more than once before): its own disk and its own address
+  on the VM network, so no shared filesystem. Prefer the macOS VM S50b sets up as its clean Mac, so
+  one VM serves both. It proves two homes and two network stacks, not NAT across the internet; say
+  so in the delivery.
 
 - [x] **S56 Leftover sweep (dev messages).** Delivered 2026-11-14 (cloud, merged to main `3a39a6f`). What a maker's coding agent reads
   at the moment something has already gone wrong. Fifteen items from "Leftovers", every one of them
@@ -1118,9 +1122,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
-  (GitHub Pages under that account would do). (c) S55 needs a second machine with a home of its
-  own. None of the three can run in a cloud foreman as it stands, because each needs a credential
-  or a device that belongs to the human.
+  (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
+  this Mac; the human has no easy second machine. Not a question any more.
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
   the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
