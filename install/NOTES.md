@@ -7,7 +7,8 @@ the specs did not fit, TECHNICAL.md was fixed in place; the changes:
   its own, so a bar had nowhere to show.
 - **`--uninstall` and `--status` skip the folder check of 3.4.1** (3.2): INST-S-31's last case needs an
   uninstall to run with `~/.local/share/watane-dev` turned into a link; 8.5 rule 3 is what stops it
-  from removing through that link.
+  from removing through that link. The validator found the receipt, the journals and their
+  `.old`/`.new` names still removed through a link at `share/watane`; they now pass 8.5 too.
 - **`<target>` of 3.4.1** for a folder that does not exist yet is its nearest parent's resolved path
   plus the missing part (`<second>/watane`), so the message names where a write would land.
 - **`gzip` in the test `PATH`** (12.1): GNU tar runs `gzip` to read a `.tar.gz`; macOS's tar does not.

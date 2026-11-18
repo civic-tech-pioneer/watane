@@ -317,6 +317,20 @@ fn inst_s14_failed_upgrade_rolls_back() {
     assert!(fx.tmp_tree().is_empty());
 }
 
+#[test]
+fn inst_s14_failed_fresh_install_removes_what_it_moved_in() {
+    let fx = Fx::new();
+    fx.state_write("mv_fault", "fail\n*watane.app.new.*\n");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    let files: Vec<String> = fx
+        .home_tree()
+        .into_iter()
+        .filter(|n| !n.ends_with('/'))
+        .collect();
+    assert!(files.is_empty(), "{files:?}");
+}
+
 fn uninstall_setup() -> Fx {
     let fx = installed();
     write_file(&fx.home.join(".watane/marker"), "marker");
@@ -774,7 +788,8 @@ fn inst_s31_an_install_folder_outside_the_home() {
             )
         );
         assert!(fx.rel.requests().is_empty());
-        let _ = other;
+        let left: Vec<_> = fs::read_dir(other).expect("other").collect();
+        assert!(left.is_empty(), "the second folder is empty: {left:?}");
     };
     let new = || {
         let fx = Fx::new();
@@ -790,7 +805,6 @@ fn inst_s31_an_install_folder_outside_the_home() {
         "~/.local/bin",
         &format!("{}/bin", o.display()),
     );
-    assert!(fs::read_dir(&o).expect("o").next().is_none());
 
     let (fx, other, o) = new();
     fs::create_dir_all(fx.home.join(".local")).expect("local");
@@ -801,7 +815,6 @@ fn inst_s31_an_install_folder_outside_the_home() {
         "~/Applications",
         &o.display().to_string(),
     );
-    assert!(fs::read_dir(&o).expect("o").next().is_none());
 
     let (fx, other, o) = new();
     fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
@@ -848,6 +861,18 @@ fn inst_s31_an_install_folder_outside_the_home() {
         fx.home.display()
     );
     assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
+
+    // uninstall removes nothing through a link at the folder of the receipt and the journals
+    let (fx, _other, o) = new();
+    assert_eq!(fx.run(&[]).code, 0);
+    fs::rename(fx.share("watane"), o.join("watane")).expect("move");
+    symlink(o.join("watane"), fx.share("watane")).expect("link");
+    write_file(&o.join("watane/journal.99999999"), "old x\n");
+    write_file(&o.join("watane/receipt.old.99999999"), "x");
+    let before = fx.tree(&o);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fx.tree(&o), before, "nothing outside the home was removed");
 
     // a link to a folder inside the home is fine
     let fx = Fx::new();

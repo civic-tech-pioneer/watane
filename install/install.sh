@@ -269,6 +269,7 @@ $J_NEW
 EOF
     fi
     while IFS= read -r ub_p; do
+      allowed "$ub_p" || continue
       if exists "$ub_p.new.$1"; then rm -rf "$ub_p.new.$1"; fi
     done <<EOF
 $ENTRIES_ALL
@@ -299,6 +300,7 @@ EOF
     fi
   fi
   while IFS= read -r fc_p; do
+    allowed "$fc_p" || continue
     if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1"; fi
   done <<EOF
 $ENTRIES
@@ -329,6 +331,11 @@ EOF
 
 # recover: undo or finish what a dead process left (3.6 step 0), then clean its names
 recover() {
+  # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
+  if ! allowed "$RECEIPT"; then
+    clean_stale
+    return 0
+  fi
   find_journals
   while IFS= read -r rc_n; do
     [ -n "$rc_n" ] || continue
@@ -868,7 +875,11 @@ do_uninstall() {
 $R_LINES
 EOF
   clean_stale
-  rm -f "$RECEIPT" || warn "could not remove $RECEIPT"
+  if allowed "$RECEIPT"; then
+    rm -f "$RECEIPT" || warn "could not remove $RECEIPT"
+  else
+    warn "skipped $RECEIPT: not a path that watane installs"
+  fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
     rmdir "$du_d" 2>/dev/null || true
   done

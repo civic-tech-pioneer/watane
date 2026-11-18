@@ -119,7 +119,9 @@ install.sh --help | -h
 
 `--uninstall` and `--status` run steps 2 and 3 of 3.4 and the `HOME` checks of
 step 4 (not the folder check of 3.4.1: an uninstall must still work when a folder
-became a link, and 8.5 rule 3 keeps it from removing through one), then 8.4 or 8.1; they check no version and no platform, and download
+became a link, and 8.5 rule 3 keeps it from removing through one: the receipt, the
+journals and their `.new`/`.old` names too, which 3.6 step 0 leaves alone when the
+receipt's folder resolves outside the home), then 8.4 or 8.1; they check no version and no platform, and download
 nothing.
 
 `--no-toolchain` with `--uninstall` or `--status`, and any unknown flag
@@ -852,7 +854,7 @@ is a feature of `app`, not of `install` (Q11).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27); then the stale names of
-   3.8; then the receipt; then `rmdir` (not `rm -r`)
+   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.
