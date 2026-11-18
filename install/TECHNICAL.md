@@ -571,6 +571,7 @@ watane-0.1.0-aarch64-apple-darwin/
       VERSION                     "0.1.0"
   Applications/
     watane.app/                   the bundle of 7.3
+      Contents/_CodeSignature/    CodeDirectory, CodeRequirements, CodeResources, CodeSignature (when codesign is on PATH)
 ```
 
 `share/watane/VERSION` is in the tree so that the receipt can list it;
@@ -598,7 +599,10 @@ app or its `Info.plist`, `dev/scripts/vendor.sh`, or an empty vendor folder). Ev
 looked up from the checkout that holds the script (`<checkout>/target/release/...`,
 `<checkout>/dev/scripts/vendor.sh`), so `tests/package.rs` copies `package.sh` into a
 miniature checkout of fake programs and runs it there. The `codesign` and `otool` steps run
-only when the tool is on `PATH`.
+only when the tool is on `PATH`. When `codesign` runs, the bundle also holds
+`Contents/_CodeSignature/` and exactly its four files `CodeDirectory`,
+`CodeRequirements`, `CodeResources`, and `CodeSignature`; without it no
+`_CodeSignature` entry is expected in the fake bundle.
 
 ## 5. Checksums
 
@@ -1026,6 +1030,11 @@ for stage 5 only.
 
 ### 12.1 In `cargo test` (stage 1 and 3)
 
+Tests run on Linux and macOS; signing is skipped when `codesign` is absent.
+Test support uses one 600-second deadline for marker, state and request waits,
+and a process-wide gate limits live plain, pseudo-terminal and package runs
+to four per test binary. Deadlines start after admission.
+
 `tests/script.rs` runs `sh install/install.sh` as a child with:
 - a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
   `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
@@ -1276,3 +1285,4 @@ otherwise.
 | IN-37 | With `WATANE_RUSTUP_URL` set, the offer-A question names that URL. | The question says where the download comes from. |
 | IN-38 | 8.5 rule 3 resolves the holding folder against its install folder, and rule 2 refuses a `bin/` name ending in `.mine`. | A link inside an install folder must not lead a removal into the rest of the home. |
 | IN-39 | An install folder must resolve strictly below the resolved home, in 3.4.1, in 8.5 rule 3 and for the closing `rmdir`; a link to the home itself is refused, a link to another folder below it still works. | A link `~/.local/bin -> ~` made the removal rule reach `~/watane-x` and the home's top level. |
+| IN-40 | The archive tree includes the bundle’s `_CodeSignature` folder and its four files when `codesign` is on `PATH`; fake bundles have none without it. | Ad-hoc signing adds these files on macOS; the same tree test must also pass on Linux without signing tools (4.2, 12.1). |

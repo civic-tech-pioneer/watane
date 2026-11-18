@@ -10,12 +10,63 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 pub const TARGET: &str = "aarch64-apple-darwin";
 pub const PERL: &str = "/usr/bin/perl";
+
+/// Endpoint security can queue each exec for tens of seconds on a loaded Mac.
+pub const WAIT_TIMEOUT: Duration = Duration::from_secs(600);
+static RUNS: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+pub struct RunPermit;
+
+impl RunPermit {
+    pub fn acquire() -> Self {
+        let (count, ready) = &RUNS;
+        let mut count = ready
+            .wait_while(count.lock().expect("runs"), |n| *n >= 4)
+            .expect("runs");
+        *count += 1;
+        Self
+    }
+}
+
+impl Drop for RunPermit {
+    fn drop(&mut self) {
+        *RUNS.0.lock().expect("runs") -= 1;
+        RUNS.1.notify_one();
+    }
+}
+
+pub struct RunChild {
+    child: Child,
+    _permit: RunPermit,
+}
+
+impl std::ops::Deref for RunChild {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+
+impl std::ops::DerefMut for RunChild {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+
+/// Acquires before spawning, so callers start their deadlines after the gate.
+pub fn spawn_run(c: &mut Command) -> RunChild {
+    let permit = RunPermit::acquire();
+    RunChild {
+        child: c.spawn().expect("spawn"),
+        _permit: permit,
+    }
+}
 
 /// What a run printed and how it ended.
 #[derive(Debug)]
@@ -151,10 +202,7 @@ impl Fx {
             if !s.is_empty() {
                 return s;
             }
-            assert!(
-                t.elapsed() < Duration::from_secs(30),
-                "{name} never appeared"
-            );
+            assert!(t.elapsed() < WAIT_TIMEOUT, "{name} never appeared");
             thread::sleep(Duration::from_millis(20));
         }
     }
@@ -334,16 +382,17 @@ pub fn exec(mut c: Command) -> Out {
     finish(child)
 }
 
-pub fn spawn(c: &mut Command) -> Child {
+pub fn spawn(c: &mut Command) -> RunChild {
     c.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = c.spawn().expect("spawn");
+    let mut child = spawn_run(c);
     drop(child.stdin.take());
     child
 }
 
-pub fn finish(child: Child) -> Out {
+pub fn finish(run: RunChild) -> Out {
+    let RunChild { child, _permit } = run;
     let o = child.wait_with_output().expect("wait");
     Out {
         code: o.status.code().unwrap_or(-1),
@@ -560,10 +609,7 @@ impl Release {
     pub fn wait_stalled(&self) {
         let t = Instant::now();
         while !self.stalled.load(Ordering::SeqCst) {
-            assert!(
-                t.elapsed() < Duration::from_secs(20),
-                "the request never came"
-            );
+            assert!(t.elapsed() < WAIT_TIMEOUT, "the request never came");
             thread::sleep(Duration::from_millis(20));
         }
     }

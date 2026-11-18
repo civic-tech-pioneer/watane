@@ -782,7 +782,7 @@ fn inst_s30_files_that_watane_did_not_install() {
     c.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = c.spawn().expect("spawn");
+    let mut child = spawn_run(&mut c);
     write_file(
         &fx.bin(&format!("watane.new.{}", child.id())).join("marker"),
         "m",
@@ -1366,7 +1366,7 @@ fn ac1_an_archive_with_a_link_member_is_refused() {
 
 /// Runs a fresh install that waits at the first `chmod` of the staging, and returns the pid
 /// of the script (the child is the script itself: `perl` execs `sh`).
-fn install_held_at_staging(fx: &Fx) -> (std::process::Child, u32) {
+fn install_held_at_staging(fx: &Fx) -> (RunChild, u32) {
     fx.state_write("chmod_wait", "");
     let child = spawn(&mut fx.cmd(&[]));
     fx.wait_state("chmod_waiting");

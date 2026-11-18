@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{Fx, Out};
+use super::{Fx, Out, RunPermit, WAIT_TIMEOUT};
 
 fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
@@ -33,6 +33,7 @@ pub fn run(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &str)])
     c.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    let _permit = RunPermit::acquire();
     let mut child = c.spawn().expect("spawn script(1)");
     let mut stdin = child.stdin.take().expect("stdin");
     let mut stdout = child.stdout.take().expect("stdout");
@@ -60,7 +61,7 @@ pub fn run(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &str)])
                 break;
             }
             assert!(
-                t.elapsed() < Duration::from_secs(30),
+                t.elapsed() < WAIT_TIMEOUT,
                 "marker {marker:?} never came; output:\n{s}"
             );
             thread::sleep(Duration::from_millis(20));

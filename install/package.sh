@@ -18,8 +18,8 @@ out=$3
 case $version in '' | *[!0-9A-Za-z.+-]*) die "not a version: $version" ;; esac
 case $target in '' | *[!0-9A-Za-z_-]*) die "not a target: $target" ;; esac
 
-here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-root=$(CDPATH= cd -- "$here/.." && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+root=$(CDPATH='' cd -- "$here/.." && pwd)
 rel=$root/target/release
 app=$rel/bundle/macos/watane.app
 vendor_sh=$root/dev/scripts/vendor.sh

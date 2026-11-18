@@ -61,6 +61,21 @@ fn ac1_the_archive_has_the_tree_of_4_2() {
     .iter()
     .map(|s| format!("{t}{s}"))
     .collect();
+    if std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .any(|dir| dir.join("codesign").is_file())
+    {
+        for name in [
+            "",
+            "/CodeDirectory",
+            "/CodeRequirements",
+            "/CodeResources",
+            "/CodeSignature",
+        ] {
+            want.push(format!(
+                "{t}/Applications/watane.app/Contents/_CodeSignature{name}"
+            ));
+        }
+    }
     want.sort();
     assert_eq!(listing(&archive), want);
 

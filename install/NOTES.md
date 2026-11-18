@@ -49,3 +49,18 @@ A folder that resolves to the home itself is refused with its own first line (`r
 ## S50b fix4: SIGPIPE
 
 A closed reader (`curl | sh | head`) kills the shell at its next write without the `EXIT` trap, leaving the temporary folder. `PIPE` is now trapped like `HUP`/`INT`/`TERM` (exit 141), and the handler ignores `PIPE` so its own writes cannot die. The "quit it and open it again" line is printed only for an upgrade (old version differs), not a reinstall (3.6 step 5).
+
+## S50b-fix: macOS test load and shellcheck
+
+Endpoint security (ManageEngine app control and Microsoft Defender) checks each exec:
+the foreman measured 0.08 seconds for an idle shell, 5 seconds under 16 test
+threads, and 25–35 seconds for fake uname. The old 20/30-second waits failed
+with empty output under load, although the script was correct. Test support
+now shares a 600-second deadline and a Mutex/Condvar gate admitting four live
+plain, pty or package runs per binary. Admission happens before spawning and
+before callers start their waits; a permit remains held through completion.
+
+The archive expectation includes the four files added by codesign only when
+codesign is on PATH (IN-40). Shellcheck findings were fixed by removing unused
+HAD_RECEIPT, spelling empty CDPATH explicitly, and documenting literal printed
+commands/home shorthand. Character classes in tr still map Y/YES to y/yes.

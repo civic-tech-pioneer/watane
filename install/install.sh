@@ -27,7 +27,6 @@ JOURNALS=""
 TC_STATE=""
 TC_OK=0
 RUSTUP=""
-HAD_RECEIPT=0
 UPGRADED=0
 
 usage() {
@@ -534,7 +533,6 @@ EOF
       UPGRADED=1
     fi
   fi
-  HAD_RECEIPT=$cf_old_ok
   return 0
 }
 
@@ -708,6 +706,8 @@ print_commands() {
       say '  rustup default stable'
       ;;
   esac
+  # Print the command literally.
+  # shellcheck disable=SC2016
   say 'Then `watane-dev doctor` checks it again.'
   return 0
 }
@@ -756,7 +756,7 @@ toolchain_step() {
   esac
   ts_ans=""
   IFS= read -r ts_ans </dev/tty || ts_ans=""
-  ts_ans=$(printf '%s' "$ts_ans" | tr 'A-Z' 'a-z')
+  ts_ans=$(printf '%s' "$ts_ans" | tr '[:upper:]' '[:lower:]')
   case $ts_ans in
     y | yes) ;;
     *)
@@ -797,9 +797,13 @@ toolchain_step() {
 # --- the end of an install (TECHNICAL 3.9, 3.10) ---
 
 path_block() {
+  # Print the home shorthand for the person.
+  # shellcheck disable=SC2088
   say '~/.local/bin is not on your PATH, so a new terminal will not find watane-dev yet.'
   case ${SHELL:-} in
     */zsh | */bash)
+      # Print the shell file name literally.
+      # shellcheck disable=SC2088
       case $SHELL in */zsh) pb_f='~/.zshrc' ;; *) pb_f='~/.bash_profile' ;; esac
       say 'Add it, then open a new terminal:'
       say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $pb_f"
@@ -830,6 +834,8 @@ final_output() {
     *)
       path_block
       say ''
+      # Print the command with home shorthand.
+      # shellcheck disable=SC2088
       fo_dev='~/.local/bin/watane-dev'
       fo_fmt='  %-44s%s\n'
       ;;
