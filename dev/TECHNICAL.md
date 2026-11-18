@@ -592,8 +592,9 @@ only. Child processes still inherit the process's environment, and
 `WATANE_HOME` and `HOME` reach `watane_host::default_home()` unchanged,
 so a test of those (or of `PATH` lookup, exit by signal, stderr, a
 closed stdout, `TMPDIR`) starts the program. `cwd` None is the process's
-folder; tests pass `--dir`, as `new --from` without `--dir` uses the
-process's folder.
+folder. `cwd` places a missing or relative `--dir`; a relative `--home`
+and `new --from` without `--dir` still resolve against the process's
+folder, so a test of those starts the program.
 
 ## 3. Environment
 

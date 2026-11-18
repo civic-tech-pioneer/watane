@@ -1,20 +1,13 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+mod in_process;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
-    let o = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .current_dir(dir)
-        .env("WATANE_DEV_CACHE", dir.join("cache"))
-        .args(args)
-        .output()
-        .unwrap();
-    (
-        o.status.code().unwrap(),
-        serde_json::from_slice(&o.stdout).unwrap(),
-    )
+    let cache = dir.join("cache");
+    in_process::dev(dir, args, &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))])
 }
 #[test]
 fn ac2_check_counter_mod_and_rejections() {
@@ -85,7 +78,12 @@ fn ac4_unused_provider_message_and_fix_respect_managed_files() {
         assert_eq!(run(t.path(), &["new", slug, "--json"]).0, 0);
     }
     let dir = t.path().join("consumer");
-    assert_eq!(run(&dir, &["add", "../provider", "--json"]).0, 0);
+    // Absolute: a relative provider is read from the process's folder in-process.
+    let provider = t.path().join("provider");
+    assert_eq!(
+        run(&dir, &["add", provider.to_str().unwrap(), "--json"]).0,
+        0
+    );
     let (code, value) = run(&dir, &["check", "--json"]);
     assert_eq!(code, 1, "{value}");
     let error = value["errors"]

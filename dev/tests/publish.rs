@@ -1,6 +1,8 @@
 #![cfg(feature = "fake-host")]
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+mod in_process;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -44,18 +46,15 @@ fn page(root: &Path) -> PathBuf {
     dir.canonicalize().unwrap()
 }
 fn publish(dir: &Path, home: &Path, args: &[&str]) -> (i32, Value) {
-    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .current_dir(dir)
-        .env("WATANE_DEV_CACHE", home.join("build-cache"))
-        .args(["publish", "--json", "--home"])
-        .arg(home)
-        .args(args)
-        .output()
-        .unwrap();
-    (
-        output.status.code().unwrap(),
-        serde_json::from_slice(&output.stdout).unwrap(),
-    )
+    let cache = home.join("build-cache");
+    let mut all = vec![
+        "publish".as_ref(),
+        "--json".as_ref(),
+        "--home".as_ref(),
+        home.as_os_str(),
+    ];
+    all.extend(args.iter().map(std::ffi::OsStr::new));
+    in_process::dev(dir, &all, &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))])
 }
 #[test]
 fn ac1_local_providers_precede_status_and_pipeline() {

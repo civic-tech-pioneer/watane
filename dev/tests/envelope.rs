@@ -1,20 +1,14 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+mod in_process;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
-    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .current_dir(dir)
-        .env("WATANE_DEV_CACHE", dir.join("cache"))
-        .args(args)
-        .output()
-        .unwrap();
-    (
-        output.status.code().unwrap(),
-        serde_json::from_slice(&output.stdout).unwrap(),
-    )
+    let cache = dir.join("cache");
+    in_process::dev(dir, args, &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))])
 }
 #[test]
 fn ac1_new_counter_template_envelope() {

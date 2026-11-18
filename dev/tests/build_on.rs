@@ -5,8 +5,10 @@
     reason = "tests may panic, catch panics, and share lock-only mutexes that guard no data"
 )]
 
+mod in_process;
 mod support;
 use serde_json::{Value, json};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -94,6 +96,27 @@ impl Fixture {
         }
     }
     fn run(&self, args: &[&str]) -> (i32, Value) {
+        let mut all: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        all.extend([
+            OsStr::new("--json"),
+            OsStr::new("--home"),
+            self.home.as_os_str(),
+        ]);
+        in_process::dev(
+            self.root.path(),
+            &all,
+            &[
+                ("WATANE_DEV_CACHE", Some(self.cache.as_os_str())),
+                (
+                    "WATANE_BIN",
+                    Some(OsStr::new(env!("CARGO_BIN_EXE_fake-watane"))),
+                ),
+            ],
+        )
+    }
+    /// `run` as a process: `new --from` without a slug or `--dir` writes to
+    /// the process's folder (TECHNICAL 2.5).
+    fn run_process(&self, args: &[&str]) -> (i32, Value) {
         let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
             .current_dir(self.root.path())
             .env("WATANE_DEV_CACHE", &self.cache)
@@ -174,7 +197,7 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
             v["dir"].as_str().unwrap()
         )
     );
-    let (code, v) = f.run(&["new", "--from", &link("reading-list")]);
+    let (code, v) = f.run_process(&["new", "--from", &link("reading-list")]);
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["result"]["slug"], "reading-list");
     assert_eq!(v["result"]["mentions"], json!([]));
@@ -446,19 +469,20 @@ fn ac6_publish_unlisted_warning_provider_links_and_default_list() {
 }
 
 fn run_mod(f: &Fixture, dir: &Path, command: &str, extra: &[&str], watane: &Path) -> (i32, Value) {
-    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .arg(command)
-        .arg("--json")
-        .arg("--dir")
-        .arg(dir)
-        .args(extra)
-        .env("WATANE_DEV_CACHE", &f.cache)
-        .env("WATANE_BIN", watane)
-        .output()
-        .unwrap();
-    (
-        out.status.code().unwrap(),
-        serde_json::from_slice(&out.stdout).unwrap(),
+    let mut all = vec![
+        OsStr::new(command),
+        OsStr::new("--json"),
+        OsStr::new("--dir"),
+        dir.as_os_str(),
+    ];
+    all.extend(extra.iter().map(OsStr::new));
+    in_process::dev(
+        f.root.path(),
+        &all,
+        &[
+            ("WATANE_DEV_CACHE", Some(f.cache.as_os_str())),
+            ("WATANE_BIN", Some(watane.as_os_str())),
+        ],
     )
 }
 fn consumer(f: &Fixture) -> PathBuf {
@@ -740,7 +764,7 @@ summary = "Example"
         let mut args = args;
         let target = link("ratings");
         args.push(&target);
-        let (code, v) = f.run(&args);
+        let (code, v) = f.run_process(&args);
         assert_eq!(code, 0, "{v}");
         assert_eq!(v["warnings"], json!([]));
         let dir = f.root.path().join(slug);

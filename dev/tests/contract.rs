@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+mod in_process;
+
 mod support;
 use serde_json::{Value, json};
 use std::fs;
@@ -28,21 +30,14 @@ impl Fixture {
         }
     }
     fn run(&self, name: &str) -> (i32, Value) {
-        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-            .current_dir(&self.dir)
-            .args([name, "--json"])
-            .env("WATANE_DEV_CACHE", &self.cache)
-            .env_remove("WATANE_DEV_UNIT_SECONDS")
-            .output()
-            .unwrap();
-        let value = serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
-            panic!(
-                "{e}: {}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            )
-        });
-        (output.status.code().unwrap(), value)
+        in_process::dev(
+            &self.dir,
+            &[name, "--json"],
+            &[
+                ("WATANE_DEV_CACHE", Some(self.cache.as_os_str())),
+                ("WATANE_DEV_UNIT_SECONDS", None),
+            ],
+        )
     }
     fn steps(&self, steps: Value) {
         fs::write(
@@ -384,21 +379,14 @@ fn copy_fixture(name: &str, to: &std::path::Path) {
 fn test_in(dir: &std::path::Path, contract: Value) -> (i32, Value) {
     fs::create_dir_all(dir.join("tests")).unwrap();
     fs::write(dir.join("tests/c.json"), contract.to_string()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-        .current_dir(dir)
-        .args(["test", "--json"])
-        .env("WATANE_DEV_CACHE", support::cache())
-        .env_remove("WATANE_DEV_UNIT_SECONDS")
-        .output()
-        .unwrap();
-    let v = serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
-        panic!(
-            "{e}: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-    });
-    (output.status.code().unwrap(), v)
+    in_process::dev(
+        dir,
+        &["test", "--json"],
+        &[
+            ("WATANE_DEV_CACHE", Some(support::cache().as_os_str())),
+            ("WATANE_DEV_UNIT_SECONDS", None),
+        ],
+    )
 }
 
 #[test]

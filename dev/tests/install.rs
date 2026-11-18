@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+mod in_process;
+
 use serde_json::Value;
 use std::process::Command;
 
@@ -171,16 +173,16 @@ mod fake {
         dir.canonicalize().unwrap()
     }
     fn install(dir: &Path, home: &Path) -> (i32, Value) {
-        let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
-            .current_dir(dir)
-            .env("WATANE_DEV_CACHE", home.join("build-cache"))
-            .args(["install", "--json", "--home"])
-            .arg(home)
-            .output()
-            .unwrap();
-        (
-            output.status.code().unwrap(),
-            serde_json::from_slice(&output.stdout).unwrap(),
+        let cache = home.join("build-cache");
+        super::in_process::dev(
+            dir,
+            &[
+                "install".as_ref(),
+                "--json".as_ref(),
+                "--home".as_ref(),
+                home.as_os_str(),
+            ],
+            &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))],
         )
     }
     #[test]
