@@ -209,7 +209,7 @@ on is `<publisher>/<slug>@<that version>` (a `ReleaseRef`).
    resolve with `Resolve::push_groups` inside `std::panic::catch_unwind`.
    Never pass filesystem paths to a parser that reopens them. Component
    import checking uses the imports from this same checked resolution.
-   An error or a panic is rule `wit`, with the first 2000 bytes of the parser message.
+   An error or a panic is rule `wit`, with the parser message rendered by wit-parser (its `--> <path>:<line>:<column>` location and snippet), cut to 2000 bytes at a UTF-8 boundary with that line kept.
 3. The main package must be `mods:<slug>@<version>` with a valid `Slug` and
    `Version`, and hold exactly one world.
 4. Classify each item of that world (4.5). `wit-parser` has elaborated the

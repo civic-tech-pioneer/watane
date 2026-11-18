@@ -199,7 +199,7 @@ pub(crate) fn read(
         let text = std::str::from_utf8(&world_bytes).unwrap_or("");
         let own_name =
             UnresolvedPackageGroup::parse(dir.join("wit/world.wit"), package_header(text))
-                .map_err(|(_, e)| e.to_string())?
+                .map_err(|(map, e)| e.render(&map))?
                 .main
                 .name;
         let mut maps: BTreeMap<std::path::PathBuf, SourceMap> = BTreeMap::new();
@@ -221,9 +221,13 @@ pub(crate) fn read(
         let mut own_package_copy = false;
         for (parent, map) in maps {
             let paths: Vec<_> = map.source_names().map(std::path::PathBuf::from).collect();
-            let group = map
-                .parse()
-                .map_err(|(_, e)| format!("failed to parse package: {}: {e}", parent.display()))?;
+            let group = map.parse().map_err(|(map, e)| {
+                format!(
+                    "failed to parse package: {}: {}",
+                    parent.display(),
+                    e.render(&map)
+                )
+            })?;
             // Diagnose the own-provider copy before resolution can obscure it
             // with a duplicate-package error. Its checked bytes were parsed above.
             if own_name.namespace == "mods"
@@ -246,7 +250,7 @@ pub(crate) fn read(
         let mut resolve = Resolve::default();
         let main = resolve
             .push_groups(main.ok_or("missing WIT package")?, groups)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.render(&resolve.source_map))?;
         Ok((resolve, main, sources, own_package_copy))
     });
     let (resolve, main, sources, own_package_copy) = match parsed {
@@ -257,18 +261,7 @@ pub(crate) fn read(
                 .iter()
                 .find(|f| message.contains(&dir.join(f).to_string_lossy().to_string()))
                 .map_or("wit/world.wit", String::as_str);
-            // Take at a UTF-8 boundary, at most 2000 bytes.
-            let end = message
-                .char_indices()
-                .map(|(i, _)| i)
-                .take_while(|&i| i <= 2000)
-                .last()
-                .unwrap_or(0);
-            let message = if message.len() <= 2000 {
-                &message
-            } else {
-                &message[..end]
-            };
+            let message = cap_message(&message);
             violation(violations, Rule::Wit, file, message);
             return Ok(None);
         }
@@ -538,4 +531,42 @@ pub(crate) fn read(
         providers,
         own_package_copy,
     }))
+}
+
+/// Cut `message` at a UTF-8 boundary to at most 2000 bytes, keeping the
+/// wit-parser ` --> path:line:col` line (TECHNICAL 4).
+fn cap_message(message: &str) -> String {
+    fn cut(text: &str, max: usize) -> &str {
+        let mut end = max.min(text.len());
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        &text[..end]
+    }
+    if message.len() <= 2000 {
+        return message.to_string();
+    }
+    let Some(arrow) = message.lines().find(|l| l.contains("--> ")) else {
+        return cut(message, 2000).to_string();
+    };
+    if arrow.len() >= 2000 {
+        return cut(arrow, 2000).to_string();
+    }
+    let head = message.replacen(arrow, "", 1);
+    format!("{}\n{arrow}", cut(head.trim_end(), 1999 - arrow.len()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cap_message;
+
+    #[test]
+    fn ac3_s86_long_message_keeps_arrow_and_utf8_boundary() {
+        let arrow = "     --> /m/wit/world.wit:4:3";
+        let message = format!("{}\n{arrow}\n      |\n    4 | @", "é".repeat(3000));
+        let cut = cap_message(&message);
+        assert!(cut.len() <= 2000, "{}", cut.len());
+        assert!(cut.contains(arrow));
+        assert!(cap_message(&"é".repeat(3000)).len() <= 2000);
+    }
 }

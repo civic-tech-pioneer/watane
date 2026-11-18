@@ -864,3 +864,28 @@ fn regress_s33_other_slug_is_not_own_copy() {
         );
     }
 }
+
+fn broken_message(file: &str) -> (String, PathBuf) {
+    let dir = temporary("hello");
+    let text = "package mods:broken@0.1.0;\n\nworld broken {\n  @\n}\n";
+    put(dir.path(), file, text);
+    let path = dir.path().join(file);
+    let v = refused(dir.path(), Rule::Wit, file);
+    let wit: Vec<_> = v.iter().filter(|v| v.rule == Rule::Wit).collect();
+    assert_eq!(wit.len(), 1, "{v:?}");
+    (wit[0].message.clone(), path)
+}
+
+#[test]
+fn ac1_s86_wit_syntax_error_carries_location() {
+    let (message, path) = broken_message("wit/world.wit");
+    let arrow = format!(" --> {}:5:1", path.display());
+    assert!(message.contains(&arrow), "{message}");
+}
+
+#[test]
+fn ac2_s86_provider_copy_error_names_its_file() {
+    let (message, path) = broken_message("wit/deps/broken/world.wit");
+    let arrow = format!(" --> {}:5:1", path.display());
+    assert!(message.contains(&arrow), "{message}");
+}
