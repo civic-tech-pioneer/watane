@@ -984,22 +984,23 @@ not-protected line. Rustup, if the person says yes, is rustup's own trust
 
 ## 11. Build plan
 
-S50b is stages 1 to 5; stages 6 and 7 are later. Sizes: S is under
+S50b is stages 1 to 3, S50c stages 4 and 5; stages 6 and 7 are later. Sizes: S is under
 a day for an agent, M is a day.
 
 | Stage | Build | Touches (folders) | Needs | Done when |
 |---|---|---|---|---|
-| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22, INST-S-26 to 28, 30 and 31 pass in `cargo test`. Size M |
+| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22, INST-S-26 to 28, 30 and 31 pass in `cargo test`; the swap of 3.6 is built whole. Size M |
 | 2 Versions | `watane-node --version`; `--version` of the three programs prints `<name> <version>` and exits 0 (a test each) | `node/` (bin and its `program.rs` test), `host/` and `dev/` only if a test finds a difference | none | `watane-node --version` prints `watane-node 0.1.0`. Size S |
-| 3 Packer | `package.sh` (4), `tests/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing. Size S |
+| 3 Packer | `package.sh` (4), `tests/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing; INST-S-32 to 35 pass in `cargo test`. Size S |
 | 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | INST-S-29 passes in `cargo test`; a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
 | 5 Clean Mac | `tests/clean_mac.sh` (12.3, 12.4); the second macOS user prepared by the human; the first real release `v0.1.0` cut by the human | `install/`; the human | stage 4 | INST-S-1, 23, 24, 25 pass on the clean Mac against the real release. Size M, local |
 | 6 App notice | the app shows the one-liner and the Gatekeeper text where `app` shows its first start (optional) | `app/` | stage 5 | not required for S50b |
 | 7 Linux | the CLI-only archive (9) | `install/`, `.github/`, `dev/` if a path differs | S50b | a Linux clean-machine run; not scheduled |
 
 Stages 1 and 2 are independent; 3 waits for 1; 4 for 1 to 3; 5 for 4.
-S50b (the slice "a person can install watane") is stages 1 to 5; the
-human is needed for stage 5 only.
+S50b (the script and its archive) is stages 1 to 3; S50c ("a person
+installs watane on a clean Mac") is stages 4 and 5; the human is needed
+for stage 5 only.
 
 ## 12. Test plan
 
