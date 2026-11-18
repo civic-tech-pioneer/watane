@@ -127,6 +127,29 @@ fn ac2_toolchain_rejects_invalid_utf8_answer() {
 
 #[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn adv_s50b_fix_toolchain_nul_in_answer_is_no() {
+    // 3.7: only `y` and `yes` count; `y` then a NUL (Ctrl-@) is another answer
+    for answer in [&b"y\0"[..], &b"\0yes"[..], &b"y\0\0\0"[..]] {
+        let fx = Fx::new();
+        let url = fx.rustup_installer();
+        let out = support::pty::run_bytes(
+            &fx,
+            &[],
+            &[("WATANE_RUSTUP_URL", &url)],
+            &[("[y/N] ", answer)],
+        );
+        assert_eq!(out.code, 0, "{out:?}");
+        assert_eq!(
+            fx.state_read("installer.log"),
+            "",
+            "answer {answer:?}: {out:?}"
+        );
+        assert!(out.has_line("toolchain: not installed"), "{out:?}");
+    }
+}
+
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn ac2_toolchain_accepts_mixed_case_yes() {
     let fx = Fx::new();
     let url = fx.rustup_installer();
