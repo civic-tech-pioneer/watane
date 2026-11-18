@@ -102,10 +102,12 @@ fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
     c.current_dir(&project);
     let out = exec(c);
     assert_eq!(out.code, 0, "{out:?}");
-    let pwds = fs::read_to_string(fx.state.join("rustup.pwd")).expect("rustup was called");
     let home = fs::canonicalize(&fx.home).expect("home");
-    for l in pwds.lines() {
-        assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{pwds}");
+    for log in ["rustup.pwd", "rustc.pwd"] {
+        let pwds = fs::read_to_string(fx.state.join(log)).expect(log);
+        for l in pwds.lines() {
+            assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{log}: {pwds}");
+        }
     }
     let auto = fs::read_to_string(fx.state.join("rustup.auto")).expect("auto");
     assert!(auto.lines().all(|l| l == "0"), "{auto}");

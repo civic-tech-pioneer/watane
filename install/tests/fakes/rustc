@@ -1,5 +1,7 @@
 #!/bin/sh
-# Fake rustc: --print sysroot prints the file rustup_sysroot of the test.
+# Fake rustc: --print sysroot prints the file rustup_sysroot of the test. Each call logs its
+# cwd in $FAKE_STATE/rustc.pwd.
+pwd >> "$FAKE_STATE/rustc.pwd"
 sr=
 [ -f "$FAKE_STATE/rustup_sysroot" ] && read -r sr < "$FAKE_STATE/rustup_sysroot"
 [ "${1:-}" = "--print" ] && echo "$sr"

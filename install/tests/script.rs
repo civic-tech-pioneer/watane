@@ -203,6 +203,15 @@ fn inst_s7_target_missing() {
         "{log}"
     );
     assert!(out.has_line("toolchain: installed"));
+    // 3.7: offer B's rustup runs from $HOME (the test's cwd is not), auto-install off
+    let home = fs::canonicalize(&fx.home).expect("home");
+    let pwds = fx.state_read("rustup.pwd");
+    assert!(pwds.lines().count() >= 2, "{pwds}");
+    for l in pwds.lines() {
+        assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{pwds}");
+    }
+    let auto = fx.state_read("rustup.auto");
+    assert!(auto.lines().all(|l| l == "0"), "{auto}");
 }
 
 #[test]
