@@ -122,3 +122,38 @@ fn adv_s50b_fix_ctrl_c_in_xattr_reaches_the_toolchain_step() {
     assert!(!out.stdout.contains("no terminal to ask on"), "{out:?}");
     assert!(!out.stdout.contains("is installed."), "{out:?}");
 }
+
+#[test]
+fn ac2_ctrl_c_in_platform_substitution() {
+    let fx = Fx::new();
+    group_signal_fake(&fx, "sysctl", "*", "INT", 130, "exit 0");
+    fs::write(
+        fx.fakes.join("uname"),
+        "#!/bin/sh\ncase $1 in -s) echo Darwin ;; -m) echo x86_64 ;; esac\n",
+    )
+    .expect("uname");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stderr.contains("unsupported platform"), "{out:?}");
+}
+
+#[test]
+fn ac2_ctrl_c_in_ignored_rmdir() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    group_signal_fake(&fx, "rmdir", "*", "INT", 130, "exit 0");
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stdout.contains("uninstalled watane"), "{out:?}");
+}
+
+#[test]
+fn ac2_ctrl_c_in_answer_pipeline() {
+    for tool in ["dd", "od"] {
+        let fx = Fx::new();
+        group_signal_fake(&fx, tool, "*", "INT", 130, "exit 0");
+        let out = fx.run_pty(&[], &[], &[("[y/N] ", "n")]);
+        assert_eq!(out.code, 130, "{tool}: {out:?}");
+        assert!(!out.stdout.contains("toolchain: not installed"), "{out:?}");
+    }
+}

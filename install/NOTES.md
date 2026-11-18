@@ -329,3 +329,39 @@ Final validation: the single default `cargo test` run passed (86 passed,
 16 ignored), including all genuine-failure, rollback and repeated-recovery
 tests. No ignored or GUI tests ran. Only the five listed install files
 changed; no other subsystem or dependency changed.
+
+
+## s50b-fix-6: retain signal statuses on ignored results
+
+The two unchanged adversary Ctrl-C tests and three new AC2 tests first
+failed on macOS: toolchain detection and xattr continued to success,
+sysctl reported an unsupported platform, rmdir continued uninstall, and
+the answer pipeline treated the interruption as a declined offer.
+
+Signal checks now see statuses before platform and toolchain probes,
+negative grep/xcode-select predicates, readlink fallbacks, ignored removal
+failures, extraction mkdir and final cleanup can discard them. Both
+post-rustup detection and initial detection stop before a misleading
+result. Builtin-only formatting substitutions need no program-status recovery;
+shell_quote and its caller now retain the sed pipeline status. Existing acted-on swap failures retain
+their rollback behavior. Undo clears the already handled signal in its
+subshell so internal probes let it finish; the parent retains the code. No dependency was added.
+
+The answer read uses dd into a temporary byte file, then od, checking both
+statuses. A trial with od -N 1 alone consumed the rest of a piped answer,
+so dd still limits the actual read. Uninstall lazily creates the temporary
+folder for its question and the existing exit trap removes it; mktemp is
+therefore checked in every mode. The new pipeline regression interrupts
+either original pipeline tool and preserves the raw-byte answer rules.
+
+Foreman decisions recorded in TECHNICAL 3.8: rustup/rustup-init exiting
+129/130/141/143 counts as that signal without a toolchain failure line;
+final-cleanup interruption may leave the temporary folder; a signal while
+a question waits acts when the read returns. Existing adversary tests
+and assertions remain unchanged.
+
+Final validation: `cargo test` passed (92 passed, 16 ignored; 620.82 s).
+The five focused Ctrl-C tests passed after their observed red run.
+`cargo clippy --all-targets -- -D warnings`, `cargo +nightly fmt --check`
+and `shellcheck -s sh install.sh package.sh` exited 0. Clippy retained
+the existing workspace-hack manifest warnings. No ignored or GUI tests ran.

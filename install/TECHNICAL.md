@@ -427,13 +427,16 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
 stdin. Only the exact bytes of `y` and `yes`, in any ASCII case, count;
 any extra byte, including NUL or an undecodable byte, is no. Read bytes
-with POSIX `dd bs=1 count=1` and encode each with `od -An -v -to1`
-before shell substitution: macOS `sh`'s `read` drops NUL. A NUL marks
+with POSIX `dd bs=1 count=1` into a byte file in the temporary folder,
+then encode each with `od -An -v -to1`
+before shell substitution (checking both programs' statuses separately): macOS `sh`'s `read` drops NUL. A NUL marks
 this whole answer invalid; continue through the line's newline. Retain at
 most six shell characters (the longest accepted word across both questions); longer
 lines are invalid and are drained through their newline. Decode non-NUL
 bytes with POSIX `printf %b`, without case folding or trimming. An empty line, end of file and no terminal
 are all `N` (INST-F-9, as `node` NO-10).
+Uninstall creates the same temporary folder lazily when it asks its question;
+`mktemp` is checked for all modes. The exit trap removes that folder too.
 `--no-toolchain` is `N` with no question. No flag, variable or file means `y`:
 with no terminal (an agent, a pipe, a CI job) the toolchain is not installed,
 and the commands are printed for the person or the agent to run (F-GET-3,
@@ -487,7 +490,12 @@ status to the signal code when the shell loses the parent's trap after
 its child dies. This applies to `die` and the separate foreign-file,
 download and toolchain failure paths. Version and checksum-line checks
 use builtins so a killed pipeline cannot masquerade as invalid input.
-Cleanup preserves the signal code.
+Every program whose status the script does not otherwise act on passes it
+to the signal check, so a signal the shell lost still ends the run.
+A real exit of 129/130/141/143 from rustup or rustup-init is treated as
+that signal, without a "toolchain step failed" line. A signal during final
+cleanup may leave the temporary folder. A signal while a question waits
+is acted on when the read returns. Cleanup preserves the signal code.
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).

@@ -113,11 +113,15 @@ resolve_dir() {
     [ -n "$rd_d" ] || rd_d=/
   done
   if rd_r=$(cd "$rd_d" 2>/dev/null && pwd -P); then
+    check_signal "$?"
     if [ "$rd_r" = / ]; then RES=$rd_rest; else RES=$rd_r$rd_rest; fi
     [ -n "$RES" ] || RES=/
     return 0
+  else
+    check_signal "$?"
   fi
-  rd_t=$(readlink "$rd_d" 2>/dev/null) || rd_t=$rd_d
+  rd_t=$(readlink "$rd_d" 2>/dev/null) || { check_signal "$?"; rd_t=$rd_d; }
+  check_signal "$?"
   RES=$rd_t$rd_rest
   return 1
 }
@@ -234,7 +238,12 @@ read_journal() {
 # pid_gone <n>: the process is dead, or is this script's own pid
 pid_gone() {
   if [ "$1" = "$$" ]; then return 0; fi
-  if kill -0 "$1" 2>/dev/null; then return 1; fi
+  if kill -0 "$1" 2>/dev/null; then
+    check_signal "$?"
+    return 1
+  else
+    check_signal "$?"
+  fi
   return 0
 }
 
@@ -266,13 +275,15 @@ EOF
 
 # rm_path <path>: rm -rf with a warning
 rm_path() {
-  rm -rf "$1" || { warn "could not remove $1"; return 1; }
+  rm -rf "$1" || { check_signal "$?"; warn "could not remove $1"; return 1; }
   return 0
 }
 
 # undo_swap <pid>: put the old files back from the journal of that pid (3.6 step 4)
 undo_swap() {
   (
+    # The parent retains the signal code; checks inside the undo must let it finish.
+    SIGNAL=0
     set +e
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
@@ -344,7 +355,7 @@ EOF
 $ENTRIES
 EOF
   if exists "$fc_old"; then rm_path "$fc_old" || return 1; fi
-  rm -f "$SHAREW/journal.$1" || return 1
+  rm -f "$SHAREW/journal.$1" || { check_signal "$?"; return 1; }
   return 0
 }
 
@@ -424,7 +435,7 @@ cleanup() {
   trap - EXIT
   ( : ) || true
   rollback
-  if [ -n "$TMP" ]; then rm -rf "$TMP" || true; fi
+  if [ -n "$TMP" ]; then rm -rf "$TMP" || { check_signal "$?"; }; fi
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
   exit "$cl_rc"
 }
@@ -469,19 +480,23 @@ unsupported() {
 }
 
 check_platform() {
-  cp_s=$(uname -s)
-  cp_m=$(uname -m)
+  cp_s=$(uname -s) || { cp_rc=$?; check_signal "$cp_rc"; exit "$cp_rc"; }
+  check_signal "$?"
+  cp_m=$(uname -m) || { cp_rc=$?; check_signal "$cp_rc"; exit "$cp_rc"; }
+  check_signal "$?"
   [ "$cp_s" = Darwin ] || unsupported "$cp_s $cp_m"
   check_tools "sw_vers sysctl xattr xcode-select"
   case $cp_m in
     arm64) ;;
     x86_64)
-      cp_a=$(sysctl -n hw.optional.arm64 2>/dev/null) || cp_a=0
+      cp_a=$(sysctl -n hw.optional.arm64 2>/dev/null) || { check_signal "$?"; cp_a=0; }
+      check_signal "$?"
       [ "$cp_a" = 1 ] || unsupported "$cp_s $cp_m"
       ;;
     *) unsupported "$cp_s $cp_m" ;;
   esac
-  cp_v=$(sw_vers -productVersion)
+  cp_v=$(sw_vers -productVersion) || { cp_rc=$?; check_signal "$cp_rc"; exit "$cp_rc"; }
+  check_signal "$?"
   cp_major=${cp_v%%.*}
   case $cp_major in
     '' | *[!0-9]*) unsupported "macOS $cp_v (needs 14.0 or later)" ;;
@@ -496,6 +511,7 @@ check_home() {
   fi
   HOME_R=$(cd "$HOME" 2>/dev/null && pwd -P) ||
     die 2 "HOME is not a folder: $HOME" "Set HOME to your home folder, then run this again."
+  check_signal "$?"
   [ "$HOME_R" != / ] || die 2 "HOME resolves to /: $HOME" "Set HOME to your home folder, then run this again."
   return 0
 }
@@ -620,7 +636,10 @@ extract_archive() {
     die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
   check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
+    check_signal "$?"
     die 5 "$ARCHIVE holds a file name that leaves its folder" "Nothing was installed."
+  else
+    check_signal "$?"
   fi
   # a link member (type l or h in the listing) could make a later chmod or copy reach a file
   # outside the tree: refused before anything is unpacked (3.4 step 9)
@@ -628,15 +647,19 @@ extract_archive() {
     die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
   check_signal
   if grep -q '^[lh]' "$TMP/members.v"; then
+    check_signal "$?"
     die 5 "$ARCHIVE holds a symbolic or hard link, which a watane archive never does" "Nothing was installed."
+  else
+    check_signal "$?"
   fi
-  mkdir "$TMP/x"
+  mkdir "$TMP/x" || { ea_rc=$?; check_signal "$ea_rc"; exit "$ea_rc"; }
+  check_signal "$?"
   tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" ||
     die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."
   check_signal
   TOP=$TMP/x/watane-$RELEASE-$TARGET
   ea_v=""
-  if [ -f "$TOP/VERSION" ]; then IFS= read -r ea_v <"$TOP/VERSION" || true; fi
+  if [ -f "$TOP/VERSION" ]; then IFS= read -r ea_v <"$TOP/VERSION" || { check_signal "$?"; }; fi
   [ "$ea_v" = "$RELEASE" ] ||
     die 5 "$ARCHIVE is not a watane archive of version $RELEASE" "Nothing was installed."
   for ea_r in $RELS; do
@@ -733,9 +756,20 @@ read_answer() {
   ANSWER=""
   ra_bad=0
   while :; do
-    # od prints one octal number; field splitting removes its padding only.
-    # shellcheck disable=SC2046
-    set -- $(dd bs=1 count=1 2>/dev/null | od -An -v -to1)
+    # Keep both statuses: a pipeline would hide dd's signal status behind od.
+    # dd must read exactly one byte; od alone may read ahead past that byte.
+    if [ -z "$TMP" ]; then
+      TMP=$(mktemp -d "${TMPDIR:-/tmp}/watane-install.XXXXXX") ||
+        die 1 "cannot make a temporary folder in ${TMPDIR:-/tmp}"
+      check_signal "$?"
+    fi
+    dd bs=1 count=1 >"$TMP/answer-byte" 2>/dev/null || { check_signal "$?"; }
+    check_signal "$?"
+    ra_byte=$(od -An -v -to1 "$TMP/answer-byte") || { check_signal "$?"; }
+    check_signal "$?"
+    # Field splitting removes od's padding only.
+    # shellcheck disable=SC2086
+    set -- $ra_byte
     case ${1:-} in
       '') ANSWER=""; return 0 ;;
       012) break ;;
@@ -759,6 +793,7 @@ detect_toolchain() {
   RUSTUP=""
   if command -v rustup >/dev/null 2>&1; then
     RUSTUP=$(command -v rustup)
+    check_signal "$?"
   elif [ -x "${CARGO_HOME:-$HOME/.cargo}/bin/rustup" ]; then
     RUSTUP=${CARGO_HOME:-$HOME/.cargo}/bin/rustup
   elif [ -x "$HOME/.cargo/bin/rustup" ]; then
@@ -770,11 +805,15 @@ detect_toolchain() {
   fi
   # from $HOME, rustup auto-install off: a rust-toolchain.toml of the folder we start in must not
   # make rustup install or run anything before a typed yes
-  if ! dt_rustc=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$RUSTUP" which rustc 2>/dev/null); then
+  if dt_rustc=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$RUSTUP" which rustc 2>/dev/null); then
+    check_signal "$?"
+  else
+    check_signal "$?"
     TC_STATE=none_b
     return 0
   fi
-  dt_sr=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$dt_rustc" --print sysroot 2>/dev/null) || dt_sr=""
+  dt_sr=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$dt_rustc" --print sysroot 2>/dev/null) || { check_signal "$?"; dt_sr=""; }
+  check_signal "$?"
   if [ -n "$dt_sr" ] && [ -d "$dt_sr/lib/rustlib/wasm32-wasip2/lib" ]; then
     TC_STATE=ok
   else
@@ -812,6 +851,7 @@ rustup_step() {
 
 toolchain_step() {
   detect_toolchain
+  check_signal "$?"
   if [ "$TC_STATE" = ok ]; then
     say 'toolchain: ok (rustup, wasm32-wasip2)'
     TC_OK=1
@@ -874,6 +914,7 @@ toolchain_step() {
   esac
   say 'toolchain: installed'
   detect_toolchain
+  check_signal "$?"
   if [ "$TC_STATE" != ok ]; then
     check_signal
     say 'toolchain: still incomplete after the install'
@@ -937,7 +978,10 @@ final_output() {
     printf "$fo_fmt" "$fo_dev new reading-list" 'makes a mod'
   }
   if [ "$TC_OK" != 1 ]; then say '  (install the toolchain first: see above)'; fi
-  if ! xcode-select -p >/dev/null 2>&1; then
+  if xcode-select -p >/dev/null 2>&1; then
+    check_signal "$?"
+  else
+    check_signal "$?"
     say "watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:"
     say '  xcode-select --install'
   fi
@@ -950,6 +994,7 @@ do_install() {
   TMPBASE=${TMPDIR:-/tmp}
   TMP=$(mktemp -d "$TMPBASE/watane-install.XXXXXX") ||
     die 1 "cannot make a temporary folder in $TMPBASE" "Set TMPDIR to a folder you can write to, then run this again."
+  check_signal "$?"
   ARCHIVE=watane-$RELEASE-$TARGET.tar.gz
   BASE=${WATANE_RELEASE_BASE:-https://github.com/civic-tech-pioneer/watane/releases/download/v$RELEASE}
   check_no_live_install
@@ -966,8 +1011,10 @@ do_install() {
   verify_archive
   extract_archive
   install_files
-  xattr -dr com.apple.quarantine "$HOME/Applications/watane.app" >/dev/null 2>&1 || true
-  finish_commit "$$" || true
+  xattr -dr com.apple.quarantine "$HOME/Applications/watane.app" >/dev/null 2>&1 || { check_signal "$?"; }
+  check_signal "$?"
+  finish_commit "$$" || { check_signal "$?"; }
+  check_signal "$?"
   SWAP_ACTIVE=0
   say 'installed:'
   for di_r in $RELS; do
@@ -995,7 +1042,8 @@ EOF
 home_deletable() {
   plain_path "$1" || return 1
   case "$HOME/" in "$1"/*) return 1 ;; esac
-  hd_r=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  hd_r=$(cd "$1" 2>/dev/null && pwd -P) || { check_signal "$?"; return 1; }
+  check_signal "$?"
   plain_path "$hd_r" || return 1
   case "$HOME_R/" in "$hd_r"/*) return 1 ;; esac
   HOME_DEL=$hd_r
@@ -1006,7 +1054,9 @@ home_deletable() {
 
 # shell_quote <text>: the text in single quotes, for a command the person runs
 shell_quote() {
-  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+  sq_text=$(printf '%s' "$1" | sed "s/'/'\\\\''/g") || { check_signal "$?"; }
+  check_signal "$?"
+  printf "'%s'" "$sq_text"
 }
 
 do_uninstall() {
@@ -1019,21 +1069,21 @@ do_uninstall() {
     case $du_l in 'path '*) ;; *) continue ;; esac
     du_p=${du_l#path }
     if allowed "$du_p"; then
-      if exists "$du_p"; then rm_path "$du_p" || true; fi
+      if exists "$du_p"; then rm_path "$du_p" || { check_signal "$?"; }; fi
     else
       warn "skipped $du_p: not a path that watane installs"
     fi
   done <<EOF
 $R_LINES
 EOF
-  clean_stale || true
+  clean_stale || { check_signal "$?"; }
   if allowed "$RECEIPT"; then
-    rm -f "$RECEIPT" || warn "could not remove $RECEIPT"
+    rm -f "$RECEIPT" || { check_signal "$?"; warn "could not remove $RECEIPT"; }
   else
     warn "skipped $RECEIPT: not a path that watane installs"
   fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
-    if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || true; fi
+    if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || { check_signal "$?"; }; fi
   done
   say "uninstalled watane $du_ver"
   if exists "$HOME/Library/Caches/watane-dev"; then
@@ -1049,7 +1099,9 @@ EOF
     if [ "$HOME_OUT" = 1 ]; then
       say "kept: $(tilde "$du_h") (not deleted: it resolves to $HOME_DEL, outside your home folder)"
       say 'To delete it yourself, run:'
-      say "  rm -rf $(shell_quote "$HOME_DEL")"
+      du_quoted=$(shell_quote "$HOME_DEL") || { check_signal "$?"; }
+      check_signal "$?"
+      say "  rm -rf $du_quoted"
       return 0
     fi
     say "kept: $(tilde "$du_h") (not deleted: not a folder that watane can delete)"
@@ -1062,7 +1114,8 @@ EOF
     du_a=$ANSWER
     if [ "$du_a" = delete ]; then
       rm -rf -- "$HOME_DEL"
-      if [ -L "$du_h" ]; then rm -f -- "$du_h"; fi
+      check_signal "$?"
+      if [ -L "$du_h" ]; then rm -f -- "$du_h"; check_signal "$?"; fi
       say "deleted: $(tilde "$du_h")"
       return 0
     fi
@@ -1119,9 +1172,9 @@ main() {
   check_signal
   [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
   # step 3: tools
-  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od"
+  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od mktemp"
   if [ "$MODE" = install ]; then
-    check_tools "curl tar mktemp"
+    check_tools "curl tar"
     command -v shasum >/dev/null 2>&1 || check_tools sha256sum
   fi
   # step 4: platform, home, folders
