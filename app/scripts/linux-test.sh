@@ -12,7 +12,8 @@ docker run --rm --init --platform linux/arm64 --shm-size=1g --add-host site.loca
   --mount type=volume,source=watane-app-linux-target,target=/linux-target \
   --env CARGO_TARGET_DIR=/linux-target --workdir /repo "$image" bash -euc '
     pkg-config --modversion glib-2.0 libsoup-3.0 webkit2gtk-4.1
-    cargo test -p watane-app "$@"
+    # One run: the driver build runs the default tests too. Its lone non-driver test
+    # (ac1_default_dist_refuses_listed_local) is plain logic that check.sh runs on the Mac.
     # libtest cannot filter by ignore reason. These are every #[ignore = "front: ..."]
     # test in gui_shell/gui_isolation; linux_runner verifies this list stays complete.
     dbus-run-session xvfb-run -a bash -se -- "$@" <<\DRIVER

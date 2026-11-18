@@ -1735,10 +1735,11 @@ A release build never reads the variable.
 `cargo test` runs the unit and static tests. `cargo test --features driver`
 also runs the quiet window tests; on macOS they need a logged-in session.
 For Linux, run `app/scripts/linux-test.sh` from any directory (or
-`./scripts/linux-test.sh` here). It builds `linux.Dockerfile` and runs both
-the default suite, then the driver suite under `xvfb-run` with Openbox, including ignored
-slow tests such as J2. It compiles but skips every front test by name.
-Extra arguments (for example `ac5_journey_j2`) go to both cargo runs.
+`./scripts/linux-test.sh` here). It builds `linux.Dockerfile` and runs the
+driver suite, which includes the default tests, under `xvfb-run` with Openbox, including
+ignored slow tests such as J2. It compiles but skips every front test by name. The one test
+of the build without `driver` is plain logic; `cargo test` on macOS runs it.
+Extra arguments (for example `ac5_journey_j2`) go to the cargo run.
 Named Docker volumes cache Cargo’s registry and `/linux-target`; the
 worktree’s macOS `target/` is untouched. The runner prints the image’s GLib,
 libsoup and WebKitGTK versions before testing.

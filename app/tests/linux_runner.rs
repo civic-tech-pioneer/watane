@@ -28,8 +28,7 @@ exec "$@"
         r#"#!/bin/bash
 printf '<%s>' "$@" >> "$CARGO_LOG"
 printf '\n' >> "$CARGO_LOG"
-if [[ " $* " == *' --features driver '* ]]; then exit "${DRIVER_EXIT:-0}"; fi
-exit "${TEST_EXIT:-0}"
+exit "${DRIVER_EXIT:-0}"
 "#,
     );
     for (name, body) in [
@@ -47,9 +46,8 @@ exit "${TEST_EXIT:-0}"
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/linux-test.sh");
     for (variable, code, calls) in [
         ("BUILD_EXIT", 7, 0),
-        ("TEST_EXIT", 8, 1),
-        ("DRIVER_EXIT", 9, 2),
-        ("DRIVER_EXIT", 0, 2),
+        ("DRIVER_EXIT", 9, 1),
+        ("DRIVER_EXIT", 0, 1),
     ] {
         let docker_log = bin.join("docker.log");
         let cargo_log = bin.join("cargo.log");
@@ -80,7 +78,7 @@ exit "${TEST_EXIT:-0}"
                 assert!(line.contains("<a filter with spaces>"));
             }
         }
-        if calls == 2 {
+        if calls == 1 {
             assert!(cargo.contains("<--features><driver><--><--include-ignored>"));
         }
         let docker = fs::read_to_string(docker_log).unwrap();
