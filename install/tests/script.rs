@@ -496,6 +496,16 @@ fn inst_s16_uninstall_home_deleted() {
 }
 
 #[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac3_uninstall_nul_in_answer_keeps_home() {
+    let fx = uninstall_setup();
+    let out = support::pty::run_bytes(&fx, &["--uninstall"], &[], &[("keep it: ", b"de\0lete")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(fx.home.join(".watane/marker").is_file(), "{out:?}");
+    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
+}
+
+#[test]
 fn inst_s17_uninstall_no_terminal() {
     let fx = uninstall_setup();
     let file = fx.root.path().join("tty");
@@ -1335,6 +1345,147 @@ fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
         "mine\n",
         "the person's watane.app is kept: {out:?}"
     );
+}
+
+/// AC4 (3.6 step 4, 3.8): interrupt each removal in a staged undo, both with
+/// TERM (the handler repeats rollback) and KILL (the next run recovers).
+#[test]
+fn ac4_every_undo_removal_can_be_repeated_or_recovered() {
+    let entries = [
+        ".local/bin/watane",
+        ".local/bin/watane-dev",
+        ".local/bin/watane-node",
+        ".local/share/watane-dev/vendor",
+        ".local/share/watane/install.sh",
+        ".local/share/watane/VERSION",
+        "Applications/watane.app",
+        ".local/share/watane/receipt",
+    ];
+    let removals: Vec<_> = entries[..6]
+        .iter()
+        .map(|p| format!("*/{p}"))
+        .chain(std::iter::once("*/share/watane/journal.42".to_string()))
+        .chain(entries.iter().map(|p| format!("*/{p}.new.42")))
+        .collect();
+    for mode in ["term", "sleep"] {
+        for removal in &removals {
+            let fx = Fx::new();
+            for p in &entries[..6] {
+                write_file(&fx.home.join(p), "old");
+            }
+            write_file(&fx.receipt(), "old receipt");
+            fs::create_dir(fx.home.join("Applications")).expect("applications");
+            let before = snapshot(&fx.home);
+            let mut journal = String::new();
+            for p in &entries {
+                let path = fx.home.join(p);
+                let kind = if *p == "Applications/watane.app" {
+                    "new"
+                } else {
+                    "old"
+                };
+                journal.push_str(&format!(
+                    "{kind} {}\nmoved {}\n",
+                    path.display(),
+                    path.display()
+                ));
+                write_file(&fx.home.join(format!("{p}.new.42")), "staged");
+                if kind == "old" {
+                    write_file(&fx.home.join(format!("{p}.old.42")), &fx.read(&path));
+                    if path != fx.receipt() {
+                        fs::remove_file(&path).expect("moved aside");
+                    }
+                }
+            }
+            write_file(&fx.share("watane/journal.42"), &journal);
+            let setup = r#"
+HOME_R=$(cd "$HOME" && pwd -P)
+set_entries
+trap cleanup EXIT
+trap 'on_signal 143' TERM
+"#;
+            let source = baked_script("0.1.0").replace(
+                "main \"$@\"",
+                &format!("{setup}\nSWAP_PID=42\nSWAP_ACTIVE=1\nrollback\n"),
+            );
+            fs::write(&fx.script, source).expect("undo fixture");
+            fx.state_write("rm_fault", &format!("{mode}\n{removal}\n"));
+            if mode == "term" {
+                let out = fx.run(&[]);
+                assert_eq!(out.code, 143, "{removal}: {out:?}");
+                assert!(!fx.state.join("rm_fault").exists(), "{removal} was reached");
+                assert_eq!(snapshot(&fx.home), before, "{removal}: {out:?}");
+            } else {
+                let child = spawn(&mut fx.cmd(&[]));
+                fx.wait_state("rm_sleeping");
+                signal_group(child.id(), "KILL");
+                let out = finish(child);
+                assert_eq!(out.code, -1, "{removal}: {out:?}");
+                fs::remove_file(fx.state.join("rm_fault")).expect("unfault");
+            }
+            // A person puts their own app here after the interruption. Its staged
+            // .new file never moved in; neither rollback nor recovery owns this app.
+            write_file(&fx.app().join("marker"), "mine");
+            let recover =
+                baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nrecover\n"));
+            fs::write(&fx.script, recover).expect("recovery fixture");
+            for _ in 0..2 {
+                let out = fx.run(&[]);
+                assert_eq!(out.code, 0, "{mode}, {removal}: {out:?}");
+                let mut expected = before.clone();
+                expected.push(("Applications/watane.app/".to_string(), Vec::new()));
+                expected.push((
+                    "Applications/watane.app/marker".to_string(),
+                    b"mine".to_vec(),
+                ));
+                expected.sort();
+                let mut actual = snapshot(&fx.home);
+                actual.sort();
+                assert_eq!(actual, expected, "{mode}, {removal}: {out:?}");
+                assert!(
+                    leftovers(&fx).is_empty(),
+                    "{mode}, {removal}: {:?}",
+                    leftovers(&fx)
+                );
+            }
+        }
+    }
+}
+
+/// AC4: a fresh entry already removed by undo cannot claim a later replacement.
+#[test]
+fn ac4_recovery_keeps_replacement_at_an_undone_new_entry() {
+    let fx = Fx::new();
+    write_file(&fx.bin("watane"), "installed by this run");
+    write_file(&fx.share("watane/receipt.new.42"), "pending");
+    write_file(
+        &fx.share("watane/journal.42"),
+        &format!(
+            "new {}\nmoved {}\n",
+            fx.bin("watane").display(),
+            fx.bin("watane").display()
+        ),
+    );
+    let setup = r#"
+HOME_R=$(cd "$HOME" && pwd -P)
+set_entries
+"#;
+    fs::write(
+        &fx.script,
+        baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nundo_swap 42\n")),
+    )
+    .expect("undo fixture");
+    kill_at(&fx, "rm", "*/share/watane/journal.42", &[]);
+    write_file(&fx.bin("watane"), "mine");
+    fs::write(
+        &fx.script,
+        baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nrecover\n")),
+    )
+    .expect("recovery fixture");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fx.read(&fx.bin("watane")), "mine", "{out:?}");
+    assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
 }
 
 fn plant_s35(fx: &Fx, n: u32) {

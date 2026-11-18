@@ -274,7 +274,7 @@ undo_swap() {
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
       # the receipt moved into place: the commit happened, there is nothing to undo
-      if ! exists "$RECEIPT.new.$1"; then exit 0; fi
+      if ! exists "$RECEIPT.new.$1"; then finish_commit "$1"; exit 0; fi
       read_journal "$ub_j"
       while IFS= read -r ub_p; do
         [ -n "$ub_p" ] || continue
@@ -288,11 +288,20 @@ EOF
         [ -n "$ub_p" ] || continue
         in_list "$J_MOVED" "$ub_p" || continue
         exists "$ub_p.new.$1" && continue
-        rm -rf "$ub_p"
+        # Move back to staging before deleting: a repeated undo then has proof
+        # that this fresh entry was already taken out of the installed paths.
+        if exists "$ub_p"; then
+          mv "$ub_p" "$ub_p.new.$1" || exit 1
+        else
+          mkdir "$ub_p.new.$1" || exit 1
+        fi
       done <<EOF
 $J_NEW
 EOF
     fi
+    # Retire the journal while every staging name still proves what did not move.
+    # A retry after this point cleans staging only; it cannot claim a person's file.
+    rm -f "$SHAREW/journal.$1" || exit 1
     while IFS= read -r ub_p; do
       allowed "$ub_p" || continue
       if exists "$ub_p.new.$1"; then rm -rf "$ub_p.new.$1"; fi
@@ -300,7 +309,6 @@ EOF
 $ENTRIES_ALL
 EOF
     if exists "$RECEIPT.old.$1"; then rm -rf "$RECEIPT.old.$1"; fi
-    rm -f "$SHAREW/journal.$1"
     exit 0
   )
 }
@@ -667,6 +675,32 @@ EOF
   return 0
 }
 
+# read_answer: one terminal line, preserving NUL as a rejected byte (3.7, 8.4).
+# Encode before shell substitution: macOS sh's read silently drops NUL bytes.
+read_answer() {
+  ANSWER=""
+  ra_bad=0
+  while :; do
+    # od prints one octal number; field splitting removes its padding only.
+    # shellcheck disable=SC2046
+    set -- $(dd bs=1 count=1 2>/dev/null | od -An -v -to1)
+    case ${1:-} in
+      '') ANSWER=""; return 0 ;;
+      012) break ;;
+      000) ra_bad=1 ;;
+      *)
+        if [ "${#ANSWER}" -lt 6 ]; then
+          ANSWER=$ANSWER$(printf '%b' "\\0$1")
+        else
+          ra_bad=1
+        fi
+        ;;
+    esac
+  done
+  if [ "$ra_bad" = 1 ]; then ANSWER=""; fi
+  return 0
+}
+
 # --- the toolchain (TECHNICAL 3.7) ---
 
 detect_toolchain() {
@@ -756,7 +790,8 @@ toolchain_step() {
       ;;
   esac
   ts_ans=""
-  IFS= read -r ts_ans </dev/tty || ts_ans=""
+  read_answer </dev/tty
+  ts_ans=$ANSWER
   case $ts_ans in
     [Yy] | [Yy][Ee][Ss]) ;;
     *)
@@ -968,7 +1003,8 @@ EOF
   if ( : </dev/tty ) 2>/dev/null; then
     printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde_r "$HOME_DEL")"
     du_a=""
-    IFS= read -r du_a </dev/tty || du_a=""
+    read_answer </dev/tty
+    du_a=$ANSWER
     if [ "$du_a" = delete ]; then
       rm -rf -- "$HOME_DEL"
       if [ -L "$du_h" ]; then rm -f -- "$du_h"; fi
@@ -1027,7 +1063,7 @@ main() {
   main_uid=$(id -u 2>/dev/null) || die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."
   [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
   # step 3: tools
-  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill"
+  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od"
   if [ "$MODE" = install ]; then
     check_tools "curl tar mktemp"
     command -v shasum >/dev/null 2>&1 || check_tools sha256sum

@@ -160,7 +160,7 @@ Stock macOS 14 and later, found on the default `PATH`
 in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `shasum` (else `sha256sum`), `uname`, `sw_vers`, `sysctl`, `id`, `mktemp`,
 `mkdir`, `mv`, `cp`, `rm`, `rmdir`, `ls`, `cat`, `chmod`, `grep`, `sed`,
-`awk`, `tr`, `head`, `dirname`, `readlink`, `xattr`, `xcode-select`, `kill`, `printf`, `test`. It uses no
+`awk`, `tr`, `head`, `dirname`, `readlink`, `dd`, `od`, `xattr`, `xcode-select`, `kill`, `printf`, `test`. It uses no
 `python`, `perl`, `jq`, `brew`, `git`, `openssl`, `wget`, `gh` or
 `codesign`, and no bash-only syntax (no `[[`, arrays, `local`, `echo -e`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
@@ -322,10 +322,21 @@ files (INST-F-20, INST-S-14, 32, 33).
    replaces the file in one rename, so that no moment leaves it missing); an `old` entry with no `.old.<pid>` was not
    swapped and its `<path>` is the old file, which stays. For each
    `new <path>` line, only if the journal also holds `moved <path>` and
-   `<path>.new.<pid>` no longer exists (it was moved in): `rm -rf <path>`.
+   `<path>.new.<pid>` no longer exists (it was moved in): rename `<path>`
+   back to `<path>.new.<pid>` instead of deleting it in place. If the entry
+   is already absent, create an empty directory at that staging name as
+   evidence that undo reached it. A retry sees the staging name and leaves
+   a replacement at `<path>` alone.
    Only lines valid by 3.6.1 are used. Each removal only where the rule of 8.5
-   allows; then remove each
-   `.new.<pid>`, `receipt.new.<pid>` and the journal; exit 5 (or 129, 130,
+   allows; then remove
+   the journal **before** deleting any `.new.<pid>` (including
+   `receipt.new.<pid>`). If removing the journal fails, keep all `.new` names
+   and report the undo incomplete so rollback can retry. While the journal
+   exists, those names remain evidence that an entry did not move in; after
+   it is gone, a repeated undo only cleans staging names and never acts on
+   entry paths. Thus no journal survives the last `.new` removal, avoiding
+   a stale live-pid refusal after pid reuse. Then remove the `.new.<pid>`
+   names and any `receipt.old.<pid>`; exit 5 (or 129, 130,
    141, 143). A running `watane` keeps its open file; the next start uses the new
    one. The old version and the old receipt are then as before the run
    (INST-S-14, 32).
@@ -365,7 +376,10 @@ named `journal.<n>` with `<n>` digits only, and use a line of it only when:
 
 Any other line is ignored, so a journal cannot name a path outside the
 entries, and `mv <path>.old.<n> <path>` and `rm -rf <path>` act on entries
-only. An `old` line is used only while `<path>.old.<n>` exists; a `new` line
+only. A `new` line alone is never proof that watane moved a file in
+(INST-S-35). During undo, no `.new.<n>` is deleted until the journal has
+been removed, so a retry cannot reinterpret a cleaned staging file as a
+completed move. An `old` line is used only while `<path>.old.<n>` exists; a `new` line
 removes or counts `<path>` only with its `moved` line and no
 `<path>.new.<n>` (INST-S-35). Two runs at once are not supported: a run
 that finds, at step 6, a journal of a live process other than itself stops
@@ -396,8 +410,14 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 
 **Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
-stdin. Only `y` and `yes`, in any case, count; any other answer, an
-undecodable byte included, is no. An empty line, end of file and no terminal
+stdin. Only the exact bytes of `y` and `yes`, in any ASCII case, count;
+any extra byte, including NUL or an undecodable byte, is no. Read bytes
+with POSIX `dd bs=1 count=1` and encode each with `od -An -v -to1`
+before shell substitution: macOS `sh`'s `read` drops NUL. A NUL marks
+this whole answer invalid; continue through the line's newline. Retain at
+most six shell characters (the longest accepted word across both questions); longer
+lines are invalid and are drained through their newline. Decode non-NUL
+bytes with POSIX `printf %b`, without case folding or trimming. An empty line, end of file and no terminal
 are all `N` (INST-F-9, as `node` NO-10).
 `--no-toolchain` is `N` with no question. No flag, variable or file means `y`:
 with no terminal (an agent, a pipe, a CI job) the toolchain is not installed,
@@ -442,7 +462,11 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 ### 3.8 Cleanup
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
-`PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. The swap counts as undone only when its undo ended: macOS `sh` forks a subshell with a trapped signal still pending and that subshell dies of it, so an undo that did not end leaves the swap in progress for the handler that runs next. macOS `sh` can also lose an `INT` that lands just after the child it waited on died of it; the run then ends as the failed swap it saw (exit 5, the swap undone). A `.new.<pid>` or `.old.<pid>`
+`PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).
+A kill before journal removal leaves the evidence needed to repeat the
+undo; a kill afterwards leaves only staging cleanup, so recovery never
+removes a replacement that the person put at an entry path. The swap counts
+as undone only when its undo ended: macOS `sh` forks a subshell with a trapped signal still pending and that subshell dies of it, so an undo that did not end leaves the swap in progress for the handler that runs next. macOS `sh` can also lose an `INT` that lands just after the child it waited on died of it; the run then ends as the failed swap it saw (exit 5, the swap undone). A `.new.<pid>` or `.old.<pid>`
 left by a kill between 3.6 steps 2 and 3 is found and removed (after its
 journal, if there is one, was undone) by the next run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or
@@ -902,7 +926,9 @@ is a feature of `app`, not of `install` (Q11).
    and cannot be restored without a backup. Type delete to delete it, or
    press Enter to keep it: `, where `<R>` is shown with `~` for the
    resolved `$HOME` (`~/.watane` in the usual case). Only the exact text `delete` deletes it
-   (`rm -rf`); then print `deleted: ~/.watane`. Anything else, an end of
+   (`rm -rf`); the byte reader of 3.7 is used here too, and any extra byte,
+   NUL included (`de\0lete`, for example), keeps the home. Then print
+   `deleted: ~/.watane` only after deletion. Anything else, an end of
    file and no terminal keep it (INST-S-15 to 17). No flag, variable or file answers this
    question (Q12). Tests type the answer on a pseudo-terminal (12.1).
 
@@ -1059,6 +1085,10 @@ to four per test binary. Deadlines start after admission.
   `shasum -a 256` or `sha256sum`; the crate adds no hash dependency) and a fake
   archive: `tar -czf` of a tree with the layout of 4.2 whose programs are
   small shell scripts that print `<name> <version>` for `--version`;
+- The test launcher supplies its own pid as `FAKE_INSTALL_PID` to fake `rm`:
+  its `term` mode signals both the undo subshell and the installer without
+  relying on `ps`, which the agent sandbox blocks. This variable belongs
+  only to the test tools; `install.sh` does not read it.
 - **no terminal**: each test that expects none starts the script as
   `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' sh install.sh ...` (`perl`
   is on stock macOS and on the Linux runners; it is a tool of the test, not

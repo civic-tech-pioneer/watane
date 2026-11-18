@@ -176,3 +176,46 @@ test above now pins without one. `inst_s33_int_in_the_swap_undoes_it` joins the 
 tests; under exec load macOS `sh` lost the INT in about one run of three (bash 3.2 ignores an INT
 that lands just after the child it waited on died of it), and those runs ended with exit 5 and
 the swap undone, which 3.8 now names.
+
+## S50b-fix-3: exact answer bytes and repeatable undo
+
+Both supplied adversary tests failed unchanged before the fix: `y` followed
+by NUL ran rustup, and a second undo removed the person's replacement app.
+Answers now pass through stock POSIX `dd` and `od` one byte at a time before
+entering shell variables. NUL rejects the whole line rather than disappearing;
+no trimming or case folding changes the answer. Both questions share this
+reader, drain through the newline, and reject EOF and extra bytes. Storage is
+bounded to six shell characters, the length of `delete`. The two stock tools were added
+to TECHNICAL 3.3 and the tests' restricted PATH; no crate dependency was added.
+The required `de\0lete` pty regression keeps the home (this particular case
+already passed on the baseline shell); the supplied trailing/prefix NUL
+rustup cases demonstrated the byte-loss breach.
+
+Undo now removes the journal after restoring entries and before deleting any
+staging name. If journal removal fails, staging evidence remains and undo
+reports failure for rollback to retry. A completed receipt move encountered
+by rollback finishes commit cleanup instead of leaving a journal behind.
+The removal matrix went red on a TERM at journal removal: all staging was
+gone but the journal survived the run. It stages a journal directly, then
+interrupts each of fifteen removals with TERM (rollback repeats) and KILL
+(next run recovers), compares the old home bytes, adds a person's app, and
+checks two recovery runs preserve it without journals or staging leftovers.
+The first default suite had 51 script tests pass and one fail: the existing
+signal-during-undo test expected 143 but got 5 because the sandbox blocks
+fake rm's `ps`. The test launcher now supplies its own pid to fake rm, so
+TERM still reaches both shells without ps. All existing assertions remain.
+
+An additional prebuilt regression went red after undo had removed a fresh
+entry but before journal retirement: recovery deleted a replacement at that
+entry. Fresh entries now move back to their `.new` names before cleanup,
+so a repeated undo sees durable evidence that they were taken out. An entry
+already absent gets an empty staging directory for the same evidence.
+The supplied red tests and all prior test assertions remain unchanged.
+
+Final validation on macOS: `cargo test -p watane-install` passed (68 passed,
+16 ignored); the supplied NUL adversary and the new home-question NUL test
+also passed with `--ignored`. The unchanged repeated-undo adversary, both
+AC4 regressions and all original default tests passed. `cargo clippy
+--all-targets -- -D warnings`, `cargo +nightly fmt --check`, and
+`shellcheck -s sh install.sh package.sh` exited 0. The existing manifest
+warnings about workspace-hack remain. No other ignored or GUI tests ran.

@@ -2,7 +2,8 @@
 # Fake rm: passes to the real one ($FAKE_REAL/rm) unless the file rm_fault of the test says
 # "fail", "sleep" or "term" (line 1) for an argument that matches the glob (line 2). "term" removes
 # the fault, then sends TERM to the shell that called it and to that shell's parent (a group signal
-# sent from inside the group reaches only the sender on macOS).
+# sent from inside the group reaches only the sender on macOS). The test launcher
+# supplies its pid so no ps (blocked by the agent sandbox) is needed.
 if [ -f "$FAKE_STATE/rm_fault" ]; then
   { read -r mode; read -r pat; } < "$FAKE_STATE/rm_fault"
   for a; do
@@ -13,7 +14,8 @@ if [ -f "$FAKE_STATE/rm_fault" ]; then
           sleep) echo "$a" > "$FAKE_STATE/rm_sleeping"; exec "$FAKE_REAL/sleep" 600 ;;
           term)
             "$FAKE_REAL/rm" -f "$FAKE_STATE/rm_fault"
-            pp=$(/bin/ps -o ppid= -p "$PPID")
+            pp=${FAKE_INSTALL_PID:-}
+            if [ -z "$pp" ]; then pp=$(/bin/ps -o ppid= -p "$PPID"); fi
             kill -s TERM $pp "$PPID"
             exit 1 ;;
         esac ;;

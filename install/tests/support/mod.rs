@@ -22,7 +22,7 @@ pub const PERL: &str = "/usr/bin/perl";
 pub const LAUNCH: [&str; 3] = [
     "-MPOSIX",
     "-e",
-    "POSIX::setsid(); $SIG{$_} = 'DEFAULT' for qw(HUP INT QUIT TERM PIPE); exec @ARGV",
+    "POSIX::setsid(); $ENV{FAKE_INSTALL_PID} = $$; $SIG{$_} = 'DEFAULT' for qw(HUP INT QUIT TERM PIPE); exec @ARGV",
 ];
 
 /// Endpoint security can queue each exec for tens of seconds on a loaded Mac.
@@ -131,9 +131,9 @@ pub struct Fx {
     pub rel: Release,
 }
 
-const TOOLS: [&str; 18] = [
+const TOOLS: [&str; 20] = [
     "sh", "curl", "tar", "mktemp", "mkdir", "cp", "rmdir", "ls", "cat", "chmod", "grep", "sed",
-    "awk", "tr", "head", "dirname", "readlink",
+    "awk", "tr", "head", "dirname", "readlink", "dd", "od",
     // GNU tar runs gzip; macOS tar has it built in, so the script does not name it
     "gzip",
 ];
