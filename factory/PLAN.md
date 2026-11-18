@@ -333,7 +333,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   answer), not a second macOS user; Q17 is a later dev slice; Q16 waits on the human. Friction:
   `factory/check.sh` cannot gate a docs-only task; adversary and user-sim on a design slice patch
   documents, which took 3 and 2 passes.
-- [~] **S50b The install script and its archive (install stages 1 to 3).** In flight (cloud), branch `slice/s50b`, routine `trig_01AgdQrXH4dny5jSKwNRQYDM`. Builds install/TECHNICAL
+- [x] **S50b The install script and its archive (install stages 1 to 3).** Delivered 2026-11-18 (merged rebased as f863f48; routine `trig_01AgdQrXH4dny5jSKwNRQYDM` finished, branches removed). Builds install/TECHNICAL
   11 stages 1 to 3: `install.sh` and the `watane-install` crate with its script tests (INST-S-1..22,
   26..28, 30, 31, with fakes for every Darwin-only tool so they pass on Linux), `--version` on the
   three programs (`watane-node --version`), and `package.sh` building the 4.2 tree from fake
@@ -341,12 +341,43 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `$HOME`, refuses each breach scenario, and upgrades and uninstalls. Touches: `install/`, root
   `Cargo.toml` (one member line), `Cargo.lock`, `workspace-hack/` (generated), `node/` (bin and
   `program.rs` test). Cloud.
+  Delivered: the packed `install.sh` puts watane, watane-dev and watane-node in ~/.local/bin, the
+  vendor folder and watane.app in place, then upgrades, reinstalls, reports `--status` and
+  uninstalls; every refusal (checksum, foreign files, root, platform, version, folders outside the
+  home, link members) stops before it changes anything. Proved on Linux with fakes for the Darwin
+  tools. user-sim REJECTED once (a closed stdout, `curl | sh | head`, died of SIGPIPE and left the
+  temp folder), fixed, ACCEPTED; adversary BREACHED twice (uninstall rmdir'd outside the home
+  through a ~/.local link; a project's rust-toolchain.toml let rustup auto-install before any yes;
+  an install folder linked to the home let a receipt line delete a top-level folder), fixed, then
+  HELD. Decisions (IN-34..39): INST-S-32..35 join stage 1; uninstall and status skip the install-time
+  folder check, every removal goes through 8.5; toolchain detection runs from $HOME with
+  RUSTUP_AUTO_INSTALL=0; archives with any link member are refused (exit 5); journal and receipt.new
+  made with noclobber; a home resolving outside $HOME is never deleted (the rm -rf is printed); PIPE
+  trapped like HUP/INT/TERM (exit 141); install folders must resolve strictly below the home; the
+  foreman skill's Install adversary row names install.sh, package.sh, release.yml. Friction:
+  cargo-deny, cargo-hakari and shellcheck are missing from the cloud image; workspace clippy fails in
+  the cloud (no gdk); clippy's dev/src/outcome.rs:1 lint on the cloud toolchain (second report);
+  a cloud foreman cannot delete a remote branch (second report). For a later slice: dev doctor's
+  rustup detection could take the same neutral-folder rule; dash's `printf: I/O error` on a closed
+  pipe; no hint after a pipe closes past the commit point; "upgrading 0.2.0 to 0.1.0" for a
+  downgrade; the no-terminal uninstall does not say how to delete the home.
+- [~] **S50b-fix install's tests pass on macOS.** In flight (local), branch `slice/s50b-fix`.
+  Two install tests fail on the Mac (the cloud could not run them): (1) `package.rs`
+  ac1_the_archive_has_the_tree_of_4_2: package.sh ad-hoc signs watane.app on macOS, so the archive
+  holds `Contents/_CodeSignature/{CodeDirectory,CodeRequirements,CodeResources,CodeSignature}`,
+  which neither install/TECHNICAL 4.2 nor the test expects (decide: the tree lists them on macOS);
+  (2) ac4_install_upgrade_uninstall_of_packed_archives: `support/pty.rs:62` "marker never came"
+  within 30 s on macOS (BSD pty, or dash vs macOS sh). Also run `shellcheck -s sh` on install.sh
+  and package.sh (missing in the cloud; install it if needed). Outcome: `cargo test -p
+  watane-install -- --include-ignored` green on the Mac, three runs. Touches: `install/` only.
+  Local (macOS).
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
   (report only, no rewrite), the human makes the repository public, and the PO applies Q16, and `tests/clean_mac.sh` run in a fresh macOS VM
   on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
-  serves S55). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
+  serves S55). Also the receipt records each install folder's resolved path, and a removal is
+  skipped when the folder now resolves elsewhere (deputy decision, S50b open risk). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
   from the one-liner to `watane-dev new`. Touches: `.github/`, `install/`, `README.md`. Local.
   The original S50 sketch, for its intent:
   Someone with a clean Mac and no Rust toolchain ends up
@@ -915,7 +946,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
-| install | 1 script, 2 versions, 3 packer | 7 | open (S50b) |
+| install | 1 script, 2 versions, 3 packer | 7 | done (S50b) |
 | install | 4 workflow, 5 clean Mac (J7) | 7 | open (S50c) |
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
@@ -1444,6 +1475,12 @@ The human may veto each one.
   does not (dev 10.4.1 step 6, section 11). This answers S47's watch item.
 - S42: the `publish.push_failed` fix is the failed command and the rest of its list, with no
   "Fix the cause" prefix; the message reads `<command> failed: <stderr>` (dev 2.2, 10.4.1).
+- S50b (2026-11-18): the receipt records each install folder's resolved path at install, and
+  uninstall skips a removal when the folder now resolves elsewhere (install/TECHNICAL 8.5 rule 3's
+  open risk: a same-user link made after install, `~/.local/share/watane-dev -> ~/Documents`, lets a
+  receipt line empty it). Built in S50c, before the first release, when the receipt format costs
+  nothing to change; after it, a change needs a migration. Rejected: accepting the risk, and
+  checking share/ lines against a fixed list (breaks 8.5's downgrade rule).
 
 ## Friction
 
@@ -1850,3 +1887,5 @@ The human may veto each one.
   Gatekeeper step, upgrade and uninstall, with 15 attacks on the design pinned as scenarios.
 - S86: a maker's agent reads a line number in a WIT error, passes `--home` to test and serve, and
   gets a rerun it can paste at every fix that used to say "run this command again".
+- S50b: the packed install script installs, upgrades, reports and uninstalls watane in a home, and
+  refuses every attack found on it before it changes anything (proved on Linux with fakes).
