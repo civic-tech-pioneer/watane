@@ -294,9 +294,11 @@ fn ac6_holder_returns_while_refresh_waits_on_host() {
         )
         .unwrap(),
     );
-    // The initial follow serves head and entries/0 normally; the refresh really answers after 20 s.
+    // The initial follow serves head and entries/0 normally; the refresh is answered only after
+    // the holder calls returned.
     let bytes = first[0].bytes().to_vec();
     let (blocked_tx, blocked_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
     let server_thread = std::thread::spawn(move || {
         for _ in 0..2 {
             server
@@ -307,7 +309,7 @@ fn ac6_holder_returns_while_refresh_waits_on_host() {
         }
         let request = server.recv().unwrap();
         blocked_tx.send(()).unwrap();
-        std::thread::sleep(Duration::from_secs(20));
+        let _ = release_rx.recv();
         let _ = request.respond(tiny_http::Response::from_data(bytes));
     });
     d.follow(&Link::new(key, &url, None).unwrap()).unwrap();
@@ -334,6 +336,7 @@ fn ac6_holder_returns_while_refresh_waits_on_host() {
         assert!(rx.recv_timeout(Duration::from_secs(1)).unwrap() < Duration::from_secs(1));
     }
     holder_thread.join().unwrap();
+    release_tx.send(()).unwrap();
     refresh.join().unwrap();
     server_thread.join().unwrap();
     assert!(d.channel(&key).unwrap().kept);
