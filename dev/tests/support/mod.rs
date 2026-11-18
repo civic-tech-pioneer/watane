@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 pub fn cache() -> &'static Path {
     // A `static` is never dropped, so the cache cannot live in `$TMPDIR`: it sits under the
     // target folder and is removed by `cargo clean`. Every dev test binary shares it and keeps
-    // it between runs until watane-dev is rebuilt. Each process holds a shared lock while it
+    // it between runs; a rebuilt watane-dev refreshes it, keeping `target/`. Each process holds a shared lock while it
     // lives; a rebuild takes the exclusive one, so it never removes a cache in use.
     static WARM: OnceLock<(PathBuf, std::fs::File)> = OnceLock::new();
     &WARM.get_or_init(warm).0
@@ -32,7 +32,14 @@ fn warm() -> (PathBuf, std::fs::File) {
         lock.lock_shared().unwrap();
         return (temp, lock);
     }
-    let _ = std::fs::remove_dir_all(&temp);
+    // Keep the compiled crates in `target/`: Cargo's fingerprints decide what a new watane-dev
+    // must rebuild there, so a relink of watane-dev is not a cold template build (~180 s).
+    for e in std::fs::read_dir(&temp).into_iter().flatten().flatten() {
+        if e.file_name() != "target" {
+            let p = e.path();
+            let _ = std::fs::remove_dir_all(&p).or_else(|_| std::fs::remove_file(&p));
+        }
+    }
     std::fs::create_dir_all(&temp).unwrap();
     let dir = temp.join("counter");
     let new = Command::new(binary)
