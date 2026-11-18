@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake sw_vers: -productVersion from the file sw_vers of the test.
+v=14.5
+[ -f "$FAKE_STATE/sw_vers" ] && read -r v < "$FAKE_STATE/sw_vers"
+echo "$v"

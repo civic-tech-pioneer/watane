@@ -1,0 +1,969 @@
+#!/bin/sh
+# install.sh: installs, upgrades, reports and removes watane (install/TECHNICAL 3).
+# POSIX sh, only the tools of TECHNICAL 3.3. The whole body is the function `main`,
+# called on the last line, so that a download cut off half way runs nothing.
+set -eu
+umask 022
+
+DEFAULT_RELEASE="@RELEASE@"
+NL='
+'
+TARGET=aarch64-apple-darwin
+RELS="bin/watane bin/watane-dev bin/watane-node share/watane-dev/vendor share/watane/install.sh share/watane/VERSION Applications/watane.app"
+
+TMP=""
+SWAP_ACTIVE=0
+SWAP_PID=0
+RES=""
+HOME_R=""
+R_OK=0
+R_VERSION=""
+R_TARGET=""
+R_LINES=""
+J_OLD=""
+J_NEW=""
+J_MOVED=""
+JOURNALS=""
+TC_STATE=""
+TC_OK=0
+RUSTUP=""
+HAD_RECEIPT=0
+
+usage() {
+  printf '%s\n' \
+    'usage: install.sh [--release <version>] [--no-toolchain]' \
+    '       install.sh --uninstall' \
+    '       install.sh --status' \
+    '       install.sh --help | -h'
+}
+
+say() { printf '%s\n' "$*"; }
+warn() { printf 'watane install: %s\n' "$*" >&2; }
+
+# die <code> <cause> [<what to do> ...]
+die() {
+  die_code=$1
+  shift
+  printf 'watane install: %s\n' "$1" >&2
+  shift
+  for die_l in "$@"; do printf '%s\n' "$die_l" >&2; done
+  exit "$die_code"
+}
+
+bad_flag() {
+  printf 'watane install: unknown or conflicting flag %s\n' "$1" >&2
+  usage >&2
+  exit 1
+}
+
+# tilde <path>: the path with $HOME shown as ~
+tilde() {
+  case $1 in
+    "$HOME") printf '~' ;;
+    "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+exists() { [ -e "$1" ] || [ -L "$1" ]; }
+
+# in_list <newline separated list> <item>
+in_list() {
+  case "$NL$1$NL" in
+    *"$NL$2$NL"*) return 0 ;;
+  esac
+  return 1
+}
+
+# add_item <list> <item>: prints the list with the item added
+add_item() {
+  if [ -z "$1" ]; then printf '%s' "$2"; else printf '%s\n%s' "$1" "$2"; fi
+}
+
+# plain_path <path>: absolute, no newline, no //, no trailing /, no . or .. component
+plain_path() {
+  case $1 in
+    '' | *"$NL"* | *//* | */ | */./* | */../* | */. | */..) return 1 ;;
+    /*) return 0 ;;
+  esac
+  return 1
+}
+
+# resolve_dir <folder>: RES is the physical path of the folder, or of where it would be
+# made, found through its nearest existing parent. A link never counts as missing.
+# Returns 1 when a link cannot be entered; RES is then its target.
+resolve_dir() {
+  rd_d=$1
+  rd_rest=""
+  while [ ! -d "$rd_d" ] && [ ! -L "$rd_d" ]; do
+    rd_rest="/${rd_d##*/}$rd_rest"
+    rd_d=${rd_d%/*}
+    [ -n "$rd_d" ] || rd_d=/
+  done
+  if rd_r=$(cd "$rd_d" 2>/dev/null && pwd -P); then
+    if [ "$rd_r" = / ]; then RES=$rd_rest; else RES=$rd_r$rd_rest; fi
+    [ -n "$RES" ] || RES=/
+    return 0
+  fi
+  rd_t=$(readlink "$rd_d" 2>/dev/null) || rd_t=$rd_d
+  RES=$rd_t$rd_rest
+  return 1
+}
+
+in_home() {
+  case $1 in
+    "$HOME_R" | "$HOME_R"/*) return 0 ;;
+  esac
+  return 1
+}
+
+# allowed <path>: the rule of TECHNICAL 8.5, the only paths a removal may touch
+allowed() {
+  plain_path "$1" || return 1
+  case $1 in
+    "$HOME/Applications/watane.app") ;;
+    "$HOME"/.local/bin/watane*)
+      al_n=${1#"$HOME"/.local/bin/}
+      case $al_n in */*) return 1 ;; esac
+      ;;
+    "$HOME"/.local/share/watane/?* | "$HOME"/.local/share/watane-dev/?*) ;;
+    *) return 1 ;;
+  esac
+  resolve_dir "${1%/*}" || return 1
+  in_home "$RES"
+}
+
+# dest_of <rel>: DEST is where the entry goes
+dest_of() {
+  case $1 in
+    Applications/*) DEST=$HOME/$1 ;;
+    *) DEST=$PREFIX/$1 ;;
+  esac
+}
+
+set_entries() {
+  PREFIX=$HOME/.local
+  SHAREW=$PREFIX/share/watane
+  RECEIPT=$SHAREW/receipt
+  ENTRIES=""
+  for se_r in $RELS; do
+    dest_of "$se_r"
+    ENTRIES=$(add_item "$ENTRIES" "$DEST")
+  done
+  ENTRIES_ALL=$(add_item "$ENTRIES" "$RECEIPT")
+}
+
+valid_entry() { in_list "$ENTRIES_ALL" "$1" && allowed "$1"; }
+
+# read_receipt <file>: R_OK, R_VERSION, R_TARGET, R_LINES (the `path` lines as they are)
+read_receipt() {
+  R_OK=0
+  R_VERSION=""
+  R_TARGET=""
+  R_LINES=""
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  rr_first=1
+  while IFS= read -r rr_l; do
+    if [ "$rr_first" = 1 ]; then
+      rr_first=0
+      [ "$rr_l" = 'watane-receipt 1' ] || return 0
+      R_OK=1
+      continue
+    fi
+    case $rr_l in
+      'version '*) R_VERSION=${rr_l#version } ;;
+      'target '*) R_TARGET=${rr_l#target } ;;
+      'path '*) R_LINES=$(add_item "$R_LINES" "$rr_l") ;;
+    esac
+  done <"$1"
+  return 0
+}
+
+# read_journal <file>: J_OLD, J_NEW, J_MOVED hold the lines that count (TECHNICAL 3.6.1)
+read_journal() {
+  J_OLD=""
+  J_NEW=""
+  J_MOVED=""
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  while IFS= read -r rj_l; do
+    case $rj_l in
+      'old '*) rj_p=${rj_l#old } rj_k=old ;;
+      'new '*) rj_p=${rj_l#new } rj_k=new ;;
+      'moved '*) rj_p=${rj_l#moved } rj_k=moved ;;
+      *) continue ;;
+    esac
+    if valid_entry "$rj_p"; then
+      case $rj_k in
+        old) J_OLD=$(add_item "$J_OLD" "$rj_p") ;;
+        new) J_NEW=$(add_item "$J_NEW" "$rj_p") ;;
+        moved) J_MOVED=$(add_item "$J_MOVED" "$rj_p") ;;
+      esac
+    fi
+  done <"$1"
+  return 0
+}
+
+# pid_gone <n>: the process is dead, or is this script's own pid
+pid_gone() {
+  if [ "$1" = "$$" ]; then return 0; fi
+  if kill -0 "$1" 2>/dev/null; then return 1; fi
+  return 0
+}
+
+# find_journals: JOURNALS lists the pids of the journal files that count
+find_journals() {
+  JOURNALS=""
+  for fj_f in "$SHAREW"/journal.*; do
+    exists "$fj_f" || continue
+    fj_n=${fj_f##*/journal.}
+    case $fj_n in '' | *[!0-9]*) continue ;; esac
+    [ -f "$fj_f" ] && [ ! -L "$fj_f" ] || continue
+    JOURNALS=$(add_item "$JOURNALS" "$fj_n")
+  done
+  return 0
+}
+
+check_no_live_install() {
+  find_journals
+  while IFS= read -r cn_n; do
+    [ -n "$cn_n" ] || continue
+    pid_gone "$cn_n" && continue
+    die 5 "another install is running (pid $cn_n)" \
+      "If no install is running, that number now belongs to another program; remove $SHAREW/journal.$cn_n and run this again."
+  done <<EOF
+$JOURNALS
+EOF
+  return 0
+}
+
+# rm_path <path>: rm -rf with a warning
+rm_path() {
+  rm -rf "$1" || warn "could not remove $1"
+  return 0
+}
+
+# undo_swap <pid>: put the old files back from the journal of that pid (3.6 step 4)
+undo_swap() {
+  (
+    set +e
+    ub_j=$SHAREW/journal.$1
+    if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
+      # the receipt moved into place: the commit happened, there is nothing to undo
+      if ! exists "$RECEIPT.new.$1"; then exit 0; fi
+      read_journal "$ub_j"
+      while IFS= read -r ub_p; do
+        [ -n "$ub_p" ] || continue
+        exists "$ub_p.old.$1" || continue
+        if [ "$ub_p" != "$RECEIPT" ]; then rm -rf "$ub_p"; fi
+        mv "$ub_p.old.$1" "$ub_p" || warn "could not put back $ub_p"
+      done <<EOF
+$J_OLD
+EOF
+      while IFS= read -r ub_p; do
+        [ -n "$ub_p" ] || continue
+        in_list "$J_MOVED" "$ub_p" || continue
+        exists "$ub_p.new.$1" && continue
+        rm -rf "$ub_p"
+      done <<EOF
+$J_NEW
+EOF
+    fi
+    while IFS= read -r ub_p; do
+      if exists "$ub_p.new.$1"; then rm -rf "$ub_p.new.$1"; fi
+    done <<EOF
+$ENTRIES_ALL
+EOF
+    if exists "$RECEIPT.old.$1"; then rm -rf "$RECEIPT.old.$1"; fi
+    rm -f "$SHAREW/journal.$1"
+    exit 0
+  )
+}
+
+# finish_commit <pid>: step 5 of 3.6 for the swap of that pid
+finish_commit() {
+  fc_old=$SHAREW/receipt.old.$1
+  read_receipt "$RECEIPT"
+  if [ "$R_OK" = 1 ]; then
+    fc_cur=$R_LINES
+    read_receipt "$fc_old"
+    if [ "$R_OK" = 1 ]; then
+      while IFS= read -r fc_l; do
+        case $fc_l in 'path '*) ;; *) continue ;; esac
+        fc_p=${fc_l#path }
+        if in_list "$fc_cur" "$fc_l"; then continue; fi
+        allowed "$fc_p" || continue
+        if exists "$fc_p"; then rm_path "$fc_p"; fi
+      done <<EOF
+$R_LINES
+EOF
+    fi
+  fi
+  while IFS= read -r fc_p; do
+    if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1"; fi
+  done <<EOF
+$ENTRIES
+EOF
+  if exists "$fc_old"; then rm_path "$fc_old"; fi
+  rm -f "$SHAREW/journal.$1"
+  return 0
+}
+
+# clean_stale: the `.new.<n>` and `.old.<n>` names of dead processes (3.8)
+clean_stale() {
+  while IFS= read -r cs_e; do
+    allowed "$cs_e" || continue
+    for cs_k in new old; do
+      for cs_f in "$cs_e.$cs_k".*; do
+        exists "$cs_f" || continue
+        cs_n=${cs_f#"$cs_e.$cs_k."}
+        case $cs_n in '' | *[!0-9]*) continue ;; esac
+        pid_gone "$cs_n" || continue
+        rm_path "$cs_f"
+      done
+    done
+  done <<EOF
+$ENTRIES_ALL
+EOF
+  return 0
+}
+
+# recover: undo or finish what a dead process left (3.6 step 0), then clean its names
+recover() {
+  find_journals
+  while IFS= read -r rc_n; do
+    [ -n "$rc_n" ] || continue
+    pid_gone "$rc_n" || continue
+    if exists "$RECEIPT.new.$rc_n"; then
+      undo_swap "$rc_n"
+    else
+      finish_commit "$rc_n"
+    fi
+  done <<EOF
+$JOURNALS
+EOF
+  clean_stale
+  return 0
+}
+
+on_signal() {
+  trap '' HUP INT TERM
+  if [ "$SWAP_ACTIVE" = 1 ]; then
+    SWAP_ACTIVE=0
+    undo_swap "$SWAP_PID"
+  fi
+  exit "$1"
+}
+
+cleanup() {
+  cl_rc=$?
+  trap - EXIT
+  if [ "$SWAP_ACTIVE" = 1 ]; then
+    SWAP_ACTIVE=0
+    undo_swap "$SWAP_PID" || true
+  fi
+  if [ -n "$TMP" ]; then rm -rf "$TMP" || true; fi
+  exit "$cl_rc"
+}
+
+check_version() {
+  case $1 in
+    *"$NL"*) die 1 "not a version: $1" "a version looks like 0.1.0" ;;
+  esac
+  if ! printf '%s\n' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
+    die 1 "not a version: $1" "a version looks like 0.1.0"
+  fi
+  return 0
+}
+
+check_tools() {
+  for ct_t in $1; do
+    command -v "$ct_t" >/dev/null 2>&1 ||
+      die 2 "the tool $ct_t is missing" "watane install uses only the tools that stock macOS ships; $ct_t was not found on your PATH."
+  done
+  return 0
+}
+
+unsupported() {
+  die 2 "unsupported platform: $1" "watane installs on macOS 14.0 or later, on Apple silicon."
+}
+
+check_platform() {
+  cp_s=$(uname -s)
+  cp_m=$(uname -m)
+  [ "$cp_s" = Darwin ] || unsupported "$cp_s $cp_m"
+  check_tools "sw_vers sysctl xattr xcode-select"
+  case $cp_m in
+    arm64) ;;
+    x86_64)
+      cp_a=$(sysctl -n hw.optional.arm64 2>/dev/null) || cp_a=0
+      [ "$cp_a" = 1 ] || unsupported "$cp_s $cp_m"
+      ;;
+    *) unsupported "$cp_s $cp_m" ;;
+  esac
+  cp_v=$(sw_vers -productVersion)
+  cp_major=${cp_v%%.*}
+  case $cp_major in
+    '' | *[!0-9]*) unsupported "macOS $cp_v (needs 14.0 or later)" ;;
+  esac
+  [ "$cp_major" -ge 14 ] || unsupported "macOS $cp_v (needs 14.0 or later)"
+  return 0
+}
+
+check_home() {
+  if ! plain_path "$HOME" || [ "$HOME" = / ]; then
+    die 2 "HOME is not a plain absolute folder: $HOME" "Set HOME to your home folder, then run this again."
+  fi
+  HOME_R=$(cd "$HOME" 2>/dev/null && pwd -P) ||
+    die 2 "HOME is not a folder: $HOME" "Set HOME to your home folder, then run this again."
+  [ "$HOME_R" != / ] || die 2 "HOME resolves to /: $HOME" "Set HOME to your home folder, then run this again."
+  return 0
+}
+
+# check_folders: each install folder resolves inside the home (TECHNICAL 3.4.1)
+check_folders() {
+  for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
+    if ! resolve_dir "$ch_f" || ! in_home "$RES"; then
+      die 2 "$(tilde "$ch_f") resolves to $RES, outside your home folder $HOME_R" \
+        "watane writes only under your home folder. Make it a real folder there, then run this again."
+    fi
+  done
+  return 0
+}
+
+# download <url> <file> <secure|plain>
+download() {
+  if [ "$3" = secure ]; then
+    curl -fsSL --proto '=https' --tlsv1.2 --retry 2 --connect-timeout 15 -o "$2" "$1" 2>"$TMP/curl.err" && return 0
+  else
+    curl -fsSL --retry 2 --connect-timeout 15 -o "$2" "$1" 2>"$TMP/curl.err" && return 0
+  fi
+  dl_rc=$?
+  case $dl_rc in 129 | 130 | 143) exit "$dl_rc" ;; esac
+  printf 'watane install: cannot download %s\n' "$1" >&2
+  cat "$TMP/curl.err" >&2
+  exit 3
+}
+
+check_foreign() {
+  read_receipt "$RECEIPT"
+  cf_old_ok=$R_OK
+  cf_old_ver=$R_VERSION
+  cf_known=""
+  while IFS= read -r cf_l; do
+    case $cf_l in 'path '*) ;; *) continue ;; esac
+    cf_p=${cf_l#path }
+    if allowed "$cf_p"; then cf_known=$(add_item "$cf_known" "$cf_p"); fi
+  done <<EOF
+$R_LINES
+EOF
+  find_journals
+  while IFS= read -r cf_n; do
+    [ -n "$cf_n" ] || continue
+    pid_gone "$cf_n" || continue
+    read_journal "$SHAREW/journal.$cf_n"
+    while IFS= read -r cf_p; do
+      [ -n "$cf_p" ] || continue
+      in_list "$J_MOVED" "$cf_p" || continue
+      if exists "$cf_p.new.$cf_n"; then continue; fi
+      cf_known=$(add_item "$cf_known" "$cf_p")
+    done <<EOF
+$J_NEW
+EOF
+  done <<EOF
+$JOURNALS
+EOF
+  cf_found=""
+  while IFS= read -r cf_p; do
+    if in_list "$cf_known" "$cf_p"; then continue; fi
+    if exists "$cf_p"; then cf_found=$(add_item "$cf_found" "$cf_p"); fi
+  done <<EOF
+$ENTRIES
+EOF
+  if [ "$cf_old_ok" != 1 ] && exists "$RECEIPT"; then cf_found=$(add_item "$cf_found" "$RECEIPT"); fi
+  if [ -n "$cf_found" ]; then
+    printf 'watane install: found files that watane did not install:\n' >&2
+    while IFS= read -r cf_p; do printf '  %s\n' "$(tilde "$cf_p")" >&2; done <<EOF
+$cf_found
+EOF
+    printf 'Move them aside, then run this again, for example:\n' >&2
+    while IFS= read -r cf_p; do printf '  mv %s %s.mine\n' "$(tilde "$cf_p")" "$(tilde "$cf_p")" >&2; done <<EOF
+$cf_found
+EOF
+    exit 8
+  fi
+  if [ "$cf_old_ok" = 1 ]; then
+    if [ "$cf_old_ver" = "$RELEASE" ]; then
+      say "reinstalling watane $RELEASE"
+    else
+      say "upgrading watane $cf_old_ver to $RELEASE"
+    fi
+  fi
+  HAD_RECEIPT=$cf_old_ok
+  return 0
+}
+
+verify_archive() {
+  va_want=$(awk -v f="$ARCHIVE" '$2 == f { print $1 }' "$TMP/SHA256SUMS")
+  va_count=$(printf '%s\n' "$va_want" | grep -c . || true)
+  if [ "$va_count" = 0 ]; then
+    die 4 "SHA256SUMS has no line for $ARCHIVE" "Nothing was installed."
+  elif [ "$va_count" != 1 ]; then
+    die 4 "SHA256SUMS has more than one line for $ARCHIVE" "Nothing was installed."
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    va_got=$(shasum -a 256 "$TMP/$ARCHIVE" | awk '{ print $1 }')
+  else
+    va_got=$(sha256sum "$TMP/$ARCHIVE" | awk '{ print $1 }')
+  fi
+  if [ "$va_want" != "$va_got" ]; then
+    die 4 "checksum mismatch for $ARCHIVE" "expected $va_want" "got $va_got" "Nothing was installed."
+  fi
+  say "checked: sha256 matches SHA256SUMS of release v$RELEASE"
+  return 0
+}
+
+extract_archive() {
+  tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null ||
+    die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
+    die 5 "$ARCHIVE holds a file name that leaves its folder" "Nothing was installed."
+  fi
+  mkdir "$TMP/x"
+  tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" ||
+    die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."
+  TOP=$TMP/x/watane-$RELEASE-$TARGET
+  ea_v=""
+  if [ -f "$TOP/VERSION" ]; then IFS= read -r ea_v <"$TOP/VERSION" || true; fi
+  [ "$ea_v" = "$RELEASE" ] ||
+    die 5 "$ARCHIVE is not a watane archive of version $RELEASE" "Nothing was installed."
+  for ea_r in $RELS; do
+    exists "$TOP/$ea_r" ||
+      die 5 "$ARCHIVE is not a watane archive: $ea_r is missing" "Nothing was installed."
+  done
+  return 0
+}
+
+stage_files() {
+  for sf_r in $RELS; do
+    dest_of "$sf_r"
+    mkdir -p "${DEST%/*}" || return 1
+    cp -R "$TOP/$sf_r" "$DEST.new.$$" || return 1
+    case $sf_r in
+      bin/* | share/watane/install.sh) chmod 755 "$DEST.new.$$" || return 1 ;;
+    esac
+  done
+  mkdir -p "$SHAREW" || return 1
+  {
+    printf 'watane-receipt 1\nversion %s\ntarget %s\n' "$RELEASE" "$TARGET"
+    while IFS= read -r sf_p; do printf 'path %s\n' "$sf_p"; done <<EOF
+$ENTRIES
+EOF
+  } >"$RECEIPT.new.$$" || return 1
+  return 0
+}
+
+write_journal() {
+  {
+    while IFS= read -r wj_p; do
+      if exists "$wj_p"; then printf 'old %s\n' "$wj_p"; else printf 'new %s\n' "$wj_p"; fi
+    done <<EOF
+$ENTRIES_ALL
+EOF
+  } >"$SHAREW/journal.$$"
+}
+
+swap_entries() {
+  sw_j=$SHAREW/journal.$$
+  while IFS= read -r sw_p; do
+    if exists "$sw_p"; then mv "$sw_p" "$sw_p.old.$$" || return 1; fi
+    printf 'moved %s\n' "$sw_p" >>"$sw_j" || return 1
+    mv "$sw_p.new.$$" "$sw_p" || return 1
+  done <<EOF
+$ENTRIES
+EOF
+  if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return 1; fi
+  printf 'moved %s\n' "$RECEIPT" >>"$sw_j" || return 1
+  mv "$RECEIPT.new.$$" "$RECEIPT" || return 1
+  SWAP_ACTIVE=0
+  return 0
+}
+
+do_swap() {
+  SWAP_PID=$$
+  SWAP_ACTIVE=1
+  stage_files || return 1
+  write_journal || return 1
+  swap_entries || return 1
+  return 0
+}
+
+install_files() {
+  recover
+  while IFS= read -r if_p; do
+    for if_k in new old; do
+      if exists "$if_p.$if_k.$$"; then
+        die 5 "$if_p.$if_k.$$ is in the way" "Remove it, then run this again."
+      fi
+    done
+  done <<EOF
+$ENTRIES_ALL
+EOF
+  if ! do_swap; then
+    SWAP_ACTIVE=0
+    undo_swap "$$"
+    die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
+  fi
+  return 0
+}
+
+# --- the toolchain (TECHNICAL 3.7) ---
+
+detect_toolchain() {
+  RUSTUP=""
+  if command -v rustup >/dev/null 2>&1; then
+    RUSTUP=$(command -v rustup)
+  elif [ -x "${CARGO_HOME:-$HOME/.cargo}/bin/rustup" ]; then
+    RUSTUP=${CARGO_HOME:-$HOME/.cargo}/bin/rustup
+  elif [ -x "$HOME/.cargo/bin/rustup" ]; then
+    RUSTUP=$HOME/.cargo/bin/rustup
+  fi
+  if [ -z "$RUSTUP" ]; then
+    TC_STATE=none_a
+    return 0
+  fi
+  if ! dt_rustc=$("$RUSTUP" which rustc 2>/dev/null); then
+    TC_STATE=none_b
+    return 0
+  fi
+  dt_sr=$("$dt_rustc" --print sysroot 2>/dev/null) || dt_sr=""
+  if [ -n "$dt_sr" ] && [ -d "$dt_sr/lib/rustlib/wasm32-wasip2/lib" ]; then
+    TC_STATE=ok
+  else
+    TC_STATE=target
+  fi
+  return 0
+}
+
+print_commands() {
+  say 'To install it later, run:'
+  case $TC_STATE in
+    none_a) say "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2" ;;
+    target) say '  rustup target add wasm32-wasip2' ;;
+    none_b)
+      say '  rustup toolchain install stable --profile minimal -t wasm32-wasip2'
+      say '  rustup default stable'
+      ;;
+  esac
+  say 'Then `watane-dev doctor` checks it again.'
+  return 0
+}
+
+# rustup_step <command...>: run it, or end with exit 6
+rustup_step() {
+  rs_rc=0
+  "$@" || rs_rc=$?
+  if [ "$rs_rc" != 0 ]; then
+    die 6 "the toolchain step failed (rustup exited $rs_rc)" "watane is installed; run the step yourself, then \`watane-dev doctor\`."
+  fi
+  return 0
+}
+
+toolchain_step() {
+  detect_toolchain
+  if [ "$TC_STATE" = ok ]; then
+    say 'toolchain: ok (rustup, wasm32-wasip2)'
+    TC_OK=1
+    return 0
+  fi
+  TC_OK=0
+  if [ "$NO_TC" = 1 ]; then
+    say 'toolchain: skipped (--no-toolchain)'
+    print_commands
+    return 0
+  fi
+  if ! ( : </dev/tty ) 2>/dev/null; then
+    say 'no terminal to ask on: the toolchain was not installed'
+    print_commands
+    return 0
+  fi
+  case $TC_STATE in
+    target)
+      printf '%s\n%s [y/N] ' \
+        'watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.' \
+        'Add the wasm32-wasip2 target with rustup?'
+      ;;
+    *)
+      printf '%s\n%s [y/N] ' \
+        'watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.' \
+        'Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)?'
+      ;;
+  esac
+  ts_ans=""
+  IFS= read -r ts_ans </dev/tty || ts_ans=""
+  ts_ans=$(printf '%s' "$ts_ans" | tr 'A-Z' 'a-z')
+  case $ts_ans in
+    y | yes) ;;
+    *)
+      say 'toolchain: not installed'
+      print_commands
+      return 0
+      ;;
+  esac
+  case $TC_STATE in
+    none_a)
+      if [ -n "${WATANE_RUSTUP_URL:-}" ]; then
+        say "using WATANE_RUSTUP_URL=$WATANE_RUSTUP_URL"
+        download "$WATANE_RUSTUP_URL" "$TMP/rustup-init.sh" plain
+      else
+        download https://sh.rustup.rs "$TMP/rustup-init.sh" secure
+      fi
+      rustup_step sh "$TMP/rustup-init.sh" -y --profile minimal --no-modify-path -t wasm32-wasip2 </dev/null
+      say 'rustup put its programs in ~/.cargo/bin; watane-dev finds them there. To use cargo yourself, add that folder to your PATH.'
+      ;;
+    target)
+      rustup_step "$RUSTUP" target add wasm32-wasip2
+      ;;
+    none_b)
+      rustup_step "$RUSTUP" toolchain install stable --profile minimal -t wasm32-wasip2
+      rustup_step "$RUSTUP" default stable
+      ;;
+  esac
+  say 'toolchain: installed'
+  detect_toolchain
+  if [ "$TC_STATE" != ok ]; then
+    say 'toolchain: still incomplete after the install'
+    exit 6
+  fi
+  TC_OK=1
+  return 0
+}
+
+# --- the end of an install (TECHNICAL 3.9, 3.10) ---
+
+path_block() {
+  say '~/.local/bin is not on your PATH, so a new terminal will not find watane-dev yet.'
+  case ${SHELL:-} in
+    */zsh | */bash)
+      case $SHELL in */zsh) pb_f='~/.zshrc' ;; *) pb_f='~/.bash_profile' ;; esac
+      say 'Add it, then open a new terminal:'
+      say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $pb_f"
+      ;;
+    *)
+      say "Add it to your shell's startup file, then open a new terminal:"
+      say "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+  esac
+  return 0
+}
+
+final_output() {
+  say "watane $RELEASE is installed."
+  if [ "$HAD_RECEIPT" = 1 ]; then say 'If watane is open, quit it and open it again.'; fi
+  say ''
+  say 'If macOS says "watane" cannot be opened, or could not verify that it is free of malware:'
+  say '  watane.app is not signed by an Apple developer, because there is no account behind watane.'
+  say '  Open System Settings, Privacy & Security, find the line about "watane" and press "Open Anyway".'
+  say '  Or run this once, then open the app again:'
+  say '    xattr -dr com.apple.quarantine ~/Applications/watane.app'
+  say ''
+  case ":${PATH:-}:" in
+    *":$PREFIX/bin:"*)
+      fo_dev=watane-dev
+      fo_fmt='  %-38s%s\n'
+      ;;
+    *)
+      path_block
+      say ''
+      fo_dev='~/.local/bin/watane-dev'
+      fo_fmt='  %-44s%s\n'
+      ;;
+  esac
+  say 'Next:'
+  # shellcheck disable=SC2059
+  {
+    printf "$fo_fmt" 'open ~/Applications/watane.app' 'the app'
+    printf "$fo_fmt" "$fo_dev doctor" 'checks the maker tools'
+    printf "$fo_fmt" "$fo_dev new reading-list" 'makes a mod'
+  }
+  if [ "$TC_OK" != 1 ]; then say '  (install the toolchain first: see above)'; fi
+  if ! xcode-select -p >/dev/null 2>&1; then
+    say "watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:"
+    say '  xcode-select --install'
+  fi
+  return 0
+}
+
+# --- the commands ---
+
+do_install() {
+  TMPBASE=${TMPDIR:-/tmp}
+  TMP=$(mktemp -d "$TMPBASE/watane-install.XXXXXX") ||
+    die 1 "cannot make a temporary folder in $TMPBASE" "Set TMPDIR to a folder you can write to, then run this again."
+  ARCHIVE=watane-$RELEASE-$TARGET.tar.gz
+  BASE=${WATANE_RELEASE_BASE:-https://github.com/civic-tech-pioneer/watane/releases/download/v$RELEASE}
+  check_no_live_install
+  check_foreign
+  if [ -n "${WATANE_RELEASE_BASE:-}" ]; then
+    say "using WATANE_RELEASE_BASE=$WATANE_RELEASE_BASE"
+    DLMODE=plain
+  else
+    DLMODE=secure
+  fi
+  download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" "$DLMODE"
+  say "downloading $ARCHIVE"
+  download "$BASE/$ARCHIVE" "$TMP/$ARCHIVE" "$DLMODE"
+  verify_archive
+  extract_archive
+  install_files
+  xattr -dr com.apple.quarantine "$HOME/Applications/watane.app" >/dev/null 2>&1 || true
+  finish_commit "$$"
+  say 'installed:'
+  for di_r in $RELS; do
+    dest_of "$di_r"
+    case $di_r in bin/* | share/watane-dev/vendor | Applications/*) say "  $(tilde "$DEST")" ;; esac
+  done
+  toolchain_step
+  final_output
+  return 0
+}
+
+do_status() {
+  read_receipt "$RECEIPT"
+  [ "$R_OK" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
+  say "watane $R_VERSION ($R_TARGET)"
+  while IFS= read -r ds_l; do
+    case $ds_l in 'path '*) say "$(tilde "${ds_l#path }")" ;; esac
+  done <<EOF
+$R_LINES
+EOF
+  return 0
+}
+
+# home_deletable <home>: HOME_DEL is its resolved path when the home may be deleted
+home_deletable() {
+  plain_path "$1" || return 1
+  case "$HOME/" in "$1"/*) return 1 ;; esac
+  hd_r=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  plain_path "$hd_r" || return 1
+  case "$HOME_R/" in "$hd_r"/*) return 1 ;; esac
+  HOME_DEL=$hd_r
+  return 0
+}
+
+do_uninstall() {
+  check_no_live_install
+  recover
+  read_receipt "$RECEIPT"
+  [ "$R_OK" = 1 ] || die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
+  du_ver=$R_VERSION
+  while IFS= read -r du_l; do
+    case $du_l in 'path '*) ;; *) continue ;; esac
+    du_p=${du_l#path }
+    if allowed "$du_p"; then
+      if exists "$du_p"; then rm_path "$du_p"; fi
+    else
+      warn "skipped $du_p: not a path that watane installs"
+    fi
+  done <<EOF
+$R_LINES
+EOF
+  clean_stale
+  rm -f "$RECEIPT" || warn "could not remove $RECEIPT"
+  for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
+    rmdir "$du_d" 2>/dev/null || true
+  done
+  say "uninstalled watane $du_ver"
+  if exists "$HOME/Library/Caches/watane-dev"; then
+    say 'kept: ~/Library/Caches/watane-dev (maker cache; safe to delete)'
+  fi
+  if exists "$HOME/.rustup" || exists "$HOME/.cargo"; then
+    say 'kept: ~/.rustup and ~/.cargo (the Rust toolchain; remove with rustup self uninstall)'
+  fi
+  du_h=${WATANE_HOME:-$HOME/.watane}
+  [ -e "$du_h" ] || return 0
+  if ! home_deletable "$du_h"; then
+    say "kept: $(tilde "$du_h") (not deleted: not a folder that watane can delete)"
+    return 0
+  fi
+  if ( : </dev/tty ) 2>/dev/null; then
+    printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde "$du_h")"
+    du_a=""
+    IFS= read -r du_a </dev/tty || du_a=""
+    if [ "$du_a" = delete ]; then
+      rm -rf -- "$HOME_DEL"
+      if [ -L "$du_h" ]; then rm -f -- "$du_h"; fi
+      say "deleted: $(tilde "$du_h")"
+      return 0
+    fi
+  fi
+  say "kept: $(tilde "$du_h") (your home: identity, mods, channels)"
+  return 0
+}
+
+main() {
+  HOME=${HOME:-}
+  MODE=install
+  HAVE_REL=0
+  REL_ARG=""
+  NO_TC=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --release)
+        [ $# -ge 2 ] || die 1 "--release needs a version" "a version looks like 0.1.0"
+        HAVE_REL=1
+        REL_ARG=$2
+        shift
+        ;;
+      --no-toolchain) NO_TC=1 ;;
+      --uninstall | --status)
+        [ "$MODE" = install ] || bad_flag "$1"
+        MODE=${1#--}
+        ;;
+      --help | -h)
+        usage
+        exit 0
+        ;;
+      *) bad_flag "$1" ;;
+    esac
+    shift
+  done
+  if [ "$NO_TC" = 1 ] && [ "$MODE" != install ]; then bad_flag --no-toolchain; fi
+  if [ "$HAVE_REL" = 1 ]; then
+    RELEASE=$REL_ARG
+  elif [ -n "${WATANE_RELEASE:-}" ]; then
+    RELEASE=$WATANE_RELEASE
+  else
+    RELEASE=$DEFAULT_RELEASE
+  fi
+  if [ "$MODE" = install ]; then check_version "$RELEASE"; fi
+
+  trap cleanup EXIT
+  trap 'on_signal 129' HUP
+  trap 'on_signal 130' INT
+  trap 'on_signal 143' TERM
+
+  # step 2: root
+  main_uid=$(id -u 2>/dev/null) || die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."
+  [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
+  # step 3: tools
+  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill"
+  if [ "$MODE" = install ]; then
+    check_tools "curl tar mktemp"
+    command -v shasum >/dev/null 2>&1 || check_tools sha256sum
+  fi
+  # step 4: platform, home, folders
+  if [ "$MODE" = install ]; then check_platform; fi
+  check_home
+  set_entries
+  if [ "$MODE" = install ]; then check_folders; fi
+  case $MODE in
+    status) do_status ;;
+    uninstall) do_uninstall ;;
+    *)
+      say "watane $RELEASE: installing for $TARGET"
+      do_install
+      ;;
+  esac
+}
+
+main "$@"

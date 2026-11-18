@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake sysctl: hw.optional.arm64 from the file rosetta of the test (default 0).
+v=0
+[ -f "$FAKE_STATE/rosetta" ] && read -r v < "$FAKE_STATE/rosetta"
+echo "$v"

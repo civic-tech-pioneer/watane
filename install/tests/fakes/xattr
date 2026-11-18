@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fake xattr: records its arguments in $FAKE_STATE/xattr.log.
+echo "$*" >> "$FAKE_STATE/xattr.log"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["pkg", "host", "dev", "app", "log", "dist", "net", "node", "workspace-hack"]
+members = ["pkg", "host", "dev", "app", "log", "dist", "net", "node", "install", "workspace-hack"]
 
 # Line tables keep file:line in backtraces; full debug info made every worktree's target/ ~20% larger.
 [profile.dev]

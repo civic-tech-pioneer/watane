@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fake mv: passes to the real one ($FAKE_REAL/mv) unless the file mv_fault of the test says
+# "fail" or "sleep" (line 1) for an argument that matches the glob (line 2).
+if [ -f "$FAKE_STATE/mv_fault" ]; then
+  { read -r mode; read -r pat; } < "$FAKE_STATE/mv_fault"
+  for a; do
+    case $a in
+      $pat)
+        case $mode in
+          fail) echo "fake mv: failing on $a" >&2; exit 1 ;;
+          sleep) echo "$a" > "$FAKE_STATE/mv_sleeping"; exec "$FAKE_REAL/sleep" 600 ;;
+        esac ;;
+    esac
+  done
+fi
+exec "$FAKE_REAL/mv" "$@"

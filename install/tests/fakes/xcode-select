@@ -1,0 +1,9 @@
+#!/bin/sh
+# Fake xcode-select: -p fails when the file xcode_missing exists, else prints a path;
+# any other call is recorded in $FAKE_STATE/xcode-select.log.
+if [ "${1:-}" = "-p" ]; then
+  [ -f "$FAKE_STATE/xcode_missing" ] && exit 2
+  echo /Library/Developer/CommandLineTools
+  exit 0
+fi
+echo "$*" >> "$FAKE_STATE/xcode-select.log"

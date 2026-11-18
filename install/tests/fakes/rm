@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fake rm: passes to the real one ($FAKE_REAL/rm) unless the file rm_fault of the test says
+# "fail" or "sleep" (line 1) for an argument that matches the glob (line 2).
+if [ -f "$FAKE_STATE/rm_fault" ]; then
+  { read -r mode; read -r pat; } < "$FAKE_STATE/rm_fault"
+  for a; do
+    case $a in
+      $pat)
+        case $mode in
+          fail) echo "fake rm: failing on $a" >&2; exit 1 ;;
+          sleep) echo "$a" > "$FAKE_STATE/rm_sleeping"; exec "$FAKE_REAL/sleep" 600 ;;
+        esac ;;
+    esac
+  done
+fi
+exec "$FAKE_REAL/rm" "$@"

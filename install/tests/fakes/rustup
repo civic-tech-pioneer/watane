@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fake rustup: every call is logged in $FAKE_STATE/rustup.log. The toolchain state comes from
+# the file rustup_sysroot (the sysroot of its rustc) and rustup_no_toolchain.
+echo "$*" >> "$FAKE_STATE/rustup.log"
+sr=
+[ -f "$FAKE_STATE/rustup_sysroot" ] && read -r sr < "$FAKE_STATE/rustup_sysroot"
+case "${1:-}" in
+  which)
+    [ -f "$FAKE_STATE/rustup_no_toolchain" ] && exit 1
+    echo "${0%/*}/rustc" ;;
+  target)
+    [ "${2:-}" = add ] && mkdir -p "$sr/lib/rustlib/${3:-}/lib" ;;
+  toolchain)
+    rm -f "$FAKE_STATE/rustup_no_toolchain"
+    mkdir -p "$sr/lib/rustlib/wasm32-wasip2/lib" ;;
+esac
+exit 0

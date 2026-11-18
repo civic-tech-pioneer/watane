@@ -8418,6 +8418,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "watane-install"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "tiny_http",
+ "workspace-hack",
+]
+
+[[package]]
 name = "watane-log"
 version = "0.1.0"
 dependencies = [

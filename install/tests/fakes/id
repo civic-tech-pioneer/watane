@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake id: -u from the file id_u of the test (default 1000).
+v=1000
+[ -f "$FAKE_STATE/id_u" ] && read -r v < "$FAKE_STATE/id_u"
+echo "$v"

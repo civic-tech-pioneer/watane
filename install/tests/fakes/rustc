@@ -1,0 +1,6 @@
+#!/bin/sh
+# Fake rustc: --print sysroot prints the file rustup_sysroot of the test.
+sr=
+[ -f "$FAKE_STATE/rustup_sysroot" ] && read -r sr < "$FAKE_STATE/rustup_sysroot"
+[ "${1:-}" = "--print" ] && echo "$sr"
+exit 0

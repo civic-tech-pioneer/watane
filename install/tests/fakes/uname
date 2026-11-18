@@ -1,0 +1,10 @@
+#!/bin/sh
+# Fake uname: the platform comes from files of the test in $FAKE_STATE.
+v=
+case "${1:-}" in
+  -s) f=uname_s; v=Darwin ;;
+  -m) f=uname_m; v=arm64 ;;
+  *) f=uname_s; v=Darwin ;;
+esac
+[ -f "$FAKE_STATE/$f" ] && read -r v < "$FAKE_STATE/$f"
+echo "$v"

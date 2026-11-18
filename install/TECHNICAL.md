@@ -7,7 +7,7 @@ questions left open. Names that this document fixes (the script, the
 archives, the paths, the flags, the variables, the exit codes, the texts)
 are cited elsewhere and defined only here.
 
-Nothing is built yet. Every stage of section 11 is S50b's or later.
+Stage 1 of section 11 is built (S50b-1: `install.sh` and `tests/script.rs`); `NOTES.md` records where the build differed from the first draft.
 
 ## 1. What `install` owns
 
@@ -118,7 +118,8 @@ install.sh --help | -h
 | `--help`, `-h` | print the usage above on stdout, exit 0 |
 
 `--uninstall` and `--status` run steps 2 and 3 of 3.4 and the `HOME` checks of
-step 4, then 8.4 or 8.1; they check no version and no platform, and download
+step 4 (not the folder check of 3.4.1: an uninstall must still work when a folder
+became a link, and 8.5 rule 3 keeps it from removing through one), then 8.4 or 8.1; they check no version and no platform, and download
 nothing.
 
 `--no-toolchain` with `--uninstall` or `--status`, and any unknown flag
@@ -196,7 +197,7 @@ folder that holds an entry of 3.6 or the receipt: `$HOME/.local/bin`,
 `$HOME/.local/share/watane`, `$HOME/.local/share/watane-dev`,
 `$HOME/Applications` (checking only `$HOME/.local/share` would let a link at
 `share/watane-dev` lead out). A folder that does not exist yet is resolved
-through its nearest existing parent; a symbolic link counts as existing even
+through its nearest existing parent (`<target>` is that parent's resolved path followed by the missing part); a symbolic link counts as existing even
 when its target is missing, so a broken link is never stepped over (`d=$folder;
 while [ ! -d "$d" ] && [ ! -L "$d" ]; do d=$(dirname "$d"); done; (cd "$d" &&
 pwd -P)`): a link that `cd` cannot enter (broken, or to a file) is exit 2 with
@@ -254,8 +255,7 @@ before step 10.
 
 `curl -fsSL --proto '=https' --tlsv1.2 --retry 2 --connect-timeout 15
 -o <file> <url>` (without `--proto` when 3.2 says so). `-f` makes a 404 an
-error. A progress bar (`-#` in place of `-s`) only when stderr is a
-terminal. URL of a file: `<base>/<name>`; names:
+error. No progress bar: curl's stderr goes to a file (below). URL of a file: `<base>/<name>`; names:
 `SHA256SUMS`, `watane-<v>-<target>.tar.gz`. A curl error is exit 3 with
 `watane install: cannot download <url>` and curl's own reason on the next
 line: curl's stderr goes to a file of the temporary folder and is printed
@@ -1011,15 +1011,14 @@ for stage 5 only.
   `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
   folder and `TMPDIR` another;
 - `PATH` = `<fakes dir>:<symlink dir>` where the symlink dir holds links to
-  only the real tools of 3.3 that the test needs, so a tool that 3.3 does
+  only the real tools of 3.3 that the test needs (and `gzip`, which GNU tar runs and macOS's tar does not), so a tool that 3.3 does
   not list cannot be used by accident (a test that the script ran a
   tool outside 3.3 fails with `command not found`);
 - fake tools in `tests/fakes/`: `uname`, `sw_vers`, `sysctl` (platform);
   `id` (root); `xattr` (records its arguments in a log); `rustup` and
   `rustc` (state of the toolchain from files of the test); `mv` (fails, or
-  sleeps until killed, when an argument matches a pattern that a file of the test
-  names: `watane.app` for INST-S-14 and 33, `receipt.new.` for INST-S-32 and 33);
-  `rm` (sleeps until killed on its first `.old.` argument: INST-S-33);
+  sleeps until killed, when an argument matches a shell glob that the file `mv_fault` of the test names, mode on line 1 and glob on line 2; the real `mv` is reached through `$FAKE_REAL`, a folder that is not on `PATH`; the globs are `*watane.app.new.*` for INST-S-14 and 33, `*receipt.new.*` for INST-S-32 and 33, so that the undo's `mv <path>.old.<pid>` is not hit);
+  `rm` (same, from the file `rm_fault`; INST-S-33 names `*.old.*`);
   `xcode-select` (`-p` fails or prints a path, and records any other call:
   INST-S-34);
   `curl` is the real one;
