@@ -156,7 +156,7 @@ fn running_preview(folder: &Path) -> Result<(Option<Client>, Option<Ready>), Pro
     Ok((running, cached))
 }
 
-pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
+pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Problem> {
     preview_folders(dir, env).ok()?.iter().find_map(|folder| {
         let (_, ready) = running_preview(folder).ok()?;
         let ready = ready?;
@@ -168,7 +168,9 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env) -> Option<Problem> {
                     previous_url(&ready)
                 ),
             )
-            .fix("Fix the errors, then run: watane-dev serve --json"),
+            .fix(format!(
+                "Fix the errors, then run: watane-dev serve --json{args}"
+            )),
         )
     })
 }
@@ -456,7 +458,7 @@ mod tests {
             cache: temp.path().join("cache"),
             unit_seconds: 60,
         };
-        assert!(previous_warning(&dir, &env).is_none());
+        assert!(previous_warning(&dir, &env, "").is_none());
         let preview = folder(&dir, &env, "counter");
         let home = preview.join("home");
         fs::create_dir_all(&home).unwrap();
@@ -487,7 +489,7 @@ mod tests {
             )
             .unwrap();
         });
-        let warning = previous_warning(&dir, &env).unwrap();
+        let warning = previous_warning(&dir, &env, "").unwrap();
         assert_eq!(
             serde_json::to_value(warning).unwrap(),
             json!({
@@ -498,6 +500,6 @@ mod tests {
             })
         );
         server.join().unwrap();
-        assert!(previous_warning(&dir, &env).is_none());
+        assert!(previous_warning(&dir, &env, "").is_none());
     }
 }

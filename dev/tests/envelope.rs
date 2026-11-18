@@ -502,3 +502,99 @@ fn ac6_s39_specs_cover_paths_derivation_fake_and_argument_errors() {
         assert!(body.contains(marker), "{section} missing {marker}");
     }
 }
+
+fn page(root: &Path) -> std::path::PathBuf {
+    let dir = root.join("demo");
+    fs::create_dir_all(dir.join("wit")).unwrap();
+    fs::create_dir_all(dir.join("ui")).unwrap();
+    fs::write(
+        dir.join("mod.toml"),
+        "name = \"Demo\"\nsummary = \"a page\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("wit/world.wit"),
+        "package mods:demo@0.2.3; world demo {}",
+    )
+    .unwrap();
+    fs::write(dir.join("ui/index.html"), "<title>Demo</title>").unwrap();
+    dir.canonicalize().unwrap()
+}
+
+/// S86 AC2: the rerun names `--dir` and `--home` only when the command was given them.
+#[test]
+fn ac2_test_next_carries_dir_and_home_only_when_given() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = page(temp.path());
+    let cwd = dir.display().to_string();
+    let (code, value) = run(&dir, &["test", "--json"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["next"], "watane-dev serve --json");
+    let (code, value) = run(temp.path(), &["test", "--json", "--dir", &cwd]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["next"],
+        format!("watane-dev serve --json --dir {cwd}")
+    );
+    let (code, value) = run(
+        temp.path(),
+        &[
+            "test",
+            "--json",
+            "--dir",
+            &cwd,
+            "--home",
+            &format!("{}/.", temp.path().display()),
+        ],
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["next"],
+        format!(
+            "watane-dev serve --json --dir {cwd} --home {}",
+            temp.path().canonicalize().unwrap().display()
+        )
+    );
+}
+
+/// S86 AC5: a closed stdout ends the program quietly, never with a panic.
+#[test]
+fn ac5_help_into_a_closed_pipe_exits_quietly() {
+    for _ in 0..20 {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .arg("--help")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(0));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("panicked"), "{stderr}");
+    }
+}
+
+/// S86 AC4 (goal 7): a local provider with a known folder names it.
+#[test]
+fn ac4_local_dependency_names_the_known_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = page(temp.path());
+    fs::write(dir.join("deps.json"), r#"{"mods:a":null}"#).unwrap();
+    let provider = temp.path().join("a");
+    fs::create_dir(&provider).unwrap();
+    fs::write(
+        dir.join(".watane-dev.json"),
+        json!({"local_providers":{"a":"../a"},"release_providers":{}}).to_string(),
+    )
+    .unwrap();
+    let (code, value) = run(&dir, &["publish", "--json", "--home", "/nowhere"]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(
+        value["errors"][0]["message"],
+        format!(
+            "mods:a is a local provider (deps.json names its folder {}, not a release), and a published mod can depend only on released providers",
+            provider.canonicalize().unwrap().display()
+        )
+    );
+}

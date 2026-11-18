@@ -2,8 +2,14 @@
 //! its result and exits with the status of its class (TECHNICAL 2.2).
 
 use clap::Parser;
+use std::io::Write;
 use watane_dev::cli::Cli;
 use watane_dev::outcome::{Code, Outcome, Problem};
+/// Writes to stdout; a closed stdout (`| head -1`) ends the output, not the program with a panic.
+fn emit(text: &str) {
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
+}
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
     let json = args.iter().any(|s| s == "--json");
@@ -15,7 +21,7 @@ fn main() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
             ) =>
         {
-            print!("{e}");
+            emit(&e.to_string());
             return;
         }
         Err(e) => {
@@ -61,9 +67,9 @@ fn main() {
         }
     };
     if json {
-        println!("{}", outcome.to_json());
+        emit(&format!("{}\n", outcome.to_json()));
     } else {
-        print!("{}", outcome.to_text());
+        emit(&outcome.to_text());
     }
     std::process::exit(i32::from(outcome.exit_code()));
 }

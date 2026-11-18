@@ -204,7 +204,11 @@ fn ac2_no_source_writes_nothing() {
     );
     assert_eq!(
         v["errors"][0]["fix"],
-        "Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>"
+        format!(
+            "Build on a release that includes its source, or depend on this one with: watane-dev add --release '{}' --home {}",
+            link("reading-list"),
+            f.home.canonicalize().unwrap().display()
+        )
     );
     assert!(!f.root.path().join("ratings").exists());
 }
@@ -300,7 +304,11 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
     assert_eq!(v["errors"][0]["code"], "mod.self_dependency");
     assert_eq!(
         v["errors"][0]["fix"],
-        "Pass the link or release of another mod to add --release"
+        format!(
+            "Pick the link or release of another mod, then run: watane-dev add --release <link> --dir {} --home {}",
+            own.canonicalize().unwrap().display(),
+            f.home.canonicalize().unwrap().display()
+        )
     );
 }
 #[test]
@@ -391,8 +399,9 @@ fn ac5_missing_released_cache_has_actionable_fix() {
     assert_eq!(
         v["errors"][0]["fix"],
         format!(
-            "Start the watane app, then run: watane-dev add --release {}",
-            release("ratings")
+            "Start the watane app, then run: watane-dev add --release {} --dir {}",
+            release("ratings"),
+            dir.canonicalize().unwrap().display()
         )
     );
 }

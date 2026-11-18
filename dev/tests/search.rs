@@ -357,6 +357,10 @@ fn ac2_search_app_failure_names_app() {
         assert_eq!(response.status().as_u16(), status);
         let (code, value) = search(home.path(), &["books"]);
         assert_eq!(code, if status == 503 { 3 } else { 4 }, "{value}");
+        let rerun = format!(
+            "watane-dev search --json books --home {}",
+            home.path().canonicalize().unwrap().display()
+        );
         assert_eq!(
             value["errors"][0]["code"],
             if status == 503 {
@@ -379,9 +383,11 @@ fn ac2_search_app_failure_names_app() {
         assert_eq!(
             value["errors"][0]["fix"],
             if status == 503 {
-                "Ask the person to restart the watane app, then run this command again"
+                format!("Ask the person to restart the watane app, then run: {rerun}")
             } else {
-                "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+                format!(
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: {rerun}"
+                )
             }
         );
         assert_eq!(value["next"], value["errors"][0]["fix"]);
@@ -428,6 +434,26 @@ fn ac4_search_with_two_words_and_no_results_tries_the_first_word() {
     )
     .unwrap();
     let (code, value) = search(home.path(), &["reading", "list"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["next"],
+        format!(
+            "Try fewer words: watane-dev search --json reading --home {}",
+            home.path().canonicalize().unwrap().display()
+        )
+    );
+}
+
+#[test]
+fn ac4_quoted_two_word_argument_counts_two_words() {
+    let home = tempfile::tempdir().unwrap();
+    let _host = start(home.path());
+    fs::write(
+        home.path().join("fake.json"),
+        json!({"search":{"indexes":1,"results":[]}}).to_string(),
+    )
+    .unwrap();
+    let (code, value) = search(home.path(), &["reading list"]);
     assert_eq!(code, 0, "{value}");
     assert_eq!(
         value["next"],

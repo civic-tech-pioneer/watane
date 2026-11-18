@@ -21,9 +21,17 @@ fn ac1_no_host_precedes_pipeline() {
             .unwrap()
             .contains(home.path().to_str().unwrap())
     );
+    let (dir, home) = (
+        home.path().canonicalize().unwrap(),
+        home.path().canonicalize().unwrap(),
+    );
     assert_eq!(
         value["errors"][0]["fix"],
-        "Start the watane app, then run this command again"
+        format!(
+            "Start the watane app, then run: watane-dev install --json --dir {} --home {}",
+            dir.display(),
+            home.display()
+        )
     );
 }
 
@@ -611,9 +619,22 @@ fn ac2_missing_home_component_before_parent_is_environment_error() {
             value["errors"][0]["message"],
             "no watane app runs for the home x/../h (x does not exist)"
         );
+        // s86: publish keeps its older fix text.
+        let again = match command {
+            "install" => {
+                "watane-dev install --json --dir ".to_string()
+                    + root.path().canonicalize().unwrap().to_str().unwrap()
+                    + " --home <folder>"
+            }
+            "search" => "watane-dev search --json --home <folder>".to_string(),
+            _ => "this command again".to_string(),
+        };
+        let then = if command == "publish" { " " } else { ": " };
         assert_eq!(
             value["errors"][0]["fix"],
-            "Pass --home the folder that the watane app uses (x does not exist), then run this command again"
+            format!(
+                "Pass --home the folder that the watane app uses (x does not exist), then run{then}{again}"
+            )
         );
     }
 }

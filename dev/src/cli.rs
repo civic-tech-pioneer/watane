@@ -39,7 +39,10 @@ pub enum Command {
     /// Report the toolchain, allowlist and host environment
     Doctor,
     /// Check, build and run sandboxed unit and contract tests
-    Test,
+    Test {
+        #[arg(long, help = "Home of the running watane app")]
+        home: Option<PathBuf>,
+    },
     /// Add a local provider and report its WIT imports
     Add {
         /// Folder of the provider mod
@@ -91,6 +94,8 @@ pub enum Command {
     Serve {
         #[arg(long, help = "Stops the preview and deletes its data")]
         stop: bool,
+        #[arg(long, help = "Home of the running watane app")]
+        home: Option<PathBuf>,
     },
 }
 fn github_account(account: &str) -> Result<String, String> {
@@ -115,7 +120,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::New { .. } => "new",
         Command::Check => "check",
         Command::Doctor => "doctor",
-        Command::Test => "test",
+        Command::Test { .. } => "test",
         Command::Add { .. } => "add",
         Command::Serve { .. } => "serve",
         Command::Install { .. } => "install",
@@ -149,6 +154,14 @@ pub fn run(cli: Cli) -> Outcome {
             &cwd,
         );
     }
+    let dir_given = cli.dir.is_some();
+    let home_given = match &cli.command {
+        Command::Test { home }
+        | Command::Serve { home, .. }
+        | Command::Install { home, .. }
+        | Command::Publish { home, .. } => home.clone(),
+        _ => None,
+    };
     let dir = cli.dir.unwrap_or_else(|| match &cli.command {
         Command::New { slug, .. } => cwd.join(slug.as_deref().expect("clap requires a slug")),
         _ => cwd.clone(),
@@ -162,12 +175,14 @@ pub fn run(cli: Cli) -> Outcome {
         Ok(dir) => dir,
         Err(e) => return Outcome::new(name, Some(dir)).fail(vec![Problem::internal(e)]),
     };
+    // ` --dir <mod>` and ` --home <home>` for the reruns of test and serve, only as given.
+    let args = rerun_args(dir_given, &dir, home_given);
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
         Command::Search { .. } => unreachable!("search needs no mod folder"),
         Command::Doctor => return crate::doctor::doctor(&dir),
-        Command::Install { home, wait } => return install(&dir, home, wait),
-        Command::Publish { no_source, push, owner, home, wait } => return publish(&dir, no_source, push, owner.as_deref(), home, wait),
+        Command::Install { home, wait } => return install(&dir, home, wait, &args),
+        Command::Publish { no_source, push, owner, home, wait } => return publish(&dir, no_source, push, owner.as_deref(), home, wait, &args),
         Command::New { slug, .. } => template::new_mod(&dir, slug.as_deref().expect("clap requires a slug"))
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
@@ -187,15 +202,18 @@ pub fn run(cli: Cli) -> Outcome {
                     serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])
                 })
             }),
-        Command::Test => {
-            return test(&dir);
+        Command::Test { .. } => {
+            return test_with(&dir, &args);
         }
         Command::Add { release: Some(target), home, .. } => {
             let result = (|| {
-                let home = app_home(home)?;
-                let client = crate::api::Client::for_app(&home).map_err(|e|vec![e])?;
+                let given = home.is_some();
+                let rerun = |home: &str| format!("watane-dev add --release {} --json --dir {}{home}", quote(Path::new(&target)), quote(&dir));
+                let home = app_home(home, Some(&rerun))?;
+                let shown = home_arg(given, &home);
+                let client = crate::api::Client::for_app(&home, Some(&rerun(&shown))).map_err(|e|vec![e])?;
                 let env = Env::from_process().map_err(|e|vec![e])?;
-                crate::build_on::add_release(&dir, &target, &client, &env)
+                crate::build_on::add_release(&dir, &target, &client, &env, &shown)
             })();
             // A failed fetch has no lines to copy: its fix is the next step.
             return match result {
@@ -216,7 +234,7 @@ pub fn run(cli: Cli) -> Outcome {
                 outcome.dir = dir.canonicalize().ok();
                 outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves), then run: watane-dev test --json --dir {}", quote(outcome.dir.as_deref().unwrap_or(&dir))));
             }),
-        Command::Serve { stop } => dir
+        Command::Serve { stop, .. } => dir
             .canonicalize()
             .or_else(|e| match e.kind() {
                 // A missing folder has no mod.toml: check reports usage.not_a_mod.
@@ -232,15 +250,15 @@ pub fn run(cli: Cli) -> Outcome {
                     let mut tested = test_local(&dir);
                     if !tested.ok {
                         outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {
-                            let next = failed_test_next(&tested.errors, "serve");
+                            let next = failed_test_next(&tested.errors, "serve", &args);
                             for error in &mut tested.errors {
-                                error.fix = rewritten_fix(error, "serve");
+                                error.fix = rewritten_fix(error, "serve", &args);
                             }
                             Some(next)
                         } else {
                             tested.next
                         };
-                        if let Some(warning) = preview::previous_warning(&dir, &env) {
+                        if let Some(warning) = preview::previous_warning(&dir, &env, &args) {
                             outcome.warnings.push(warning);
                         }
                         return Err(tested.errors);
@@ -252,7 +270,7 @@ pub fn run(cli: Cli) -> Outcome {
     match result {
         Ok(v) => {
             if name == "serve" {
-                outcome.next = serve_next(&v, cli.json);
+                outcome.next = serve_next(&v, cli.json, &args);
             }
             outcome.result = Some(v);
             if name == "new" {
@@ -305,10 +323,23 @@ fn derive(
         {
             return Err(vec![crate::build_on::exists(dir)]);
         }
-        let home = app_home(home)?;
-        let client = crate::api::Client::for_app(&home).map_err(|e| vec![e])?;
+        let given = home.is_some();
+        let rerun = |home: &str| {
+            let dir = destination
+                .as_deref()
+                .map_or_else(String::new, |dir| format!(" --dir {}", quote(dir)));
+            let slug = slug.map_or_else(String::new, |slug| format!(" {slug}"));
+            format!(
+                "watane-dev new{slug} --from {} --json{dir}{home}",
+                quote(Path::new(target))
+            )
+        };
+        let home = app_home(home, Some(&rerun))?;
+        let shown = home_arg(given, &home);
+        let client =
+            crate::api::Client::for_app(&home, Some(&rerun(&shown))).map_err(|e| vec![e])?;
         let env = Env::from_process().map_err(|e| vec![e])?;
-        crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env)
+        crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env, &shown)
     })();
     match result {
         Ok((value, warnings)) => {
@@ -328,11 +359,7 @@ fn derive(
             }
 
             let mentions = value["mentions"].as_array().is_some_and(|v| !v.is_empty());
-            let replace = format!(
-                "Replace {from} with {slug} (and {} with {}) at each result.mentions entry",
-                from.replace('-', "_"),
-                slug.replace('-', "_")
-            );
+            let replace = replace_text(from, slug);
             let step = match (prebuilt, from != slug, mentions) {
                 (false, _, true) => format!("{replace}, then run"),
                 (false, _, false) => {
@@ -357,12 +384,22 @@ fn derive(
     }
 }
 
-fn serve_next(result: &serde_json::Value, json: bool) -> Option<String> {
+/// The rename step; the snake form is named only when it differs from the slug.
+fn replace_text(from: &str, slug: &str) -> String {
+    let (from_, slug_) = (from.replace('-', "_"), slug.replace('-', "_"));
+    let snake = if from_ == from && slug_ == slug {
+        String::new()
+    } else {
+        format!(" (and {from_} with {slug_})")
+    };
+    format!("Replace {from} with {slug}{snake} at each result.mentions entry")
+}
+
+fn serve_next(result: &serde_json::Value, json: bool, args: &str) -> Option<String> {
     if result["stopped"] == true {
-        return Some(
-            "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
-                .into(),
-        );
+        return Some(format!(
+            "The preview and its data are gone. To start a new one, run: watane-dev serve --json{args}"
+        ));
     }
     let page = result["pages"].as_array()?.last()?["url"]
         .as_str()
@@ -419,34 +456,54 @@ fn test_local(dir: &Path) -> Outcome {
     Outcome::new("test", Some(dir.to_path_buf()))
 }
 
-/// The fix of a failing test error, rerun with `command` instead of `test`.
-fn rewritten_fix(error: &Problem, command: &str) -> Option<String> {
-    use crate::outcome::Code;
-    let fix = error.fix.as_ref()?;
-    if matches!(
-        error.code,
-        Code::TestUnit | Code::TestUnitLimit | Code::TestContract
-    ) {
-        Some(fix.strip_suffix("watane-dev test --json").map_or_else(
-            || fix.clone(),
-            |prefix| format!("{prefix}watane-dev {command} --json"),
-        ))
+/// ` --dir <mod>` (when the command was given `--dir`) and ` --home <home>`
+/// (when given `--home`), which end every `test` and `serve` rerun.
+fn rerun_args(dir_given: bool, dir: &Path, home: Option<PathBuf>) -> String {
+    let dir = if dir_given {
+        format!(" --dir {}", quote(dir))
     } else {
-        Some(fix.clone())
-    }
+        String::new()
+    };
+    let home = home.map_or_else(String::new, |home| {
+        let home = resolved_path(&home).unwrap_or(home);
+        home_arg(true, &home)
+    });
+    format!("{dir}{home}")
 }
 
-fn failed_test_next(errors: &[Problem], command: &str) -> String {
+/// The fix of a failing test error, rerun with `command` instead of `test`,
+/// and with the `args` of the command line (`rerun_args`).
+fn rewritten_fix(error: &Problem, command: &str, args: &str) -> Option<String> {
+    use crate::outcome::Code;
+    let fix = error.fix.as_ref()?;
+    Some(match error.code {
+        Code::TestUnit | Code::TestUnitLimit | Code::TestContract => {
+            fix.strip_suffix("watane-dev test --json").map_or_else(
+                || fix.clone(),
+                |prefix| format!("{prefix}watane-dev {command} --json{args}"),
+            )
+        }
+        // The fix names the app's release add: it goes to this mod and this home.
+        Code::ModReleaseProviderMissing => format!("{fix}{args}"),
+        _ => fix.clone(),
+    })
+}
+
+fn failed_test_next(errors: &[Problem], command: &str, args: &str) -> String {
     errors
         .first()
-        .and_then(|error| rewritten_fix(error, command))
-        .unwrap_or_else(|| format!("watane-dev {command} --json"))
+        .and_then(|error| rewritten_fix(error, command, args))
+        .unwrap_or_else(|| format!("watane-dev {command} --json{args}"))
 }
 
 /// Check, build and run unit and contract tests, retaining completed parts on failure.
 pub fn test(dir: &Path) -> Outcome {
+    test_with(dir, "")
+}
+
+fn test_with(dir: &Path, args: &str) -> Outcome {
     let mut outcome = Outcome::new("test", Some(dir.to_path_buf()));
-    outcome.next = Some("watane-dev test --json".into());
+    outcome.next = Some(format!("watane-dev test --json{args}"));
     let mut result =
         serde_json::json!({"check": null, "build": null, "unit": null, "contract": null});
     let mut pipeline = || -> Result<Vec<Problem>, Vec<Problem>> {
@@ -495,12 +552,12 @@ pub fn test(dir: &Path) -> Outcome {
             serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)])?;
         Ok(errors)
     };
-    let errors = pipeline().unwrap_or_else(|errors| errors);
+    let mut errors = pipeline().unwrap_or_else(|errors| errors);
     if !result["check"].is_null() {
         outcome.result = Some(result);
     }
     if errors.is_empty() {
-        outcome.next = Some("watane-dev serve --json".into());
+        outcome.next = Some(format!("watane-dev serve --json{args}"));
         outcome
     } else {
         if errors
@@ -509,7 +566,10 @@ pub fn test(dir: &Path) -> Outcome {
         {
             outcome.next = Some("watane-dev doctor --json".into());
         } else {
-            outcome.next = Some(failed_test_next(&errors, "test"));
+            outcome.next = Some(failed_test_next(&errors, "test", args));
+            for error in &mut errors {
+                error.fix = rewritten_fix(error, "test", args);
+            }
         }
         outcome.fail(errors)
     }
@@ -520,7 +580,7 @@ fn search_command(
     words: &[String],
     publisher: Option<&str>,
     interface: Option<&str>,
-    home: Option<&Path>,
+    home: &str,
 ) -> String {
     let mut next = String::from("watane-dev search --json");
     for word in words {
@@ -531,9 +591,7 @@ fn search_command(
             next.push_str(&format!(" --{flag} {}", quote(Path::new(value))));
         }
     }
-    if let Some(home) = home {
-        next.push_str(&format!(" --home {}", quote(home)));
-    }
+    next.push_str(home);
     next
 }
 
@@ -546,25 +604,29 @@ fn search(
     let mut outcome = Outcome::new("search", None);
     let given = home.is_some();
     let result: Result<serde_json::Value, Vec<Problem>> = (|| {
-        let home = app_home(home)?;
-        let shown = given.then_some(home.as_path());
-        let client = crate::api::Client::for_app(&home).map_err(|e| {
-            outcome.next = Some(search_command(words, publisher, interface, shown));
+        let rerun = |home: &str| search_command(words, publisher, interface, home);
+        let home = app_home(home, Some(&rerun))?;
+        let shown = home_arg(given, &home);
+        let rerun = rerun(&shown);
+        let client = crate::api::Client::for_app(&home, Some(&rerun)).map_err(|e| {
+            outcome.next = Some(rerun.clone());
             vec![e]
         })?;
         let answer = client
             .search(&words.join(" "), publisher, interface)
             .map_err(|e| vec![e])?;
+        // A quoted argument of two words is two words.
+        let split: Vec<&str> = words.iter().flat_map(|w| w.split_whitespace()).collect();
         if answer["results"].as_array().is_some_and(Vec::is_empty) {
             outcome.next = Some(if answer["indexes"] == 0 {
                 format!(
                     "Ask the person to add an index in the watane app, then run: {}",
-                    search_command(words, publisher, interface, shown)
+                    rerun
                 )
-            } else if words.len() >= 2 {
+            } else if split.len() >= 2 {
                 format!(
                     "Try fewer words: {}",
-                    search_command(&words[..1], publisher, interface, shown)
+                    search_command(&[split[0].to_string()], publisher, interface, &shown)
                 )
             } else {
                 "Try other words, or search with --interface <name>: watane-dev search --json <other words>".into()
@@ -586,7 +648,7 @@ fn search(
     }
 }
 
-fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
+fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> Outcome {
     let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
     let result = (|| {
         let (home, client) = app_client(&mut outcome, home, wait)?;
@@ -627,7 +689,7 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>) -> Outcome {
                 outcome.next = errors
                     .first()
                     .and_then(|e| e.fix.clone())
-                    .or_else(|| Some("watane-dev test --json".into()));
+                    .or_else(|| Some(format!("watane-dev test --json{args}")));
             }
             outcome.fail(errors)
         }
@@ -644,7 +706,7 @@ fn home_arg(given: bool, home: &Path) -> String {
 }
 
 /// Quotes a path for a POSIX shell `next` line.
-fn quote(path: &Path) -> String {
+pub(crate) fn quote(path: &Path) -> String {
     let path = path.display().to_string();
     if !path.is_empty()
         && path
@@ -682,7 +744,11 @@ fn resolved_path(path: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
-fn app_home(home: Option<PathBuf>) -> Result<PathBuf, Vec<Problem>> {
+/// The command's rerun for a given ` --home <h>` argument (or none).
+type Rerun<'a> = &'a dyn Fn(&str) -> String;
+
+/// The fix of a missing home: pass the folder, then run the rerun with a placeholder.
+fn app_home(home: Option<PathBuf>, rerun: Option<Rerun>) -> Result<PathBuf, Vec<Problem>> {
     let home = home
         .map(Ok)
         .unwrap_or_else(watane_host::default_home)
@@ -707,9 +773,16 @@ fn app_home(home: Option<PathBuf>) -> Result<PathBuf, Vec<Problem>> {
                         home.display()
                     ),
                 )
-                .fix(format!(
-                    "Pass --home the folder that the watane app uses ({detail}), then run this command again"
-                )),
+                .fix(match rerun {
+                    Some(rerun) => format!(
+                        "Pass --home the folder that the watane app uses ({detail}), then run: {}",
+                        rerun(" --home <folder>")
+                    ),
+                    // s86: publish keeps its older fix text (dev/tests/publish.rs pins it).
+                    None => format!(
+                        "Pass --home the folder that the watane app uses ({detail}), then run this command again"
+                    ),
+                }),
             ]
         } else {
             vec![Problem::internal(e)]
@@ -723,24 +796,27 @@ fn app_client(
     wait: Option<u64>,
 ) -> Result<(PathBuf, crate::api::Client), Vec<Problem>> {
     let given = home.is_some();
-    let home = app_home(home)?;
-    let client = crate::api::Client::for_app(&home).map_err(|e| {
-        if e.code == crate::outcome::Code::EnvHostNotRunning {
-            let dir = outcome.dir.as_ref().expect("command has a mod folder");
-            let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-            let mut next = format!(
-                "watane-dev {} --json --dir {}{}",
-                outcome.command,
-                quote(&dir),
-                home_arg(given, &home)
-            );
-            if let Some(wait) = wait {
-                next.push_str(&format!(" --wait {wait}"));
-            }
-            outcome.next = Some(next);
+    let command = outcome.command;
+    let dir = outcome.dir.as_ref().expect("command has a mod folder");
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let rerun = |home: &str| {
+        let mut next = format!("watane-dev {command} --json --dir {}{home}", quote(&dir));
+        if let Some(wait) = wait {
+            next.push_str(&format!(" --wait {wait}"));
         }
-        vec![e]
-    })?;
+        next
+    };
+    // s86: publish keeps the older fix text of its tests; install gets the rerun.
+    let fixed = (command != "publish").then_some(&rerun as Rerun);
+    let home = app_home(home, fixed)?;
+    let rerun = rerun(&home_arg(given, &home));
+    let client =
+        crate::api::Client::for_app(&home, fixed.map(|_| rerun.as_str())).map_err(|e| {
+            if e.code == crate::outcome::Code::EnvHostNotRunning {
+                outcome.next = Some(rerun.clone());
+            }
+            vec![e]
+        })?;
     Ok((home, client))
 }
 
@@ -751,26 +827,36 @@ fn publish(
     requested_owner: Option<&str>,
     home: Option<PathBuf>,
     wait: Option<u64>,
+    args: &str,
 ) -> Outcome {
     use crate::outcome::{Class, Code};
     let mut outcome = Outcome::new("publish", Some(dir.to_path_buf()));
     let home_given = home.is_some();
     let result = (|| {
         let providers = watane_pkg::Deps::read(dir).map_err(check::mod_problems)?;
+        let local = deps::read_local(dir).unwrap_or_default();
         let errors: Vec<_> = providers
             .iter()
             .filter(|(_, publisher)| publisher.is_none())
             .map(|(slug, _)| {
+                // dev/tests/publish.rs pins this text for a null entry with no folder known.
+                let names = local.get(&slug.to_string()).map_or_else(
+                    || "its folder, not a release".to_string(),
+                    |path| {
+                        let path = dir.join(path);
+                        let path = path.canonicalize().unwrap_or(path);
+                        format!("its folder {}, not a release", path.display())
+                    },
+                );
                 Problem::new(
                     Code::PublishLocalDependency,
-                    format!("mods:{slug} is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers"),
+                    format!("mods:{slug} is a local provider (deps.json names {names}), and a published mod can depend only on released providers"),
                 )
                 .at("deps.json", None, None)
                 .fix(format!("Publish {slug} first (if it is already published, that run reports its release), then depend on its release"))
             })
             .collect();
         if !errors.is_empty() {
-            let local = deps::read_local(dir).unwrap_or_default();
             outcome.next = providers
                 .iter()
                 .filter(|(_, publisher)| publisher.is_none())
@@ -995,7 +1081,7 @@ fn publish(
                 outcome.next = errors
                     .first()
                     .and_then(|e| e.fix.clone())
-                    .or_else(|| Some("watane-dev test --json".into()));
+                    .or_else(|| Some(format!("watane-dev test --json{args}")));
             }
             outcome.fail(errors)
         }
@@ -1083,7 +1169,7 @@ mod tests {
         let error = Problem::new(crate::outcome::Code::TestContract, "mismatch")
             .fix("Fix tests/watane-dev test --json.json step 1 (api.get), then run: watane-dev test --json");
         assert_eq!(
-            failed_test_next(&[error], "serve"),
+            failed_test_next(&[error], "serve", ""),
             "Fix tests/watane-dev test --json.json step 1 (api.get), then run: watane-dev serve --json"
         );
     }
@@ -1094,14 +1180,14 @@ mod tests {
         for code in [Code::TestUnit, Code::TestUnitLimit, Code::TestContract] {
             let error = Problem::new(code, "x").fix("Fix it, then run: watane-dev test --json");
             assert_eq!(
-                rewritten_fix(&error, "serve").unwrap(),
+                rewritten_fix(&error, "serve", "").unwrap(),
                 "Fix it, then run: watane-dev serve --json"
             );
         }
         let other =
             Problem::new(Code::ModInvalid, "x").fix("Fix it, then run: watane-dev test --json");
         assert_eq!(
-            rewritten_fix(&other, "serve").unwrap(),
+            rewritten_fix(&other, "serve", "").unwrap(),
             "Fix it, then run: watane-dev test --json"
         );
     }
@@ -1127,15 +1213,15 @@ mod tests {
         .fix("Fix tests/counter.json step 2 (api.get), then run: watane-dev test --json");
         for command in ["test", "serve"] {
             assert_eq!(
-                failed_test_next(&unit, command),
+                failed_test_next(&unit, command, ""),
                 format!("Fix the unit test tests::fails, then run: watane-dev {command} --json")
             );
             assert_eq!(
-                failed_test_next(&limit_errors, command),
+                failed_test_next(&limit_errors, command, ""),
                 format!("Fix the unit test tests::endless, then run: watane-dev {command} --json")
             );
             assert_eq!(
-                failed_test_next(std::slice::from_ref(&contract), command),
+                failed_test_next(std::slice::from_ref(&contract), command, ""),
                 format!(
                     "Fix tests/counter.json step 2 (api.get), then run: watane-dev {command} --json"
                 )
@@ -1143,12 +1229,13 @@ mod tests {
             assert_eq!(
                 failed_test_next(
                     &[Problem::new(Code::ModInvalid, "bad").fix("Correct the mod")],
-                    command
+                    command,
+                    ""
                 ),
                 "Correct the mod"
             );
             assert_eq!(
-                failed_test_next(&[Problem::new(Code::BuildCompile, "bad")], command),
+                failed_test_next(&[Problem::new(Code::BuildCompile, "bad")], command, ""),
                 format!("watane-dev {command} --json")
             );
         }
@@ -1201,7 +1288,7 @@ mod tests {
         let link = root.path().join("alias");
         std::os::unix::fs::symlink(root.path(), &link).unwrap();
         assert_eq!(
-            app_home(Some(link.join("new/nested"))).unwrap(),
+            app_home(Some(link.join("new/nested")), None).unwrap(),
             root.path().canonicalize().unwrap().join("new/nested")
         );
         assert!(!root.path().join("new").exists());
@@ -1211,7 +1298,7 @@ mod tests {
     fn ac2_serve_next_url_is_last_and_mcp_keys_match_mode() {
         let result = json!({"reused": false, "pages": [{"url": "http://demo.localhost:7/"}]});
         for json in [false, true] {
-            let next = serve_next(&result, json).unwrap();
+            let next = serve_next(&result, json, "").unwrap();
             let prefix = if json { "result." } else { "" };
             assert_eq!(
                 next,
@@ -1231,6 +1318,7 @@ mod tests {
                 "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_new"}
             }),
             true,
+            "",
         )
         .unwrap();
         for text in [
@@ -1254,7 +1342,8 @@ mod tests {
                     "pages": [{"url": "http://demo.localhost:7/"}],
                     "mcp": {"url": "http://localhost:7/mcp/preview", "token": "wt_old"}
                 }),
-                true
+                true,
+                ""
             )
             .as_deref(),
             Some("Give the person this page: http://demo.localhost:7/")
@@ -1265,11 +1354,11 @@ mod tests {
     fn ac2_new_preview_without_page_still_gives_mcp_setup() {
         let pageless = |reused| json!({"reused": reused, "pages": [{"slug": "demo", "url": null}], "mcp": {"url": "u", "token": "t"}});
         assert!(
-            serve_next(&pageless(false), true)
+            serve_next(&pageless(false), true, "")
                 .unwrap()
                 .starts_with("The MCP url and token are new.")
         );
-        assert_eq!(serve_next(&pageless(true), true), None);
+        assert_eq!(serve_next(&pageless(true), true, ""), None);
     }
 
     #[test]
@@ -1392,7 +1481,7 @@ mod tests {
                 .contains("deletes its data")
         );
         assert_eq!(
-            serve_next(&json!({"stopped":true}), true).as_deref(),
+            serve_next(&json!({"stopped":true}), true, "").as_deref(),
             Some(
                 "The preview and its data are gone. To start a new one, run: watane-dev serve --json"
             )
@@ -1487,7 +1576,8 @@ mod tests {
                     {"slug":"a","url":"http://a.localhost:123/"},
                     {"slug":"b","url":"http://b.localhost:123/"}
                 ]}),
-                true
+                true,
+                ""
             )
             .as_deref(),
             Some("Give the person this page: http://b.localhost:123/")
@@ -1498,9 +1588,101 @@ mod tests {
                     {"slug":"a","url":"http://a.localhost:123/"},
                     {"slug":"b","url":null}
                 ]}),
-                true
+                true,
+                ""
             ),
             None
+        );
+    }
+
+    #[test]
+    fn s86_ac1_test_and_serve_take_home() {
+        use clap::CommandFactory;
+        Cli::try_parse_from(["watane-dev", "test", "--json", "--home", "/x", "--dir", "m"])
+            .unwrap();
+        Cli::try_parse_from(["watane-dev", "serve", "--stop", "--home", "/x"]).unwrap();
+        for name in ["test", "serve"] {
+            let help = Cli::command()
+                .find_subcommand_mut(name)
+                .unwrap()
+                .render_help()
+                .to_string();
+            assert!(help.contains("--home <HOME>"), "{help}");
+            assert!(help.contains("Home of the running watane app"), "{help}");
+        }
+    }
+
+    #[test]
+    fn s86_ac2_reruns_end_in_dir_and_home_only_as_given() {
+        use crate::outcome::Code;
+        let dir = Path::new("/w/my mod");
+        assert_eq!(rerun_args(false, dir, None), "");
+        assert_eq!(rerun_args(true, dir, None), " --dir '/w/my mod'");
+        assert_eq!(
+            rerun_args(true, dir, Some("/h".into())),
+            " --dir '/w/my mod' --home /h"
+        );
+        let args = " --dir /w/m --home /h";
+        let unit =
+            Problem::new(Code::TestUnit, "x").fix("Fix it, then run: watane-dev test --json");
+        assert_eq!(
+            rewritten_fix(&unit, "test", args).unwrap(),
+            "Fix it, then run: watane-dev test --json --dir /w/m --home /h"
+        );
+        assert_eq!(
+            rewritten_fix(&unit, "serve", args).unwrap(),
+            "Fix it, then run: watane-dev serve --json --dir /w/m --home /h"
+        );
+        let missing = Problem::new(Code::ModReleaseProviderMissing, "x")
+            .fix("Start the watane app, then run: watane-dev add --release k/p@0.1.0");
+        assert_eq!(
+            rewritten_fix(&missing, "serve", args).unwrap(),
+            "Start the watane app, then run: watane-dev add --release k/p@0.1.0 --dir /w/m --home /h"
+        );
+        assert_eq!(
+            failed_test_next(&[], "serve", args),
+            "watane-dev serve --json --dir /w/m --home /h"
+        );
+        assert_eq!(
+            serve_next(&json!({"stopped":true}), true, " --dir /w/m").unwrap(),
+            "The preview and its data are gone. To start a new one, run: watane-dev serve --json --dir /w/m"
+        );
+    }
+
+    #[test]
+    fn s86_ac3_missing_home_fix_ends_in_the_rerun_with_a_placeholder() {
+        let rerun = |home: &str| format!("watane-dev search --json x{home}");
+        let missing = PathBuf::from("x/../h");
+        let e = app_home(Some(missing.clone()), Some(&rerun)).unwrap_err();
+        assert_eq!(
+            e[0].fix.as_deref(),
+            Some(
+                "Pass --home the folder that the watane app uses (x does not exist), then run: watane-dev search --json x --home <folder>"
+            )
+        );
+        // s86: publish keeps the older text.
+        let e = app_home(Some(missing), None).unwrap_err();
+        assert!(
+            e[0].fix
+                .as_deref()
+                .unwrap()
+                .ends_with(", then run this command again")
+        );
+    }
+
+    #[test]
+    fn s86_ac4_rename_names_the_snake_form_only_when_it_differs() {
+        assert_eq!(
+            replace_text("counter", "tally"),
+            "Replace counter with tally at each result.mentions entry"
+        );
+        assert_eq!(
+            replace_text("reading-list", "ratings"),
+            "Replace reading-list with ratings (and reading_list with ratings) at each result.mentions entry"
+        );
+        assert_eq!(
+            replace_text("ratings", "my-ratings"),
+            "Replace ratings with my-ratings (and ratings with my_ratings) at each result.mentions entry"
         );
     }
 }

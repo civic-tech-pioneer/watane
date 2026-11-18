@@ -233,6 +233,7 @@ pub fn add_release(
     target: &str,
     client: &Client,
     env: &Env,
+    home: &str,
 ) -> Result<Value, Vec<Problem>> {
     if !dir.join("mod.toml").is_file() {
         return Err(vec![Problem::new(Code::UsageNotAMod, format!("{} is not a mod folder: it has no mod.toml",dir.display()))
@@ -248,7 +249,10 @@ pub fn add_release(
     if slug == *provider.slug() {
         return Err(vec![
             Problem::new(Code::ModSelfDependency, "a mod cannot depend on itself")
-                .fix("Pass the link or release of another mod to add --release"),
+                .fix(format!(
+                    "Pick the link or release of another mod, then run: watane-dev add --release <link> --dir {}{home}",
+                    crate::cli::quote(dir)
+                )),
         ]);
     }
     watane_pkg::add_provider(dir, &provider, Some(release.publisher.clone()))
@@ -279,11 +283,12 @@ pub fn new_from(
     target: &str,
     client: &Client,
     env: &Env,
+    home: &str,
 ) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     let (release, package) = client.fetch(target).map_err(|e| vec![e])?;
     if !package.has_source() {
         return Err(vec![Problem::new(Code::UsageNoSource, format!("the release {release} holds no source (no logic/Cargo.toml, logic/src/ or tests/)"))
-        .fix("Build on a release that includes its source, or depend on this one with: watane-dev add --release <link>")]);
+        .fix(format!("Build on a release that includes its source, or depend on this one with: watane-dev add --release {}{home}", crate::cli::quote(Path::new(target))))]);
     }
     let slug: Slug = slug
         .unwrap_or(release.slug.as_str())

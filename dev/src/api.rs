@@ -9,20 +9,27 @@ use std::time::Duration;
 use watane_host::{InstalledMod, RunInfo};
 const FETCH_FIX: &str =
     "Pass a mod link watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>";
-fn bad_fetch_answer(detail: impl std::fmt::Display) -> Problem {
-    Problem::new(Code::HostRefused, format!("[bad_answer] {detail}"))
-        .fix("The watane app answered with a package that does not match the request; ask the person to update the watane app, then run this command again")
+/// A fix that ends in the command's rerun: `<step>, then run: <rerun>`.
+/// Without a rerun it keeps the older prose (publish does: s86, below).
+fn then_run(step: &str, rerun: Option<&str>) -> String {
+    match rerun {
+        Some(rerun) => format!("{step}, then run: {rerun}"),
+        None => format!("{step}, then run this command again"),
+    }
 }
 #[derive(Debug)]
 pub struct Client {
     port: u16,
     home: PathBuf,
+    /// The command's own rerun (built in cli.rs), which ends the fixes that
+    /// ask for a retry; `None` keeps the older prose.
+    rerun: Option<String>,
 }
 impl Client {
-    pub fn for_app(home: &Path) -> Result<Self, Problem> {
+    pub fn for_app(home: &Path, rerun: Option<&str>) -> Result<Self, Problem> {
         let missing = |message| {
             Problem::new(Code::EnvHostNotRunning, message)
-                .fix("Start the watane app, then run this command again")
+                .fix(then_run("Start the watane app", rerun))
         };
         let absent = || {
             missing(format!(
@@ -34,6 +41,7 @@ impl Client {
         let client = Self {
             port: run.port,
             home: home.to_path_buf(),
+            rerun: rerun.map(str::to_string),
         };
         let status = client
             .request("status", None, Duration::from_secs(2))
@@ -69,6 +77,7 @@ impl Client {
         let status = Self {
             port: run.port,
             home: home.to_path_buf(),
+            rerun: None,
         }
         .request("status", None, Duration::from_secs(2))
         .ok()?;
@@ -86,6 +95,7 @@ impl Client {
         let client = Self {
             port: run.port,
             home: home.to_path_buf(),
+            rerun: None,
         };
         let status = match client.request("status", None, Duration::from_secs(2)) {
             Ok(v) => v,
@@ -100,6 +110,14 @@ impl Client {
         } else {
             Ok(None)
         }
+    }
+    fn bad_fetch_answer(&self, detail: impl std::fmt::Display) -> Problem {
+        Problem::new(Code::HostRefused, format!("[bad_answer] {detail}")).fix(self.then(
+            "The watane app answered with a package that does not match the request; ask the person to update the watane app",
+        ))
+    }
+    fn then(&self, step: &str) -> String {
+        then_run(step, self.rerun.as_deref())
     }
     fn app_failure(&self, status: u16, value: &Value) -> Option<Problem> {
         if !(500..600).contains(&status) {
@@ -117,10 +135,11 @@ impl Client {
                     self.home.display()
                 ),
             )
-            .fix("Ask the person to restart the watane app, then run this command again")
+            .fix(self.then("Ask the person to restart the watane app"))
         } else {
-            Problem::new(Code::HostFailed, format!("[{code}] {message}"))
-                .fix("The watane app failed on this request; ask the person to read the watane app's log, then run this command again")
+            Problem::new(Code::HostFailed, format!("[{code}] {message}")).fix(self.then(
+                "The watane app failed on this request; ask the person to read the watane app's log",
+            ))
         })
     }
 
@@ -252,7 +271,12 @@ impl Client {
             .post(format!("http://localhost:{}/api/fetch", self.port))
             .send_json(body)
             .map_err(|e| {
-                Problem::new(Code::HostNoAnswer, e.to_string()).fix("Run this command again")
+                Problem::new(Code::HostNoAnswer, e.to_string()).fix(match &self.rerun {
+                    Some(rerun) => {
+                        format!("Check that the watane app is running, then run: {rerun}")
+                    }
+                    None => "Run this command again".into(),
+                })
             })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -273,29 +297,29 @@ impl Client {
                 ),
             );
             return Err(e.fix(if status == 400 {
-                FETCH_FIX
+                FETCH_FIX.into()
             } else if status == 409 && value["error"]["code"] == "fetch_refused" {
-                "Check the link or release with the person who shared it: the watane app found no release to fetch for it"
+                "Check the link or release with the person who shared it: the watane app found no release to fetch for it".into()
             } else if status == 502 && value["error"]["code"] == "fetch_failed" {
-                "Check the link and that its publisher's site is reachable, then run this command again"
+                self.then("Check the link and that its publisher's site is reachable")
             } else {
-                FETCH_FIX
+                FETCH_FIX.into()
             }));
         }
         let release: ReleaseRef = response
             .headers()
             .get("Watane-Release")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| bad_fetch_answer("missing Watane-Release"))?
+            .ok_or_else(|| self.bad_fetch_answer("missing Watane-Release"))?
             .parse()
-            .map_err(bad_fetch_answer)?;
+            .map_err(|e| self.bad_fetch_answer(e))?;
         let id: PackageId = response
             .headers()
             .get("Watane-Package")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| bad_fetch_answer("missing Watane-Package"))?
+            .ok_or_else(|| self.bad_fetch_answer("missing Watane-Package"))?
             .parse()
-            .map_err(bad_fetch_answer)?;
+            .map_err(|e| self.bad_fetch_answer(e))?;
         let matches = if let Some(asked) = asked {
             release == asked
         } else {
@@ -308,9 +332,9 @@ impl Client {
                 && target.rsplit_once('#').map(|(_, slug)| slug) == Some(release.slug.as_str())
         };
         if !matches {
-            return Err(bad_fetch_answer(
-                "Watane-Release does not match the requested release",
-            ));
+            return Err(
+                self.bad_fetch_answer("Watane-Release does not match the requested release")
+            );
         }
         use std::io::Read;
         let mut bytes = Vec::new();
@@ -326,22 +350,19 @@ impl Client {
                 "[too_large] package exceeds MAX_PACKAGE_BYTES",
             ));
         }
-        let package = Package::from_bytes(bytes).map_err(bad_fetch_answer)?;
+        let package = Package::from_bytes(bytes).map_err(|e| self.bad_fetch_answer(e))?;
         if package.id() != id {
-            return Err(bad_fetch_answer(
-                "Watane-Package does not match the package body",
-            ));
+            return Err(self.bad_fetch_answer("Watane-Package does not match the package body"));
         }
         let world = package
             .file("wit/world.wit")
-            .ok_or_else(|| bad_fetch_answer("package has no wit/world.wit"))?;
-        let (_, slug, version) =
-            crate::build_on::declaration(std::str::from_utf8(world).map_err(bad_fetch_answer)?)
-                .map_err(|e| bad_fetch_answer(e.message))?;
+            .ok_or_else(|| self.bad_fetch_answer("package has no wit/world.wit"))?;
+        let (_, slug, version) = crate::build_on::declaration(
+            std::str::from_utf8(world).map_err(|e| self.bad_fetch_answer(e))?,
+        )
+        .map_err(|e| self.bad_fetch_answer(e.message))?;
         if slug != release.slug || version != release.version {
-            return Err(bad_fetch_answer(
-                "Watane-Release does not match the package body",
-            ));
+            return Err(self.bad_fetch_answer("Watane-Release does not match the package body"));
         }
         Ok((release, package))
     }
@@ -458,6 +479,7 @@ mod tests {
         Client {
             port,
             home: PathBuf::from("/home/test"),
+            rerun: Some("watane-dev cmd --json".into()),
         }
     }
 
@@ -471,7 +493,7 @@ mod tests {
                     "unavailable",
                     "env.host_not_running",
                     "the watane app of /home/test runs but could not open its data: broken data",
-                    "Ask the person to restart the watane app, then run this command again",
+                    "Ask the person to restart the watane app, then run: watane-dev cmd --json",
                     3,
                 ),
                 (
@@ -479,7 +501,7 @@ mod tests {
                     "internal",
                     "host.failed",
                     "[internal] broken data",
-                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again",
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json",
                     4,
                 ),
                 (
@@ -487,7 +509,7 @@ mod tests {
                     "other",
                     "host.failed",
                     "[other] broken data",
-                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again",
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json",
                     4,
                 ),
             ] {
@@ -529,7 +551,7 @@ mod tests {
             (
                 502,
                 "fetch_failed",
-                "Check the link and that its publisher's site is reachable, then run this command again",
+                "Check the link and that its publisher's site is reachable, then run: watane-dev cmd --json",
             ),
         ] {
             let (port, thread) = stub(
@@ -747,7 +769,7 @@ mod tests {
                 assert_eq!(
                     error.fix.as_deref(),
                     Some(
-                        "The watane app answered with a package that does not match the request; ask the person to update the watane app, then run this command again"
+                        "The watane app answered with a package that does not match the request; ask the person to update the watane app, then run: watane-dev cmd --json"
                     )
                 );
             }
@@ -878,6 +900,7 @@ mod tests {
             &format!("{}/ratings@0.1.0", "y".repeat(52)),
             &client(0),
             &env,
+            "",
         )
         .unwrap_err();
         assert_eq!(errors[0].code, Code::UsageNotAMod);
@@ -943,9 +966,9 @@ mod tests {
                 Some(if status == 400 {
                     "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
                 } else if status == 503 {
-                    "Ask the person to restart the watane app, then run this command again"
+                    "Ask the person to restart the watane app, then run: watane-dev cmd --json"
                 } else if status == 500 {
-                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
@@ -1018,7 +1041,8 @@ mod tests {
         assert_eq!(
             Client {
                 port,
-                home: PathBuf::from("/home/test")
+                home: PathBuf::from("/home/test"),
+                rerun: None,
             }
             .releases()
             .unwrap(),
@@ -1033,7 +1057,8 @@ mod tests {
         assert_eq!(
             Client {
                 port,
-                home: PathBuf::from("/home/test")
+                home: PathBuf::from("/home/test"),
+                rerun: None,
             }
             .releases()
             .unwrap_err()
@@ -1060,7 +1085,7 @@ mod tests {
             assert_eq!(
                 e.fix.as_deref(),
                 Some(if status == 500 {
-                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
@@ -1209,13 +1234,15 @@ mod tests {
                 json!({"watane":1,"pid":1,"port":port,"mode":mode}).to_string(),
             )
             .unwrap();
-            let e = Client::for_app(home.path()).err().unwrap();
+            let e = Client::for_app(home.path(), Some("watane-dev cmd --json"))
+                .err()
+                .unwrap();
             assert_eq!(e.code, Code::EnvHostNotRunning);
             assert!(e.message.contains(cause), "{}", e.message);
             assert!(e.message.contains(home.path().to_str().unwrap()));
             assert_eq!(
                 e.fix.as_deref(),
-                Some("Start the watane app, then run this command again")
+                Some("Start the watane app, then run: watane-dev cmd --json")
             );
             thread.join().unwrap();
         }
@@ -1312,12 +1339,29 @@ mod tests {
                 Some(if expected == Code::HostDeclined {
                     "Ask the person whether they want the mod installed in their watane app, then run install again with --wait <seconds>"
                 } else if expected == Code::HostFailed {
-                    "The watane app failed on this request; ask the person to read the watane app's log, then run this command again"
+                    "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
                     "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
                 })
             );
             thread.join().unwrap();
         }
+    }
+
+    #[test]
+    fn s86_for_app_without_a_rerun_keeps_the_older_fix() {
+        let home = tempfile::tempdir().unwrap();
+        let e = Client::for_app(home.path(), None).err().unwrap();
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Start the watane app, then run this command again")
+        );
+        let e = Client::for_app(home.path(), Some("watane-dev x --json"))
+            .err()
+            .unwrap();
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Start the watane app, then run: watane-dev x --json")
+        );
     }
 }
