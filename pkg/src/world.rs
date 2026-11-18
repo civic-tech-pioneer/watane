@@ -581,7 +581,7 @@ fn cap_message(message: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::cap_message;
+    use super::{cap_message, escape_message};
 
     #[test]
     fn ac3_s86_long_message_keeps_arrow_and_utf8_boundary() {
@@ -597,5 +597,17 @@ mod tests {
         let early = format!("error\n{arrow}\n{tail}");
         let cut = cap_message(&early);
         assert_eq!(cut, early[..1999]);
+    }
+
+    #[test]
+    fn ac1_s86_escape_message_covers_every_listed_char() {
+        // Oracle written by hand, not via escape_debug/escape_unicode.
+        let raw = "a\tb\rc\u{1b}d\u{7}e\u{7f}f\u{85}g\n --> /m/w.wit:1:2\n\
+                   \u{61c}\u{200e}\u{200f}\u{202a}\u{202b}\u{202c}\u{202d}\u{202e}\
+                   \u{2066}\u{2067}\u{2068}\u{2069}é\\";
+        let want = "a\\tb\\rc\\u{1b}d\\u{7}e\\u{7f}f\\u{85}g\n --> /m/w.wit:1:2\n\
+                    \\u{61c}\\u{200e}\\u{200f}\\u{202a}\\u{202b}\\u{202c}\\u{202d}\\u{202e}\
+                    \\u{2066}\\u{2067}\\u{2068}\\u{2069}é\\";
+        assert_eq!(escape_message(raw), want);
     }
 }
