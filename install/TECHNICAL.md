@@ -1030,7 +1030,13 @@ for stage 5 only.
 - a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
   `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
   folder and `TMPDIR` another;
-- `PATH` = `<fakes dir>:<symlink dir>` where the symlink dir holds links to
+- `PATH` = `<test fakes>:<shared fakes>:<symlink dir>`: the test's own folder
+  (empty unless the scenario adds `rustup` and `rustc`, or another fake), then the
+  fakes of `tests/fakes/` written once per test binary under `CARGO_TARGET_TMPDIR`
+  (they hold no state: every answer comes from files of the test in
+  `$FAKE_STATE`) with `#!/bin/dash` where there is one, since macOS's `/bin/sh`
+  starts bash in a second process and each process start is slow there
+  (`install.sh` itself always runs under `/bin/sh`); the symlink dir holds links to
   only the real tools of 3.3 that the test needs (and `gzip`, which GNU tar runs and macOS's tar does not), so a tool that 3.3 does
   not list cannot be used by accident (a test that the script ran a
   tool outside 3.3 fails with `command not found`);
