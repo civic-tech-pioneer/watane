@@ -549,6 +549,8 @@ mod tests {
                 "fetch_failed",
                 "Check the link and that its publisher's site is reachable, then run: watane-dev cmd --json",
             ),
+            // Only a 502 fetch_failed names the publisher's site.
+            (404, "fetch_failed", FETCH_FIX),
         ] {
             let (port, thread) = stub(
                 status,
