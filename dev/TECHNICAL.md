@@ -2154,7 +2154,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
-| share (step 6) | the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11: first differing path of two packages (missing, extra, different, byte order), GitHub upstream parsing, and the watane branch list ending in repo edit | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
+| share (step 6) | `tests/share.rs` asserts whole command lists on the scripted runner (15.4); here: the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11: first differing path of two packages (missing, extra, different, byte order), GitHub upstream parsing, and the watane branch list ending in repo edit | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -2220,17 +2220,17 @@ rules belong to 15.1.
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
-| DEV-S-41 | `share::ac1_first_push_creates_both_repositories_and_names_the_mod_repository` | integration: fake-watane, fake-gh, real git, local bare remotes; page-only mod |
-| DEV-S-42 | `share::ac2_second_version_pushes_without_creating` | integration, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
-| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | integration: PATH without git, then without gh |
-| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | integration: fake-gh with no user; a gitconfig with no user |
-| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands` | integration: a remote with a refusing `pre-receive` hook |
-| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything` | integration |
-| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files` | integration: fake fetch of a package whose remote tag matches |
-| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | integration: the test moves the tag in the remote |
-| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package` | integration |
-| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch` | integration: DEV-S-47's folder (its `upstream` URL ends in `.git`), fake-gh as `carol` |
-| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns` | integration: fake-gh already holds a fork of the upstream for `carol`; a package-made derived mod |
+| DEV-S-41 | `share::ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository`; `share::ac1_first_push_runs_the_commands_of_10_4_1`, `ac1_nothing_staged_skips_the_commit`, `ac1_pushed_repository_is_fetched_and_reset_before_the_commit`, `ac2_owner_creates_and_pushes_both_repositories`, `ac1_owner_preserved_in_recovery_commands` | end to end: fake-watane, fake-gh, real git, local bare remotes; page-only mod. In-process on the scripted runner (15.4): the exact command list |
+| DEV-S-42 | `share::ac2_e2e_second_version_pushes_without_creating` | end to end, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
+| DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | in-process, scripted runner: git, then gh not found |
+| DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | in-process, scripted runner: gh's not-logged-in answer; git's identity error; no network |
+| DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands`, `ac4_failures_in_both_lists_join_their_finishing_commands` | in-process, scripted runner: a refused push; failures in both lists |
+| DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything`, `ac5_named_repository_is_used_on_any_host`, `ac6_prebuilt_mod_keeps_logic_wasm_in_commit`, `ac3_missing_app_retry_keeps_push_and_package_options` | in-process, scripted runner |
+| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files`; `share::ac8_e2e_new_from_clones_then_first_push_forks` | in-process: the scripted clone copies the tagged tree; end to end: a real clone of a tag pushed to a local remote |
+| DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | in-process: the scripted clone holds a changed file |
+| DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package`, `share::ac3_package_without_repository_has_no_fork_warning` | in-process: clone fails, git not found; a package with no repository runs no git |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch`, `ac8_late_or_unfinished_fork_is_used`, `ac3_owner_matching_login_case_insensitively_omits_organization`; `share::ac8_e2e_new_from_clones_then_first_push_forks` | in-process, scripted gh as `carol`: the exact fork, rename and default-branch commands; end to end: fake-gh forks a real remote, its upstream URL ends in `.git` |
+| DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns`, `ac3_owner_forks_and_existing_fork_fallback` | in-process, scripted runner: gh answers with another fork; a derived mod without upstream |
 | DEV-S-52 | `contract::ac_collect_fake_and_answer` | integration: the `menu` and `item` folders of the scenario, on the real `Harness` |
 | DEV-S-53 | `contract::ac_manage_fake_and_records` (integration, on host's prebuilt `manager` fixture and the real `Harness`); `contract::tests::manages_mismatch_report` (unit, `run_steps` with a closure) | integration and unit: the literal steps of the scenario |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
@@ -2357,8 +2357,17 @@ app 11). Each step-6 test makes, in its temp folder:
   insteadOf = https://github.com/`. So dev's `https://github.com/alice/x`
   reaches `remotes/alice/x` through git's own rewrite: no seam in dev.
 - `bin/gh`: a link to the built `fake-gh`, first on `PATH`. The real `git`
-  stays on `PATH`; DEV-S-43 builds a `PATH` with only `bin/` (no git), or
-  without `bin/gh`.
+  stays on `PATH` (a link in `bin/`).
+
+Only the `_e2e_` tests of `tests/share.rs` (the first push, the second
+version, `new --from` then a fork) and fake-gh's own test run git and
+`fake-gh` like this: each command is a process start, slow on a guarded
+machine. The other step-6 tests run dev in-process (2.5) under
+`share::with_runner` (feature `fake-host`): a `Runner` closure gets each
+git and gh argument vector (git's folder is its `-C`) instead of a child
+process and answers with a scripted exit status, stdout and stderr, or
+"not found". They assert the exact command list of 10.4.1 and 10.4.2 and
+the result, warnings, errors, fixes and `next` built from the answers.
 
 Stage 10 implements the user, repository lookup and create calls below;
 stage 11 implements fork and edit.

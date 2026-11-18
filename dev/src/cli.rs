@@ -133,7 +133,12 @@ pub fn main_with(
     };
     let json = args.iter().any(|s| s == "--json");
     let outcome = match Cli::try_parse_from(args) {
-        Ok(cli) => crate::env::with_vars(vars, || run_in(cli, cwd.map_or_else(std::env::current_dir, |cwd| Ok(cwd.to_path_buf())))),
+        Ok(cli) => crate::env::with_vars(vars, || {
+            run_in(
+                cli,
+                cwd.map_or_else(std::env::current_dir, |cwd| Ok(cwd.to_path_buf())),
+            )
+        }),
         Err(e)
             if matches!(
                 e.kind(),
