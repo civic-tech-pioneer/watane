@@ -561,16 +561,19 @@ mod tests {
             problems[0].message,
             "the build read 3 .wit files under /x/other/wit, outside the mod"
         );
-        assert!(
-            problems[0]
-                .fix
-                .as_deref()
-                .unwrap()
-                .ends_with("not at /x/other/wit")
+        assert_eq!(
+            problems[0].fix.as_deref(),
+            Some(
+                "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at /x/other/wit"
+            )
         );
         assert_eq!(
             problems[1].message,
             "the build read /x/other/data.rs, outside the mod"
+        );
+        assert_eq!(
+            problems[1].fix.as_deref(),
+            Some("Remove the include_bytes!, include_str!, include! or #[path] that names it")
         );
         let one = reads_outside_problems(vec![PathBuf::from("/x/other/wit/world.wit")]);
         assert_eq!(one.len(), 1);

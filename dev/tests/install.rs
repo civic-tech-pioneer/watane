@@ -264,8 +264,9 @@ mod fake {
             value["errors"][0]["message"],
             "no answer from the home host in 1 s"
         );
-        assert!(value["errors"][0]["fix"].is_string(), "{value}");
-        assert!(value["next"].is_string(), "{value}");
+        let fix = "Run the command again with a longer --wait";
+        assert_eq!(value["errors"][0]["fix"], fix, "{value}");
+        assert_eq!(value["next"], fix, "{value}");
     }
     #[test]
     fn ac5_declined_next_is_first_fix() {
