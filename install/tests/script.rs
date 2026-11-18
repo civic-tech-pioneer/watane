@@ -1438,7 +1438,12 @@ fn ac3_a_home_that_resolves_outside_the_home_is_not_deleted() {
         out.has_line(&format!("  rm -rf '{}'", o.display())),
         "{out:?}"
     );
-    assert!(out.stdout.contains(&o.display().to_string()), "{out:?}");
+    let kept = format!(
+        "kept: ~/link (not deleted: it resolves to {}, outside your home folder)",
+        o.display()
+    );
+    assert!(out.has_line(&kept), "{out:?}");
+    assert!(out.has_line("To delete it yourself, run:"), "{out:?}");
 }
 
 /// AC3: the question names the resolved path.

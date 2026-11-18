@@ -291,13 +291,15 @@ files (INST-F-20, INST-S-14, 32, 33).
    keeps links inside the app). Create parent folders with `mkdir -p`.
    `chmod 755` the three programs and `install.sh`. Write the new receipt
    (8.1) to `<prefix>/share/watane/receipt.new.<pid>`, in the same folder
-   as the receipt.
+   as the receipt. This file and the journal of step 2 are created only
+   when nothing (a link included) is at the name, with `set -C`
+   (noclobber) around the write; if something is, the run fails as any
+   failure of the swap does (undo, exit 5) and nothing is written through
+   it (IN-35).
 2. **Journal.** Write `<prefix>/share/watane/journal.<pid>`, one line for
    each entry, the receipt included: `old <path>` if `<path>` exists now
    (`-e` or `-L`), else `new <path>`. It is written directly, with no
-   temporary name, and, like `receipt.new.<pid>`, only when nothing (a link included) is at that
-   name, with `set -C` (noclobber) around the write; if something is, the swap fails as any
-   failure of it does (undo, exit 5) and nothing is written through it (IN-35): no entry is swapped before it is complete, and the undo
+   temporary name: no entry is swapped before it is complete, and the undo
    of step 4 touches only entries the swap reached, so a journal cut short
    by a kill undoes nothing.
 3. **Swap.** For each entry in the order of the list above, the receipt
@@ -890,9 +892,10 @@ is a feature of `app`, not of `install` (Q11).
    folder that watane can delete)` (INST-S-28), so that a `WATANE_HOME` set
    to `~` by mistake cannot turn one typed word into the loss of every file
    of the person. The question:
-   `Delete the watane home <R>? (R shown with `~` for the resolved home; `~/.watane` in the usual case) It holds your identity and your mods,
+   `Delete the watane home <R>? It holds your identity and your mods,
    and cannot be restored without a backup. Type delete to delete it, or
-   press Enter to keep it: `. Only the exact text `delete` deletes it
+   press Enter to keep it: `, where `<R>` is shown with `~` for the
+   resolved `$HOME` (`~/.watane` in the usual case). Only the exact text `delete` deletes it
    (`rm -rf`); then print `deleted: ~/.watane`. Anything else, an end of
    file and no terminal keep it (INST-S-15 to 17). No flag, variable or file answers this
    question (Q12). Tests type the answer on a pseudo-terminal (12.1).
@@ -1267,7 +1270,7 @@ otherwise.
 | IN-32 | Dev's fix texts for the toolchain and the vendor folder are not changed in this design; a later `dev` slice points them at the installer (Q17). | `install` changes no code of another subsystem and INST-F-13 keeps `watane-dev` as it is. |
 | IN-33 | A live journal of another pid stops the run (exit 5); the message names the journal file to remove when that pid was reused by an unrelated program. The script never removes it itself, since it cannot tell a reused pid from a running install. | Undo: drop the line; or later add a lock with the start time. |
 | IN-34 | An archive with any symbolic-link or hard-link member is refused (exit 5) before it is unpacked, and `package.sh` refuses a link among its inputs. | A link to a file outside the tree would make `chmod` or a copy touch it; a watane archive has none. Undo: drop the check. |
-| IN-35 | `journal.<pid>` and `receipt.new.<pid>` are created only where nothing exists, under noclobber. | A link planted at a predictable name must not be written through. |
+| IN-35 | `journal.<pid>` and `receipt.new.<pid>` are created only where nothing exists, under noclobber. | A link planted at a predictable name must not be written through. Undo: drop the check and `set -C`. |
 | IN-36 | A home that resolves outside the resolved `$HOME` is never deleted by the script, even on a typed `delete`; the `rm -rf` command is printed. The question names the resolved path. | One typed word must not delete another disk's folder through a link. Undo: allow it with the question. |
 | IN-37 | With `WATANE_RUSTUP_URL` set, the offer-A question names that URL. | The question says where the download comes from. |
 | IN-38 | 8.5 rule 3 resolves the holding folder against its install folder, and rule 2 refuses a `bin/` name ending in `.mine`. | A link inside an install folder must not lead a removal into the rest of the home. |
