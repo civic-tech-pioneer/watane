@@ -2,6 +2,8 @@
 # Fake rustup: every call is logged in $FAKE_STATE/rustup.log. The toolchain state comes from
 # the file rustup_sysroot (the sysroot of its rustc) and rustup_no_toolchain.
 echo "$*" >> "$FAKE_STATE/rustup.log"
+pwd >> "$FAKE_STATE/rustup.pwd"
+echo "${RUSTUP_AUTO_INSTALL:-unset}" >> "$FAKE_STATE/rustup.auto"
 sr=
 [ -f "$FAKE_STATE/rustup_sysroot" ] && read -r sr < "$FAKE_STATE/rustup_sysroot"
 case "${1:-}" in

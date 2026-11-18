@@ -32,3 +32,8 @@ S50b-3 built `package.sh`, `tests/package.rs` and INST-S-32 to 35, and the hand-
   `TERM` at the app (the undo in `on_signal`); the live pid of S-35 (`kill -0`). Each mutant turns
   one of them red.
 - AC4 puts both versions' lines in one `SHA256SUMS`, since the fake release is one server for both.
+
+S50b-fix1: the closing `rmdir` loop of `do_uninstall` resolves each folder (`resolve_dir`) and removes it only when it is inside
+the resolved home. Toolchain detection and the rustup commands of offer B run in a subshell from `$HOME` with
+`RUSTUP_AUTO_INSTALL=0` (3.7): rustup reads `rust-toolchain.toml` from the cwd. The fake rustup logs `pwd` and
+`RUSTUP_AUTO_INSTALL` per call in `rustup.pwd` / `rustup.auto`.

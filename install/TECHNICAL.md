@@ -377,7 +377,11 @@ own.
 `watane-dev doctor` agree: `rustup` is the first of `command -v rustup`,
 `${CARGO_HOME:-$HOME/.cargo}/bin/rustup`, `$HOME/.cargo/bin/rustup`; then
 `<rustup> which rustc` gives the compiler, and `<rustc> --print sysroot`
-a folder that must hold `lib/rustlib/wasm32-wasip2/lib`. Three states:
+a folder that must hold `lib/rustlib/wasm32-wasip2/lib`. Detection and the
+rustup commands of offer B run from `$HOME` (`cd "$HOME"` in a subshell) with
+`RUSTUP_AUTO_INSTALL=0` exported: a `rust-toolchain.toml` in the folder the person
+started in (any Rust project) would otherwise make rustup download the toolchain it names,
+or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Three states:
 
 | State | Meaning | Offer | Question (printed on stdout, then `[y/N] `) |
 |---|---|---|---|
@@ -859,7 +863,7 @@ is a feature of `app`, not of `install` (Q11).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27); then the stale names of
-   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`)
+   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves inside the resolved home, 8.5 rule 3)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.

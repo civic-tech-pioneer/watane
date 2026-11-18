@@ -81,3 +81,33 @@ fn adv_s50b_toolchain_installed_without_a_yes_from_a_project_folder() {
         "rustup was asked to download a toolchain with no yes: {fetched:?}"
     );
 }
+
+/// 3.7: detection runs from `$HOME` with `RUSTUP_AUTO_INSTALL=0`, whatever a `rust-toolchain.toml`
+/// of the starting folder names (here a `path` toolchain whose `rustc` must never run).
+#[test]
+fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
+    let fx = Fx::new();
+    fx.add_rustup(true);
+    let project = fx.root.path().join("project");
+    let mark = fx.root.path().join("ran");
+    write_file(
+        &project.join("rust-toolchain.toml"),
+        &format!("[toolchain]\npath = \"{}/tc\"\n", project.display()),
+    );
+    write_file(
+        &project.join("tc/bin/rustc"),
+        &format!("#!/bin/sh\necho ran > {}\n", mark.display()),
+    );
+    let mut c = fx.cmd(&[]);
+    c.current_dir(&project);
+    let out = exec(c);
+    assert_eq!(out.code, 0, "{out:?}");
+    let pwds = fs::read_to_string(fx.state.join("rustup.pwd")).expect("rustup was called");
+    let home = fs::canonicalize(&fx.home).expect("home");
+    for l in pwds.lines() {
+        assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{pwds}");
+    }
+    let auto = fs::read_to_string(fx.state.join("rustup.auto")).expect("auto");
+    assert!(auto.lines().all(|l| l == "0"), "{auto}");
+    assert!(!mark.exists(), "the project's rustc ran");
+}

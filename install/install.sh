@@ -638,11 +638,13 @@ detect_toolchain() {
     TC_STATE=none_a
     return 0
   fi
-  if ! dt_rustc=$("$RUSTUP" which rustc 2>/dev/null); then
+  # from $HOME, rustup auto-install off: a rust-toolchain.toml of the folder we start in must not
+  # make rustup install or run anything before a typed yes
+  if ! dt_rustc=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$RUSTUP" which rustc 2>/dev/null); then
     TC_STATE=none_b
     return 0
   fi
-  dt_sr=$("$dt_rustc" --print sysroot 2>/dev/null) || dt_sr=""
+  dt_sr=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$dt_rustc" --print sysroot 2>/dev/null) || dt_sr=""
   if [ -n "$dt_sr" ] && [ -d "$dt_sr/lib/rustlib/wasm32-wasip2/lib" ]; then
     TC_STATE=ok
   else
@@ -668,7 +670,7 @@ print_commands() {
 # rustup_step <command...>: run it, or end with exit 6
 rustup_step() {
   rs_rc=0
-  "$@" || rs_rc=$?
+  ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
   if [ "$rs_rc" != 0 ]; then
     die 6 "the toolchain step failed (rustup exited $rs_rc)" "watane is installed; run the step yourself, then \`watane-dev doctor\`."
   fi
@@ -881,7 +883,7 @@ EOF
     warn "skipped $RECEIPT: not a path that watane installs"
   fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
-    rmdir "$du_d" 2>/dev/null || true
+    if resolve_dir "$du_d" && in_home "$RES"; then rmdir "$du_d" 2>/dev/null || true; fi
   done
   say "uninstalled watane $du_ver"
   if exists "$HOME/Library/Caches/watane-dev"; then
