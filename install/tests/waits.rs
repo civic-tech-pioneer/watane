@@ -50,13 +50,8 @@ fn ac2_group_kill_leaves_no_window_for_parent_cleanup() {
         let cleanup = root.path().join("cleanup");
         let mut command = std::process::Command::new(support::PERL);
         command
-            .args([
-                "-MPOSIX",
-                "-e",
-                "POSIX::setsid(); exec @ARGV",
-                "/bin/sh",
-                "-c",
-            ])
+            .args(support::LAUNCH)
+            .args(["/bin/sh", "-c"])
             .arg(
                 r#"
 trap 'echo cleanup > "$2"' EXIT
@@ -80,4 +75,32 @@ exit 1
         assert_eq!(out.code, -1, "{out:?}");
         assert!(!cleanup.exists(), "parent ran cleanup during group KILL");
     }
+}
+
+/// A test run from a background shell inherits an ignored INT; the launcher restores it.
+#[test]
+fn ac2_the_launcher_restores_an_ignored_int() {
+    let mut command = std::process::Command::new(support::PERL);
+    command
+        .args(["-e", "$SIG{INT} = 'IGNORE'; exec @ARGV", support::PERL])
+        .args(support::LAUNCH)
+        .args(["/bin/sh", "-c", "trap 'exit 7' INT; kill -s INT $$; exit 0"]);
+    let out = support::finish(support::spawn(&mut command));
+    assert_eq!(out.code, 7, "{out:?}");
+}
+
+/// A process left behind that holds the pipes cannot make a test wait forever.
+#[test]
+fn ac2_a_run_past_its_deadline_is_killed_with_its_group() {
+    let mut command = std::process::Command::new(support::PERL);
+    command
+        .args(support::LAUNCH)
+        .args(["/bin/sh", "-c", "/bin/sleep 600 & exit 0"]);
+    let start = std::time::Instant::now();
+    let out = support::finish_within(
+        support::spawn(&mut command),
+        std::time::Duration::from_secs(2),
+    );
+    assert!(out.is_err(), "{out:?}");
+    assert!(start.elapsed() < std::time::Duration::from_secs(300));
 }

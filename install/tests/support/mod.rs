@@ -16,6 +16,14 @@ use std::time::{Duration, Instant};
 
 pub const TARGET: &str = "aarch64-apple-darwin";
 pub const PERL: &str = "/usr/bin/perl";
+/// `perl` arguments that start the rest in a new session with the signals the script traps at
+/// their defaults: a shell started in the background ignores INT, and an ignored signal stays
+/// ignored through `exec`, so the script's trap and `curl` would never see the test's INT.
+pub const LAUNCH: [&str; 3] = [
+    "-MPOSIX",
+    "-e",
+    "POSIX::setsid(); $SIG{$_} = 'DEFAULT' for qw(HUP INT QUIT TERM PIPE); exec @ARGV",
+];
 
 /// Endpoint security can queue each exec for tens of seconds on a loaded Mac.
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -278,7 +286,7 @@ chmod 755 "$HOME/.cargo/bin/rustup" "$HOME/.cargo/bin/rustc"
     /// `sh install.sh <args>` with no controlling terminal (a new session), stdin a pipe.
     pub fn cmd(&self, args: &[&str]) -> Command {
         let mut c = Command::new(PERL);
-        c.args(["-MPOSIX", "-e", "POSIX::setsid(); exec @ARGV", "/bin/sh"]);
+        c.args(LAUNCH).arg("/bin/sh");
         c.arg(&self.script).args(args);
         c.env_clear().envs(self.env_pairs());
         c
@@ -392,13 +400,35 @@ pub fn spawn(c: &mut Command) -> RunChild {
 }
 
 pub fn finish(run: RunChild) -> Out {
+    finish_within(run, WAIT_TIMEOUT).unwrap_or_else(|out| panic!("run never ended: {out:?}"))
+}
+
+/// Waits until the run ended and its pipes closed; past `limit` it kills the run's process group
+/// (a process left behind can hold the pipes forever) and returns what it printed as `Err`.
+pub fn finish_within(run: RunChild, limit: Duration) -> Result<Out, Out> {
     let RunChild { child, _permit } = run;
-    let o = child.wait_with_output().expect("wait");
-    Out {
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || tx.send(child.wait_with_output().expect("wait")));
+    let (o, ended) = match rx.recv_timeout(limit) {
+        Ok(o) => (o, true),
+        Err(_) => {
+            // the run is not reaped yet, so its pid still names it and its group
+            let _ = Command::new("/bin/sh")
+                .args([
+                    "-c",
+                    &format!("kill -s KILL -- -{pid} || kill -s KILL {pid}"),
+                ])
+                .status();
+            (rx.recv().expect("wait"), false)
+        }
+    };
+    let out = Out {
         code: o.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
-    }
+    };
+    if ended { Ok(out) } else { Err(out) }
 }
 
 /// Sends a signal to the process group of a child that started with `setsid`.

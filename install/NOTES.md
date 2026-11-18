@@ -89,3 +89,16 @@ captured run failed in 23.57 seconds with parent exit 1 and child `Killed: 9`.
 With the fix, all 16 rounds passed under that same background exec load
 (472.34 seconds). This distinguishes evidence of the race from the
 intermittent higher-level symptom.
+
+## S50b-fix: a test run that inherits an ignored INT
+
+`inst_s11_interrupted_during_the_download` hung for over an hour in a check run, with `curl`
+still connected to the stalled release server. A shell that starts a job in the background
+ignores INT for it, the ignore survives `exec`, and a non-interactive `sh` cannot trap a
+signal it was started with ignored: so the test binary, `perl`, `install.sh` and its `curl`
+all ignored the test's INT and `finish` waited for ever. Reproduced by starting the test under
+`perl -e '$SIG{INT}="IGNORE"; exec @ARGV'`. The script is right (a person's Ctrl-C arrives
+with INT at its default). The launcher (`support::LAUNCH`) now sets HUP, INT, QUIT, TERM and
+PIPE to their defaults after `setsid`, and `finish` kills the run's process group when the run
+has not ended and closed its pipes within the 600-second deadline, so no left-behind process
+can hold a test for ever.
