@@ -433,12 +433,13 @@ cleanup() {
 }
 
 check_version() {
+  # Spelled-out classes: bash 3.2's ranges follow the locale and would admit e.g. é.
   cv_core=${1%%-*}
   case $1 in
     *-*)
       cv_suffix=${1#*-}
       case $cv_suffix in
-        '' | *[!0-9A-Za-z.]* | .* | *. | *..*)
+        '' | *[!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.]* | .* | *. | *..*)
           die 1 "not a version: $1" "a version looks like 0.1.0" ;;
       esac
       ;;
@@ -446,7 +447,7 @@ check_version() {
   for cv_i in 1 2 3; do
     cv_part=${cv_core%%.*}
     case $cv_part in
-      '' | *[!0-9]*) die 1 "not a version: $1" "a version looks like 0.1.0" ;;
+      '' | *[!0123456789]*) die 1 "not a version: $1" "a version looks like 0.1.0" ;;
     esac
     if [ "$cv_i" != 3 ]; then
       [ "$cv_core" != "$cv_part" ] || die 1 "not a version: $1" "a version looks like 0.1.0"

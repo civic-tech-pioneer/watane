@@ -119,8 +119,13 @@ fn ac3_bad_versions_keep_their_text_and_code() {
             "1.2.3/x",
             "1.2.3\n",
             "a.2.3",
+            "1.2.3-\u{e9}",
+            "1.2.3-\u{df}",
         ] {
-            let out = fixture(shell, &format!("check_version '{version}'"));
+            let out = fixture(
+                shell,
+                &format!("LC_ALL=en_US.UTF-8; export LC_ALL\ncheck_version '{version}'"),
+            );
             assert_eq!(out.code, 1, "{shell}: {out:?}");
             assert_eq!(
                 out.stderr,
