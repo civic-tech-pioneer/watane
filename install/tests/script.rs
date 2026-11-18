@@ -338,6 +338,7 @@ fn inst_s13_same_version_again() {
     let out = fx.run(&[]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("reinstalling watane 0.1.0"));
+    assert!(!out.has_line("If watane is open, quit it and open it again."));
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty());
 }

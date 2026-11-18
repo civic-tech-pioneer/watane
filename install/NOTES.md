@@ -45,3 +45,7 @@ state folder) holds the staging so a test can plant a link at `journal.<pid>` fi
 
 S50b-fix3: install folders must resolve strictly below the resolved home (`below_home`; `in_home` stays for the home-to-delete check). A link to the home itself gave rule 3 the home's top level (IN-39). Links to other folders inside the home still work (INST-S-31 last case).
 A folder that resolves to the home itself is refused with its own first line (`resolves to your home folder itself`); INST-S-31 last case now also upgrades and uninstalls through the dotfiles link.
+
+## S50b fix4: SIGPIPE
+
+A closed reader (`curl | sh | head`) kills the shell at its next write without the `EXIT` trap, leaving the temporary folder. `PIPE` is now trapped like `HUP`/`INT`/`TERM` (exit 141), and the handler ignores `PIPE` so its own writes cannot die. The "quit it and open it again" line is printed only for an upgrade (old version differs), not a reinstall (3.6 step 5).

@@ -28,6 +28,7 @@ TC_STATE=""
 TC_OK=0
 RUSTUP=""
 HAD_RECEIPT=0
+UPGRADED=0
 
 usage() {
   printf '%s\n' \
@@ -378,7 +379,7 @@ EOF
 }
 
 on_signal() {
-  trap '' HUP INT TERM
+  trap '' HUP INT TERM PIPE
   if [ "$SWAP_ACTIVE" = 1 ]; then
     SWAP_ACTIVE=0
     undo_swap "$SWAP_PID"
@@ -530,6 +531,7 @@ EOF
       say "reinstalling watane $RELEASE"
     else
       say "upgrading watane $cf_old_ver to $RELEASE"
+      UPGRADED=1
     fi
   fi
   HAD_RECEIPT=$cf_old_ok
@@ -812,7 +814,7 @@ path_block() {
 
 final_output() {
   say "watane $RELEASE is installed."
-  if [ "$HAD_RECEIPT" = 1 ]; then say 'If watane is open, quit it and open it again.'; fi
+  if [ "$UPGRADED" = 1 ]; then say 'If watane is open, quit it and open it again.'; fi
   say ''
   say 'If macOS says "watane" cannot be opened, or could not verify that it is free of malware:'
   say '  watane.app is not signed by an Apple developer, because there is no account behind watane.'
@@ -1013,6 +1015,7 @@ main() {
   trap 'on_signal 129' HUP
   trap 'on_signal 130' INT
   trap 'on_signal 143' TERM
+  trap 'on_signal 141' PIPE
 
   # step 2: root
   main_uid=$(id -u 2>/dev/null) || die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."

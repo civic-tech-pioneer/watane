@@ -313,7 +313,7 @@ files (INST-F-20, INST-S-14, 32, 33).
    been moved aside, a kill just before the commit would leave no receipt,
    and the next run's step 6, which comes before step 0, would find every
    swapped path foreign (exit 8, against INST-S-33; S50a user-sim, dry run).
-4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT` or `TERM` while
+4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT`, `PIPE` or `TERM` while
    they run (the trap, 3.8), undoes the swap from the journal, or, if the
    failure came before the journal was written, from the `.new` names alone:
    for each `old <path>` line, only if `<path>.old.<pid>` exists (the swap
@@ -326,7 +326,7 @@ files (INST-F-20, INST-S-14, 32, 33).
    Only lines valid by 3.6.1 are used. Each removal only where the rule of 8.5
    allows; then remove each
    `.new.<pid>`, `receipt.new.<pid>` and the journal; exit 5 (or 129, 130,
-   143). A running `watane` keeps its open file; the next start uses the new
+   141, 143). A running `watane` keeps its open file; the next start uses the new
    one. The old version and the old receipt are then as before the run
    (INST-S-14, 32).
 5. **After the commit.** Remove the paths of the old receipt that are not
@@ -335,7 +335,7 @@ files (INST-F-20, INST-S-14, 32, 33).
    it if this step is cut short; remove the journal last. A removal that fails here
    prints `watane install: could not remove <path>` on stderr and does not
    change the exit status: the new version is installed, and the next run
-   removes a leftover `.old.<n>` of a dead pid (3.8). After an upgrade the
+   removes a leftover `.old.<n>` of a dead pid (3.8). After an upgrade to another version (not a reinstall of the same one) the
    script prints `If watane is open, quit it and open it again.`
 
 A process that is killed by `SIGKILL` (or loses power) between steps 2 and
@@ -440,8 +440,8 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 
 ### 3.8 Cleanup
 
-The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`
-and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130 and 143. A `.new.<pid>` or `.old.<pid>`
+The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
+`PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `PIPE` so its own messages cannot kill it. A `.new.<pid>` or `.old.<pid>`
 left by a kill between 3.6 steps 2 and 3 is found and removed (after its
 journal, if there is one, was undone) by the next run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or
@@ -519,7 +519,7 @@ do. Exit codes:
 | 6 | the toolchain step failed (watane itself is installed) |
 | 7 | no receipt (`--status`, `--uninstall`) |
 | 8 | files that watane did not install are where it would install (3.4.2); nothing was changed |
-| 129, 130, 143 | `HUP`, `INT`, `TERM` |
+| 129, 130, 141, 143 | `HUP`, `INT`, `PIPE` (the reader of the output went away), `TERM` |
 
 ### 3.10 `PATH`
 
