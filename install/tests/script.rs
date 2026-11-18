@@ -1127,6 +1127,20 @@ fn inst_s33_term_in_the_swap_undoes_it() {
     assert!(fx.tmp_tree().is_empty());
 }
 
+/// 3.6 step 4, 3.8: `PIPE` (the reader went away) in the swap undoes it as `TERM` does.
+#[test]
+fn inst_s33_pipe_in_the_swap_undoes_it() {
+    let (fx, before) = swap_start();
+    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
+    let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), "PIPE");
+    let out = finish(child);
+    assert_eq!(out.code, 141, "{out:?}");
+    assert_eq!(snapshot(&fx.home), before);
+    assert!(fx.tmp_tree().is_empty());
+}
+
 fn plant_s35(fx: &Fx, n: u32) {
     let h = fx.home.display();
     let mut j = String::new();
