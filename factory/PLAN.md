@@ -306,7 +306,7 @@ These slices remove one piece of fakery each. S50 comes first: the others all ne
 person can install. S52, S53 and S54 need things the human must provide (see "Waiting on the
 human"), so they cannot be handed to a cloud foreman as they stand.
 
-- [~] **S50a Installing watane designed.** In flight (cloud), branch `slice/s50a`. A design slice:
+- [~] **S50a Installing watane designed.** In flight (cloud), branch `slice/s50a`, routine `trig_01Gj3q54bMDCtqf3x2FBGHS9`. A design slice:
   no spec says how watane reaches a machine. The human decided (2026-11-18): one `curl … | sh`
   from GitHub Releases puts `watane`, `watane-dev` and `watane-node` in `~/.local/bin` and
   `watane.app` in `~/Applications`, then gives the Gatekeeper step; it offers (y/N, never silent)
