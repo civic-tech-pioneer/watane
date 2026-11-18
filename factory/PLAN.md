@@ -383,7 +383,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   on the VM network, so no shared filesystem. Prefer the macOS VM S50b sets up as its clean Mac, so
   one VM serves both. It proves two homes and two network stacks, not NAT across the internet; say
   so in the delivery.
-- [~] **S86 dev says what is wrong (leftover sweep 3).** In flight (cloud), branch `slice/s86`. A maker's agent reads a real cause and a
+- [~] **S86 dev says what is wrong (leftover sweep 3).** In flight (cloud), branch `slice/s86`, routine `trig_01XMgpCFKi3MdbVHsqbfqzTU`. A maker's agent reads a real cause and a
   `next` it can run at eleven places in dev where it now does not. Re-checked against main
   2026-11-18 (`### dev` in Leftovers; the doctor item is fixed). Outcomes: (1) a WIT syntax error
   gives a line number (pkg/src/world.rs renders wit-parser's error with its source map, :202, 226,
