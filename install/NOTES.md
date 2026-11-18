@@ -365,3 +365,9 @@ The five focused Ctrl-C tests passed after their observed red run.
 `cargo clippy --all-targets -- -D warnings`, `cargo +nightly fmt --check`
 and `shellcheck -s sh install.sh package.sh` exited 0. Clippy retained
 the existing workspace-hack manifest warnings. No ignored or GUI tests ran.
+
+Validator, round 1: the swap's `|| return 1` (stage_files, swap_entries,
+do_swap) still replaced a program's status, so a Ctrl-C during the staging
+`cp -R` ended with exit 5 and "could not put the files in place". Those
+sites now return the program's own status and install_files passes it to
+the signal check after the rollback.

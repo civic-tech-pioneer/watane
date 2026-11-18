@@ -672,13 +672,13 @@ extract_archive() {
 stage_files() {
   for sf_r in $RELS; do
     dest_of "$sf_r"
-    mkdir -p "${DEST%/*}" || return 1
-    cp -R "$TOP/$sf_r" "$DEST.new.$$" || return 1
+    mkdir -p "${DEST%/*}" || return
+    cp -R "$TOP/$sf_r" "$DEST.new.$$" || return
     case $sf_r in
-      bin/* | share/watane/install.sh) chmod 755 "$DEST.new.$$" || return 1 ;;
+      bin/* | share/watane/install.sh) chmod 755 "$DEST.new.$$" || return ;;
     esac
   done
-  mkdir -p "$SHAREW" || return 1
+  mkdir -p "$SHAREW" || return
   # a file the script creates is created new: nothing, a link included, may be at the name
   # (noclobber on top of the check, for a link planted in between; 3.6 step 2)
   ! exists "$RECEIPT.new.$$" || return 1
@@ -710,15 +710,15 @@ EOF
 swap_entries() {
   sw_j=$SHAREW/journal.$$
   while IFS= read -r sw_p; do
-    if exists "$sw_p"; then mv "$sw_p" "$sw_p.old.$$" || return 1; fi
+    if exists "$sw_p"; then mv "$sw_p" "$sw_p.old.$$" || return; fi
     printf 'moved %s\n' "$sw_p" >>"$sw_j" || return 1
-    mv "$sw_p.new.$$" "$sw_p" || return 1
+    mv "$sw_p.new.$$" "$sw_p" || return
   done <<EOF
 $ENTRIES
 EOF
-  if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return 1; fi
+  if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return; fi
   printf 'moved %s\n' "$RECEIPT" >>"$sw_j" || return 1
-  mv "$RECEIPT.new.$$" "$RECEIPT" || return 1
+  mv "$RECEIPT.new.$$" "$RECEIPT" || return
   return 0
 }
 
@@ -726,9 +726,10 @@ do_swap() {
   check_signal
   SWAP_PID=$$
   SWAP_ACTIVE=1
-  stage_files || return 1
-  write_journal || return 1
-  swap_entries || return 1
+  # A failed program's status is returned as is, so a signal the shell lost is still seen.
+  stage_files || return
+  write_journal || return
+  swap_entries || return
   return 0
 }
 
@@ -743,8 +744,10 @@ install_files() {
   done <<EOF
 $ENTRIES_ALL
 EOF
-  if ! do_swap; then
+  if do_swap; then :; else
+    if_rc=$?
     rollback
+    check_signal "$if_rc"
     die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
   fi
   return 0

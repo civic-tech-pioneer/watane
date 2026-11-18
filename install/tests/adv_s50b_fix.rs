@@ -157,3 +157,24 @@ fn ac2_ctrl_c_in_answer_pipeline() {
         assert!(!out.stdout.contains("toolchain: not installed"), "{out:?}");
     }
 }
+
+/// 3.8: a Ctrl-C during the staging copy (`cp -R`, the longest file step) is not a failure:
+/// the swap's `|| return 1` once replaced cp's 130, and the run printed "could not put the
+/// files in place" with exit 5.
+#[test]
+fn ac2_ctrl_c_in_staging_copy_has_no_cause() {
+    let fx = Fx::new();
+    let real = which("cp");
+    group_signal_fake(
+        &fx,
+        "cp",
+        "-R*",
+        "INT",
+        130,
+        &format!("exec {} \"$@\"", real.display()),
+    );
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stderr.contains("watane install:"), "{out:?}");
+    assert!(!fx.receipt().exists(), "{out:?}");
+}
