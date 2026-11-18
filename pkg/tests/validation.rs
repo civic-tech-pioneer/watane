@@ -957,7 +957,7 @@ fn ac2_s86_fix3_wit_message_escapes_invisible_characters() {
     put(
         dir.path(),
         "wit/world.wit",
-        "package mods:hello@0.1.0;\nworld hello { \u{2028} --> /etc/passwd:1:1\u{2029}\u{e0041}\u{200b}\u{feff} @ }\n".to_string(),
+        "package mods:hello@0.1.0;\nworld hello { \u{2028} --> /etc/passwd:1:1\u{2029}\u{e0041}\u{200b}\u{feff} @ }\n",
     );
     let message = wit_message(dir.path());
     for c in ['\u{2028}', '\u{2029}', '\u{e0041}', '\u{200b}', '\u{feff}'] {
