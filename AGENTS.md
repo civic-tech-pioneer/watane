@@ -10,7 +10,7 @@ one folder per subsystem.
 | Why, goals, order of work | `spec/VISION.md` |
 | What it does, journeys | `spec/FUNCTIONAL.md` |
 | What flows between subsystems, security model | `spec/TECHNICAL.md`; peers: `spec/PEERS.md` |
-| One subsystem (`pkg host dev app log dist net node`) | `<sub>/VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`, then `<sub>/AGENTS.md` for its commands and rules |
+| One subsystem (`pkg host dev app log dist net node install`) | `<sub>/VISION.md`, `FUNCTIONAL.md`, `TECHNICAL.md`, then `<sub>/AGENTS.md` for its commands and rules |
 | A signature | the `TECHNICAL.md` of the subsystem that owns it, nowhere else |
 | What a source file does | its `//!` line, which cites its `TECHNICAL` section |
 | What is built, what is next | `factory/PLAN.md`; one task's brief: `factory/tasks/<id>.md` |

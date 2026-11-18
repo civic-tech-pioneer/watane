@@ -28,6 +28,7 @@ Each subsystem is one folder beside `spec/`, in one git repository.
 | `dist` | Moves releases between people: publish, follow, find. | `log`, `pkg` | none | 3, 4 |
 | `net` | Connects machines directly: node keys, classes, the wire, pairing, sync (`PEERS.md`). | `log` | none | 8 |
 | `node` | Joins `dist` and `net`: the holder, the sync loops, the always-on program. | `dist`, `net` | `watane-node` | 8 |
+| `install` | Puts watane on a machine: a script, a packer, a release workflow and their documents. | none (it packs the programs of `host`, `dev`, `node` and `app`) | `install.sh` | 7 |
 
 ```text
 programs     watane-dev        watane        desktop app      watane-node
@@ -48,6 +49,10 @@ Rules:
 - `dist` and `net` do not know each other. `net` defines the holder trait;
   `node` implements it over `dist` and runs the loops between them (step 8).
   `app` reaches `dist` and `net` through `node` from step 8.
+- `install` owns a script, a packer, a workflow and documents, and no code
+  that another subsystem calls; its one crate (`watane-install`) holds
+  tests only (`install/TECHNICAL.md` 1). It is the one subsystem that
+  nothing depends on and that is not part of watane at run time.
 - The inner modules of a subsystem are its own business (its `TECHNICAL.md`).
 - Each subsystem is one crate `watane-<name>` at the root of its folder.
   The root `Cargo.toml` is a workspace: a subsystem's crate becomes a member
@@ -205,6 +210,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Verification | The participant from web hosts and other people | signatures, a hash chain, package hashes; fork detection |
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
 | Manager (step 10) | Mods and the participant from a managing mod | the `Manage` grant checked at each function and before each effect; reads, three reductions (disable, withdraw a grant, close a page) and opening a page only; every install, update, enable, grant and removal is a request that the app decides in the consent view, which names the manager, one open at a time; effects only when the manager's call succeeds; no signature, no consent answer, no identity (W35; host 6.10, app 17) |
+| Install (step 7) | The participant's machine from a tampered download | TLS to GitHub; the SHA-256 of the archive from the `SHA256SUMS` of the same release, checked before any file is written; no root; the toolchain only after a typed yes (`install/TECHNICAL.md` 5, 10) |
 | Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
@@ -216,6 +222,9 @@ Not protected in the first version:
 - one identity on two devices. The two would fork the channel, so the
   first version supports one device for each identity. Step 8 keeps that
   rule: own machines hold no identity (W33);
+- a compromised repository, maintainer account or release workflow: it can
+  replace the archive and its checksums together, and the piped script is not
+  covered by a checksum (`install/TECHNICAL.md` 5, 10);
 - a compromised own machine, within its trust: it can withhold, and lie
   about completeness, until the participant removes it (`PEERS.md` 12).
 
@@ -272,12 +281,12 @@ Each one closes a gap of the old specification. Veto any of them.
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
 | 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
 | 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
-| 7 The real world | nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | the journeys pass on real hosts and machines |
+| 7 The real world | `install` (a person can get watane: J7); then nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | J7 passes on a clean Mac; the journeys pass on real hosts and machines |
 | 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
 | 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
 | 10 Own manager | `pkg` (the `Manage` grant, stage 11); `host` (`watane:host/manage`, its requests to the confirmation, manage fakes in `Harness`; stage 11); `dev` (the manage fake and `manages` in contract tests; stage 13); `app` (the words of the grant and of each request, the windows a reduction closes; stage J, after stage I) | J10 passes |
 
-A journey test drives the real programs. A step is not done on the tests of
+A journey test drives the real programs. J7 lives in `install/tests/clean_mac.sh`, because it needs a clean Mac. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
 `app/tests/`, because they drive the app. J5 lives in `app/tests/` too.
 
@@ -287,6 +296,11 @@ Steps 1 to 3 are designed in the documents of the subsystems: the builder
 allowlist and the contract test form in `dev`, the grant words in `app`,
 the local name in `host`, the published folder, the link and the statement
 bodies in `dist`, the backup format in `log`. These wait for their step:
+
+Step 7's first slice, installing, is designed (S50a): `install/` holds the
+script, the release archive, the checksums, the Gatekeeper step, the release
+workflow, upgrade and uninstall, and the clean-Mac test (`install/TECHNICAL.md`
+1 to 12; build plan in 11). Linux is stated out of scope there (9).
 
 Step 4 is designed (S26 draft, W20 to W23): the statements of an index,
 the read set and the search in `dist/TECHNICAL.md` 4.1, 5.9 and 5.10; the

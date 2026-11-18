@@ -27,6 +27,7 @@ sketch.
 | [dist](../dist/VISION.md) | Moves releases between people. |
 | [net](../net/VISION.md) | Connects machines directly, by the class of each peer ([PEERS.md](PEERS.md), step 8). |
 | [node](../node/VISION.md) | Joins `dist` and `net`, and runs `watane-node` (step 8). |
+| [install](../install/VISION.md) | Puts watane on a machine: the script, the release archive and workflow (step 7). |
 
 ## Rules
 

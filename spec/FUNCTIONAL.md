@@ -125,7 +125,15 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-OWN-7** No endpoint that someone else runs is used unless the participant chose it: not a relay, not the DHT. Where the machines cannot reach each other without one, watane says so.
 - **F-OWN-8** watane publishes nothing that ties the participant to a machine or an address, unless the participant turned on a function that names it, such as the DHT.
 
-### 2.10 Quality
+### 2.10 Get watane (step 7)
+
+- **F-GET-1** One command that a person pastes in a terminal puts the programs `watane`, `watane-dev` and `watane-node` and the desktop app on a Mac, in the person's own folders, with no root, no account and no checkout.
+- **F-GET-2** The install verifies the download against the checksums of the same release before it writes a file, and installs nothing when they differ.
+- **F-GET-3** The install offers to install the Rust toolchain that the maker tools need, with a question that the person answers; it installs it only after a yes. With no terminal to ask on, it installs nothing and prints the commands. The maker tools themselves install nothing (DEV-F-13).
+- **F-GET-4** The same command upgrades an installed watane. One command removes it and keeps the participant's home unless the participant types a word that deletes it.
+- **F-GET-5** The install tells the person how to open the app although it is not signed by an Apple developer, and sends nothing about the person or the machine.
+
+### 2.11 Quality
 
 - **F-QUAL-1** Every function works offline, except reading a channel or an index from its web host, and reaching another machine (step 8).
 - **F-QUAL-2** watane runs on macOS first and on Linux second.
@@ -182,6 +190,20 @@ dependency on the interface of Carol's mod; his contract tests use a fake
 of it. Eve installs Dave's mod, and watane installs Carol's mod first. Where
 Carol's mod is not available, watane shows another mod whose interface
 fits, and binds it after Eve picks it.
+
+### J7: Get watane
+
+Alice has a Mac and has never installed Rust. She pastes one line from the
+watane release page into a terminal. It downloads the release, checks it
+against the release's checksums, and puts `watane`, `watane-dev` and
+`watane-node` in `~/.local/bin` and `watane.app` in `~/Applications`. It
+asks whether to install the Rust toolchain for the maker tools, and she
+answers yes. It tells her how to open the unsigned app if macOS asks. She
+opens the app, and her coding agent runs `watane-dev new reading-list`
+straight after. A week later she pastes the line again and watane is
+upgraded, with her home as it was. A corrupted download installs nothing.
+An uninstall removes the programs and the app, and asks before it would
+delete her home.
 
 ### J8: Own machines
 
