@@ -907,3 +907,21 @@ fn ac2_s86_provider_copy_error_names_its_file() {
     let arrow = format!(" --> {}:5:1", path.display());
     assert!(message.contains(&arrow), "{message}");
 }
+
+#[test]
+fn ac1_s86_header_and_resolve_errors_carry_location() {
+    // The package header is parsed on its own first; resolution is a later step.
+    for (text, at) in [
+        ("not WIT", "1:1"),
+        (
+            "package mods:hello@0.1.0;\nworld hello {\n  import foo:bar/baz;\n}\n",
+            "3:10",
+        ),
+    ] {
+        let dir = temporary("hello");
+        put(dir.path(), "wit/world.wit", text);
+        let message = wit_message(dir.path());
+        let arrow = format!(" --> {}:{at}", dir.path().join("wit/world.wit").display());
+        assert!(message.contains(&arrow), "{message}");
+    }
+}

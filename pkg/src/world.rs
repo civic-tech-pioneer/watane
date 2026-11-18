@@ -549,6 +549,10 @@ fn cap_message(message: &str) -> String {
     let Some(arrow) = message.lines().find(|l| l.contains("--> ")) else {
         return cut(message, 2000).to_string();
     };
+    let kept = cut(message, 2000);
+    if kept.contains(arrow) {
+        return kept.to_string();
+    }
     if arrow.len() >= 2000 {
         return cut(arrow, 2000).to_string();
     }
@@ -568,5 +572,13 @@ mod tests {
         assert!(cut.len() <= 2000, "{}", cut.len());
         assert!(cut.contains(arrow));
         assert!(cap_message(&"é".repeat(3000)).len() <= 2000);
+        // An arrow inside the first 2000 bytes keeps wit-parser's order.
+        let early = format!("error\n{arrow}\n{}", "é".repeat(3000));
+        let cut = cap_message(&early);
+        assert!(
+            early.starts_with(&cut) && cut.len() >= 1999,
+            "{}",
+            cut.len()
+        );
     }
 }
