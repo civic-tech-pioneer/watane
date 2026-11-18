@@ -533,8 +533,8 @@ pub(crate) fn read(
     }))
 }
 
-/// Write every control character other than `\n` and every bidi format
-/// character of `message` in its escaped form (TECHNICAL 4).
+/// Write every control character other than `\n`, every bidi format
+/// character and every invisible or line-separator character of `message` in its escaped form (TECHNICAL 4).
 fn escape_message(message: &str) -> String {
     let mut out = String::with_capacity(message.len());
     for c in message.chars() {
@@ -543,6 +543,7 @@ fn escape_message(message: &str) -> String {
         } else if c.is_control() {
             out.extend(c.escape_debug());
         } else if matches!(c, '\u{61c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+            || matches!(c, '\u{2028}' | '\u{2029}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{e0000}'..='\u{e007f}')
         {
             out.extend(c.escape_unicode());
         } else {
@@ -608,6 +609,13 @@ mod tests {
         let want = "a\\tb\\rc\\u{1b}d\\u{7}e\\u{7f}f\\u{85}g\n --> /m/w.wit:1:2\n\
                     \\u{61c}\\u{200e}\\u{200f}\\u{202a}\\u{202b}\\u{202c}\\u{202d}\\u{202e}\
                     \\u{2066}\\u{2067}\\u{2068}\\u{2069}é\\";
+        assert_eq!(escape_message(raw), want);
+    }
+
+    #[test]
+    fn ac1_s86_fix3_escape_message_covers_invisible_chars() {
+        let raw = "a\u{2028}b\u{2029}c\u{200b}\u{200c}\u{200d}\u{2060}\u{feff}\u{e0000}\u{e0041}\u{e007f}\u{1b}é\\\n --> /m/w.wit:1:2";
+        let want = "a\\u{2028}b\\u{2029}c\\u{200b}\\u{200c}\\u{200d}\\u{2060}\\u{feff}\\u{e0000}\\u{e0041}\\u{e007f}\\u{1b}é\\\n --> /m/w.wit:1:2";
         assert_eq!(escape_message(raw), want);
     }
 }

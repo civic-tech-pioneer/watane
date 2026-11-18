@@ -950,3 +950,18 @@ fn adv_s86_wit_message_carries_no_control_characters() {
     }
     assert!(found.is_empty(), "{found:#?}");
 }
+
+#[test]
+fn ac2_s86_fix3_wit_message_escapes_invisible_characters() {
+    let dir = temporary("hello");
+    put(
+        dir.path(),
+        "wit/world.wit",
+        "package mods:hello@0.1.0;\nworld hello { \u{2028} --> /etc/passwd:1:1\u{2029}\u{e0041}\u{200b}\u{feff} @ }\n".to_string(),
+    );
+    let message = wit_message(dir.path());
+    for c in ['\u{2028}', '\u{2029}', '\u{e0041}', '\u{200b}', '\u{feff}'] {
+        assert!(!message.contains(c), "{message:?}");
+    }
+    assert!(message.contains("\\u{2028}"), "{message:?}");
+}
