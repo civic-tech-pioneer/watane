@@ -343,7 +343,8 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `program.rs` test). Cloud.
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
-  first real release `v0.1.0` (cut by the human), and `tests/clean_mac.sh` run in a fresh macOS VM
+  first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
+  (report only, no rewrite), the human makes the repository public, and the PO applies Q16, and `tests/clean_mac.sh` run in a fresh macOS VM
   on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
   serves S55). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
   from the one-liner to `watane-dev new`. Touches: `.github/`, `install/`, `README.md`. Local.
@@ -410,7 +411,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   on the VM network, so no shared filesystem. Prefer the macOS VM S50b sets up as its clean Mac, so
   one VM serves both. It proves two homes and two network stacks, not NAT across the internet; say
   so in the delivery.
-- [~] **S86 dev says what is wrong (leftover sweep 3).** In flight (cloud), branch `slice/s86`, routine `trig_01XMgpCFKi3MdbVHsqbfqzTU`. A maker's agent reads a real cause and a
+- [x] **S86 dev says what is wrong (leftover sweep 3).** Delivered 2026-11-18 (merged as 7c29140; routine `trig_01XMgpCFKi3MdbVHsqbfqzTU` finished, branches removed). A maker's agent reads a real cause and a
   `next` it can run at eleven places in dev where it now does not. Re-checked against main
   2026-11-18 (`### dev` in Leftovers; the doctor item is fixed). Outcomes: (1) a WIT syntax error
   gives a line number (pkg/src/world.rs renders wit-parser's error with its source map, :202, 226,
@@ -426,6 +427,21 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   pkg/src/world.rs, dev/src/{cli,api,build_on,builder,main,preview}.rs, dev/src/bin/fake-watane.rs,
   dev/tests/{check,install}.rs, dev/TECHNICAL.md. Not dev/src/share.rs, dev/tests/share.rs,
   dev/tests/publish.rs or dev/tests/support/ (the human's test-speed session works there). Cloud.
+  Delivered: a maker's agent gets a real cause and a runnable `next` at the eleven places: a WIT
+  syntax error has file, line and column; `test` and `serve` take `--home`; reruns carry `--dir`
+  and `--home`; app fixes end `then run: <rerun>`; `--help | head` exits quietly; an outside `.wit`
+  read is one problem; fake-watane can be told never to answer. user-sim ACCEPTED; adversary
+  BREACHED once (the WIT message echoed the untrusted source line raw: ESC, BEL, `\r`, U+202E),
+  fixed, then HELD. Decisions: `Client::for_app(home, rerun)`, cli.rs builds every rerun and api.rs
+  holds no command lines; pkg escapes control, bidi and invisible characters in the `wit` message
+  itself (pkg/TECHNICAL 4 step 2 and its security row); several outside `.wit` reads name their
+  deepest common folder; a search word starting with `-` gets `--` before it in the rerun;
+  `serve --stop` accepts and ignores `--home`; publish keeps two old texts that the human's
+  dev/tests/publish.rs pins (`// s86:`). Friction: the cloud cannot run the real `watane` (no IPv6
+  loopback), so every real-preview test is not run there; the dev allowlist is not vendored in a
+  fresh container (`dev/scripts/vendor.sh`); clippy's `too_long_first_doc_paragraph` on
+  dev/src/outcome.rs:1 fails check.sh in the cloud only (newer toolchain); a cloud foreman cannot
+  delete a remote branch; an implementer reported green while a pkg test failed (check.sh caught it).
 
 - [x] **S56 Leftover sweep (dev messages).** Delivered 2026-11-14 (cloud, merged to main `3a39a6f`). What a maker's coding agent reads
   at the moment something has already gone wrong. Fifteen items from "Leftovers", every one of them
@@ -1015,25 +1031,21 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### dev
 
-- [S17] `doctor` run inside a mod folder suggests `new`: dev/src/doctor.rs has no `mod.toml` branch.
-  Evidence is absent code, not present code; one `watane-dev doctor --json` in a mod folder settles it.
-- [S17] a WIT syntax error keeps `line: null` (dev/src/check.rs:528); dev's `wit_location` works only
-  when pkg supplies a `-->` line, so the fix belongs in pkg.
-- [S12b] `fake-watane` has no never-answer mode (fake-watane.rs:212 handles only `decline`), so
-  `host.no_answer` is covered only by in-crate stubs the integration tests cannot reach.
-- [S12b] `install::ac2_real_home_without_app` leaves `watane` running if it panics
-  (dev/tests/install.rs:429-446; no Drop guard).
-- [S47] `test` and `serve` refuse `--home`, while `new`, `add`, `install`, `publish` and `search`
-  take one (dev/src/cli.rs:36-40, 85-89).
-- [S56] some fixes are still "run this command again" prose (host_not_running, a `--home` with a
-  missing ancestor, `add --release` self), and `test`/`serve` fixes and `next` carry no `--dir`.
-- [S56] `usage.no_source`'s fix says `<link>` though the release is known.
-- [S56] `build.reads_outside` reports one error per .wit file, and a relative `generate!` path can
-  resolve into a stale cache sibling, giving a misleading `build.compile`.
-- [S56] "Replace counter with tally (and counter with tally)" repeats when the slug has no dash.
-- [S56] `local_dependency` says "names its folder" for a null entry.
-- [S56] a quoted multi-word search counts as one word.
-- [S56] `watane-dev --help | head` panics on a broken pipe (older than S56).
+Re-checked and swept by S86 (2026-11-18); these remain.
+
+- [S56] a relative `generate!` path can resolve into a stale cache sibling, giving a misleading
+  `build.compile` (dev/src/builder.rs).
+- [S86] publish keeps "Start the watane app, then run this command again" and the old
+  `local_dependency` text for a null entry: dev/tests/publish.rs (:80, :111) pins both; the code
+  marks them `// s86:`. A one-line change once the human's test-speed branch has landed.
+- [S86] other prose fixes with no rerun: install's `host.no_answer` ("with a longer --wait"),
+  dev/src/api.rs:180, 186, 240, builder.rs:168, outcome.rs:214, `build.reads_outside`'s fix;
+  `check`/`new --dir X` `next` and `usage.no_source`'s `add --release` lack `--dir`; test/serve
+  failing at check time give no rerun; the no-app `next` shape differs by command.
+- [S86] the WIT column counts bytes, not chars; the message keeps wit-parser's `EscapeUnicode(...)`
+  debug text; U+00AD, U+180E and U+3164 stay raw.
+- [S86] fake-watane's never mode parks its one request loop, so later requests to that fake hang.
+- [S86] a filter value starting with `-` (`--publisher=-x`) makes an unusable rerun.
 
 ### app
 
@@ -1169,6 +1181,15 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
   this Mac; the human has no easy second machine. Not a question any more.
+- S50c needs `civic-tech-pioneer/watane` public (2026-11-18). ANSWERED 2026-11-18: (a), plan for public. S50c scans the history for secrets first; the human flips the visibility; then the PO applies the tag ruleset and the `release` environment. The repository is private on the free
+  plan, so (1) `curl … | sh` cannot download its Releases without a token, and (2) GitHub refuses
+  rulesets and environment reviewers there (403 "Upgrade to GitHub Pro or make this repository
+  public"). Options: (a) make it public before S50c's first release, then apply Q16's tag ruleset and
+  `release` environment; (b) GitHub Pro, and publish the archives somewhere public. Recommendation:
+  (a). Cost to undo: (a) the history is public from then on, so check it holds no secret first;
+  (b) a subscription. The read-only default `GITHUB_TOKEN` is already set. Q16's item (3), a ruleset
+  on `main` requiring pull requests, was not applied: it would block the factory's direct pushes to
+  `main`.
 - S50a Q16 (2026-11-18, install/TECHNICAL 14): ANSWERED 2026-11-18, (a) all three. Repository settings before the first release.
   (a) a tag ruleset on `v*`, a `release` environment with a required reviewer, and a read-only
   default `GITHUB_TOKEN`; (b) none, the workflow alone. Recommendation: (a): the release token
@@ -1827,3 +1848,5 @@ The human may veto each one.
   dist name the real cause at six refusals, `StaleBases` among them.
 - S50a: installing watane is designed: one curl | sh from GitHub Releases, rustup offered, the
   Gatekeeper step, upgrade and uninstall, with 15 attacks on the design pinned as scenarios.
+- S86: a maker's agent reads a line number in a WIT error, passes `--home` to test and serve, and
+  gets a rerun it can paste at every fix that used to say "run this command again".
