@@ -113,3 +113,43 @@ fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
     assert!(auto.lines().all(|l| l == "0"), "{auto}");
     assert!(!mark.exists(), "the project's rustc ran");
 }
+
+/// 8.5 rule 3 (fix2) checks that the holding folder resolves inside the resolved install folder
+/// and that this folder resolves "inside the resolved home"; the home itself counts as inside.
+/// So a link put at `~/.local/share/watane-dev` pointing at `~` (after the install) makes
+/// `.../watane-dev/<x>` reach any top folder of the home: one receipt line deletes `~/Documents`
+/// ("removals only of paths that watane installs, whatever the receipt says"; the rule's own
+/// text: a link put at `share/watane-dev` must not make it delete elsewhere). Even with the
+/// receipt untouched, the standard line `.../watane-dev/vendor` deletes the person's `~/vendor`.
+#[test]
+fn adv_s50b_uninstall_through_install_folder_linked_to_the_home() {
+    let fx = Fx::new();
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    let h = fx.home.display().to_string();
+    write_file(&fx.home.join("Documents/marker"), "m");
+    write_file(&fx.home.join("vendor/mine"), "m");
+    let dev = fx.share("watane-dev");
+    fs::remove_dir_all(&dev).expect("rm dev");
+    symlink(&fx.home, &dev).expect("link");
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(fx.receipt())
+        .expect("open");
+    std::io::Write::write_all(
+        &mut f,
+        format!("path {h}/.local/share/watane-dev/Documents\n").as_bytes(),
+    )
+    .expect("append");
+    drop(f);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        fx.home.join("Documents/marker").exists(),
+        "~/Documents deleted: {out:?}"
+    );
+    assert!(
+        fx.home.join("vendor/mine").exists(),
+        "~/vendor deleted: {out:?}"
+    );
+}
