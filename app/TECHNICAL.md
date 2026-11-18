@@ -253,7 +253,7 @@ answers `Deny` (APP-F-18).
 
 ### 5.3 Main window
 
-`tauri://localhost/index.html`, 1000 × 700, title `watane`. One page with
+`tauri://localhost/index.html`, 1000 × 720 (the first start fits without scrolling), title `watane`. One page with
 the views launcher, details, agents (toolsets and tokens) and, from stage C,
 identity and channels, and from stage D, find. It never shows mod content.
 

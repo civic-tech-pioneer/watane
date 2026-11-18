@@ -517,6 +517,11 @@ mod windows {
             &app,
             "!document.querySelector('#first-start').hidden && document.querySelector('#first-start').textContent.includes('Install your first mod') && document.querySelectorAll('#first-start .card').length === 3",
         );
+        // The default window fits the first start without a scrollbar.
+        check(
+            &app,
+            "innerHeight > 0 && document.documentElement.scrollHeight <= innerHeight",
+        );
         check(
             &app,
             "document.querySelector('#filter-control').hidden && document.querySelector('#add-mod').hidden && document.querySelector('[data-tab=updates]').hidden",

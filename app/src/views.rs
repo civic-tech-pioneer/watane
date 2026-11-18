@@ -54,7 +54,7 @@ fn main_window_at(app: &tauri::AppHandle, hash: &str) -> tauri::Result<()> {
         WebviewUrl::App(format!("index.html{hash}").into()),
     )
     .title("watane")
-    .inner_size(1000., 700.)
+    .inner_size(1000., 720.)
     .on_page_load(loaded);
     let w = screen_builder(app, builder).build()?;
     let drop_window = w.clone();
