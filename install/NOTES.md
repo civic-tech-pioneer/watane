@@ -64,3 +64,28 @@ The archive expectation includes the four files added by codesign only when
 codesign is on PATH (IN-40). Shellcheck findings were fixed by removing unused
 HAD_RECEIPT, spelling empty CDPATH explicitly, and documenting literal printed
 commands/home shorthand. Character classes in tr still map Y/YES to y/yes.
+
+## S50b-fix: group KILL can race rollback on macOS
+
+The missing journal after `kill_at` was caused by non-atomic signal delivery
+to the process group, not a stale fake-tool marker or the run gate. Killing
+the fake mv could wake the installer before KILL reached the installer. Its
+failed move then ran the ordinary rollback, removing the journal and staged
+files. Endpoint-security delays and scheduling under load exposed this window.
+
+A small parent-shell/child-sleeper regression reproduced it under concurrent
+`/bin/sh -c true` load: the child was reported as `Killed: 9`, but the parent
+ran its EXIT cleanup and exited 1 instead of dying from KILL. Extra background
+sleepers widen the delivery window; repeated rounds exercise the race.
+`signal_group` now sends STOP to the leader PID before KILL to the group, in
+one sender shell. The leader cannot run rollback when its child dies. Other
+signals retain their ordinary group delivery so TERM/PIPE still test rollback.
+No installer, fake-tool behavior, deadline, gate or existing assertion changes.
+
+The four-worker exec-load run of the three original cases passed before the
+fix (1080 seconds), so it did not reproduce the foreman's exact failures.
+The smaller fixture did reproduce the underlying delivery race twice; one
+captured run failed in 23.57 seconds with parent exit 1 and child `Killed: 9`.
+With the fix, all 16 rounds passed under that same background exec load
+(472.34 seconds). This distinguishes evidence of the race from the
+intermittent higher-level symptom.

@@ -403,8 +403,15 @@ pub fn finish(run: RunChild) -> Out {
 
 /// Sends a signal to the process group of a child that started with `setsid`.
 pub fn signal_group(pid: u32, sig: &str) {
+    // Group delivery is not atomic: a killed child can wake its parent before
+    // the parent's KILL arrives. Freeze the leader first so it cannot roll back.
+    let command = if sig == "KILL" {
+        format!("kill -s STOP {pid} && kill -s KILL -- -{pid}")
+    } else {
+        format!("kill -s {sig} -- -{pid}")
+    };
     let st = Command::new("/bin/sh")
-        .args(["-c", &format!("kill -s {sig} -- -{pid}")])
+        .args(["-c", &command])
         .status()
         .expect("kill");
     assert!(st.success(), "kill {sig} -{pid}");

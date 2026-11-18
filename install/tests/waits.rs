@@ -40,3 +40,44 @@ fn ac3_shellcheck_reports_no_findings_when_available() {
         String::from_utf8_lossy(&output.stdout)
     );
 }
+
+/// A failed child must not let its parent run cleanup during a simulated power loss.
+#[test]
+fn ac2_group_kill_leaves_no_window_for_parent_cleanup() {
+    for _ in 0..16 {
+        let root = tempfile::tempdir().expect("root");
+        let ready = root.path().join("ready");
+        let cleanup = root.path().join("cleanup");
+        let mut command = std::process::Command::new(support::PERL);
+        command
+            .args([
+                "-MPOSIX",
+                "-e",
+                "POSIX::setsid(); exec @ARGV",
+                "/bin/sh",
+                "-c",
+            ])
+            .arg(
+                r#"
+trap 'echo cleanup > "$2"' EXIT
+# More group members widen the interval between child and parent delivery.
+for n in 1 2 3 4 5 6 7 8; do /bin/sleep 600 & done
+/bin/sh -c 'echo ready > "$1"; exec /bin/sleep 600' sh "$1"
+exit 1
+"#,
+            )
+            .arg("sh")
+            .arg(&ready)
+            .arg(&cleanup);
+        let child = support::spawn(&mut command);
+        let start = std::time::Instant::now();
+        while !ready.exists() {
+            assert!(start.elapsed() < support::WAIT_TIMEOUT, "child never ready");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        support::signal_group(child.id(), "KILL");
+        let out = support::finish(child);
+        assert_eq!(out.code, -1, "{out:?}");
+        assert!(!cleanup.exists(), "parent ran cleanup during group KILL");
+    }
+}
