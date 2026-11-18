@@ -316,8 +316,8 @@ in `pkg/TECHNICAL.md` 4.2 (pkg stage 8); `publish --push`, the fork of
 10.4 (dev stages 10 and 11). In the default suite, a local bare
 repository per GitHub repository, git's own `insteadOf` rewrite of
 `https://github.com/`, and `fake-gh` on `PATH` stand in (dev 15.4); J3 and
-J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
-`app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
+J5 each gain a journey on that stand-in (`app/tests/it/j3.rs::ac2_j3_github`,
+`app/tests/it/j5.rs::ac2_j5_github`), served from a clone of the pushed site
 repository. Only the opt-in `real-github` journeys reach GitHub, in
 throwaway repositories they create and delete (app 11).
 
@@ -347,7 +347,7 @@ take effect, the request table, the `catalog` page message, `Confirm::
 and its release encoding in `pkg/TECHNICAL.md` 4.5, 5.1 and 7.2 (pkg stage
 11); the manage fake and `manages` in `dev/TECHNICAL.md` 8.1 (dev stage
 13); the words, the consent requests and J10's tests in `app/TECHNICAL.md`
-17 (app stage J). J10 lives in `app/tests/j10.rs`. The human answered
+17 (app stage J). J10 lives in `app/tests/it/j10.rs`. The human answered
 the six choices on 2026-11-16 (`host/TECHNICAL.md` 18, Q28 to Q33): a
 removal that keeps the data, and an enable, are requests; a manager may
 install from a channel the home does not read, after a first consent to

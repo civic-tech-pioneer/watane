@@ -227,7 +227,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` (dev/tests/publish.rs pins the first text for the case with no folder known) | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` (dev/tests/it/publish.rs pins the first text for the case with no folder known) | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
 | `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link or ReleaseRef as the maker passed it, quoted>[ --home <resolved home>]` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>`, plus ` --dir <canonical mod folder>` when `serve` was given `--dir` and ` --home <resolved home>` when given `--home` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
@@ -259,7 +259,7 @@ hands it to `Client::for_app`. The reruns: install's of 9.6; search's (10); `add
 --release`: `watane-dev add --release <link> --json --dir <dir>[ --home <h>]`;
 `new --from`: `watane-dev new [<slug>] --from <link> --json [--dir <dir>][ --home <h>]`.
 **Exception, publish:** its fixes keep the older `..., then run this command again`
-(`Client::for_app(home, None)`), because dev/tests/publish.rs pins them; a
+(`Client::for_app(home, None)`), because dev/tests/it/publish.rs pins them; a
 follow-up moves publish to the rerun of 9.7.
 
 In step 6, `<rerun>` is the canonical publish rerun of 9.7 with `--push`.
@@ -2158,7 +2158,7 @@ stop before compilation need no warmed cache. No product code changes.
 | json_eq | `ac7_json_equality_literal_pairs` | unit: literal number, type, nesting, order and large-integer pairs |
 | deps | `ac3_missing_provider_text_and_fix`, `ac3_local_order_and_missing_folders` | unit: literal order, missing-provider message/fix |
 | build_on | `ac1_package_declaration_accepts_comments_and_whitespace`, `ac1_files_are_sorted_by_relative_path_text` | unit: WIT package declaration with comments and spacing; textual path order |
-| share (step 6) | `tests/share.rs` asserts whole command lists on the scripted runner (15.4); here: the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11: first differing path of two packages (missing, extra, different, byte order), GitHub upstream parsing, and the watane branch list ending in repo edit | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
+| share (step 6) | `tests/it/share.rs` asserts whole command lists on the scripted runner (15.4); here: the command lists of 10.4.1 steps 5 and 6 for a new and an existing `.git`; the `push_failed` fix from the failed index (quoting as 2.4); URL equality (trailing `/`, `.git`); `raw` from stored origin URLs (`https://github.com/o/r`, `.../r.git`, `git@github.com:o/r`, another host); the gh stderr classes (404, 401, `gh auth login`, other); stage 11: first differing path of two packages (missing, extra, different, byte order), GitHub upstream parsing, and the watane branch list ending in repo edit | unit: literal argument vectors and texts; packages built by `watane_pkg::pack` from literal folders, no git run |
 
 ### 15.2 Scenario proofs (`tests/` unless qualified)
 
@@ -2363,7 +2363,7 @@ app 11). Each step-6 test makes, in its temp folder:
 - `bin/gh`: a link to the built `fake-gh`, first on `PATH`. The real `git`
   stays on `PATH` (a link in `bin/`).
 
-Only the `_e2e_` tests of `tests/share.rs` (the first push, the second
+Only the `_e2e_` tests of `tests/it/share.rs` (the first push, the second
 version, `new --from` then a fork) and fake-gh's own test run git and
 `fake-gh` like this: each command is a process start, slow on a guarded
 machine. The other step-6 tests run dev in-process (2.5) under
@@ -2406,8 +2406,8 @@ fake-gh` beside `watane-dev`.
 release text and a newline), so the site folder changes with each publish
 as dist's does.
 
-The journeys (spec/TECHNICAL.md 8, 9): `app/tests/j3.rs::ac2_j3_github`
-and `app/tests/j5.rs::ac2_j5_github` use the same `remotes/`, `gitconfig`
+The journeys (spec/TECHNICAL.md 8, 9): `app/tests/it/j3.rs::ac2_j3_github`
+and `app/tests/it/j5.rs::ac2_j5_github` use the same `remotes/`, `gitconfig`
 and `bin/gh`, with the real app. Alice runs `watane-dev publish --push`;
 the test then serves a fresh `git clone` of `remotes/alice/watane-channel`
 (branch `main`) with the static server of J3, sets that server's URL as

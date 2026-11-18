@@ -12,7 +12,7 @@ Work test-first:
    proves>"]`. Name the test after the criterion (`ac1_...`). Run it and see it fail for the
    right reason.
 2. Write the least code that makes it pass. Then refactor while green. In this loop run only
-   the tests you work on (`cargo test --test <file> <name>`, or `--lib <name>`), not the suite.
+   the tests you work on (`cargo test --test it <file>::<name>`, or `--lib <name>`), not the suite.
 3. Once, at the end: run the default `cargo test`, clippy and fmt of `AGENTS.md`. All must pass.
    Do not run ignored tests you did not write, the whole slow set, or any window (`driver`)
    test: your sandbox cannot start the GUI or `sandbox-exec`. After you finish, a script runs

@@ -17,7 +17,7 @@ Step 1 (Make, J1). A first cut; the product owner refines each sketch before it 
 - [x] **S8 Same mod, same id.** Delivered 2026-11-11 (main `d79e73e`). Sol runs: S8-1 1, S8-2 1.
 - [x] **S6 J1: Alice gets her reading list.** Delivered 2026-11-11 (main `856b431`). Sol runs: S6-1 1, S6-2 1.
 
-Step 1 done 2026-11-11: J1 passes (`dev/tests/journey.rs`); every step-1 stage is done or its rest
+Step 1 done 2026-11-11: J1 passes (`dev/tests/it/journey.rs`); every step-1 stage is done or its rest
 is in step 2.
 
 - [x] **S7 Pack a mod.** Delivered 2026-11-10 (main `a740d78`). Sol runs: pkg 1.
@@ -69,7 +69,7 @@ Step 2 (Run together, J2).
   the no-app result's `dir` is as typed while `next` is canonical; `add . --dir x` says ". is not a
   mod folder"; host `install::ac2_real_home_without_app` leaves `watane` running if it panics.
 
-Step 2 done 2026-11-12: J2 passes (`app/tests/j2.rs`); every step-2 stage is done.
+Step 2 done 2026-11-12: J2 passes (`app/tests/it/j2.rs`); every step-2 stage is done.
 
 Step 3 (Publish, J3).
 
@@ -101,7 +101,7 @@ Step 3 (Publish, J3).
 - [x] **S21c The agent publishes.** Delivered 2026-11-12 (main `355656d`). Sol runs: S21c-1 1, S21c-2 1,
   S21c-3 1 (one validator round-2 fix).
 
-Step 3 done 2026-11-12: J3 passes (`app/tests/j3.rs`); every step-3 stage is done.
+Step 3 done 2026-11-12: J3 passes (`app/tests/it/j3.rs`); every step-3 stage is done.
 
 Between steps 3 and 4.
 - [x] **S24 Publish and install edges.** Delivered 2026-11-12 (main `f6b40d9`). Sol runs: S24-1 1,
@@ -133,7 +133,7 @@ Between steps 3 and 4.
   are raw transport errors that do not name the index; "listed by Ivy" and "listed by Ivy through
   Alice" show together on one hit.
 
-Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is done.
+Step 4 done 2026-11-13: J4 passes (`app/tests/it/j4.rs`); every step-4 stage is done.
 - [x] **S31 The agent searches (dev stage 8).** Delivered 2026-11-13 (main `956de83`). Sol runs:
   S31-1 1, S31-2 1. Tested against `fake-watane`; the real `/api/search` is S29's. Left for later
   (user-sim): 503 and other app errors get the generic "Correct the reported host error" fix;
@@ -205,7 +205,7 @@ Step 4 done 2026-11-13: J4 passes (`app/tests/j4.rs`); every step-4 stage is don
   working local API; hidden windows poll only on focus; consent requests from clients that stopped
   waiting pile up (S24).
 
-Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`) and passes again since S47.
+Step 5 done 2026-11-13: J5 passes (`app/tests/it/j5.rs`); every step-5 stage is done. J5 broke at S39 (main `3458939`, `new --from`) and passes again since S47.
 
 - [x] **S44 Carol reads names, not keys (app cleanup).** Delivered 2026-11-13 (main `95db4b6`). Sol
   runs: S44-1 1 (about 26 min). User-sim accepted on the first run. Publishers show by profile name,
@@ -267,7 +267,7 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
   (main `1aa2763`); dev's full suite with `--include-ignored` and J3 and J5 rerun on the Mac:
   green. User-sim accepted on the first run. `watane-dev publish --push`: the first run creates
   `<owner>/watane-channel` and `<owner>/<slug>`, writes `repository`, and its `next` asks for the
-  raw site URL; later runs commit, tag the ReleaseRef and push. `app/tests/j3.rs::ac2_j3_github`
+  raw site URL; later runs commit, tag the ReleaseRef and push. `app/tests/it/j3.rs::ac2_j3_github`
   passes against local bare remotes and `fake-gh`: Bob installs from a served clone of the pushed
   site and sees Alice as verified. Left for later (user-sim): `env.git_identity` keeps git's last
   five stderr lines, which cuts a hint mid-sentence and leaks user@host into the JSON (the last
@@ -289,11 +289,11 @@ Step 5 done 2026-11-13: J5 passes (`app/tests/j5.rs`); every step-5 stage is don
 - [x] **S43 Eve clones and forks Dave's mod (dev stage 11).** `new --from` clones the named
   repository at the ReleaseRef tag, checks it against the verified package, falls back to the
   package with `new.fork_differs` or `new.fork_unavailable`; Eve's first `publish --push` forks the
-  upstream repository on branch `watane`. `app/tests/j5.rs::ac2_j5_github` passes; user-sim
+  upstream repository on branch `watane`. `app/tests/it/j5.rs::ac2_j5_github` passes; user-sim
   ACCEPTED on the first run. Verified on the Mac: dev 300 passed with `--include-ignored`,
   app driver + J3 + J5 142 passed. Front tests not run (they take over the screen).
 
-Step 6 done 2026-11-14: `app/tests/j5.rs::ac2_j5_github` passes; every step-6 stage is done
+Step 6 done 2026-11-14: `app/tests/it/j5.rs::ac2_j5_github` passes; every step-6 stage is done
 (pkg 8, dev 10, dev 11). Every step of the build plan is delivered. GitHub is still the fake `gh`
 and local git remotes: no real repository, no real static host, no second machine, and no
 installer for watane itself.
@@ -452,7 +452,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   accepts and checks `organization=`. The template `AGENTS.md` and `publish`'s help name the flag.
   Outcome: the real J5 runs Carol's fork in `minmax-fund` (forked, the parent set, watane's default
   branch), and the fake J5 checks `organization=`. Touches: dev/src (share.rs, the publish CLI),
-  dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/j5.rs. Local (the token). After S69
+  dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/it/j5.rs. Local (the token). After S69
   (dev). Also fixes dev's `ac10_endless...` deadline test (Friction, S65 and S69).
   Delivered (merged as 8de79ae): an agent runs `watane-dev publish --push --owner <org>` and dev creates `<org>/<slug>` and `<org>/watane-channel`, and forks a derived mod into the org (`organization=<org>`, parent set, default branch `watane`); without `--owner` nothing changes. Real J5 passed twice against minmax-fund, which held only OpenMLOps afterwards. Decisions: GitHub forks into the org that owns the parent under a new name, so the real J5 forks inside minmax-fund, with Carol's slug a reserved `watane-j-<r>` (harness `reserve()` checks a 404 and records the name for deletion); `--owner` checks GitHub's account rule and requires `--push`; `organization` is sent only when the owner is not the login (case-insensitive), and fake-gh refuses `organization=<login>`; ac10 builds the endless source once untimed, then times the cached run against 7 s. Verified on the Mac: dev green with ignored except envelope ac5 (red on main since S73, see Friction), app J5 green. For a later slice (user-sim): `--owner` does not apply to a channel whose origin is already stored, silently; the `--owner` usage errors point to `watane-dev --help` instead of `publish --help`.
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
@@ -476,8 +476,8 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   (5) fake-watane can be told never to answer, so `host.no_answer` has an integration test, and
   `ac2_real_home_without_app` stops `watane` through the existing `Host` guard. Touches:
   pkg/src/world.rs, dev/src/{cli,api,build_on,builder,main,preview}.rs, dev/src/bin/fake-watane.rs,
-  dev/tests/{check,install}.rs, dev/TECHNICAL.md. Not dev/src/share.rs, dev/tests/share.rs,
-  dev/tests/publish.rs or dev/tests/support/ (the human's test-speed session works there). Cloud.
+  dev/tests/{check,install}.rs, dev/TECHNICAL.md. Not dev/src/share.rs, dev/tests/it/share.rs,
+  dev/tests/it/publish.rs or dev/tests/support/ (the human's test-speed session works there). Cloud.
   Delivered: a maker's agent gets a real cause and a runnable `next` at the eleven places: a WIT
   syntax error has file, line and column; `test` and `serve` take `--home`; reruns carry `--dir`
   and `--home`; app fixes end `then run: <rerun>`; `--help | head` exits quietly; an outside `.wit`
@@ -488,7 +488,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   itself (pkg/TECHNICAL 4 step 2 and its security row); several outside `.wit` reads name their
   deepest common folder; a search word starting with `-` gets `--` before it in the rerun;
   `serve --stop` accepts and ignores `--home`; publish keeps two old texts that the human's
-  dev/tests/publish.rs pins (`// s86:`). Friction: the cloud cannot run the real `watane` (no IPv6
+  dev/tests/it/publish.rs pins (`// s86:`). Friction: the cloud cannot run the real `watane` (no IPv6
   loopback), so every real-preview test is not run there; the dev allowlist is not vendored in a
   fresh container (`dev/scripts/vendor.sh`); clippy's `too_long_first_doc_paragraph` on
   dev/src/outcome.rs:1 fails check.sh in the cloud only (newer toolchain); a cloud foreman cannot
@@ -569,7 +569,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   2026-11-14 (`c424dd2`, branch `slice/s58`, merged to main). Takes S51 with it.
 
   The last `part` row: the app can remove a toolset, not only end a token. `Host::remove_toolset`
-  exists (host/src/tools.rs:195) and host/tests/catalog.rs:1000 covers it; nothing in
+  exists (host/src/tools.rs:195) and host/tests/it/program/catalog.rs:1000 covers it; nothing in
   `app/src/commands.rs` calls it. That closes host stage 4, carried as `part` since S5.
 
   The text, six items: list, include, publish and install consents show the 52-character key before
@@ -591,7 +591,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   GTK, and J2 and J4 must pass.
 
   Delivered. The app's agents view has a Remove button per toolset (`app/ui/app.js:122` ->
-  `toolset_remove` -> `Host::remove_toolset`), driver-tested in `app/tests/j2.rs:310`: host stage 4
+  `toolset_remove` -> `Host::remove_toolset`), driver-tested in `app/tests/it/j2.rs:310`: host stage 4
   is done, the last `part` row in the table. All seven items were still open on re-check; only one
   line had drifted (the mod-card notice surfaces at `core.rs:237`, not 229). Consent values now read
   `<readable> - <key or reference>`, name first, full key kept so it can still be checked.
@@ -644,7 +644,7 @@ is a step-7-style check, after S55.
   RETURN in round 1 (7 items, all fixed), PASS in round 2. New stages, in build order: log L6
   Keyless, dist S8 (one slice with L6, since both change `identity()`), node 1 Holder (needs L6, S8,
   net N1 and N2), node 2 Machines (needs net N4), node 3 Program (`watane-node`), app G Own machines
-  (needs node 2 and 3; J8 in app/tests/j8.rs). Checked by the product owner before merging: docs
+  (needs node 2 and 3; J8 in app/tests/it/j8.rs). Checked by the product owner before merging: docs
   only, the two Q2/Q3 rows its only net/TECHNICAL edit, the doc-reading app tests green (static_config
   5, linux_runner 3, lib 77), and every net call node relies on (`told`, `need`, `need_blob`,
   `answer_join`, `Holdings`) present in net's API, `open_keyless` and `drop_identity` agreeing
@@ -759,13 +759,13 @@ is a step-7-style check, after S55.
   questions, decided by the product owner: a `Kept` ingest that stores nothing (a gap) removes its
   `kept` record (dist 5.12); `DistHoldings::set` a second time is an error, not a silent keep.
   Touches: node, dist (the kept record), net (that one cause text). Cloud.
-  Delivered (796c074, merged rebased): Alice publishes on her laptop and her server keeps entry and package within about 250 ms on loopback; a light laptop searches through the server (hits marked with its key), installs from it and gets the next release through it; an unused app home joins as a replica and drops its key; a restored identity takes its head only when Alice picks the server's hint. Decisions: net's Unreachable cause names only what is missing; a failed Kept ingest takes back only the kept mark it added; `DistHoldings::set` twice is `NodeError::HolderSet`; node's search sends one remote query with interface null (dist's `InterfaceQuery` has no accessor), so remote budgets are spent on any interface; S5 uses a 4 s host delay. Verified on the Mac: hakari clean, node, dist, net, log with ignored, host and app green. Found, not fixed (net 5.7): a gossip hint is acted on with the neighbour that relayed it, which may not hold the head yet, so about 1 in 10 updates on a three-machine topic waits for the 10-minute sync; node/tests/light.rs reconnects as a commented workaround. user-sim notes: 'own head 1 is not stored' reads wrong for a hint with the right seq and another id; `IdentityInUse` says 'signed statements' after one; an anchor never asks its full machines on fetch, follow or search (NODE-F-9), so it cannot search what only the server holds.
+  Delivered (796c074, merged rebased): Alice publishes on her laptop and her server keeps entry and package within about 250 ms on loopback; a light laptop searches through the server (hits marked with its key), installs from it and gets the next release through it; an unused app home joins as a replica and drops its key; a restored identity takes its head only when Alice picks the server's hint. Decisions: net's Unreachable cause names only what is missing; a failed Kept ingest takes back only the kept mark it added; `DistHoldings::set` twice is `NodeError::HolderSet`; node's search sends one remote query with interface null (dist's `InterfaceQuery` has no accessor), so remote budgets are spent on any interface; S5 uses a 4 s host delay. Verified on the Mac: hakari clean, node, dist, net, log with ignored, host and app green. Found, not fixed (net 5.7): a gossip hint is acted on with the neighbour that relayed it, which may not hold the head yet, so about 1 in 10 updates on a three-machine topic waits for the 10-minute sync; node/tests/it/light.rs reconnects as a commented workaround. user-sim notes: 'own head 1 is not stored' reads wrong for a hint with the right seq and another id; `IdentityInUse` says 'signed statements' after one; an anchor never asks its full machines on fetch, follow or search (NODE-F-9), so it cannot search what only the server holds.
 - [x] **S72 Alice runs her server as a program (node 3), and a hint reaches the right machine.**
   Branch `slice/s72`. Builds node stage 3 (node/TECHNICAL.md 6 and 9, row 3): `watane-node` with
   `join`, `run`, `status`, `relay` (a fixed port; port 0 refused) and `dht`, and the output of 6.2.
   Fixes S70's net finding (net 5.7): a gossip hint pulls from the machine that told it, or retries once
   the relaying neighbour holds the seq, so an update does not wait for the 10-minute sync; remove
-  node/tests/light.rs's reconnect workaround. Outcome: node scenarios S10 to S13 pass on the real
+  node/tests/it/light.rs's reconnect workaround. Outcome: node scenarios S10 to S13 pass on the real
   `watane-node` binary between homes on 127.0.0.1; the three-machine hint test passes 20 of 20 runs
   without the workaround. Touches: node (the bin, tests, docs), net (5.7 and its test). Cloud.
   Delivered (merged rebased as 69954c2): Alice runs her server as `watane-node` (`join`, `run`, `status`, `relay`, `dht`, optional `--bind`); a hint whose machine lacks the seq retries every 250 ms on the next trusted machine, up to 20 times, and the light.rs workaround is gone. Decisions: tokio's signal feature, not signal-hook; `url` a direct node dependency (Cargo.lock: tokio and url in node's list, no new crate); a join stores the anchor's answering address; `Net::options()`; a signal during join exits 1 `interrupted`; a removed machine's `run` points to `join --replace`; S13 uses another author's entries. Verified on the Mac: hakari clean, net and node green with ignored, node's light test 5 of 5, app builds. For a later slice (user-sim wording, about ten items in the S72 report): the key printed twice in causes; `--help` says unknown flag; the y/N prompt and its answer share a line; no confirmation after dht and relay changes; a second run reports the dist lock instead of another watane-node.
@@ -774,10 +774,10 @@ is a step-7-style check, after S55.
   machines on, the pairing code and the join question with the short key, devices and roles, expiry,
   relays, the DHT switch with its consent text, restore hints; in the app's settings, where S74 puts
   own machines. Folds in S61's stage G leftovers (`Core::indexes` fails keyless; `choose_index`
-  reports `NoIdentity` after it worked; the `IdentityInUse` text). Outcome: J8 (`app/tests/j8.rs`)
+  reports `NoIdentity` after it worked; the `IdentityInUse` text). Outcome: J8 (`app/tests/it/j8.rs`)
   passes on loopback homes on one Mac, and J2 to J5, J9 still pass. Touches: app (src, ui, tests/j8.rs,
   TECHNICAL 9.8). Local (the app). After S74, which changes the same app/src and app/ui.
-  Delivered (merged as e1643b5): Alice turns on her own machines in Settings, pairs her server (`watane-node`) and a second laptop with a code and the consent view, publishes to the server with no static host, searches and installs through it from a light laptop, removes a machine, restores from the server's hint, and adds relays or the DHT only after consent; no mod or local route reaches any of it. J8 passes natively (5 of 5, 52 to 77 s). Step 8 is done. Decisions: net (no format change): after `pair` the joiner pulls `devices` once from the anchor, so a new machine learns the others' addresses (in memory, not book.json; a failed pull does not fail the join; net 5.5); J8's restore keeps the restored laptop as anchor and the server re-joins with `join --replace`; `Status.identity.signed`, and the Join question asks the delete question only for an identity that signed nothing; IdentityInUse reads "has signed at least one statement"; S61 leftovers: `indexes` works keyless, `choose_index` on a keyless home succeeds or changes nothing; tests/support/node.rs. Verified on the Mac: hakari clean; net and node green with ignored; the app driver suite green with ignored, J8 included (front tests not run). For a later slice: a light laptop refused by a server that removed it shows dist's "is not followed" (node/src/calls.rs:66 drops need_blob's Result; net turns not_allowed into Unreachable, light.rs:178); user-sim wording: a reused code says "not a pairing code", "no direct path" also when the anchor is just off (3x), no reconnect after both restart on new ports, the anchor's own row "Last seen: unknown", "anchor · anchor <key>", Join clickable twice before the 2 s refresh, the restore refusal does not point to Settings, no `watane-node --help`, `status` fails "home is locked" while run runs, relay/DHT controls enabled while off, publishing does not warn that the home can no longer join; node/tests/restore.rs s9 flakes about 3 in 12 (SiteNotWritten), also on main.
+  Delivered (merged as e1643b5): Alice turns on her own machines in Settings, pairs her server (`watane-node`) and a second laptop with a code and the consent view, publishes to the server with no static host, searches and installs through it from a light laptop, removes a machine, restores from the server's hint, and adds relays or the DHT only after consent; no mod or local route reaches any of it. J8 passes natively (5 of 5, 52 to 77 s). Step 8 is done. Decisions: net (no format change): after `pair` the joiner pulls `devices` once from the anchor, so a new machine learns the others' addresses (in memory, not book.json; a failed pull does not fail the join; net 5.5); J8's restore keeps the restored laptop as anchor and the server re-joins with `join --replace`; `Status.identity.signed`, and the Join question asks the delete question only for an identity that signed nothing; IdentityInUse reads "has signed at least one statement"; S61 leftovers: `indexes` works keyless, `choose_index` on a keyless home succeeds or changes nothing; tests/support/node.rs. Verified on the Mac: hakari clean; net and node green with ignored; the app driver suite green with ignored, J8 included (front tests not run). For a later slice: a light laptop refused by a server that removed it shows dist's "is not followed" (node/src/calls.rs:66 drops need_blob's Result; net turns not_allowed into Unreachable, light.rs:178); user-sim wording: a reused code says "not a pairing code", "no direct path" also when the anchor is just off (3x), no reconnect after both restart on new ports, the anchor's own row "Last seen: unknown", "anchor · anchor <key>", Join clickable twice before the 2 s refresh, the restore refusal does not point to Settings, no `watane-node --help`, `status` fails "home is locked" while run runs, relay/DHT controls enabled while off, publishing does not warn that the home can no longer join; node/tests/it/restore.rs s9 flakes about 3 in 12 (SiteNotWritten), also on main.
 
 - [x] **S80 Alice's server says what is wrong (node, net).** Branch `slice/s80`. The node and net items
   of S72's and S75's user-sim reports: a light laptop refused by a server that removed it is told so
@@ -785,7 +785,7 @@ is a step-7-style check, after S55.
   `watane-node --help`; `status` while `run` runs answers instead of "home is locked"; a second `run`
   names the running watane-node; the key printed once in causes; the y/N answer on its own line; a
   confirmation after `dht` and `relay` changes; a reused code says it was used; "no direct path" only
-  when there is none, once; node/tests/restore.rs s9 flake (SiteNotWritten). Outcome: each item has a
+  when there is none, once; node/tests/it/restore.rs s9 flake (SiteNotWritten). Outcome: each item has a
   test on the real `watane-node`. Touches: node, net (no wire or disk format change). Cloud.
   Delivered (merged as 5e2e12f): watane-node says what is wrong: a removed light laptop is told "node <short> refused: not_allowed"; `--help`; `status` answers while `run` runs; a second run, dht, relay or join names the running watane-node; each key printed once; the y/N answer on its own line; dht and relay changes confirmed; a used code says it was used or expired; "no direct path" only with no known address, else "did not answer at its n known address(es)"; restore.rs s9 fixed (a test race). Decisions: no wire change (the joiner maps the anchor's bad_code to CodeSpent when the code parses); need/need_blob return Refused{NotAllowed} (iroh-blobs' 403 mapped to it), busy/over_budget unchanged; nested causes drop the inner node name; a kept refusal replaces only dist's missing-source errors, as DistError::Io { path: "the server" }; `Machine::of(&Net)`. Verified on the Mac: hakari clean; node green with ignored; net green with ignored on reruns (reach ac4 failed once under S81's build load, then 5 of 5 alone and 3 of 3 as a file); app J8, machines and J3 green. For a later slice: a refused fetch still waits dist's package_timeout before reporting; the chain's top line is just "the server"; join prints "waiting for your answer" before the code is checked; a join answered yes after its joiner died adds a machine that never joined (a net check); `relay remove` of an unset relay is silent; `watane-node bogus` asks for --home; "relative URL without a base" is parser jargon.
 - [x] **S81 The app says what it means (app wording).** Branch `slice/s81`. The app items of S74's,
@@ -861,7 +861,7 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
   A27), host stage 10 (the collect of 9.4, the outlet row of 6.4, collect edges in the cycle check
   of 4.2 step 8, the 5.3 rule, collect fakes in `Harness`, the fixtures `menu` and `item-*`), and dev
   stage 12 (collect fakes and `deliver` answers in contract tests, the template `AGENTS.md` lines).
-  Outcome: host S36 to S39 pass (`host/tests/collect.rs`); pkg A26 and A27 pass; DEV-S-52 passes as
+  Outcome: host S36 to S39 pass (`host/tests/it/collect.rs`); pkg A26 and A27 pass; DEV-S-52 passes as
   `contract::ac_collect_fake_and_answer`, which turns dev's scenario map green on main; a maker's
   agent running `watane test` on `menu` with and without a fake sees the lists of DEV-S-52.
   Touches: pkg, host, dev (src, tests, fixtures, their TECHNICAL where a decision lands). Not app:
@@ -871,12 +871,12 @@ node. Designed in 51e0dfb (W34): pkg 4.5, host 4.2, 6.4, 6.6, 9.4, dev 8.1, app 
 - [x] **S66 Alice extends a shell with two command mods (app stage H, J9).** Branch `slice/s66`.
   Builds app stage H (app/TECHNICAL.md 12, row H): the step 9 text of the subscription row in
   `app/src/words.rs` ("Receive the {interface} events of {provider} and answer its requests"), and
-  `app/tests/j9.rs` with host's fixtures `menu` and `item-*`. Outcome: J9 passes as spec/FUNCTIONAL
+  `app/tests/it/j9.rs` with host's fixtures `menu` and `item-*`. Outcome: J9 passes as spec/FUNCTIONAL
   writes it (the plan shows the answer grant; the shell shows both commands without learning who gave
   which; a failing command mod is left out; a withdrawn grant removes its command at the next
   collect; a command mod that also calls the shell is refused at the plan, naming the cycle); J2 to
-  J5 still pass. Touches: app/src/words.rs, app/tests/j9.rs, app/TECHNICAL.md. Local (the app).
-  S71 (local) owns dev/ and app/tests/j5.rs.
+  J5 still pass. Touches: app/src/words.rs, app/tests/it/j9.rs, app/TECHNICAL.md. Local (the app).
+  S71 (local) owns dev/ and app/tests/it/j5.rs.
   Delivered (1259216): J9 passes. Alice installs a shell and command mods; the plan reads "Receive the {interface} events of {provider} and answer its requests"; the shell shows the commands without learning who gave which; a failing mod is left out; a withdrawn grant removes its command at the next collect; a cycle is refused at the plan. Decisions: the shell page is an app test fixture (`app/tests/fixtures/menu-ui`) over host's `menu`; `clicked` is an event every granted command mod receives; app gains redb 4.5 as a dev-dependency only, to read a mod's state after quitting; `factory/impl.sh` adds `CARGO_TARGET_DIR` to Sol's writable roots, so Sol can build into main's shared `target/`. Verified natively on the Mac by the foreman after its rebase on main: app suite, J2 to J5, J9 green; hakari clean. Later (user-sim): the cycle error reads like an internal message and does not say what to do; the mod list does not show which mods add commands to which, or that one answered nothing.
 
   **Step 9 is done:** J9 passes and pkg 9, host 10, dev 12 and app H are done.
@@ -938,7 +938,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   is the same before and after a full run of pkg, host, dev, log, dist, net and node (cloud: the tests
   that run there; the Mac checks the rest at merge). Touches: test support and the temp-folder code of
   pkg, host, dev, log, dist, net, node; not app (S54, S75 own its tests; the app leaks 11). Cloud.
-  Delivered (merged as 94c6ecd): a full run of pkg, host, dev, log, dist, net and node leaves `$TMPDIR` as it was. Only dev leaked (about 2.4 GB a run): the warm template cache sat in a static `OnceLock<TempDir>` (now at `<CARGO_TARGET_TMPDIR>/watane-dev-warm-<binary>`, rebuilt at first use per run, removed by cargo clean), and a builder test's child exited with its TempDir alive. Guards: dev/tests/regress_s78.rs and a check in the builder unit test. Verified on the Mac: dev and host green with ignored, 0 entries left in a private TMPDIR. For a later slice: dev's real-program tests panic on a missing WATANE_BIN; pkg `ac6_round_trip_and_changed_package` races the ignored `regenerate_fixtures`; the app's own leaks (11 folders).
+  Delivered (merged as 94c6ecd): a full run of pkg, host, dev, log, dist, net and node leaves `$TMPDIR` as it was. Only dev leaked (about 2.4 GB a run): the warm template cache sat in a static `OnceLock<TempDir>` (now at `<CARGO_TARGET_TMPDIR>/watane-dev-warm-<binary>`, rebuilt at first use per run, removed by cargo clean), and a builder test's child exited with its TempDir alive. Guards: dev/tests/it/regress_s78.rs and a check in the builder unit test. Verified on the Mac: dev and host green with ignored, 0 entries left in a private TMPDIR. For a later slice: dev's real-program tests panic on a missing WATANE_BIN; pkg `ac6_round_trip_and_changed_package` races the ignored `regenerate_fixtures`; the app's own leaks (11 folders).
 - [x] **S74 Alice's shell opens at start (the main mod: pkg 10, app I).** Branch `slice/s74`. Builds
   pkg stage 10 (`main = true` in `mod.toml`, `Mod::main`, A28, A29) and app stage I (app/TECHNICAL
   5.3 and 5.4: the app opens the main mod at start or the manager; the participant makes any mod with a
@@ -947,7 +947,7 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   Outcome: app S37 to S42 pass (`tests/manager.rs` with the fixture `desk`); every earlier suite
   and J2 to J5, J9 pass. Touches: pkg (meta.rs, its tests, TECHNICAL 4.2 if a decision lands), app
   (src, ui, tests/manager.rs, TECHNICAL 5.3, 5.4). Local (the app). S71 (local) owns dev/ and
-  app/tests/j5.rs; S72 (cloud) owns node/ and net/; S73 (cloud) owns the docs above.
+  app/tests/it/j5.rs; S72 (cloud) owns node/ and net/; S73 (cloud) owns the docs above.
   Delivered (merged as a2bf077): Alice's main mod (one she picks, or one that proposes itself with `main = true`) opens at start in place of the manager; Mods… and Settings… in the app menu open the manager (Library, Find, Updates, details with connections and a warning before disable or remove) or Settings (identity, site, backup, agents, machines). Decisions: the app reads `Mod::main()` with `Mod::read(<home>/mods/<local>)` (read only, false on error), host's `InstalledMod` unchanged; the fixture desk is page-only; the driver op `menu` takes `item`, not `id` (collides with the request id, TECHNICAL 10); pkg: `main = true` with a symlinked ui/ gives only the path violation; j2 ac7 goes through the APP-F-67 warning; Settings shows own machines as "Unavailable" until S75. Verified on the Mac: pkg green with ignored; the app driver suite green with ignored (front tests not run), j2 and manager on a rerun after S54's build swapped `watane-app`. For a later slice (user-sim): the library does not mark the main mod; the consent for a mod that proposes main does not say it becomes the start window; a connection link does not move focus to the target's details; the disable warning says "These mods use it" when only an Extended-by link remains.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
@@ -1072,9 +1072,9 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 ### host
 
 - [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
-  (host/tests/program.rs:567); the probe-to-bind window stands.
+  (host/tests/it/program.rs:567); the probe-to-bind window stands.
 - [S45] the 413 guard passes because the test tolerates a reset, not because the server drains the
-  unread body (host/tests/api.rs:401; the server sets `Connection: close`). Worth knowing before
+  unread body (host/tests/it/program/api.rs:401; the server sets `Connection: close`). Worth knowing before
   trusting it under other guards.
 - [S12a] an abrupt disconnect mid-`/call` has no test; `Served::shutdown` still documents a 5 s
   bound (host/src/server.rs:195).
@@ -1087,7 +1087,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 - [S56] a relative `generate!` path can resolve into a stale cache sibling, giving a misleading
   `build.compile` (dev/src/builder.rs).
 - [S86] publish keeps "Start the watane app, then run this command again" and the old
-  `local_dependency` text for a null entry: dev/tests/publish.rs (:80, :111) pins both; the code
+  `local_dependency` text for a null entry: dev/tests/it/publish.rs (:80, :111) pins both; the code
   marks them `// s86:`. A one-line change once the human's test-speed branch has landed.
 - [S86] other prose fixes with no rerun: install's `host.no_answer` ("with a longer --wait"),
   dev/src/api.rs:180, 186, 240, builder.rs:168, outcome.rs:214, `build.reads_outside`'s fix;
@@ -1101,7 +1101,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 ### app
 
 - [S12a] a disabled provider shows the fixture page's "not granted" and hides the host's message
-  (app/tests/fixtures/recommendations/ui/app.js:5, asserted by app/tests/j2.rs:212).
+  (app/tests/fixtures/recommendations/ui/app.js:5, asserted by app/tests/it/j2.rs:212).
 - [S12a] there is no grant-change message, so the app reloads the whole window
   (app/src/core.rs:313).
 - [S18] the Linux runner prints versions without names (app/scripts/linux-test.sh:14).
@@ -1911,7 +1911,7 @@ The human may veto each one.
 
 - S21b: Alice publishes a mod from her app and shares her link; Bob enters it in his app, sees "by
   Alice (fingerprint) · signature verified", approves, and it runs; a changed package or head entry
-  is refused with its cause and URL, and nothing is installed (J3 passes in `app/tests/j3.rs`).
+  is refused with its cause and URL, and nothing is installed (J3 passes in `app/tests/it/j3.rs`).
 - S21c: Bob's coding agent runs `watane-dev publish --json`; Bob approves "Sign a release" in his app
   and the agent gets the release, site and link; Alice installs from that link (step 3 done).
 - S25: Carol's refresh updates Alice's mod quietly or through consent when it asks for a new grant;

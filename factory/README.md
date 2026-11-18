@@ -119,7 +119,7 @@ it; a higher level only proves that the parts work together.
 | Level | What | Cost | Runs in |
 |---|---|---|---|
 | Unit | a function in the crate (`#[cfg(test)]`): a rule, a parser, a classifier, an error text | ms | default `cargo test` |
-| Integration | a command or route on prebuilt fixtures (host: `tests/fixtures`; dev: one warm template cache, shared by every dev test binary and kept between runs (a new watane-dev rebuilds only what changed); a copy at another path builds cold) | < 1 s each | default `cargo test` |
+| Integration | a command or route on prebuilt fixtures (host: `tests/fixtures`; dev: one warm template cache, shared by every dev test and kept between runs (a new watane-dev rebuilds only what changed); a copy at another path builds cold) | < 1 s each | default `cargo test` |
 | Slow | a cold build, a full pipeline on the real `watane`, one per thing only it proves (DEV-S-10 to 13, the preview life cycle) | 10 s to minutes | `#[ignore = "slow: ..."]` |
 | Journey | J1 to J5, one test each | minutes | `#[ignore = "slow: journey ..."]` |
 | Front | an app GUI check that needs real focus or stacking (`App::front`); waits for the human to be idle | seconds each, plus the wait | `#[ignore = "front: takes the screen"]`, once per slice |
@@ -129,6 +129,15 @@ Rules:
 - A subsystem's default `cargo test` stays under 2 minutes on a quiet machine. A test that needs
   more is `slow`, and its reason names what no cheaper test can prove.
 - An integration test never builds a mod from scratch unless the build is what it tests.
+- A subsystem's integration tests are one binary: each file is a module of `tests/it/main.rs`
+  (`tests/it/<file>.rs` and a `mod <file>;` line), never a new `tests/<file>.rs`. Every test
+  binary links wasmtime and is scanned on its first run; 124 of them took 6.84 GB and 42 s to
+  relink after a change to `pkg`. Run one file's tests with `cargo test --test it <file>::`. A
+  test that changes or counts process-wide state (env, umask, cwd, open sockets) runs itself in a
+  child process (`static_config`, `unpack_umask`, net and node `support::rerun_alone`); a lock
+  that kept a file's tests apart lives in `tests/support` when files share it (app `GUI`); net's
+  `support::slot` lets at most 6 tests run machines at once, as its deadline tests need.
+  `install/` keeps its own files until `slice/s50b-fix` has merged.
 - App GUI tests run hidden (`App::start`) or in the background (`App::background`): no window on
   screen, no Dock icon, no focus taken. Only `front` tests take the screen.
 - Who runs what: Sol runs the tests it works on, and the default tests once at the end.
@@ -148,8 +157,8 @@ Tests that assert a spec'd time limit (a call stopped after 200 ms and before 2 
 the load of parallel slices, so they carry `#[ignore = "timing: run on a quiescent machine, ..."]`.
 Sol and validators skip them. The product owner runs them on `main` after each merge, one at a
 time; a failure counts only if it repeats:
-`cargo test -p watane-host --test runtime -- --ignored --test-threads=1` and
-`cargo test -p watane-host --test preview -- --ignored --test-threads=1 ac3_shutdown`.
+`cargo test -p watane-host --test it -- --ignored --test-threads=1 runtime::` and
+`cargo test -p watane-host --test it -- --ignored --test-threads=1 program::catalog::ac3_shutdown`.
 A new test of a time limit gets the same attribute. A wait that only guards against a hang is
 not such a test: give it a wide bound (30 s or more) and leave it in the normal run.
 

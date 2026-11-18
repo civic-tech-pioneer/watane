@@ -14,7 +14,7 @@ window per mod page, and the consent view for every confirmation.
 
 ```bash
 cargo build && cargo test                   # app, unit and static tests
-cargo test --features driver --test <file> -- --include-ignored   # a task's window tests: only the files it touched
+cargo test --features driver --test it -- --include-ignored <file>::   # a task's window tests: only the files it touched
 cargo test --features driver                # every window test (macOS GUI session): once per slice, by the foreman
 cargo clippy --all-targets --features driver -- -D warnings && cargo fmt --check
 cargo build --release --features driver     # must FAIL: no driver in a release
@@ -29,7 +29,7 @@ cargo build --release --features driver     # must FAIL: no driver in a release
 - No `remote` key, no `core:` or plugin permission, no window other than
   `main` and `consent` in a capability. No `devUrl`.
 - A new command goes into `build.rs`, a capability and the literal lists
-  of `tests/static_config.rs`. Untrusted text only via `textContent`.
+  of `tests/it/static_config.rs`. Untrusted text only via `textContent`.
 - Window tests wait for page-load events, never a fixed time. Never weaken
   a test; record a changed fact in `NOTES.md`.
 

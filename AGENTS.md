@@ -32,6 +32,9 @@ that.
   them.
 - **Ask the human** only to go against a vision document or to weaken a
   security check.
+- Integration tests are modules of one binary per subsystem: `<sub>/tests/it/<file>.rs` with a
+  `mod <file>;` line in `tests/it/main.rs`, never a new `tests/<file>.rs` (`factory/README.md`,
+  test kinds). One file's tests: `cargo test --test it <file>::`.
 - A new source file starts with a `//!` line: what it is for, and
   `(TECHNICAL n.m)` when a section owns it. `factory/check.sh` fails
   without one.

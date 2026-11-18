@@ -356,7 +356,7 @@ are milliseconds since the Unix epoch. Later stages add the heads file
 (`watane/heads/1`, D4) as a second form, and no other.
 
 Stage N1 added golden vectors made with `ed25519-compact` from the seed of
-RFC 8032 test 1, as `log` 4.4 does: `tests/vectors.rs` holds the bytes of a
+RFC 8032 test 1, as `log` 4.4 does: `tests/it/vectors.rs` holds the bytes of a
 list of the anchor (full) and a second key (light), seq 1, time
 1767225600000, expires 0, built by hand, and its signature from the oracle.
 The signed bytes are the prefix (with its zero byte), then the CBOR array of
@@ -909,7 +909,7 @@ N4 part 1 notes (built, S67):
   match its hash"; every `Refused` cause contains the node's short key (the
   event adds "node <short>: " when the cause lacks it).
 - No `Limits` field is new; `hello`'s ops now name `query`.
-- Tests: `tests/light.rs` (S8, S9 query part, S12, the anchor, the causes),
+- Tests: `tests/it/light.rs` (S8, S9 query part, S12, the anchor, the causes),
   unit tests in `light.rs` and `wire.rs`.
 - Turning net off (`set_options` with `on` false, `close`) ends every kept
   connection with an application close code, then waits at most `CLOSE_WAIT`
@@ -943,7 +943,7 @@ N4 part 2 notes (built, S68):
 - `devices` answers carry addresses (4.2); `pairing::take_answer` checks and
   adds them. They are asked for when the list changes (a push, a pull), not
   at every connect.
-- Tests: `tests/reach.rs` (S11 with an in-process relay on 127.0.0.1, the
+- Tests: `tests/it/reach.rs` (S11 with an in-process relay on 127.0.0.1, the
   redial from the book, the addresses of a `devices` answer), unit tests in
   `reach.rs` (services, cause, book), `lib.rs` (the switch rules,
   `no_default_services`) and `wire.rs` (the codec).

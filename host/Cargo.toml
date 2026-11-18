@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 rust-version = "1.95"
-autotests = false
 
 [lib]
 name = "watane_host"
@@ -14,42 +13,6 @@ doctest = false
 [[bin]]
 name = "watane"
 path = "src/bin/watane.rs"
-
-[[test]]
-name = "preview"
-path = "tests/program.rs"
-
-[[test]]
-name = "runtime"
-path = "tests/runtime.rs"
-
-[[test]]
-name = "json"
-path = "tests/json.rs"
-
-[[test]]
-name = "harness"
-path = "tests/harness.rs"
-
-[[test]]
-name = "mcp"
-path = "tests/mcp.rs"
-
-[[test]]
-name = "verify"
-path = "tests/verify.rs"
-
-[[test]]
-name = "binds"
-path = "tests/binds.rs"
-
-[[test]]
-name = "collect"
-path = "tests/collect.rs"
-
-[[test]]
-name = "manage"
-path = "tests/manage.rs"
 
 [dependencies]
 watane-pkg = { path = "../pkg" }

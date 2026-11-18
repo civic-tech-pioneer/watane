@@ -1,7 +1,8 @@
 #!/bin/bash
 # factory/check.sh <task> [<base commit>]: runs a task's checks outside Sol's sandbox, in the current
 # worktree: build, the default tests, clippy, fmt, and the `slow:` tests of each test file the task
-# touched since <base> (app files with the `driver` feature). Never `front:`, `timing:` or `real:` ones.
+# touched since <base>, each a module of the `it` binary (app: with the `driver` feature). Never
+# `front:`, `timing:` or `real:` ones.
 # impl.sh runs it after every Sol run; a cloud foreman runs it after the implementer agent; a
 # validator reruns it after its own fixes. Log: factory/runs/<task>.check.log of the main checkout.
 # Prints `CHECK PASS <commit>` or `CHECK FAIL <commit>: <steps>`; exits 1 on a failure.
@@ -39,12 +40,20 @@ step fmt cargo +nightly fmt --check  # nightly: rustfmt.toml sets nightly-only o
 step moddoc sh -c 'r=0; for f in $(find src -name "*.rs"); do head -1 "$f" | grep -q "^//!" || { echo "no //! module doc: $f"; r=1; }; done; exit $r'
 # a new or changed dependency: licence, source and ban rules (deny.toml); advisories only on main
 [ -n "$(git diff --name-only "$BASE" -- "$W/Cargo.lock")" ] && step deny cargo deny check bans licenses sources
-for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/[^/]+\.rs$'); do
+# integration tests are modules of one binary, tests/it/main.rs (factory/README.md, test kinds)
+[ "$SUB" = install ] || step one-binary sh -c 'for f in tests/*.rs; do [ -e "$f" ] && { echo "$f: make it tests/it/$(basename "$f") with a mod line in tests/it/main.rs"; exit 1; }; done; exit 0'
+for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/([^/]+|it/.+)\.rs$' | grep -v '/it/main\.rs$'); do
   p=$W/$f; [ -f "$p" ] || continue
-  SLOW=$(names "$p" slow); [ -n "$SLOW" ] || continue
+  [ -n "$(names "$p" slow)" ] || continue
   SKIP=(); for n in $(names "$p" front; names "$p" timing; names "$p" real); do SKIP+=(--skip "$n"); done
-  # ponytail: names are substring filters; a slow name that contains a skipped one is skipped too
-  step "slow $(basename "$f" .rs)" cargo test ${FEAT[@]+"${FEAT[@]}"} --test "$(basename "$f" .rs)" -- --ignored $SLOW ${SKIP[@]+"${SKIP[@]}"}
+  case $f in
+    */tests/it/*)  # every ignored test of the file's module except front, timing and real: its slow ones
+      m=${f#*/tests/it/}; m=${m%.rs}; m=${m//\//::}
+      step "slow $m" cargo test ${FEAT[@]+"${FEAT[@]}"} --test it -- --ignored "$m::" ${SKIP[@]+"${SKIP[@]}"} ;;
+    *)  # install/ keeps one binary per file until slice/s50b-fix has merged
+      # ponytail: names are substring filters; a slow name that contains a skipped one is skipped too
+      step "slow $(basename "$f" .rs)" cargo test ${FEAT[@]+"${FEAT[@]}"} --test "$(basename "$f" .rs)" -- --ignored $(names "$p" slow) ${SKIP[@]+"${SKIP[@]}"} ;;
+  esac
 done
 if [ ${#FAILED[@]} -eq 0 ]; then echo "CHECK PASS $HEAD"; echo "CHECK PASS $HEAD" >> "$LOG"; exit 0; fi
 echo "CHECK FAIL $HEAD: ${FAILED[*]} (log $LOG)" | tee -a "$LOG"; exit 1

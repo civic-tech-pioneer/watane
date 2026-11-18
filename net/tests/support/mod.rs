@@ -514,6 +514,7 @@ pub fn open_on(
     holdings: Arc<MemHoldings>,
     options: watane_net::Options,
 ) -> watane_net::Net {
+    slot();
     let net = watane_net::Net::open(net_dir, holdings, options.clone()).unwrap();
     net.set_options(options).unwrap();
     net
@@ -560,6 +561,7 @@ pub fn node_trusting(
     trusted: Vec<NodeKey>,
     limits: Option<watane_net::Limits>,
 ) -> Node {
+    slot();
     let dir = tempfile::tempdir().unwrap();
     let net_dir = dir.path().join("net");
     let key = {
@@ -671,6 +673,7 @@ pub fn pair(fx: &Fixture) -> (Node, Node) {
 // ---- raw QUIC: a client and a fake callee that speak bytes only ----
 
 pub fn builder(seed: [u8; 32]) -> iroh::endpoint::Builder {
+    slot();
     iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
         .secret_key(iroh::SecretKey::from_bytes(&seed))
         .relay_mode(iroh::RelayMode::Disabled)
@@ -925,4 +928,55 @@ pub fn stays(millis: u64, mut f: impl FnMut() -> bool) -> bool {
         std::thread::sleep(Duration::from_millis(50));
     }
     f()
+}
+
+/// Runs the test `name` (its full path in the `it` binary) alone in a child process and returns
+/// true; in that child it returns false and the test goes on. For a test that counts the
+/// process's sockets, which every test of the binary shares.
+pub fn rerun_alone(name: &str) -> bool {
+    if std::env::var_os("WATANE_RERUN_ALONE").is_some() {
+        return false;
+    }
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--test-threads=1"])
+        .env("WATANE_RERUN_ALONE", "1")
+        .output()
+        .unwrap();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success() && text.contains("1 passed"), "{text}");
+    true
+}
+
+/// At most `SLOTS` tests run machines at once. Each file was its own binary, so only a file's own
+/// tests ran together; now all of net's do, and tests with 1 s deadlines or a 5 s bound failed
+/// under that load (3 runs in 10 at 16 threads, none in 8 at 6). The test's own thread takes a
+/// slot when it opens its first machine and gives it back when the test ends. Only libtest's test
+/// threads, named `module::test`, take one: a runtime's worker threads outlive the test.
+// ponytail: a fixed count; make it a share of the cores if machines change a lot
+pub fn slot() {
+    use std::sync::Condvar;
+    const SLOTS: usize = 6;
+    static TAKEN: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+    struct Slot;
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            *TAKEN.0.lock().unwrap() -= 1;
+            TAKEN.1.notify_one();
+        }
+    }
+    thread_local!(static HELD: std::cell::RefCell<Option<Slot>> = const { std::cell::RefCell::new(None) });
+    if !std::thread::current()
+        .name()
+        .is_some_and(|n| n.contains("::"))
+        || HELD.with(|h| h.borrow().is_some())
+    {
+        return;
+    }
+    let mut taken = TAKEN.0.lock().unwrap();
+    while *taken >= SLOTS {
+        taken = TAKEN.1.wait(taken).unwrap();
+    }
+    *taken += 1;
+    HELD.with(|h| *h.borrow_mut() = Some(Slot));
 }

@@ -905,7 +905,7 @@ roots; `read_file` unit tests `ac3_s22_checked_handle` and
 `ac4_s22_committed_fixtures_pack` packs both on-disk logic fixtures and
 checks the local-provider refusal. Their committed `logic.wasm` files are
 produced independently by `dummy_module` → metadata → `ComponentEncoder`;
-regenerate with `cargo test -p watane-pkg --test s22 regenerate_fixtures -- --ignored`
+regenerate with `cargo test -p watane-pkg --test it support::regenerate_fixtures -- --ignored`
 (the test is `#[ignore = "regenerates fixtures"]`). Ordinary release tests
 copy these committed files without rebuilding. `ac5_s22_disk_hello_golden`
 checks the disk fixture against both 6.5's id and 7.3's 73 literal bytes.

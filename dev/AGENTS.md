@@ -16,7 +16,7 @@ JSON results are the product: a coding agent reads them and acts alone.
 scripts/vendor.sh [<out>]               # once: allowlist crates, optional output folder (registry cache or network)
 cargo build
 cargo test                              # stages 0-4
-cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test --test <file> -- --ignored <name>  # a task's slow tests: only the ones it touched
+cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test --test it -- --ignored <file>::<name>  # a task's slow tests: only the ones it touched
 cargo build -p watane-host && WATANE_BIN=$PWD/../target/debug/watane cargo test -- --ignored  # the whole slow set: once per slice, by the foreman
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check                       # the toolchain needs: rustup target add wasm32-wasip2

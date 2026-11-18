@@ -253,3 +253,21 @@ pub fn head(node: &Node, channel: &PublicKey) -> Option<(u64, watane_dist::Entry
         .into_iter()
         .find_map(|(_, h)| h.map(|h| (h.seq, h.id)))
 }
+
+/// Runs the test `name` (its full path in the `it` binary) alone in a child process and returns
+/// true; in that child it returns false and the test goes on. For a test that counts the
+/// process's sockets, which every test of the binary shares.
+pub fn rerun_alone(name: &str) -> bool {
+    if std::env::var_os("WATANE_RERUN_ALONE").is_some() {
+        return false;
+    }
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--test-threads=1"])
+        .env("WATANE_RERUN_ALONE", "1")
+        .output()
+        .unwrap();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success() && text.contains("1 passed"), "{text}");
+    true
+}
