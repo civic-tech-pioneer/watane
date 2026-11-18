@@ -342,7 +342,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `Cargo.toml` (one member line), `Cargo.lock`, `workspace-hack/` (generated), `node/` (bin and
   `program.rs` test). Cloud.
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
-  and Q16. `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
+  and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human), and `tests/clean_mac.sh` run in a fresh macOS VM
   on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
   serves S55). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
@@ -1169,7 +1169,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
   this Mac; the human has no easy second machine. Not a question any more.
-- S50a Q16 (2026-11-18, install/TECHNICAL 14): repository settings before the first release.
+- S50a Q16 (2026-11-18, install/TECHNICAL 14): ANSWERED 2026-11-18, (a) all three. Repository settings before the first release.
   (a) a tag ruleset on `v*`, a `release` environment with a required reviewer, and a read-only
   default `GITHUB_TOKEN`; (b) none, the workflow alone. Recommendation: (a): the release token
   is the one key that ships code to every installer, and (a) means no push or build script can
