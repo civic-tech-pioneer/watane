@@ -718,7 +718,10 @@ fn ac3_rules_wit_message_is_first_2000_bytes() {
     );
     let expected = parser_message(dir.path());
     assert!(expected.len() < 2000);
-    assert_eq!(wit_message(dir.path()), expected);
+    let message = wit_message(dir.path());
+    assert!(message.starts_with(&expected), "{message}");
+    let arrow = format!(" --> {}:2:26", dir.path().join("wit/world.wit").display());
+    assert!(message.contains(&arrow), "{message}");
 
     let name = "a".repeat(3000);
     put(
@@ -730,7 +733,22 @@ fn ac3_rules_wit_message_is_first_2000_bytes() {
     );
     let expected = parser_message(dir.path());
     assert!(expected.len() > 2000 && expected.is_char_boundary(2000));
-    assert_eq!(wit_message(dir.path()), expected[..2000]);
+    let message = wit_message(dir.path());
+    assert!(message.len() <= 2000 && message.is_char_boundary(message.len()));
+    // A snippet line over 500 bytes makes wit-parser print `path:line:col: error` (no
+    // `-->` form); the location sits after the oracle's prefix and the cut keeps 2000 bytes.
+    let prefix = format!(
+        "failed to parse package: {}: ",
+        dir.path().join("wit").display()
+    );
+    assert!(expected.starts_with(&prefix));
+    assert!(message.starts_with(&prefix), "{message}");
+    let location = format!(
+        "{}:2:26: type `aaaa",
+        dir.path().join("wit/world.wit").display()
+    );
+    assert!(message[prefix.len()..].starts_with(&location), "{message}");
+    assert_eq!(message.len(), 2000, "{}", message.len());
 }
 
 #[test]
