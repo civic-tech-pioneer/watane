@@ -459,11 +459,10 @@ fn ac2_real_home_without_app() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
+    let stdout = child.stdout.take().unwrap();
     let _host = Host(child);
+    let mut line = String::new();
+    BufReader::new(stdout).read_line(&mut line).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
         .current_dir(home.path())
         .args(["install", "--json", "--home"])
