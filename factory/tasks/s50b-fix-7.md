@@ -22,6 +22,13 @@ check only the swap's own status, so the INT is lost.
 - AC3 Search the whole script once more for any other place where a status from a program or a
   function that runs programs is replaced by a constant (`|| exit <n>`, `|| return <n>`,
   `|| die`) without passing through `check_signal`; fix each and list them in install/NOTES.md.
+- AC3b (product owner) Close the class by a rule, not by sites: every place in install.sh where
+  a program's status is dropped or remapped (`|| exit n`, `|| return n`, `|| die`, `|| true`,
+  `|| x=""`, `if ! prog`, a `$(...)` whose status is overwritten) passes through the signal
+  check. Add one test (e.g. a scan of install.sh's text) that fails when a new site of these
+  forms skips `check_signal`, with an explicit, commented allow-list for the few that must
+  (the undo subshell's `SIGNAL=0` path, builtins-only substitutions). Write the rule into
+  TECHNICAL 3.8.
 - AC4 Real failures keep their text and code; every other test passes; shellcheck 0.
 
 ## Spec
