@@ -333,7 +333,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   answer), not a second macOS user; Q17 is a later dev slice; Q16 waits on the human. Friction:
   `factory/check.sh` cannot gate a docs-only task; adversary and user-sim on a design slice patch
   documents, which took 3 and 2 passes.
-- [ ] **S50b The install script and its archive (install stages 1 to 3).** Builds install/TECHNICAL
+- [~] **S50b The install script and its archive (install stages 1 to 3).** In flight (cloud), branch `slice/s50b`. Builds install/TECHNICAL
   11 stages 1 to 3: `install.sh` and the `watane-install` crate with its script tests (INST-S-1..22,
   26..28, 30, 31, with fakes for every Darwin-only tool so they pass on Linux), `--version` on the
   three programs (`watane-node --version`), and `package.sh` building the 4.2 tree from fake
