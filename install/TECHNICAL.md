@@ -41,7 +41,7 @@ install/
 
 ## 2. Where things are
 
-All paths are the defaults; each can be moved (3.2). `~` is `$HOME`.
+The paths are fixed (the human's decision, 2026-11-18); a test moves them by moving `HOME`. `~` is `$HOME`.
 
 | What | Path | Why there |
 |---|---|---|
@@ -53,8 +53,7 @@ All paths are the defaults; each can be moved (3.2). `~` is `$HOME`.
 | the maker cache | `~/Library/Caches/watane-dev` | `dev/TECHNICAL.md` env; rebuildable; kept by an uninstall |
 | the toolchain | `~/.rustup`, `~/.cargo` (`$CARGO_HOME`, `$RUSTUP_HOME`) | rustup's own; `watane-dev` finds `rustup` in `~/.cargo/bin` with no `PATH` entry (`dev 6.1` step 2) |
 
-The prefix is `~/.local`; `bin/` and `share/` are under it. A person who
-moves the prefix (`--prefix`) moves both together.
+The prefix is `~/.local`; `bin/` and `share/` are under it.
 
 Run-time needs of each program, from the code: `watane` needs nothing
 beside it. `watane-dev` needs the vendor folder (above), `watane` beside
@@ -100,7 +99,7 @@ The script file is the same file as the copy in the archive
 ### 3.2 Flags and environment
 
 ```text
-install.sh [--release <version>] [--prefix <dir>] [--toolchain | --no-toolchain]
+install.sh [--release <version>] [--toolchain | --no-toolchain]
 install.sh --uninstall
 install.sh --status
 install.sh --help | -h
@@ -109,7 +108,6 @@ install.sh --help | -h
 | Flag | Meaning |
 |---|---|
 | `--release <v>` | install version `<v>` (`0.1.0`, no `v`) instead of the script's own |
-| `--prefix <dir>` | the prefix, default `~/.local` |
 | `--toolchain` | answer yes to the offer; install the missing parts without asking (INST-F-9) |
 | `--no-toolchain` | answer no without asking; still prints the commands |
 | `--uninstall` | remove what the receipt lists (8.4) |
@@ -123,8 +121,6 @@ flag <flag>` and the usage on stderr. A flag beats its variable.
 | Variable | Meaning | Default |
 |---|---|---|
 | `WATANE_RELEASE` | as `--release` | the baked version |
-| `WATANE_PREFIX` | as `--prefix` | `$HOME/.local` |
-| `WATANE_APP_DIR` | the folder that gets `watane.app` | `$HOME/Applications` |
 | `WATANE_RELEASE_BASE` | the folder URL that holds the release's files, without a trailing slash; any scheme curl knows (`https://`, `http://`, `file://`) | `https://github.com/civic-tech-pioneer/watane/releases/download/v<release>` |
 | `WATANE_RUSTUP_URL` | where the rustup installer script comes from | `https://sh.rustup.rs` |
 | `WATANE_INSTALL_TTY` | the file that answers are read from | `/dev/tty` |
@@ -146,7 +142,8 @@ in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `python`, `perl`, `jq`, `brew`, `git`, `openssl`, `wget`, `gh` or
 `codesign`, and no bash-only syntax (no `[[`, arrays, `local`, `echo -e`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
-022`. Before step 3 it checks each tool with `command -v`; a missing one
+022`, and its whole body is one function `main` called on the last line
+(`main "$@"`), so that a download cut off half way runs nothing. Before step 3 it checks each tool with `command -v`; a missing one
 is exit 2 (INST-S-21).
 
 ### 3.4 The steps of an install
@@ -159,7 +156,7 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 | 1 | Parse flags and variables (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
 | 2 | Refuse root: `id -u` is 0. | exit 1 |
 | 3 | The tools of 3.3. | exit 2 |
-| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later. The target is `aarch64-apple-darwin`. | exit 2 |
+| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` holds no newline. The target is `aarch64-apple-darwin`. | exit 2 |
 | 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset) and set the trap (3.8). | exit 1 |
 | 6 | Read the receipt, if any: the installed version, for the message of step 12. | |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
@@ -191,7 +188,7 @@ line.
 
 The paths are the entries of 8.1: `<prefix>/bin/watane`, `watane-dev`,
 `watane-node`; `<prefix>/share/watane-dev/vendor`;
-`<prefix>/share/watane/install.sh`, `VERSION`; `<app dir>/watane.app`.
+`<prefix>/share/watane/install.sh`, `VERSION`; `~/Applications/watane.app`.
 
 1. For each entry, copy it from the extracted tree to `<path>.new.<pid>`
    (same folder, so the move is a rename; `cp -R` keeps links inside the
@@ -219,7 +216,7 @@ a folder that must hold `lib/rustlib/wasm32-wasip2/lib`. Three states:
 |---|---|---|---|
 | ok | rustc found and the target present | none | none; prints `toolchain: ok (rustup, wasm32-wasip2)` |
 | no target | rustup and rustc, no target | `rustup target add wasm32-wasip2` | `watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.` newline `Add the wasm32-wasip2 target with rustup? [y/N]` |
-| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]` |
+| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]` |
 
 **Answer.** Read one line from `$WATANE_INSTALL_TTY`, else from
 `/dev/tty` when `( : < /dev/tty ) 2>/dev/null` succeeds; a script piped
@@ -238,7 +235,7 @@ question.
   the script lets through. Then print the note `rustup put its programs in
   ~/.cargo/bin; watane-dev finds them there. To use cargo yourself, add
   that folder to your PATH.`
-- no target, and B: run the rustup command shown.
+- no target, and B: run the rustup commands shown, in order.
 - Print `toolchain: installed` and re-run the detection once; if it is
   not `ok`, print `toolchain: still incomplete after the install` and exit
   6.
@@ -256,7 +253,8 @@ watane-dev will tell you the same if it is missing: run `watane-dev doctor`.
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
 command.) For `no target`: `  rustup target add wasm32-wasip2`; for B:
-`  rustup toolchain install stable --profile minimal -t wasm32-wasip2`.
+`  rustup toolchain install stable --profile minimal -t wasm32-wasip2` and
+`  rustup default stable`.
 With no terminal the first line is `no terminal to ask on: the toolchain
 was not installed`; with `--no-toolchain` it is `toolchain: skipped
 (--no-toolchain)`.
@@ -291,7 +289,7 @@ installed:
 <the toolchain block of 3.7>
 watane 0.1.0 is installed.
 
-If macOS says "watane" cannot be opened because the developer cannot be verified:
+If macOS says "watane" cannot be opened, or could not verify that it is free of malware:
   watane.app is not signed by an Apple developer, because there is no account behind watane.
   Open System Settings, Privacy & Security, find the line about "watane" and press "Open Anyway".
   Or run this once, then open the app again:
@@ -326,8 +324,7 @@ do. Exit codes:
 
 ### 3.10 `PATH`
 
-Printed when `<prefix>/bin` is not on `PATH`, with `~/.local` as the
-default prefix:
+Printed when `~/.local/bin` is not on `PATH`:
 
 ```text
 ~/.local/bin is not on your PATH, so a new terminal will not find watane-dev yet.
@@ -381,7 +378,7 @@ watane-0.1.0-aarch64-apple-darwin/
 the top `VERSION` is what step 9 of 3.4 checks. `bin/` and `share/` keep
 the sibling layout that `vendor_dir` needs. The vendor folder is about
 26 MB and is part of the archive because the maker tools build offline
-(DEV-F-14, `dev 6`): a first `watane-dev test` must not fetch crates
+(F-QUAL-1, `dev 6.2`): a first `watane-dev test` must not fetch crates
 (Q9). The three programs are one executable each, statically linked
 Rust, linked only against system libraries.
 
@@ -438,7 +435,7 @@ when installed by the script. The script still runs, as the person's own
 user and with no `sudo`:
 
 ```sh
-xattr -dr com.apple.quarantine "$APP_DIR/watane.app"
+xattr -dr com.apple.quarantine "$HOME/Applications/watane.app"
 ```
 
 so that an app copied by a browser or AirDrop in an earlier attempt, or an
@@ -452,7 +449,7 @@ Printed in the next-step block (3.9), always, because it costs a few lines
 and spares a person a search if macOS does prompt:
 
 ```text
-If macOS says "watane" cannot be opened because the developer cannot be verified:
+If macOS says "watane" cannot be opened, or could not verify that it is free of malware:
   watane.app is not signed by an Apple developer, because there is no account behind watane.
   Open System Settings, Privacy & Security, find the line about "watane" and press "Open Anyway".
   Or run this once, then open the app again:
@@ -501,9 +498,10 @@ commit SHAs. A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
    `host/Cargo.toml`, `dev/Cargo.toml`, `node/Cargo.toml`, `app/Cargo.toml`
    and `app/tauri.conf.json`; otherwise the job fails before it builds
    (Q7).
-3. Rust: the stable toolchain that `rust-toolchain` or `rust-version` names
-   (`rustup show`), `rustup target add wasm32-wasip2` (the dev tests need
-   it), cache `~/.cargo` and `target` keyed on `Cargo.lock`.
+3. Rust: the runner's stable toolchain (at least the `rust-version` of
+   `host/Cargo.toml` and `dev/Cargo.toml`); no Wasm target, since the job
+   builds and tests no mod; cache `~/.cargo` and `target` keyed on
+   `Cargo.lock`.
 4. `MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p
    watane-host -p watane-dev -p watane-node`.
 5. The app (7.3).
@@ -534,7 +532,7 @@ that file; it asks the bundler for the app with a config override:
 ```sh
 cargo install tauri-cli --version '^2' --locked     # cached
 cd app && cargo tauri build --bundles app \
-  --config '{"bundle":{"active":true,"targets":["app"]}}'
+  --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}'
 ```
 
 which writes `target/release/bundle/macos/watane.app` (the product name
@@ -592,8 +590,9 @@ path /Users/alice/.local/share/watane/VERSION
 path /Users/alice/Applications/watane.app
 ```
 
-Absolute paths, one for each entry of 3.6, no space or newline in a path
-(a `HOME` with a newline is refused in step 4). The receipt names itself
+Absolute paths, one for each entry of 3.6; a path is the rest of its
+line, so it may hold a space but not a newline (a `HOME` with a newline
+is refused in step 4, exit 2). The receipt names itself
 nowhere; it is removed by the uninstall as the last file.
 
 ### 8.2 Upgrade
@@ -619,9 +618,9 @@ is a feature of `app`, not of `install` (Q11).
 `install.sh --uninstall` (INST-F-21, 22):
 
 1. Read the receipt; none is exit 7 (INST-S-18).
-2. `rm -rf` each `path` of the receipt that lies under the prefix or the
-   app folder of the receipt, refusing any path that is `/`, `$HOME` or
-   not absolute; then the receipt; then `rmdir` (not `rm -r`)
+2. `rm -rf` each `path` of the receipt that lies under `$HOME/.local/` or
+   is `$HOME/Applications/watane.app`, refusing any other path, `/`, `$HOME`
+   and a path that is not absolute; then the receipt; then `rmdir` (not `rm -r`)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.
@@ -724,7 +723,9 @@ human is needed for stage 5 only.
 ### 12.1 In `cargo test` (stage 1 and 3)
 
 `tests/script.rs` runs `sh install/install.sh` as a child with:
-- `HOME` an empty temporary folder; `TMPDIR` another; `WATANE_HOME` unset;
+- a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
+  `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
+  folder and `TMPDIR` another;
 - `PATH` = `<fakes dir>:<symlink dir>` where the symlink dir holds links to
   only the real tools of 3.3 that the test needs, so a tool that 3.3 does
   not list cannot be used by accident (a test that the script ran a
@@ -737,8 +738,8 @@ human is needed for stage 5 only.
 - `WATANE_RELEASE_BASE=http://127.0.0.1:<port>/release` served by a
   `tiny_http` thread of the test that logs each request path (the oracle of
   "no request" and "exactly these two"), or `file://` for the tests that
-  need no log; the fake release holds a `SHA256SUMS` made by the test (it
-  hashes with the Rust crate it already has, or with `shasum`) and a fake
+  need no log; the fake release holds a `SHA256SUMS` made by the test (with
+  `shasum -a 256` or `sha256sum`; the crate adds no hash dependency) and a fake
   archive: `tar -czf` of a tree with the layout of 4.2 whose programs are
   small shell scripts that print `<name> <version>` for `--version`;
 - `WATANE_INSTALL_TTY` a file holding the answers, or absent;
@@ -779,7 +780,8 @@ path if a clean machine with no command line tools is wanted (Q10).
 
 `tests/clean_mac.sh [--from <dir>] [--fresh-home]` does the whole run
 with no person at the keyboard except the one answer file it writes:
-1. `--fresh-home` (the runner): `H=$(mktemp -d)`; otherwise `H=$HOME` of
+1. `--fresh-home` (the runner): `H=$(cd "$(mktemp -d)" && pwd -P)` (the
+   physical path: `doctor --json` reports canonical paths, `/private/var`); otherwise `H=$HOME` of
    the clean user. `cd $H`.
 2. Run every later command under `env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin
    TERM=dumb`, plus `WATANE_INSTALL_TTY`.

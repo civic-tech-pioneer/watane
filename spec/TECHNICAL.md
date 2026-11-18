@@ -286,9 +286,10 @@ Each one closes a gap of the old specification. Veto any of them.
 | 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
 | 10 Own manager | `pkg` (the `Manage` grant, stage 11); `host` (`watane:host/manage`, its requests to the confirmation, manage fakes in `Harness`; stage 11); `dev` (the manage fake and `manages` in contract tests; stage 13); `app` (the words of the grant and of each request, the windows a reduction closes; stage J, after stage I) | J10 passes |
 
-A journey test drives the real programs. J7 lives in `install/tests/clean_mac.sh`, because it needs a clean Mac. A step is not done on the tests of
+A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
 `app/tests/`, because they drive the app. J5 lives in `app/tests/` too.
+J7 lives in `install/tests/clean_mac.sh`, because it needs a clean Mac.
 
 ## 9. Not designed yet
 
@@ -296,11 +297,6 @@ Steps 1 to 3 are designed in the documents of the subsystems: the builder
 allowlist and the contract test form in `dev`, the grant words in `app`,
 the local name in `host`, the published folder, the link and the statement
 bodies in `dist`, the backup format in `log`. These wait for their step:
-
-Step 7's first slice, installing, is designed (S50a): `install/` holds the
-script, the release archive, the checksums, the Gatekeeper step, the release
-workflow, upgrade and uninstall, and the clean-Mac test (`install/TECHNICAL.md`
-1 to 12; build plan in 11). Linux is stated out of scope there (9).
 
 Step 4 is designed (S26 draft, W20 to W23): the statements of an index,
 the read set and the search in `dist/TECHNICAL.md` 4.1, 5.9 and 5.10; the
@@ -324,6 +320,11 @@ J5 each gain a journey on that stand-in (`app/tests/j3.rs::ac2_j3_github`,
 `app/tests/j5.rs::ac2_j5_github`), served from a clone of the pushed site
 repository. Only the opt-in `real-github` journeys reach GitHub, in
 throwaway repositories they create and delete (app 11).
+
+Step 7's first slice, installing, is designed (S50a): `install/` holds the
+script, the release archive, the checksums, the Gatekeeper step, the release
+workflow, upgrade and uninstall, and the clean-Mac test (`install/TECHNICAL.md`
+1 to 12; build plan in 11). Linux is stated out of scope there (9).
 
 Step 8 is designed (`PEERS.md`, `net/VISION.md`, `net/FUNCTIONAL.md`,
 `net/TECHNICAL.md`; W31 to W33; S59): `node/` (the holder over `dist`, the
