@@ -42,3 +42,5 @@ S50b-fix2: the adversary's five RISK findings closed with the stricter option (I
 script in a test is the `Command` child (perl execs sh), and a fake `chmod` (`chmod_wait`/`chmod_waiting` in the
 state folder) holds the staging so a test can plant a link at `journal.<pid>` first. `home_deletable` sets
 `HOME_OUT` for the outside-home case; the question shows the resolved path through `tilde_r`; the `deleted:` and `kept:` lines keep the home as given.
+
+S50b-fix3: install folders must resolve strictly below the resolved home (`below_home`; `in_home` stays for the home-to-delete check). A link to the home itself gave rule 3 the home's top level (IN-39). Links to other folders inside the home still work (INST-S-31 last case).

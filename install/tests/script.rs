@@ -1467,3 +1467,59 @@ fn ac3_the_question_names_the_resolved_path() {
     );
     assert!(fx.home.join("real/marker").exists());
 }
+
+#[test]
+fn inst_s31_an_install_folder_resolving_to_the_home() {
+    let home_err = |fx: &Fx, folder: &str| {
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 2, "{out:?}");
+        let home = fs::canonicalize(&fx.home)
+            .expect("canon")
+            .display()
+            .to_string();
+        assert_eq!(
+            out.first_err(),
+            format!("watane install: {folder} resolves to {home}, outside your home folder {home}")
+        );
+        assert!(fx.rel.requests().is_empty());
+    };
+    for (rel, shown) in [
+        (".local/bin", "~/.local/bin"),
+        ("Applications", "~/Applications"),
+        (".local/share/watane", "~/.local/share/watane"),
+        (".local/share/watane-dev", "~/.local/share/watane-dev"),
+    ] {
+        let fx = Fx::new();
+        fs::create_dir_all(fx.home.join(".local/share")).expect("share");
+        symlink(&fx.home, fx.home.join(rel)).expect("link");
+        home_err(&fx, shown);
+    }
+}
+
+#[test]
+fn inst_s31_uninstall_through_bin_or_applications_linked_to_the_home() {
+    for (rel, line, victim) in [
+        (".local/bin", ".local/bin/watane-x", "watane-x"),
+        ("Applications", "Applications/watane.app", "watane.app"),
+    ] {
+        let fx = Fx::new();
+        assert_eq!(fx.run(&[]).code, 0);
+        let link = fx.home.join(rel);
+        fs::remove_dir_all(&link).expect("rm");
+        symlink(&fx.home, &link).expect("link");
+        write_file(&fx.home.join(victim), "mine");
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(fx.receipt())
+            .expect("open");
+        std::io::Write::write_all(
+            &mut f,
+            format!("path {}/{line}\n", fx.home.display()).as_bytes(),
+        )
+        .expect("append");
+        drop(f);
+        let out = fx.run(&["--uninstall"]);
+        assert_eq!(out.code, 0, "{out:?}");
+        assert!(fx.home.join(victim).exists(), "{victim} removed: {out:?}");
+    }
+}

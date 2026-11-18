@@ -206,8 +206,8 @@ pwd -P)`): a link that `cd` cannot enter (broken, or to a file) is exit 2 with
 the same text and `<target>` as `readlink` gives it. Otherwise a broken link
 to `/Volumes/Off/bin` would pass as its parent and be written through once the
 volume, or a folder another user creates under `/tmp`, appears. The resolved
-home must not be `/`. Each must equal the resolved home or start with it
-followed by `/`; otherwise exit 2 with
+home must not be `/`. Each must start with the resolved home followed by `/` (strictly below it: a folder
+that resolves to the home itself is refused too); otherwise exit 2 with
 
 ```text
 watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder /Users/alice
@@ -511,7 +511,7 @@ do. Exit codes:
 |---|---|
 | 0 | done, or `--help`, or `--status` with a receipt, or uninstall done; includes the answer `N` |
 | 1 | usage, root, no temporary folder |
-| 2 | unsupported platform, a missing tool, or an install folder that resolves outside the home (3.4.1) |
+| 2 | unsupported platform, a missing tool, or an install folder that resolves outside the home or to the home itself (3.4.1) |
 | 3 | a download failed |
 | 4 | the checksum does not match, or `SHA256SUMS` has no line for the archive |
 | 5 | the archive is not a watane archive, the files could not be put in place (rolled back), or another install is running (3.6.1) |
@@ -867,7 +867,7 @@ is a feature of `app`, not of `install` (Q11).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27); then the stale names of
-   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves inside the resolved home, 8.5 rule 3)
+   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves strictly below the resolved home, 8.5 rule 3)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.
@@ -922,7 +922,7 @@ no `.` or `..` component). A path is allowed only when:
    `$HOME/.local/share/watane-dev/` (not the folder itself); and
 3. the folder that holds it resolves inside the resolved install folder it is listed under
    (`~/.local/bin`, `~/.local/share/watane`, `~/.local/share/watane-dev`, `~/Applications`), and
-   that folder inside the resolved home, as in
+   that folder strictly below the resolved home (never the home itself), as in
    3.4.1 (`--uninstall` too checks this, so a link put at
    `share/watane-dev` after the install does not make it delete `vendor`
    elsewhere).
@@ -1274,3 +1274,4 @@ otherwise.
 | IN-36 | A home that resolves outside the resolved `$HOME` is never deleted by the script, even on a typed `delete`; the `rm -rf` command is printed. The question names the resolved path. | One typed word must not delete another disk's folder through a link. Undo: allow it with the question. |
 | IN-37 | With `WATANE_RUSTUP_URL` set, the offer-A question names that URL. | The question says where the download comes from. |
 | IN-38 | 8.5 rule 3 resolves the holding folder against its install folder, and rule 2 refuses a `bin/` name ending in `.mine`. | A link inside an install folder must not lead a removal into the rest of the home. |
+| IN-39 | An install folder must resolve strictly below the resolved home, in 3.4.1, in 8.5 rule 3 and for the closing `rmdir`; a link to the home itself is refused, a link to another folder below it still works. | A link `~/.local/bin -> ~` made the removal rule reach `~/watane-x` and the home's top level. |

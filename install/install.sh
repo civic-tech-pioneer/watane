@@ -126,6 +126,14 @@ in_home() {
   return 1
 }
 
+# below_home <resolved path>: strictly below the resolved home, never the home itself
+below_home() {
+  case $1 in
+    "$HOME_R"/*) return 0 ;;
+  esac
+  return 1
+}
+
 # allowed <path>: the rule of TECHNICAL 8.5, the only paths a removal may touch
 allowed() {
   plain_path "$1" || return 1
@@ -141,7 +149,7 @@ allowed() {
     *) return 1 ;;
   esac
   resolve_dir "$al_root" || return 1
-  in_home "$RES" || return 1
+  below_home "$RES" || return 1
   al_rr=$RES
   resolve_dir "${1%/*}" || return 1
   case $RES in
@@ -446,7 +454,7 @@ check_home() {
 # check_folders: each install folder resolves inside the home (TECHNICAL 3.4.1)
 check_folders() {
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
-    if ! resolve_dir "$ch_f" || ! in_home "$RES"; then
+    if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
       die 2 "$(tilde "$ch_f") resolves to $RES, outside your home folder $HOME_R" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
     fi
@@ -925,7 +933,7 @@ EOF
     warn "skipped $RECEIPT: not a path that watane installs"
   fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
-    if resolve_dir "$du_d" && in_home "$RES"; then rmdir "$du_d" 2>/dev/null || true; fi
+    if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || true; fi
   done
   say "uninstalled watane $du_ver"
   if exists "$HOME/Library/Caches/watane-dev"; then
