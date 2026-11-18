@@ -26,7 +26,7 @@ pub fn find_watane() -> Result<PathBuf, Problem> {
         )
         .fix("Install watane, or set WATANE_BIN to the program")
     };
-    if let Some(p) = std::env::var_os("WATANE_BIN") {
+    if let Some(p) = crate::env::var_os("WATANE_BIN") {
         let p = PathBuf::from(p);
         return if executable(&p) {
             p.canonicalize().map_err(Problem::internal)
@@ -40,7 +40,7 @@ pub fn find_watane() -> Result<PathBuf, Problem> {
             return Ok(p);
         }
     }
-    if let Some(paths) = std::env::var_os("PATH") {
+    if let Some(paths) = crate::env::var_os("PATH") {
         for path in std::env::split_paths(&paths) {
             let p = path.join("watane");
             if executable(&p) {

@@ -130,7 +130,7 @@ pub fn vendor_dir() -> Result<PathBuf, Problem> {
         .unwrap_or_default();
     let cache = crate::env::Env::from_process()?.cache.join("vendor");
     let path = select_vendor(
-        std::env::var_os("WATANE_DEV_VENDOR").map(PathBuf::from),
+        crate::env::var_os("WATANE_DEV_VENDOR").map(PathBuf::from),
         &installed,
         &dev.join("allowlist/vendor"),
         &cache,

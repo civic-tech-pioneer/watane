@@ -115,7 +115,88 @@ fn github_account(account: &str) -> Result<String, String> {
     }
 }
 
+/// What `main` does with its process (2.5), with the process given.
+///
+/// Parses `args` (the program name first), runs the command with `vars` over
+/// the process's environment and `cwd` as the current folder (None: the
+/// process's), writes the result to `out` and returns the exit status.
+pub fn main_with(
+    args: &[std::ffi::OsString],
+    vars: &[(&str, Option<&std::ffi::OsStr>)],
+    cwd: Option<&Path>,
+    out: &mut dyn std::io::Write,
+) -> u8 {
+    use crate::outcome::Code;
+    // A closed stdout (`| head -1`) ends the output, not the program with a panic.
+    let mut emit = |text: &str| {
+        let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
+    };
+    let json = args.iter().any(|s| s == "--json");
+    let outcome = match Cli::try_parse_from(args) {
+        Ok(cli) => crate::env::with_vars(vars, || run_in(cli, cwd.map_or_else(std::env::current_dir, |cwd| Ok(cwd.to_path_buf())))),
+        Err(e)
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            emit(&e.to_string());
+            return 0;
+        }
+        Err(e) => {
+            let command = args
+                .iter()
+                .filter_map(|s| s.to_str())
+                .find_map(|s| match s {
+                    "new" => Some("new"),
+                    "check" => Some("check"),
+                    "serve" => Some("serve"),
+                    "doctor" => Some("doctor"),
+                    "test" => Some("test"),
+                    "add" => Some("add"),
+                    "install" => Some("install"),
+                    "publish" => Some("publish"),
+                    "search" => Some("search"),
+                    "help" => Some("help"),
+                    _ => None,
+                })
+                .unwrap_or("watane-dev");
+            let message = if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                    | clap::error::ErrorKind::MissingSubcommand
+            ) {
+                "no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search".to_string()
+            } else {
+                let text = e.to_string();
+                let body: Vec<&str> = text
+                    .lines()
+                    .take_while(|line| !line.trim().is_empty())
+                    .map(str::trim)
+                    .collect();
+                let joined = body.join(" ");
+                joined
+                    .strip_prefix("error: ")
+                    .unwrap_or(&joined)
+                    .to_string()
+            };
+            Outcome::new(command, None).fail(vec![
+                Problem::new(Code::UsageArgs, message).fix("watane-dev --help"),
+            ])
+        }
+    };
+    if json {
+        emit(&format!("{}\n", outcome.to_json()));
+    } else {
+        emit(&outcome.to_text());
+    }
+    outcome.exit_code()
+}
+
 pub fn run(cli: Cli) -> Outcome {
+    run_in(cli, std::env::current_dir())
+}
+fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     let name = match cli.command {
         Command::New { .. } => "new",
         Command::Check => "check",
@@ -127,7 +208,7 @@ pub fn run(cli: Cli) -> Outcome {
         Command::Publish { .. } => "publish",
         Command::Search { .. } => "search",
     };
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd {
         Ok(p) => p,
         Err(e) => return Outcome::new(name, None).fail(vec![Problem::internal(e)]),
     };

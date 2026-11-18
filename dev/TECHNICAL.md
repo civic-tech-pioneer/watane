@@ -15,9 +15,9 @@ One crate at the root of this folder: package `watane-dev`, lib
 ```text
 dev/
   Cargo.toml
-  src/main.rs           parse the CLI, call cli::run, print, exit
+  src/main.rs           call cli::main_with on the process's arguments and stdout, exit
   src/lib.rs            the modules below, all `pub`
-  src/cli.rs            clap types; run(Cli) -> Outcome; one fn for each command
+  src/cli.rs            clap types; main_with (2.5); run(Cli) -> Outcome; one fn for each command
   src/outcome.rs        Outcome, Problem, Code, Class; JSON and text output
   src/doctor.rs         report every environment gap without stopping early
   src/env.rs            the cache folder and the limits
@@ -573,6 +573,27 @@ and two or more words, `Try fewer words: <the search command with only the first
 with one word or none, `Try other words, or search with --interface <name>: watane-dev search --json <other words>`.
 The search command is the one built for `env.host_not_running` below.
 When any word starts with `-`, the filters and `--home` come before the words and ` --` precedes the words, so the rerun does not read a word as a flag.
+
+### 2.5 One run in-process (tests)
+
+`main` is `cli::main_with` on the process's own arguments, environment,
+folder and stdout:
+
+```rust
+pub fn main_with(args: &[OsString], vars: &[(&str, Option<&OsStr>)], cwd: Option<&Path>,
+    out: &mut dyn Write) -> u8;   // exit status; args[0] is the program name
+```
+
+A test calls it in-process to check a command's JSON, codes and messages
+without starting `watane-dev`. `vars` sets (`Some`) or unsets (`None`) the
+variables of section 3 for this call: dev reads every variable of its own
+through `env::var_os`, which looks at them first, on the calling thread
+only. Child processes still inherit the process's environment, and
+`WATANE_HOME` and `HOME` reach `watane_host::default_home()` unchanged,
+so a test of those (or of `PATH` lookup, exit by signal, stderr, a
+closed stdout, `TMPDIR`) starts the program. `cwd` None is the process's
+folder; tests pass `--dir`, as `new --from` without `--dir` uses the
+process's folder.
 
 ## 3. Environment
 

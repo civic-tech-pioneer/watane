@@ -54,7 +54,7 @@ pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
         .env("CARGO_TERM_COLOR", "never")
         .env("CARGO_INCREMENTAL", "0");
     for key in ["SDKROOT", "DEVELOPER_DIR"] {
-        if let Some(value) = std::env::var_os(key) {
+        if let Some(value) = crate::env::var_os(key) {
             command.env(key, value);
         }
     }

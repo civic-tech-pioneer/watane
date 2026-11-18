@@ -44,21 +44,21 @@ pub fn find(env: &Env) -> Result<Toolchain, Problem> {
 
 /// Discover the toolchain without requiring an installed Wasm target.
 pub fn discover(env: &Env) -> Result<Toolchain, Problem> {
-    let (cargo, rustc) = if let Some(root) = std::env::var_os("WATANE_DEV_TOOLCHAIN") {
+    let (cargo, rustc) = if let Some(root) = crate::env::var_os("WATANE_DEV_TOOLCHAIN") {
         let root = PathBuf::from(root).canonicalize().map_err(problem)?;
         (root.join("bin/cargo"), root.join("bin/rustc"))
     } else {
-        let mut candidates = std::env::var_os("PATH")
+        let mut candidates = crate::env::var_os("PATH")
             .map(|p| {
                 std::env::split_paths(&p)
                     .map(|p| p.join("rustup"))
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        if let Some(home) = std::env::var_os("CARGO_HOME") {
+        if let Some(home) = crate::env::var_os("CARGO_HOME") {
             candidates.push(PathBuf::from(home).join("bin/rustup"));
         }
-        if let Some(home) = std::env::var_os("HOME") {
+        if let Some(home) = crate::env::var_os("HOME") {
             candidates.push(PathBuf::from(home).join(".cargo/bin/rustup"));
         }
         let rustup = candidates
