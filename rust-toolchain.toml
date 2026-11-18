@@ -2,3 +2,4 @@
 # Upgrade on purpose, then re-check that seed.
 [toolchain]
 channel = "1.100.0"
+targets = ["wasm32-wasip2"]
