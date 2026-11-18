@@ -4,15 +4,21 @@ use super::driver::App;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 // Build the maker program, never a mod. Read Cargo's artifact message so a
 // custom target directory still selects this checkout's binary, not PATH.
+// Built once per test process: each `cargo build` takes Cargo's build lock.
 pub fn workspace_dev() -> PathBuf {
-    workspace_binary("watane-dev", &[])
+    static BIN: OnceLock<PathBuf> = OnceLock::new();
+    BIN.get_or_init(|| workspace_binary("watane-dev", &[]))
+        .clone()
 }
 
 pub fn workspace_fake_gh() -> PathBuf {
-    workspace_binary("fake-gh", &["--features", "fake-host"])
+    static BIN: OnceLock<PathBuf> = OnceLock::new();
+    BIN.get_or_init(|| workspace_binary("fake-gh", &["--features", "fake-host"]))
+        .clone()
 }
 
 fn workspace_binary(name: &str, extra: &[&str]) -> PathBuf {
