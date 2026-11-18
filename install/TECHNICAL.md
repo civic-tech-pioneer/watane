@@ -27,7 +27,7 @@ install/
   install.sh          the script served to people (section 3)
   package.sh          the packer (section 4)
   tests/
-    script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28: runs install.sh against a fake release (section 12)
+    script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28, 30, 31: runs install.sh against a fake release (section 12)
     workflow.rs       INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     package.rs        the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools
@@ -92,7 +92,8 @@ With a flag: `... | sh -s -- --no-toolchain`. The pinned script installs its
 own version; the latest script installs the latest published release
 (GitHub redirects `latest`, so the script needs no API call and parses no
 JSON). A script that still holds `@RELEASE@` (a checkout) refuses to run
-without `--release` or `WATANE_RELEASE`.
+without `--release` or `WATANE_RELEASE`: `@RELEASE@` fails the version check of
+3.2 (exit 1, `not a version: @RELEASE@`).
 
 The script file is the same file as the copy in the archive
 (`share/watane/install.sh`), so `sh ~/.local/share/watane/install.sh
@@ -112,8 +113,12 @@ install.sh --help | -h
 | `--release <v>` | install version `<v>` (`0.1.0`, no `v`) instead of the script's own |
 | `--no-toolchain` | answer no without asking; still prints the commands. There is no flag that answers yes (IN-24) |
 | `--uninstall` | remove what the receipt lists (8.4) |
-| `--status` | print the receipt's version, target and paths (8.1); exit 7 with no receipt |
+| `--status` | print the receipt's version, target and paths (8.1); with no receipt, exit 7 and `watane install: not installed: no receipt at ~/.local/share/watane/receipt` |
 | `--help`, `-h` | print the usage above on stdout, exit 0 |
+
+`--uninstall` and `--status` run steps 2 and 3 of 3.4 and the `HOME` checks of
+step 4, then 8.4 or 8.1; they check no version and no platform, and download
+nothing.
 
 `--no-toolchain` with `--uninstall` or `--status`, and any unknown flag
 (`--toolchain` among them), exit 1 with `watane install: unknown or conflicting
@@ -133,7 +138,7 @@ version looks like 0.1.0`, before any download (INST-S-26).
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `WATANE_RELEASE` | as `--release` | the baked version |
+| `WATANE_RELEASE` | as `--release`; set to the empty text it counts as unset, as `WATANE_HOME` (an empty `--release ''` is refused by the version check) | the baked version |
 | `WATANE_RELEASE_BASE` | the folder URL that holds the release's files, without a trailing slash; any scheme curl knows (`https://`, `http://`, `file://`) | `https://github.com/civic-tech-pioneer/watane/releases/download/v<release>` |
 | `WATANE_RUSTUP_URL` | where the rustup installer script comes from | `https://sh.rustup.rs` |
 | `WATANE_HOME` | the home, read only to name it in the uninstall question | `$HOME/.watane` |
@@ -151,13 +156,15 @@ Stock macOS 14 and later, found on the default `PATH`
 in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `shasum` (else `sha256sum`), `uname`, `sw_vers`, `sysctl`, `id`, `mktemp`,
 `mkdir`, `mv`, `cp`, `rm`, `rmdir`, `ls`, `cat`, `chmod`, `grep`, `sed`,
-`awk`, `tr`, `head`, `xattr`, `kill`, `printf`, `test`. It uses no
+`awk`, `tr`, `head`, `dirname`, `readlink`, `xattr`, `kill`, `printf`, `test`. It uses no
 `python`, `perl`, `jq`, `brew`, `git`, `openssl`, `wget`, `gh` or
 `codesign`, and no bash-only syntax (no `[[`, arrays, `local`, `echo -e`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
 022`, and its whole body is one function `main` called on the last line
-(`main "$@"`), so that a download cut off half way runs nothing. Before step 3 it checks each tool with `command -v`; a missing one
-is exit 2 (INST-S-21).
+(`main "$@"`), so that a download cut off half way runs nothing. Step 3 checks each tool with `command -v`; a missing one
+is exit 2 (INST-S-21). `sw_vers`, `sysctl` and `xattr` exist only on macOS, so step 3
+leaves them out and step 4 checks them once `uname -s` printed `Darwin`: on Linux the
+person reads `unsupported platform: Linux <arch>` (9), not that `sw_vers` is missing.
 
 ### 3.4 The steps of an install
 
@@ -250,7 +257,8 @@ error. A progress bar (`-#` in place of `-s`) only when stderr is a
 terminal. URL of a file: `<base>/<name>`; names:
 `SHA256SUMS`, `watane-<v>-<target>.tar.gz`. A curl error is exit 3 with
 `watane install: cannot download <url>` and curl's own reason on the next
-line.
+line: curl's stderr goes to a file of the temporary folder and is printed
+after that first line, so the first line of stderr is the script's.
 
 ### 3.6 Replacing the paths
 
@@ -322,7 +330,7 @@ failed (rustup exited <n>)`; the programs stay installed.
 toolchain: not installed
 To install it later, run:
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2
-watane-dev will tell you the same if it is missing: run `watane-dev doctor`.
+Then `watane-dev doctor` checks it again.
 ```
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
@@ -381,8 +389,9 @@ Next:
 
 Before `Next:` and after the Gatekeeper block, when `<prefix>/bin` is not
 on `PATH` (a colon-wrapped match of `:<prefix>/bin:` in `:$PATH:`), the
-block of 3.10. With the toolchain in state `none` and not installed, the
-`Next:` lines end with `  (install the toolchain first: see above)`.
+block of 3.10. When the toolchain is not `ok` at the end of step 13 (state `none`
+or `no target`, not installed), one more line follows the three `Next:` lines:
+`  (install the toolchain first: see above)`.
 `watane-dev new` is the real command (`dev/src/cli.rs`).
 
 Errors: first line `watane install: <cause>`, then lines that say what to
@@ -469,16 +478,19 @@ Rust, linked only against system libraries.
 `Info.plist`), runs `codesign --force --sign -` on the programs and
 `codesign --force --deep --sign -` on the app, then `codesign --verify
 --deep --strict` on each (ad hoc: Apple silicon will not run an unsigned
-binary; this is no identity, section 6), writes the archive and
-`SHA256SUMS` into `<out-dir>`. It needs no network except what
+binary; this is no identity, section 6), writes the archive, the baked
+`install.sh` (the third asset of 4.1, the same bytes as
+`share/watane/install.sh`) and `SHA256SUMS` into `<out-dir>`. It needs no network except what
 `vendor.sh` needs. It exits non-zero and writes no archive when a check
 fails.
 
 ## 5. Checksums
 
-`SHA256SUMS` is made by the workflow in the same job that makes the
-archive, with `shasum -a 256 <archive> > SHA256SUMS`, and uploaded in the
-same release. The script (step 8) takes the line whose second field is
+`SHA256SUMS` is made by `package.sh` (4.2), in the job that makes the
+archive, with `cd <out-dir> && shasum -a 256 <archive file name> > SHA256SUMS`
+(the bare name, and no `-b`: a path such as `dist-out/watane-...` or a
+`*` before the name would leave the script's `awk` with no line, exit 4 for
+every person), and uploaded in the same release. The script (step 8) takes the line whose second field is
 exactly the archive name (`awk -v f=<name> '$2 == f { print $1 }'`; zero or
 more than one match is exit 4), computes `shasum -a 256 <archive>` (else
 `sha256sum`) and compares the two 64-character strings as text.
@@ -589,7 +601,8 @@ nothing.
    2 needs `main`'s history).
 2. **Version and origin check**: the tag without `v` equals `version` in
    `host/Cargo.toml`, `dev/Cargo.toml`, `node/Cargo.toml`, `app/Cargo.toml`
-   and `app/tauri.conf.json`, and on a tag run `git merge-base
+   and `app/tauri.conf.json` (on a hand run, which has no tag, the version is
+   `host/Cargo.toml`'s and the five must still be equal), and on a tag run `git merge-base
    --is-ancestor "$GITHUB_SHA" origin/main` succeeds; otherwise the job
    fails before it builds (Q7).
 3. Rust: the runner's stable toolchain (at least the `rust-version` of
@@ -604,15 +617,18 @@ nothing.
    watane-host -p watane-dev -p watane-node`.
 5. The app (7.3).
 6. `install/package.sh aarch64-apple-darwin <version> dist-out/`.
-7. **Smoke**: `sh install/tests/clean_mac.sh --from dist-out --fresh-home`
+7. **Smoke**: `sh install/tests/clean_mac.sh --from "$PWD/dist-out" --fresh-home`
    (12.3): the install into a temporary `HOME` with `file://` as the
    release base, the assertions of 12.4, `watane --version`,
    `watane-dev --version`, `watane-node --version`, `otool -L`. The
    runner has no terminal, so the toolchain is not installed; the runner's own rustup is hidden by the
    `PATH` of the test.
 8. Release (the `release` job, tag runs only): `gh release create v<version>
-   --draft --title "watane <version>" --notes-file <generated> <archive>
-   SHA256SUMS install.sh` (`GITHUB_TOKEN`), then `gh release edit
+   --draft --title "watane <version>" --notes <text> <archive>
+   SHA256SUMS install.sh` (`GITHUB_TOKEN`, `--repo "$GITHUB_REPOSITORY"` since
+   there is no checkout), where `<text>` is the one-line command of 3.1, the
+   pinned line for this version, and a link to `install/TECHNICAL.md` 6.2 for
+   the Gatekeeper step, then `gh release edit
    v<version> --draft=false` as the last step, so that `latest/download`
    never serves a release with missing files. A failure before that leaves
    a draft, which no URL serves.
@@ -726,8 +742,10 @@ is a feature of `app`, not of `install` (Q11).
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.
-4. Print what it kept, one line each:
-   `kept: ~/.watane (your home: identity, mods, channels)`,
+4. Print what it kept, one line each (the home's line comes after step 5,
+   and only when the home exists: `deleted: <home>`, or
+   `kept: ~/.watane (your home: identity, mods, channels)`, or the kept line
+   of a home that may not be deleted, below):
    `kept: ~/Library/Caches/watane-dev (maker cache; safe to delete)` when
    it exists, `kept: ~/.rustup and ~/.cargo (the Rust toolchain; remove
    with rustup self uninstall)` when they exist.
@@ -799,7 +817,9 @@ checksums, `~/.local`) would carry over, but:
 - the first journey is Alice on a Mac (VISION).
 
 The script stops on Linux with exit 2 and `unsupported platform: Linux
-<arch>` and names what is supported. The design leaves room: a target in
+<arch>` and, on the next line, `watane installs on macOS 14.0 or later, on
+Apple silicon.` (the same second line for every refusal of step 4's platform
+check, INST-S-20). The design leaves room: a target in
 4.1, a platform case in step 4, a second runner in 7.1. Stage 6 of the
 build plan is the CLI-only Linux archive (`watane`, `watane-dev`,
 `watane-node`, vendor), with no app, on `ubuntu-22.04` for glibc 2.35;
@@ -855,7 +875,7 @@ a day for an agent, M is a day.
 
 | Stage | Build | Touches (folders) | Needs | Done when |
 |---|---|---|---|---|
-| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22 and INST-S-26 to 28 pass in `cargo test`. Size M |
+| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22, INST-S-26 to 28, 30 and 31 pass in `cargo test`. Size M |
 | 2 Versions | `watane-node --version`; `--version` of the three programs prints `<name> <version>` and exits 0 (a test each) | `node/` (bin and its `program.rs` test), `host/` and `dev/` only if a test finds a difference | none | `watane-node --version` prints `watane-node 0.1.0`. Size S |
 | 3 Packer | `package.sh` (4), `tests/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing. Size S |
 | 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | INST-S-29 passes in `cargo test`; a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
@@ -909,7 +929,25 @@ human is needed for stage 5 only.
   run (12.3 step 5) types the answer the same way, so the real macOS
   `script` covers the path as well;
 - `WATANE_RUSTUP_URL=file://<fake installer script>` that writes
-  `$HOME/.cargo/bin/rustup` and records its arguments.
+  `$HOME/.cargo/bin/rustup` (a fake that reports state `ok` afterwards) and
+  records its arguments.
+
+Also:
+- the script under test is a copy of `install/install.sh` with `@RELEASE@`
+  replaced by `0.1.0`, as `package.sh` does; the checkout copy itself refuses
+  to run (3.1);
+- each test puts on `PATH` only the fakes its scenario has: `rustup` and
+  `rustc` are absent unless the scenario says they are there (INST-S-6, 7),
+  since the detection of 3.7 takes any `rustup` that `command -v` finds;
+- `PATH` of the child holds no `perl` or `script`, so the test starts them by
+  absolute path (`/usr/bin/perl`, `/usr/bin/script`): `Command` searches the
+  child's `PATH`;
+- on a pseudo-terminal stdout and stderr arrive merged, each line ends in
+  `\r\n`, and the typed answer is echoed after the question; the oracles of
+  those scenarios match lines after removing `\r`, and an oracle that names
+  stderr is checked in the no-terminal scenarios only;
+- INST-S-5 (a) has no question to wait for: the test types `y` and Enter
+  when the line `checked: sha256 ...` appears.
 
 The tests run as a normal user and compare a listing of `$HOME` before and
 after (INST-S-1, 2, 8, 20). They run on Linux and macOS, since the
@@ -956,6 +994,22 @@ with no person at the keyboard; each answer is typed on a pseudo-terminal by the
 5. INST-S-3 and 25 from a fresh home; INST-S-15 and 16 (uninstall, answered on a pseudo-terminal, 12.1).
 6. Print `CLEAN-MAC PASS` or the first failed assertion with its command.
 
+With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
+then INST-S-1 with no terminal, the three `--version` lines and the `otool`
+assertion of 12.4; no answer is typed, no toolchain is installed and no app
+is opened. Without it, "a fresh home" means: `rm -rf` exactly `$H/.local`,
+`$H/Applications/watane.app`, `$H/.cargo`, `$H/.rustup`, `$H/.watane` and
+`$H/Library/Caches/watane-dev`, never `$H` itself, then the assertions of 12.4
+again. INST-S-23 needs a GUI session of the clean user (fast user switching,
+not `su - wclean`: `open` from `su` has no window server session of that
+user), so the whole run is started from Terminal inside that session; the
+human logs in, the script then needs no one at the keyboard.
+
+The script reads JSON (`doctor --json`) and plists with `plutil -extract
+<key path> raw -o - <file>` (stock macOS, reads JSON too), so it needs no
+`jq` or `python3`. "The app's executable" is
+`Contents/MacOS/<CFBundleExecutable of Contents/Info.plist>`.
+
 ### 12.4 What proves "no cargo, no target, no checkout"
 
 An assertion, not trust. Before the install, in the environment of 12.3
@@ -969,10 +1023,11 @@ for d in "$H/.cargo" "$H/.rustup" "$H/Library/Caches/watane-dev" "$H/.watane" "$
   [ ! -e "$d" ] || fail "$d exists"; done
 [ -z "$(ls -d "$H"/.rustup/toolchains/*/lib/rustlib/wasm32-wasip2 2>/dev/null)" ] || fail "target exists"
 # no checkout: nothing above the working folder is a watane checkout or any git work tree
+# (`-e`, not `-d`: a git worktree's `.git` is a file)
 d=$H; while [ "$d" != / ]; do
-  [ ! -e "$d/Cargo.toml" ] && [ ! -d "$d/.git" ] || fail "checkout at $d"; d=$(dirname "$d"); done
+  [ ! -e "$d/Cargo.toml" ] && [ ! -e "$d/.git" ] || fail "checkout at $d"; d=$(dirname "$d"); done
 # no variable that points at one
-env | grep -E '^(CARGO|RUSTUP|WATANE_(BIN|DEV_[A-Z_]*|HOME))=' && fail "variable set"
+! env | grep -E '^(CARGO[A-Z_]*|RUSTUP[A-Z_]*|WATANE_[A-Z_]*)=' || fail "variable set"
 ```
 
 After the install, before the answer `y`: the same loop finds no `cargo`;
@@ -991,7 +1046,7 @@ what they need beside themselves.
 
 | Test | Where |
 |---|---|
-| INST-S-1 to INST-S-22, INST-S-26 to 29; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
+| INST-S-1 to INST-S-22, INST-S-26 to 31; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-14`, by `workflow_dispatch` |
 | INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (a second user), against a real release |
 
