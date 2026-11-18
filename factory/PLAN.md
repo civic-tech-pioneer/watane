@@ -1481,6 +1481,12 @@ The human may veto each one.
   receipt line empty it). Built in S50c, before the first release, when the receipt format costs
   nothing to change; after it, a change needs a migration. Rejected: accepting the risk, and
   checking share/ lines against a fixed list (breaks 8.5's downgrade rule).
+- S50b-fix (2026-11-19): macOS bash 3.2 can lose a Ctrl-C when a child exits 130. Fix it as a
+  class (s50b-fix-7): every dropped or remapped status in install.sh goes through the signal check,
+  and a test fails on a new site that skips it. If the next adversary pass still finds a site of
+  this class (home intact; only the exit code and cause line are wrong), it becomes a known limit in
+  install/TECHNICAL 3.8, its tests are `#[ignore = "known limit, S50c"]`, and the slice delivers.
+  Not a weakened check: the rollback always finishes.
 
 ## Friction
 
