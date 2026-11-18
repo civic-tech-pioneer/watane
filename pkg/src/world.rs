@@ -261,7 +261,7 @@ pub(crate) fn read(
                 .iter()
                 .find(|f| message.contains(&dir.join(f).to_string_lossy().to_string()))
                 .map_or("wit/world.wit", String::as_str);
-            let message = cap_message(&message);
+            let message = cap_message(&escape_message(&message));
             violation(violations, Rule::Wit, file, message);
             return Ok(None);
         }
@@ -531,6 +531,25 @@ pub(crate) fn read(
         providers,
         own_package_copy,
     }))
+}
+
+/// Write every control character other than `\n` and every bidi format
+/// character of `message` in its escaped form (TECHNICAL 4).
+fn escape_message(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    for c in message.chars() {
+        if c == '\n' {
+            out.push(c);
+        } else if c.is_control() {
+            out.extend(c.escape_debug());
+        } else if matches!(c, '\u{61c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Cut `message` at a UTF-8 boundary to at most 2000 bytes, keeping the

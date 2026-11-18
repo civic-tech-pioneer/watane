@@ -209,7 +209,7 @@ on is `<publisher>/<slug>@<that version>` (a `ReleaseRef`).
    resolve with `Resolve::push_groups` inside `std::panic::catch_unwind`.
    Never pass filesystem paths to a parser that reopens them. Component
    import checking uses the imports from this same checked resolution.
-   An error or a panic is rule `wit`, with the parser message rendered by wit-parser (its `--> <path>:<line>:<column>` location and snippet), cut to 2000 bytes at a UTF-8 boundary with that line kept.
+   An error or a panic is rule `wit`, with the parser message rendered by wit-parser (its `--> <path>:<line>:<column>` location and snippet), cut to 2000 bytes at a UTF-8 boundary with that line kept. Before the cut the message escapes every control character except the `\n` between lines and every bidi format character of the untrusted source (`\u{1b}`, `\r`, `\u{202e}`).
 3. The main package must be `mods:<slug>@<version>` with a valid `Slug` and
    `Version`, and hold exactly one world.
 4. Classify each item of that world (4.5). `wit-parser` has elaborated the
@@ -859,7 +859,7 @@ world recommendations {
 | No path traversal | path grammar (6.2) in pack and decode, before any write; `unpack` writes only below a directory it has just created, with `create_new`. |
 | No overwrite through case or file/directory clashes | the lowercase and parent checks of 6.2. |
 | No size bomb | no compression; the length limit is checked first; each declared size is compared with the remaining input; `.wit`, `mod.toml`, `deps.json` and release limits are checked before parsing; WIT nesting ≤ 32. |
-| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. Malformed release errors name context and cause once. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
+| A malformed input cannot stop the host | the WIT parser and the component decoder run inside `catch_unwind`; every refusal is a value, never a panic. The `wit` message escapes control and bidi characters of the source (4). Malformed release errors name context and cause once. `Path` and `Symlink` display paths with `str::escape_debug`, preserving raw path fields without emitting control characters; an unpack error survives cleanup failure. |
 | No secret leaves through a package | only the paths of 6.1; hidden directory descendants checked for links before omission; symbolic links refused; every mod and pack content read and every `add_provider` read and write uses the shared all-components no-follow walk and same-handle checks of 6.4 on Unix; WIT resolves checked bytes without reopening; private state lives in the home, never in a mod folder. |
 | One meaning, one byte string | canonical package bytes (6.3) and canonical release CBOR (7.2) with decode-then-re-encode; so one id and one signature per meaning. |
 | A package matches its release | `Release::check` re-derives the body from the unpacked mod and compares every field. |
