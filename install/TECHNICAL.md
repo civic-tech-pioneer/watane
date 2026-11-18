@@ -299,14 +299,20 @@ files (INST-F-20, INST-S-14, 32, 33).
 3. **Swap.** For each entry in the order of the list above, the receipt
    last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then append the
    line `moved <path>` to the journal; then
-   `mv <path>.new.<pid> <path>`. The move of `receipt.new.<pid>` onto the
-   receipt is the commit point.
+   `mv <path>.new.<pid> <path>`. The receipt alone is not moved aside: it is
+   copied (`cp -p receipt receipt.old.<pid>`, when it exists), and
+   `mv receipt.new.<pid> receipt` replaces it in one rename. So until that
+   rename, the commit point, the file `receipt` is the old receipt; had it
+   been moved aside, a kill just before the commit would leave no receipt,
+   and the next run's step 6, which comes before step 0, would find every
+   swapped path foreign (exit 8, against INST-S-33; S50a user-sim, dry run).
 4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT` or `TERM` while
    they run (the trap, 3.8), undoes the swap from the journal, or, if the
    failure came before the journal was written, from the `.new` names alone:
    for each `old <path>` line, only if `<path>.old.<pid>` exists (the swap
    reached this entry): `rm -rf <path>` if it exists, then
-   `mv <path>.old.<pid> <path>`; an `old` entry with no `.old.<pid>` was not
+   `mv <path>.old.<pid> <path>` (for the receipt, only the `mv`, which
+   replaces the file in one rename, so that no moment leaves it missing); an `old` entry with no `.old.<pid>` was not
    swapped and its `<path>` is the old file, which stays. For each
    `new <path>` line, only if the journal also holds `moved <path>` and
    `<path>.new.<pid>` no longer exists (it was moved in): `rm -rf <path>`.
@@ -316,9 +322,10 @@ files (INST-F-20, INST-S-14, 32, 33).
    143). A running `watane` keeps its open file; the next start uses the new
    one. The old version and the old receipt are then as before the run
    (INST-S-14, 32).
-5. **After the commit.** `rm -rf` each `.old.<pid>`; remove the paths of the
-   old receipt that are not in the new list, each only if the rule of 8.5
-   allows it (INST-S-27); remove the journal last. A removal that fails here
+5. **After the commit.** Remove the paths of the old receipt that are not
+   in the new list, each only if the rule of 8.5 allows it (INST-S-27); then
+   `rm -rf` each `.old.<pid>`, `receipt.old.<pid>` last, since step 0 reads
+   it if this step is cut short; remove the journal last. A removal that fails here
    prints `watane install: could not remove <path>` on stderr and does not
    change the exit status: the new version is installed, and the next run
    removes a leftover `.old.<n>` of a dead pid (3.8). After an upgrade the
@@ -497,7 +504,7 @@ do. Exit codes:
 | 2 | unsupported platform, a missing tool, or an install folder that resolves outside the home (3.4.1) |
 | 3 | a download failed |
 | 4 | the checksum does not match, or `SHA256SUMS` has no line for the archive |
-| 5 | the archive is not a watane archive, or the files could not be put in place (rolled back) |
+| 5 | the archive is not a watane archive, the files could not be put in place (rolled back), or another install is running (3.6.1) |
 | 6 | the toolchain step failed (watane itself is installed) |
 | 7 | no receipt (`--status`, `--uninstall`) |
 | 8 | files that watane did not install are where it would install (3.4.2); nothing was changed |
@@ -837,7 +844,8 @@ is a feature of `app`, not of `install` (Q11).
 
 `install.sh --uninstall` (INST-F-21, 22):
 
-1. Recover first, as 3.6 step 0 (a journal of a dead process is undone or
+1. Stop, as an install does, on a journal of a live process other than
+   itself (3.6.1, exit 5). Recover first, as 3.6 step 0 (a journal of a dead process is undone or
    finished), so that a killed upgrade leaves neither a missing receipt nor
    `.old.<n>` names behind. Then read the receipt; none is exit 7
    (INST-S-18).
