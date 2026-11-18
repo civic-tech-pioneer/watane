@@ -572,6 +572,7 @@ index in the watane app, then run: <the search command>`; with none otherwise
 and two or more words, `Try fewer words: <the search command with only the first word>`;
 with one word or none, `Try other words, or search with --interface <name>: watane-dev search --json <other words>`.
 The search command is the one built for `env.host_not_running` below.
+When any word starts with `-`, the filters and `--home` come before the words and ` --` precedes the words, so the rerun does not read a word as a flag.
 
 ## 3. Environment
 

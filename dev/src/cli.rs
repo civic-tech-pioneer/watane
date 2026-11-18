@@ -583,8 +583,14 @@ fn search_command(
     home: &str,
 ) -> String {
     let mut next = String::from("watane-dev search --json");
-    for word in words {
-        next.push_str(&format!(" {}", quote(Path::new(word))));
+    // A word that starts with `-` would read as a flag: filters first, then `--`.
+    let dashed = words.iter().any(|w| w.starts_with('-'));
+    let words_text: String = words
+        .iter()
+        .map(|w| format!(" {}", quote(Path::new(w))))
+        .collect();
+    if !dashed {
+        next.push_str(&words_text);
     }
     for (flag, value) in [("publisher", publisher), ("interface", interface)] {
         if let Some(value) = value {
@@ -592,6 +598,10 @@ fn search_command(
         }
     }
     next.push_str(home);
+    if dashed {
+        next.push_str(" --");
+        next.push_str(&words_text);
+    }
     next
 }
 
@@ -1118,6 +1128,21 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ac1_search_rerun_guards_dash_words_with_double_dash() {
+        let line = search_command(&["--home=/x".to_string()], None, None, "");
+        assert_eq!(line, "watane-dev search --json -- '--home=/x'");
+        let argv = line.replace('\'', "");
+        let cli = Cli::try_parse_from(argv.split(' ')).unwrap();
+        match cli.command {
+            Command::Search { text, home, .. } => {
+                assert_eq!(text, ["--home=/x"]);
+                assert!(home.is_none());
+            }
+            _ => panic!("not search"),
+        }
+    }
 
     #[test]
     fn ac5_owner_documentation_and_ac6_cached_timing_contract() {
