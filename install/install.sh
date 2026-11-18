@@ -426,7 +426,12 @@ check_signal() {
   if [ "$SIGNAL" = 0 ]; then
     case $sig_status in 129 | 130 | 141 | 143) SIGNAL=$sig_status ;; esac
   fi
-  if [ "$SIGNAL" != 0 ]; then exit "$SIGNAL"; fi
+  # Ignore further signals as on_signal does: a trap still pending would otherwise run in the
+  # exit trap and end it before it removes the temporary folder.
+  if [ "$SIGNAL" != 0 ]; then
+    trap '' HUP INT TERM PIPE
+    exit "$SIGNAL"
+  fi
   return 0
 }
 

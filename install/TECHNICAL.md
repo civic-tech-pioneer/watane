@@ -491,7 +491,8 @@ its child dies. This applies to `die` and the separate foreign-file,
 download and toolchain failure paths. Version and checksum-line checks
 use builtins so a killed pipeline cannot masquerade as invalid input.
 Every program whose status the script does not otherwise act on passes it
-to the signal check, so a signal the shell lost still ends the run.
+to the signal check, so a signal the shell lost still ends the run. When
+the check ends the run it first ignores further signals, as the handler does.
 A real exit of 129/130/141/143 from rustup or rustup-init is treated as
 that signal, without a "toolchain step failed" line. A signal during final
 cleanup may leave the temporary folder. A signal while a question waits

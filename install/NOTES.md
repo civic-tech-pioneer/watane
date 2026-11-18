@@ -371,3 +371,10 @@ do_swap) still replaced a program's status, so a Ctrl-C during the staging
 `cp -R` ended with exit 5 and "could not put the files in place". Those
 sites now return the program's own status and install_files passes it to
 the signal check after the rollback.
+
+Validator, round 1: `ac4_signals_during_xattr_leave_the_new_version_without_a_journal`
+failed once in a full check run (exit 130, temporary folder left). With the
+new check right after xattr, `check_signal` can exit while the INT trap is
+still pending; the trap then ran at cleanup's dispatch point, after
+`trap - EXIT`, and exited before `rm -rf`. `check_signal` now ignores
+further signals before it exits, as `on_signal` does.
