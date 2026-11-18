@@ -1298,6 +1298,45 @@ fn inst_s33_a_signal_that_kills_the_undo_is_undone_by_the_handler() {
     assert!(fx.tmp_tree().is_empty());
 }
 
+/// The undo of 3.6 step 4 must be safe to repeat (rollback runs it again when a signal killed
+/// it). The first undo removes `<entry>.new.<pid>` before the journal, so a repeat reads a
+/// `new` + `moved` entry with no `.new` as "moved in" and removes what is at the path now.
+#[test]
+fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
+    let fx = Fx::new();
+    // fresh install: every entry is `new`; the app's swap `mv` fails after its `moved` line
+    fx.state_write("mv_fault", "fail\n*/Applications/watane.app\n");
+    // at the undo's `rm` of receipt.new (after it removed watane.app.new.<pid>): the person
+    // drags a watane.app into ~/Applications, and the undo's subshell dies of TERM (the
+    // macOS sh pending-trap death that `rollback` repeats the undo for)
+    let rm = fx.fakes.join("rm");
+    fs::write(
+        &rm,
+        "#!/bin/sh\n\
+         for a; do case $a in */share/watane/receipt.new.*)\n\
+         if [ -f \"$FAKE_STATE/armed\" ]; then\n\
+         \"$FAKE_REAL/rm\" -f \"$FAKE_STATE/armed\"\n\
+         /bin/mkdir -p \"$HOME/Applications/watane.app\"\n\
+         echo mine > \"$HOME/Applications/watane.app/marker\"\n\
+         kill -s TERM $PPID; exit 1\n\
+         fi ;; esac; done\n\
+         exec \"$FAKE_REAL/rm\" \"$@\"\n",
+    )
+    .expect("fake rm");
+    fx.state_write("armed", "1");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(
+        !fx.state.join("armed").exists(),
+        "the undo reached its rm: {out:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(fx.app().join("marker")).unwrap_or_default(),
+        "mine\n",
+        "the person's watane.app is kept: {out:?}"
+    );
+}
+
 fn plant_s35(fx: &Fx, n: u32) {
     let h = fx.home.display();
     let mut j = String::new();
