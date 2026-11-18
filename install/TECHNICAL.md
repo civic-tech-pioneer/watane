@@ -27,7 +27,7 @@ install/
   install.sh          the script served to people (section 3)
   package.sh          the packer (section 4)
   tests/
-    script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28, 30, 31: runs install.sh against a fake release (section 12)
+    script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28, 30 to 35: runs install.sh against a fake release (section 12)
     workflow.rs       INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     package.rs        the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools
@@ -223,7 +223,7 @@ The paths to install are the entries of 3.6. Step 6 reads the receipt, if
 there is one and it is a regular file whose first line is `watane-receipt 1`,
 as the set of paths that watane installed: its `path` lines that the rule of
 8.5 allows (a refused line is ignored here, so the INST-S-27 receipt still
-upgrades); a missing, unreadable or unrecognised receipt is the empty set. The `new <path>` lines of a journal left by a dead process (3.6) are added to the set: they are paths that an interrupted swap of this script put there.
+upgrades); a missing, unreadable or unrecognised receipt is the empty set. A path of a journal left by a dead process (3.6) is added to the set only when the journal's rules of 3.6.1 say the swap moved it in: a valid `new <path>` line, a valid `moved <path>` line, and no `<path>.new.<n>`. A `new` line alone is not enough: it says that the path did not exist when the killed run began, not that watane put it there, and a file that the person put at that path afterwards (a `watane.app` dragged from a browser) must stay foreign (INST-S-35).
 The receipt's own path counts as a foreign file when it exists (`-e` or `-L`)
 and is not a recognised receipt, since step 10's `mv` onto a folder would put
 the receipt inside it. For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
@@ -297,7 +297,8 @@ files (INST-F-20, INST-S-14, 32, 33).
    of step 4 touches only entries the swap reached, so a journal cut short
    by a kill undoes nothing.
 3. **Swap.** For each entry in the order of the list above, the receipt
-   last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then
+   last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then append the
+   line `moved <path>` to the journal; then
    `mv <path>.new.<pid> <path>`. The move of `receipt.new.<pid>` onto the
    receipt is the commit point.
 4. **Undo.** Any failure in steps 1 to 3, and `HUP`, `INT` or `TERM` while
@@ -307,8 +308,9 @@ files (INST-F-20, INST-S-14, 32, 33).
    reached this entry): `rm -rf <path>` if it exists, then
    `mv <path>.old.<pid> <path>`; an `old` entry with no `.old.<pid>` was not
    swapped and its `<path>` is the old file, which stays. For each
-   `new <path>` line, only if `<path>.new.<pid>` no longer exists (it was
-   moved in): `rm -rf <path>`. Each removal only where the rule of 8.5
+   `new <path>` line, only if the journal also holds `moved <path>` and
+   `<path>.new.<pid>` no longer exists (it was moved in): `rm -rf <path>`.
+   Only lines valid by 3.6.1 are used. Each removal only where the rule of 8.5
    allows; then remove each
    `.new.<pid>`, `receipt.new.<pid>` and the journal; exit 5 (or 129, 130,
    143). A running `watane` keeps its open file; the next start uses the new
@@ -334,6 +336,29 @@ the two cases apart by `receipt.new.<n>`: while it exists the commit has not
 happened and the journal is undone; once it is gone the receipt is the new
 one, and step 0 finishes step 5 for it (the paths only the old receipt
 held, the `.old.<n>` names, the journal).
+
+#### 3.6.1 Which journal lines count
+
+A journal is read back by another process, maybe after a kill, a power
+loss or an edit, so it is input, like the receipt (8.5). Step 0, the undo of
+step 4 and the check of 3.4.2 use a journal only when it is a regular file
+named `journal.<n>` with `<n>` digits only, and use a line of it only when:
+
+1. the line ends with a newline (a line cut short by a kill is ignored);
+2. it is `old <path>`, `new <path>` or `moved <path>`, nothing else; and
+3. `<path>` is, as text, exactly one of the entries of 3.6 for the current
+   `HOME` (the seven paths and the receipt), which the rule of 8.5 allows.
+
+Any other line is ignored, so a journal cannot name a path outside the
+entries, and `mv <path>.old.<n> <path>` and `rm -rf <path>` act on entries
+only. An `old` line is used only while `<path>.old.<n>` exists; a `new` line
+removes or counts `<path>` only with its `moved` line and no
+`<path>.new.<n>` (INST-S-35). Two runs at once are not supported: a run
+that finds, at step 6, a journal of a live process other than itself stops
+with exit 5 and `watane install: another install is running (pid <n>)`,
+before it downloads or changes anything,
+so it never treats the other run's half-swapped files as foreign or as its
+own.
 
 ### 3.7 The toolchain
 
@@ -1129,7 +1154,7 @@ what they need beside themselves.
 
 | Test | Where |
 |---|---|
-| INST-S-1 to INST-S-22, INST-S-26 to 31; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
+| INST-S-1 to INST-S-22, INST-S-26 to 35; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-14`, by `workflow_dispatch` |
 | INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (a second user), against a real release |
 
