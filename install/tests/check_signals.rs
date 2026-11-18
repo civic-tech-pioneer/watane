@@ -284,3 +284,28 @@ fn ac3_signalled_download_and_toolchain_have_no_cause() {
         }
     }
 }
+
+/// Validator (3.8): the flag and foreign-file failure paths let a recorded signal end the run first.
+#[test]
+fn a_recorded_signal_ends_the_flag_and_foreign_paths_without_a_cause() {
+    for shell in shells() {
+        for body in [
+            "SIGNAL=143\nbad_flag --nope",
+            "set_entries\nmkdir -p \"$PREFIX/bin\"\nprintf 'mine\\n' >\"$PREFIX/bin/watane-dev\"\nSIGNAL=143\ncheck_foreign",
+        ] {
+            let out = fixture(shell, &format!("trap cleanup EXIT\n{body}"));
+            assert_eq!(out.code, 143, "{shell}: {body}: {out:?}");
+            assert!(out.stderr.is_empty(), "{shell}: {body}: {out:?}");
+            // Without the recorded signal the same body prints its cause.
+            let out = fixture(
+                shell,
+                &format!("trap cleanup EXIT\n{}", body.replace("SIGNAL=143\n", "")),
+            );
+            assert_ne!(out.code, 143, "{shell}: {body}: {out:?}");
+            assert!(
+                out.first_err().starts_with("watane install: "),
+                "{shell}: {body}: {out:?}"
+            );
+        }
+    }
+}
