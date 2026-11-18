@@ -184,11 +184,19 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 #### 3.4.1 Install folders stay inside the home
 
 Step 4 resolves, with `pwd -P` (symbolic links followed), the home and each
-folder that the script writes: `$HOME/.local/bin`, `$HOME/.local/share`,
-`$HOME/Applications`. A folder that does not exist yet is resolved through its
-nearest existing parent (`d=$folder; while [ ! -d "$d" ]; do
-d=$(dirname "$d"); done; (cd "$d" && pwd -P)`). Each must equal the resolved
-home or start with it followed by `/`; otherwise exit 2 with
+folder that holds an entry of 3.6 or the receipt: `$HOME/.local/bin`,
+`$HOME/.local/share/watane`, `$HOME/.local/share/watane-dev`,
+`$HOME/Applications` (checking only `$HOME/.local/share` would let a link at
+`share/watane-dev` lead out). A folder that does not exist yet is resolved
+through its nearest existing parent; a symbolic link counts as existing even
+when its target is missing, so a broken link is never stepped over (`d=$folder;
+while [ ! -d "$d" ] && [ ! -L "$d" ]; do d=$(dirname "$d"); done; (cd "$d" &&
+pwd -P)`): a link that `cd` cannot enter (broken, or to a file) is exit 2 with
+the same text and `<target>` as `readlink` gives it. Otherwise a broken link
+to `/Volumes/Off/bin` would pass as its parent and be written through once the
+volume, or a folder another user creates under `/tmp`, appears. The resolved
+home must not be `/`. Each must equal the resolved home or start with it
+followed by `/`; otherwise exit 2 with
 
 ```text
 watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder /Users/alice
@@ -204,9 +212,13 @@ not look.
 #### 3.4.2 Files that watane did not install
 
 The paths to install are the entries of 3.6. Step 6 reads the receipt, if
-there is one and it holds the format of 8.1, as the set of paths that watane
-installed; a missing, unreadable or unrecognised receipt is the empty set.
-For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
+there is one and it is a regular file whose first line is `watane-receipt 1`,
+as the set of paths that watane installed: its `path` lines that the rule of
+8.5 allows (a refused line is ignored here, so the INST-S-27 receipt still
+upgrades); a missing, unreadable or unrecognised receipt is the empty set.
+The receipt's own path counts as a foreign file when it exists (`-e` or `-L`)
+and is not a recognised receipt, since step 12's `mv` onto a folder would put
+the receipt inside it. For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
 (a file, a folder or a link, even a broken one) the script collects it. If any
 was found it prints, to stderr, and exits 8 before it downloads anything:
 
@@ -246,7 +258,10 @@ The paths are the entries of 8.1: `<prefix>/bin/watane`, `watane-dev`,
 `watane-node`; `<prefix>/share/watane-dev/vendor`;
 `<prefix>/share/watane/install.sh`, `VERSION`; `~/Applications/watane.app`.
 
-0. Remove the stale names of 3.8.
+0. Remove the stale names of 3.8. If `<path>.new.<pid>` or
+   `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`),
+   exit 5 before any copy: `cp -R` onto an existing folder or link copies
+   into it, and `mv` onto one moves into it.
 1. For each entry, copy it from the extracted tree to `<path>.new.<pid>`
    (same folder, so the move is a rename; `cp -R` keeps links inside the
    app). Create parent folders with `mkdir -p`. `chmod 755` the three
@@ -333,7 +348,8 @@ run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or
 `<path>.old.<n>` where `<path>` is an entry of 3.6 that the rule of 8.5
 allows, `<n>` is one or more digits and nothing else, and `kill -0 <n>`
-fails. Any other name (`watane.old.mine`) is left alone.
+fails or `<n>` is the script's own pid (a name with its own pid can only be
+left by an earlier process that had the same pid). Any other name (`watane.old.mine`) is left alone.
 
 ### 3.9 What it prints
 
@@ -722,8 +738,12 @@ is a feature of `app`, not of `install` (Q11).
 5. The home question, only when the home exists, a real terminal answers
    (`/dev/tty` opens; `WATANE_INSTALL_TTY` is not read here), and
    the home is a folder that may be deleted: an absolute path with no `.`
-   or `..` component, not `/`, not `$HOME`, and not a folder that holds
-   `$HOME` (`$HOME/` does not start with `<home>/`). Otherwise no question
+   or `..` component and no trailing `/`, not `/`, not `$HOME`, and not a
+   folder that holds `$HOME` (`$HOME/` does not start with `<home>/`); and
+   the same holds for its resolved path `R` (`cd <home> && pwd -P`) against
+   the resolved `$HOME`, so that `WATANE_HOME=~/link` with `link` pointing
+   at `~` or `/` is refused. The deletion is `rm -rf -- "$R"`, then `rm`
+   of `<home>` when it is a link. Otherwise no question
    is asked and the kept line reads `kept: <home> (not deleted: not a
    folder that watane can delete)` (INST-S-28), so that a `WATANE_HOME` set
    to `~` by mistake cannot turn one typed word into the loss of every file
@@ -748,12 +768,17 @@ the stale names of 3.8) first checks the path as text, against the current
 `HOME` (which step 4 requires to be absolute, not `/`, with no newline and
 no `.` or `..` component). A path is allowed only when:
 
-1. it holds no newline and no `//`, and no component is `.` or `..` (no
-   `/./`, `/../`, and it does not end in `/.` or `/..`); and
+1. it holds no newline and no `//`, does not end in `/` (`rm -rf
+   link/` deletes what the link points to), and no component is `.` or
+   `..` (no `/./`, `/../`, and it does not end in `/.` or `/..`); and
 2. it is exactly `$HOME/Applications/watane.app`; or it is
    `$HOME/.local/bin/<name>` where `<name>` starts with `watane` and holds
    no `/`; or it lies strictly below `$HOME/.local/share/watane/` or
-   `$HOME/.local/share/watane-dev/` (not the folder itself).
+   `$HOME/.local/share/watane-dev/` (not the folder itself); and
+3. the folder that holds it resolves inside the resolved home, as in
+   3.4.1 (`--uninstall` too checks this, so a link put at
+   `share/watane-dev` after the install does not make it delete `vendor`
+   elsewhere).
 
 A prefix test alone is not the rule: `$HOME/.local/../Documents` starts
 with `$HOME/.local/` and is refused by 1; `$HOME/.local/share/fish` is
