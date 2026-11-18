@@ -584,7 +584,12 @@ binary; this is no identity, section 6), writes the archive, the baked
 `install.sh` (the third asset of 4.1, the same bytes as
 `share/watane/install.sh`) and `SHA256SUMS` into `<out-dir>`. It needs no network except what
 `vendor.sh` needs. It exits non-zero and writes no archive when a check
-fails.
+fails: the message starts `package.sh: missing part:` and names the part (a program, the
+app or its `Info.plist`, `dev/scripts/vendor.sh`, or an empty vendor folder). Every input is
+looked up from the checkout that holds the script (`<checkout>/target/release/...`,
+`<checkout>/dev/scripts/vendor.sh`), so `tests/package.rs` copies `package.sh` into a
+miniature checkout of fake programs and runs it there. The `codesign` and `otool` steps run
+only when the tool is on `PATH`.
 
 ## 5. Checksums
 

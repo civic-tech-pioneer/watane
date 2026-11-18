@@ -143,6 +143,22 @@ impl Fx {
         fs::copy(checkout_script(), &self.script).expect("copy script");
     }
 
+    /// Waits until the fake `mv` or `rm` wrote that it sleeps (the file of `state`), then returns it.
+    pub fn wait_state(&self, name: &str) -> String {
+        let t = Instant::now();
+        loop {
+            let s = self.state_read(name);
+            if !s.is_empty() {
+                return s;
+            }
+            assert!(
+                t.elapsed() < Duration::from_secs(30),
+                "{name} never appeared"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     pub fn state_write(&self, name: &str, content: &str) {
         fs::write(self.state.join(name), content).expect("state write");
     }
@@ -564,4 +580,131 @@ pub fn write_file(p: &Path, body: &str) {
     fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
     let mut f = fs::File::create(p).expect("create");
     f.write_all(body.as_bytes()).expect("write");
+}
+
+/// A pid that is dead now.
+pub fn dead_pid() -> u32 {
+    let mut c = Command::new("/bin/sh");
+    c.args(["-c", "exit 0"]);
+    let mut child = c.spawn().expect("spawn");
+    let pid = child.id();
+    child.wait().expect("wait");
+    pid
+}
+
+/// A checkout of watane in miniature: what `package.sh` reads, with fake programs (TECHNICAL 12.1).
+pub struct Checkout {
+    pub root: tempfile::TempDir,
+}
+
+impl Checkout {
+    /// Programs print `<name> <version>`; `vendor` are the folders the fake `vendor.sh` makes.
+    pub fn new(version: &str, vendor: &[&str]) -> Checkout {
+        let root = tempfile::tempdir().expect("tempdir");
+        let r = root.path();
+        let w = |rel: &str, body: &str, mode: u32| {
+            let p = r.join(rel);
+            fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+            fs::write(&p, body).expect("write");
+            fs::set_permissions(&p, fs::Permissions::from_mode(mode)).expect("chmod");
+        };
+        let me = Path::new(env!("CARGO_MANIFEST_DIR"));
+        w(
+            "install/package.sh",
+            &fs::read_to_string(me.join("package.sh")).expect("package.sh"),
+            0o755,
+        );
+        w(
+            "install/install.sh",
+            &fs::read_to_string(checkout_script()).expect("install.sh"),
+            0o644,
+        );
+        for n in ["watane", "watane-dev", "watane-node"] {
+            w(
+                &format!("target/release/{n}"),
+                &format!("#!/bin/sh\necho \"{n} {version}\"\n"),
+                0o755,
+            );
+        }
+        w(
+            "target/release/bundle/macos/watane.app/Contents/Info.plist",
+            "<plist/>\n",
+            0o644,
+        );
+        w(
+            "target/release/bundle/macos/watane.app/Contents/MacOS/watane",
+            "#!/bin/sh\n",
+            0o755,
+        );
+        let mut v = String::from("#!/bin/sh\nmkdir -p \"$1\"\n");
+        for c in vendor {
+            v.push_str(&format!(
+                "mkdir -p \"$1/{c}\" && echo '[package]' > \"$1/{c}/Cargo.toml\"\n"
+            ));
+        }
+        w("dev/scripts/vendor.sh", &v, 0o755);
+        Checkout { root }
+    }
+
+    pub fn path(&self, rel: &str) -> PathBuf {
+        self.root.path().join(rel)
+    }
+
+    /// `sh install/package.sh <target> <version> <out>`, with `front` first on the `PATH`.
+    pub fn pack(&self, version: &str, out: &Path, front: Option<&Path>) -> Out {
+        let mut c = Command::new("/bin/sh");
+        c.arg(self.path("install/package.sh"))
+            .args([TARGET, version])
+            .arg(out);
+        if let Some(f) = front {
+            let old = std::env::var("PATH").unwrap_or_default();
+            c.env("PATH", format!("{}:{old}", f.display()));
+        }
+        exec(c)
+    }
+}
+
+/// The names in a `.tar.gz`, without a trailing `/`, sorted.
+pub fn listing(archive: &Path) -> Vec<String> {
+    let o = Command::new(which("tar"))
+        .arg("-tzf")
+        .arg(archive)
+        .output()
+        .expect("tar");
+    assert!(o.status.success(), "tar -t failed");
+    let mut v: Vec<String> = String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .map(|l| l.trim_end_matches('/').to_string())
+        .collect();
+    v.sort();
+    v
+}
+
+/// A `.tar.gz` of one file with exactly this member name; the ustar header is written by hand,
+/// so that no tar tool has a say in the name, then gzip'd with the tool.
+pub fn archive_with_member(name: &str) -> Vec<u8> {
+    let body = b"evil\n";
+    let mut h = [0u8; 512];
+    h[..name.len()].copy_from_slice(name.as_bytes());
+    h[100..107].copy_from_slice(b"0000644");
+    h[108..115].copy_from_slice(b"0000000");
+    h[116..123].copy_from_slice(b"0000000");
+    h[124..135].copy_from_slice(format!("{:011o}", body.len()).as_bytes());
+    h[136..147].copy_from_slice(b"00000000000");
+    h[156] = b'0';
+    h[257..263].copy_from_slice(b"ustar\0");
+    h[263..265].copy_from_slice(b"00");
+    h[148..156].fill(b' ');
+    let sum: u32 = h.iter().map(|b| u32::from(*b)).sum();
+    h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+    let mut tar = h.to_vec();
+    tar.extend_from_slice(body);
+    tar.resize(tar.len() + (512 - body.len()), 0);
+    tar.extend_from_slice(&[0u8; 1024]);
+    let d = tempfile::tempdir().expect("tempdir");
+    let p = d.path().join("a.tar");
+    fs::write(&p, &tar).expect("write");
+    let st = Command::new(which("gzip")).arg(&p).status().expect("gzip");
+    assert!(st.success());
+    fs::read(d.path().join("a.tar.gz")).expect("read")
 }

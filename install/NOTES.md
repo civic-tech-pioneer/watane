@@ -20,3 +20,15 @@ the specs did not fit, TECHNICAL.md was fixed in place; the changes:
 - The swap, its undo, signals and recovery were also tried by hand with the fake `mv` (failure and
   sleep plus `KILL` at the receipt and at the app; `TERM` at the app); INST-S-32 to 35 are S50b-3's.
 - Shellcheck is not installed in the cloud sandbox; the script passes `sh -n` and `dash -n`.
+
+S50b-3 built `package.sh`, `tests/package.rs` and INST-S-32 to 35, and the hand-built bad archive of AC6. Notes:
+
+- **`package.sh` finds its inputs from its own place** (4.2): `<checkout>/target/release/...` and
+  `<checkout>/dev/scripts/vendor.sh`, so the test needs no variable or flag: it copies the script into
+  a miniature checkout. A refusal says `package.sh: missing part: <what>`.
+- The tests that were not in S-33's text but catch hand mutants of `install.sh`: a kill at the receipt
+  of a fresh install (the journal part of the foreign-file check, 3.4.2); a kill while `rm` removes a
+  path that only the old receipt held (`cp -p receipt receipt.old`, `finish_commit` in `recover`);
+  `TERM` at the app (the undo in `on_signal`); the live pid of S-35 (`kill -0`). Each mutant turns
+  one of them red.
+- AC4 puts both versions' lines in one `SHA256SUMS`, since the fake release is one server for both.
