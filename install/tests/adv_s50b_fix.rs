@@ -63,14 +63,14 @@ fn adv_s50b_fix_term_before_the_foreign_check_prints_a_cause() {
 #[test]
 fn adv_s50b_fix_term_after_the_swap_checkpoint_installs_and_reaches_the_toolchain() {
     let fx = Fx::new();
-    let from = "  check_signal\n  SIGNAL_DEFER=0\n";
+    let from = "  check_signal\n  SWAP_PID=$$\n";
     let s = baked_script("0.1.0");
     assert!(s.contains(from));
     fs::write(
         &fx.script,
         s.replacen(
             from,
-            "  check_signal\n  kill -s TERM $$\n  SIGNAL_DEFER=0\n",
+            "  check_signal\n  kill -s TERM $$\n  SWAP_PID=$$\n",
             1,
         ),
     )

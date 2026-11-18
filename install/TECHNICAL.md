@@ -138,7 +138,8 @@ repository's archive and its own `SHA256SUMS`, and print `checked`. In step
 `^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$` (checked with
 shell builtins and `case` patterns, without a pipeline); otherwise exit
 1 with `watane install: not a version: <v>` and, on the next line, `a
-version looks like 0.1.0`, before any download (INST-S-26).
+version looks like 0.1.0`, before any download (INST-S-26). A failure first
+lets a pending signal end the run without a cause line (3.8).
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -174,6 +175,8 @@ person reads `unsupported platform: Linux <arch>` (9), not that `sw_vers` is mis
 
 In this order. Each step either succeeds or ends the script as the last
 column says; a step after step 5 that fails runs the cleanup first (3.8).
+Signals end the run at once at every step, including recovery; each failure
+path lets a pending signal end the run before it prints a cause (3.8).
 
 | # | Step | On failure |
 |---|---|---|
@@ -473,14 +476,18 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 
 ### 3.8 Cleanup
 
-An `INT`, `HUP`, `TERM` or `PIPE` before the swap ends the run with its
-signal code and no cause line. Traps are installed before the first check.
-Before staging, a signal handler records its code; checkpoints and error
-paths give a pending trap a dispatch point before reporting a failure,
-then exit if a signal was recorded. A program's signal exit status is
-also preserved when macOS `sh` loses the parent's `INT` after its child
-dies. Version and checksum-line checks use builtins so a killed pipeline
-cannot masquerade as invalid input. Cleanup preserves the signal code.
+An `INT`, `HUP`, `TERM` or `PIPE` ends the run at once with its code
+(undoing an active swap); a failure path first lets a pending signal end
+the run, so a signalled run prints no cause line. Traps are installed
+before the first check and never defer a signal to a later checkpoint,
+including during recovery (3.6 step 0). Before diagnosing a failure,
+`check_signal` runs `( : ) || true` to give macOS `sh` (bash 3.2) a
+pending-trap dispatch point. It also maps a failed child's 129/130/141/143
+status to the signal code when the shell loses the parent's trap after
+its child dies. This applies to `die` and the separate foreign-file,
+download and toolchain failure paths. Version and checksum-line checks
+use builtins so a killed pipeline cannot masquerade as invalid input.
+Cleanup preserves the signal code.
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).

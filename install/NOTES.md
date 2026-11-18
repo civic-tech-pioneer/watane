@@ -289,3 +289,43 @@ Final validation: `cargo test -p watane-install` passed (78 passed,
 `cargo +nightly fmt --check` and `shellcheck -s sh install.sh package.sh`
 all exited 0. Clippy retained the existing workspace-hack manifest
 warnings. No ignored or GUI tests ran.
+
+
+## s50b-fix-5: immediate signals, pending traps before failure causes
+
+All three unchanged adversary tests went red on this Mac: TERM during
+SHA256SUMS still fetched the archive, TERM during mktemp printed the
+foreign-file cause, and TERM between the swap checkpoint and clearing
+deferral installed and reached the toolchain step. A new builtin-only
+fixture also went red because a command after the signal still ran.
+
+Removed SIGNAL_DEFER and its branches. The handler now exits immediately
+at every step, with the existing active-swap rollback. Recovery is again
+interruptible; its undo evidence remains safe to repeat as in s50b-fix-3.
+The pending-trap dispatch and child-status mapping in check_signal remain
+before die, checksum and unpack failures. Added dispatch before the
+separate foreign-file, bad-flag and incomplete-toolchain causes. A new
+fixture went red when a toolchain child's signal status became exit 6;
+rustup_step now passes that status to check_signal before its diagnosis.
+Removed the redundant partial signal-status mapping in download, which
+already calls check_signal for all four signal statuses. No dependency
+was added.
+
+Changed tests: adversary test 3's SIGNAL_DEFER=0 anchor disappeared, so
+only its injection strings now anchor on SWAP_PID=$$, at the same moment
+between do_swap's check_signal and starting the swap. All its assertions
+are unchanged: exit 143, no toolchain step, no installed message and no
+receipt. Adversary tests 1 and 2 and the user-sim regression are unchanged.
+No existing check_signals assertion changed; two comments no longer
+refer to deferral. New fixtures cover immediate exit between builtins and
+child signal statuses during download and toolchain failure handling.
+
+The unchanged 40-interrupt user-sim regression passed three consecutive
+runs on this Mac (21.42, 35.20 and 22.71 seconds). The full check_signals
+file passed all 11 tests. Shellcheck, clippy and nightly fmt check exited
+0; clippy retains the existing workspace-hack manifest warnings.
+
+Final validation: the single default `cargo test` run passed (86 passed,
+16 ignored), including all genuine-failure, rollback and repeated-recovery
+tests. No ignored or GUI tests ran. Only the five listed install files
+changed; no other subsystem or dependency changed.

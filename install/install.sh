@@ -29,7 +29,6 @@ TC_OK=0
 RUSTUP=""
 UPGRADED=0
 SIGNAL=0
-SIGNAL_DEFER=1
 
 usage() {
   printf '%s\n' \
@@ -54,6 +53,7 @@ die() {
 }
 
 bad_flag() {
+  check_signal
   printf 'watane install: unknown or conflicting flag %s\n' "$1" >&2
   usage >&2
   exit 1
@@ -400,9 +400,6 @@ rollback() {
 
 on_signal() {
   SIGNAL=$1
-  # Before staging, defer exit to a checkpoint: bash 3.2 can dispatch a trap
-  # only after it has already entered the failed command's error path.
-  if [ "$SIGNAL_DEFER" = 1 ] && [ "$SWAP_ACTIVE" != 1 ]; then return 0; fi
   trap '' HUP INT TERM PIPE
   rollback
   exit "$1"
@@ -525,7 +522,6 @@ download() {
   fi
   dl_rc=$?
   check_signal "$dl_rc"
-  case $dl_rc in 129 | 130 | 143) exit "$dl_rc" ;; esac
   printf 'watane install: cannot download %s\n' "$1" >&2
   cat "$TMP/curl.err" >&2
   exit 3
@@ -568,6 +564,7 @@ $ENTRIES
 EOF
   if [ "$cf_old_ok" != 1 ] && exists "$RECEIPT"; then cf_found=$(add_item "$cf_found" "$RECEIPT"); fi
   if [ -n "$cf_found" ]; then
+    check_signal
     printf 'watane install: found files that watane did not install:\n' >&2
     while IFS= read -r cf_p; do printf '  %s\n' "$(tilde "$cf_p")" >&2; done <<EOF
 $cf_found
@@ -704,7 +701,6 @@ EOF
 
 do_swap() {
   check_signal
-  SIGNAL_DEFER=0
   SWAP_PID=$$
   SWAP_ACTIVE=1
   stage_files || return 1
@@ -808,6 +804,7 @@ rustup_step() {
   rs_rc=0
   ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
   if [ "$rs_rc" != 0 ]; then
+    check_signal "$rs_rc"
     die 6 "the toolchain step failed (rustup exited $rs_rc)" "watane is installed; run the step yourself, then \`watane-dev doctor\`."
   fi
   return 0
@@ -878,6 +875,7 @@ toolchain_step() {
   say 'toolchain: installed'
   detect_toolchain
   if [ "$TC_STATE" != ok ]; then
+    check_signal
     say 'toolchain: still incomplete after the install'
     exit 6
   fi
@@ -1132,7 +1130,6 @@ main() {
   set_entries
   if [ "$MODE" = install ]; then check_folders; fi
   check_signal
-  if [ "$MODE" != install ]; then SIGNAL_DEFER=0; fi
   case $MODE in
     status) do_status ;;
     uninstall) do_uninstall ;;

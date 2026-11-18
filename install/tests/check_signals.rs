@@ -203,7 +203,7 @@ verify_archive
     }
 }
 
-/// Validator R1 (3.8): only the checks before staging defer a signal; after the commit it ends the run.
+/// Validator R1 (3.8): a signal after the commit ends the run.
 #[test]
 fn a_signal_after_the_commit_ends_the_run_at_once() {
     for (signal, code) in [("INT", 130), ("TERM", 143)] {
@@ -224,7 +224,7 @@ fn a_signal_after_the_commit_ends_the_run_at_once() {
     }
 }
 
-/// Validator R1 (3.8): an uninstall is not deferred; a signal stops it before its last steps.
+/// Validator R1 (3.8): a signal stops an uninstall before its last steps.
 #[test]
 fn a_signal_during_the_uninstall_ends_it_at_once() {
     let fx = Fx::new();
@@ -245,5 +245,42 @@ fn cleanup_keeps_a_recorded_signal_code() {
         );
         assert_eq!(out.code, 143, "{shell}: {out:?}");
         assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+    }
+}
+
+/// AC1: a trap dispatched between builtins must exit before the next check.
+#[test]
+fn ac1_a_signal_before_the_swap_ends_the_run_at_once() {
+    for shell in shells() {
+        for (signal, code) in [("INT", 130), ("HUP", 129), ("TERM", 143), ("PIPE", 141)] {
+            let out = fixture(
+                shell,
+                &format!(
+                    "trap cleanup EXIT\ntrap 'on_signal {code}' {signal}\nkill -s {signal} $$\nprintf 'continued after signal\\n'\ncheck_signal"
+                ),
+            );
+            assert_eq!(out.code, code, "{shell}: {out:?}");
+            assert!(out.stdout.is_empty(), "{shell}: {out:?}");
+            assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+        }
+    }
+}
+
+/// AC3: failure branches must preserve a child's signal status before printing a cause.
+#[test]
+fn ac3_signalled_download_and_toolchain_have_no_cause() {
+    for shell in shells() {
+        for code in [129, 130, 141, 143] {
+            for body in [
+                format!(
+                    "TMP=$TMPDIR\ncurl() {{ return {code}; }}\ndownload fixture \"$TMP/archive\" plain"
+                ),
+                format!("rustup_step /bin/sh -c 'exit {code}'"),
+            ] {
+                let out = fixture(shell, &format!("trap cleanup EXIT\n{body}"));
+                assert_eq!(out.code, code, "{shell}: {body}: {out:?}");
+                assert!(out.stderr.is_empty(), "{shell}: {body}: {out:?}");
+            }
+        }
     }
 }
