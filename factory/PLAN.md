@@ -306,7 +306,7 @@ These slices remove one piece of fakery each. S50 comes first: the others all ne
 person can install. S52, S53 and S54 need things the human must provide (see "Waiting on the
 human"), so they cannot be handed to a cloud foreman as they stand.
 
-- [~] **S50a Installing watane designed.** In flight (cloud), branch `slice/s50a`, routine `trig_01Gj3q54bMDCtqf3x2FBGHS9`. A design slice:
+- [x] **S50a Installing watane designed.** Delivered 2026-11-18 (merged as 2fb602a; routine `trig_01Gj3q54bMDCtqf3x2FBGHS9` finished, branch removed). A design slice:
   no spec says how watane reaches a machine. The human decided (2026-11-18): one `curl … | sh`
   from GitHub Releases puts `watane`, `watane-dev` and `watane-node` in `~/.local/bin` and
   `watane.app` in `~/Applications`, then gives the Gatekeeper step; it offers (y/N, never silent)
@@ -319,8 +319,35 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   each open question is under `install/TECHNICAL` with options, a recommendation and the cost to
   undo. Touches: `install/*.md`, `spec/FUNCTIONAL.md`, `spec/TECHNICAL.md`, root `AGENTS.md` (one
   table cell). No code. Cloud.
-- [ ] **S50b A person can install watane.** Builds S50a's rows. Local (a clean Mac). Sketch below
-  is the original; S50a replaces its details.
+  Delivered: a reviewer can build S50b from `install/` (VISION, FUNCTIONAL INST-F-1..26 and
+  INST-S-1..35, TECHNICAL with the script, archive, SHA256SUMS, release.yml, upgrade, uninstall,
+  receipt and journal, build plan 11, questions 14) and spec/FUNCTIONAL 2.10 (F-GET-1..5, J7).
+  user-sim REJECTED once (receipt rollback, command line tools, app build not `--locked`), fixed,
+  ACCEPTED; adversary: three passes on the design (15 breaches, all closed in the documents, each
+  pinned by INST-S-26..35 for S50b's tests to turn red); validator PASS twice. Decisions (IN-24..33,
+  each the stricter option): no terminal means nothing installed and the commands printed; the
+  offer and uninstall's delete read only /dev/tty, tests use a pty; a first install refuses files
+  it did not install (exit 8); install folders outside $HOME refused; the receipt commits a
+  journaled swap with SIGKILL recovery; `xcode-select --install` printed, never run;
+  `cargo tauri build -- --locked`. PO: Q10 and Q1 are settled on the macOS VM (the human's VM
+  answer), not a second macOS user; Q17 is a later dev slice; Q16 waits on the human. Friction:
+  `factory/check.sh` cannot gate a docs-only task; adversary and user-sim on a design slice patch
+  documents, which took 3 and 2 passes.
+- [ ] **S50b The install script and its archive (install stages 1 to 3).** Builds install/TECHNICAL
+  11 stages 1 to 3: `install.sh` and the `watane-install` crate with its script tests (INST-S-1..22,
+  26..28, 30, 31, with fakes for every Darwin-only tool so they pass on Linux), `--version` on the
+  three programs (`watane-node --version`), and `package.sh` building the 4.2 tree from fake
+  programs. Outcome: on the real programs, the script installs a packed archive into a temp
+  `$HOME`, refuses each breach scenario, and upgrades and uninstalls. Touches: `install/`, root
+  `Cargo.toml` (one member line), `Cargo.lock`, `workspace-hack/` (generated), `node/` (bin and
+  `program.rs` test). Cloud.
+- [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
+  and Q16. `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
+  first real release `v0.1.0` (cut by the human), and `tests/clean_mac.sh` run in a fresh macOS VM
+  on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
+  serves S55). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
+  from the one-liner to `watane-dev new`. Touches: `.github/`, `install/`, `README.md`. Local.
+  The original S50 sketch, for its intent:
   Someone with a clean Mac and no Rust toolchain ends up
   with a working `watane` and `watane-app` from one command, and can run `watane-dev new` straight
   after. Outcome: the install is exercised somewhere that has no cargo, no target folder and no
@@ -872,6 +899,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
+| install | 1 script, 2 versions, 3 packer | 7 | open (S50b) |
+| install | 4 workflow, 5 clean Mac (J7) | 7 | open (S50c) |
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | done (S63) |
@@ -1140,6 +1169,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
   this Mac; the human has no easy second machine. Not a question any more.
+- S50a Q16 (2026-11-18, install/TECHNICAL 14): repository settings before the first release.
+  (a) a tag ruleset on `v*`, a `release` environment with a required reviewer, and a read-only
+  default `GITHUB_TOKEN`; (b) none, the workflow alone. Recommendation: (a): the release token
+  is the one key that ships code to every installer, and (a) means no push or build script can
+  publish alone. Cost to undo: (a) three settings off; (b) nothing to undo, but a release cut
+  without review cannot be taken back from machines that installed it. Blocks S50c only.
 - S16/S17: should the host mark some MCP tools read-only (`readOnlyHint`), so harnesses like Codex
   call them without an approval setting? Options: (a) no hint; the template `AGENTS.md` documents
   the approval line per harness; (b) a mod declares read-only functions (a new `mod.toml` or WIT
@@ -1790,3 +1825,5 @@ The human may veto each one.
 - S56: a maker's agent reads the real cause and a runnable `next` at fifteen dev messages that misled.
 - S57: `add_provider` cannot be made to write outside the mod by a swapped link, and pkg, log and
   dist name the real cause at six refusals, `StaleBases` among them.
+- S50a: installing watane is designed: one curl | sh from GitHub Releases, rustup offered, the
+  Gatekeeper step, upgrade and uninstall, with 15 attacks on the design pinned as scenarios.
