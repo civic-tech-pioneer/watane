@@ -229,3 +229,16 @@ fn a_signal_during_the_uninstall_ends_it_at_once() {
     assert_eq!(out.code, 143, "{out:?}");
     assert!(!out.stdout.contains("uninstalled watane"), "{out:?}");
 }
+
+/// Validator R1 (3.8): cleanup ends a run that recorded a signal with its code, whatever exit it saw.
+#[test]
+fn cleanup_keeps_a_recorded_signal_code() {
+    for shell in shells() {
+        let out = fixture(
+            shell,
+            "trap cleanup EXIT\ntrap 'on_signal 143' TERM\nkill -s TERM $$\nexit 0",
+        );
+        assert_eq!(out.code, 143, "{shell}: {out:?}");
+        assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+    }
+}
