@@ -17,15 +17,23 @@ and `script(1)` is util-linux; on the Mac two things differ.
   folder and those four files exactly when `codesign` is on `PATH`, and no `_CodeSignature`
   entry when it is not. install/TECHNICAL 4.2 says so in the tree (one line under
   `watane.app/`) and in the text.
-- AC2 `tests/package.rs` `ac4_install_upgrade_uninstall_of_packed_archives` and every other test
-  that uses `support/pty.rs` pass on a loaded Mac. Observed: on the Mac the uninstall step once
-  failed with `support/pty.rs:62` "marker \"keep it: \" never came" after 30 s; a later run on the
-  same Mac at load 17 passed, and every test of the crate takes 60 to 300 s there. Find the cause
-  first (read the captured output in the panic: is the prompt missing, or late?). If it is only
-  slowness, raise the wait for a marker to 180 s (a failing test then fails later, nothing
-  passes that should not). If the prompt is missing on macOS (`/bin/sh` is bash in POSIX mode
-  there, `script -q /dev/null` with a piped stdin), fix the harness or the script so it comes.
-  Say which in install/NOTES.md.
+- AC2 Every test of the crate that waits (`support/pty.rs` `run`, `support/mod.rs`
+  `Fx::wait_state` and the request wait near line 564) passes on this Mac. Measured by the
+  foreman: the Mac runs endpoint security (ManageEngine app control, Microsoft Defender) that
+  holds every `exec` while it checks it. Idle, `/bin/sh -c true` takes 0.08 s; while the suite
+  runs on 16 test threads it takes 5 s and a fake `uname -m` 25 to 35 s. So one test that passes
+  alone in 62 s (`inst_s15_uninstall_home_kept`) fails at four at once ("marker \"keep it: \"
+  never came", empty output after 30 s), and a full run failed 10 script.rs tests the same way
+  (`inst_s2`, `s11` "the request never came", `s15`, `s16`, `s28`, `s33 ...fresh install`, and
+  the `ac2`/`ac3`/`ac4` question tests). Nothing in the script is wrong; the waits are too
+  short for this Mac. Fix in the test support only:
+  (a) one named constant for every wait, 600 s (a failing test then fails later; nothing passes
+  that should not); and
+  (b) a process-wide gate in `support/` that lets at most 4 runs of `install.sh` (plain, pty,
+  and `package.sh`) be alive at once in one test binary, so the exec queue stays short; a
+  test's wait starts when its run starts, not while it waits at the gate. Keep it small (a
+  `Mutex<usize>` and `Condvar`, or `std::sync` only; no new dependency).
+  Do not change the script for this. Write the cause and the fix in install/NOTES.md.
 - AC3 `shellcheck -s sh install/install.sh install/package.sh` exits 0. Fix real findings
   (SC2034 `HAD_RECEIPT` unused: remove it or use it; SC1007 `CDPATH= cd`: write `CDPATH=''`).
   The `~/...` texts that are printed for a person (SC2088, lines near 800, 803, 833) and the
@@ -52,8 +60,9 @@ none.
 ## Changed tests
 - `install/tests/package.rs` `ac1_the_archive_has_the_tree_of_4_2`: after, it expects the four
   `_CodeSignature` files and their folder when `codesign` is on `PATH`.
-- `install/tests/support/pty.rs` `run` and `install/tests/support/mod.rs` `Fx::wait_state`: the
-  30 s waits may change per AC2 (keep the two equal, one named constant).
+- `install/tests/support/pty.rs` `run` and `install/tests/support/mod.rs` (`Fx::wait_state`, the
+  request wait): the 30 s and 20 s waits become one constant of 600 s, and runs pass the gate
+  (AC2). No test's assertions change.
 - Searched `install/tests/*.rs` for `_CodeSignature`, `Duration::from_secs(30)` and `HAD_RECEIPT`:
   no other test asserts these.
 
