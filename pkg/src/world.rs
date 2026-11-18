@@ -566,19 +566,17 @@ mod tests {
 
     #[test]
     fn ac3_s86_long_message_keeps_arrow_and_utf8_boundary() {
+        // "x" then two-byte chars: every limit below falls inside a char.
+        let tail = format!("x{}", "é".repeat(3000));
         let arrow = "     --> /m/wit/world.wit:4:3";
-        let message = format!("{}\n{arrow}\n      |\n    4 | @", "é".repeat(3000));
+        let message = format!("{tail}\n{arrow}\n      |\n    4 | @");
         let cut = cap_message(&message);
-        assert!(cut.len() <= 2000, "{}", cut.len());
-        assert!(cut.contains(arrow));
-        assert!(cap_message(&"é".repeat(3000)).len() <= 2000);
+        assert!((1998..=2000).contains(&cut.len()), "{}", cut.len());
+        assert!(cut.starts_with("xé") && cut.contains(arrow), "{cut}");
+        assert_eq!(cap_message(&tail), tail[..1999]);
         // An arrow inside the first 2000 bytes keeps wit-parser's order.
-        let early = format!("error\n{arrow}\n{}", "é".repeat(3000));
+        let early = format!("error\n{arrow}\n{tail}");
         let cut = cap_message(&early);
-        assert!(
-            early.starts_with(&cut) && cut.len() >= 1999,
-            "{}",
-            cut.len()
-        );
+        assert_eq!(cut, early[..1999]);
     }
 }
