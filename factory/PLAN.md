@@ -1484,6 +1484,10 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-18, PO) main's check failed ~15 dev tests (`env.allowlist`, paths into `watane-test-speed`): a worktree shares `target/` and `target/tmp`, and dev/tests/support/mod.rs's unlocked `remove_dir_all` of its warm cache lets two concurrent runs delete each other's. They pass alone. The human's chore/test-speed branch adds locks; recheck after it lands.
+- (2026-11-18, PO) S86's `install::fake::ac3_never_answer_is_no_answer` asserts under 10 s and failed once in the full parallel suite; 3 s alone. A candidate for the timing `#[ignore]`.
+- (2026-11-18, PO) the main check's `dev publish ac4_accepted_fake_publish_completes_under_five_seconds` (5.9 s) and `node program s10` failed under load, passed alone.
+- (2026-11-18, PO) a `~/.local/bin/git` symlink to Xcode's git breaks https (no `libexec/git-core` beside it); PO, watchers and foremen use `/usr/bin/git` until the human replaces it.
 - (S85) macOS window tests miss the app's 30 s ready timeout when the Mac is loaded (load 11 to 24 from parallel jobs); compare slice and main only when both run at once. Options: a longer driver TIMEOUT, or one GUI suite at a time.
 - (S85) factory/check.sh's app clippy failed on sibling log/pkg code under clippy 1.99 (check again after e8265e8).
 
