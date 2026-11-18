@@ -356,6 +356,8 @@ removes or counts `<path>` only with its `moved` line and no
 `<path>.new.<n>` (INST-S-35). Two runs at once are not supported: a run
 that finds, at step 6, a journal of a live process other than itself stops
 with exit 5 and `watane install: another install is running (pid <n>)`,
+followed by `If no install is running, that number now belongs to another
+program; remove <home>/.local/share/watane/journal.<n> and run this again.`,
 before it downloads or changes anything,
 so it never treats the other run's half-swapped files as foreign or as its
 own.
@@ -1239,3 +1241,4 @@ otherwise.
 | IN-30 | The script checks `xcode-select -p` and, when the command line tools are missing, prints `xcode-select --install` with one line of why; it never runs it and prints nothing when the tools are present. | The maker tools need `cc` and `git`; macOS opens its own dialog, and the install is the person's to start (3.9, INST-S-34; Q10 asks the human how J7 is proved without them). |
 | IN-31 | The app is built with `cargo tauri build ... -- --locked`, and INST-S-29 checks the workflow line. | A release must build the app from the reviewed lock, as the programs are (7.3). |
 | IN-32 | Dev's fix texts for the toolchain and the vendor folder are not changed in this design; a later `dev` slice points them at the installer (Q17). | `install` changes no code of another subsystem and INST-F-13 keeps `watane-dev` as it is. |
+| IN-33 | A live journal of another pid stops the run (exit 5); the message names the journal file to remove when that pid was reused by an unrelated program. The script never removes it itself, since it cannot tell a reused pid from a running install. | Undo: drop the line; or later add a lock with the start time. |
