@@ -44,3 +44,4 @@ state folder) holds the staging so a test can plant a link at `journal.<pid>` fi
 `HOME_OUT` for the outside-home case; the question shows the resolved path through `tilde_r`; the `deleted:` and `kept:` lines keep the home as given.
 
 S50b-fix3: install folders must resolve strictly below the resolved home (`below_home`; `in_home` stays for the home-to-delete check). A link to the home itself gave rule 3 the home's top level (IN-39). Links to other folders inside the home still work (INST-S-31 last case).
+A folder that resolves to the home itself is refused with its own first line (`resolves to your home folder itself`); INST-S-31 last case now also upgrades and uninstalls through the dotfiles link.

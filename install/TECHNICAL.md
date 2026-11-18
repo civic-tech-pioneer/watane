@@ -214,7 +214,8 @@ watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home fo
 watane writes only under your home folder. Make it a real folder there, then run this again.
 ```
 
-before any download (INST-S-31). A person whose folders live on another disk
+before any download (INST-S-31); for a folder that resolves to the home itself
+the first line reads `watane install: ~/.local/bin resolves to your home folder itself`. A person whose folders live on another disk
 makes the link point inside the home, or installs by hand; the script does not
 follow a link out, because a link can be put there by another program of the
 same user and the script would then write, as the person, where the person did

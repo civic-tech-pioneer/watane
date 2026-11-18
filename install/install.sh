@@ -455,7 +455,9 @@ check_home() {
 check_folders() {
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
-      die 2 "$(tilde "$ch_f") resolves to $RES, outside your home folder $HOME_R" \
+      ch_m="resolves to $RES, outside your home folder $HOME_R"
+      [ "$RES" != "$HOME_R" ] || ch_m="resolves to your home folder itself"
+      die 2 "$(tilde "$ch_f") $ch_m" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
     fi
   done

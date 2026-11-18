@@ -920,6 +920,23 @@ fn inst_s31_an_install_folder_outside_the_home() {
     let out = fx.run(&[]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(fx.home.join("real_local/bin/watane").is_file());
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    let out = fx.run(&["--release", "0.2.0"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("upgrading watane 0.1.0 to 0.2.0"));
+    fx.assert_installed("0.2.0");
+    assert!(
+        fx.home
+            .join("real_local/share/watane-dev/vendor/new-crate-1.0.0")
+            .is_dir()
+    );
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("uninstalled watane 0.2.0"), "{out:?}");
+    assert_uninstalled(&fx);
+    assert!(!fx.home.join("real_local/bin").exists());
+    assert!(!fx.home.join("real_local/share").exists());
+    assert!(!fx.receipt().exists());
 }
 
 #[test]
@@ -1473,13 +1490,15 @@ fn inst_s31_an_install_folder_resolving_to_the_home() {
     let home_err = |fx: &Fx, folder: &str| {
         let out = fx.run(&[]);
         assert_eq!(out.code, 2, "{out:?}");
-        let home = fs::canonicalize(&fx.home)
-            .expect("canon")
-            .display()
-            .to_string();
         assert_eq!(
             out.first_err(),
-            format!("watane install: {folder} resolves to {home}, outside your home folder {home}")
+            format!("watane install: {folder} resolves to your home folder itself")
+        );
+        assert_eq!(
+            out.stderr.lines().nth(1),
+            Some(
+                "watane writes only under your home folder. Make it a real folder there, then run this again."
+            )
         );
         assert!(fx.rel.requests().is_empty());
     };
