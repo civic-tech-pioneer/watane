@@ -114,3 +114,39 @@ The UTF-8-locale PTY regression typed `y\xffnope` and failed before the fix
 with `tr: Illegal byte sequence` and exit 1 on macOS. A second PTY test types
 `YeS` and checks the installer invocation. The PTY helper gained raw-byte
 input while preserving the existing string-answer API and assertions.
+
+## S50b-fix-2 follow-up: TERM rollback and macOS sh's pending traps
+
+The foreman's `inst_s33_term_in_the_swap_undoes_it` exited 143 but left the
+upgrade mid-swap. Eight full installer rounds under four concurrent
+`/bin/sh -c true` workers passed locally (221.25 seconds), so those runs
+alone did not reproduce the reported failure.
+
+A smaller fixture prepares the old/new files and journal directly, then
+runs the real `on_signal` and `undo_swap` functions at the same fake-mv
+pause. Repeating that fixture under the same exec load reproduced an
+unrestored swap in 37.33 seconds. stderr identified the failure:
+`run_pending_traps: bad value in trap_list[15]: 0x0`, followed by
+`signal handler is SIG_DFL, resending 15 (SIGTERM) to myself`.
+The shell was resending TERM during rollback, rather than completing it.
+`finish` did not hit its deadline: the test reached its snapshot assertion
+with exit 143. The fake-mv sleep glob does not match the `.old` moves used
+by rollback.
+
+`on_signal` now registers no-op (`:`) handlers instead of replacing its
+active handlers with ignored traps (`trap ''`). This keeps a handler registered while
+rollback starts its subshells, avoiding the macOS sh pending-trap failure.
+The original snapshot assertions remain; the TERM test now includes the
+run output on a snapshot failure. A default prebuilt-journal regression
+and an ignored 16-round exec-load regression exercise the actual rollback
+functions without a release build or the full install pipeline.
+
+With the no-op handlers, the checked-in 16-round load test passed in
+227.71 seconds, and the original TERM and PIPE tests passed under the
+concurrent exec load (45.43 and 45.59 seconds). A longer exploratory run
+was stopped after that validation and is not counted as a pass.
+
+Final checks: `cargo test -p watane-install` passed (63 passed, 15 ignored),
+`cargo clippy --all-targets -- -D warnings`, `cargo +nightly fmt --check`
+and `shellcheck -s sh install.sh package.sh` all exited 0. No existing test
+assertion was removed or weakened.

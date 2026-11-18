@@ -378,7 +378,9 @@ EOF
 }
 
 on_signal() {
-  trap '' HUP INT TERM PIPE
+  # macOS sh can resend a pending signal in a rollback subshell after
+  # trap '' replaces the active handler. Keep a no-op handler registered.
+  trap ':' HUP INT TERM PIPE
   if [ "$SWAP_ACTIVE" = 1 ]; then
     SWAP_ACTIVE=0
     undo_swap "$SWAP_PID"

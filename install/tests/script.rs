@@ -1174,8 +1174,92 @@ fn inst_s33_term_in_the_swap_undoes_it() {
     signal_group(child.id(), "TERM");
     let out = finish(child);
     assert_eq!(out.code, 143, "{out:?}");
-    assert_eq!(snapshot(&fx.home), before);
+    assert_eq!(snapshot(&fx.home), before, "{out:?}");
     assert!(fx.tmp_tree().is_empty());
+}
+
+/// 3.8: signal rollback needs only a staged journal, not a download or package build.
+#[test]
+fn ac1_term_rollback_from_a_prebuilt_journal() {
+    let fx = Fx::new();
+    let paths = [
+        fx.bin("watane"),
+        fx.bin("watane-dev"),
+        fx.bin("watane-node"),
+        fx.share("watane-dev/vendor"),
+        fx.share("watane/install.sh"),
+        fx.share("watane/VERSION"),
+        fx.app(),
+        fx.receipt(),
+    ];
+    for path in &paths {
+        write_file(path, "old");
+    }
+    let before = snapshot(&fx.home);
+    let mut journal = String::new();
+    for path in &paths {
+        write_file(
+            &path.with_file_name(format!(
+                "{}.old.42",
+                path.file_name().expect("name").to_string_lossy()
+            )),
+            "old",
+        );
+        write_file(path, "new");
+        journal.push_str(&format!("old {}\n", path.display()));
+    }
+    fs::remove_file(fx.app()).expect("app moved aside");
+    write_file(&fx.app().with_file_name("watane.app.new.42"), "new");
+    write_file(&fx.receipt().with_file_name("receipt.new.42"), "pending");
+    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
+    write_file(&fx.share("watane/journal.42"), &journal);
+    let source = baked_script("0.1.0").replace(
+        "main \"$@\"",
+        r#"
+HOME_R=$(cd "$HOME" && pwd -P)
+set_entries
+SWAP_PID=42
+SWAP_ACTIVE=1
+trap cleanup EXIT
+trap 'on_signal 143' TERM
+mv "$HOME/Applications/watane.app.new.42" "$HOME/Applications/watane.app"
+"#,
+    );
+    fs::write(&fx.script, source).expect("fixture script");
+    let child = spawn(&mut fx.cmd(&[]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), "TERM");
+    let out = finish(child);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert_eq!(snapshot(&fx.home), before, "{out:?}");
+}
+
+/// Exercise TERM rollback while endpoint-security-like exec contention delays children.
+#[test]
+#[ignore = "slow: repeats the swap rollback under concurrent exec load"]
+fn ac1_term_rollback_under_exec_load() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct StopWorkers<'a>(&'a AtomicBool);
+    impl Drop for StopWorkers<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+    let stop = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            let stop = &stop;
+            scope.spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let _ = Command::new("/bin/sh").args(["-c", "true"]).status();
+                }
+            });
+        }
+        let _stop_workers = StopWorkers(&stop);
+        for _ in 0..16 {
+            ac1_term_rollback_from_a_prebuilt_journal();
+        }
+    });
 }
 
 /// 3.6 step 4, 3.8: `PIPE` (the reader went away) in the swap undoes it as `TERM` does.
