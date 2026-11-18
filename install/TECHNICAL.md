@@ -27,7 +27,8 @@ install/
   install.sh          the script served to people (section 3)
   package.sh          the packer (section 4)
   tests/
-    script.rs         INST-S-1 to INST-S-22: runs install.sh against a fake release (section 12)
+    script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28: runs install.sh against a fake release (section 12)
+    workflow.rs       INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     package.rs        the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools, the answer file
     clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac
@@ -118,6 +119,18 @@ install.sh --help | -h
 and any unknown flag, exit 1 with `watane install: unknown or conflicting
 flag <flag>` and the usage on stderr. A flag beats its variable.
 
+**The version is checked before it is used.** The version, from
+`--release`, `WATANE_RELEASE` or the baked value, goes into a URL path
+(`.../download/v<v>/...`), file names and the receipt, and curl collapses
+`..` segments of a URL path; so a value such as
+`1/../../../../../other/repo/releases/download/v1` would fetch another
+repository's archive and its own `SHA256SUMS`, and print `checked`. In step
+1 the version must match the extended regular expression
+`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$` (checked with
+`grep -Eq` on a value already refused if it holds a newline); otherwise exit
+1 with `watane install: not a version: <v>` and, on the next line, `a
+version looks like 0.1.0`, before any download (INST-S-26).
+
 | Variable | Meaning | Default |
 |---|---|---|
 | `WATANE_RELEASE` | as `--release` | the baked version |
@@ -153,12 +166,12 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 
 | # | Step | On failure |
 |---|---|---|
-| 1 | Parse flags and variables (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
+| 1 | Parse flags and variables (3.2); check the version (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
 | 2 | Refuse root: `id -u` is 0. | exit 1 |
 | 3 | The tools of 3.3. | exit 2 |
-| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` holds no newline. The target is `aarch64-apple-darwin`. | exit 2 |
+| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. | exit 2 |
 | 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset) and set the trap (3.8). | exit 1 |
-| 6 | Read the receipt, if any: the installed version, for the message of step 12. | |
+| 6 | Read the receipt, if any: the installed version, for the message of step 12. Nothing is removed in this step. | |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
 | 9 | Extract: refuse a member name that is absolute or holds `..`; `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
@@ -190,6 +203,7 @@ The paths are the entries of 8.1: `<prefix>/bin/watane`, `watane-dev`,
 `watane-node`; `<prefix>/share/watane-dev/vendor`;
 `<prefix>/share/watane/install.sh`, `VERSION`; `~/Applications/watane.app`.
 
+0. Remove the stale names of 3.8.
 1. For each entry, copy it from the extracted tree to `<path>.new.<pid>`
    (same folder, so the move is a rename; `cp -R` keeps links inside the
    app). Create parent folders with `mkdir -p`. `chmod 755` the three
@@ -197,7 +211,8 @@ The paths are the entries of 8.1: `<prefix>/bin/watane`, `watane-dev`,
 2. For each entry: if `<path>` exists, `mv <path> <path>.old.<pid>`; then
    `mv <path>.new.<pid> <path>`.
 3. Success: `rm -rf` each `.old.<pid>`; remove the paths of the old
-   receipt that are not in the new list.
+   receipt that are not in the new list, each only if the rule of 8.5
+   allows it (INST-S-27).
 4. Any failure in 1 or 2: undo the moves done (`rm -rf <path>` for a path
    already replaced, `mv <path>.old.<pid> <path>`), remove each
    `.new.<pid>`, exit 5 (INST-S-14). A running `watane` keeps its open
@@ -266,8 +281,11 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`
 and `TERM` first exits with 129, 130 and 143. A `.new.<pid>` or `.old.<pid>`
 left by a kill between 3.6 steps 2 and 3 is found and removed by the next
-run (any `<path>.new.*` or `.old.*` beside a receipt path whose pid is not
-alive is removed in step 6).
+run, at 3.6 step 0 (after the checksum matched, so nothing outside the
+temporary folder changes before step 10): a name `<path>.new.<n>` or
+`<path>.old.<n>` where `<path>` is an entry of 3.6 that the rule of 8.5
+allows, `<n>` is one or more digits and nothing else, and `kill -0 <n>`
+fails. Any other name (`watane.old.mine`) is left alone.
 
 ### 3.9 What it prints
 
@@ -478,30 +496,49 @@ the SHA-256 check of 5, and the person's own decision to run the line.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
-  workflow_dispatch:
-    inputs:
-      dry_run: { type: boolean, default: true }
-permissions:
-  contents: write            # to create the release; nothing else
+  workflow_dispatch: {}      # no inputs: a hand run is always a dry run
+permissions: {}              # nothing at the top; each job names its own
 ```
 
-`runs-on: macos-14` (Apple silicon). One job `package-macos`. A
-`workflow_dispatch` run builds everything and uploads the files as a
-workflow artifact only (a dry run: no release). Actions are pinned to full
+Two jobs, so that no code that the build runs holds a token that can
+write to the repository:
+
+| Job | Runs on | Permissions | Does |
+|---|---|---|---|
+| `package-macos` | `macos-14` (Apple silicon) | `contents: read` | steps 1 to 7 of 7.2; uploads the archive, `SHA256SUMS` and `install.sh` as a workflow artifact |
+| `release` | `ubuntu-latest` | `contents: write` | only on a tag push, `needs: package-macos`; no checkout, no `cargo`, no script of the repository: it downloads the artifact and runs step 8 with `gh` |
+
+Why: the build compiles every dependency's build script, `tauri-cli` and
+the vendored crates; any of them that is hostile runs with the job's token
+and, by default, the checkout's persisted credentials. With
+`contents: write` there, a crate author could push to a branch, move a tag
+or replace release assets. So the build job's checkout sets
+`persist-credentials: false`, and its token can only read.
+
+A `workflow_dispatch` run is the first job only (a dry run: no release);
+it has no input that turns the release on. Actions are pinned to full
 commit SHAs. A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
-`releases/latest` never serves.
+`releases/latest` never serves. A tag whose commit is not on `main` is
+refused (7.2 step 2), so a tag pushed on an unreviewed branch publishes
+nothing.
 
 ### 7.2 Steps
 
-1. Checkout (`fetch-depth: 0` not needed).
-2. **Version check**: the tag without `v` equals `version` in
+1. Checkout with `persist-credentials: false` and `fetch-depth: 0` (step
+   2 needs `main`'s history).
+2. **Version and origin check**: the tag without `v` equals `version` in
    `host/Cargo.toml`, `dev/Cargo.toml`, `node/Cargo.toml`, `app/Cargo.toml`
-   and `app/tauri.conf.json`; otherwise the job fails before it builds
-   (Q7).
+   and `app/tauri.conf.json`, and on a tag run `git merge-base
+   --is-ancestor "$GITHUB_SHA" origin/main` succeeds; otherwise the job
+   fails before it builds (Q7).
 3. Rust: the runner's stable toolchain (at least the `rust-version` of
    `host/Cargo.toml` and `dev/Cargo.toml`); no Wasm target, since the job
-   builds and tests no mod; cache `~/.cargo` and `target` keyed on
-   `Cargo.lock`.
+   builds and tests no mod. **No cache** (`actions/cache`,
+   `Swatinem/rust-cache` or `setup-*` caching): a release restores nothing
+   that another workflow run wrote, because a cache entry from another run
+   (`target`, or the unpacked sources under `~/.cargo/registry/src`, which
+   cargo does not re-hash) would enter the archive unchecked. A release
+   build is slower; that is its price.
 4. `MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p
    watane-host -p watane-dev -p watane-node`.
 5. The app (7.3).
@@ -512,16 +549,17 @@ commit SHAs. A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
    `watane-dev --version`, `watane-node --version`, `otool -L`. The
    toolchain is answered `N`; the runner's own rustup is hidden by the
    `PATH` of the test.
-8. Release (not on a dry run): `gh release create v<version>
+8. Release (the `release` job, tag runs only): `gh release create v<version>
    --draft --title "watane <version>" --notes-file <generated> <archive>
    SHA256SUMS install.sh` (`GITHUB_TOKEN`), then `gh release edit
    v<version> --draft=false` as the last step, so that `latest/download`
    never serves a release with missing files. A failure before that leaves
    a draft, which no URL serves.
 
-The job writes no cache or secret into the archive, uses no secret but
-`GITHUB_TOKEN`, and runs no step from a pull request (it triggers only on
-tags and by hand).
+No job writes a cache or a secret into the archive, uses a secret but
+`GITHUB_TOKEN`, or runs a step from a pull request (it triggers only on
+tags and by hand). INST-S-29 checks the file `release.yml` for these rules
+in `cargo test`.
 
 ### 7.3 Bundling `watane.app`
 
@@ -530,12 +568,14 @@ tags and by hand).
 that file; it asks the bundler for the app with a config override:
 
 ```sh
-cargo install tauri-cli --version '^2' --locked     # cached
+cargo install tauri-cli --version '=<x.y.z>' --locked   # an exact version, not cached
 cd app && cargo tauri build --bundles app \
   --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}'
 ```
 
-which writes `target/release/bundle/macos/watane.app` (the product name
+The version of `tauri-cli` is exact (S50b picks it and a person bumps it
+by hand): a range would let a new upload to crates.io run in the release
+build. The command writes `target/release/bundle/macos/watane.app` (the product name
 is `watane`, `tauri.conf.json`) with `Info.plist` merged from
 `app/Info.plist` (the `NSAppTransportSecurity` entries without which no
 mod page loads, `app 12`), the icon, and the version of
@@ -618,9 +658,10 @@ is a feature of `app`, not of `install` (Q11).
 `install.sh --uninstall` (INST-F-21, 22):
 
 1. Read the receipt; none is exit 7 (INST-S-18).
-2. `rm -rf` each `path` of the receipt that lies under `$HOME/.local/` or
-   is `$HOME/Applications/watane.app`, refusing any other path, `/`, `$HOME`
-   and a path that is not absolute; then the receipt; then `rmdir` (not `rm -r`)
+2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
+   it refuses is left in place, with `watane install: skipped <path>: not a
+   path that watane installs` on stderr (INST-S-27); then the stale names of
+   3.8; then the receipt; then `rmdir` (not `rm -r`)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
    and `<prefix>/bin`, each only if empty.
 3. Print `uninstalled watane 0.1.0`.
@@ -629,7 +670,14 @@ is a feature of `app`, not of `install` (Q11).
    `kept: ~/Library/Caches/watane-dev (maker cache; safe to delete)` when
    it exists, `kept: ~/.rustup and ~/.cargo (the Rust toolchain; remove
    with rustup self uninstall)` when they exist.
-5. The home question, only when the home exists and a terminal answers:
+5. The home question, only when the home exists, a terminal answers, and
+   the home is a folder that may be deleted: an absolute path with no `.`
+   or `..` component, not `/`, not `$HOME`, and not a folder that holds
+   `$HOME` (`$HOME/` does not start with `<home>/`). Otherwise no question
+   is asked and the kept line reads `kept: <home> (not deleted: not a
+   folder that watane can delete)` (INST-S-28), so that a `WATANE_HOME` set
+   to `~` by mistake cannot turn one typed word into the loss of every file
+   of the person. The question:
    `Delete the watane home ~/.watane? It holds your identity and your mods,
    and cannot be restored without a backup. Type delete to delete it, or
    press Enter to keep it: `. Only the exact text `delete` deletes it
@@ -639,6 +687,31 @@ is a feature of `app`, not of `install` (Q11).
 
 The home is `$WATANE_HOME` if set and not empty, else `~/.watane`, as
 `watane_host::default_home()`.
+
+### 8.5 Which paths the script may remove
+
+A receipt is a file in the person's folders, read back by a later run; an
+edit, a corruption, a receipt written under another `HOME`, or a bug of a
+later version must not make the script delete more than watane installs.
+So every removal (an uninstall, the paths that only an old receipt holds,
+the stale names of 3.8) first checks the path as text, against the current
+`HOME` (which step 4 requires to be absolute, not `/`, with no newline and
+no `.` or `..` component). A path is allowed only when:
+
+1. it holds no newline and no `//`, and no component is `.` or `..` (no
+   `/./`, `/../`, and it does not end in `/.` or `/..`); and
+2. it is exactly `$HOME/Applications/watane.app`; or it is
+   `$HOME/.local/bin/<name>` where `<name>` starts with `watane` and holds
+   no `/`; or it lies strictly below `$HOME/.local/share/watane/` or
+   `$HOME/.local/share/watane-dev/` (not the folder itself).
+
+A prefix test alone is not the rule: `$HOME/.local/../Documents` starts
+with `$HOME/.local/` and is refused by 1; `$HOME/.local/share/fish` is
+under `$HOME/.local/` and is refused by 2. The rule names folders, not a
+list of today's seven entries, so a later version may add an entry below
+them and an older script still removes it on a downgrade. `rm -rf` of an
+allowed path that is a symbolic link removes the link, not what it points
+to.
 
 ## 9. Linux (TC-7, second)
 
@@ -670,7 +743,10 @@ Q14.
 | No root, no `sudo`, no password | step 2 refuses root; every path is under `$HOME` (INST-F-5) | INST-S-21; the test runs as a normal user and asserts no write outside `$HOME` |
 | The toolchain is installed only after a typed yes or `--toolchain` | 3.7 | INST-S-2 to 5 |
 | No account, no telemetry, no update check, no background process | the script has no other URL than 3.2 lists and starts nothing that outlives it | INST-S-1 (the fake server's request log holds exactly `SHA256SUMS` and the archive); `ps` after the run |
-| The home is never deleted without a typed `delete` | 8.4 | INST-S-15 to 17 |
+| The home is never deleted without a typed `delete`, and never when it is `/`, `$HOME` or a folder above it | 8.4 | INST-S-15 to 17, 28 |
+| The version cannot steer the download to another path or repository | the version check of 3.2 | INST-S-26 |
+| An uninstall or upgrade removes only what watane installs, whatever the receipt says | the rule of 8.5 | INST-S-27 |
+| No code of the build holds a token that can write to the repository; a release restores no cache; a hand run publishes nothing; a tag off `main` publishes nothing | two jobs, `persist-credentials: false`, no cache, no dispatch input, the ancestor check (7.1, 7.2) | INST-S-29 |
 | The programs run only what is in the person's own folders | the archive's tree (4.2) | package test; 12.4 `otool` |
 
 **Trust in the download.** TLS to `github.com` (certificate checked by
@@ -706,10 +782,10 @@ a day for an agent, M is a day.
 
 | Stage | Build | Touches (folders) | Needs | Done when |
 |---|---|---|---|---|
-| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22 pass in `cargo test`. Size M |
+| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22 and INST-S-26 to 28 pass in `cargo test`. Size M |
 | 2 Versions | `watane-node --version`; `--version` of the three programs prints `<name> <version>` and exits 0 (a test each) | `node/` (bin and its `program.rs` test), `host/` and `dev/` only if a test finds a difference | none | `watane-node --version` prints `watane-node 0.1.0`. Size S |
 | 3 Packer | `package.sh` (4), `tests/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing. Size S |
-| 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
+| 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | INST-S-29 passes in `cargo test`; a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
 | 5 Clean Mac | `tests/clean_mac.sh` (12.3, 12.4); the second macOS user prepared by the human; the first real release `v0.1.0` cut by the human | `install/`; the human | stage 4 | INST-S-1, 23, 24, 25 pass on the clean Mac against the real release. Size M, local |
 | 6 App notice | the app shows the one-liner and the Gatekeeper text where `app` shows its first start (optional) | `app/` | stage 5 | not required for S50b |
 | 7 Linux | the CLI-only archive (9) | `install/`, `.github/`, `dev/` if a path differs | S50b | a Linux clean-machine run; not scheduled |
@@ -826,7 +902,7 @@ what they need beside themselves.
 
 | Test | Where |
 |---|---|
-| INST-S-1 to INST-S-22; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
+| INST-S-1 to INST-S-22, INST-S-26 to 29; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-14`, by `workflow_dispatch` |
 | INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (a second user), against a real release |
 
@@ -862,7 +938,7 @@ otherwise.
 | Q3 | Intel Macs. | (a) Unsupported: exit 2 (TC-7: aarch64 first). (b) A second archive `x86_64-apple-darwin` built on `macos-13`, or a universal binary. | (a). A person on an Intel Mac gets a clear stop. | (a) to (b): a target in 4.1, a runner in 7.1, a case in step 4, a second clean machine for the test (cannot be tested on Apple silicon except under Rosetta). |
 | Q4 | The oldest macOS. | (a) 14.0, the runner's own, tested. (b) 13 or 12, `MACOSX_DEPLOYMENT_TARGET` lower, untested. | (a). An older number is a claim nobody tests. | Change one number in `install.sh`, `release.yml`; a lower number needs an older test machine. |
 | Q5 | Should the script put `~/.local/bin` on the `PATH` itself? | (a) Print the line only (3.10). (b) Ask y/N and append to `~/.zshrc`. (c) Append silently. | (a): no silent edit of a shell file (VISION), and the app and `watane-dev` work from the full path in the printed `Next:` lines. | (a) to (b): a question and an append; a later uninstall must then know the line it added (receipt gains `edit` entries). |
-| Q6 | How `watane.app` is bundled. | (a) `cargo tauri build --bundles app` with a config override (7.3). (b) Assemble the bundle by hand in `package.sh`. (c) Set `bundle.active: true` in `tauri.conf.json`. | (a); it needs `tauri-cli` on the runner (cached). Fall back to (b) if the override does not behave. (c) changes `app`'s config for every `cargo tauri dev` and is not needed. | (a) to (b): a day, `package.sh` only; the tree is unchanged. |
+| Q6 | How `watane.app` is bundled. | (a) `cargo tauri build --bundles app` with a config override (7.3). (b) Assemble the bundle by hand in `package.sh`. (c) Set `bundle.active: true` in `tauri.conf.json`. | (a); it needs `tauri-cli` on the runner (an exact version, not cached, 7.3). Fall back to (b) if the override does not behave. (c) changes `app`'s config for every `cargo tauri dev` and is not needed. | (a) to (b): a day, `package.sh` only; the tree is unchanged. |
 | Q7 | Where the version comes from. Crates each say `0.1.0` today. | (a) The tag, checked equal to five places (7.2 step 2). (b) A `[workspace.package] version` that every crate inherits. (c) Computed from the tag, written into the files by the workflow. | (a) now, (b) as its own small slice if five places hurt. | (a) to (b): every `Cargo.toml` of the workspace, hakari, the lock; mechanical. |
 | Q8 | Where `install.sh` is served. | (a) A release asset with the version baked in (3.1). (b) `raw.githubusercontent.com/.../main/install/install.sh`. (c) A short URL on a domain that watane owns. | (a): pinned to a release, no moving `main`, no domain. The cost is a long URL, shown once in the README. | (a) to (c): a domain and a redirect; old URLs must keep working. |
 | Q9 | The 26 MB vendor folder in the archive. | (a) In the archive (4.2): the first `watane-dev test` builds offline. (b) A second asset `watane-dev-vendor-<v>.tar.gz`, fetched by the script. (c) `watane-dev` fetches it on first use. | (a). One download, one checksum, no first-use network (F-QUAL-1, DEV-F-14). | (a) to (b): a second file, a second checksum, a script step. (c) puts network and a trust step into `dev`. |
@@ -897,3 +973,6 @@ otherwise.
 | IN-18 | Nothing checks for a new version and nothing runs after the script ends. | VISION; INST-F-23. |
 | IN-19 | The oldest macOS is 14.0 and the platform is Apple silicon only. | What the runner builds and tests (Q3, Q4). |
 | IN-20 | The one-liner is the `latest` URL; a pinned URL exists for a person or an agent who wants one version. | 3.1. |
+| IN-21 | The version is checked against a fixed pattern before it reaches a URL, a file name or the receipt. | curl collapses `..` in a URL path; a version must not choose the repository (3.2; S50a adversary). |
+| IN-22 | Every removal checks the path against the rule of 8.5, not against a prefix; the home question is never asked for `/`, `$HOME` or a folder above it. | The receipt and `WATANE_HOME` are inputs, not proofs (8.4, 8.5; S50a adversary). |
+| IN-23 | The release workflow builds with a read-only token, no persisted credentials and no cache, publishes from a second job that runs no repository code, only for a tag on `main`; a hand run has no input that publishes. | A hostile build dependency must not get a token that writes to the repository (7.1, 7.2; S50a adversary). |
