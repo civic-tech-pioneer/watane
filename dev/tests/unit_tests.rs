@@ -7,7 +7,7 @@
 mod support;
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -71,6 +71,18 @@ fn output(command: &mut Command) -> (i32, Value) {
     });
     (output.status.code().unwrap(), value)
 }
+/// The folders where Cargo puts `package`'s compiled units under `profile_dir`:
+/// `deps/` up to Cargo 1.99, `build/<package>/<hash>/out/` from 1.100 (TECHNICAL 6.4).
+fn units(profile_dir: &Path, package: &str) -> Vec<PathBuf> {
+    let deps = profile_dir.join("deps");
+    if deps.is_dir() {
+        return vec![deps];
+    }
+    fs::read_dir(profile_dir.join("build").join(package))
+        .unwrap()
+        .map(|e| e.unwrap().path().join("out"))
+        .collect()
+}
 fn line(text: &str, needle: &str) -> usize {
     text.lines().position(|line| line.contains(needle)).unwrap() + 1
 }
@@ -79,9 +91,9 @@ fn line(text: &str, needle: &str) -> usize {
 fn ac1_ac2_template_unit_counts_and_warm_pipeline() {
     let cache = support::cache();
     assert_eq!(cache, support::cache());
-    let deps = cache.join("target/wasm32-wasip2/release/deps");
-    let artifact = fs::read_dir(deps)
-        .unwrap()
+    let artifact = units(&cache.join("target/wasm32-wasip2/release"), "serde_core")
+        .into_iter()
+        .flat_map(|dir| fs::read_dir(dir).unwrap())
         .map(|e| e.unwrap().path())
         .find(|p| {
             p.file_name()
@@ -456,8 +468,8 @@ fn ac3_fixed_mod_discards_stale_release_and_unit_dependencies() {
             .temp
             .path()
             .join("cache/target/wasm32-wasip2")
-            .join(profile)
-            .join("deps/counter-stale.d");
+            .join(profile);
+        let stale = units(&stale, "counter")[0].join("counter-stale.d");
         fs::write(&stale, format!("old.wasm: {}\n", outside.display())).unwrap();
         fs::write(&source, original).unwrap();
         let (status, v) = output(&mut f.command("test"));

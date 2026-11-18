@@ -256,41 +256,46 @@ pub(crate) fn compile(
             .map_err(|e| vec![Problem::internal(e)])?,
     )
     .map_err(|e| vec![Problem::internal(e)])?;
-    let crate_name = manifest["package"]["name"]
+    let package = manifest["package"]["name"]
         .as_str()
-        .ok_or_else(|| vec![Problem::internal("missing crate name")])?
-        .replace('-', "_");
+        .ok_or_else(|| vec![Problem::internal("missing crate name")])?;
+    let crate_name = package.replace('-', "_");
     let profile = if args[0] == "test" {
         "debug"
     } else {
         "release"
     };
-    let deps = ctx
-        .env
-        .cache
-        .join("target/wasm32-wasip2")
-        .join(profile)
-        .join("deps");
+    let profile_dir = ctx.env.cache.join("target/wasm32-wasip2").join(profile);
+    // rustc's dep-info of the mod crate: in `deps/` up to Cargo 1.99, in
+    // `build/<package>/<hash>/out/` from Cargo 1.100's build-dir layout (6.4).
     let dep_files = || -> Result<Vec<PathBuf>, Vec<Problem>> {
-        if !deps.exists() {
-            return Ok(Vec::new());
+        let read = |dir: &Path| -> std::io::Result<Vec<PathBuf>> {
+            match fs::read_dir(dir) {
+                Ok(entries) => entries.map(|e| e.map(|e| e.path())).collect(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+                Err(e) => Err(e),
+            }
+        };
+        let internal = |e: std::io::Error| vec![Problem::internal(e)];
+        let mut dirs = vec![profile_dir.join("deps")];
+        for unit in read(&profile_dir.join("build").join(package)).map_err(internal)? {
+            dirs.push(unit.join("out"));
         }
-        fs::read_dir(&deps)
-            .map_err(|e| vec![Problem::internal(e)])?
-            .filter_map(|entry| match entry {
-                Ok(entry) => {
-                    let path = entry.path();
-                    let stem = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or_default();
-                    (path.extension().is_some_and(|e| e == "d")
-                        && (stem == crate_name || stem.starts_with(&format!("{crate_name}-"))))
-                    .then_some(Ok(path))
+        let mut files = Vec::new();
+        for dir in dirs {
+            for path in read(&dir).map_err(internal)? {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                if path.extension().is_some_and(|e| e == "d")
+                    && (stem == crate_name || stem.starts_with(&format!("{crate_name}-")))
+                {
+                    files.push(path);
                 }
-                Err(e) => Some(Err(vec![Problem::internal(e)])),
-            })
-            .collect()
+            }
+        }
+        Ok(files)
     };
     for path in dep_files()? {
         fs::remove_file(path).map_err(|e| vec![Problem::internal(e)])?;

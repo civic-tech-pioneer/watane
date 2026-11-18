@@ -1083,9 +1083,12 @@ The runs, in order:
    `env.allowlist`.
 3. If the new lock differs from `<mod>/logic/Cargo.lock`, dev writes it
    there; `lock_updated` is true.
-4. Before compilation, dev deletes
-   `<cache>/target/wasm32-wasip2/release/deps/<crate>-*.d` and `<crate>.d`
-   (`<crate>`: the package name with `-` replaced by `_`). Dev refreshes
+4. Before compilation, dev deletes the mod crate's rustc dep-info files:
+   `<crate>-*.d` and `<crate>.d` (`<crate>`: the package name with `-`
+   replaced by `_`) in `<cache>/target/wasm32-wasip2/release/deps/` (Cargo
+   up to 1.99) and in each `.../release/build/<package>/<hash>/out/` (Cargo
+   1.100's build-dir layout, which has no `deps/`). Cargo's own
+   `release/<crate>.d` is not one of them. Dev refreshes
    the copied `logic/src/lib.rs` modification time so Cargo recompiles the
    mod even when its binary dependency cache still considers it fresh.
 5. `cargo build <common> --locked --release --target wasm32-wasip2 --message-format json`.
@@ -1098,7 +1101,7 @@ The runs, in order:
      `.wasm` file in `filenames`.
    - On a failure with no `compiler-message` error: `build.resolve` with
      the last 40 lines of standard error.
-6. **Reads** (DEV-S-10): dev reads the new `deps/<crate>-*.d` and `deps/<crate>.d` files (make syntax:
+6. **Reads** (DEV-S-10): dev reads every new dep-info file of step 4, in both places (make syntax:
    `target: dep dep ...`, with `\ ` for a space in a path). Every path in
    them must lie under the copy folder, the vendor folder, the sysroot or
    `<cache>/target`. Else one `build.reads_outside` for all outside paths ending in `.wit` (for n > 1: `the build read <n> .wit files under <folder>, outside the mod`, `<folder>` their deepest common ancestor) and one for each other path, and dev
@@ -1135,7 +1138,7 @@ then runs contract tests (8). A mod with `logic.wasm` and no
    (after 6.4 step 1). Compiler errors: as 6.4 step 5. The test binaries
    are the `executable` fields of `compiler-artifact` messages with
    `profile.test` true. Before compilation dev deletes the old
-   `debug/deps/<crate>-*.d` and `<crate>.d` files; after compilation the
+   dep-info files of 6.4 step 4 under `debug/` instead of `release/`; after compilation the
    reads check of 6.4 step 6 scans the new files before any binary executes.
    An outside read also removes `<mod>/logic.wasm`.
 2. dev runs each binary as a `wasi:cli/command` component in Wasmtime:
