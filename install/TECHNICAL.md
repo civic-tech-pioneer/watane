@@ -30,8 +30,8 @@ install/
     script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28: runs install.sh against a fake release (section 12)
     workflow.rs       INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     package.rs        the tree package.sh gives (section 4.2), with fake programs
-    support/mod.rs    the fake release, the fake tools, the answer file
-    support/pty.rs    runs a command on a real pseudo-terminal and types an answer (12.1)
+    support/mod.rs    the fake release, the fake tools
+    support/pty.rs    runs a command on a real pseudo-terminal and types an answer; and runs one with no controlling terminal (12.1)
     clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac
     fakes/            the fake tools that script.rs puts first on PATH (12.1)
 .github/workflows/release.yml
@@ -136,10 +136,10 @@ version looks like 0.1.0`, before any download (INST-S-26).
 | `WATANE_RELEASE` | as `--release` | the baked version |
 | `WATANE_RELEASE_BASE` | the folder URL that holds the release's files, without a trailing slash; any scheme curl knows (`https://`, `http://`, `file://`) | `https://github.com/civic-tech-pioneer/watane/releases/download/v<release>` |
 | `WATANE_RUSTUP_URL` | where the rustup installer script comes from | `https://sh.rustup.rs` |
-| `WATANE_INSTALL_TTY` | a test seam: the file that the answer to the toolchain offer (3.7) is read from. It never answers the uninstall question (8.4), which only a real terminal answers | `/dev/tty` |
 | `WATANE_HOME` | the home, read only to name it in the uninstall question | `$HOME/.watane` |
 | `HOME`, `PATH`, `SHELL`, `TMPDIR`, `CARGO_HOME`, `RUSTUP_HOME` | as everywhere | |
 
+No variable answers a question: the offer of 3.7 and the question of 8.4 read the terminal (`/dev/tty`) and nothing else (IN-25).
 `WATANE_RELEASE_BASE` and `WATANE_RUSTUP_URL` exist for the tests and for
 a mirror. When either is set, the script prints `using <name>=<value>`
 before it downloads, and does not add `--proto '=https'`.
@@ -291,18 +291,14 @@ a folder that must hold `lib/rustlib/wasm32-wasip2/lib`. Three states:
 | no target | rustup and rustc, no target | `rustup target add wasm32-wasip2` | `watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.` newline `Add the wasm32-wasip2 target with rustup? [y/N]` |
 | none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]` |
 
-**Answer.** Read one line from `$WATANE_INSTALL_TTY` when it is set (a
-test seam, 3.2: it answers only this offer), else from `/dev/tty` when
-`( : < /dev/tty ) 2>/dev/null` succeeds; a script piped from `curl` has the
-pipe as stdin, so it never reads stdin. After `tr 'A-Z' 'a-z'`, only `y` and
-`yes` count; an empty line, end of file, any other text, and no terminal are
-all `N` (INST-F-9, as `node` NO-10). `--no-toolchain` is `N` with no
-question. No flag, variable or file means `y` on its own: with no terminal
-and no seam file, the toolchain is not installed, and the commands are
-printed for the person or the agent to run (F-GET-3, IN-24). A program of
-the same user that sets `WATANE_INSTALL_TTY` can answer the offer, and so
-install rustup; it could run rustup itself as well (spec/TECHNICAL 6, same-user
-limit), and the offer changes nothing else.
+**Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
+succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
+stdin. After `tr 'A-Z' 'a-z'`, only `y` and `yes` count; an empty line, end of
+file, any other text, and no terminal are all `N` (INST-F-9, as `node` NO-10).
+`--no-toolchain` is `N` with no question. No flag, variable or file means `y`:
+with no terminal (an agent, a pipe, a CI job) the toolchain is not installed,
+and the commands are printed for the person or the agent to run (F-GET-3,
+IN-24, IN-25).
 
 **On `y`**, in the order of the table's offer:
 - A: download `$WATANE_RUSTUP_URL` to `<temporary folder>/rustup-init.sh`
@@ -612,7 +608,7 @@ nothing.
    (12.3): the install into a temporary `HOME` with `file://` as the
    release base, the assertions of 12.4, `watane --version`,
    `watane-dev --version`, `watane-node --version`, `otool -L`. The
-   toolchain is answered `N`; the runner's own rustup is hidden by the
+   runner has no terminal, so the toolchain is not installed; the runner's own rustup is hidden by the
    `PATH` of the test.
 8. Release (the `release` job, tag runs only): `gh release create v<version>
    --draft --title "watane <version>" --notes-file <generated> <archive>
@@ -736,7 +732,7 @@ is a feature of `app`, not of `install` (Q11).
    it exists, `kept: ~/.rustup and ~/.cargo (the Rust toolchain; remove
    with rustup self uninstall)` when they exist.
 5. The home question, only when the home exists, a real terminal answers
-   (`/dev/tty` opens; `WATANE_INSTALL_TTY` is not read here), and
+   (`/dev/tty` opens), and
    the home is a folder that may be deleted: an absolute path with no `.`
    or `..` component and no trailing `/`, not `/`, not `$HOME`, and not a
    folder that holds `$HOME` (`$HOME/` does not start with `<home>/`); and
@@ -895,14 +891,16 @@ human is needed for stage 5 only.
   `shasum -a 256` or `sha256sum`; the crate adds no hash dependency) and a fake
   archive: `tar -czf` of a tree with the layout of 4.2 whose programs are
   small shell scripts that print `<name> <version>` for `--version`;
-- `WATANE_INSTALL_TTY` a file holding the answer to the toolchain offer,
-  or absent. It never answers the uninstall question (8.4);
-- **the uninstall question** (INST-S-15, 16, 28) is answered on a real
-  pseudo-terminal by `support/pty.rs`: it starts the script under
-  `script(1)` (macOS: `script -q /dev/null sh install.sh --uninstall`;
-  util-linux: `script -qec "sh install.sh --uninstall" /dev/null`), reads
-  its output until the line `Type delete to delete it, or press Enter to
-  keep it: ` appears, then writes the answer and a newline to `script`'s
+- **no terminal**: each test that expects none starts the script as
+  `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' sh install.sh ...` (`perl`
+  is on stock macOS and on the Linux runners; it is a tool of the test, not
+  of the script), so that there is no controlling terminal even when
+  `cargo test` runs in a terminal and `/dev/tty` cannot be opened;
+- **every question** (the offer, INST-S-2, 3, 5 (a), 7; the uninstall, INST-S-15,
+  16, 28) is answered on a real pseudo-terminal by `support/pty.rs`: it starts the script under
+  `script(1)` (macOS: `script -q /dev/null sh install.sh <flags>`;
+  util-linux: `script -qec "sh install.sh <flags>" /dev/null`), reads
+  its output until the line that ends the question (`[y/N] ` or `keep it: `) appears, then writes the answer and a newline to `script`'s
   stdin. It needs no `expect`. These tests are `#[ignore = "slow: needs a
   pseudo-terminal from script(1)"]`, so the gate runs them with the other
   slow tests of the files a task touched. If `script(1)` does not forward a
@@ -946,12 +944,12 @@ workflow (the fresh-`HOME` form of the same script). The VM is the upgrade
 path if a clean machine with no command line tools is wanted (Q10).
 
 `tests/clean_mac.sh [--from <dir>] [--fresh-home]` does the whole run
-with no person at the keyboard; its one answer file (`WATANE_INSTALL_TTY`) answers only the toolchain offer:
+with no person at the keyboard; each answer is typed on a pseudo-terminal by the same `script(1)` method as 12.1:
 1. `--fresh-home` (the runner): `H=$(cd "$(mktemp -d)" && pwd -P)` (the
    physical path: `doctor --json` reports canonical paths, `/private/var`); otherwise `H=$HOME` of
    the clean user. `cd $H`.
 2. Run every later command under `env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin
-   TERM=dumb`, plus `WATANE_INSTALL_TTY`.
+   TERM=dumb`.
 3. The assertions of 12.4, then the install: `curl -fsSL <url> | sh`
    (or `sh <from>/install.sh` with `WATANE_RELEASE_BASE=file://<from>`).
 4. INST-S-1, then INST-S-2 (answer `y`) from a fresh home, INST-S-23, 24.
@@ -1049,7 +1047,7 @@ otherwise.
 | IN-2 | Per-user paths only: `~/.local/{bin,share}` and `~/Applications`. No root. | V5; INST-F-5. The human decided the two folders (2026-11-18). |
 | IN-3 | `curl ... | sh` with the script as a release asset and the version baked in; the script is plain POSIX `sh` on stock macOS tools. | The human's decision; no dependency to install first (3.1, 3.3). |
 | IN-4 | A receipt of absolute paths, written last; upgrade and uninstall touch exactly its paths. | The script never guesses what it owns (8.1). |
-| IN-5 | The toolchain is offered, y/N, default N, only on a terminal answer (`WATANE_INSTALL_TTY` is a test seam for this answer alone); with no terminal the answer is N and the commands are printed. | The human's decision (2026-11-18); DEV-F-13; F-MAKE-5. |
+| IN-5 | The toolchain is offered, y/N, default N, only on an answer typed on the terminal (`/dev/tty`); with no terminal the answer is N and the commands are printed. | The human's decision (2026-11-18); DEV-F-13; F-MAKE-5. |
 | IN-6 | rustup is installed with `--profile minimal --no-modify-path -t wasm32-wasip2`. | Smallest that `watane-dev` needs; no shell file edit; `watane-dev` finds rustup in `~/.cargo/bin` (`dev 6.1`). |
 | IN-7 | The programs and the app are ad-hoc signed (`codesign --sign -`), and the script removes the quarantine mark and prints the Gatekeeper text. | Apple silicon needs a signature to run; there is no Apple account; the human's "few, calm steps" (6). |
 | IN-8 | The checksum is the only integrity check; its limits are stated (5, 10); no signing key in this version. | No release key exists, and the stock tools cannot verify one (Q2). |
@@ -1059,7 +1057,7 @@ otherwise.
 | IN-12 | `bundle.active` stays `false`; the workflow asks for the bundle with `--config`. | No change to `app` for a release's sake (7.3, Q6). |
 | IN-13 | The version is the tag, and the workflow checks it equals the crates' and `tauri.conf.json`'s. | A release whose programs print a different number is a bug (7.2, Q7). |
 | IN-14 | A crate `watane-install`, tests only. | The tests must be in `cargo test` and the gate (1). |
-| IN-15 | Tests fake the platform with fake tools first on `PATH`, and the network with `WATANE_RELEASE_BASE`; the answer to the toolchain offer comes from `WATANE_INSTALL_TTY` and the uninstall answer from a pseudo-terminal. | The real script runs unchanged, with no test-only branch other than the three variables (12.1). |
+| IN-15 | Tests fake the platform with fake tools first on `PATH`, and the network with `WATANE_RELEASE_BASE`; every answer (the offer and the uninstall question) is typed on a pseudo-terminal, and a test with no terminal runs in a new session. | The real script runs unchanged, with no test-only branch other than the three variables (12.1). |
 | IN-16 | "Clean Mac" is a second macOS user plus an asserted `env -i` environment (12.3, 12.4); a VM is the next step. | Cheapest real GUI session and real Gatekeeper; the assertion, not the account, is the proof. |
 | IN-17 | The home is deleted on uninstall only by the typed word `delete` on a real terminal; no flag, variable or file answers it. | A deliberate act, since an identity cannot be restored without a backup (F-APP-6). It does not stop a same-user program from deleting the home (spec/TECHNICAL 6). |
 | IN-18 | Nothing checks for a new version and nothing runs after the script ends. | VISION; INST-F-23. |
@@ -1068,8 +1066,8 @@ otherwise.
 | IN-21 | The version is checked against a fixed pattern before it reaches a URL, a file name or the receipt. | curl collapses `..` in a URL path; a version must not choose the repository (3.2; S50a adversary). |
 | IN-22 | Every removal checks the path against the rule of 8.5, not against a prefix; the home question is never asked for `/`, `$HOME` or a folder above it. | The receipt and `WATANE_HOME` are inputs, not proofs (8.4, 8.5; S50a adversary). |
 | IN-23 | The release workflow builds with a read-only token, no persisted credentials and no cache, publishes from a second job that runs no repository code, only for a tag on `main`; a hand run has no input that publishes. | A hostile build dependency must not get a token that writes to the repository (7.1, 7.2; S50a adversary). |
-| IN-24 | There is no `--toolchain` flag, and no variable or file says yes in a real run. With no terminal the script installs no toolchain and prints the commands. | The human decided the offer is y/N and never silent; an agent that wants the toolchain runs the printed command itself (F-GET-3, 3.7). `--no-toolchain` stays, to skip the question. |
-| IN-25 | `WATANE_INSTALL_TTY` answers the toolchain offer only, as a test seam; the uninstall `delete` question reads `/dev/tty` alone, and its tests use a pseudo-terminal (12.1). | A seam that could answer the deletion of an identity would make a file the answer to the one irreversible question. |
+| IN-24 | There is no `--toolchain` flag, and no variable or file says yes. With no terminal the script installs no toolchain and prints the commands. | The human decided the offer is y/N and never silent; an agent that wants the toolchain runs the printed command itself (F-GET-3, 3.7). `--no-toolchain` stays, to skip the question. |
+| IN-25 | The script has no test seam for answers: the toolchain offer and the uninstall question read `/dev/tty` alone. Tests type answers on a pseudo-terminal (`script(1)`, 12.1) and run a no-terminal case in a new session. | A file or variable that answers the offer lets an agent with no terminal install rustup, against F-GET-3 and "never silent"; one that answers the deletion question would be worse. Replaces the earlier seam `WATANE_INSTALL_TTY`, which no longer exists. |
 | IN-26 | A first install, or an upgrade onto a path that no receipt lists, stops with exit 8 if the path exists, and changes nothing; there is no flag that overwrites. | INST-F-19: the script replaces only what it installed (3.4.2). |
 | IN-27 | `~/.local/bin`, `~/.local/share` and `~/Applications` must resolve, with links followed, inside the home; else exit 2. | INST-F-5's intent: write only under the person's home, even if a link would lead elsewhere (3.4.1). |
 | IN-28 | S50b does not cut the first release before the human has set the repository settings of Q16 (tag ruleset for `v*`, environment `release` with a required reviewer, read-only default token, `main` reviewed). | The workflow's own rules (7) assume them; the repository, not the repository's files, enforces who may start a release. |

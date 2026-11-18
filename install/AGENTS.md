@@ -27,8 +27,10 @@ local foreman.
 3. Names are defined in TECHNICAL.md only (archive, paths, flags,
    variables, exit codes, texts). Change one there and in every document
    that cites it, then in the script and the tests.
-4. The script has no test-only branch except `WATANE_RELEASE_BASE`,
-   `WATANE_RUSTUP_URL` and `WATANE_INSTALL_TTY` (TECHNICAL.md 3.2; the last answers the toolchain offer only, never the uninstall question). A test
+4. The script has no test-only branch except `WATANE_RELEASE_BASE` and
+   `WATANE_RUSTUP_URL` (TECHNICAL.md 3.2). No variable, flag or file
+   answers a question: the offer and the uninstall question read `/dev/tty`
+   only; tests type on a pseudo-terminal. A test
    fakes the platform with tools first on `PATH`.
 5. A test never reaches the internet. A test of the real release is the
    clean-Mac run, not `cargo test`.
