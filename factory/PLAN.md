@@ -306,7 +306,22 @@ These slices remove one piece of fakery each. S50 comes first: the others all ne
 person can install. S52, S53 and S54 need things the human must provide (see "Waiting on the
 human"), so they cannot be handed to a cloud foreman as they stand.
 
-- [ ] **S50 A person can install watane.** Someone with a clean Mac and no Rust toolchain ends up
+- [~] **S50a Installing watane designed.** In flight (cloud), branch `slice/s50a`. A design slice:
+  no spec says how watane reaches a machine. The human decided (2026-11-18): one `curl … | sh`
+  from GitHub Releases puts `watane`, `watane-dev` and `watane-node` in `~/.local/bin` and
+  `watane.app` in `~/Applications`, then gives the Gatekeeper step; it offers (y/N, never silent)
+  to install rustup and `wasm32-wasip2`; dev keeps DEV-F-13 (dev installs nothing). Writes a new
+  subsystem `install/` (VISION, FUNCTIONAL with EARS rules and scenarios, TECHNICAL with the script,
+  the release archive layout and its checksums, the release workflow, upgrade and uninstall, and a
+  build-plan table), a journey line in `spec/FUNCTIONAL.md` and its place in `spec/TECHNICAL.md`,
+  and the S50b test: where a clean Mac comes from (a second macOS user, or a VM) and what proves
+  "no cargo, no target, no checkout". Outcome: a reviewer can build S50b from the documents alone;
+  each open question is under `install/TECHNICAL` with options, a recommendation and the cost to
+  undo. Touches: `install/*.md`, `spec/FUNCTIONAL.md`, `spec/TECHNICAL.md`, root `AGENTS.md` (one
+  table cell). No code. Cloud.
+- [ ] **S50b A person can install watane.** Builds S50a's rows. Local (a clean Mac). Sketch below
+  is the original; S50a replaces its details.
+  Someone with a clean Mac and no Rust toolchain ends up
   with a working `watane` and `watane-app` from one command, and can run `watane-dev new` straight
   after. Outcome: the install is exercised somewhere that has no cargo, no target folder and no
   checkout, so the test cannot be a `cargo test` in this repo. The human decided (2026-11-15): unsigned, since there is no Apple Developer
