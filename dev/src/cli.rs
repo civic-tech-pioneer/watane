@@ -575,7 +575,7 @@ fn test_with(dir: &Path, args: &str) -> Outcome {
     }
 }
 
-/// The search command as a rerun: words, filters, and `--home` only when given.
+/// The search command as a rerun: words, filters, and `--home` only when given (TECHNICAL 2.4).
 fn search_command(
     words: &[String],
     publisher: Option<&str>,
@@ -1142,6 +1142,32 @@ mod tests {
             }
             _ => panic!("not search"),
         }
+        let words = ["cats".to_string(), "-x".to_string()];
+        let line = search_command(&words, Some("p"), None, " --home /h");
+        assert_eq!(
+            line,
+            "watane-dev search --json --publisher p --home /h -- cats -x"
+        );
+        let argv = line.replace('\'', "");
+        let cli = Cli::try_parse_from(argv.split(' ')).unwrap();
+        match cli.command {
+            Command::Search {
+                text,
+                home,
+                publisher,
+                ..
+            } => {
+                assert_eq!(text, ["cats", "-x"]);
+                assert_eq!(home, Some(PathBuf::from("/h")));
+                assert_eq!(publisher.as_deref(), Some("p"));
+            }
+            _ => panic!("not search"),
+        }
+        let plain = ["cats".to_string()];
+        assert_eq!(
+            search_command(&plain, Some("p"), None, " --home /h"),
+            "watane-dev search --json cats --publisher p --home /h"
+        );
     }
 
     #[test]
