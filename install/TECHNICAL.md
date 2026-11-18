@@ -1062,7 +1062,11 @@ to four per test binary. Deadlines start after admission.
   `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' sh install.sh ...` (`perl`
   is on stock macOS and on the Linux runners; it is a tool of the test, not
   of the script), so that there is no controlling terminal even when
-  `cargo test` runs in a terminal and `/dev/tty` cannot be opened;
+  `cargo test` runs in a terminal and `/dev/tty` cannot be opened; the
+  same `perl` sets `HUP`, `INT`, `QUIT`, `TERM` and `PIPE` to their defaults
+  before the `exec`, since a `cargo test` started in the background inherits
+  an ignored `INT` that `sh` could not trap; a run that has not ended within
+  the deadline has its process group killed;
 - **every question** (the offer, INST-S-2, 3, 5 (a), 7; the uninstall, INST-S-15,
   16, 28) is answered on a real pseudo-terminal by `support/pty.rs`: it starts the script under
   `script(1)` (macOS: `script -q /dev/null sh install.sh <flags>`;
