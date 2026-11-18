@@ -136,7 +136,7 @@ flag <flag>` and the usage on stderr. A flag beats its variable.
 repository's archive and its own `SHA256SUMS`, and print `checked`. In step
 1 the version must match the extended regular expression
 `^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$` (checked with
-`grep -Eq` on a value already refused if it holds a newline); otherwise exit
+shell builtins and `case` patterns, without a pipeline); otherwise exit
 1 with `watane install: not a version: <v>` and, on the next line, `a
 version looks like 0.1.0`, before any download (INST-S-26).
 
@@ -177,11 +177,11 @@ column says; a step after step 5 that fails runs the cleanup first (3.8).
 
 | # | Step | On failure |
 |---|---|---|
-| 1 | Parse flags and variables (3.2); check the version (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
+| 1 | Set the traps (3.8), parse flags and variables (3.2); check the version (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
 | 2 | Refuse root: `id -u` is 0. | exit 1 |
 | 3 | The tools of 3.3. | exit 2 |
 | 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. Each install folder resolves inside the home (3.4.1). | exit 2 |
-| 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset) and set the trap (3.8). | exit 1 |
+| 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset). | exit 1 |
 | 6 | Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step. | exit 8 |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
@@ -473,6 +473,15 @@ was not installed`; with `--no-toolchain` it is `toolchain: skipped
 
 ### 3.8 Cleanup
 
+An `INT`, `HUP`, `TERM` or `PIPE` before the swap ends the run with its
+signal code and no cause line. Traps are installed before the first check.
+Before staging, a signal handler records its code; checkpoints and error
+paths give a pending trap a dispatch point before reporting a failure,
+then exit if a signal was recorded. A program's signal exit status is
+also preserved when macOS `sh` loses the parent's `INT` after its child
+dies. Version and checksum-line checks use builtins so a killed pipeline
+cannot masquerade as invalid input. Cleanup preserves the signal code.
+
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).
 The swap remains active through quarantine removal (`xattr`) and the
@@ -482,7 +491,7 @@ committed branch, which finishes cleanup without reverting the new version.
 A kill before journal removal leaves the evidence needed to repeat the
 undo; a kill afterwards leaves only staging cleanup, so recovery never
 removes a replacement that the person put at an entry path. The swap counts
-as undone only when its undo ended: macOS `sh` forks a subshell with a trapped signal still pending and that subshell dies of it, so an undo that did not end leaves the swap in progress for the handler that runs next. macOS `sh` can also lose an `INT` that lands just after the child it waited on died of it; the run then ends as the failed swap it saw (exit 5, the swap undone). A `.new.<pid>` or `.old.<pid>`
+as undone only when its undo ended: macOS `sh` forks a subshell with a trapped signal still pending and that subshell dies of it, so an undo that did not end leaves the swap in progress for the handler that runs next. During a swap, macOS `sh` can also lose an `INT` that lands just after the child it waited on died of it; the run then ends as the failed swap it saw (exit 5, the swap undone). A `.new.<pid>` or `.old.<pid>`
 left by a kill between 3.6 steps 2 and 3 is found and removed (after its
 journal, if there is one, was undone) by the next run, at 3.6 step 0 (after the checksum matched, so nothing outside the
 temporary folder changes before step 10): a name `<path>.new.<n>` or

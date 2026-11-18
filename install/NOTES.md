@@ -254,3 +254,38 @@ validator's stronger home-question assertions. `cargo clippy --all-targets
 -- -D warnings`, `cargo +nightly fmt --check` and `shellcheck -s sh
 install.sh package.sh` exited 0. All cargo tests ran without shell
 backgrounding. The existing workspace-hack manifest warnings remain.
+
+## S50b-fix: early signals without false causes
+
+The unchanged user-sim regression failed on this Mac before the fix: at
+60, 75 and 90 ms it called `0.1.0` an invalid version (exit 1); at 105
+and 135 ms it called `id` missing (exit 2). The version's `printf | grep`
+and the checksum-line `awk` / `printf | grep` are now builtin checks.
+Checksum calculation captures shasum/sha256sum directly, preserving the
+program's status instead of losing it through the final awk.
+
+On macOS `/bin/sh` (bash 3.2) and `/bin/dash`, the working combination is
+to register traps before parsing, record the signal before staging, and
+run `( : ) || true` at a checkpoint before diagnosing a failure. Forking
+the empty subshell gives bash a pending-trap dispatch point; a subshell
+that itself dies of the pending signal must not bypass the parent's flag
+check. A failed program's 129/130/141/143 status is also preserved: an INT
+lost by bash after the child's death cannot be recovered from a flag
+alone. Cleanup preserves a recorded signal code. During an active swap
+the existing immediate signal rollback stays in place.
+
+The unchanged 40-interrupt regression passed three consecutive times on
+this Mac (22.21, 24.68 and 24.83 seconds). New prebuilt function fixtures
+cover all four signals during id, shasum and tar's list, verbose-list and
+extract operations, on both shells; all passed (42.58 seconds). Other
+fixtures check signal-status preservation without a delivered parent
+signal, builtin-only version and checksum-line checks, and unchanged
+genuine bad-version / checksum error lines and codes. The existing
+missing-tool and other real-failure assertions remain unchanged. No
+dependency or tool was added.
+
+Final validation: `cargo test -p watane-install` passed (78 passed,
+16 ignored, 601.43 seconds); `cargo clippy --all-targets -- -D warnings`,
+`cargo +nightly fmt --check` and `shellcheck -s sh install.sh package.sh`
+all exited 0. Clippy retained the existing workspace-hack manifest
+warnings. No ignored or GUI tests ran.

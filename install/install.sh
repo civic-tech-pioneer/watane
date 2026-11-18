@@ -28,6 +28,7 @@ TC_STATE=""
 TC_OK=0
 RUSTUP=""
 UPGRADED=0
+SIGNAL=0
 
 usage() {
   printf '%s\n' \
@@ -42,6 +43,7 @@ warn() { printf 'watane install: %s\n' "$*" >&2; }
 
 # die <code> <cause> [<what to do> ...]
 die() {
+  check_signal "$?"
   die_code=$1
   shift
   printf 'watane install: %s\n' "$1" >&2
@@ -396,26 +398,62 @@ rollback() {
 }
 
 on_signal() {
+  SIGNAL=$1
+  # Before staging, defer exit to a checkpoint: bash 3.2 can dispatch a trap
+  # only after it has already entered the failed command's error path.
+  [ "$SWAP_ACTIVE" = 1 ] || return 0
   trap '' HUP INT TERM PIPE
   rollback
   exit "$1"
 }
 
+# A subshell gives bash 3.2 a pending-trap dispatch point before any diagnosis.
+# It can itself die of the pending signal; the parent must still check its flag.
+# Preserve a signalled program's status too: bash can lose the parent's INT
+# when the group signal reaches the child first.
+check_signal() {
+  sig_status=${1:-0}
+  ( : ) || true
+  if [ "$SIGNAL" = 0 ]; then
+    case $sig_status in 129 | 130 | 141 | 143) SIGNAL=$sig_status ;; esac
+  fi
+  if [ "$SIGNAL" != 0 ]; then exit "$SIGNAL"; fi
+  return 0
+}
+
 cleanup() {
   cl_rc=$?
   trap - EXIT
+  ( : ) || true
   rollback
   if [ -n "$TMP" ]; then rm -rf "$TMP" || true; fi
+  if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
   exit "$cl_rc"
 }
 
 check_version() {
+  cv_core=${1%%-*}
   case $1 in
-    *"$NL"*) die 1 "not a version: $1" "a version looks like 0.1.0" ;;
+    *-*)
+      cv_suffix=${1#*-}
+      case $cv_suffix in
+        '' | *[!0-9A-Za-z.]* | .* | *. | *..*)
+          die 1 "not a version: $1" "a version looks like 0.1.0" ;;
+      esac
+      ;;
   esac
-  if ! printf '%s\n' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
-    die 1 "not a version: $1" "a version looks like 0.1.0"
-  fi
+  for cv_i in 1 2 3; do
+    cv_part=${cv_core%%.*}
+    case $cv_part in
+      '' | *[!0-9]*) die 1 "not a version: $1" "a version looks like 0.1.0" ;;
+    esac
+    if [ "$cv_i" != 3 ]; then
+      [ "$cv_core" != "$cv_part" ] || die 1 "not a version: $1" "a version looks like 0.1.0"
+      cv_core=${cv_core#*.}
+    else
+      [ "$cv_core" = "$cv_part" ] || die 1 "not a version: $1" "a version looks like 0.1.0"
+    fi
+  done
   return 0
 }
 
@@ -484,6 +522,7 @@ download() {
     curl -fsSL --retry 2 --connect-timeout 15 -o "$2" "$1" 2>"$TMP/curl.err" && return 0
   fi
   dl_rc=$?
+  check_signal "$dl_rc"
   case $dl_rc in 129 | 130 | 143) exit "$dl_rc" ;; esac
   printf 'watane install: cannot download %s\n' "$1" >&2
   cat "$TMP/curl.err" >&2
@@ -549,18 +588,27 @@ EOF
 }
 
 verify_archive() {
-  va_want=$(awk -v f="$ARCHIVE" '$2 == f { print $1 }' "$TMP/SHA256SUMS")
-  va_count=$(printf '%s\n' "$va_want" | grep -c . || true)
+  va_want=""
+  va_count=0
+  # The remaining fields are deliberately ignored, as in SHA256SUMS's format.
+  # shellcheck disable=SC2034
+  while read -r va_hash va_name va_rest || [ -n "$va_hash" ]; do
+    [ "$va_name" = "$ARCHIVE" ] || continue
+    va_want=$va_hash
+    va_count=$((va_count + 1))
+  done <"$TMP/SHA256SUMS"
   if [ "$va_count" = 0 ]; then
     die 4 "SHA256SUMS has no line for $ARCHIVE" "Nothing was installed."
   elif [ "$va_count" != 1 ]; then
     die 4 "SHA256SUMS has more than one line for $ARCHIVE" "Nothing was installed."
   fi
   if command -v shasum >/dev/null 2>&1; then
-    va_got=$(shasum -a 256 "$TMP/$ARCHIVE" | awk '{ print $1 }')
+    va_got=$(shasum -a 256 "$TMP/$ARCHIVE") || { check_signal "$?"; va_got=""; }
   else
-    va_got=$(sha256sum "$TMP/$ARCHIVE" | awk '{ print $1 }')
+    va_got=$(sha256sum "$TMP/$ARCHIVE") || { check_signal "$?"; va_got=""; }
   fi
+  check_signal
+  va_got=${va_got%% *}
   if [ "$va_want" != "$va_got" ]; then
     die 4 "checksum mismatch for $ARCHIVE" "expected $va_want" "got $va_got" "Nothing was installed."
   fi
@@ -571,6 +619,7 @@ verify_archive() {
 extract_archive() {
   tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null ||
     die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
     die 5 "$ARCHIVE holds a file name that leaves its folder" "Nothing was installed."
   fi
@@ -578,12 +627,14 @@ extract_archive() {
   # outside the tree: refused before anything is unpacked (3.4 step 9)
   tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null ||
     die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  check_signal
   if grep -q '^[lh]' "$TMP/members.v"; then
     die 5 "$ARCHIVE holds a symbolic or hard link, which a watane archive never does" "Nothing was installed."
   fi
   mkdir "$TMP/x"
   tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" ||
     die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."
+  check_signal
   TOP=$TMP/x/watane-$RELEASE-$TARGET
   ea_v=""
   if [ -f "$TOP/VERSION" ]; then IFS= read -r ea_v <"$TOP/VERSION" || true; fi
@@ -650,6 +701,7 @@ EOF
 }
 
 do_swap() {
+  check_signal
   SWAP_PID=$$
   SWAP_ACTIVE=1
   stage_files || return 1
@@ -1019,6 +1071,12 @@ EOF
 }
 
 main() {
+  trap cleanup EXIT
+  trap 'on_signal 129' HUP
+  trap 'on_signal 130' INT
+  trap 'on_signal 143' TERM
+  trap 'on_signal 141' PIPE
+
   HOME=${HOME:-}
   MODE=install
   HAVE_REL=0
@@ -1055,14 +1113,9 @@ main() {
   fi
   if [ "$MODE" = install ]; then check_version "$RELEASE"; fi
 
-  trap cleanup EXIT
-  trap 'on_signal 129' HUP
-  trap 'on_signal 130' INT
-  trap 'on_signal 143' TERM
-  trap 'on_signal 141' PIPE
-
   # step 2: root
   main_uid=$(id -u 2>/dev/null) || die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."
+  check_signal
   [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
   # step 3: tools
   check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od"
@@ -1075,6 +1128,7 @@ main() {
   check_home
   set_entries
   if [ "$MODE" = install ]; then check_folders; fi
+  check_signal
   case $MODE in
     status) do_status ;;
     uninstall) do_uninstall ;;
