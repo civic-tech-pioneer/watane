@@ -361,23 +361,34 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   rustup detection could take the same neutral-folder rule; dash's `printf: I/O error` on a closed
   pipe; no hint after a pipe closes past the commit point; "upgrading 0.2.0 to 0.1.0" for a
   downgrade; the no-terminal uninstall does not say how to delete the home.
-- [~] **S50b-fix install's tests pass on macOS.** In flight (local), branch `slice/s50b-fix`, foreman `12428ef1` (sessionId `12428ef1-c5b7-4444-9986-9f7a1456143c`), worktree `.claude/worktrees/s50b-fix`.
-  Two install tests fail on the Mac (the cloud could not run them): (1) `package.rs`
-  ac1_the_archive_has_the_tree_of_4_2: package.sh ad-hoc signs watane.app on macOS, so the archive
-  holds `Contents/_CodeSignature/{CodeDirectory,CodeRequirements,CodeResources,CodeSignature}`,
-  which neither install/TECHNICAL 4.2 nor the test expects (decide: the tree lists them on macOS);
-  (2) ac4_install_upgrade_uninstall_of_packed_archives: `support/pty.rs:62` "marker never came"
-  within 30 s on macOS (BSD pty, or dash vs macOS sh). Also run `shellcheck -s sh` on install.sh
-  and package.sh (missing in the cloud; install it if needed). Outcome: `cargo test -p
-  watane-install -- --include-ignored` green on the Mac, three runs. Touches: `install/` only.
-  Local (macOS).
+- [x] **S50b-fix install's tests pass on macOS.** Delivered 2026-11-19 (main `441f083`). Sol runs:
+  fix-1 2, fix-2 2, fix-3 2, fix-4 1, fix-5 1, fix-6 1, fix-7 3, fix-8 1, fix-9 1. user-sim REJECTED
+  once (a Ctrl-C in the first second named a false cause), then ACCEPTED, three green Mac runs
+  (128 tests); adversary BREACHED in 6 passes (13 red tests, all fixed), then HELD. Decisions: the
+  macOS tree lists `watane.app/Contents/_CodeSignature/*` (IN-40); pty and request waits are one
+  600 s constant, at most 4 installer runs per test binary, and an overdue run's group is killed;
+  the test launcher resets ignored HUP/INT/QUIT/TERM/PIPE; answers are byte-exact (dd/od, added to
+  3.3): only y/yes in any case and only `delete`, any NUL, CR or extra byte is no; the undo retires
+  the journal before deleting staging names, is retried once, and says "could not be put back" only
+  when an old entry is missing or still `.old`; signals act at once and every dropped status passes
+  `check_signal`, guarded by a scan test that is a regression guard, not a boundary (its limits are
+  hand-review forms in 3.8); known limits in 3.8 (a Ctrl-C during the swap on bash 3.2 may end as
+  exit 5 with the swap undone; a real 129..143 exit from rustup reads as a signal; a signal in the
+  final cleanup may leave the temp folder; a signal at a question acts when the read returns;
+  uninstall and status need mktemp; a failed undo of a new entry may say "Nothing was changed");
+  an unwritable TMPDIR at the home question stops uninstall with exit 1 after the files are removed.
+  Open risks, moved into S50c. Linux: rerun in the cloud after the merge (S50b-fix-linux).
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
   (report only, no rewrite), the human makes the repository public, and the PO applies Q16, and `tests/clean_mac.sh` run in a fresh macOS VM
   on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
   serves S55). Also the receipt records each install folder's resolved path, and a removal is
-  skipped when the folder now resolves elsewhere (deputy decision, S50b open risk). Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
+  skipped when the folder now resolves elsewhere (deputy decision, S50b open risk). Also S50b-fix's open
+  risks: two installs started at once can both pass `check_no_live_install` (it runs long before the
+  journal exists): take a lock in the home first (deputy decision); the `allowed "$RECEIPT"` failure
+  path can let `clean_stale` remove staging evidence while a journal remains; a failed `cp -p` of the
+  receipt can restore a truncated `receipt.old`. Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
   from the one-liner to `watane-dev new`. Touches: `.github/`, `install/`, `README.md`. Local.
   The original S50 sketch, for its intent:
   Someone with a clean Mac and no Rust toolchain ends up
@@ -946,7 +957,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
-| install | 1 script, 2 versions, 3 packer | 7 | done (S50b) |
+| install | 1 script, 2 versions, 3 packer | 7 | done (S50b; macOS S50b-fix) |
 | install | 4 workflow, 5 clean Mac (J7) | 7 | open (S50c) |
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
@@ -1109,6 +1120,13 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
   dist/TECHNICAL.md:1231 still carries Q12 open.
+
+### install
+
+- From S50b-fix's user-sim: no hint after a Ctrl-C past the commit; `--status` does not clean up
+  leftovers; the offer shows `WATANE_RUSTUP_URL` but "install it later" prints sh.rustup.rs; ^D at a
+  question needs a newline; empty folders remain after an interrupted fresh install; a Ctrl-C in the
+  first ~0.1 s, before the traps exist, kills the shell directly.
 
 ### Unsettled
 
@@ -1487,9 +1505,15 @@ The human may veto each one.
   this class (home intact; only the exit code and cause line are wrong), it becomes a known limit in
   install/TECHNICAL 3.8, its tests are `#[ignore = "known limit, S50c"]`, and the slice delivers.
   Not a weakened check: the rollback always finishes.
+- S50b-fix (2026-11-19): two concurrent installs are excluded by a lock the script takes in the
+  home before `check_no_live_install` (a `mkdir` lock folder, removed on exit; a stale one older
+  than the journal rules allow is reported, not broken). Built in S50c, before the first release.
+  Rejected: accepting the race (two runs can interleave swaps in one home).
 
 ## Friction
 
+- (2026-11-19, S50b-fix) this Mac's endpoint security (ManageEngine, Defender) slows each exec 50 to 400 times under load: a full install test run takes 20 to 40 min, and timing races show only here.
+- (2026-11-19, S50b-fix) a peer session killed the foreman's check.sh test binary (now a rule); `impl.sh &` from a shell makes INT ignored in the tests; a reused task id overwrote a finished brief for a while (new ids use a dash).
 - (2026-11-18, PO) main's check failed ~15 dev tests (`env.allowlist`, paths into `watane-test-speed`): a worktree shares `target/` and `target/tmp`, and dev/tests/support/mod.rs's unlocked `remove_dir_all` of its warm cache lets two concurrent runs delete each other's. They pass alone. The human's chore/test-speed branch adds locks; recheck after it lands.
 - (2026-11-18, PO) S86's `install::fake::ac3_never_answer_is_no_answer` asserts under 10 s and failed once in the full parallel suite; 3 s alone. A candidate for the timing `#[ignore]`.
 - (2026-11-18, PO) the main check's `dev publish ac4_accepted_fake_publish_completes_under_five_seconds` (5.9 s) and `node program s10` failed under load, passed alone.
@@ -1899,3 +1923,5 @@ The human may veto each one.
   gets a rerun it can paste at every fix that used to say "run this command again".
 - S50b: the packed install script installs, upgrades, reports and uninstalls watane in a home, and
   refuses every attack found on it before it changes anything (proved on Linux with fakes).
+- S50b-fix: on a Mac, the packed install script installs, upgrades, reports and uninstalls a real
+  signed archive on macOS's own sh, and a Ctrl-C at any step exits 130 and leaves a whole version.
