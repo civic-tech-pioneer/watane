@@ -20,6 +20,7 @@ R_OK=0
 R_VERSION=""
 R_TARGET=""
 R_LINES=""
+R_RESOLVED=""
 J_OLD=""
 J_NEW=""
 J_MOVED=""
@@ -29,6 +30,7 @@ TC_OK=0
 RUSTUP=""
 UPGRADED=0
 SIGNAL=0
+LOCK_OWNED=0
 
 usage() {
   printf '%s\n' \
@@ -165,6 +167,28 @@ allowed() {
   return 1
 }
 
+# receipt_allowed <path>: 8.5, including the install-time folder identity.
+receipt_allowed() {
+  if allowed "$1"; then :; else
+    check_signal "$?"
+    warn "skipped $1: not a path that watane installs"
+    return 1
+  fi
+  ra_folder=${al_root#"$HOME/"}
+  ra_now=$al_rr
+  ra_old='an unrecorded path'
+  while IFS= read -r ra_l; do
+    case $ra_l in
+      "resolved $ra_folder "*) ra_old=${ra_l#"resolved $ra_folder "} ;;
+    esac
+  done <<EOF
+$R_RESOLVED
+EOF
+  if [ "$ra_old" = "$ra_now" ]; then return 0; fi
+  warn "skipped $1: ~/$ra_folder resolves to $ra_now, not to $ra_old as at install"
+  return 1
+}
+
 # dest_of <rel>: DEST is where the entry goes
 dest_of() {
   case $1 in
@@ -187,12 +211,13 @@ set_entries() {
 
 valid_entry() { in_list "$ENTRIES_ALL" "$1" && allowed "$1"; }
 
-# read_receipt <file>: R_OK, R_VERSION, R_TARGET, R_LINES (the `path` lines as they are)
+# read_receipt <file>: R_OK, R_VERSION, R_TARGET, R_LINES and R_RESOLVED (raw lines)
 read_receipt() {
   R_OK=0
   R_VERSION=""
   R_TARGET=""
   R_LINES=""
+  R_RESOLVED=""
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   rr_first=1
   while IFS= read -r rr_l; do
@@ -205,6 +230,7 @@ read_receipt() {
     case $rr_l in
       'version '*) R_VERSION=${rr_l#version } ;;
       'target '*) R_TARGET=${rr_l#target } ;;
+      'resolved '*) R_RESOLVED=$(add_item "$R_RESOLVED" "$rr_l") ;;
       'path '*) R_LINES=$(add_item "$R_LINES" "$rr_l") ;;
     esac
   done <"$1"
@@ -273,6 +299,38 @@ EOF
   return 0
 }
 
+# take_lock: never break a lock, even when its pid is dead (3.6.2).
+take_lock() {
+  LOCK=$HOME/.watane-install.lock
+  if mkdir "$LOCK" 2>/dev/null; then
+    LOCK_OWNED=1
+    check_signal "$?"
+    (set -C; printf '%s\n' "$$" >"$LOCK/pid") || { check_signal "$?"; die 5 "could not write install lock"; }
+    check_signal "$?"
+    return 0
+  else
+    check_signal "$?"
+  fi
+  tl_suffix=""
+  if [ -f "$LOCK/pid" ] && [ ! -L "$LOCK/pid" ]; then
+    tl_pid=""
+    tl_lines=0
+    while IFS= read -r tl_line || [ -n "$tl_line" ]; do
+      tl_lines=$((tl_lines + 1))
+      tl_pid=$tl_line
+    done <"$LOCK/pid"
+    case $tl_pid in
+      '' | *[!0123456789]*) ;;
+      *) if [ "$tl_lines" = 1 ]; then tl_suffix=" (pid $tl_pid)"; fi ;;
+    esac
+  fi
+  tl_quoted=$(shell_quote "$LOCK")
+  check_signal "$?"
+  die 5 "another install may be running$tl_suffix" \
+    "If no install is running, remove its lock and run this again:" \
+    "  rm -rf $tl_quoted"
+}
+
 # rm_path <path>: rm -rf with a warning
 rm_path() {
   rm -rf "$1" || { check_signal "$?"; warn "could not remove $1"; return 1; }
@@ -293,6 +351,7 @@ undo_swap() {
       while IFS= read -r ub_p; do
         [ -n "$ub_p" ] || continue
         exists "$ub_p.old.$1" || continue
+        if [ "$ub_p" = "$RECEIPT" ]; then in_list "$J_MOVED" "$ub_p" || continue; fi
         if [ "$ub_p" != "$RECEIPT" ]; then rm_path "$ub_p" || exit "$?"; fi
         mv "$ub_p.old.$1" "$ub_p" || exit "$?"
       done <<EOF
@@ -341,7 +400,7 @@ finish_commit() {
         case $fc_l in 'path '*) ;; *) continue ;; esac
         fc_p=${fc_l#path }
         if in_list "$fc_cur" "$fc_l"; then continue; fi
-        allowed "$fc_p" || continue
+        receipt_allowed "$fc_p" || { check_signal "$?"; continue; }
         if exists "$fc_p"; then rm_path "$fc_p" || return; fi
       done <<EOF
 $R_LINES
@@ -382,7 +441,6 @@ EOF
 recover() {
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
   if ! allowed "$RECEIPT"; then
-    clean_stale || { check_signal "$?"; die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."; }
     return 0
   fi
   find_journals
@@ -443,6 +501,10 @@ cleanup() {
   trap - EXIT
   ( : ) || true
   rollback || { check_signal "$?"; }
+  if [ "$LOCK_OWNED" = 1 ]; then
+    rm -f "$LOCK/pid" || { check_signal "$?"; }
+    rmdir "$LOCK" || { check_signal "$?"; }
+  fi
   if [ -n "$TMP" ]; then rm -rf "$TMP" || { check_signal "$?"; }; fi
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
   exit "$cl_rc"
@@ -524,6 +586,7 @@ check_home() {
 
 # check_folders: each install folder resolves inside the home (TECHNICAL 3.4.1)
 check_folders() {
+  FOLDERS_RESOLVED=""
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
       ch_m="resolves to $RES, outside your home folder $HOME_R"
@@ -531,6 +594,7 @@ check_folders() {
       die 2 "$(tilde "$ch_f") $ch_m" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
     fi
+    FOLDERS_RESOLVED=$(add_item "$FOLDERS_RESOLVED" "resolved ${ch_f#"$HOME/"} $RES")
   done
   return 0
 }
@@ -688,6 +752,7 @@ stage_files() {
   set -C
   if {
     printf 'watane-receipt 1\nversion %s\ntarget %s\n' "$RELEASE" "$TARGET"
+    printf '%s\n' "$FOLDERS_RESOLVED"
     while IFS= read -r sf_p; do printf 'path %s\n' "$sf_p"; done <<EOF
 $ENTRIES
 EOF
@@ -1021,6 +1086,7 @@ do_install() {
   check_signal "$?"
   ARCHIVE=watane-$RELEASE-$TARGET.tar.gz
   BASE=${WATANE_RELEASE_BASE:-https://github.com/civic-tech-pioneer/watane/releases/download/v$RELEASE}
+  take_lock
   check_no_live_install
   check_foreign
   if [ -n "${WATANE_RELEASE_BASE:-}" ]; then
@@ -1084,6 +1150,7 @@ shell_quote() {
 }
 
 do_uninstall() {
+  take_lock
   check_no_live_install
   recover
   read_receipt "$RECEIPT"
@@ -1092,19 +1159,19 @@ do_uninstall() {
   while IFS= read -r du_l; do
     case $du_l in 'path '*) ;; *) continue ;; esac
     du_p=${du_l#path }
-    if allowed "$du_p"; then
+    if receipt_allowed "$du_p"; then
       if exists "$du_p"; then rm_path "$du_p" || { check_signal "$?"; }; fi
     else
-      warn "skipped $du_p: not a path that watane installs"
+      check_signal "$?"
     fi
   done <<EOF
 $R_LINES
 EOF
-  clean_stale || { check_signal "$?"; }
-  if allowed "$RECEIPT"; then
+  if allowed "$RECEIPT"; then clean_stale || { check_signal "$?"; }; fi
+  if receipt_allowed "$RECEIPT"; then
     rm -f "$RECEIPT" || { check_signal "$?"; warn "could not remove $RECEIPT"; }
   else
-    warn "skipped $RECEIPT: not a path that watane installs"
+    check_signal "$?"
   fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
     if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || { check_signal "$?"; }; fi

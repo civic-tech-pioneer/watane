@@ -431,7 +431,9 @@ only write outside the temporary folder before step 10, and it sits
 directly in `$HOME` so that no folder needs to be made for it. The exit
 trap (3.8) removes it, `pid` then the folder, on every exit of the run
 that made it, after the undo and before the temporary folder; a run that
-did not make it never removes it.
+did not make it never removes it. If writing `pid` fails, the run exits 5
+with `watane install: could not write install lock`; the exit trap still
+removes the lock it made. A signal status is preserved as in 3.8.
 
 When `mkdir` fails, the run stops with exit 5 before it downloads or
 changes anything, and prints, to stderr:
@@ -1028,6 +1030,11 @@ reads them. The format stays `watane-receipt 1`: no release had shipped
 when these lines were added, and a receipt without them is still read, its
 removals skipped by rule 4.
 
+INST-S-37 tests the old-only `vendor` removal with a prebuilt committed
+swap and step 5 cleanup: the new receipt omits `vendor`, the old one keeps
+it. The current archive contract (4.2) still requires `vendor`; this test
+does not introduce an optional archive entry.
+
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline
 is refused in step 4, exit 2). The receipt names itself
@@ -1240,7 +1247,8 @@ to four per test binary. Deadlines start after admission. Stale-journal
 fixtures use pid `99999999`, above Linux's maximum pid limit (4194304)
 and macOS's pid range, so a live kernel thread cannot claim the journal.
 
-`tests/it/script.rs` runs `sh install/install.sh` as a child with:
+`tests/it/s50c.rs` uses the same support for INST-S-37 to 39 and lock/status
+regressions. `tests/it/script.rs` runs `sh install/install.sh` as a child with:
 - a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
   `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
   folder and `TMPDIR` another;
@@ -1258,6 +1266,10 @@ and macOS's pid range, so a live kernel thread cannot claim the journal.
   `id` (root); `xattr` (records its arguments in a log); `rustup` and
   `rustc` (state of the toolchain from files of the test); `mv` (fails, or
   sleeps until killed, when an argument matches a shell glob that the file `mv_fault` of the test names, mode on line 1 and glob on line 2; the real `mv` is reached through `$FAKE_REAL`, a folder that is not on `PATH`; the globs are `*watane.app.new.*` for INST-S-14 and 33, `*receipt.new.*` for INST-S-32 and 33, so that the undo's `mv <path>.old.<pid>` is not hit);
+  `mv` also has mode `wait`: it writes `mv_sleeping`, waits until `mv_fault`
+  is removed, then performs the move (INST-S-38 releases the first run);
+  `cp` (mode `half` and a glob in `cp_fault`: writes the first 32 bytes of
+  the receipt backup, then fails; otherwise the real copy, INST-S-39);
   `rm` (same, from the file `rm_fault`; INST-S-33 names `*.old.*`);
   `xcode-select` (`-p` fails or prints a path, and records any other call:
   INST-S-34);

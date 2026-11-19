@@ -221,7 +221,7 @@ impl Fx {
         if let Some(k) = which_opt("kill") {
             symlink(k, tools.join("kill")).expect("link kill");
         }
-        for t in ["mv", "rm", "sleep", "mkdir", "chmod"] {
+        for t in ["mv", "rm", "sleep", "mkdir", "chmod", "cp"] {
             symlink(which(t), real.join(t)).expect("link real");
         }
         let script = r.join("install.sh");

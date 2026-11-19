@@ -587,3 +587,42 @@ after failing before the fix. Default cargo test -p watane-install passed
 fmt --check, shellcheck and git diff --check passed. Existing ignored PTY
 tests remain for the outside-sandbox validator per the task instructions;
 Linux execution also remains for its runner.
+
+
+### S50c: receipt folder identity, lock and recovery evidence
+
+The receipt keeps four `resolved` lines from the folder checks. Receipt-driven
+uninstall and old-only post-commit removals require the same physical folder
+now, including removal of the receipt itself. Missing resolution records skip
+removals with the specified warning. A mkdir lock in the home serializes
+install and uninstall; status remains read-only. Only the owner removes its
+lock, after rollback. Dead, empty and malformed planted locks are never broken.
+
+Undo now requires `moved <receipt>` before trusting the copied old receipt.
+Recovery and uninstall's later stale cleanup leave staging evidence alone
+when the receipt's path is disallowed. The new fake cp writes a partial
+backup then fails; fake mv's wait mode lets the concurrency test release a
+successful first install. No dependencies or installer test seams were added.
+
+Red tests reproduced missing resolved lines, an ignored planted lock, a
+32-byte receipt replacing the complete receipt, and deleted staging evidence
+through a receipt directory linked outside the home. The kill tests first
+failed at the new lock boundary, then passed with the helper checking the
+refusal and executing its printed removal command before recovery. The
+prebuilt TERM rollback fixture needed its completed receipt backup recorded
+with `moved <receipt>`; its rollback assertions are unchanged and pass.
+
+INST-S-37's old-only vendor cleanup uses a prebuilt committed swap because
+the current archive requires vendor. FUNCTIONAL and TECHNICAL clarify that
+fixture; the archive contract stays unchanged. TECHNICAL also describes the
+new fake cp, mv wait mode and S50c tests.
+
+Final validation on the Mac: default `cargo test` passed (116 passed,
+17 ignored), including unchanged status_audit.rs and check_signals.rs.
+Clippy --all-targets with -D warnings, nightly fmt --check, shellcheck
+-s sh install.sh package.sh and git diff --check passed. The first default
+run exposed only the incomplete prebuilt TERM fixture noted above; after
+correcting its journal evidence, the focused test and final default run
+passed. Existing ignored tests and --include-ignored remain for the
+outside-sandbox validator, per the task instructions. Clean-Mac and VM
+work remain out of scope for this slice.

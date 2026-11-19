@@ -1,0 +1,14 @@
+#!/bin/sh
+# Fake cp: a partial receipt backup followed by failure, otherwise the real cp.
+if [ -f "$FAKE_STATE/cp_fault" ]; then
+  { read -r mode; read -r pat; } < "$FAKE_STATE/cp_fault"
+  for a; do
+    case $a in
+      $pat)
+        case $mode in
+          half) head -c 32 "$2" > "$3"; exit 1 ;;
+        esac ;;
+    esac
+  done
+fi
+exec "$FAKE_REAL/cp" "$@"

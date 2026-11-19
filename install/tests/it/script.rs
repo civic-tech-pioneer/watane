@@ -1099,11 +1099,37 @@ fn kill_at(fx: &Fx, tool: &str, glob: &str, args: &[&str]) {
     fx.state_write(&format!("{tool}_fault"), &format!("sleep\n{glob}\n"));
     let child = spawn(&mut fx.cmd(args));
     fx.wait_state(&format!("{tool}_sleeping"));
-    signal_group(child.id(), "KILL");
+    let child_pid = child.id();
+    signal_group(child_pid, "KILL");
     let out = finish(child);
     assert_eq!(out.code, -1, "killed: {out:?}");
     fs::remove_file(fx.state.join(format!("{tool}_fault"))).expect("unfault");
     fs::remove_file(fx.state.join(format!("{tool}_sleeping"))).expect("unsleep");
+    // Direct undo fixtures do not run main and therefore never acquire a lock.
+    if !fx.read(&fx.script).ends_with("main \"$@\"\n") {
+        return;
+    }
+    let before = snapshot(&fx.home);
+    let requests = fx.rel.requests();
+    let blocked = fx.run(args);
+    assert_eq!(blocked.code, 5, "{blocked:?}");
+    assert_eq!(
+        blocked.first_err(),
+        format!(
+            "watane install: another install may be running (pid {})",
+            child_pid
+        )
+    );
+    assert_eq!(snapshot(&fx.home), before, "blocked run changes nothing");
+    assert_eq!(fx.rel.requests(), requests, "blocked run does not download");
+    let command = blocked.stderr.lines().nth(2).expect("printed rm command");
+    assert!(
+        Command::new("/bin/sh")
+            .args(["-c", command])
+            .status()
+            .expect("run printed lock removal")
+            .success()
+    );
 }
 
 fn has_leftover(fx: &Fx, what: &str) -> bool {
@@ -1284,6 +1310,9 @@ fn ac1_term_rollback_from_a_prebuilt_journal() {
         &fx.receipt().with_file_name("receipt.new.99999999"),
         "pending",
     );
+    // The prebuilt receipt backup is complete and the new receipt was installed.
+    // The swap records that proof before replacing the receipt (TECHNICAL 3.6).
+    journal.push_str(&format!("moved {}\n", fx.receipt().display()));
     fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
     write_file(&fx.share("watane/journal.99999999"), &journal);
     let source = baked_script("0.1.0").replace(
