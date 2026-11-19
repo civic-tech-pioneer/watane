@@ -390,7 +390,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
 - [~] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** Merged
   2026-11-19 (main `7a3a335`); open: the human cuts `v0.1.0`, then `sh install/tests/vm_mac.sh`
   (no `--from`: the real one-liner over curl) passes INST-S-1, 23, 24, 25 against the real release.
-  Foreman `035bf637` (sessionId `035bf637-693e-4f46-b950-2abe784c40a3`) stays for that run. Sol
+  Foreman `035bf637` (sessionId `035bf637-693e-4f46-b950-2abe784c40a3`) has ended; the PO runs it. Sol
   runs: s50c-1 2, s50c-2 1, s50c-3 1, s50c-fix1 2, s50c-fix2 1. user-sim REJECTED once (a refusal
   that suggested an `mv` through a re-linked folder; a VM home check tripped by macOS's own
   media-library writes), then ACCEPTED: the README one-liner in a fresh Tart VM, with and without
