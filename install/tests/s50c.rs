@@ -368,10 +368,64 @@ fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
             !out.stderr.contains("mv ~/.local/share/watane-dev/vendor"),
             "{out:?}"
         );
+        assert!(!out.stderr.contains("did not install"), "{out:?}");
+        let fixes: Vec<_> = out
+            .stderr
+            .lines()
+            .filter(|l| l.starts_with("Make ~/"))
+            .collect();
+        let once: std::collections::BTreeSet<_> = fixes.iter().collect();
+        assert_eq!(fixes.len(), once.len(), "one fix line per folder: {out:?}");
+        if !recorded {
+            assert!(
+                fixes.contains(
+                    &"Make ~/.local/bin a real folder again (or point it where it was), then run this again."
+                ),
+                "{out:?}"
+            );
+        }
         assert_eq!(snapshot(&fx.home), before);
         assert_eq!(fx.rel.requests(), requests);
         if recorded {
             assert_eq!(fx.read(&fx.home.join("Documents/vendor/marker")), "mine");
         }
     }
+}
+
+#[test]
+fn ac1_relinked_folder_and_ordinary_foreign_path_are_both_reported() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
+    write_file(&fx.home.join("Documents/vendor/marker"), "mine");
+    symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();
+    let dev = format!("path {}\n", fx.bin("watane-dev").display());
+    let receipt = fx.read(&fx.receipt());
+    assert!(receipt.contains(&dev));
+    fs::write(fx.receipt(), receipt.replace(&dev, "")).unwrap();
+    let before = snapshot(&fx.home);
+    let requests = fx.rel.requests();
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 8, "{out:?}");
+    assert!(
+        out.stderr
+            .contains("found files that watane did not install:"),
+        "{out:?}"
+    );
+    assert!(
+        out.stderr
+            .contains("  mv ~/.local/bin/watane-dev ~/.local/bin/watane-dev.mine"),
+        "{out:?}"
+    );
+    assert!(
+        !out.stderr.contains("mv ~/.local/share/watane-dev/vendor"),
+        "{out:?}"
+    );
+    assert!(
+        out.stderr
+            .contains("Make ~/.local/share/watane-dev a real folder again"),
+        "{out:?}"
+    );
+    assert_eq!(snapshot(&fx.home), before);
+    assert_eq!(fx.rel.requests(), requests);
 }

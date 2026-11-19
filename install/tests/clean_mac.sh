@@ -140,13 +140,8 @@ home_changes() {
       if [ "$mode" = clt ]; then
         case $path in "$H/.cargo"|"$H/.cargo/"*|"$H/.rustup"|"$H/.rustup/"*) continue ;; esac
       fi
-      case $relative in
-        */*)
-          top=${relative%%/*}
-          check grep -Fxq -- "$H/$top" "$work/home-before"
-          continue
-          ;;
-      esac
+      # find lists each new top-level folder on its own line, which fails below.
+      case $relative in */*) continue ;; esac
     fi
     # A live macOS session writes its own ~/Library files (Siri, caches) during the run;
     # only a watane name there is the installer's. cargo test's INST-S-1 proves the rest hermetically.
