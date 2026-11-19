@@ -1238,7 +1238,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- S50c's VM (2026-11-19, asked by the S50c foreman): may it install Tart (macOS VM CLI on
+- ANSWERED 2026-11-19: (a), Tart (155 GB free). S50c's VM (asked by the S50c foreman): may it install Tart (macOS VM CLI on
   Virtualization.framework, Homebrew, FSL-1.1-ALv2 licence, tens of MB) and download
   `ghcr.io/cirruslabs/macos-golden-gate-vanilla` (macOS 27, ~30 GB download, ~35 GB on disk, 156 GB
   free)? The same VM serves S55. Options: (a) Tart + that image (recommended: scriptable, an APFS
@@ -1252,7 +1252,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
   this Mac; the human has no easy second machine. Not a question any more.
-- S50c needs `civic-tech-pioneer/watane` public (2026-11-18). ANSWERED 2026-11-18: (a), plan for public. Secret scan done 2026-11-19 (S50c: gitleaks 8.30.1 over all 1032 commits plus a pattern sweep): no secrets; one false positive, a z-base-32 test key in app/src. Public with it: the author email on 1762 commits and `/Users/merlijn` in 2 paths (hiding them needs a history rewrite). Next: the human makes the repository public. S50c scans the history for secrets first; the human flips the visibility; then the PO applies the tag ruleset and the `release` environment. The repository is private on the free
+- S50c needs `civic-tech-pioneer/watane` public (2026-11-18). ANSWERED 2026-11-18: (a), plan for public. Secret scan done 2026-11-19 (S50c: gitleaks 8.30.1 over all 1032 commits plus a pattern sweep): no secrets; one false positive, a z-base-32 test key in app/src. Public with it: the author email on 1762 commits and `/Users/merlijn` in 2 paths (hiding them needs a history rewrite). DONE 2026-11-19: the repository is public (the human's go-ahead); the PO applied Q16: tag ruleset `release tags v*` (id 27621105: creation, update, deletion; bypass admin only), environment `release` (required reviewer mboogerd, deployment tags `v*` only), approval required for all outside contributors' runs, default token read (already). Not applied: Q16(3)'s branch ruleset on main (it blocks the factory's pushes). Next: the human cuts v0.1.0 when S50c is ready. S50c scans the history for secrets first; the human flips the visibility; then the PO applies the tag ruleset and the `release` environment. The repository is private on the free
   plan, so (1) `curl … | sh` cannot download its Releases without a token, and (2) GitHub refuses
   rulesets and environment reviewers there (403 "Upgrade to GitHub Pro or make this repository
   public"). Options: (a) make it public before S50c's first release, then apply Q16's tag ruleset and
@@ -1544,7 +1544,6 @@ The human may veto each one.
 - (2026-11-18, PO) main's check failed ~15 dev tests (`env.allowlist`, paths into `watane-test-speed`): a worktree shares `target/` and `target/tmp`, and dev/tests/support/mod.rs's unlocked `remove_dir_all` of its warm cache lets two concurrent runs delete each other's. They pass alone. The human's chore/test-speed branch adds locks; recheck after it lands.
 - (2026-11-18, PO) S86's `install::fake::ac3_never_answer_is_no_answer` asserts under 10 s and failed once in the full parallel suite; 3 s alone. A candidate for the timing `#[ignore]`.
 - (2026-11-18, PO) the main check's `dev publish ac4_accepted_fake_publish_completes_under_five_seconds` (5.9 s) and `node program s10` failed under load, passed alone.
-- (2026-11-18, PO) a `~/.local/bin/git` symlink to Xcode's git breaks https (no `libexec/git-core` beside it); PO, watchers and foremen use `/usr/bin/git` until the human replaces it.
 - (S85) macOS window tests miss the app's 30 s ready timeout when the Mac is loaded (load 11 to 24 from parallel jobs); compare slice and main only when both run at once. Options: a longer driver TIMEOUT, or one GUI suite at a time.
 - (S85) factory/check.sh's app clippy failed on sibling log/pkg code under clippy 1.99 (check again after e8265e8).
 
