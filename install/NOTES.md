@@ -663,3 +663,43 @@ The final failed-undo signal regression also passed in isolation after the
 cleanup refactor. Clippy --all-targets with -D warnings, nightly fmt --check,
 shellcheck -s sh install.sh package.sh and git diff --check passed. Existing
 ignored tests remain for the outside-sandbox validator as instructed.
+### S50c-2: release workflow and install entry point
+
+Added the two-job release workflow: a read-only macOS build with no cache,
+five-file version checks and the tag's main-ancestry check; a separate,
+environment-gated publisher that downloads only the artifact, creates a draft
+with all three assets and publishes it last. Manual dispatch has no inputs
+and never enters the publishing job. Hyphenated versions are prereleases.
+The smoke command calls the S50c-3 interface without implementing its script.
+
+The action v4 commit SHAs were resolved with `gh api` for checkout,
+upload-artifact and download-artifact. Tauri CLI is pinned to 2.12.5, from
+the same 2.12 series as Cargo.lock's Tauri 2.12.5; upstream release:
+https://tauri.app/release/tauri-cli/v2.12.5/ . The runner's stable toolchain
+overrides rust-toolchain.toml, so that file does not install its Wasm target.
+The actual bundle build and workflow dry run remain the foreman's checks.
+
+The workflow and README tests were observed red with the missing workflow
+and install section, then green. Mutations remove each required rule or add
+unsafe inputs/steps. An additional red/green mutation proves an unrelated
+`echo -- --locked` cannot satisfy the app-build check. A fake-gh publisher
+fixture first exposed Bash 3's empty-array/nounset behavior; a boolean
+prerelease argument now works for both stable and prerelease versions, and
+the fixture verifies both calls and the rendered notes without network access.
+
+AC3 needed no code or test change: package.sh already bakes @RELEASE@ into
+both copies, and package::ac1_the_archive_has_the_tree_of_4_2 passed unchanged,
+checking the baked script, absence of the placeholder and identical asset bytes.
+README now shows the install and --no-toolchain commands and the behavior link.
+No dependency was added. No ignored, GUI or real-release test was run.
+
+Actionlint was not run: `brew list actionlint` reports no installed keg.
+YAML loading and `bash -n` of all embedded shell steps passed.
+
+Final validation: `cargo test -p watane-install` passed (112 passed,
+17 ignored, 11 suites; 1157.71 s). Clippy --all-targets with -D warnings,
+nightly fmt --check, shellcheck -s sh install.sh package.sh and git diff
+--check passed. The version/origin step was also exercised locally with
+temporary manifests and a fake git: manual/matching tags passed; a version
+mismatch and off-main tag failed before any build. The publisher fixture
+passed for stable and prerelease notes/arguments. No real release was created.

@@ -75,7 +75,7 @@ prints the command that installs them (3.9); it never runs it (IN-30, Q10).
 ### 3.1 Where it is served
 
 Each release holds `install.sh` as an asset, with the release's version
-written into it by the workflow (the line `DEFAULT_RELEASE="@RELEASE@"`
+written into it by `package.sh` in the workflow (the line `DEFAULT_RELEASE="@RELEASE@"`
 becomes `DEFAULT_RELEASE="0.1.0"`). Two URLs:
 
 ```text
@@ -871,7 +871,7 @@ the SHA-256 check of 5, and the person's own decision to run the line.
 
 ## 7. The release workflow
 
-`.github/workflows/release.yml`. S50b writes it; this is its design.
+`.github/workflows/release.yml`, implemented in S50c-2.
 
 ### 7.1 Trigger and runner
 
@@ -948,6 +948,15 @@ No job writes a cache or a secret into the archive, uses a secret but
 tags and by hand). INST-S-29 checks the file `release.yml` for these rules
 in `cargo test`.
 
+`tests/workflow.rs` (INST-S-29) uses job-scoped line rules, without a YAML
+dependency. It checks the triggers, permissions, ordered build commands,
+version/origin checks, artifact handoff and draft publication. In-test copies
+remove each required rule or add an unsafe step/input; each must be rejected.
+Shell continuations are joined, and `-- --locked` must end the Tauri build
+command itself. These are regression checks of this workflow's supported
+syntax, not a general YAML or shell security analyzer. The same file checks
+the README's install commands and link to `FUNCTIONAL.md`.
+
 ### 7.3 Bundling `watane.app`
 
 `app/tauri.conf.json` has `bundle.active: false`, so a plain
@@ -955,7 +964,7 @@ in `cargo test`.
 that file; it asks the bundler for the app with a config override:
 
 ```sh
-cargo install tauri-cli --version '=<x.y.z>' --locked   # an exact version, not cached
+cargo install tauri-cli --version '=2.12.5' --locked   # an exact version, not cached
 cd app && cargo tauri build --bundles app \
   --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}' \
   -- --locked
@@ -969,7 +978,12 @@ file: the command of `release.yml` that holds `cargo tauri build`, its
 `\`-continued lines joined, must hold a word `--` followed by `--locked`,
 and the command of step 4 must hold `--locked`.
 
-The version of `tauri-cli` is exact (S50b picks it and a person bumps it
+The selected `tauri-cli` version is **2.12.5**, matching the 2.12 series of
+`tauri` **2.12.5** in `Cargo.lock` (upstream tag `tauri-cli-v2.12.5`).
+The build job sets `RUSTUP_TOOLCHAIN=stable` to use the runner's toolchain
+without installing the checkout's pinned toolchain or its Wasm target.
+
+The version of `tauri-cli` is exact (a person bumps it
 by hand): a range would let a new upload to crates.io run in the release
 build. The command writes `target/release/bundle/macos/watane.app` (the product name
 is `watane`, `tauri.conf.json`) with `Info.plist` merged from

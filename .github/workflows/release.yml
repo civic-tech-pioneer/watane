@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  package-macos:
+    runs-on: macos-14
+    permissions:
+      contents: read
+    env:
+      # Use the runner's stable Rust, overriding the checkout's toolchain file
+      # (which would also install a Wasm target). No cache is restored or saved.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check version and origin
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re, tomllib
+          paths = ['host/Cargo.toml', 'dev/Cargo.toml', 'node/Cargo.toml', 'app/Cargo.toml']
+          versions = [tomllib.loads(open(path).read())['package']['version'] for path in paths]
+          versions.append(json.load(open('app/tauri.conf.json'))['version'])
+          tag_run = os.environ['GITHUB_REF'].startswith('refs/tags/')
+          version = os.environ['GITHUB_REF_NAME'][1:] if tag_run else versions[0]
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?', version), 'invalid release version'
+          assert all(v == version for v in versions), f'version mismatch: {versions} != {version}'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print(f'version={version}', file=output)
+          PY
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          fi
+      - name: Runner stable Rust
+        run: |
+          rustc --version
+          cargo --version
+      - name: Build programs
+        run: MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p watane-host -p watane-dev -p watane-node
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version '=2.12.5' --locked
+      - name: Bundle app
+        working-directory: app
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '14.0'
+        run: |
+          cargo tauri build --bundles app \
+            --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}' \
+            -- --locked
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: install/package.sh aarch64-apple-darwin "$VERSION" dist-out/
+      - name: Smoke install in fresh home
+        run: sh install/tests/clean_mac.sh --from "$PWD/dist-out" --fresh-home
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-release
+          path: dist-out/
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: package-macos
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: macos-release
+          path: dist-out/
+      - name: Upload draft and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME#v}
+          cat > release-notes.md <<EOF
+          Install (macOS, Apple silicon):
+
+          \`\`\`sh
+          curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh
+          \`\`\`
+
+          This version:
+
+          \`\`\`sh
+          curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/download/v${version}/install.sh | sh
+          \`\`\`
+
+          [Opening the app with Gatekeeper](https://github.com/civic-tech-pioneer/watane/blob/v${version}/install/TECHNICAL.md#62-the-text).
+          EOF
+          prerelease=false
+          [[ $version != *-* ]] || prerelease=true
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --draft --title "watane $version" \
+            --notes-file release-notes.md --prerelease="$prerelease" \
+            "dist-out/watane-$version-aarch64-apple-darwin.tar.gz" \
+            dist-out/SHA256SUMS dist-out/install.sh
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

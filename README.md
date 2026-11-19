@@ -2,6 +2,22 @@
 
 An empty host that people fill with their own mods.
 
+## Install (macOS, Apple silicon)
+
+On macOS 14 or later:
+
+```sh
+curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh
+```
+
+To skip the Rust toolchain question:
+
+```sh
+curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh -s -- --no-toolchain
+```
+
+See [installation behavior](install/FUNCTIONAL.md) for details.
+
 Start at [spec/README.md](spec/README.md): the vision, the reading order,
 and one row per subsystem.
 
