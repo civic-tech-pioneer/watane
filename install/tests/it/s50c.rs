@@ -1,8 +1,7 @@
 //! S50c receipt, lock and recovery regressions (TECHNICAL 3.6, 8.5).
-mod support;
+use crate::support::*;
 use std::fs;
 use std::os::unix::fs::symlink;
-use support::*;
 
 #[test]
 fn ac1_resolved_folders_guard_receipt_removals() {

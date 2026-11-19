@@ -1,10 +1,9 @@
 //! Adversarial tests of S50c: the release origin check and the receipt folder rule (TECHNICAL 7.2, 8.5).
-mod support;
+use crate::support::*;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
-use support::*;
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("/usr/bin/git")

@@ -1,9 +1,8 @@
 //! Regressions for install-folder changes during staging and cleanup (TECHNICAL 3.6).
-mod support;
 
+use crate::support::*;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
-use support::*;
 
 #[test]
 fn ac2_folder_changed_during_staging_aborts_before_swap() {

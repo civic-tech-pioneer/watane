@@ -28,13 +28,13 @@ install/
   package.sh          the packer (section 4)
   tests/
     script.rs         INST-S-1 to INST-S-22, INST-S-26 to 28, 30 to 35: runs install.sh against a fake release (section 12)
-    workflow.rs       INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
+    it/workflow.rs    INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     package.rs        the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools
     support/pty.rs    runs a command on a real pseudo-terminal and types an answer; and runs one with no controlling terminal (12.1)
     clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac, inside the VM
     vm_mac.sh         drives the Tart VM of 12.3 from the host: clone, run, ssh clean_mac.sh, delete
-    clean_mac.rs      offline preflight, syntax/lint and fake VM lifecycle; ignored release smoke and PTY fixture
+    it/clean_mac.rs   offline preflight, syntax/lint and fake VM lifecycle; ignored release smoke and PTY fixture
     fakes/            the fake tools that script.rs puts first on PATH (12.1)
 .github/workflows/release.yml
 ```
@@ -973,7 +973,7 @@ No job writes a cache or a secret into the archive, uses a secret but
 tags and by hand). INST-S-29 checks the file `release.yml` for these rules
 in `cargo test`.
 
-`tests/workflow.rs` (INST-S-29) uses job-scoped line rules, without a YAML
+`tests/it/workflow.rs` (INST-S-29) uses job-scoped line rules, without a YAML
 dependency. It checks the triggers, permissions, ordered build commands,
 version/origin checks, artifact handoff and draft publication. In-test copies
 remove each required rule or add an unsafe step/input; each must be rejected.

@@ -6,10 +6,16 @@ mod support;
 
 mod adv_s50b;
 mod adv_s50b_fix;
+mod adv_s50c;
 mod check_signals;
+mod clean_mac;
 mod package;
 mod regress_s50b;
 mod regress_s50b_fix;
+mod regress_s50c;
+mod regress_s50c_sim;
+mod s50c;
 mod script;
 mod status_audit;
 mod waits;
+mod workflow;

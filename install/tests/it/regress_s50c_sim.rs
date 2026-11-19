@@ -1,11 +1,10 @@
 //! Regressions found by acting out S50c as Alice on the real release (TECHNICAL 3.4.2, 12.4).
-mod support;
 
+use crate::support::*;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
-use support::*;
 
 /// A rerun after Alice re-linked `~/.local/share/watane-dev` to `~/Documents`
 /// is refused (rule 4), but the refusal only says "files that watane did not
@@ -102,7 +101,7 @@ fn regress_s50c_home_changes_ignores_macos_media_library_writes() {
 
 #[test]
 fn ac1_guest_home_changes_checks_top_level_and_watane_but_fresh_stays_strict() {
-    let source = include_str!("clean_mac.sh");
+    let source = include_str!("../clean_mac.sh");
     let function = source
         .split("home_changes() {")
         .nth(1)
