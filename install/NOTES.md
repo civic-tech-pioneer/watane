@@ -378,3 +378,36 @@ new check right after xattr, `check_signal` can exit while the INT trap is
 still pending; the trap then ran at cleanup's dispatch point, after
 `trap - EXIT`, and exited before `rm -rf`. `check_signal` now ignores
 further signals before it exits, as `on_signal` does.
+
+## s50b-fix-7: retain rollback interruption statuses
+
+Both unchanged adversary undo tests reproduced exit 5 with a cause before
+this fix and pass with exit 130 and no cause afterwards. undo_swap now
+exits with each failed command's status; rollback returns it and clears
+SWAP_ACTIVE only on success. install_files checks rollback's status before
+its swap diagnosis, and recover checks undo's status before its diagnosis.
+The undo subshell's SIGNAL=0 remains unchanged. Signal-handler rollback
+failure cannot override the signal already being handled; EXIT cleanup
+checks rollback failures as well.
+
+Whole-script status audit: finish_commit's rm_path calls and clean_stale's
+rm_path call now return the helper's status. The two swap journal appends
+return printf's status, and stage_files/write_journal retain their output
+block's failure status instead of assigning 1. ac3_journal_append_preserves_signal_status
+failed with exit 5 before the append fix and checks exit 130 with no cause.
+Other constant returns are builtin validation results or follow an explicit
+check_signal (resolve_dir, rm_path, finish_commit's journal removal,
+home_deletable). Direct `|| die` calls retain the status into die's first
+check_signal; no extra check is needed there. No dependency was added.
+
+Validation: the unchanged adversary Ctrl-C tests passed; the AC3 regression
+passed after its observed red run. Focused script ac4 tests: 5 passed,
+1 ignored. Default cargo test -p watane-install: 89 passed, 16 ignored,
+1 failed. The failure is the unchanged
+adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved assertion at
+script.rs:1352: it sends TERM to the undo subshell but expects exit 5;
+retaining undo's signal status now correctly yields 143. This contradicts
+the task's status-propagation requirement, so the test is left unchanged
+for the owner to resolve. Clippy and nightly fmt check exited 0 (existing
+workspace-hack manifest warnings only); shellcheck exited 0. No ignored
+or GUI tests ran.

@@ -232,3 +232,23 @@ fn adv_s50b_fix_ctrl_c_in_swap_undo_prints_a_cause() {
     assert_eq!(out.code, 130, "{out:?}");
     assert!(!out.stderr.contains("watane install:"), "{out:?}");
 }
+
+/// AC3: a failed journal append retains its signal status through swap and rollback.
+#[test]
+fn ac3_journal_append_preserves_signal_status() {
+    let fx = Fx::new();
+    let source = baked_script("0.1.0").replace(
+        "main \"$@\"",
+        r#"
+printf() {
+  case $1 in 'moved %s\n') return 130 ;; esac
+  command printf "$@"
+}
+main "$@"
+"#,
+    );
+    fs::write(&fx.script, source).expect("journal fixture");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(!out.stderr.contains("watane install:"), "{out:?}");
+}
