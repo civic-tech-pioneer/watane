@@ -387,9 +387,10 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Linux only (install/TECHNICAL 12.1); the SC2015 sites are explicit ifs. Known limit widened
   (3.8): a real 129..143 exit of any child (tar, mktemp) reads as a signal. After the merge: main
   green on the Mac (124) and on Linux twice (cloud check S50b-fix2-linux, shellcheck 0.9 clean).
-- [~] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** Merged
-  2026-11-19 (main `7a3a335`); open: the human cuts `v0.1.0`, then `sh install/tests/vm_mac.sh`
-  (no `--from`: the real one-liner over curl) passes INST-S-1, 23, 24, 25 against the real release.
+- [x] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** Merged
+  2026-11-19 (main `7a3a335`). v0.1.0 released 2026-11-19 (run 44572257701, approved by the human);
+  `sh install/tests/vm_mac.sh` (no `--from`: the real one-liner over curl) then passed INST-S-1, 23,
+  24, 25 against the real release (CLEAN-MAC PASS, VM PASS).
   Foreman `035bf637` (sessionId `035bf637-693e-4f46-b950-2abe784c40a3`) has ended; the PO runs it. Sol
   runs: s50c-1 2, s50c-2 1, s50c-3 1, s50c-fix1 2, s50c-fix2 1. user-sim REJECTED once (a refusal
   that suggested an `mv` through a re-linked folder; a VM home check tripped by macOS's own
@@ -987,7 +988,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
 | install | 1 script, 2 versions, 3 packer | 7 | done (S50b; macOS S50b-fix) |
-| install | 4 workflow, 5 clean Mac (J7) | 7 | done but the real-release VM run (S50c) |
+| install | 4 workflow, 5 clean Mac (J7) | 7 | done (S50c; v0.1.0 checked in a clean VM) |
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | done (S63) |
@@ -1991,6 +1992,7 @@ The human may veto each one.
 - S50b-fix2: a Ctrl-C in the install's first checks on a loaded Mac exits 130 with no false cause;
   install's tests no longer lean on Linux-only accidents.
 - S50c: on a clean Mac (a Tart VM), the README's one-liner installs watane from a CI-built archive;
-  the app opens and `watane-dev new` and `test` work. The release workflow and Q16 are in place.
+  the app opens and `watane-dev new` and `test` work. The release workflow and Q16 are in place;
+  v0.1.0 is out, and its one-liner passes on a clean Mac.
 - S87: when Alice's full machine holds a changed package file, her laptop's Machines view always
   names that machine and why, whatever order the events come in. wasmtime 48.0.9 (8 advisories).
