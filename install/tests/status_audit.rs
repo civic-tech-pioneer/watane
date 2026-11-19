@@ -1,286 +1,209 @@
 //! Guard status-handling sites against lost signals (install/TECHNICAL 3.8).
 
-// This is a conservative source lint, not a POSIX shell parser. Exact, function-scoped
-// exceptions make a newly introduced spelling require review, even for builtin code.
+// This is a conservative source lint for this script's syntax, not a POSIX parser.
+const CHECKED_HELPERS: &[&str] = &[
+    "exists",
+    "plain_path",
+    "below_home",
+    "in_home",
+    "in_list",
+    "add_item",
+    "tilde",
+    "tilde_r",
+    "allowed",
+    "pid_gone",
+    "resolve_dir",
+    "home_deletable",
+];
+
 const ALLOWED: &[(&str, &str)] = &[
-    // Builtin predicates, EOF tests and formatting substitutions run no external programs.
-    ("exists", r###"exists() { [ -e "$1" ] || [ -L "$1" ]; }"###),
-    ("resolve_dir", r###"[ -n "$rd_d" ] || rd_d=/"###),
-    ("resolve_dir", r###"[ -n "$RES" ] || RES=/"###),
-    ("allowed", r###"plain_path "$1" || return 1"###),
-    ("allowed", r###"below_home "$RES" || return 1"###),
-    (
-        "set_entries",
-        r###"ENTRIES=$(add_item "$ENTRIES" "$DEST")"###,
-    ),
-    (
-        "set_entries",
-        r###"ENTRIES_ALL=$(add_item "$ENTRIES" "$RECEIPT")"###,
-    ),
-    (
-        "read_receipt",
-        r###"[ -f "$1" ] && [ ! -L "$1" ] || return 0"###,
-    ),
-    (
-        "read_receipt",
-        r###"[ "$rr_l" = 'watane-receipt 1' ] || return 0"###,
-    ),
-    (
-        "read_receipt",
-        r###"'path '*) R_LINES=$(add_item "$R_LINES" "$rr_l") ;;"###,
-    ),
-    (
-        "read_journal",
-        r###"[ -f "$1" ] && [ ! -L "$1" ] || return 0"###,
-    ),
-    (
-        "read_journal",
-        r###"old) J_OLD=$(add_item "$J_OLD" "$rj_p") ;;"###,
-    ),
-    (
-        "read_journal",
-        r###"new) J_NEW=$(add_item "$J_NEW" "$rj_p") ;;"###,
-    ),
-    (
-        "read_journal",
-        r###"moved) J_MOVED=$(add_item "$J_MOVED" "$rj_p") ;;"###,
-    ),
-    ("find_journals", r###"exists "$fj_f" || continue"###),
-    (
-        "find_journals",
-        r###"[ -f "$fj_f" ] && [ ! -L "$fj_f" ] || continue"###,
-    ),
-    (
-        "find_journals",
-        r###"JOURNALS=$(add_item "$JOURNALS" "$fj_n")"###,
-    ),
-    ("check_no_live_install", r###"[ -n "$cn_n" ] || continue"###),
-    ("clean_stale", r###"exists "$cs_f" || continue"###),
-    ("recover", r###"[ -n "$rc_n" ] || continue"###),
-    (
-        "check_platform",
-        r###"[ "$cp_s" = Darwin ] || unsupported "$cp_s $cp_m""###,
-    ),
-    (
-        "check_platform",
-        r###"[ "$cp_a" = 1 ] || unsupported "$cp_s $cp_m""###,
-    ),
-    (
-        "check_platform",
-        r###"[ "$cp_major" -ge 14 ] || unsupported "macOS $cp_v (needs 14.0 or later)""###,
-    ),
-    (
-        "check_home",
-        r###"if ! plain_path "$HOME" || [ "$HOME" = / ]; then"###,
-    ),
-    (
-        "check_folders",
-        r###"[ "$RES" != "$HOME_R" ] || ch_m="resolves to your home folder itself""###,
-    ),
-    ("check_folders", r###"die 2 "$(tilde "$ch_f") $ch_m" \"###),
-    (
-        "check_foreign",
-        r###"if allowed "$cf_p"; then cf_known=$(add_item "$cf_known" "$cf_p"); fi"###,
-    ),
-    ("check_foreign", r###"[ -n "$cf_n" ] || continue"###),
-    ("check_foreign", r###"[ -n "$cf_p" ] || continue"###),
-    (
-        "check_foreign",
-        r###"in_list "$J_MOVED" "$cf_p" || continue"###,
-    ),
-    (
-        "check_foreign",
-        r###"cf_known=$(add_item "$cf_known" "$cf_p")"###,
-    ),
-    (
-        "check_foreign",
-        r###"if exists "$cf_p"; then cf_found=$(add_item "$cf_found" "$cf_p"); fi"###,
-    ),
-    (
-        "check_foreign",
-        r###"if [ "$cf_old_ok" != 1 ] && exists "$RECEIPT"; then cf_found=$(add_item "$cf_found" "$RECEIPT"); fi"###,
-    ),
-    (
-        "check_foreign",
-        r###"while IFS= read -r cf_p; do printf '  %s\n' "$(tilde "$cf_p")" >&2; done <<EOF"###,
-    ),
-    (
-        "check_foreign",
-        r###"while IFS= read -r cf_p; do printf '  mv %s %s.mine\n' "$(tilde "$cf_p")" "$(tilde "$cf_p")" >&2; done <<EOF"###,
-    ),
-    (
-        "verify_archive",
-        r###"while read -r va_hash va_name va_rest || [ -n "$va_hash" ]; do"###,
-    ),
-    (
-        "verify_archive",
-        r###"[ "$va_name" = "$ARCHIVE" ] || continue"###,
-    ),
-    (
-        "stage_files",
-        r###"! exists "$RECEIPT.new.$$" || return 1"###,
-    ),
-    (
-        "write_journal",
-        r###"! exists "$SHAREW/journal.$$" || return 1"###,
-    ),
-    ("read_answer", r###"ANSWER=$ANSWER$(printf '%b' "\\0$1")"###),
-    (
-        "toolchain_step",
-        r###"if ! ( : </dev/tty ) 2>/dev/null; then"###,
-    ),
-    (
-        "do_install",
-        r###"case $di_r in bin/* | share/watane-dev/vendor | Applications/*) say "  $(tilde "$DEST")" ;; esac"###,
-    ),
-    (
-        "do_status",
-        r###"case $ds_l in 'path '*) say "$(tilde "${ds_l#path }")" ;; esac"###,
-    ),
-    ("home_deletable", r###"plain_path "$1" || return 1"###),
-    ("home_deletable", r###"plain_path "$hd_r" || return 1"###),
-    (
-        "home_deletable",
-        r###"if ! in_home "$hd_r"; then HOME_OUT=1; return 1; fi"###,
-    ),
-    (
-        "do_uninstall",
-        r###"if exists "$HOME/.rustup" || exists "$HOME/.cargo"; then"###,
-    ),
-    ("do_uninstall", r###"[ -e "$du_h" ] || return 0"###),
-    (
-        "do_uninstall",
-        r###"say "kept: $(tilde "$du_h") (not deleted: it resolves to $HOME_DEL, outside your home folder)""###,
-    ),
-    (
-        "do_uninstall",
-        r###"say "kept: $(tilde "$du_h") (not deleted: not a folder that watane can delete)""###,
-    ),
-    (
-        "do_uninstall",
-        r###"printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde_r "$HOME_DEL")""###,
-    ),
-    ("do_uninstall", r###"say "deleted: $(tilde "$du_h")""###),
-    (
-        "do_uninstall",
-        r###"say "kept: $(tilde "$du_h") (your home: identity, mods, channels)""###,
-    ),
-    ("main", r###"[ "$MODE" = install ] || bad_flag "$1""###),
-    (
-        "main",
-        r###"command -v shasum >/dev/null 2>&1 || check_tools sha256sum"###,
-    ),
-    // These predicates check their program statuses internally before returning a boolean.
-    ("allowed", r###"resolve_dir "$al_root" || return 1"###),
-    ("allowed", r###"resolve_dir "${1%/*}" || return 1"###),
-    ("finish_commit", r###"allowed "$fc_p" || continue"###),
-    ("clean_stale", r###"allowed "$cs_e" || continue"###),
-    ("clean_stale", r###"pid_gone "$cs_n" || continue"###),
-    ("recover", r###"if ! allowed "$RECEIPT"; then"###),
-    ("recover", r###"pid_gone "$rc_n" || continue"###),
-    (
-        "check_folders",
-        r###"if ! resolve_dir "$ch_f" || ! below_home "$RES"; then"###,
-    ),
-    ("check_foreign", r###"pid_gone "$cf_n" || continue"###),
-    ("do_uninstall", r###"if ! home_deletable "$du_h"; then"###),
-    // Undo retains SIGNAL=0; these exact calls propagate status to the parent checkpoint.
-    (
-        "undo_swap",
-        r###"if ! exists "$RECEIPT.new.$1"; then finish_commit "$1" || exit "$?"; exit 0; fi"###,
-    ),
-    ("undo_swap", r###"[ -n "$ub_p" ] || continue"###),
-    ("undo_swap", r###"exists "$ub_p.old.$1" || continue"###),
-    (
-        "undo_swap",
-        r###"if [ "$ub_p" != "$RECEIPT" ]; then rm_path "$ub_p" || exit "$?"; fi"###,
-    ),
-    ("undo_swap", r###"mv "$ub_p.old.$1" "$ub_p" || exit "$?""###),
-    ("undo_swap", r###"in_list "$J_MOVED" "$ub_p" || continue"###),
-    ("undo_swap", r###"mv "$ub_p" "$ub_p.new.$1" || exit "$?""###),
-    ("undo_swap", r###"exists "${ub_p%/*}" || continue"###),
-    ("undo_swap", r###"mkdir "$ub_p.new.$1" || exit "$?""###),
-    (
-        "undo_swap",
-        r###"rm -f "$SHAREW/journal.$1" || exit "$?""###,
-    ),
-    (
-        "undo_swap",
-        r###"if exists "$ub_p.new.$1"; then rm_path "$ub_p.new.$1" || exit "$?"; fi"###,
-    ),
-    (
-        "undo_swap",
-        r###"if exists "$RECEIPT.old.$1"; then rm_path "$RECEIPT.old.$1" || exit "$?"; fi"###,
-    ),
-    ("undo_swap", r###"allowed "$ub_p" || continue"###),
-    // Swap and cleanup helpers return the original status for the caller to check.
-    ("rollback", r###"undo_swap "$SWAP_PID" || return"###),
-    ("stage_files", r###"mkdir -p "${DEST%/*}" || return"###),
-    (
-        "stage_files",
-        r###"cp -R "$TOP/$sf_r" "$DEST.new.$$" || return"###,
-    ),
-    (
-        "stage_files",
-        r###"bin/* | share/watane/install.sh) chmod 755 "$DEST.new.$$" || return ;;"###,
-    ),
-    ("stage_files", r###"mkdir -p "$SHAREW" || return"###),
-    (
-        "swap_entries",
-        r###"if exists "$sw_p"; then mv "$sw_p" "$sw_p.old.$$" || return; fi"###,
-    ),
-    (
-        "swap_entries",
-        r###"printf 'moved %s\n' "$sw_p" >>"$sw_j" || return"###,
-    ),
-    ("swap_entries", r###"mv "$sw_p.new.$$" "$sw_p" || return"###),
-    (
-        "swap_entries",
-        r###"if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return; fi"###,
-    ),
-    (
-        "swap_entries",
-        r###"printf 'moved %s\n' "$RECEIPT" >>"$sw_j" || return"###,
-    ),
-    (
-        "swap_entries",
-        r###"mv "$RECEIPT.new.$$" "$RECEIPT" || return"###,
-    ),
-    ("do_swap", r###"stage_files || return"###),
-    ("do_swap", r###"write_journal || return"###),
-    ("do_swap", r###"swap_entries || return"###),
-    (
-        "finish_commit",
-        r###"if exists "$fc_p"; then rm_path "$fc_p" || return; fi"###,
-    ),
-    (
-        "finish_commit",
-        r###"if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1" || return; fi"###,
-    ),
-    (
-        "finish_commit",
-        r###"if exists "$fc_old"; then rm_path "$fc_old" || return; fi"###,
-    ),
-    ("clean_stale", r###"rm_path "$cs_f" || return"###),
-    // Trap dispatch points and an already selected signal must not interrupt rollback.
+    // A signal is already selected; rollback must finish before the handler exits.
     ("on_signal", r###"rollback || :"###),
+    // These subshells dispatch pending traps; their own status must not stop dispatch.
     ("check_signal", r###"( : ) || true"###),
     ("cleanup", r###"( : ) || true"###),
-    // resolve_dir checks both branches before interpreting cd/pwd's result.
+    // Both branches check the unnegated substitution status before interpreting it.
     (
         "resolve_dir",
         r###"if rd_r=$(cd "$rd_d" 2>/dev/null && pwd -P); then"###,
-    ),
-    // Detection checks both branches; rustup_step saves and checks rs_rc before diagnosis.
-    (
-        "rustup_step",
-        r###"( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?"###,
     ),
     (
         "detect_toolchain",
         r###"if dt_rustc=$(cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$RUSTUP" which rustc 2>/dev/null); then"###,
     ),
+    // rs_rc is saved here and checked before the toolchain diagnosis.
+    (
+        "rustup_step",
+        r###"( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?"###,
+    ),
+    // Builtin printf encodes a byte; no external program runs in this substitution.
+    ("read_answer", r###"ANSWER=$ANSWER$(printf '%b' "\\0$1")"###),
+    // This negated probe runs only the ':' builtin with a tty redirection.
+    (
+        "toolchain_step",
+        r###"if ! ( : </dev/tty ) 2>/dev/null; then"###,
+    ),
 ];
+
+// Keep quoted arguments opaque so operators inside them cannot authorize a fallback.
+fn shell_tokens(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut word = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if escaped {
+            word.push(c);
+            escaped = false;
+        } else if c == '\\' && quote != Some('\'') {
+            word.push(c);
+            escaped = true;
+        } else if quote == Some(c) {
+            word.push(c);
+            quote = None;
+        } else if quote.is_some() {
+            word.push(c);
+        } else if c == '\'' || c == '"' {
+            word.push(c);
+            quote = Some(c);
+        } else if c.is_whitespace() || ";&|{}()".contains(c) {
+            if !word.is_empty() {
+                tokens.push(std::mem::take(&mut word));
+            }
+            if !c.is_whitespace() {
+                let mut operator = c.to_string();
+                if (c == '&' || c == '|') && chars.peek() == Some(&c) {
+                    operator.push(chars.next().expect("peek matched a doubled operator"));
+                }
+                tokens.push(operator);
+            }
+        } else {
+            word.push(c);
+        }
+    }
+    if !word.is_empty() {
+        tokens.push(word);
+    }
+    tokens
+}
+
+fn safe_command(tokens: &[String]) -> bool {
+    let tokens = tokens
+        .iter()
+        .skip_while(|word| matches!(word.as_str(), "if" | "while" | "then" | "!"))
+        .skip_while(|word| word.starts_with("IFS="))
+        .collect::<Vec<_>>();
+    match tokens.first().map(|word| word.as_str()) {
+        Some("[") => tokens.iter().any(|word| word.as_str() == "]"),
+        Some("read") => true,
+        Some("command") => tokens.get(1).is_some_and(|word| word.as_str() == "-v"),
+        Some(name) => CHECKED_HELPERS.contains(&name),
+        None => false,
+    }
+}
+
+// Remove only substitutions whose entire command is a known helper. An external
+// substitution must instead use a checkpoint or one of the reviewed special sites.
+fn helper_substitutions(line: &str) -> Option<String> {
+    let mut result = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find("$(") {
+        result.push_str(&rest[..start]);
+        let body = &rest[start + 2..];
+        if body.starts_with('(') {
+            let end = body.find("))")?;
+            if body[..end].contains("$(") {
+                return None;
+            }
+            result.push_str("arithmetic");
+            rest = &body[end + 2..];
+            continue;
+        }
+        let mut quote = None;
+        let mut escaped = false;
+        let mut end = None;
+        for (index, c) in body.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' && quote != Some('\'') {
+                escaped = true;
+            } else if quote == Some(c) {
+                quote = None;
+            } else if quote.is_none() {
+                if c == '\'' || c == '"' {
+                    quote = Some(c);
+                } else if c == ')' {
+                    end = Some(index);
+                    break;
+                }
+            }
+        }
+        let end = end?;
+        // Nested substitutions may run a different program even inside quoted helper args.
+        // None are needed here: keep unfamiliar nesting subject to explicit review.
+        if body[..end].contains("$(") {
+            return None;
+        }
+        let command = shell_tokens(&body[..end]);
+        if !command
+            .first()
+            .is_some_and(|name| CHECKED_HELPERS.contains(&name.as_str()))
+            || command
+                .iter()
+                .any(|word| matches!(word.as_str(), ";" | "&&" | "||" | "|" | "("))
+        {
+            return None;
+        }
+        result.push_str("substitution");
+        rest = &body[end + 1..];
+    }
+    result.push_str(rest);
+    Some(result)
+}
+
+fn covered_by_rule(line: &str) -> bool {
+    let Some(line) = helper_substitutions(line) else {
+        return false;
+    };
+    let tokens = shell_tokens(&line);
+    for (index, token) in tokens.iter().enumerate() {
+        if token == "||" {
+            let rhs = &tokens[index + 1..];
+            // No constant: these forward the failed command's status to the caller.
+            let preserves = rhs.first().is_some_and(|word| word == "return")
+                && rhs
+                    .get(1)
+                    .is_none_or(|word| matches!(word.as_str(), ";" | "}"));
+            let preserves = preserves
+                || (rhs.first().is_some_and(|word| word == "exit")
+                    && rhs.get(1).is_some_and(|word| word == "\"$?\"")
+                    && rhs
+                        .get(2)
+                        .is_none_or(|word| matches!(word.as_str(), ";" | "}")));
+            let start = tokens[..index]
+                .iter()
+                .rposition(|word| matches!(word.as_str(), ";" | "{" | "}"))
+                .map_or(0, |position| position + 1);
+            let builtin_left = tokens[start..index]
+                .split(|word| matches!(word.as_str(), "&&" | "||" | "|"))
+                .all(safe_command);
+            if !preserves && !builtin_left {
+                return false;
+            }
+        }
+        if token == "!" && index > 0 && tokens[index - 1] == "if" {
+            let end = tokens[index + 1..]
+                .iter()
+                .position(|word| matches!(word.as_str(), ";" | "&&" | "||"))
+                .map_or(tokens.len(), |position| index + 1 + position);
+            if !safe_command(&tokens[index + 1..end]) {
+                return false;
+            }
+        }
+    }
+    true
+}
 
 fn unchecked_sites(source: &str) -> Vec<String> {
     let lines: Vec<_> = source.lines().map(str::trim).collect();
@@ -323,7 +246,7 @@ fn unchecked_sites(source: &str) -> Vec<String> {
             || (!line.contains("||") && !line.starts_with("if ")
                 && line.split_once("$(").is_some_and(|(prefix, _)| prefix.ends_with('='))
                 && lines.get(index + 1).is_some_and(|next| *next == "check_signal \"$?\""));
-        if !checked && !ALLOWED.contains(&(function, *line)) {
+        if !checked && !ALLOWED.contains(&(function, *line)) && !covered_by_rule(line) {
             unchecked.push(format!("{} ({function}): {line}", index + 1));
         }
     }
@@ -375,4 +298,30 @@ fn ac3b_status_remapping_requires_a_signal_check() {
     }
     // A check after `|| true` is too late: it would see true's zero.
     assert!(!unchecked_sites("tool || true\ncheck_signal \"$?\"\n").is_empty());
+}
+
+#[test]
+fn ac3b_rules_cover_builtins_checked_helpers_and_preserved_statuses() {
+    for site in [
+        "[ -n \"$value\" ] && [ -f \"$file\" ] || return 1",
+        "read -r value || value=\"\"",
+        "command -v tool || return 1",
+        "if ! allowed \"$different_path\"; then",
+        "resolve_dir \"$different_path\" || return 1",
+        "value=$(add_item \"$list\" \"$item\")",
+        "say \"$(tilde \"$different_path\")\"",
+        "tool || return",
+        "tool || exit \"$?\"",
+    ] {
+        assert!(
+            unchecked_sites(&format!("new_site() {{\n{site}\n")).is_empty(),
+            "rule did not cover {site}"
+        );
+    }
+    for helper in CHECKED_HELPERS {
+        assert!(unchecked_sites(&format!("if ! {helper} value; then\n")).is_empty());
+    }
+    assert!(!unchecked_sites("if ! unknown_helper value; then\n").is_empty());
+    assert!(!unchecked_sites("unknown_helper value || return 1\n").is_empty());
+    assert!(!unchecked_sites(r#"value=$(add_item "$(external_tool)" item)"#).is_empty());
 }

@@ -440,3 +440,31 @@ Follow-up final validation: cargo test -p watane-install passed (97 passed,
 16 ignored, 11 suites; 633.34 s). Clippy, nightly fmt check, shellcheck and
 git diff --check passed. Clippy retains only the existing workspace-hack
 manifest warnings. This supersedes the earlier unresolved assertion result.
+
+### s50b-fix-7 validator return, round 1: rule classes
+
+Kept validator commit f9fbc69's single undo-status paragraph. Replaced the
+large exact-line allow-list in status_audit.rs with rules for builtin tests,
+read/command -v, the twelve named builtin-only or internally checked helpers,
+and status-preserving `|| return` / `|| exit "$?"`. Quoted arguments are
+kept opaque while identifying shell operators, and helper substitutions
+must contain only a named helper call. Nested substitutions remain subject
+to review so a quoted external command cannot hide inside helper arguments.
+Only eight exact special sites remain, each commented and function-scoped:
+rollback in on_signal, the two dispatch subshells, the two conditional
+substitutions, saved rustup status, byte formatting and the builtin tty probe.
+
+The new rule-class test first failed on an ordinary edited builtin test
+under the old allow-list, then passed with the rule matcher. It also rejects
+an unknown helper (both negation and constant return), and accepts each
+named helper without adding line entries. A nested external-substitution
+regression failed before the nesting guard and passed afterwards. Kept all
+previous mutation checks. TECHNICAL 3.8 describes the rule classes and the
+remaining special exceptions. No installer behavior or dependency changed.
+
+Round-1 final validation: default cargo test -p watane-install passed
+(98 passed, 16 ignored), including both rule-scan tests and all unchanged
+rollback tests. Focused scanner tests passed after the test-only clippy fix
+(use expect with the established peek invariant instead of unwrap).
+Clippy, nightly fmt check, shellcheck and git diff --check passed; only the
+existing workspace-hack manifest warnings remain. No ignored or GUI tests ran.
