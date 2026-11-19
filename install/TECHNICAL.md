@@ -319,7 +319,11 @@ files (INST-F-20, INST-S-14, 32, 33).
    temporary name: no entry is swapped before it is complete, and the undo
    of step 4 touches only entries the swap reached, so a journal cut short
    by a kill undoes nothing.
-3. **Swap.** For each entry in the order of the list above, the receipt
+3. **Swap.** First resolve again, as step 4 did (3.4.1), each install
+   folder, and compare it with the path step 4 resolved: if one differs (a
+   link made or changed since), undo as step 4 below and exit 5 with
+   `watane install: <folder> changed during the install: it now resolves to
+   <now>` (`<folder>` as `~/...`), before any entry is moved. Then, for each entry in the order of the list above, the receipt
    last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then append the
    line `moved <path>` to the journal; then
    `mv <path>.new.<pid> <path>`. The receipt alone is not moved aside: it is
@@ -371,7 +375,9 @@ files (INST-F-20, INST-S-14, 32, 33).
    (INST-S-14, 32).
 5. **After the commit.** Remove the paths of the old receipt that are not
    in the new list, each only if the rule of 8.5 allows it (INST-S-27); then
-   `rm -rf` each `.old.<pid>`, `receipt.old.<pid>` last, since step 0 reads
+   `rm -rf` each `.old.<pid>` whose install folder still resolves as the new
+   receipt's `resolved` line says (8.5 rule 4 against the new receipt; else
+   the `skipped` line of rule 4 and the name stays), `receipt.old.<pid>` last, since step 0 reads
    it if this step is cut short; remove the journal last. A removal that fails here
    prints `watane install: could not remove <path>` on stderr and does not
    change the exit status of the installing run: the new version is installed.
@@ -903,8 +909,11 @@ A `workflow_dispatch` run is the first job only (a dry run: no release);
 it has no input that turns the release on. Actions are pinned to full
 commit SHAs. A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
 `releases/latest` never serves. A tag whose commit is not on `main` is
-refused (7.2 step 2), so a tag pushed on an unreviewed branch publishes
-nothing.
+refused (7.2 step 2). That check guards against a mistake, not an
+attacker: a tag push runs the `release.yml` of the tagged commit, so a
+person who may push a `v*` tag on a commit of their own can delete the
+check in that commit. What stops an unreviewed release is Q16: the `v*`
+tag ruleset and the `release` environment's required reviewer (IN-28).
 
 ### 7.2 Steps
 
@@ -914,7 +923,9 @@ nothing.
    `host/Cargo.toml`, `dev/Cargo.toml`, `node/Cargo.toml`, `app/Cargo.toml`
    and `app/tauri.conf.json` (on a hand run, which has no tag, the version is
    `host/Cargo.toml`'s and the five must still be equal), and on a tag run `git merge-base
-   --is-ancestor "$GITHUB_SHA" origin/main` succeeds; otherwise the job
+   --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main` succeeds (the full
+   ref name: with `fetch-depth: 0` every tag is fetched, and a tag named
+   `origin/main` would win the short name); otherwise the job
    fails before it builds (Q7).
 3. Rust: the runner's stable toolchain (at least the `rust-version` of
    `host/Cargo.toml` and `dev/Cargo.toml`); no Wasm target, since the job
@@ -1206,7 +1217,7 @@ Q14.
 | The home is never deleted without a typed `delete`, and never when it is `/`, `$HOME` or a folder above it | 8.4 | INST-S-15 to 17, 28 |
 | The version cannot steer the download to another path or repository | the version check of 3.2 | INST-S-26 |
 | An uninstall or upgrade removes only what watane installs, whatever the receipt says | the rule of 8.5 | INST-S-27 |
-| No code of the build holds a token that can write to the repository; a release restores no cache; a hand run publishes nothing; a tag off `main` publishes nothing | two jobs, `persist-credentials: false`, no cache, no dispatch input, the ancestor check (7.1, 7.2) | INST-S-29 |
+| No code of the build holds a token that can write to the repository; a release restores no cache; a hand run publishes nothing; a tag off `main` publishes nothing | two jobs, `persist-credentials: false`, no cache, no dispatch input; the ancestor check against `refs/remotes/origin/main` (7.1, 7.2) for mistakes, and Q16's tag ruleset and `release` reviewer against a person who may push a tag | INST-S-29; Q16 is a setting, not testable here |
 | The programs run only what is in the person's own folders | the archive's tree (4.2) | package test; 12.4 `otool` |
 
 **Trust in the download.** TLS to `github.com` (certificate checked by
@@ -1232,6 +1243,12 @@ not-protected line. Rustup, if the person says yes, is rustup's own trust
   archive against the source;
 - another program of the same user, which can replace the installed files
   afterwards: the same-user limit of `spec/TECHNICAL.md` 6;
+- a program of the same user that swaps a link into an install folder
+  while a run is under way: the folders are resolved at step 4 and again
+  just before the swap (3.6 step 3), and step 5 checks rule 4 again, but
+  a link made in the instant between a check and the `mv` or `rm -rf`
+  that follows it is followed (the stock tools have no "no-follow" rename
+  or removal); same limit;
 - the rustup installer, when the person says yes (it is code from the
   network; the question names its origin).
 
