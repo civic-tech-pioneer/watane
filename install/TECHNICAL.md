@@ -490,10 +490,6 @@ status to the signal code when the shell loses the parent's trap after
 its child dies. This applies to `die` and the separate foreign-file,
 download and toolchain failure paths. Version and checksum-line checks
 use builtins so a killed pipeline cannot masquerade as invalid input.
-Undo preserves each failed program or helper status, and rollback returns the
-undo status. Recovery and a failed swap check that status before exit 5;
-the undo subshell still clears `SIGNAL` so an already handled signal does
-not stop its cleanup. Staging and journal writes also retain their status.
 Every program whose status the script does not otherwise act on passes it
 to the signal check, so a signal the shell lost still ends the run. When
 the check ends the run it first ignores further signals, as the handler does.
@@ -501,8 +497,8 @@ Undo commands preserve their own failure status through the undo subshell
 and `rollback`; recovery and a failed swap pass the undo status to
 `check_signal` before diagnosing exit 5. The undo subshell keeps `SIGNAL=0`
 so an already handled parent signal does not stop its work. A failed undo
-leaves the swap active for a safe retry. Journal writes and cleanup helpers
-also preserve program statuses until the caller checks for signals.
+leaves the swap active for a safe retry. Staging, journal writes and cleanup
+helpers also preserve program statuses until the caller checks for signals.
 Every site that drops or remaps a program's status must pass the original
 status through `check_signal` before interpreting it: constant `exit` or
 `return`, `die`, ignored failures (`|| true` or a fallback assignment),
