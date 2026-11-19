@@ -387,18 +387,27 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   Linux only (install/TECHNICAL 12.1); the SC2015 sites are explicit ifs. Known limit widened
   (3.8): a real 129..143 exit of any child (tar, mktemp) reads as a signal. After the merge: main
   green on the Mac (124) and on Linux twice (cloud check S50b-fix2-linux, shellcheck 0.9 clean).
-- [~] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** In flight (local), foreman `035bf637` (sessionId `035bf637-693e-4f46-b950-2abe784c40a3`), worktree `.claude/worktrees/s50c`. After S50b
-  and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
-  first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
-  (report only, no rewrite), the human makes the repository public, and the PO applies Q16, and `tests/clean_mac.sh` run in a fresh macOS VM
-  on this Mac (not a second macOS user: change install/TECHNICAL 12 to say so; the same VM later
-  serves S55). Also the receipt records each install folder's resolved path, and a removal is
-  skipped when the folder now resolves elsewhere (deputy decision, S50b open risk). Also S50b-fix's open
-  risks: two installs started at once can both pass `check_no_live_install` (it runs long before the
-  journal exists): take a lock in the home first (deputy decision); the `allowed "$RECEIPT"` failure
-  path can let `clean_stale` remove staging evidence while a journal remains; a failed `cp -p` of the
-  receipt can restore a truncated `receipt.old`. Outcome: INST-S-1, 23, 24, 25 pass in the VM against the real release; a person goes
-  from the one-liner to `watane-dev new`. Touches: `.github/`, `install/`, `README.md`. Local.
+- [~] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** Merged
+  2026-11-19 (main `7a3a335`); open: the human cuts `v0.1.0`, then `sh install/tests/vm_mac.sh`
+  (no `--from`: the real one-liner over curl) passes INST-S-1, 23, 24, 25 against the real release.
+  Foreman `035bf637` (sessionId `035bf637-693e-4f46-b950-2abe784c40a3`) stays for that run. Sol
+  runs: s50c-1 2, s50c-2 1, s50c-3 1, s50c-fix1 2, s50c-fix2 1. user-sim REJECTED once (a refusal
+  that suggested an `mv` through a re-linked folder; a VM home check tripped by macOS's own
+  media-library writes), then ACCEPTED: the README one-liner in a fresh Tart VM, with and without
+  command line tools, against the CI-built archive. adversary BREACHED twice (a tag named
+  `origin/main` fooled the ancestor check; a link swapped in mid-run was written through), both
+  fixed, then HELD; s50c-fix2 (refusal text only) had no third pass. Release dry run green twice on
+  GitHub. Decisions: receipt `resolved <folder> <R>` lines and 8.5 rule 4 (IN-42); lock
+  `~/.watane-install.lock`, a `mkdir`, never broken, a SIGKILL leaves a printed `rm -rf` (IN-41,
+  INST-S-33); the undo restores `receipt.old` only with its `moved` line, and recovery does nothing
+  when the receipt path is not allowed (IN-43); install folders are rechecked before the swap
+  (exit 5); release on `macos-15`; tauri-cli pinned `=2.12.4`; clean Mac = Tart VM (IN-16, 12.3,
+  Q10 (b)), images `watane-clean` and `watane-clean-clt` kept for S55; in the guest, macOS's own
+  writes deeper in existing folders are skipped; clean_mac.sh reads Mach-O load commands with
+  Perl when CLT is absent. Accepted risks (same user or older): a link alternated in the instant
+  between check and mv (TECHNICAL 10, not protected); `clean_stale` and recovery remove dead-pid
+  `.old`/`.new` names under rule 3 only; the ancestor check guards against mistakes, Q16 is the
+  gate (7.1, 10).
   The original S50 sketch, for its intent:
   Someone with a clean Mac and no Rust toolchain ends up
   with a working `watane` and `watane-app` from one command, and can run `watane-dev new` straight
@@ -967,7 +976,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | Subsystem | Stage | Step | Status |
 |---|---|---|---|
 | install | 1 script, 2 versions, 3 packer | 7 | done (S50b; macOS S50b-fix) |
-| install | 4 workflow, 5 clean Mac (J7) | 7 | open (S50c) |
+| install | 4 workflow, 5 clean Mac (J7) | 7 | done but the real-release VM run (S50c) |
 | net | N1 crate, codecs, `hello`, `heads`, `entries` | 8 | done (S60) |
 | net | N2 device list, pairing, classes, allowances | 8 | done (S62) |
 | net | N3 sync, gossip hints, blobs | 8 | done (S63) |
@@ -1139,6 +1148,12 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 - From S50b-fix2's user-sim: `--status | head -1` prints `printf: write error: Broken pipe` before
   exit 141; a copied or renamed home with a stale journal or old receipt reads its own files as
   foreign (exit 8), since its paths are absolute.
+- From S50c's user-sim: a late Ctrl-C leaves empty `~/.local/bin` and `share/watane-dev`; a Ctrl-C
+  at the toolchain question does not say watane is installed; `skipped` and refusal lines print
+  `/private/...` paths, not `~`; after an uninstall through a re-linked folder, watane's vendor
+  stays there with no hint; rustup's own text lands in the middle of watane's output; an upgrade
+  writes a new entry through a folder re-linked inside the home (specs silent); actions pinned at
+  v4 run on forced Node 24 (warning).
 
 ### Unsettled
 
@@ -1538,6 +1553,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-19, S50c) `workflow_dispatch` cannot dry-run a workflow not yet on main (ran as a push to a throwaway branch); Homebrew needs `brew trust` per formula for third-party taps; the macos-14 runner was retired under the slice; main's tests/it move mid-slice cost a layout commit.
 - (2026-11-19, S50b-fix2) a slice id that equals an old task id collides with its brief (`factory/tasks/s50b-fix2.md`); the foreman used `s50b-fix2-1`. Pick slice ids that no task brief uses.
 - (2026-11-19, S50b-fix) this Mac's endpoint security (ManageEngine, Defender) slows each exec 50 to 400 times under load: a full install test run takes 20 to 40 min, and timing races show only here.
 - (2026-11-19, S50b-fix) a peer session killed the foreman's check.sh test binary (now a rule); `impl.sh &` from a shell makes INT ignored in the tests; a reused task id overwrote a finished brief for a while (new ids use a dash).
@@ -1953,3 +1969,5 @@ The human may veto each one.
   signed archive on macOS's own sh, and a Ctrl-C at any step exits 130 and leaves a whole version.
 - S50b-fix2: a Ctrl-C in the install's first checks on a loaded Mac exits 130 with no false cause;
   install's tests no longer lean on Linux-only accidents.
+- S50c: on a clean Mac (a Tart VM), the README's one-liner installs watane from a CI-built archive;
+  the app opens and `watane-dev new` and `test` work. The release workflow and Q16 are in place.
