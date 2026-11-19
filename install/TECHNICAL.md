@@ -435,7 +435,9 @@ directly in `$HOME` so that no folder needs to be made for it. The exit
 trap (3.8) removes it, `pid` then the folder, on every exit of the run
 that made it (a failed undo and a signal included), after the undo and before the temporary folder;
 only a signal in the instant between `mkdir` and the run recording that it
-owns the lock can leave it, which fails safe: the next run prints the
+owns the lock, or a first signal that arrives while the exit trap of a run
+not ended by a signal is already running (as for the temporary folder),
+can leave it, which fails safe: the next run prints the
 `rm -rf`; a run that
 did not make it never removes it. If writing `pid` fails, the run exits 5
 with `watane install: could not write install lock`; the exit trap still
@@ -610,7 +612,7 @@ edits do not require an exception.
 A real exit of 129/130/141/143 from any child (rustup, rustup-init, tar,
 mktemp, ...) is treated as that signal, without its cause line; nothing is
 installed and cleanup and rollback still run. A signal during final
-cleanup may leave the temporary folder. A signal while a question waits
+cleanup may leave the temporary folder and the lock (3.6.2). A signal while a question waits
 is acted on when the read returns. Cleanup preserves the signal code.
 
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
