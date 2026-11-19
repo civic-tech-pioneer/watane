@@ -198,14 +198,18 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
             return Err(e);
         }
         match last {
-            Some((node, e)) => Err(NetError::Unreachable {
-                node,
-                cause: format!(
+            Some((node, e)) => {
+                let cause = format!(
                     "package {} was not fetched: {}",
                     blobs::hex8(&id),
                     e.cause_text()
-                ),
-            }),
+                );
+                core.emit(crate::Event::Unreachable {
+                    node,
+                    cause: cause.clone(),
+                });
+                Err(NetError::Unreachable { node, cause })
+            }
             None => Err(NetError::NoFullMachine),
         }
     })

@@ -503,3 +503,118 @@ fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
     light.net.need(&chan(x)).unwrap();
     assert_eq!(light.holdings.raws(&chan(x)), raws(&cx));
 }
+
+/// S87: a connected full machine without the package reports the same failure.
+#[test]
+fn ac1_s87_missing_package_emits_exactly_one_matching_event() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&full, &light, Role::Light);
+    let events = light.net.events();
+    let id = BlobId([92; 32]);
+    let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&id, 10) else {
+        panic!("expected Unreachable");
+    };
+    assert_eq!(node, full.key);
+    assert!(cause.starts_with(&format!("package {} was not fetched: ", hex(&id.0[..4]))));
+    let failures: Vec<_> = events
+        .try_iter()
+        .filter_map(|event| match event {
+            Event::Unreachable { node, cause } => Some((node, cause)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(failures, vec![(node, cause)]);
+    assert!(light.holdings.stored_blobs.lock().unwrap().is_empty());
+}
+
+/// S87: change the file only after iroh-blobs has referenced it.
+#[test]
+fn ac2_s87_changed_referenced_file_reports_failure_five_times() {
+    let mut unreachable = 0;
+    let mut bad_object = 0;
+    for _ in 0..5 {
+        let full = node(holding(&[], true), None);
+        let warm = node(MemHoldings::empty(), None);
+        let light = node(MemHoldings::empty(), None);
+        let bytes = vec![7; 3000];
+        let id = full.holdings.add_blob(&bytes);
+        pair_into(&full, &warm, Role::Light);
+        pair_into(&full, &light, Role::Light);
+        warm.net.need_blob(&id, bytes.len() as u64).unwrap();
+        let path = watane_net::Holdings::blob(full.holdings.as_ref(), &id).unwrap();
+        let mut changed = bytes.clone();
+        changed[0] ^= 1;
+        std::fs::write(path, changed).unwrap();
+        let events = light.net.events();
+        match light.net.need_blob(&id, bytes.len() as u64) {
+            Err(NetError::Unreachable { node, cause }) => {
+                unreachable += 1;
+                assert_eq!(node, full.key);
+                assert!(cause.contains("not served"), "{cause}");
+                let failures: Vec<_> = events
+                    .try_iter()
+                    .filter_map(|e| match e {
+                        Event::Unreachable { node, cause } => Some((node, cause)),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(failures, vec![(node, cause)]);
+            }
+            Err(NetError::BadObject { node, cause }) => {
+                bad_object += 1;
+                assert_eq!(node, full.key);
+                assert!(cause.contains("does not match its hash"), "{cause}");
+                assert!(events.try_iter().any(|e| matches!(e,
+                    Event::Refused { node: n, cause: c } if n == node && c == cause)));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(light.holdings.stored_blobs.lock().unwrap().is_empty());
+    }
+    eprintln!("S87 changed file: Unreachable={unreachable}, BadObject={bad_object}");
+}
+
+#[test]
+fn ac3_s87_other_blob_errors_emit_no_problem_event() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), Some(quick()));
+    let id = BlobId([93; 32]);
+    let events = light.net.events();
+    assert!(matches!(
+        light.net.need_blob(&id, 10),
+        Err(NetError::NoFullMachine)
+    ));
+    assert!(events.try_iter().next().is_none());
+    pair_into(&full, &light, Role::Light);
+    let events = light.net.events();
+    assert!(matches!(
+        light.net.need_blob(&id, 65 << 20),
+        Err(NetError::TooLarge { .. })
+    ));
+    assert!(events.try_iter().next().is_none());
+    full.net.remove_device(&light.key).unwrap();
+    let events = light.net.events();
+    assert!(matches!(
+        light.net.need_blob(&id, 10),
+        Err(NetError::Refused {
+            code: watane_net::Code::NotAllowed,
+            ..
+        })
+    ));
+    assert!(
+        events
+            .try_iter()
+            .all(|e| !matches!(e, Event::Unreachable { .. } | Event::Refused { .. }))
+    );
+    light
+        .net
+        .set_options(Options {
+            on: false,
+            ..options(None)
+        })
+        .unwrap();
+    let events = light.net.events();
+    assert!(matches!(light.net.need_blob(&id, 10), Err(NetError::Off)));
+    assert!(events.try_iter().next().is_none());
+}
