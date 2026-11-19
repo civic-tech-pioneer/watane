@@ -132,6 +132,7 @@ fn ac2_ctrl_c_in_platform_substitution() {
         "#!/bin/sh\ncase $1 in -s) echo Darwin ;; -m) echo x86_64 ;; esac\n",
     )
     .expect("uname");
+    fs::set_permissions(fx.fakes.join("uname"), fs::Permissions::from_mode(0o755)).expect("chmod");
     let out = fx.run(&[]);
     assert_eq!(out.code, 130, "{out:?}");
     assert!(!out.stderr.contains("unsupported platform"), "{out:?}");

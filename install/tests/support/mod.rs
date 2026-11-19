@@ -279,8 +279,9 @@ impl Fx {
 
     /// Puts the fake `rustup` and `rustc` on the `PATH`, with a sysroot that has the target or not.
     pub fn add_rustup(&self, with_target: bool) {
+        // A copy, not a link: a test that rewrites its rustup must not change the shared one.
         for n in ["rustup", "rustc"] {
-            symlink(shared_fakes().join("rustup").join(n), self.fakes.join(n)).expect("link fake");
+            fs::copy(shared_fakes().join("rustup").join(n), self.fakes.join(n)).expect("copy fake");
         }
         let sysroot = self.root.path().join("sysroot");
         fs::create_dir_all(sysroot.join("lib")).expect("sysroot");

@@ -4,7 +4,7 @@ mod support;
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -1354,6 +1354,7 @@ fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
          exec \"$FAKE_REAL/rm\" \"$@\"\n",
     )
     .expect("fake rm");
+    fs::set_permissions(&rm, fs::Permissions::from_mode(0o755)).expect("chmod");
     fx.state_write("armed", "1");
     let out = fx.run(&[]);
     // TERM in undo now retains its signal status instead of becoming exit 5.
@@ -1547,8 +1548,6 @@ fn ac4_recovery_skips_a_fresh_entry_whose_parent_is_gone() {
 /// Validator R1 (AC4): recovery cannot continue after a real filesystem failure.
 #[test]
 fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
-    use std::os::unix::fs::PermissionsExt;
-
     for failure in [
         "marker",
         "move",
@@ -1858,7 +1857,6 @@ fn serve(fx: &Fx, bytes: Vec<u8>) {
 /// AC1 (3.4 step 9): an archive with a link member is refused before anything is moved.
 #[test]
 fn ac1_an_archive_with_a_link_member_is_refused() {
-    use std::os::unix::fs::PermissionsExt;
     for kind in ["symlink", "hardlink", "dirlink"] {
         let fx = Fx::new();
         let outside = fx.root.path().join("outside");
