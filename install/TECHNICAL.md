@@ -1487,7 +1487,8 @@ exclusive. A relative `--from` path is resolved from the caller's working
 folder before entering the test home. Before each install, a path listing of the home records the
 guest's existing folders (including Desktop and Library); newly created
 paths must be under `.local` or `Applications`, with `.cargo` and `.rustup`
-also allowed only for the CLT part's typed yes.
+also allowed only for the CLT part's typed yes, and `Library/*` paths
+without `watane` in their name skipped (step 3 of `vm_mac.sh` above).
 
 With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
 then INST-S-1 with no terminal, the three `--version` lines and the `otool`

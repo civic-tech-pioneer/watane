@@ -138,7 +138,12 @@ fn ac1_ac2_fresh_home_real_release() {
 #[test]
 fn ac4_vm_lifecycle_and_failure_cleanup_without_a_vm() {
     use std::os::unix::fs::PermissionsExt;
-    for (fail_guest, prepare) in [(false, false), (true, false), (false, true)] {
+    for (fail_guest, prepare, has_clean) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, true, true),
+    ] {
         let temp = tempfile::tempdir().expect("temp");
         let bin = temp.path().join("bin");
         fs::create_dir(&bin).expect("bin");
@@ -146,7 +151,7 @@ fn ac4_vm_lifecycle_and_failure_cleanup_without_a_vm() {
         let fake = r#"#!/bin/sh
 printf '%s %s\n' "${0##*/}" "$*" >> "$CALLS"
 case ${0##*/}:$1 in
-  tart:get) exit 1 ;;
+  tart:get) [ "$HAS_CLEAN" = yes ] || exit 1 ;;
   tart:ip) echo 192.0.2.10 ;;
   ssh:*)
     [ "$SSH_ASKPASS_REQUIRE" = force ] && [ "$("$SSH_ASKPASS")" = admin ] || exit 3
@@ -176,6 +181,7 @@ esac
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .env("CALLS", &log)
             .env("FAIL_GUEST", if fail_guest { "yes" } else { "no" })
+            .env("HAS_CLEAN", if has_clean { "yes" } else { "no" })
             .output()
             .expect("vm driver");
         assert_eq!(out.status.code(), Some(i32::from(fail_guest)), "{out:?}");
@@ -188,7 +194,9 @@ esac
             2
         };
         for verb in ["clone", "run --no-graphics", "ip", "stop", "delete"] {
-            let expected = count + usize::from(prepare && verb == "clone") * 2;
+            // --prepare clones watane-clean only when it is not there yet, then watane-clean-clt.
+            let expected =
+                count + usize::from(prepare && verb == "clone") * (2 - usize::from(has_clean));
             assert_eq!(
                 calls
                     .lines()
@@ -199,8 +207,11 @@ esac
             );
         }
         if prepare {
-            assert!(
-                calls.contains("ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest watane-clean"),
+            assert_eq!(
+                calls.contains(
+                    "clone ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest watane-clean\n"
+                ),
+                !has_clean,
                 "{calls}"
             );
             assert!(calls.contains("softwareupdate --install"), "{calls}");

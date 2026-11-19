@@ -96,3 +96,42 @@ printf '%s' "$FAKE_INSTALL_PID" > "$FAKE_STATE/cleanup_pid"
     assert!(!fx.home.join(".watane-install.lock").exists());
     assert!(!fx.share(&format!("watane/journal.{pid}")).exists());
 }
+
+/// 3.6 step 5: `receipt.old.<pid>` is removed last and only when rule 4 still holds for
+/// `~/.local/share/watane` against the new receipt.
+#[test]
+fn validator_cleanup_keeps_receipt_old_when_share_folder_changes_after_commit() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fx.rel.set_version("0.2.0", &["serde-1.0.1"]);
+    fx.bake_script("0.2.0");
+    let xattr = fx.fakes.join("xattr");
+    fs::write(
+        &xattr,
+        format!(
+            r#"#!/bin/sh
+set -eu
+"$FAKE_REAL/mv" "$HOME/.local/share/watane" "$HOME/saved-watane"
+mkdir -p "$HOME/Documents"
+cp -R "$HOME/saved-watane/." "$HOME/Documents/"
+"{}" -s "$HOME/Documents" "$HOME/.local/share/watane"
+printf '%s' "$FAKE_INSTALL_PID" > "$FAKE_STATE/cleanup_pid"
+"#,
+            which("ln").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&xattr, fs::Permissions::from_mode(0o755)).unwrap();
+    let out = fx.run(&["--no-toolchain"]);
+    let pid = fx.state_read("cleanup_pid");
+    assert!(
+        fx.home
+            .join(format!("Documents/receipt.old.{pid}"))
+            .exists(),
+        "removed receipt.old through a folder changed after the commit: {out:?}"
+    );
+    assert!(
+        out.stderr.contains("skipped ") && out.stderr.contains("~/.local/share/watane resolves to"),
+        "{out:?}"
+    );
+}
