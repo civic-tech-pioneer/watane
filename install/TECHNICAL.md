@@ -1036,11 +1036,6 @@ reads them. The format stays `watane-receipt 1`: no release had shipped
 when these lines were added, and a receipt without them is still read, its
 removals skipped by rule 4.
 
-INST-S-37 tests the old-only `vendor` removal with a prebuilt committed
-swap and step 5 cleanup: the new receipt omits `vendor`, the old one keeps
-it. The current archive contract (4.2) still requires `vendor`; this test
-does not introduce an optional archive entry.
-
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline
 is refused in step 4, exit 2). The receipt names itself
@@ -1245,6 +1240,11 @@ for stage 5 only.
 ## 12. Test plan
 
 ### 12.1 In `cargo test` (stage 1 and 3)
+
+INST-S-37 tests the old-only `vendor` removal with a prebuilt committed
+swap and step 5 cleanup: the new receipt omits `vendor`, the old one keeps
+it. The current archive contract (4.2) still requires `vendor`; this test
+does not introduce an optional archive entry.
 
 Tests run on Linux and macOS; signing is skipped when `codesign` is absent.
 Test support uses one 600-second deadline for marker, state and request waits,

@@ -31,6 +31,7 @@ RUSTUP=""
 UPGRADED=0
 SIGNAL=0
 LOCK_OWNED=0
+CLEANUP_ACTIVE=0
 
 usage() {
   printf '%s\n' \
@@ -342,6 +343,9 @@ undo_swap() {
   (
     # The parent retains the signal code; checks inside the undo must let it finish.
     SIGNAL=0
+    # The cleanup phase belongs to the parent, not this undo subshell.
+    # shellcheck disable=SC2030
+    CLEANUP_ACTIVE=0
     set +e
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
@@ -491,21 +495,45 @@ check_signal() {
   # exit trap and end it before it removes the temporary folder.
   if [ "$SIGNAL" != 0 ]; then
     trap '' HUP INT TERM PIPE
+    # Undo and resource subshells deliberately clear their local cleanup phase.
+    # shellcheck disable=SC2031
+    if [ "$CLEANUP_ACTIVE" = 1 ]; then
+      CLEANUP_ACTIVE=0
+      release_files || { check_signal "$?"; }
+    fi
     exit "$SIGNAL"
   fi
   return 0
 }
 
+# Release run-owned resources even when cleanup's rollback selects a signal exit.
+# The parent keeps its signal; cleanup failures are checked without re-entering this helper.
+release_files() {
+  (
+    # Keep the parent's selected exit signal unchanged.
+    # shellcheck disable=SC2030
+    SIGNAL=0
+    CLEANUP_ACTIVE=0
+    if [ "$LOCK_OWNED" = 1 ]; then
+      rm -f "$LOCK/pid" || { check_signal "$?"; }
+      rmdir "$LOCK" || { check_signal "$?"; }
+    fi
+    if [ -n "$TMP" ]; then rm -rf "$TMP" || { check_signal "$?"; }; fi
+    exit 0
+  )
+}
+
 cleanup() {
   cl_rc=$?
   trap - EXIT
+  CLEANUP_ACTIVE=1
   ( : ) || true
   rollback || { check_signal "$?"; }
-  if [ "$LOCK_OWNED" = 1 ]; then
-    rm -f "$LOCK/pid" || { check_signal "$?"; }
-    rmdir "$LOCK" || { check_signal "$?"; }
-  fi
-  if [ -n "$TMP" ]; then rm -rf "$TMP" || { check_signal "$?"; }; fi
+  # Resource cleanup is attempted once; it must never revisit a released lock.
+  CLEANUP_ACTIVE=0
+  release_files || { check_signal "$?"; }
+  # release_files checks cleanup commands with a separate, local signal flag.
+  # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
   exit "$cl_rc"
 }
@@ -621,7 +649,11 @@ check_foreign() {
   while IFS= read -r cf_l; do
     case $cf_l in 'path '*) ;; *) continue ;; esac
     cf_p=${cf_l#path }
-    if allowed "$cf_p"; then cf_known=$(add_item "$cf_known" "$cf_p"); fi
+    if receipt_allowed "$cf_p" 2>/dev/null; then
+      cf_known=$(add_item "$cf_known" "$cf_p")
+    else
+      check_signal "$?"
+    fi
   done <<EOF
 $R_LINES
 EOF

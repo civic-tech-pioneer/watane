@@ -294,3 +294,66 @@ fn ac2_unwritable_lock_pid_exits_5_and_removes_the_lock() {
     assert!(!fx.home.join(".watane-install.lock").exists());
     assert!(fx.rel.requests().is_empty());
 }
+
+/// 3.6.2: the lock goes even when a signal's undo fails (the journal stays for the next run).
+#[test]
+fn ac2_lock_is_removed_after_a_failed_undo_under_a_signal() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    fx.state_write("mv_fault", "sleep\n*receipt.new.*\n");
+    fx.state_write("rm_fault", "fail\n*/Applications/watane.app\n");
+    let child = spawn(&mut fx.cmd(&["--release", "0.2.0", "--no-toolchain"]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), "TERM");
+    let out = finish(child);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(out.stderr.contains("fake rm: failing on"), "{out:?}");
+    assert!(!fx.home.join(".watane-install.lock").exists());
+    assert!(fx.tmp_tree().is_empty());
+    assert!(fx.home_tree().iter().any(|p| p.contains("journal.")));
+}
+
+#[test]
+fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
+    for recorded in [true, false] {
+        let fx = Fx::new();
+        assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+        if recorded {
+            fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
+            write_file(&fx.home.join("Documents/vendor/marker"), "mine");
+            symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();
+        } else {
+            let receipt = fx.read(&fx.receipt());
+            fs::write(
+                fx.receipt(),
+                receipt
+                    .lines()
+                    .filter(|l| !l.starts_with("resolved "))
+                    .map(|l| format!("{l}\n"))
+                    .collect::<String>(),
+            )
+            .unwrap();
+        }
+        fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+        let before = snapshot(&fx.home);
+        let requests = fx.rel.requests();
+        let out = fx.run(&["--release", "0.2.0", "--no-toolchain"]);
+        assert_eq!(out.code, 8, "{out:?}");
+        assert_eq!(
+            out.first_err(),
+            "watane install: found files that watane did not install:"
+        );
+        assert!(
+            out.stderr
+                .lines()
+                .any(|l| l == "  ~/.local/share/watane-dev/vendor"),
+            "{out:?}"
+        );
+        assert_eq!(snapshot(&fx.home), before);
+        assert_eq!(fx.rel.requests(), requests);
+        if recorded {
+            assert_eq!(fx.read(&fx.home.join("Documents/vendor/marker")), "mine");
+        }
+    }
+}

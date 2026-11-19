@@ -626,3 +626,40 @@ correcting its journal evidence, the focused test and final default run
 passed. Existing ignored tests and --include-ignored remain for the
 outside-sandbox validator, per the task instructions. Clean-Mac and VM
 work remain out of scope for this slice.
+
+
+### S50c validator round 1: failed signal undo and foreign folder identity
+
+Built on validator 8198038 and foreman 2d288a2. The imported regression
+`ac2_lock_is_removed_after_a_failed_undo_under_a_signal` first failed with
+the lock left behind after exit 143. It now also checks that the temporary
+folder is gone and the journal remains. Cleanup marks its phase, and a
+signal exit selected by check_signal in that phase releases the run-owned
+lock and temporary folder before exiting. Resource cleanup and undo use
+local signal/phase state so the parent keeps its selected signal and only
+the parent releases the lock after undo. Status-dropping fallbacks still
+check_signal first; status_audit.rs and check_signals.rs are unchanged.
+
+`ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download`
+first reproduced a successful upgrade through the replaced vendor folder.
+The foreign-file check now applies receipt_allowed, including rule 4,
+without printing removal warnings. Both a changed folder resolution and
+missing resolved lines make existing entries foreign: exit 8, vendor listed,
+no download, marker and home snapshot unchanged. The separate prebuilt
+committed-swap cleanup test remains in place. The test-plan paragraph moved
+from TECHNICAL 8.1 to 12.1 as requested.
+
+Reviewed hand-written receipts in script.rs, adv_s50b.rs and s50c.rs.
+Successful install/upgrade/reinstall fixtures retain the real install's
+resolved lines. Hand-built receipt.new files are pending journal evidence,
+not the installed receipt; the other literal receipts test status or
+outside-home uninstall refusal. No existing receipt fixture needed repair,
+so no support helper or existing test was changed. The two named tests above
+are the tests added in this round. No dependencies were added.
+
+Round-one final validation on the Mac: default cargo test passed (120 passed,
+17 ignored), including the unchanged status_audit and check_signals suites.
+The final failed-undo signal regression also passed in isolation after the
+cleanup refactor. Clippy --all-targets with -D warnings, nightly fmt --check,
+shellcheck -s sh install.sh package.sh and git diff --check passed. Existing
+ignored tests remain for the outside-sandbox validator as instructed.
