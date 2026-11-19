@@ -476,13 +476,28 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
+- [ ] **S55 Two machines.** in flight (local) Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
   this Mac (the human, 2026-11-18, said more than once before): its own disk and its own address
   on the VM network, so no shared filesystem. Prefer the macOS VM S50b sets up as its clean Mac, so
   one VM serves both. It proves two homes and two network stacks, not NAT across the internet; say
   so in the delivery.
+  Outcomes (J3 between two machines, checked by a user-sim on the real programs):
+  (1) Alice, on this Mac, makes the reading list and publishes it; Bob, in a fresh Tart VM cloned
+  from `watane-clean` with watane installed by the one-liner (`--from` a locally built archive, or
+  v0.1.0 when main has nothing new for it), follows her link, sees Alice as the verified
+  publisher, installs the mod and uses it in his app.
+  (2) Nothing reaches Bob through a shared folder: the VM has no mount of the host, and every byte
+  comes over the VM network (the script checks there is no share).
+  (3) Alice changes a file on the web host; Bob's watane refuses it and names the cause.
+  (4) One script, `install/tests/vm_two_machines.sh` (beside `vm_mac.sh`, reusing its helpers),
+  runs it end to end and prints `TWO-MACHINES PASS`; it deletes its VM on every exit.
+  May fake: the web host, as an HTTP server on this Mac that the VM reaches by its host address
+  (no push to the human's real GitHub without asking). Leaves out: NAT across the internet, Linux
+  guests, and a second human. Touches: install/tests/vm_two_machines.sh, install/tests/ helpers it
+  shares with vm_mac.sh, install/TECHNICAL 12; any fix it finds in dist/net/app is its own task.
+  Local (needs the Mac's VM).
 - [x] **S86 dev says what is wrong (leftover sweep 3).** Delivered 2026-11-18 (merged as 7c29140; routine `trig_01XMgpCFKi3MdbVHsqbfqzTU` finished, branches removed). A maker's agent reads a real cause and a
   `next` it can run at eleven places in dev where it now does not. Re-checked against main
   2026-11-18 (`### dev` in Leftovers; the doctor item is fixed). Outcomes: (1) a WIT syntax error
