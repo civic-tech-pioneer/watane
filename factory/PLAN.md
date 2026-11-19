@@ -464,18 +464,17 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/it/j5.rs. Local (the token). After S69
   (dev). Also fixes dev's `ac10_endless...` deadline test (Friction, S65 and S69).
   Delivered (merged as 8de79ae): an agent runs `watane-dev publish --push --owner <org>` and dev creates `<org>/<slug>` and `<org>/watane-channel`, and forks a derived mod into the org (`organization=<org>`, parent set, default branch `watane`); without `--owner` nothing changes. Real J5 passed twice against minmax-fund, which held only OpenMLOps afterwards. Decisions: GitHub forks into the org that owns the parent under a new name, so the real J5 forks inside minmax-fund, with Carol's slug a reserved `watane-j-<r>` (harness `reserve()` checks a 404 and records the name for deletion); `--owner` checks GitHub's account rule and requires `--push`; `organization` is sent only when the owner is not the login (case-insensitive), and fake-gh refuses `organization=<login>`; ac10 builds the endless source once untimed, then times the cached run against 7 s. Verified on the Mac: dev green with ignored except envelope ac5 (red on main since S73, see Friction), app J5 green. For a later slice (user-sim): `--owner` does not apply to a channel whose origin is already stored, silently; the `--owner` usage errors point to `watane-dev --help` instead of `publish --help`.
-- [~] **S87 A light machine reports a full machine's changed bytes again.** In flight (local),
-  foreman `6eea4505` (sessionId `6eea4505-793d-45ea-9fff-e9d23848991e`), worktree `.claude/worktrees/s87`. `app/tests/it/machines.rs`
-  `machines::ac6_s33_corrupt_full_machine_and_no_path_name_causes` fails on main 7a3a335, in the
-  full check and alone (`cargo test -p watane-app --features watane-app/driver --test it --
-  machines::ac6_s33`): after the full machine's package bytes change, the light machine's
-  `problems` never gets a `refused <short>:` line. No app/node/net/dist source changed since
-  11-17; the suspect is 92363a6 (dependencies at opt-level 1), which changes event order: first
-  rerun with `[profile.dev.package."*"] opt-level = 1` removed from the root Cargo.toml; if it
-  passes, fix the race in the refusal path (not opt-level); if not, bisect 6fb6731^..7a3a335 with
-  the driver feature. Outcome: the test passes five times in a row on a loaded Mac, and the
-  refusal reaches Machines (node TECHNICAL's problems list) whatever the order of events.
-  Touches: the refusal path (app, node or dist, as found) and that test. Local (app).
+- [x] **S87 A light machine reports a full machine's changed bytes again.** Delivered 2026-11-19
+  (main `b620ef7`). Sol runs: S87-1 2, S87-2 1, S87-fix1 1, each validated in round 1. user-sim
+  ACCEPTED; adversary HELD (Node boundary, net/src/). Cause: iroh-blobs 0.105 checks a referenced
+  file against its outboard before sending and resets the stream, so the light machine gets either
+  a cut stream (BadObject, `refused ... does not match its hash`) or the reset (Unreachable "not
+  served"), a race; `need_blob` returned that Unreachable without emitting it, and 92363a6's timing
+  tipped the race. Decisions: net TECHNICAL 5.9, `need_blob` emits Event::Unreachable when a full
+  machine connected but did not give the package, at most once per machine until a fetch from it
+  succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
+  machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
+  cause; opt-level 1 stays.
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
@@ -1167,6 +1166,15 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   writes a new entry through a folder re-linked inside the home (specs silent); actions pinned at
   v4 run on forced Node 24 (warning).
 
+### net / node
+
+- From S87's adversary (older than S87): a local I/O or holder error during a download reads
+  "unreachable <full machine>: package ... not fetched: <local io error, temp path>", blaming the
+  remote machine; net 5.9 is silent on it.
+- From S87's user-sim: a failed install tells Alice "channel ... is not followed; follow the
+  publisher's link" while the real cause, her full machine's bad copy, shows only in Machines (node
+  drops the blob error before dist's no-base fallback; app TECHNICAL notes it).
+
 ### Unsettled
 
 - [S30] a fake-app publish took about 30 s, close to `--wait 30`. The code says that time is the
@@ -1565,6 +1573,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-19, S87) iroh-blobs copies blobs up to 16 KiB into its store instead of referencing the file: a test of a changed referenced file needs a bigger blob. No full run had covered the driver window tests since the test-speed merges.
 - (2026-11-19, S50c) `workflow_dispatch` cannot dry-run a workflow not yet on main (ran as a push to a throwaway branch); Homebrew needs `brew trust` per formula for third-party taps; the macos-14 runner was retired under the slice; main's tests/it move mid-slice cost a layout commit.
 - (2026-11-19, S50b-fix2) a slice id that equals an old task id collides with its brief (`factory/tasks/s50b-fix2.md`); the foreman used `s50b-fix2-1`. Pick slice ids that no task brief uses.
 - (2026-11-19, S50b-fix) this Mac's endpoint security (ManageEngine, Defender) slows each exec 50 to 400 times under load: a full install test run takes 20 to 40 min, and timing races show only here.
@@ -1983,3 +1992,5 @@ The human may veto each one.
   install's tests no longer lean on Linux-only accidents.
 - S50c: on a clean Mac (a Tart VM), the README's one-liner installs watane from a CI-built archive;
   the app opens and `watane-dev new` and `test` work. The release workflow and Q16 are in place.
+- S87: when Alice's full machine holds a changed package file, her laptop's Machines view always
+  names that machine and why, whatever order the events come in. wasmtime 48.0.9 (8 advisories).
