@@ -476,7 +476,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S55 Two machines.** in flight (local) Alice publishes on one machine, Bob installs on another and uses the
+- [ ] **S55 Two machines.** in flight (local; foreman `4a61b2b4`, sessionId `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`) Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
   this Mac (the human, 2026-11-18, said more than once before): its own disk and its own address
