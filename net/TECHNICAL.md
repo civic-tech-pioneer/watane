@@ -665,7 +665,9 @@ a full machine.
   have it, gives way to the next candidate; none connected is
   `NoFullMachine`; some connected and none had it is `Unreachable` naming the
   last of them and why, and the same `Event::Unreachable { node, cause }` (the
-  error's node and cause) is emitted once per such call, so Machines shows it.
+  error's node and cause) is emitted, so Machines shows it: at most once for a
+  machine until a package fetch from it succeeds, like the keeper's (5.10), so
+  failed fetches cannot push a refusal out of Machines' 20 problems.
   A full machine whose own file no longer matches the hash never sends it:
   iroh-blobs checks the file before sending and resets the stream, so the
   light machine sees "not served" (this event), or, when the reset reaches it
