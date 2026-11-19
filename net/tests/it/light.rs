@@ -622,3 +622,60 @@ fn ac3_s87_other_blob_errors_emit_no_problem_event() {
     assert!(matches!(light.net.need_blob(&id, 10), Err(NetError::Off)));
     assert!(events.try_iter().next().is_none());
 }
+
+/// S87: different missing packages share one machine problem.
+#[test]
+fn ac1_s87_repeated_missing_packages_emit_only_the_first_event() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&full, &light, Role::Light);
+    let events = light.net.events();
+    let mut failures = Vec::new();
+    for n in 94..97 {
+        let id = BlobId([n; 32]);
+        let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&id, 10) else {
+            panic!("expected Unreachable");
+        };
+        assert_eq!(node, full.key);
+        assert!(cause.starts_with(&format!("package {} was not fetched: ", hex(&id.0[..4]))));
+        failures.push((node, cause));
+    }
+    let reported: Vec<_> = events
+        .try_iter()
+        .filter_map(|event| match event {
+            Event::Unreachable { node, cause } => Some((node, cause)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reported, failures[..1]);
+}
+
+/// S87: a successful fetch lets the same machine report a new failure.
+#[test]
+fn ac2_s87_success_resets_the_machine_package_problem() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&full, &light, Role::Light);
+    let events = light.net.events();
+    let missing = BlobId([97; 32]);
+    let fail = || {
+        let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&missing, 10) else {
+            panic!("expected Unreachable");
+        };
+        assert_eq!(node, full.key);
+        cause
+    };
+    let first = fail();
+    assert_eq!(unreachable_causes(&events), vec![first.clone()]);
+    assert_eq!(fail(), first);
+    assert!(unreachable_causes(&events).is_empty());
+    let bytes = b"a successful package";
+    let id = full.holdings.add_blob(bytes);
+    light.net.need_blob(&id, bytes.len() as u64).unwrap();
+    assert_eq!(light.holdings.taken_blob(&id), Some(bytes.to_vec()));
+    assert!(unreachable_causes(&events).is_empty());
+    assert_eq!(fail(), first);
+    assert_eq!(unreachable_causes(&events), vec![first.clone()]);
+    assert_eq!(fail(), first);
+    assert!(unreachable_causes(&events).is_empty());
+}

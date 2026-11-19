@@ -179,6 +179,8 @@ pub(crate) struct Core {
     pub(crate) links: Mutex<HashMap<NodeKey, sync::Link>>,
     pub(crate) syncs: Mutex<HashMap<NodeKey, sync::Slot>>,
     pub(crate) dials: Mutex<HashMap<NodeKey, sync::Dial>>,
+    /// Machines with a reported package fetch failure, until a fetch succeeds (5.9).
+    pub(crate) blob_unreachable: Mutex<HashSet<NodeKey>>,
     /// Machines that sent a bad object, for the life of this `Net` (5.6).
     pub(crate) dropped: Mutex<HashSet<NodeKey>>,
     /// Where gossip looks for a node.
@@ -360,6 +362,7 @@ impl Net {
                 links: Mutex::new(HashMap::new()),
                 syncs: Mutex::new(HashMap::new()),
                 dials: Mutex::new(HashMap::new()),
+                blob_unreachable: Mutex::new(HashSet::new()),
                 dropped: Mutex::new(HashSet::new()),
                 lookup: Mutex::new(None),
                 gossip: Mutex::new(None),

@@ -175,7 +175,10 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
         let mut refused = None;
         for node in machines {
             match blobs::fetch_via(&core, &node, id, size).await {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    lock(&core.blob_unreachable).remove(&node);
+                    return Ok(());
+                }
                 Err(blobs::Failed::NoConnection(_)) => {}
                 Err(blobs::Failed::NotFetched(e)) => {
                     if let NetError::BadObject { cause, .. } = &e {
@@ -204,10 +207,12 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
                     blobs::hex8(&id),
                     e.cause_text()
                 );
-                core.emit(crate::Event::Unreachable {
-                    node,
-                    cause: cause.clone(),
-                });
+                if lock(&core.blob_unreachable).insert(node) {
+                    core.emit(crate::Event::Unreachable {
+                        node,
+                        cause: cause.clone(),
+                    });
+                }
                 Err(NetError::Unreachable { node, cause })
             }
             None => Err(NetError::NoFullMachine),
