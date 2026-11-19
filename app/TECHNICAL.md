@@ -1786,6 +1786,7 @@ real approval gate. No production security check changes.
 | `tests/it/api.rs` (C) | each row of section 8.1 | the status codes and codes there; the file tree of `<home>/dist/site/`: new files after an approve, byte-equal before and after a deny |
 | `tests/it/j2.rs` (B) | J2: S2, S2b, S9, S10, S11, the data after a restart | the files of `<home>/mods/`; the fixture pages' DOM; MCP over HTTP from the test |
 | `tests/it/j3.rs` (C) | J3: S12 to S15, two apps on two homes; `ac2_j3_github` runs `publish --push` against local bare GitHub stand-ins (dev 15.4), serves a fresh clone of the pushed site, and retries publish for the link before Bob installs | a `tower-http` static server over Alice's site folder or the fresh clone; the bare remotes; the consent DOM text; `<home>/mods/` |
+| `tests/it/two_machines.rs` (S55) | `ac1_j3_two_machines`, ignored as `vm: J3 between two machines`: Alice publishes reading-list, Bob installs through a driver command, sees the verified publisher and uses the page; a fresh Bob refuses a changed package byte with its hash cause and URL | Alice's site package; consent and mod DOM; `mods_list`; all three apps quit successfully; Bob's files are never read locally |
 | `tests/it/j4.rs` (D updates) | after the index install: automatic update, added grant, refusal, withdrawal/downgrade, fork | two apps plus a restored fork home, prebuilt component with version names edited in a temp copy; driver windows, consent DOM, preserved books |
 | `tests/it/j4.rs` (D index) | J4 from the start, added to the part above: Alice's and Ivy's homes made with `watane_dist` in the test; Carol is the app. Carol adds Ivy's link as an index, searches `reading`, sees the result verified and listed by Ivy, and installs `reading-list` after consent; the update, withdrawal and fork steps above then run on that install, and after the fork the search result shows "compromised" | the test's own record of what Alice and Ivy published; `<home>/mods/`; the find, launcher and consent DOM text |
 | `tests/it/build_on.rs` (E) | S23 to S27: pick view and bind, no fit, made from and derived list, publish listing a provider, `/api/fetch` | homes of Carol, Dave and Frank made with `watane_dist`; prebuilt fixture components `ratings` (Carol's and Frank's) and `stats`; consent DOM; `<home>/mods/`; `follows.json` |
@@ -1802,6 +1803,20 @@ real approval gate. No production security check changes.
 | `tests/it/look.rs` dark (K) | S50: the main window under a dark appearance: `getComputedStyle(document.body).backgroundColor` is `rgb(17, 17, 19)` and a tile's is `rgb(25, 25, 28)`; light gives `rgb(246, 246, 244)` and `rgb(255, 255, 255)` | the driver op `theme` (section 10), no system change; if the platform gives no dark appearance the test fails, not skips, and `NOTES.md` records it |
 | `tests/it/manager.rs` (K, W37) | S51: `watane-dev install` of `desk` (`main = true`) into a running app with no main, approved in the consent view (which shows the start-window line), writes `<home>/app/main` = `desk\n`, and a restart opens `mod-desk` only; an update of `desk` after the start switch is turned off leaves the file absent; S39 (W37): the app submenu's items and separators in the order of 5.4, and the `Edit` and `Window` submenus | `<home>/app/main` with `std::fs`; the consent DOM text; the driver's `windows`; the driver op `menu_items` |
 | Changed window tests (K) | selectors only, same facts: `[data-local=X] details` → `[data-local=X]` (the panel section) in `manager.rs`, `build_on.rs`, `manage.rs`, and `.open = true` → a click on `[data-tile=X]`; `#dependency-dialog`/`-cancel`/`-continue` and `#remove-dialog` → `#confirm-panel`, `#confirm-cancel`, `#confirm-continue` in `j2.rs` and `manager.rs` (`.open` → `!hidden`; j2's removal now checks the radios and that `#confirm-cancel` has the focus, where it checked two buttons and `#keep-data` focused: Keep is still the default, now as the checked radio); `'Disabled'` in `j2.rs` → the `Off` badge; S40's `Uses: reading-list` → the `uses` row holding the chip `[data-target=reading-list]` named `Reading list`; `build_on.rs`'s `Made from …` → the `Made from` value of `Technical details`; `tests/support`'s `#refresh-find` → `#refresh-channels` | as before |
+
+For `two_machines`, set all three variables: `WATANE_VM_BOB` is a trusted
+shell command whose stdin/stdout carry Bob's driver JSON lines;
+`WATANE_VM_ALICE_HOME` is an existing empty local folder; and
+`WATANE_VM_SITE_BASE` is a URL ending in `/` serving that home's `dist/site`
+to Bob. `App::over(command, home_name)` runs
+`sh -c '<command> "$1"' sh <home_name>`, shares the local driver's reply
+routing and ready/quit handling, and has an empty `home`. Bob's home names
+are `.watane` and `bob-tamper`. If any variable is unset, the same test uses
+temporary local homes, `Site::serve`, and a hidden local driver command.
+Run either mode with
+`cargo test --features driver --test it -- --include-ignored two_machines::`.
+The test writes only to its temporary folders and Alice's supplied home,
+and prints no credentials or identity secrets.
 
 Loopback fixture publishers are explicitly chosen as indexes before reading
 their listings through Ivy. This respects dist DD-26's local-address guard

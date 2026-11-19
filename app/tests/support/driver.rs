@@ -146,8 +146,8 @@ impl App {
     }
 
     fn spawn(home: &Path, env: &[(&str, &str)], screen: &str, port: u16) -> App {
-        let stderr = tempfile::tempfile().unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_watane-app"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane-app"));
+        command
             .args([
                 "--home",
                 home.to_str().unwrap(),
@@ -157,7 +157,18 @@ impl App {
             // The app never needs the real-GitHub token of the S53 journeys.
             .env_remove("CLAUDE_GH_TOKEN")
             .envs(env.iter().copied())
-            .env("WATANE_DRIVER_SCREEN", screen)
+            .env("WATANE_DRIVER_SCREEN", screen);
+        Self::launch(command, home, port)
+    }
+    pub fn over(command: &str, home_name: &str) -> App {
+        let mut shell = Command::new("sh");
+        shell.args(["-c", &format!("{command} \"$1\""), "sh", home_name]);
+        shell.env_remove("CLAUDE_GH_TOKEN");
+        Self::launch(shell, Path::new(""), 0)
+    }
+    fn launch(mut command: Command, home: &Path, port: u16) -> App {
+        let stderr = tempfile::tempfile().unwrap();
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr.try_clone().unwrap())
@@ -299,5 +310,37 @@ impl Drop for App {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{App, TIMEOUT};
+    use serde_json::json;
+    use std::path::Path;
+
+    #[test]
+    fn ac1_over_routes_replies_and_quits_without_a_local_home() {
+        // A protocol peer, not a window: reply out of order to prove id routing.
+        let command = r#"
+            [ "$#" -eq 1 ] && [ "$1" = 'bob name ; $HOME' ] || exit 9
+            printf '%s\n' '{"event":"ready","port":1234}'
+            read -r first
+            read -r second
+            printf '%s\n' '{"id":2,"ok":"second"}' '{"id":1,"ok":"first"}'
+            read -r quit
+            case "$quit" in *'"op":"quit"'*) exit 0;; *) exit 8;; esac
+        "#;
+        let temp = tempfile::tempdir().unwrap();
+        let peer = temp.path().join("peer.sh");
+        std::fs::write(&peer, command).unwrap();
+        let app = App::over(&format!("sh '{}'", peer.display()), "bob name ; $HOME");
+        assert_eq!(app.home, Path::new(""));
+        assert_eq!(app.port, 1234);
+        let first = app.ask(json!({"request":"first"}));
+        let second = app.ask(json!({"request":"second"}));
+        assert_eq!(first.wait(TIMEOUT), Some(json!("first")));
+        assert_eq!(second.wait(TIMEOUT), Some(json!("second")));
+        assert!(app.quit().success());
     }
 }

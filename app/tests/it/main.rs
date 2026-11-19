@@ -25,3 +25,4 @@ mod manager;
 mod static_config;
 mod static_style;
 mod support_selftest;
+mod two_machines;
