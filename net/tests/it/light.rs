@@ -537,7 +537,11 @@ fn ac2_s87_changed_referenced_file_reports_failure_five_times() {
         let full = node(holding(&[], true), None);
         let warm = node(MemHoldings::empty(), None);
         let light = node(MemHoldings::empty(), None);
-        let bytes = vec![7; 3000];
+        // Above FsStore's 16 KiB inline threshold, so TryReference keeps
+        // the holder's file; varied bytes span several bao chunk groups.
+        let bytes: Vec<u8> = (0..100_000)
+            .map(|i| ((i * 31 + i / 251) % 256) as u8)
+            .collect();
         let id = full.holdings.add_blob(&bytes);
         pair_into(&full, &warm, Role::Light);
         pair_into(&full, &light, Role::Light);
