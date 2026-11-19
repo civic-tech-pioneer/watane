@@ -464,6 +464,18 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   dev/src/bin/fake-gh.rs, dev's template and TECHNICAL, app/tests/it/j5.rs. Local (the token). After S69
   (dev). Also fixes dev's `ac10_endless...` deadline test (Friction, S65 and S69).
   Delivered (merged as 8de79ae): an agent runs `watane-dev publish --push --owner <org>` and dev creates `<org>/<slug>` and `<org>/watane-channel`, and forks a derived mod into the org (`organization=<org>`, parent set, default branch `watane`); without `--owner` nothing changes. Real J5 passed twice against minmax-fund, which held only OpenMLOps afterwards. Decisions: GitHub forks into the org that owns the parent under a new name, so the real J5 forks inside minmax-fund, with Carol's slug a reserved `watane-j-<r>` (harness `reserve()` checks a 404 and records the name for deletion); `--owner` checks GitHub's account rule and requires `--push`; `organization` is sent only when the owner is not the login (case-insensitive), and fake-gh refuses `organization=<login>`; ac10 builds the endless source once untimed, then times the cached run against 7 s. Verified on the Mac: dev green with ignored except envelope ac5 (red on main since S73, see Friction), app J5 green. For a later slice (user-sim): `--owner` does not apply to a channel whose origin is already stored, silently; the `--owner` usage errors point to `watane-dev --help` instead of `publish --help`.
+- [~] **S87 A light machine reports a full machine's changed bytes again.** In flight (local),
+  worktree `.claude/worktrees/s87`. `app/tests/it/machines.rs`
+  `machines::ac6_s33_corrupt_full_machine_and_no_path_name_causes` fails on main 7a3a335, in the
+  full check and alone (`cargo test -p watane-app --features watane-app/driver --test it --
+  machines::ac6_s33`): after the full machine's package bytes change, the light machine's
+  `problems` never gets a `refused <short>:` line. No app/node/net/dist source changed since
+  11-17; the suspect is 92363a6 (dependencies at opt-level 1), which changes event order: first
+  rerun with `[profile.dev.package."*"] opt-level = 1` removed from the root Cargo.toml; if it
+  passes, fix the race in the refusal path (not opt-level); if not, bisect 6fb6731^..7a3a335 with
+  the driver feature. Outcome: the test passes five times in a row on a loaded Mac, and the
+  refusal reaches Machines (node TECHNICAL's problems list) whatever the order of events.
+  Touches: the refusal path (app, node or dist, as found) and that test. Local (app).
 - [ ] **S55 Two machines.** Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
