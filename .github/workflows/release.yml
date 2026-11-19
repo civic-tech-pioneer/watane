@@ -48,7 +48,7 @@ jobs:
       - name: Build programs
         run: MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p watane-host -p watane-dev -p watane-node
       - name: Install pinned Tauri CLI
-        run: cargo install tauri-cli --version '=2.12.5' --locked
+        run: cargo install tauri-cli --version '=2.12.4' --locked
       - name: Bundle app
         working-directory: app
         env:

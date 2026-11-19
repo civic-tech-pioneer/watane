@@ -55,7 +55,7 @@ const PACKAGE: &[&str] = &[
     "rustc --version",
     "cargo --version",
     "MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p watane-host -p watane-dev -p watane-node",
-    "cargo install tauri-cli --version '=2.12.5' --locked",
+    "cargo install tauri-cli --version '=2.12.4' --locked",
     "working-directory: app",
     "MACOSX_DEPLOYMENT_TARGET: '14.0'",
     "--config '{\"bundle\":{\"active\":true,\"targets\":[\"app\"],\"macOS\":{\"minimumSystemVersion\":\"14.0\"}}}'",

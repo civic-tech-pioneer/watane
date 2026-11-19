@@ -964,7 +964,7 @@ the README's install commands and link to `FUNCTIONAL.md`.
 that file; it asks the bundler for the app with a config override:
 
 ```sh
-cargo install tauri-cli --version '=2.12.5' --locked   # an exact version, not cached
+cargo install tauri-cli --version '=2.12.4' --locked   # an exact version, not cached
 cd app && cargo tauri build --bundles app \
   --config '{"bundle":{"active":true,"targets":["app"],"macOS":{"minimumSystemVersion":"14.0"}}}' \
   -- --locked
@@ -973,13 +973,14 @@ cd app && cargo tauri build --bundles app \
 `tauri-cli` passes what follows `--` to `cargo build`, so the app is built
 with the lock like the three programs of step 4; without it cargo would
 resolve the dependencies of `app` anew and the release could carry crates
-that nobody reviewed. S50b checks it as INST-S-29 checks the rest of the
+that nobody reviewed. INST-S-29 checks it like the rest of the
 file: the command of `release.yml` that holds `cargo tauri build`, its
 `\`-continued lines joined, must hold a word `--` followed by `--locked`,
 and the command of step 4 must hold `--locked`.
 
-The selected `tauri-cli` version is **2.12.5**, matching the 2.12 series of
-`tauri` **2.12.5** in `Cargo.lock` (upstream tag `tauri-cli-v2.12.5`).
+The selected `tauri-cli` version is **2.12.4**: the CLI released with
+`tauri` **2.12.5** of `Cargo.lock` (the same day, on the same `tauri-utils`
+2.10.2). The two crates number their versions apart; bump them together.
 The build job sets `RUSTUP_TOOLCHAIN=stable` to use the runner's toolchain
 without installing the checkout's pinned toolchain or its Wasm target.
 

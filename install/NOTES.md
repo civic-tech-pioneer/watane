@@ -703,3 +703,11 @@ nightly fmt --check, shellcheck -s sh install.sh package.sh and git diff
 temporary manifests and a fake git: manual/matching tags passed; a version
 mismatch and off-main tag failed before any build. The publisher fixture
 passed for stable and prerelease notes/arguments. No real release was created.
+
+Validator (S50c-2, round 1): the Tauri CLI pin moved from 2.12.5 to 2.12.4.
+`tauri-cli` and `tauri` number their versions apart; crates.io shows
+`tauri` 2.12.5 and `tauri-cli` 2.12.4 published two minutes apart on
+2026-10-21, both on `tauri-utils` ~2.10.2 (the lock's 2.10.2), while
+`tauri-cli` 2.12.5 (2026-11-16) needs `tauri-utils` ~2.10.3. The three
+action SHAs were re-checked with `gh api` against the `v4` tags.
+actionlint 1.7.12 reports nothing on `release.yml`.
