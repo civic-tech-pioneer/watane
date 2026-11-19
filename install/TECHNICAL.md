@@ -34,6 +34,7 @@ install/
     support/pty.rs    runs a command on a real pseudo-terminal and types an answer; and runs one with no controlling terminal (12.1)
     clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac, inside the VM
     vm_mac.sh         drives the Tart VM of 12.3 from the host: clone, run, ssh clean_mac.sh, delete
+    clean_mac.rs      offline preflight, syntax/lint and fake VM lifecycle; ignored release smoke and PTY fixture
     fakes/            the fake tools that script.rs puts first on PATH (12.1)
 .github/workflows/release.yml
 ```
@@ -970,6 +971,11 @@ cd app && cargo tauri build --bundles app \
   -- --locked
 ```
 
+For S50c the exact CLI version is `2.12.5`, read from the `tauri` package
+in `Cargo.lock`: `cargo install tauri-cli --version '=2.12.5' --locked`.
+The CLI may rewrite the two Tauri dependencies to equivalent tables with
+`features = []`; restore that incidental manifest formatting after the build.
+
 `tauri-cli` passes what follows `--` to `cargo build`, so the app is built
 with the lock like the three programs of step 4; without it cargo would
 resolve the dependencies of `app` anew and the release could carry crates
@@ -1421,6 +1427,27 @@ first failure. The VM is the guest's whole world: the host's folders are
 not shared into it (no `--dir`), so no checkout, `target` or `~/.cargo` of
 the host can be seen from it.
 
+The IP command is `tart ip <name> --wait 600`; its wait and the SSH
+readiness attempts share one 600-second deadline. `SSH_ASKPASS_REQUIRE=force`
+and an executable temporary `SSH_ASKPASS` supply `admin`, even when the
+host has a terminal. SSH/scp disable public-key authentication and use
+no persistent known-hosts file for these disposable guests. The run trap
+stops and deletes only `watane-run-<pid>` and removes the temporary askpass
+file on success, failure or HUP/INT/TERM. Preparation leaves the two named
+templates, then runs both test parts; the CLT template is cloned from a
+stopped preparation VM, so neither template is booted by a test.
+Only CLT image preparation uses passwordless `sudo` inside the disposable
+guest for Apple's `softwareupdate`; neither the installer nor the guest
+test uses root. Without Tart the host script exits 2 before creating any
+file, with `vm_mac.sh: tart is not installed (see install/TECHNICAL.md 12.3)`.
+
+CLI flags and the `admin` credentials were checked with `gh api` against
+`openai/tart` at `a8d03d4a1ae34705e153a376437cee3b4f6c4f63`:
+`docs/quick-start.md` and `Sources/tart/Commands/{Clone,Run,IP,Stop,Delete}.swift`.
+The documented images currently name Tahoe, Sequoia and Sonoma rather
+than golden-gate. The task's golden-gate reference is retained; its registry
+availability is unverified until the human approves image preparation.
+
 `tests/clean_mac.sh [--from <dir>] [--fresh-home | --part clean | --part clt]` does the whole run
 with no person at the keyboard; each answer is typed on a pseudo-terminal by the same `script(1)` method as 12.1:
 1. `--fresh-home` (the runner): `H=$(cd "$(mktemp -d)" && pwd -P)` (the
@@ -1438,15 +1465,39 @@ with no person at the keyboard; each answer is typed on a pseudo-terminal by the
    INST-S-24.
 6. Print `CLEAN-MAC PASS` or the first failed assertion with its command.
 
+Without a mode flag it runs `--part clean`; the mode flags are mutually
+exclusive. A relative `--from` path is resolved from the caller's working
+folder before entering the test home. Before each install, a path listing of the home records the
+guest's existing folders (including Desktop and Library); newly created
+paths must be under `.local` or `Applications`, with `.cargo` and `.rustup`
+also allowed only for the CLT part's typed yes.
+
 With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
 then INST-S-1 with no terminal, the three `--version` lines and the `otool`
 assertion of 12.4; no answer is typed, no toolchain is installed and no app
-is opened. Without it, "a fresh home" means: `rm -rf` exactly `$H/.local`,
+is opened. It also runs `doctor --json` to assert the installed sibling
+paths, `env.toolchain` and absence of a toolchain (12.4, INST-S-25).
+The smoke's temporary home is removed on exit. No-terminal installs run
+in a new session with stock Perl's `POSIX::setsid`, as 12.1 does; a caller's
+terminal cannot accidentally answer the toolchain offer.
+Without it, "a fresh home" means: `rm -rf` exactly `$H/.local`,
 `$H/Applications/watane.app`, `$H/.cargo`, `$H/.rustup`, `$H/.watane` and
 `$H/Library/Caches/watane-dev`, never `$H` itself, then the assertions of 12.4
 again. INST-S-23 needs a GUI session of the user that runs it: in the
 guest that is the auto-login session of `admin`, and `open` over ssh as
 the same user reaches it. No one is at the keyboard.
+
+The clean part tests both `n` and Enter, each from the asserted clean
+home. After the keep-home uninstall it reinstalls before testing `delete`:
+an uninstall without a receipt correctly exits 7. The CLT part adds only
+`$H/.local/bin` to the stock PATH for INST-S-24; it never adds `.cargo/bin`.
+All other commands inherit the cleared environment of step 2, except the
+local installer invocation's explicit `WATANE_RELEASE_BASE` override.
+The PTY helper uses stock Perl `IPC::Open3`/`IO::Select` to observe the
+prompt, type one answer through `script -q /dev/null`, and keep stdin open
+until the command exits. Its 1800-second deadline reports a failed command.
+These test processes are foreground work and end before the test exits;
+they install no service or background updater (the install vision boundary).
 
 The script reads JSON (`doctor --json`) and plists with `plutil -extract
 <key path> raw -o - <file>` (stock macOS, reads JSON too), so it needs no
@@ -1476,9 +1527,13 @@ d=$H; while [ "$d" != / ]; do
 After the install, before the answer `y`: the same loop finds no `cargo`;
 after `y`, `$H/.cargo/bin/cargo` exists and `$H/.rustup` holds the target.
 After the install, for each of the three programs and the app's
-executable, `otool -L` lists only paths that start with `/usr/lib/` or
-`/System/` (no `/opt/homebrew`, no `/usr/local`, no path under a checkout
-or `$H`'s `target`): the binaries do not lean on anything of the build
+executable, the dynamic-library load commands name only paths that start
+with `/usr/lib/` or `/System/`. With CLT present, `otool -L` checks this;
+without CLT, `/usr/bin/otool` is only a developer-tools shim, so stock Perl
+reads the thin arm64 Mach-O header and `LC_LOAD_DYLIB`, weak, re-export,
+lazy and upward load commands directly, rejecting malformed headers,
+command bounds or names. The path assertion is identical in both cases
+(no `/opt/homebrew`, no `/usr/local`, no path under a checkout or `$H`'s `target`): the binaries do not lean on anything of the build
 machine. `watane-dev doctor --json` is run with none of `WATANE_BIN`,
 `WATANE_DEV_VENDOR`, `WATANE_DEV_TOOLCHAIN` set, and must report
 `watane` at `$H/.local/bin/watane` and the allowlist at

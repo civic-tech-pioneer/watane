@@ -711,3 +711,68 @@ Validator (S50c-2, round 1): the Tauri CLI pin moved from 2.12.5 to 2.12.4.
 `tauri-cli` 2.12.5 (2026-11-16) needs `tauri-utils` ~2.10.3. The three
 action SHAs were re-checked with `gh api` against the `v4` tags.
 actionlint 1.7.12 reports nothing on `release.yml`.
+## S50c-3: clean guest and host VM harness
+
+Added clean_mac.sh with an env-cleared preflight before any release access,
+real file:// or one-line curl installs, no-terminal smoke, prompt-driven
+script(1) answers, the clean and CLT scenario groups, plutil JSON/plist
+checks, version and native-library checks. The clean guest tests n and
+Enter separately, then keep-home and delete-home uninstalls; a reinstall
+between those uninstalls is necessary because no receipt means exit 7.
+A home-path snapshot allows the guest's pre-existing Desktop/Library
+folders while rejecting new paths outside the install/toolchain folders.
+
+Added vm_mac.sh with missing-Tart exit 2 before any mutation, per-run
+clone/headless boot/IP/SSH/scp, forced SSH_ASKPASS password authentication,
+a shared 600-second readiness deadline, and stop/delete traps. Preparation
+makes the two templates, installs CLT only in a disposable guest, then
+runs both parts. No host directory is shared. Fake commands cover success,
+guest failure, preparation and local release copying (including host
+paths with spaces); the real Tart program and image were not installed.
+
+Tests first failed for missing scripts, missing preflight refusal, missing
+VM lifecycle, and the missing native dependency/home comparison helpers.
+The real fresh-home test then caught the distinct no-terminal text;
+it now distinguishes that from a typed n. The delayed tty-reader fixture
+passes from a process with no controlling terminal. The native dependency
+fixture rejects Homebrew/rpath dependencies and truncated Mach-O data.
+No dependency was added to the workspace.
+
+Spec correction: /usr/bin/otool is a CLT shim (the same system shim as cc
+and git). The no-CLT part must read thin arm64 Mach-O dylib load commands
+with stock Perl instead. It enforces the same /usr/lib or /System path
+assertion; CLT/fresh-home runs still use otool -L. The reader also passed
+on the three real release programs and the real app executable.
+
+Real local build: cargo build --release --locked -p watane-host -p
+watane-dev -p watane-node passed (4m44s). Installed tauri-cli =2.12.5
+--locked, matching Cargo.lock's tauri version, then cargo tauri build
+--bundles app with the 7.3 config override and -- --locked passed (2m15s,
+71.02 MiB bundle). Restored the CLI's incidental features=[] manifest
+formatting; no sibling file remains changed. package.sh
+ aarch64-apple-darwin 0.1.0 /tmp/s50c-3-release passed; clean_mac.sh
+--from /tmp/s50c-3-release --fresh-home printed CLEAN-MAC PASS, with no
+app launch or toolchain installation. The ignored real-release test also
+passed, with CARGO_NET_OFFLINE=true for packaging so cargo test cannot
+reach the network.
+
+Tart flags/credentials were checked using gh api at openai/tart
+ a8d03d4a1ae34705e153a376437cee3b4f6c4f63 (quick-start and the Clone,
+Run, IP, Stop and Delete command sources). The task's golden-gate image
+is not in that quick-start's image list; availability awaits the approved
+real VM preparation. No existing test assertion was changed or ignored
+suite/GUI test run. Only the two newly written ignored tests were run.
+
+Review also found that a relative --from path was being resolved after
+entering H. A fast installer-sentinel fixture reproduced the lost path;
+resolution now happens first, under the cleared environment, while
+release access still waits until after the clean assertions. The final
+home snapshot fixture and relative-path fixture each passed after red.
+
+Final validation: the single default cargo test run passed (115 passed,
+19 ignored, 11 suites; about 1250 seconds on this Mac). Both new ignored
+tests were run explicitly and passed: the real prebuilt release smoke
+and delayed PTY answer. No existing ignored or GUI test ran. Clippy
+--all-targets with -D warnings, nightly fmt --check, shellcheck of all
+four shell scripts, and git diff --check passed. The final direct smoke
+log is /tmp/s50c-3-smoke.log and its last line is CLEAN-MAC PASS.

@@ -12,9 +12,12 @@
 
 `cargo test -p watane-install` (no network, no Mac needed);
 `cargo clippy --all-targets -- -D warnings && cargo +nightly fmt --check`;
-`shellcheck -s sh install.sh package.sh` when it is installed.
-The clean-Mac tests (`tests/clean_mac.sh`) run on a Mac, by hand or by the
-local foreman.
+`shellcheck -s sh install.sh package.sh tests/clean_mac.sh tests/vm_mac.sh` when it is installed.
+`sh tests/clean_mac.sh --from <release-dir> --fresh-home` runs the local
+release smoke without a terminal, toolchain install or app launch.
+`sh tests/vm_mac.sh [--prepare] [--from <release-dir>]` runs both guest
+parts on a Mac with Tart; preparation downloads an image and is run only
+when the human has approved Tart. The fast checks are `cargo test --test clean_mac`.
 
 ## Rules that matter most here
 
