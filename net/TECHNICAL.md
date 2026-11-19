@@ -664,7 +664,13 @@ a full machine.
   `holdings.store_blob`. A machine that is not reached, or that does not
   have it, gives way to the next candidate; none connected is
   `NoFullMachine`; some connected and none had it is `Unreachable` naming the
-  last of them and why. `node` calls these before `dist` reads, so a `dist`
+  last of them and why, and the same `Event::Unreachable { node, cause }` (the
+  error's node and cause) is emitted once per such call, so Machines shows it.
+  A full machine whose own file no longer matches the hash never sends it:
+  iroh-blobs checks the file before sending and resets the stream, so the
+  light machine sees "not served" (this event), or, when the reset reaches it
+  as a cut stream, `BadObject` and `Refused`; which one is timing (S87).
+  `node` calls these before `dist` reads, so a `dist`
   fetch then finds the bytes in its own store.
 
 A light machine with no full machine reachable gives `NoFullMachine`, and
