@@ -1556,3 +1556,32 @@ Native window validation is unavailable in this sandbox and still needs
 an external GUI session. No test was skipped to hide these failures.
 `cargo fmt --check` and `git diff --check` pass. D2's pre-existing sibling
 Clippy failures remain unchanged. No dependency was added.
+
+
+#### S87-2 — changed full-machine package bytes
+
+An honest full machine checks its referenced file in iroh-blobs and resets
+rather than sending changed bytes. Depending on event order, the light
+machine sees either `refused <short>: ... does not match its hash` (a cut
+stream) or `unreachable <short>: package <hex8> was not fetched: not served:
+it does not have it, or its copy failed its check` (S87-1). Both corruption
+waits now require the affected node and exactly the corresponding prefix
+and cause fragment; unrelated problems cannot satisfy them.
+
+J8 AC6 still proves removal refusal after a successful repaired-file control,
+with both fetches in the same light-app session. Its restart before the
+control remains unconditional to clear a possible hash-refusal drop; the
+unreachable branch does not imply a drop. No drop is asserted for it.
+
+The task forbids executing window tests in this sandbox, so no GUI red/green
+run was attempted. The foreman must run machines::ac6_s33 five consecutive
+times with S87-1 merged and run the changed J8 journey. Without S87-1 the
+not-served unreachable event cannot appear and this branch alone may still
+fail; no app workaround was added. No dependency was added.
+
+Validation: `cargo test` reports 111 passing unit tests and one failure in
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`:
+`Failed to create netmon monitor`, the sandbox limitation already recorded
+above. `cargo fmt --check` passes (stable warns about nightly-only settings).
+`cargo clippy --all-targets --features driver -- -D warnings` and
+`git diff --check` pass.

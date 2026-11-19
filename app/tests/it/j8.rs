@@ -241,7 +241,7 @@ fn ac1_journey_j8() {
     );
 
     // AC5: installation warmed the server's blob reference. Remove the light
-    // cache so the next fetch must verify bytes actually sent by the server.
+    // cache so the next fetch reaches the server, which checks and resets.
     let light_package = light_home.path().join("dist/packages").join(&package_id);
     std::fs::remove_file(&light_package).unwrap();
     let mut corrupt = bytes.clone();
@@ -255,22 +255,20 @@ fn ac1_journey_j8() {
     );
     wait_machines(&light, |v| {
         v["problems"].as_array().unwrap().iter().any(|p| {
+            let text = p["text"].as_str().unwrap();
             p["node"] == server_key
-                && p["text"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with(&format!("refused {server_key}:"))
-                && p["text"]
-                    .as_str()
-                    .unwrap()
-                    .contains("does not match its hash")
+                && ((text.starts_with(&format!("refused {server_key}:"))
+                    && text.contains("does not match its hash"))
+                    || (text.starts_with(&format!("unreachable {server_key}:"))
+                        && text.contains("not served")))
         })
     });
     assert!(!light_package.exists(), "AC5: corrupt bytes were cached");
 
-    // AC6: a hash refusal drops a peer for that session. Restart only before
-    // the positive control; the successful and refused fetches below must
-    // use the same light app session, with only the server able to serve.
+    // AC6: removal must prevent a fetch that succeeded before removal.
+    // Restart before the repaired-file control to clear a possible hash-refusal
+    // drop; not-served need not drop the peer. The control and removal refusal
+    // below must share one light app session, with only the server able to serve.
     assert!(light.quit().success());
     std::fs::write(&server_package, &bytes).unwrap();
     let light = start(light_home.path());
