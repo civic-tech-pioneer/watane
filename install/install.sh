@@ -754,12 +754,27 @@ $ENTRIES_ALL
 EOF
   if do_swap; then :; else
     if_rc=$?
+    # Save the old paths before undo retires the journal. Unmoved old entries
+    # remain present; a missing old path means the previous version is not whole.
+    if_old=""
+    if [ -f "$SHAREW/journal.$$" ]; then
+      read_journal "$SHAREW/journal.$$"
+      if_old=$J_OLD
+    fi
     if_undo=0
     rollback || { if_undo=$?; check_signal "$if_undo"; }
-    check_signal "$if_rc"
     if [ "$if_undo" -ne 0 ]; then
-      die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
+      rollback || { check_signal "$?"; }
     fi
+    check_signal "$if_rc"
+    while IFS= read -r if_p; do
+      [ -n "$if_p" ] || continue
+      if ! exists "$if_p"; then
+        die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
+      fi
+    done <<EOF
+$if_old
+EOF
     die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
   fi
   return 0

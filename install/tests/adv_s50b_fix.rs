@@ -303,3 +303,30 @@ fn adv_s50b_fix_staging_cleanup_failure_claims_files_not_put_back() {
         "files are in place, yet: {out:?}"
     );
 }
+
+/// AC2: a transient restore failure is retried before reporting the old version whole.
+#[test]
+fn ac2_transient_undo_failure_retries_and_restores_old_version() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&[]).code, 0);
+    mv_fake(
+        &fx,
+        r#"case "$1" in
+          *watane.app.new.*) exit 1 ;;
+          *.old.*) if [ ! -f "$HOME/undo_failed_once" ]; then
+            : >"$HOME/undo_failed_once"
+            exit 1
+          fi ;;
+        esac"#,
+    );
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(fx.home.join("undo_failed_once").exists());
+    assert!(
+        out.stderr
+            .contains("Nothing was changed: the version that was installed still works."),
+        "{out:?}"
+    );
+    assert!(!out.stderr.contains("could not be put back"), "{out:?}");
+    fx.assert_installed("0.1.0");
+}

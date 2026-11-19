@@ -489,3 +489,29 @@ Final validation: cargo test -p watane-install passed (101 passed, 16 ignored,
 shellcheck -s sh install.sh package.sh and git diff --check passed. Clippy
 reported only the existing workspace-hack manifest warnings. No ignored or
 GUI tests ran.
+
+
+### s50b-fix-9: scan command positions and truthful rollback reporting
+
+Both unchanged adversary tests failed first: the scan missed case arms,
+background separators, negated substitutions and continued quotes; staging
+cleanup failure falsely claimed installed files were missing. The scanner now
+recognizes those command positions, rejects negated substitutions before
+checkpoint exemptions, and joins physical lines while quotes remain open.
+TECHNICAL 3.8 records its regression-guard scope and remaining hand-review
+forms; this is not a shell parser or security boundary.
+
+Added ac2_transient_undo_failure_retries_and_restores_old_version, which failed
+on the old recovery message before the fix. install_files saves old journal
+paths, retries a failed rollback once, then chooses the exit-5 text by whether
+an old path is missing. Staging cleanup failures alone keep the intact-version
+text. The permanent restore failure test still passes and proves next-run
+recovery. Added ac3_scan_scope_and_exit5_texts_are_documented, observed failing
+before updating TECHNICAL 3.8 and 3.9. No existing test assertions or dependencies
+changed.
+
+Final validation: cargo test -p watane-install passed (105 passed, 16 ignored,
+11 suites; 665.91 s). Clippy --all-targets with -D warnings, nightly fmt
+--check, shellcheck -s sh install.sh package.sh (exit 0), and git diff --check
+passed. Clippy emitted only existing workspace-hack manifest warnings.
+No ignored or GUI tests ran.

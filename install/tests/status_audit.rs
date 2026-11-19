@@ -211,6 +211,8 @@ fn covered_by_rule(line: &str) -> bool {
                         | "|"
                         | "{"
                         | "("
+                        | ")"
+                        | "&"
                 ))
         {
             let end = tokens[index + 1..]
@@ -229,7 +231,37 @@ fn covered_by_rule(line: &str) -> bool {
 }
 
 fn unchecked_sites(source: &str) -> Vec<String> {
-    let lines: Vec<_> = source.lines().map(str::trim).collect();
+    // Join physical lines inside quotes before applying the line rules.
+    let mut logical = Vec::new();
+    let mut pending = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for line in source.lines() {
+        if !pending.is_empty() {
+            pending.push('\n');
+        }
+        pending.push_str(line);
+        if !line.trim_start().starts_with('#') || quote.is_some() {
+            for c in line.chars() {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' && quote != Some('\'') {
+                    escaped = true;
+                } else if quote == Some(c) {
+                    quote = None;
+                } else if quote.is_none() && (c == '\'' || c == '"') {
+                    quote = Some(c);
+                }
+            }
+        }
+        if quote.is_none() {
+            logical.push(std::mem::take(&mut pending));
+        }
+    }
+    if !pending.is_empty() {
+        logical.push(pending);
+    }
+    let lines: Vec<_> = logical.iter().map(|line| line.trim()).collect();
     let mut function = "";
     let mut unchecked = Vec::new();
     for (index, line) in lines.iter().enumerate() {
@@ -270,7 +302,14 @@ fn unchecked_sites(source: &str) -> Vec<String> {
             || (!line.contains("||") && !line.starts_with("if ")
                 && line.split_once("$(").is_some_and(|(prefix, _)| prefix.ends_with('='))
                 && lines.get(index + 1).is_some_and(|next| *next == "check_signal \"$?\""));
-        if !checked && !ALLOWED.contains(&(function, *line)) && !covered_by_rule(line) {
+        // A checkpoint after a negated substitution sees only the inverted 0/1.
+        let negated_substitution = line
+            .split("$(")
+            .skip(1)
+            .any(|body| shell_tokens(body).first().is_some_and(|word| word == "!"));
+        if negated_substitution
+            || (!checked && !ALLOWED.contains(&(function, *line)) && !covered_by_rule(line))
+        {
             unchecked.push(format!("{} ({function}): {line}", index + 1));
         }
     }
@@ -412,4 +451,34 @@ fn adv_s50b_fix_scan_misses_case_arm_background_substitution_and_continued_quote
         missed.is_empty(),
         "scan accepts unchecked sites: {missed:?}"
     );
+}
+
+#[test]
+fn ac3_scan_scope_and_exit5_texts_are_documented() {
+    let spec = include_str!("../TECHNICAL.md");
+    let scope = spec
+        .split("### 3.8")
+        .nth(1)
+        .expect("3.8")
+        .split("### 3.9")
+        .next()
+        .expect("scope");
+    for form in [
+        "regression guard",
+        "here-documents",
+        "backticks",
+        "escaped newlines",
+        "nested",
+        "case",
+        "staging names",
+    ] {
+        assert!(
+            scope.contains(form),
+            "missing hand-review scope or recovery rule: {form}"
+        );
+    }
+    let output = spec.split("### 3.9").nth(1).expect("3.9");
+    assert!(output.contains("entry the run moved is missing"));
+    assert!(output.contains("Nothing was changed:"));
+    assert!(output.contains("The files could not be put back."));
 }

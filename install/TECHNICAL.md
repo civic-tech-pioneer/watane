@@ -497,12 +497,14 @@ Undo commands preserve their own failure status through the undo subshell
 and `rollback`; recovery and a failed swap pass the undo status to
 `check_signal` before diagnosing exit 5. The undo subshell keeps `SIGNAL=0`
 so an already handled parent signal does not stop its work. A failed undo
-leaves the swap active for a safe retry. After a failed swap, a non-signal
-undo failure prints "The files could not be put back. Run this script again
-to restore the installed version." and exits 5; entry paths may be missing
-until the next run recovers. Only a successful undo prints "Nothing was
-changed: the version that was installed still works." Staging, journal writes
-and cleanup helpers also preserve program statuses until the caller checks for signals.
+leaves the swap active for a safe retry. After a failed swap, `install_files`
+retries a failed undo once itself, checking each failure for signals. It then
+prints "The files could not be put back. Run this script again to restore the
+installed version." only if an old entry path is missing. Otherwise it prints
+"Nothing was changed: the version that was installed still works."
+Both diagnoses exit 5. A failure that only leaves staging names behind does
+not mean the old version needs restoring; the next run cleans those names.
+Staging, journal writes and cleanup helpers also preserve program statuses until the caller checks for signals.
 Every site that drops or remaps a program's status must pass the original
 status through `check_signal` before interpreting it: constant `exit` or
 `return`, `die`, ignored failures (`|| true` or a fallback assignment),
@@ -514,14 +516,25 @@ a caller's checkpoint; undo retains `SIGNAL=0` and propagates failures to
 the parent so it can finish recovery. Builtin-only predicates and formatting
 substitutions have no external program status to preserve. The conservative
 source scan `tests/status_audit.rs::ac3b_status_remapping_requires_a_signal_check`
-rejects new unchecked spellings of `||`, command substitutions, and negation
+is a regression guard for honest edits, not a security boundary: someone who
+can edit the script controls its behavior. It rejects new unchecked spellings of `||`, command substitutions, and negation
 in command position: after `if`, `elif`, `while`, `until`, `&&`, `||`, `;`,
-`|`, or at the start of a command, with any whitespace (including two spaces
-or a tab after `if`). The same rules apply to every such negation.
+`|`, `)` (a case arm), a single `&`, or at the start of a command, with any
+whitespace (including two spaces or a tab after `if`). The same rules apply
+to every such negation. Negation inside `$( ! ... )`
+or `$(! ... )` is rejected regardless of a later checkpoint, which would see
+only an inverted 0/1. Quote state carries across physical lines.
 Other status-discarding forms require hand review rather than scanning:
 `if prog; then` without a checking else, `until prog`, `prog && x`, a bare
 pipeline, `prog; :` in the `set +e` undo subshell, and `if helper` where
-that helper uses `|| return`. The scan recognizes builtin predicates (`[`,
+that helper uses `|| return`. The line tokenizer is not a shell parser:
+here-documents, backticks, escaped newlines, nested shell quoting/substitutions
+(including subshell parentheses inside substitutions), inline comments with
+quote characters, and compound lists spanning lines (including split fallback
+or checkpoint bodies) require hand review. Text matching of inline checkpoints
+and exceptions does not prove control flow; multiple commands or substitutions
+on one logical line also need hand review. The scan recognizes builtin
+predicates (`[`,
 `read`, `command -v`), calls to the short named set of builtin-only or
 internally checked helpers, and status-preserving `|| return` and
 `|| exit "$?"` by rule. Helper bodies remain subject to the scan; adding a
@@ -560,9 +573,10 @@ left by an earlier process that had the same pid). Any other name (`watane.old.m
 
 After a failed swap (exit 5), stderr reports `could not put the files in
 place`, then `Nothing was changed: the version that was installed still
-works.` if undo succeeded, or `The files could not be put back. Run this
-script again to restore the installed version.` if undo failed without a
-signal (3.8).
+works.` unless an old entry the run moved is missing, or
+`The files could not be put back. Run this script again to restore the installed version.` if such an entry is missing
+without a signal, after retrying a failed undo once (3.8). Staging cleanup
+failure alone uses the first text; both cases exit 5.
 
 Stdout carries the progress and the result, stderr the errors. No colour,
 no cursor movement, no emoji; each line is a fact or a command, so an
