@@ -425,6 +425,13 @@ fn inst_s14_failed_upgrade_rolls_back() {
     fx.state_write("mv_fault", "fail\n*watane.app.new.*\n");
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 5, "{out:?}");
+    // 3.9: only an undo that ended well says nothing changed
+    assert!(
+        out.stderr
+            .contains("Nothing was changed: the version that was installed still works."),
+        "{out:?}"
+    );
+    assert!(!out.stderr.contains("could not be put back"), "{out:?}");
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
     assert_eq!(snapshot(&fx.home), before);
