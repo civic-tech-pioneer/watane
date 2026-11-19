@@ -333,3 +333,26 @@ fn ac3b_rules_cover_builtins_checked_helpers_and_preserved_statuses() {
     assert!(!unchecked_sites("unknown_helper value || return 1\n").is_empty());
     assert!(!unchecked_sites(r#"value=$(add_item "$(external_tool)" item)"#).is_empty());
 }
+
+/// 3.8: "negated program predicates" must pass through check_signal and the scan "rejects new
+/// unchecked spellings". Each of these negates an external program's status, so a signal it
+/// died of is dropped, yet the scan accepts them: `elif` is not a negation context, and lines
+/// without `||`, `if !` or `$(` are never read.
+#[test]
+fn adv_s50b_fix_scan_misses_negated_predicates() {
+    let missed: Vec<_> = [
+        "elif ! tool; then",
+        "if [ -n \"$x\" ] && ! tool; then",
+        "while ! tool; do",
+        "if  ! tool; then",
+        "if\t! tool; then",
+        "! tool",
+    ]
+    .into_iter()
+    .filter(|site| unchecked_sites(&format!("new_site() {{\n{site}\n:\n")).is_empty())
+    .collect();
+    assert!(
+        missed.is_empty(),
+        "scan accepts unchecked negations: {missed:?}"
+    );
+}
