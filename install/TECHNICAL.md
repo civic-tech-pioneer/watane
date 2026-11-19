@@ -555,8 +555,9 @@ check their status, byte formatting and the builtin tty probe. Changes to
 a special exception require reviewing its reason; ordinary builtin line
 edits do not require an exception.
 
-A real exit of 129/130/141/143 from rustup or rustup-init is treated as
-that signal, without a "toolchain step failed" line. A signal during final
+A real exit of 129/130/141/143 from any child (rustup, rustup-init, tar,
+mktemp, ...) is treated as that signal, without its cause line; nothing is
+installed and cleanup and rollback still run. A signal during final
 cleanup may leave the temporary folder. A signal while a question waits
 is acted on when the read returns. Cleanup preserves the signal code.
 
