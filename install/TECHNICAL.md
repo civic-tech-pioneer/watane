@@ -32,7 +32,8 @@ install/
     package.rs        the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools
     support/pty.rs    runs a command on a real pseudo-terminal and types an answer; and runs one with no controlling terminal (12.1)
-    clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac
+    clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac, inside the VM
+    vm_mac.sh         drives the Tart VM of 12.3 from the host: clone, run, ssh clean_mac.sh, delete
     fakes/            the fake tools that script.rs puts first on PATH (12.1)
 .github/workflows/release.yml
 ```
@@ -188,7 +189,7 @@ version validation uses builtins only.
 | 3 | The tools of 3.3. | exit 2 |
 | 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. Each install folder resolves inside the home (3.4.1). | exit 2 |
 | 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset). | exit 1 |
-| 6 | Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step. | exit 8 |
+| 6 | Take the lock (3.6.2). Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step but the lock. | exit 5 (the lock), exit 8 |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
 | 9 | Extract: refuse a member name that is absolute or holds `..`, and any member that is a symbolic or hard link (a `tar -tvzf` line that starts with `l` or `h`; IN-34); `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
@@ -289,7 +290,12 @@ files (INST-F-20, INST-S-14, 32, 33).
    undo it as in step 4 (below), with `<n>` in place of `<pid>`; if not, the
    commit happened, so do step 5 with `<n>` in place of `<pid>` and the old
    receipt at `receipt.old.<n>` (its paths that the receipt does not hold, if
-   it still exists, then its `.old.<n>` names); then remove the journal. Then remove the stale names of 3.8. If `<path>.new.<pid>` or
+   it still exists, then its `.old.<n>` names); then remove the journal. Then remove the stale names of 3.8.
+   When the receipt's path is not allowed by 8.5 (its folder resolves
+   elsewhere; uninstall and `--status` skip the check of 3.4.1), step 0
+   does nothing at all: it cannot read the journals there, and without
+   them a `.new.<n>` or `.old.<n>` name may be the only evidence of an
+   interrupted swap, so no stale name is removed either. If `<path>.new.<pid>` or
    `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
    5 before any copy: `cp -R` onto an existing folder or link copies into
    it, and `mv` onto one moves into it.
@@ -323,7 +329,10 @@ files (INST-F-20, INST-S-14, 32, 33).
    they run (the trap, 3.8), undoes the swap from the journal, or, if the
    failure came before the journal was written, from the `.new` names alone:
    for each `old <path>` line, only if `<path>.old.<pid>` exists (the swap
-   reached this entry): `rm -rf <path>` if it exists, then
+   reached this entry; for the receipt, only if the journal also holds
+   `moved <receipt>`, since a `cp -p` that failed half way leaves a
+   `receipt.old.<pid>` cut short, and the swap appends that line only after
+   the copy succeeded): `rm -rf <path>` if it exists, then
    `mv <path>.old.<pid> <path>` (for the receipt, only the `mv`, which
    replaces the file in one rename, so that no moment leaves it missing); an `old` entry with no `.old.<pid>` was not
    swapped and its `<path>` is the old file, which stays. For each
@@ -406,7 +415,42 @@ followed by `If no install is running, that number now belongs to another
 program; remove <home>/.local/share/watane/journal.<n> and run this again.`,
 before it downloads or changes anything,
 so it never treats the other run's half-swapped files as foreign or as its
-own.
+own. The lock of 3.6.2 keeps a second run from getting that far; the
+journal check stays, for a run of an older script that takes no lock.
+
+#### 3.6.2 The lock
+
+An install and an uninstall take a lock before they read the receipt
+(step 6; 8.4 step 1), so two runs started at once cannot both pass the
+journal check of 3.6.1, which runs long before either journal exists.
+`--status` takes none: it changes nothing. The lock is the folder
+`$HOME/.watane-install.lock`, made with `mkdir` (no `-p`: it fails when
+anything, a link included, is at that name), then the file `pid` inside
+it, written with `set -C`, holding the run's pid and a newline. It is the
+only write outside the temporary folder before step 10, and it sits
+directly in `$HOME` so that no folder needs to be made for it. The exit
+trap (3.8) removes it, `pid` then the folder, on every exit of the run
+that made it, after the undo and before the temporary folder; a run that
+did not make it never removes it.
+
+When `mkdir` fails, the run stops with exit 5 before it downloads or
+changes anything, and prints, to stderr:
+
+```text
+watane install: another install may be running (pid 4242)
+If no install is running, remove its lock and run this again:
+  rm -rf '/Users/alice/.watane-install.lock'
+```
+
+`(pid <n>)` only when `pid` is a regular file whose one line is digits;
+otherwise the first line ends at `running`. The path is quoted for the
+shell as 8.4 quotes `<R>`. The script never removes a lock it did not
+make, even one whose pid is dead: it cannot tell a dead pid from a reused
+one, nor a lock just made from one whose `pid` was never written, and two
+runs that both broke one stale lock would both proceed (IN-41). So a run
+killed by `SIGKILL` or a power loss leaves the lock, and the next run
+stops at it; once the person removes it as printed, that run recovers the
+journal as 3.6 step 0 says (INST-S-33).
 
 ### 3.7 The toolchain
 
@@ -971,7 +1015,18 @@ path /Users/alice/.local/share/watane-dev/vendor
 path /Users/alice/.local/share/watane/install.sh
 path /Users/alice/.local/share/watane/VERSION
 path /Users/alice/Applications/watane.app
+resolved .local/bin /Users/alice/.local/bin
+resolved .local/share/watane /Users/alice/.local/share/watane
+resolved .local/share/watane-dev /Users/alice/.local/share/watane-dev
+resolved Applications /Users/alice/Applications
 ```
+
+A `resolved <folder> <R>` line for each of the four install folders of
+3.4.1, `<folder>` relative to `$HOME` exactly as written here and `<R>`
+the folder's resolved path (`pwd -P`) when step 4 checked it; 8.5 rule 4
+reads them. The format stays `watane-receipt 1`: no release had shipped
+when these lines were added, and a receipt without them is still read, its
+removals skipped by rule 4.
 
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline
@@ -1000,7 +1055,7 @@ is a feature of `app`, not of `install` (Q11).
 
 `install.sh --uninstall` (INST-F-21, 22):
 
-1. Stop, as an install does, on a journal of a live process other than
+1. Take the lock (3.6.2). Stop, as an install does, on a journal of a live process other than
    itself (3.6.1, exit 5). Recover first, as 3.6 step 0 (a journal of a dead process is undone or
    finished), so that a killed upgrade leaves neither a missing receipt nor
    `.old.<n>` names behind. Then read the receipt; none is exit 7
@@ -1068,7 +1123,17 @@ no `.` or `..` component). A path is allowed only when:
    that folder strictly below the resolved home (never the home itself), as in
    3.4.1 (`--uninstall` too checks this, so a link put at
    `share/watane-dev` after the install does not make it delete `vendor`
-   elsewhere).
+   elsewhere); and
+4. for a path read from a receipt (the uninstall's paths and the receipt
+   itself, 8.4 step 2; the paths that only the old receipt holds, 3.6 step
+   5), that receipt holds the line `resolved <folder> <R>` for the install
+   folder the path is listed under, and the folder resolves now to exactly
+   `<R>`. Otherwise the path is left in place with `watane install: skipped
+   <path>: <folder> resolves to <now>, not to <R> as at install` on stderr
+   (`<folder>` as `~/<folder>`; `<R>` reads `an unrecorded path` when the
+   line is missing). So a link made after the install inside the home
+   (`~/.local/share/watane-dev -> ~/Documents`), which rule 3 allows, does
+   not make a receipt line empty the folder it now points at (IN-42).
 
 A prefix test alone is not the rule: `$HOME/.local/../Documents` starts
 with `$HOME/.local/` and is refused by 1; `$HOME/.local/share/fish` is
@@ -1155,7 +1220,7 @@ a day for an agent, M is a day.
 | 2 Versions | `watane-node --version`; `--version` of the three programs prints `<name> <version>` and exits 0 (a test each) | `node/` (bin and its `program.rs` test), `host/` and `dev/` only if a test finds a difference | none | `watane-node --version` prints `watane-node 0.1.0`. Size S |
 | 3 Packer | `package.sh` (4), `tests/it/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing; INST-S-32 to 35 pass in `cargo test`. Size S |
 | 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | INST-S-29 passes in `cargo test`; a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
-| 5 Clean Mac | `tests/clean_mac.sh` (12.3, 12.4); the second macOS user prepared by the human; the first real release `v0.1.0` cut by the human | `install/`; the human | stage 4 | INST-S-1, 23, 24, 25 pass on the clean Mac against the real release. Size M, local |
+| 5 Clean Mac | `tests/clean_mac.sh` and `tests/vm_mac.sh` (12.3, 12.4); the Tart VM (the human approves the tool and image); the first real release `v0.1.0` cut by the human | `install/`; the human | stage 4 | INST-S-1, 23, 24, 25 pass in the VM against the real release. Size M, local |
 | 6 App notice | the app shows the one-liner and the Gatekeeper text where `app` shows its first start (optional) | `app/` | stage 5 | not required for S50b |
 | 7 Linux | the CLI-only archive (9) | `install/`, `.github/`, `dev/` if a path differs | S50b | a Linux clean-machine run; not scheduled |
 
@@ -1278,31 +1343,64 @@ programs actually executing on Apple silicon; the app launching; and
 `wasm32-wasip2` target and the vendored crates. These need a Mac, a
 network and a published release.
 
-### 12.3 Where a clean Mac comes from (S50b's test)
+### 12.3 Where a clean Mac comes from (S50c's test)
 
-Options:
+The clean Mac is a **macOS virtual machine on the human's Mac** (the human,
+2026-11-18; S55 reuses it as its second machine). Not a second macOS user:
+a second user shares the machine's command line tools, `/Applications` and
+Homebrew, so it cannot show J7 on a Mac without the tools (Q10).
 
-| Option | Is | Costs | Shows |
-|---|---|---|---|
-| **A second macOS user** on the human's Mac (recommended) | a user `wclean`, standard account, no Homebrew and no `~/.cargo`; created once (System Settings or `sysadminctl`), logged in over `su - wclean` or fast user switching | one-time setup by the human (needs the admin password); shares the machine's `/Applications`, its Homebrew (not on the new user's `PATH`) and the system's command line tools | a real `$HOME` with no cargo, a real quarantine and Gatekeeper, a real GUI session for the app, no reset needed: `rm -rf` the home's files between runs |
-| A VM (Tart, UTM, Parallels) with a fresh macOS image | a clean guest, snapshot per run | an image of macOS (licence, 15 to 20 GB), time to restore | everything, including a Mac with no command line tools; the strongest clean |
-| A GitHub `macos-14` runner | a clean VM per run; has rustup, Homebrew and Xcode preinstalled, so it is **not clean** until those are hidden | no setup; needs `PATH` and `HOME` to be reset by the script, which is what 12.4 does; no GUI session for Gatekeeper | the smoke of 7.2 step 7 only |
+| Option | Is | Shows |
+|---|---|---|
+| **A Tart VM** (used) | `tart` (`openai/tart`, Homebrew `openai/tools/tart`) and the image `ghcr.io/cirruslabs/macos-golden-gate-vanilla` (macOS with auto-login of the user `admin`, ssh on, no command line tools, no Homebrew, no Rust); about 30 GB once | a fresh macOS per run (`tart clone` is an APFS clone, seconds), a real quarantine and Gatekeeper, a GUI session of the auto-login user for the app, a Mac with no command line tools |
+| A GitHub `macos-14` runner | a clean VM per run with rustup, Homebrew and Xcode preinstalled, so **not clean** until those are hidden (12.4) | the smoke of 7.2 step 7 only; no GUI session |
 
-None of the three options except the VM shows a Mac without the command line tools (Q10): a second user and the runner share the machine's tools. S50b uses the second user for stage 5, and the runner for the smoke of the
-workflow (the fresh-`HOME` form of the same script). The VM is the upgrade
-path if a clean machine with no command line tools is wanted (Q10).
+Two images, made once by `tests/vm_mac.sh --prepare` from the vanilla
+image and never run for a test themselves:
+- `watane-clean`: the vanilla image as it is (no command line tools), for
+  INST-S-1, 3, 23, 25 and the `xcode-select --install` line (INST-S-34 on
+  a real Mac);
+- `watane-clean-clt`: the same with the command line tools installed in
+  the guest by `softwareupdate --install` (the label that `softwareupdate
+  --list` prints for them, after `touch
+  /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress`), and
+  nothing else, for INST-S-2 and 24, which build a mod and so need `cc`.
 
-`tests/clean_mac.sh [--from <dir>] [--fresh-home]` does the whole run
+`tests/vm_mac.sh [--prepare] [--from <dir>]` runs on the human's Mac (the
+host) and drives Tart; `clean_mac.sh` runs inside the guest and knows
+nothing of Tart. For each of the two images, `vm_mac.sh`:
+1. `tart clone <image> watane-run-<pid>`, then `tart run --no-graphics
+   watane-run-<pid>` in the background (the guest still logs `admin` in to
+   its GUI session);
+2. waits for `tart ip watane-run-<pid>` and for ssh as `admin` (password
+   `admin`, through `SSH_ASKPASS`, no key setup and no `sshpass`), with a
+   deadline of 600 s;
+3. copies `clean_mac.sh` (and, with `--from`, the release folder) into the
+   guest with `scp`, and runs `sh clean_mac.sh --part <clean|clt>` there
+   over `ssh -tt` (a terminal, so the run has a `/dev/tty`; the answers are
+   still typed by `clean_mac.sh` itself);
+4. prints the guest's output, then `tart stop` and `tart delete` the run's
+   VM on every exit (a trap), so nothing of a run survives it.
+It prints `VM PASS` when both parts printed `CLEAN-MAC PASS`, else the
+first failure. The VM is the guest's whole world: the host's folders are
+not shared into it (no `--dir`), so no checkout, `target` or `~/.cargo` of
+the host can be seen from it.
+
+`tests/clean_mac.sh [--from <dir>] [--fresh-home | --part clean | --part clt]` does the whole run
 with no person at the keyboard; each answer is typed on a pseudo-terminal by the same `script(1)` method as 12.1:
 1. `--fresh-home` (the runner): `H=$(cd "$(mktemp -d)" && pwd -P)` (the
    physical path: `doctor --json` reports canonical paths, `/private/var`); otherwise `H=$HOME` of
-   the clean user. `cd $H`.
+   the guest's user. `cd $H`.
 2. Run every later command under `env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin
    TERM=dumb`.
 3. The assertions of 12.4, then the install: `curl -fsSL <url> | sh`
    (or `sh <from>/install.sh` with `WATANE_RELEASE_BASE=file://<from>`).
-4. INST-S-1, then INST-S-2 (answer `y`) from a fresh home, INST-S-23, 24.
-5. INST-S-3 and 25 from a fresh home; INST-S-15 and 16 (uninstall, answered on a pseudo-terminal, 12.1).
+4. `--part clean` (no command line tools): INST-S-1 and the
+   `xcode-select --install` line, INST-S-23, then INST-S-3 and 25 from a
+   fresh home, then INST-S-15 and 16 (uninstall, answered on a
+   pseudo-terminal, 12.1).
+5. `--part clt` (the tools installed): INST-S-2 (answer `y`), then
+   INST-S-24.
 6. Print `CLEAN-MAC PASS` or the first failed assertion with its command.
 
 With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
@@ -1311,10 +1409,9 @@ assertion of 12.4; no answer is typed, no toolchain is installed and no app
 is opened. Without it, "a fresh home" means: `rm -rf` exactly `$H/.local`,
 `$H/Applications/watane.app`, `$H/.cargo`, `$H/.rustup`, `$H/.watane` and
 `$H/Library/Caches/watane-dev`, never `$H` itself, then the assertions of 12.4
-again. INST-S-23 needs a GUI session of the clean user (fast user switching,
-not `su - wclean`: `open` from `su` has no window server session of that
-user), so the whole run is started from Terminal inside that session; the
-human logs in, the script then needs no one at the keyboard.
+again. INST-S-23 needs a GUI session of the user that runs it: in the
+guest that is the auto-login session of `admin`, and `open` over ssh as
+the same user reaches it. No one is at the keyboard.
 
 The script reads JSON (`doctor --json`) and plists with `plutil -extract
 <key path> raw -o - <file>` (stock macOS, reads JSON too), so it needs no
@@ -1359,7 +1456,7 @@ what they need beside themselves.
 |---|---|
 | INST-S-1 to INST-S-22, INST-S-26 to 35; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-14`, by `workflow_dispatch` |
-| INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (a second user), against a real release |
+| INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (the Tart VM of 12.3, `tests/vm_mac.sh`), against a real release |
 
 `factory/check.sh` runs the first row for a task of `install`. The rows
 that need a Mac are `#[ignore = "slow: ..."]` or a shell test and are run
@@ -1397,7 +1494,7 @@ otherwise.
 | Q7 | Where the version comes from. Crates each say `0.1.0` today. | (a) The tag, checked equal to five places (7.2 step 2). (b) A `[workspace.package] version` that every crate inherits. (c) Computed from the tag, written into the files by the workflow. | (a) now, (b) as its own small slice if five places hurt. | (a) to (b): every `Cargo.toml` of the workspace, hakari, the lock; mechanical. |
 | Q8 | Where `install.sh` is served. | (a) A release asset with the version baked in (3.1). (b) `raw.githubusercontent.com/.../main/install/install.sh`. (c) A short URL on a domain that watane owns. | (a): pinned to a release, no moving `main`, no domain. The cost is a long URL, shown once in the README. | (a) to (c): a domain and a redirect; old URLs must keep working. |
 | Q9 | The 26 MB vendor folder in the archive. | (a) In the archive (4.2): the first `watane-dev test` builds offline. (b) A second asset `watane-dev-vendor-<v>.tar.gz`, fetched by the script. (c) `watane-dev` fetches it on first use. | (a). One download, one checksum, no first-use network (F-QUAL-1, DEV-F-14). | (a) to (b): a second file, a second checksum, a script step. (c) puts network and a trust step into `dev`. |
-| Q10 | **Question for the human.** Which machine proves J7 ("`watane-dev new` straight after") on a Mac with no command line tools? The allowlist needs a host linker: `dev/allowlist/Cargo.lock` holds `proc-macro2` (a build script), `serde_derive` and `wit-bindgen-rust-macro` (proc macros), which rustc links for macOS with `cc`, and `cc` without the tools is only Apple's stub that asks to install them (`wasm32-wasip2` itself links with `rust-lld`); `publish` and `new --from` also need `git`. The design prints `xcode-select --install` when `xcode-select -p` fails and never runs it (3.9, IN-30). A second macOS user shares the machine's tools and a fresh `HOME` does not remove them, so neither shows what happens without them; GitHub's `macos-14` runner has them. Not yet seen on a Mac (S50a user-sim, from the lock). | (a) Accept: S50b runs the clean-user run (12.3) and reports that J7's `watane-dev test` after the install is proved only with the tools present; the printed line is the remedy. (b) A VM (Tart, UTM) with a fresh macOS and no command line tools, snapshot per run: proves the whole of J7 including the line and the first build. (c) A second physical Mac, or a wiped one. (d) Remove the tools on the human's Mac (`sudo rm -rf /Library/Developer/CommandLineTools`): needs root, breaks the human's own `git` and `cc`, and Xcode may supply them anyway. | (b) once, as a one-time proof for S50b (a day), then (a) for later runs; if the human has no time for a VM, (a) and S50b says so in its report. (d) is not recommended. | (a) to (b): a VM image (15 to 20 GB, macOS licence terms for VMs) and one test script; (c): a machine; (d): reinstalling the tools. |
+| Q10 | **Answered (S50c): (b), the Tart VM of 12.3, for every clean-Mac run, with an image without and one with the tools.** Which machine proves J7 ("`watane-dev new` straight after") on a Mac with no command line tools? The allowlist needs a host linker: `dev/allowlist/Cargo.lock` holds `proc-macro2` (a build script), `serde_derive` and `wit-bindgen-rust-macro` (proc macros), which rustc links for macOS with `cc`, and `cc` without the tools is only Apple's stub that asks to install them (`wasm32-wasip2` itself links with `rust-lld`); `publish` and `new --from` also need `git`. The design prints `xcode-select --install` when `xcode-select -p` fails and never runs it (3.9, IN-30). A second macOS user shares the machine's tools and a fresh `HOME` does not remove them, so neither shows what happens without them; GitHub's `macos-14` runner has them. Not yet seen on a Mac (S50a user-sim, from the lock). | (a) Accept: S50b runs the clean-user run (12.3) and reports that J7's `watane-dev test` after the install is proved only with the tools present; the printed line is the remedy. (b) A VM (Tart, UTM) with a fresh macOS and no command line tools, snapshot per run: proves the whole of J7 including the line and the first build. (c) A second physical Mac, or a wiped one. (d) Remove the tools on the human's Mac (`sudo rm -rf /Library/Developer/CommandLineTools`): needs root, breaks the human's own `git` and `cc`, and Xcode may supply them anyway. | (b) once, as a one-time proof for S50b (a day), then (a) for later runs; if the human has no time for a VM, (a) and S50b says so in its report. (d) is not recommended. | (a) to (b): a VM image (15 to 20 GB, macOS licence terms for VMs) and one test script; (c): a machine; (d): reinstalling the tools. |
 | Q11 | Telling a person that a new version exists. | (a) Never, from `install` (VISION). (b) The app shows a link to the release page when the person asks. (c) The app checks GitHub in the background. | (a); (b) is `app`'s decision later. (c) contradicts "no auto-update behind the person's back" unless the person turns it on, as `net` is. | (b) is new `app` work; (c) a switch and a consent text. |
 | Q12 | How the home is deleted on uninstall. | (a) A typed `delete` on a real terminal, no flag, variable or file (8.4). (b) A flag `--delete-home` for scripts. (c) Never: the person deletes `~/.watane` by hand. | (a): the question is one deliberate act on a terminal, and a script or an agent without a terminal cannot answer it. It is not a protection against a program of the same user, which can delete `~/.watane` itself (spec/TECHNICAL 6, not protected); the identity is not recoverable without a backup (F-APP-6), which is why the act is slow. | (a) to (b): a flag; (c): remove the question. |
 | Q13 | A Homebrew tap or a `.pkg` as well. | (a) No. (b) A tap later. | (a): the human chose the one-liner; a tap is another place a version lives. | (b) is an additive stage; nothing here changes. |
@@ -1425,7 +1522,10 @@ otherwise.
 | IN-13 | The version is the tag, and the workflow checks it equals the crates' and `tauri.conf.json`'s. | A release whose programs print a different number is a bug (7.2, Q7). |
 | IN-14 | A crate `watane-install`, tests only. | The tests must be in `cargo test` and the gate (1). |
 | IN-15 | Tests fake the platform with fake tools first on `PATH`, and the network with `WATANE_RELEASE_BASE`; every answer (the offer and the uninstall question) is typed on a pseudo-terminal, and a test with no terminal runs in a new session. | The real script runs unchanged, with no test-only branch other than the two variables `WATANE_RELEASE_BASE` and `WATANE_RUSTUP_URL` (3.2, 12.1). |
-| IN-16 | "Clean Mac" is a second macOS user plus an asserted `env -i` environment (12.3, 12.4); a VM is the next step. | Cheapest real GUI session and real Gatekeeper; the assertion, not the account, is the proof. |
+| IN-16 | "Clean Mac" is a fresh Tart VM of macOS on the human's Mac, cloned per run from a vanilla image (with and without the command line tools), plus an asserted `env -i` environment (12.3, 12.4). Changed in S50c from a second macOS user. | A second user shares the machine's tools and cannot show J7 without them (Q10); a clone per run is clean by construction and S55 reuses it; the assertion, not the machine, is still the proof. |
+| IN-41 | Two runs at once are excluded by a `mkdir` lock `~/.watane-install.lock` taken before the receipt is read; the script removes only its own lock, and a lock it finds stops it (exit 5) with the `rm -rf` to run (3.6.2). | Breaking a stale lock cannot be made safe with the tools of 3.3 (pid reuse; two runs breaking one lock). After a `SIGKILL` the person removes it once. Undo: drop the lock; the journal check stays. |
+| IN-42 | The receipt records each install folder's resolved path, and a removal read from a receipt is skipped when its folder now resolves elsewhere (8.5 rule 4). | A same-user link made after the install inside the home must not let a receipt line empty another folder. Added before the first release, when the receipt format cost nothing to change. |
+| IN-43 | The undo restores `receipt.old.<pid>` only with its `moved` line; step 0 does nothing when the receipt's own path is not allowed. | A `cp -p` cut short must not replace a whole receipt with a part of it; stale names are evidence while a journal may exist. |
 | IN-17 | The home is deleted on uninstall only by the typed word `delete` on a real terminal; no flag, variable or file answers it. | A deliberate act, since an identity cannot be restored without a backup (F-APP-6). It does not stop a same-user program from deleting the home (spec/TECHNICAL 6). |
 | IN-18 | Nothing checks for a new version and nothing runs after the script ends. | VISION; INST-F-23. |
 | IN-19 | The oldest macOS is 14.0 and the platform is Apple silicon only. | What the runner builds and tests (Q3, Q4). |
