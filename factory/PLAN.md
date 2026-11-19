@@ -378,20 +378,15 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   uninstall and status need mktemp; a failed undo of a new entry may say "Nothing was changed");
   an unwritable TMPDIR at the home question stops uninstall with exit 1 after the files are removed.
   Open risks, moved into S50c. Linux: rerun in the cloud after the merge (S50b-fix-linux).
-- [~] **S50b-fix2 install's tests pass on Linux again, and a Ctrl-C under load on the Mac.**
-  In flight (local), foreman `8ab69f85` (sessionId `8ab69f85-82cf-4cb6-b141-48c5d90130a2`), worktree `.claude/worktrees/s50b-fix2`. From main after the fix of the "Full build and test
-  validation" session lands on main (fakes made executable; `add_rustup` copies; that fixes
-  ac2_ctrl_c_in_platform_substitution and adv_s50b toolchain_detection). Left: (1) Mac, main
-  check under load (9.9): `regress_s50b_fix` ctrl_c_during_the_checks_names_no_false_cause, a
-  Ctrl-C at 480..540 ms exits 2 with "the tool id is missing", the false cause user-sim rejected
-  in S50b-fix: the tool check still drops an INT under load; (2) Linux (branch
-  `check/s50b-fix-linux`, `factory/runs/s50b-fix-linux.txt`): `adv_s50b_fix`
-  ctrl_c_in_recovery_undo_prints_a_cause names pid 42 in its stale journal, a live kworker on
-  Linux (use a pid that cannot be live); `script.rs` inst_s7_target_missing hangs over 10 min
-  (defunct `script` child); shellcheck 0.9 reports SC2015 at install.sh:257 and package.sh:30, 44
-  (fails `waits.rs` ac3). Outcome: `cargo test -p watane-install -- --include-ignored` green on
-  the Mac three times with the Mac loaded, and on Linux twice (a cloud check run by the PO),
-  shellcheck clean. Touches: `install/` only.
+- [x] **S50b-fix2 install's tests pass on Linux again, and a Ctrl-C under load on the Mac.**
+  Delivered 2026-11-19 (main `3a3418b`). Sol runs: s50b-fix2-1 2; validator PASS round 1.
+  user-sim ACCEPTED (283 hand Ctrl-C runs at 0..1 s under load, all 130 with empty stderr);
+  adversary HELD. Decisions: the false cause was `main_uid=$(id -u) || die` dropping id's 130:
+  every `$(cmd) || die` runs `check_signal "$?"` first, and the status scan no longer exempts
+  `|| die`; the stale-journal fixture pid is 99999999; the pty runner closes stdin before wait on
+  Linux only (install/TECHNICAL 12.1); the SC2015 sites are explicit ifs. Known limit widened
+  (3.8): a real 129..143 exit of any child (tar, mktemp) reads as a signal. Linux: cloud check
+  S50b-fix2-linux (two runs) after the merge.
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
@@ -1141,6 +1136,9 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   leftovers; the offer shows `WATANE_RUSTUP_URL` but "install it later" prints sh.rustup.rs; ^D at a
   question needs a newline; empty folders remain after an interrupted fresh install; a Ctrl-C in the
   first ~0.1 s, before the traps exist, kills the shell directly.
+- From S50b-fix2's user-sim: `--status | head -1` prints `printf: write error: Broken pipe` before
+  exit 141; a copied or renamed home with a stale journal or old receipt reads its own files as
+  foreign (exit 8), since its paths are absolute.
 
 ### Unsettled
 
@@ -1526,6 +1524,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-19, S50b-fix2) a slice id that equals an old task id collides with its brief (`factory/tasks/s50b-fix2.md`); the foreman used `s50b-fix2-1`. Pick slice ids that no task brief uses.
 - (2026-11-19, S50b-fix) this Mac's endpoint security (ManageEngine, Defender) slows each exec 50 to 400 times under load: a full install test run takes 20 to 40 min, and timing races show only here.
 - (2026-11-19, S50b-fix) a peer session killed the foreman's check.sh test binary (now a rule); `impl.sh &` from a shell makes INT ignored in the tests; a reused task id overwrote a finished brief for a while (new ids use a dash).
 - (2026-11-18, PO) main's check failed ~15 dev tests (`env.allowlist`, paths into `watane-test-speed`): a worktree shares `target/` and `target/tmp`, and dev/tests/support/mod.rs's unlocked `remove_dir_all` of its warm cache lets two concurrent runs delete each other's. They pass alone. The human's chore/test-speed branch adds locks; recheck after it lands.
@@ -1939,3 +1938,5 @@ The human may veto each one.
   refuses every attack found on it before it changes anything (proved on Linux with fakes).
 - S50b-fix: on a Mac, the packed install script installs, upgrades, reports and uninstalls a real
   signed archive on macOS's own sh, and a Ctrl-C at any step exits 130 and leaves a whole version.
+- S50b-fix2: a Ctrl-C in the install's first checks on a loaded Mac exits 130 with no false cause;
+  install's tests no longer lean on Linux-only accidents.
