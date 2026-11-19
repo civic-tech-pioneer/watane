@@ -1238,6 +1238,13 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- S50c's VM (2026-11-19, asked by the S50c foreman): may it install Tart (macOS VM CLI on
+  Virtualization.framework, Homebrew, FSL-1.1-ALv2 licence, tens of MB) and download
+  `ghcr.io/cirruslabs/macos-golden-gate-vanilla` (macOS 27, ~30 GB download, ~35 GB on disk, 156 GB
+  free)? The same VM serves S55. Options: (a) Tart + that image (recommended: scriptable, an APFS
+  clone per run); (b) UTM (~250 MB app) + Apple's IPSW (~17 GB), harder to script; (c) Tart + the
+  smaller Tahoe image (~25 GB). The tap must be verified first (the foreman named `openai/tools`).
+  Undo: `tart delete` and `brew uninstall tart`. S50c builds everything else meanwhile.
 - Step 7 (2026-11-14): three of its slices need something the product owner cannot provide.
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
