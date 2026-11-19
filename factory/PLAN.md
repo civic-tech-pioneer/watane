@@ -379,7 +379,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   an unwritable TMPDIR at the home question stops uninstall with exit 1 after the files are removed.
   Open risks, moved into S50c. Linux: rerun in the cloud after the merge (S50b-fix-linux).
 - [~] **S50b-fix2 install's tests pass on Linux again, and a Ctrl-C under load on the Mac.**
-  In flight (local), worktree `.claude/worktrees/s50b-fix2`. From main after the fix of the "Full build and test
+  In flight (local), foreman `8ab69f85` (sessionId `8ab69f85-82cf-4cb6-b141-48c5d90130a2`), worktree `.claude/worktrees/s50b-fix2`. From main after the fix of the "Full build and test
   validation" session lands on main (fakes made executable; `add_rustup` copies; that fixes
   ac2_ctrl_c_in_platform_substitution and adv_s50b toolchain_detection). Left: (1) Mac, main
   check under load (9.9): `regress_s50b_fix` ctrl_c_during_the_checks_names_no_false_cause, a
