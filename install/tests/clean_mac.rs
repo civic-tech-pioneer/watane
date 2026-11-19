@@ -146,6 +146,7 @@ fn ac4_vm_lifecycle_and_failure_cleanup_without_a_vm() {
         let fake = r#"#!/bin/sh
 printf '%s %s\n' "${0##*/}" "$*" >> "$CALLS"
 case ${0##*/}:$1 in
+  tart:get) exit 1 ;;
   tart:ip) echo 192.0.2.10 ;;
   ssh:*)
     [ "$SSH_ASKPASS_REQUIRE" = force ] && [ "$("$SSH_ASKPASS")" = admin ] || exit 3

@@ -1408,7 +1408,8 @@ Homebrew, so it cannot show J7 on a Mac without the tools (Q10).
 | **A Tart VM** (used) | `tart` (`openai/tart`, Homebrew `openai/tools/tart`) and the image `ghcr.io/cirruslabs/macos-golden-gate-vanilla` (macOS with auto-login of the user `admin`, ssh on, no command line tools, no Homebrew, no Rust); about 30 GB once | a fresh macOS per run (`tart clone` is an APFS clone, seconds), a real quarantine and Gatekeeper, a GUI session of the auto-login user for the app, a Mac with no command line tools |
 | A GitHub `macos-15` runner | a clean VM per run with rustup, Homebrew and Xcode preinstalled, so **not clean** until those are hidden (12.4) | the smoke of 7.2 step 7 only; no GUI session |
 
-Two images, made once by `tests/vm_mac.sh --prepare` from the vanilla
+Two images, made once by `tests/vm_mac.sh --prepare` (which reuses a
+`watane-clean` that already exists) from the vanilla
 image and never run for a test themselves:
 - `watane-clean`: the vanilla image as it is (no command line tools), for
   INST-S-1, 3, 23, 25 and the `xcode-select --install` line (INST-S-34 on
@@ -1432,6 +1433,11 @@ nothing of Tart. For each of the two images, `vm_mac.sh`:
    guest with `scp`, and runs `sh clean_mac.sh --part <clean|clt>` there
    over `ssh -tt` (a terminal, so the run has a `/dev/tty`; the answers are
    still typed by `clean_mac.sh` itself);
+   in the guest, INST-S-1's "no file written outside `~/.local`,
+   `~/Applications`" skips `~/Library/*` paths without `watane` in their
+   name: a live macOS session writes its own files there during the run
+   (`~/Library/Assistant/...` in S50c's first run); `cargo test`'s INST-S-1
+   proves the whole rule in a hermetic home;
 4. prints the guest's output, then `tart stop` and `tart delete` the run's
    VM on every exit (a trap), so nothing of a run survives it.
 It prints `VM PASS` when both parts printed `CLEAN-MAC PASS`, else the

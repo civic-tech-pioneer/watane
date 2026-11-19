@@ -131,6 +131,9 @@ home_changes() {
   check find "$H" -print >"$work/home-tree"
   while IFS= read -r path; do
     case $path in "$H"|"$H/.local"|"$H/.local/"*|"$H/Applications"|"$H/Applications/"*) continue ;; esac
+    # A live macOS session writes its own ~/Library files (Siri, caches) during the run;
+    # only a watane name there is the installer's. cargo test's INST-S-1 proves the rest hermetically.
+    case $path in "$H/Library/"*[Ww]atane*) ;; "$H/Library/"*) continue ;; esac
     if [ "$mode" = clt ]; then
       case $path in "$H/.cargo"|"$H/.cargo/"*|"$H/.rustup"|"$H/.rustup/"*) continue ;; esac
     fi

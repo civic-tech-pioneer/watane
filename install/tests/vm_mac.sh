@@ -90,7 +90,7 @@ delete_run() {
 }
 if [ "$prepare" = yes ]; then
   base=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest
-  check tart clone "$base" watane-clean
+  tart get watane-clean >/dev/null 2>&1 || check tart clone "$base" watane-clean
   boot "$base"
   # Only image preparation uses the guest's passwordless sudo; the
   # installer and clean_mac.sh never do. Derive the current CLT label.
