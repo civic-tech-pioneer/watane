@@ -500,7 +500,8 @@ so an already handled parent signal does not stop its work. A failed undo
 leaves the swap active for a safe retry. After a failed swap, `install_files`
 retries a failed undo once itself, checking each failure for signals. It then
 prints "The files could not be put back. Run this script again to restore the
-installed version." only if an old entry path is missing. Otherwise it prints
+installed version." only if an old entry path is missing or an old entry other
+than the receipt still has its `.old.<pid>` name. Otherwise it prints
 "Nothing was changed: the version that was installed still works."
 Both diagnoses exit 5. A failure that only leaves staging names behind does
 not mean the old version needs restoring; the next run cleans those names.
@@ -573,8 +574,8 @@ left by an earlier process that had the same pid). Any other name (`watane.old.m
 
 After a failed swap (exit 5), stderr reports `could not put the files in
 place`, then `Nothing was changed: the version that was installed still
-works.` unless an old entry the run moved is missing, or
-`The files could not be put back. Run this script again to restore the installed version.` if such an entry is missing
+works.` unless an old entry the run moved is missing or not yet back from its `.old.<pid>` name, or
+`The files could not be put back. Run this script again to restore the installed version.` if such an entry is not back
 without a signal, after retrying a failed undo once (3.8). Staging cleanup
 failure alone uses the first text; both cases exit 5.
 

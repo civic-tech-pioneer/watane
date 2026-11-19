@@ -754,8 +754,9 @@ $ENTRIES_ALL
 EOF
   if do_swap; then :; else
     if_rc=$?
-    # Save the old paths before undo retires the journal. Unmoved old entries
-    # remain present; a missing old path means the previous version is not whole.
+    # Save the old paths before undo retires the journal. An old path that is
+    # missing, or whose `.old.` name remains, means the previous version is not
+    # whole. The receipt is copied, not moved, and stays old until the swap ends.
     if_old=""
     if [ -f "$SHAREW/journal.$$" ]; then
       read_journal "$SHAREW/journal.$$"
@@ -769,7 +770,7 @@ EOF
     check_signal "$if_rc"
     while IFS= read -r if_p; do
       [ -n "$if_p" ] || continue
-      if ! exists "$if_p"; then
+      if ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
         die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
       fi
     done <<EOF

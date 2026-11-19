@@ -515,3 +515,8 @@ Final validation: cargo test -p watane-install passed (105 passed, 16 ignored,
 --check, shellcheck -s sh install.sh package.sh (exit 0), and git diff --check
 passed. Clippy emitted only existing workspace-hack manifest warnings.
 No ignored or GUI tests ran.
+
+Validator (s50b-fix-9): the missing-path check alone called a failed undo
+whole when removing the new copy failed (the path existed, the old entry was
+still under `.old.<pid>`). The diagnosis now also counts a remaining `.old.`
+name, except the receipt's copy; validator_undo_stopped_before_restoring_reports_files_not_put_back pins it.

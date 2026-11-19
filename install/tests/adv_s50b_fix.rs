@@ -330,3 +330,30 @@ fn ac2_transient_undo_failure_retries_and_restores_old_version() {
     assert!(!out.stderr.contains("could not be put back"), "{out:?}");
     fx.assert_installed("0.1.0");
 }
+
+/// 3.9: an old entry still under its `.old.<pid>` name was not put back, even when its
+/// path holds the new copy (removing the new copy failed, so undo stopped before the move).
+#[test]
+fn validator_undo_stopped_before_restoring_reports_files_not_put_back() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&[]).code, 0);
+    mv_fake(&fx, "case \"$1\" in *receipt.new.*) exit 1 ;; esac");
+    let real = which("rm");
+    let p = fx.fakes.join("rm");
+    fs::write(
+        &p,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in *\"/.local/bin/watane\") exit 1 ;; esac\nexec {} \"$@\"\n",
+            real.display()
+        ),
+    )
+    .expect("fake");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(!out.stderr.contains("Nothing was changed"), "{out:?}");
+    assert!(
+        out.stderr.contains("The files could not be put back."),
+        "{out:?}"
+    );
+}
