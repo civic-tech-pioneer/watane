@@ -252,3 +252,24 @@ main "$@"
     assert_eq!(out.code, 130, "{out:?}");
     assert!(!out.stderr.contains("watane install:"), "{out:?}");
 }
+
+/// AC3: permanent undo failure reports recovery rather than claiming an intact install.
+#[test]
+fn ac3_failed_undo_reports_recovery_and_next_run_installs() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&[]).code, 0);
+    mv_fake(
+        &fx,
+        "case \"$1\" in *watane.app.new.*|*.old.*) exit 1 ;; esac",
+    );
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(!out.stderr.contains("Nothing was changed"), "{out:?}");
+    assert!(out.stderr.contains("The files could not be put back. Run this script again to restore the installed version."), "{out:?}");
+    assert!(!fx.bin("watane").exists());
+    assert!(!fx.app().exists());
+    mv_fake(&fx, "");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    fx.assert_installed("0.1.0");
+}

@@ -754,8 +754,12 @@ $ENTRIES_ALL
 EOF
   if do_swap; then :; else
     if_rc=$?
-    rollback || { check_signal "$?"; }
+    if_undo=0
+    rollback || { if_undo=$?; check_signal "$if_undo"; }
     check_signal "$if_rc"
+    if [ "$if_undo" -ne 0 ]; then
+      die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
+    fi
     die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
   fi
   return 0

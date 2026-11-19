@@ -497,8 +497,12 @@ Undo commands preserve their own failure status through the undo subshell
 and `rollback`; recovery and a failed swap pass the undo status to
 `check_signal` before diagnosing exit 5. The undo subshell keeps `SIGNAL=0`
 so an already handled parent signal does not stop its work. A failed undo
-leaves the swap active for a safe retry. Staging, journal writes and cleanup
-helpers also preserve program statuses until the caller checks for signals.
+leaves the swap active for a safe retry. After a failed swap, a non-signal
+undo failure prints "The files could not be put back. Run this script again
+to restore the installed version." and exits 5; entry paths may be missing
+until the next run recovers. Only a successful undo prints "Nothing was
+changed: the version that was installed still works." Staging, journal writes
+and cleanup helpers also preserve program statuses until the caller checks for signals.
 Every site that drops or remaps a program's status must pass the original
 status through `check_signal` before interpreting it: constant `exit` or
 `return`, `die`, ignored failures (`|| true` or a fallback assignment),
@@ -510,7 +514,14 @@ a caller's checkpoint; undo retains `SIGNAL=0` and propagates failures to
 the parent so it can finish recovery. Builtin-only predicates and formatting
 substitutions have no external program status to preserve. The conservative
 source scan `tests/status_audit.rs::ac3b_status_remapping_requires_a_signal_check`
-rejects new unchecked spellings. It recognizes builtin predicates (`[`,
+rejects new unchecked spellings of `||`, command substitutions, and negation
+in command position: after `if`, `elif`, `while`, `until`, `&&`, `||`, `;`,
+`|`, or at the start of a command, with any whitespace (including two spaces
+or a tab after `if`). The same rules apply to every such negation.
+Other status-discarding forms require hand review rather than scanning:
+`if prog; then` without a checking else, `until prog`, `prog && x`, a bare
+pipeline, `prog; :` in the `set +e` undo subshell, and `if helper` where
+that helper uses `|| return`. The scan recognizes builtin predicates (`[`,
 `read`, `command -v`), calls to the short named set of builtin-only or
 internally checked helpers, and status-preserving `|| return` and
 `|| exit "$?"` by rule. Helper bodies remain subject to the scan; adding a
@@ -546,6 +557,12 @@ fails or `<n>` is the script's own pid (a name with its own pid can only be
 left by an earlier process that had the same pid). Any other name (`watane.old.mine`) is left alone.
 
 ### 3.9 What it prints
+
+After a failed swap (exit 5), stderr reports `could not put the files in
+place`, then `Nothing was changed: the version that was installed still
+works.` if undo succeeded, or `The files could not be put back. Run this
+script again to restore the installed version.` if undo failed without a
+signal (3.8).
 
 Stdout carries the progress and the result, stderr the errors. No colour,
 no cursor movement, no emoji; each line is a fact or a command, so an

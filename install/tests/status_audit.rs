@@ -195,7 +195,24 @@ fn covered_by_rule(line: &str) -> bool {
             }
         }
         // A negation anywhere in a condition list drops its pipeline's status.
-        if token == "!" && index > 0 && matches!(tokens[index - 1].as_str(), "if" | "&&" | "||") {
+        if token == "!"
+            && (index == 0
+                || matches!(
+                    tokens[index - 1].as_str(),
+                    "if" | "elif"
+                        | "while"
+                        | "until"
+                        | "then"
+                        | "do"
+                        | "else"
+                        | "&&"
+                        | "||"
+                        | ";"
+                        | "|"
+                        | "{"
+                        | "("
+                ))
+        {
             let end = tokens[index + 1..]
                 .iter()
                 .position(|word| matches!(word.as_str(), ";" | "&&" | "||"))
@@ -222,8 +239,9 @@ fn unchecked_sites(source: &str) -> Vec<String> {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        let candidate =
-            line.contains("||") || line.contains("if !") || line.replace("$((", "").contains("$(");
+        let candidate = line.contains("||")
+            || shell_tokens(line).iter().any(|token| token == "!")
+            || line.replace("$((", "").contains("$(");
         if !candidate {
             continue;
         }
@@ -355,4 +373,18 @@ fn adv_s50b_fix_scan_misses_negated_predicates() {
         missed.is_empty(),
         "scan accepts unchecked negations: {missed:?}"
     );
+}
+
+#[test]
+fn ac1_negations_in_every_command_position() {
+    for prefix in [
+        "", "if ", "elif\t", "while  ", "until ", "x && ", "x || ", "x; ", "x | ",
+    ] {
+        let site = format!("{prefix}! tool");
+        assert!(!unchecked_sites(&site).is_empty(), "missed {site}");
+        let safe = format!("{prefix}! allowed value");
+        if !prefix.contains("||") {
+            assert!(unchecked_sites(&safe).is_empty(), "rejected {safe}");
+        }
+    }
 }

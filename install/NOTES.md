@@ -468,3 +468,24 @@ rollback tests. Focused scanner tests passed after the test-only clippy fix
 (use expect with the established peek invariant instead of unwrap).
 Clippy, nightly fmt check, shellcheck and git diff --check passed; only the
 existing workspace-hack manifest warnings remain. No ignored or GUI tests ran.
+
+### s50b-fix-8: negated predicates and failed undo
+
+The unchanged adversary scan test first failed on all six reported spellings.
+The scanner now tokenizes every line containing a negation token and checks
+negations in every command position, regardless of whitespace. Added AC1
+coverage for until, separators and pipelines as well as the adversary cases.
+TECHNICAL 3.8 explicitly names the forms left to hand review.
+
+The AC3 fake-mv test first reproduced the false "Nothing was changed" claim
+when restoring *.old.* fails permanently. install_files now retains rollback's
+status, checks it for signals, and prints recovery instructions on a non-signal
+undo failure; successful undo keeps its original text. The test also verifies
+missing entry paths and recovery/install on the next run. No existing test
+assertion or dependency changed. TECHNICAL 3.8 and 3.9 own both exit-5 texts.
+
+Final validation: cargo test -p watane-install passed (101 passed, 16 ignored,
+11 suites; 646.69 s). Clippy with -D warnings, nightly fmt --check,
+shellcheck -s sh install.sh package.sh and git diff --check passed. Clippy
+reported only the existing workspace-hack manifest warnings. No ignored or
+GUI tests ran.
