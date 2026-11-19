@@ -71,8 +71,8 @@ toml = "1"
 semver = "1"
 blake3 = "1.8"
 ureq = { version = "3", default-features = false, features = ["json"] }
-wasmtime = { version = "=48.0.8", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
-wasmtime-wasi = { version = "=48.0.8", default-features = false, features = ["p2"] }
+wasmtime = { version = "=48.0.9", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
+wasmtime-wasi = { version = "=48.0.9", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
