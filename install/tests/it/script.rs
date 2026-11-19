@@ -1,6 +1,6 @@
 //! INST-S-1 to 22, 26 to 28, 30 and 31: runs `install.sh` against a fake release (TECHNICAL 12.1).
 
-mod support;
+use crate::support;
 
 use std::fs;
 use std::io::Write;
@@ -8,7 +8,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use support::*;
+use crate::support::*;
 
 const CURL_LINE: &str = "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2";
 

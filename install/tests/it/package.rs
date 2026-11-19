@@ -1,13 +1,11 @@
 //! `package.sh` over fake programs (TECHNICAL 4, 5, 12.1): the tree, the refusals, the end to end run.
 
-mod support;
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
-use support::*;
+use crate::support::*;
 
 const V: &str = "0.1.0";
 

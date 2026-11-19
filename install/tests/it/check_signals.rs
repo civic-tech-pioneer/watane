@@ -1,12 +1,10 @@
 //! Early-check signals and genuine failures on POSIX shells (install/TECHNICAL 3.2, 3.8, 3.9).
 
-mod support;
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-use support::*;
+use crate::support::*;
 
 fn shells() -> Vec<&'static str> {
     let mut shells = vec!["/bin/sh"];

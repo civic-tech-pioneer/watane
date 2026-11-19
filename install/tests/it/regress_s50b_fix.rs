@@ -1,12 +1,10 @@
 //! Regression tests from S50b-fix's user-sim run on the Mac (install/TECHNICAL 3.8).
 
-mod support;
-
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-use support::*;
+use crate::support::*;
 
 /// 3.8: `INT` exits 130 (INST-S-11). On the Mac a Ctrl-C in the first second of a run, while
 /// the checks of 3.4 steps 1 to 3 run, is often reported as a cause that is not true: by hand

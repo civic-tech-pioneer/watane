@@ -1,11 +1,9 @@
 //! Adversary tests of S50b-fix: deferred signals before the swap (install/TECHNICAL 3.8).
 
-mod support;
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use support::*;
+use crate::support::*;
 
 /// Writes a wrapper first on the PATH: it sends `signal` to the installer shell only (as
 /// `kill <pid>` from another program does) when its arguments match `when`, then runs the

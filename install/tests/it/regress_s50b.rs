@@ -1,10 +1,8 @@
 //! Regression tests from S50b's user-sim run on the real programs (install/TECHNICAL 3.8).
 
-mod support;
-
 use std::fs;
 
-use support::*;
+use crate::support::*;
 
 /// 3.8: the temporary folder is removed whatever ends the run, short of `SIGKILL`. An agent
 /// that reads only the first lines (`curl ... | sh | head -20`) closes the pipe; the script's

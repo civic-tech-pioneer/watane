@@ -1,5 +1,5 @@
 //! Regression checks for bounded test runs and generous deadlines (TECHNICAL 12.1).
-mod support;
+use crate::support;
 
 #[test]
 #[ignore = "slow: proves script(1) preserves the final answer until the tty read"]

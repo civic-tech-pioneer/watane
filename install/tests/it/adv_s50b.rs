@@ -1,11 +1,9 @@
 //! Adversary tests of S50b: attacks on the Install boundary (spec/TECHNICAL 6, install/TECHNICAL 8.5, 10).
 
-mod support;
-
 use std::fs;
 use std::os::unix::fs::symlink;
 
-use support::*;
+use crate::support::*;
 
 /// 8.4 step 2 `rmdir`s `<prefix>/bin`, `<prefix>/share/watane-dev`, `<prefix>/share` and
 /// `<prefix>/share/watane` without the folder check of 8.5 rule 3: through a link at `~/.local`

@@ -7,7 +7,7 @@ questions left open. Names that this document fixes (the script, the
 archives, the paths, the flags, the variables, the exit codes, the texts)
 are cited elsewhere and defined only here.
 
-Stage 1 of section 11 is built (S50b-1: `install.sh` and `tests/script.rs`); `NOTES.md` records where the build differed from the first draft.
+Stage 1 of section 11 is built (S50b-1: `install.sh` and `tests/it/script.rs`); `NOTES.md` records where the build differed from the first draft.
 
 ## 1. What `install` owns
 
@@ -524,7 +524,7 @@ status before checking it. Helpers may preserve and return the status to
 a caller's checkpoint; undo retains `SIGNAL=0` and propagates failures to
 the parent so it can finish recovery. Builtin-only predicates and formatting
 substitutions have no external program status to preserve. The conservative
-source scan `tests/status_audit.rs::ac3b_status_remapping_requires_a_signal_check`
+source scan `tests/it/status_audit.rs::ac3b_status_remapping_requires_a_signal_check`
 is a regression guard for honest edits, not a security boundary: someone who
 can edit the script controls its behavior. It rejects new unchecked spellings of `||`, command substitutions, and negation
 in command position: after `if`, `elif`, `while`, `until`, `&&`, `||`, `;`,
@@ -733,7 +733,7 @@ binary; this is no identity, section 6), writes the archive, the baked
 fails: the message starts `package.sh: missing part:` and names the part (a program, the
 app or its `Info.plist`, `dev/scripts/vendor.sh`, or an empty vendor folder). Every input is
 looked up from the checkout that holds the script (`<checkout>/target/release/...`,
-`<checkout>/dev/scripts/vendor.sh`), so `tests/package.rs` copies `package.sh` into a
+`<checkout>/dev/scripts/vendor.sh`), so `tests/it/package.rs` copies `package.sh` into a
 miniature checkout of fake programs and runs it there. The `codesign` and `otool` steps run
 only when the tool is on `PATH`. When `codesign` runs, the bundle also holds
 `Contents/_CodeSignature/` and exactly its four files `CodeDirectory`,
@@ -1151,9 +1151,9 @@ a day for an agent, M is a day.
 
 | Stage | Build | Touches (folders) | Needs | Done when |
 |---|---|---|---|---|
-| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22, INST-S-26 to 28, 30 and 31 pass in `cargo test`; the swap of 3.6 is built whole. Size M |
+| 1 Script | `install.sh` (3), the crate `watane-install` with `tests/it/script.rs`, `tests/support/`, `tests/fakes/`; add `install` to the root `Cargo.toml` members and run `cargo hakari generate` | `install/`, root `Cargo.toml`, `workspace-hack/` (generated) | none | INST-S-1 to INST-S-22, INST-S-26 to 28, 30 and 31 pass in `cargo test`; the swap of 3.6 is built whole. Size M |
 | 2 Versions | `watane-node --version`; `--version` of the three programs prints `<name> <version>` and exits 0 (a test each) | `node/` (bin and its `program.rs` test), `host/` and `dev/` only if a test finds a difference | none | `watane-node --version` prints `watane-node 0.1.0`. Size S |
-| 3 Packer | `package.sh` (4), `tests/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing; INST-S-32 to 35 pass in `cargo test`. Size S |
+| 3 Packer | `package.sh` (4), `tests/it/package.rs` | `install/` | stage 1 (the script copy) | the tree of 4.2 is made from fake programs; refused when a part is missing; INST-S-32 to 35 pass in `cargo test`. Size S |
 | 4 Workflow | `.github/workflows/release.yml` (7); the bundle step (7.3); README line with the one-liner; a dry run on `macos-14` | `.github/`, `install/`, `README.md`; `app/` only if the bundle needs a field of `tauri.conf.json` or `Info.plist` | stages 1 to 3 | INST-S-29 passes in `cargo test`; a `workflow_dispatch` dry run uploads an archive that stage 5's test installs. Size M |
 | 5 Clean Mac | `tests/clean_mac.sh` (12.3, 12.4); the second macOS user prepared by the human; the first real release `v0.1.0` cut by the human | `install/`; the human | stage 4 | INST-S-1, 23, 24, 25 pass on the clean Mac against the real release. Size M, local |
 | 6 App notice | the app shows the one-liner and the Gatekeeper text where `app` shows its first start (optional) | `app/` | stage 5 | not required for S50b |
@@ -1175,7 +1175,7 @@ to four per test binary. Deadlines start after admission. Stale-journal
 fixtures use pid `99999999`, above Linux's maximum pid limit (4194304)
 and macOS's pid range, so a live kernel thread cannot claim the journal.
 
-`tests/script.rs` runs `sh install/install.sh` as a child with:
+`tests/it/script.rs` runs `sh install/install.sh` as a child with:
 - a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
   `WATANE_*` of the developer leaks in), then `HOME` an empty temporary
   folder and `TMPDIR` another;
@@ -1262,7 +1262,7 @@ Also:
 
 The tests run as a normal user and compare a listing of `$HOME` before and
 after (INST-S-1, 2, 8, 20). They run on Linux and macOS, since the
-platform is faked. `tests/package.rs` runs `package.sh` over fake
+platform is faked. `tests/it/package.rs` runs `package.sh` over fake
 programs and a fake vendor folder and lists the tree against 4.2; the
 `codesign` and `otool` steps are skipped when the tool is absent
 (`#[cfg(target_os = "macos")]` for the signature check).

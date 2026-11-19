@@ -324,13 +324,13 @@ fn ac2_substitution_fallback_checks_status_before_die() {
     assert!(
         unchecked_sites("value=$(cmd) || { check_signal \"$?\"; die 2 'missing'; }").is_empty()
     );
-    let unchecked = unchecked_sites(include_str!("../install.sh"));
+    let unchecked = unchecked_sites(include_str!("../../install.sh"));
     assert!(unchecked.is_empty(), "unchecked sites: {unchecked:#?}");
 }
 
 #[test]
 fn ac3b_status_remapping_requires_a_signal_check() {
-    let source = include_str!("../install.sh");
+    let source = include_str!("../../install.sh");
     assert!(source.contains("die() {\n  check_signal \"$?\"\n"));
     assert!(source.contains("    SIGNAL=0\n"));
     let unchecked = unchecked_sites(source);
@@ -467,7 +467,7 @@ fn adv_s50b_fix_scan_misses_case_arm_background_substitution_and_continued_quote
 
 #[test]
 fn ac3_scan_scope_and_exit5_texts_are_documented() {
-    let spec = include_str!("../TECHNICAL.md");
+    let spec = include_str!("../../TECHNICAL.md");
     let scope = spec
         .split("### 3.8")
         .nth(1)

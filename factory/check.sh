@@ -41,19 +41,14 @@ step moddoc sh -c 'r=0; for f in $(find src -name "*.rs"); do head -1 "$f" | gre
 # a new or changed dependency: licence, source and ban rules (deny.toml); advisories only on main
 [ -n "$(git diff --name-only "$BASE" -- "$W/Cargo.lock")" ] && step deny cargo deny check bans licenses sources
 # integration tests are modules of one binary, tests/it/main.rs (factory/README.md, test kinds)
-[ "$SUB" = install ] || step one-binary sh -c 'for f in tests/*.rs; do [ -e "$f" ] && { echo "$f: make it tests/it/$(basename "$f") with a mod line in tests/it/main.rs"; exit 1; }; done; exit 0'
-for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/([^/]+|it/.+)\.rs$' | grep -v '/it/main\.rs$'); do
+step one-binary sh -c 'for f in tests/*.rs; do [ -e "$f" ] && { echo "$f: make it tests/it/$(basename "$f") with a mod line in tests/it/main.rs"; exit 1; }; done; exit 0'
+for f in $(git diff --name-only "$BASE" -- tests/ | grep -E '^'"$SUB"'/tests/it/.+\.rs$' | grep -v '/it/main\.rs$'); do
   p=$W/$f; [ -f "$p" ] || continue
   [ -n "$(names "$p" slow)" ] || continue
   SKIP=(); for n in $(names "$p" front; names "$p" timing; names "$p" real); do SKIP+=(--skip "$n"); done
-  case $f in
-    */tests/it/*)  # every ignored test of the file's module except front, timing and real: its slow ones
-      m=${f#*/tests/it/}; m=${m%.rs}; m=${m//\//::}
-      step "slow $m" cargo test ${FEAT[@]+"${FEAT[@]}"} --test it -- --ignored "$m::" ${SKIP[@]+"${SKIP[@]}"} ;;
-    *)  # install/ keeps one binary per file until slice/s50b-fix has merged
-      # ponytail: names are substring filters; a slow name that contains a skipped one is skipped too
-      step "slow $(basename "$f" .rs)" cargo test ${FEAT[@]+"${FEAT[@]}"} --test "$(basename "$f" .rs)" -- --ignored $(names "$p" slow) ${SKIP[@]+"${SKIP[@]}"} ;;
-  esac
+  # every ignored test of the file's module except front, timing and real: its slow ones
+  m=${f#*/tests/it/}; m=${m%.rs}; m=${m//\//::}
+  step "slow $m" cargo test ${FEAT[@]+"${FEAT[@]}"} --test it -- --ignored "$m::" ${SKIP[@]+"${SKIP[@]}"}
 done
 if [ ${#FAILED[@]} -eq 0 ]; then echo "CHECK PASS $HEAD"; echo "CHECK PASS $HEAD" >> "$LOG"; exit 0; fi
 echo "CHECK FAIL $HEAD: ${FAILED[*]} (log $LOG)" | tee -a "$LOG"; exit 1

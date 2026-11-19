@@ -136,8 +136,8 @@ Rules:
   test that changes or counts process-wide state (env, umask, cwd, open sockets) runs itself in a
   child process (`static_config`, `unpack_umask`, net and node `support::rerun_alone`); a lock
   that kept a file's tests apart lives in `tests/support` when files share it (app `GUI`); net's
-  `support::slot` lets at most 6 tests run machines at once, as its deadline tests need.
-  `install/` keeps its own files until `slice/s50b-fix` has merged.
+  `support::slot` lets at most 6 tests run machines at once, as its deadline tests need; install's
+  `support::RunPermit` lets at most 4 scripts run at once.
 - App GUI tests run hidden (`App::start`) or in the background (`App::background`): no window on
   screen, no Dock icon, no focus taken. Only `front` tests take the screen.
 - Who runs what: Sol runs the tests it works on, and the default tests once at the end.
