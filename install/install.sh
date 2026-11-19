@@ -752,10 +752,10 @@ stage_files() {
   set -C
   if {
     printf 'watane-receipt 1\nversion %s\ntarget %s\n' "$RELEASE" "$TARGET"
-    printf '%s\n' "$FOLDERS_RESOLVED"
     while IFS= read -r sf_p; do printf 'path %s\n' "$sf_p"; done <<EOF
 $ENTRIES
 EOF
+    printf '%s\n' "$FOLDERS_RESOLVED"
   } >"$RECEIPT.new.$$"; then sf_rc=0; else sf_rc=$?; fi
   set +C
   return $sf_rc

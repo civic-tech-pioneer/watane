@@ -22,6 +22,16 @@ fn ac1_resolved_folders_guard_receipt_removals() {
                 "{receipt}"
             );
         }
+        let lines: Vec<&str> = receipt.lines().collect();
+        assert_eq!(lines.len(), 14, "{receipt}");
+        assert!(
+            lines[3..10].iter().all(|l| l.starts_with("path ")),
+            "{receipt}"
+        );
+        assert!(
+            lines[10..].iter().all(|l| l.starts_with("resolved ")),
+            "{receipt}"
+        );
         if recorded {
             fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
             write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -42,7 +52,13 @@ fn ac1_resolved_folders_guard_receipt_removals() {
         assert_eq!(out.code, 0, "{out:?}");
         if recorded {
             assert!(fx.home.join("Documents/vendor/marker").exists());
-            assert!(!fx.bin("watane").exists());
+            for l in lines.iter().filter(|l| l.starts_with("path ")) {
+                let p = std::path::Path::new(&l["path ".len()..]);
+                if !l.ends_with("/watane-dev/vendor") {
+                    assert!(fs::symlink_metadata(p).is_err(), "{l} left: {out:?}");
+                }
+            }
+            assert!(!fx.receipt().exists(), "{out:?}");
             assert!(out.stderr.lines().any(|l| l == format!("watane install: skipped {}: ~/.local/share/watane-dev resolves to {}, not to {} as at install", fx.share("watane-dev/vendor").display(), fs::canonicalize(fx.home.join("Documents")).unwrap().display(), fs::canonicalize(&fx.home).unwrap().join(".local/share/watane-dev").display())));
         } else {
             assert_eq!(snapshot(&fx.home), before);
@@ -242,4 +258,39 @@ fn ac5_status_reads_receipt_while_lock_is_held() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("watane 0.1.0 (aarch64-apple-darwin)"));
     assert_eq!(snapshot(&fx.home), before);
+}
+
+/// 3.6.2: an uninstall at a planted lock removes nothing of an installed home.
+#[test]
+fn ac2_uninstall_at_a_planted_lock_removes_nothing() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fs::create_dir(fx.home.join(".watane-install.lock")).unwrap();
+    let before = snapshot(&fx.home);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(snapshot(&fx.home), before);
+}
+
+/// 3.6.2: a lock whose `pid` cannot be written stops the run (exit 5) and is removed.
+#[test]
+fn ac2_unwritable_lock_pid_exits_5_and_removes_the_lock() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fx::new();
+    fs::write(
+        fx.fakes.join("mkdir"),
+        "#!/bin/sh\n\"$FAKE_REAL/mkdir\" \"$@\" || exit\ncase $1 in *.watane-install.lock) \"$FAKE_REAL/chmod\" 500 \"$1\" ;; esac\n",
+    )
+    .unwrap();
+    fs::set_permissions(fx.fakes.join("mkdir"), fs::Permissions::from_mode(0o755)).unwrap();
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(
+        out.stderr
+            .lines()
+            .any(|l| l == "watane install: could not write install lock"),
+        "{out:?}"
+    );
+    assert!(!fx.home.join(".watane-install.lock").exists());
+    assert!(fx.rel.requests().is_empty());
 }
