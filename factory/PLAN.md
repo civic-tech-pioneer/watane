@@ -385,9 +385,9 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   every `$(cmd) || die` runs `check_signal "$?"` first, and the status scan no longer exempts
   `|| die`; the stale-journal fixture pid is 99999999; the pty runner closes stdin before wait on
   Linux only (install/TECHNICAL 12.1); the SC2015 sites are explicit ifs. Known limit widened
-  (3.8): a real 129..143 exit of any child (tar, mktemp) reads as a signal. Linux: cloud check
-  S50b-fix2-linux (two runs) after the merge.
-- [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
+  (3.8): a real 129..143 exit of any child (tar, mktemp) reads as a signal. After the merge: main
+  green on the Mac (124) and on Linux twice (cloud check S50b-fix2-linux, shellcheck 0.9 clean).
+- [~] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** In flight (local), worktree `.claude/worktrees/s50c`. After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
   (report only, no rewrite), the human makes the repository public, and the PO applies Q16, and `tests/clean_mac.sh` run in a fresh macOS VM
