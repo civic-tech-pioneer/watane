@@ -32,7 +32,7 @@ const TOP: &[&str] = &[
     "permissions: {}",
 ];
 const PACKAGE: &[&str] = &[
-    "runs-on: macos-14",
+    "runs-on: macos-15",
     "contents: read",
     "RUSTUP_TOOLCHAIN: stable",
     "persist-credentials: false",
