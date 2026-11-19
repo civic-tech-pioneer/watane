@@ -378,6 +378,16 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   uninstall and status need mktemp; a failed undo of a new entry may say "Nothing was changed");
   an unwritable TMPDIR at the home question stops uninstall with exit 1 after the files are removed.
   Open risks, moved into S50c. Linux: rerun in the cloud after the merge (S50b-fix-linux).
+- [~] **S50b-fix2 install's tests pass on Linux again.** In flight (cloud). The cloud rerun after
+  S50b-fix (branch `check/s50b-fix-linux`, file `factory/runs/s50b-fix-linux.txt`) is red on
+  Linux: `adv_s50b_fix` ac2_ctrl_c_in_platform_substitution (exit 0, not 130) and
+  ctrl_c_in_recovery_undo_prints_a_cause (the test's stale journal names pid 42, a live kworker on
+  Linux: use a pid that cannot be live); `adv_s50b` toolchain_detection flaky (130 instead of 0);
+  `script.rs` inst_s7_target_missing hangs over 10 min (defunct `script` child); shellcheck 0.9
+  reports SC2015 at install.sh:257 and package.sh:30, 44 (fail `waits.rs` ac3). Outcome: `cargo test
+  -p watane-install -- --include-ignored` green on Linux twice, shellcheck clean, and the macOS
+  behaviour unchanged (list each Mac-only test the change touches as `not run (cloud)`).
+  Touches: `install/` only.
 - [ ] **S50c A person installs watane on a clean Mac (install stages 4 and 5, J7).** After S50b
   and the Q16 settings ((a): the `v*` tag ruleset, a `release` environment with a required reviewer, a read-only default token, set before the first release). `release.yml` with a `workflow_dispatch` dry run on `macos-14`, the README one-liner, the
   first real release `v0.1.0` (cut by the human); before it, a secret scan of the whole history
