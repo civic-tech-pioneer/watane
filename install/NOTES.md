@@ -411,3 +411,32 @@ the task's status-propagation requirement, so the test is left unchanged
 for the owner to resolve. Clippy and nightly fmt check exited 0 (existing
 workspace-hack manifest warnings only); shellcheck exited 0. No ignored
 or GUI tests ran.
+
+### s50b-fix-7 foreman follow-up: AC3b
+
+The check log reproduced only the recorded repeated-undo assertion failure.
+The foreman authorized changing that test's exit assertion from 5 to 143:
+it sends TERM into undo, whose signal status is now retained. Only that
+assertion and its explanatory comment changed; its replacement app and
+marker assertions remain unchanged. The focused test passed.
+
+AC3b adds tests/status_audit.rs: a conservative source scan for OR fallback,
+negated predicates and command substitutions. It requires the original
+status to reach check_signal, directly, via die's checked entry, or through
+an exact function-scoped reviewed exception. The commented allow-list covers
+builtin predicates/formatting, helpers that check statuses internally,
+status-preserving returns (including undo's SIGNAL=0 path), saved rustup
+status and signal dispatch points. Mutation checks show new unchecked
+forms, changed builtin substitutions, constant undo exits and late checks
+are rejected. This is a source lint for the script's current syntax, not a
+complete POSIX shell parser; unfamiliar syntax requires review.
+
+The scan first failed on both read_answer fallback assignments (toolchain
+and uninstall). Both now check the function's status before clearing ANSWER;
+the scan then passed. TECHNICAL 3.8 states the general status-remapping rule.
+No dependency was added, and no ignored or GUI test was run.
+
+Follow-up final validation: cargo test -p watane-install passed (97 passed,
+16 ignored, 11 suites; 633.34 s). Clippy, nightly fmt check, shellcheck and
+git diff --check passed. Clippy retains only the existing workspace-hack
+manifest warnings. This supersedes the earlier unresolved assertion result.

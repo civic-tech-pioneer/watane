@@ -503,6 +503,23 @@ and `rollback`; recovery and a failed swap pass the undo status to
 so an already handled parent signal does not stop its work. A failed undo
 leaves the swap active for a safe retry. Journal writes and cleanup helpers
 also preserve program statuses until the caller checks for signals.
+Every site that drops or remaps a program's status must pass the original
+status through `check_signal` before interpreting it: constant `exit` or
+`return`, `die`, ignored failures (`|| true` or a fallback assignment),
+negated program predicates, and command substitutions whose status would
+otherwise be overwritten. `die` checks its incoming status as its first
+command. A negated program predicate must instead capture the unnegated
+status before checking it. Helpers may preserve and return the status to
+a caller's checkpoint; undo retains `SIGNAL=0` and propagates failures to
+the parent so it can finish recovery. Builtin-only predicates and formatting
+substitutions have no external program status to preserve. The conservative
+source scan `tests/status_audit.rs::ac3b_status_remapping_requires_a_signal_check`
+rejects new unchecked spellings, with exact, function-scoped exceptions and
+comments for these builtin paths, checked helpers, status propagation and
+signal-handler dispatch. Changes to an exception require reviewing its
+reason; a new site does not inherit an exception merely by calling the
+same program.
+
 A real exit of 129/130/141/143 from rustup or rustup-init is treated as
 that signal, without a "toolchain step failed" line. A signal during final
 cleanup may leave the temporary folder. A signal while a question waits

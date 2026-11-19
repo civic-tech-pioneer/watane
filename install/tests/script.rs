@@ -1349,7 +1349,8 @@ fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
     .expect("fake rm");
     fx.state_write("armed", "1");
     let out = fx.run(&[]);
-    assert_eq!(out.code, 5, "{out:?}");
+    // TERM in undo now retains its signal status instead of becoming exit 5.
+    assert_eq!(out.code, 143, "{out:?}");
     assert!(
         !fx.state.join("armed").exists(),
         "the undo reached its rm: {out:?}"
