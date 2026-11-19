@@ -558,3 +558,32 @@ failures; Linux and shellcheck 0.9 were not available for local verification.
 Per the task's sandbox instructions, no existing ignored or GUI tests and no
 full --include-ignored run were started; the outside-sandbox validator must
 check inst_s7_target_missing and the remaining ignored PTY cases.
+
+
+### S50b-fix2 follow-up: preserve queued PTY answers on macOS
+
+The outside-sandbox Mac check (s50b-fix2-1.check.log) exposed five lost-answer
+failures: inst_s2_toolchain_answered_y, inst_s7_target_missing,
+ac2_toolchain_accepts_mixed_case_yes, inst_s16_uninstall_home_deleted and
+inst_s28_a_home_that_is_not_a_watane_home. Closing script(1)'s input before
+waiting works for util-linux, but macOS forwards EOF before the installer's
+/dev/tty read has consumed the queued answer.
+
+Added ac1_pty_preserves_the_last_answer_until_consumed: a prebuilt shell fixture
+prints a prompt, delays its tty read for one second, then confirms the consumed
+answer. It failed first on the Mac with exit 11 and EOF before delete; after
+the fix it passes and prints consumed: <delete>. It is ignored by default
+because it requires script(1), and was run explicitly as this task's new test.
+
+The runner now closes stdin before child.wait() only on Linux and after it
+on macOS (and other non-Linux targets). This retains Linux's EOF-based shutdown
+and macOS's old ordering. TECHNICAL 12.1 records the platform distinction and
+regression. No existing assertions, waits, concurrency limits or dependencies
+changed.
+
+Follow-up validation on the Mac: the new delayed-reader test passed explicitly
+after failing before the fix. Default cargo test -p watane-install passed
+(107 passed, 17 ignored). Clippy --all-targets with -D warnings, nightly
+fmt --check, shellcheck and git diff --check passed. Existing ignored PTY
+tests remain for the outside-sandbox validator per the task instructions;
+Linux execution also remains for its runner.

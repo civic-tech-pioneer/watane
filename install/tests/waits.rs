@@ -2,6 +2,20 @@
 mod support;
 
 #[test]
+#[ignore = "slow: proves script(1) preserves the final answer until the tty read"]
+fn ac1_pty_preserves_the_last_answer_until_consumed() {
+    let fx = support::Fx::new();
+    std::fs::write(
+        &fx.script,
+        "printf 'answer: '\n/bin/sleep 1\nIFS= read -r answer </dev/tty || exit 11\nprintf 'consumed: <%s>\\n' \"$answer\"\n",
+    )
+    .expect("delayed tty reader");
+    let out = fx.run_pty(&[], &[], &[("answer: ", "delete")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("consumed: <delete>"), "{out:?}");
+}
+
+#[test]
 fn ac2_waits_allow_endpoint_security_delays() {
     assert_eq!(support::WAIT_TIMEOUT.as_secs(), 600);
 }

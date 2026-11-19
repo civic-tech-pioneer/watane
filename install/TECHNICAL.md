@@ -1224,9 +1224,14 @@ and macOS's pid range, so a live kernel thread cannot claim the journal.
   `script(1)` (macOS: `script -q /dev/null sh install.sh <flags>`;
   util-linux: `script -qec "sh install.sh <flags>" /dev/null`), reads
   its output until the line that ends the question (`[y/N] ` or `keep it: `) appears, then writes the answer and a newline to `script`'s
-  stdin. After the last answer it closes that stdin before waiting for
-  `script` to exit: util-linux `script` can wait for input EOF after its
-  command exits. It needs no `expect`. These tests are `#[ignore = "slow: needs a
+  stdin. On Linux it closes that stdin after the last answer, before waiting
+  for `script` to exit: util-linux `script` can wait for input EOF after its
+  command exits. On macOS it keeps stdin open until `script` exits: macOS
+  `script` can forward EOF before the installer reads the queued answer from
+  `/dev/tty`, losing even a typed `yes` or `delete`. The delayed-reader regression
+  `waits.rs::ac1_pty_preserves_the_last_answer_until_consumed` proves the final
+  answer reaches the tty reader before shutdown. It needs no `expect`.
+  These tests are `#[ignore = "slow: needs a
   pseudo-terminal from script(1)"]`, so the gate runs them with the other
   slow tests of the files a task touched. If `script(1)` does not forward a
   piped stdin on macOS, the fallback is `openpty` in this test-only module

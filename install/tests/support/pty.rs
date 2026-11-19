@@ -81,8 +81,12 @@ pub fn run_bytes(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &
         let _ = stdin.flush();
     }
     // util-linux script waits for EOF on its input even after the command exits.
+    #[cfg(target_os = "linux")]
     drop(stdin);
     let status = child.wait().expect("wait");
+    // macOS script forwards EOF to the tty before a queued answer may be read.
+    #[cfg(not(target_os = "linux"))]
+    drop(stdin);
     reader.join().expect("reader");
     Out {
         code: status.code().unwrap_or(-1),
