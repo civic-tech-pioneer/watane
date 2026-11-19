@@ -254,7 +254,20 @@ Move them aside, then run this again, for example:
   mv ~/Applications/watane.app ~/Applications/watane.app.mine
 ```
 
-One `  <path>` and one `  mv <path> <path>.mine` line for each (INST-S-30). It
+One `  <path>` and one `  mv <path> <path>.mine` line for each (INST-S-30).
+A path that is foreign only by 8.5 rule 4 (the receipt lists it, but its
+install folder now resolves elsewhere than the receipt's `resolved` line)
+is not in that list, since its `mv` would move the person's own file through
+the link; for each such folder the script prints instead, to stderr, and
+exits 8 the same way:
+
+```text
+watane install: ~/.local/share/watane-dev resolves to /Users/alice/Documents, not to /Users/alice/.local/share/watane-dev as at install
+Make ~/.local/share/watane-dev a real folder again (or point it where it was), then run this again.
+```
+
+(`an unrecorded path` in place of the recorded one when the receipt has no
+`resolved` line for it.) It
 overwrites nothing and there is no flag that forces it (IN-26). An upgrade
 (INST-F-19) is unaffected: its paths are in the receipt. A person who
 deleted the receipt must move the files aside, or uninstall by hand first.
@@ -1434,10 +1447,11 @@ nothing of Tart. For each of the two images, `vm_mac.sh`:
    over `ssh -tt` (a terminal, so the run has a `/dev/tty`; the answers are
    still typed by `clean_mac.sh` itself);
    in the guest, INST-S-1's "no file written outside `~/.local`,
-   `~/Applications`" skips `~/Library/*` paths without `watane` in their
-   name: a live macOS session writes its own files there during the run
-   (`~/Library/Assistant/...` in S50c's first run); `cargo test`'s INST-S-1
-   proves the whole rule in a hermetic home;
+   `~/Applications`" is checked as the guest rule below, since a live macOS
+   session writes its own files during the run (`~/Library/Assistant/...`,
+   `~/Pictures/Photos Library.photoslibrary/...`,
+   `~/Music/Music/Music Library.musiclibrary/...` in S50c's runs);
+   `cargo test`'s INST-S-1 proves the whole rule in a hermetic home;
 4. prints the guest's output, then `tart stop` and `tart delete` the run's
    VM on every exit (a trap), so nothing of a run survives it.
 It prints `VM PASS` when both parts printed `CLEAN-MAC PASS`, else the
@@ -1485,10 +1499,14 @@ with no person at the keyboard; each answer is typed on a pseudo-terminal by the
 Without a mode flag it runs `--part clean`; the mode flags are mutually
 exclusive. A relative `--from` path is resolved from the caller's working
 folder before entering the test home. Before each install, a path listing of the home records the
-guest's existing folders (including Desktop and Library); newly created
-paths must be under `.local` or `Applications`, with `.cargo` and `.rustup`
-also allowed only for the CLT part's typed yes, and `Library/*` paths
-without `watane` in their name skipped (step 3 of `vm_mac.sh` above).
+guest's existing folders (including Desktop and Library). The guest rule:
+a newly created path fails the run when it is directly in the home (a new
+`.zshrc`, `.profile`, any new top-level name) other than `.local`,
+`Applications`, and `.cargo` and `.rustup` for the CLT part's typed yes, or
+when any component of it holds `watane` outside `.local`, `Applications`
+and the home's own `.watane` (made by opening the app); a new path deeper in a folder that already
+existed and without `watane` is macOS's own and is skipped (step 3 of
+`vm_mac.sh` above).
 
 With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
 then INST-S-1 with no terminal, the three `--version` lines and the `otool`
