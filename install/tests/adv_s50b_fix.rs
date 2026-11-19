@@ -273,3 +273,33 @@ fn ac3_failed_undo_reports_recovery_and_next_run_installs() {
     assert_eq!(out.code, 0, "{out:?}");
     fx.assert_installed("0.1.0");
 }
+
+/// 3.9: "The files could not be put back" is printed only when the undo failed. Here every
+/// installed file is put back and the installed version works, but removing a staged `.new.`
+/// entry fails afterwards (an undo cleanup step), so the run claims the files could not be put
+/// back and tells the person the installed version needs restoring: a false report.
+#[test]
+fn adv_s50b_fix_staging_cleanup_failure_claims_files_not_put_back() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&[]).code, 0);
+    mv_fake(&fx, "case \"$1\" in *watane.app.new.*) exit 1 ;; esac");
+    let real = which("rm");
+    let p = fx.fakes.join("rm");
+    fs::write(
+        &p,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in *.new.[0-9]*) exit 1 ;; esac\nexec {} \"$@\"\n",
+            real.display()
+        ),
+    )
+    .expect("fake");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 5, "{out:?}");
+    // the installed version is back in place and works
+    fx.assert_installed("0.1.0");
+    assert!(
+        !out.stderr.contains("could not be put back"),
+        "files are in place, yet: {out:?}"
+    );
+}

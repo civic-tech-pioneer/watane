@@ -388,3 +388,28 @@ fn ac1_negations_in_every_command_position() {
         }
     }
 }
+
+/// 3.8: the scan rejects negation "at the start of a command, with any whitespace" and
+/// unchecked `||`. Each site below negates or drops an external program's status in a form the
+/// scan promises, yet it is accepted: a `case` arm (`pat) ! tool`), a command after `&`, a
+/// negated substitution followed by `check_signal "$?"` (which sees the inverted 0/1), and a
+/// line that closes a quoted string opened on the line before (the tokenizer hides the rest).
+#[test]
+fn adv_s50b_fix_scan_misses_case_arm_background_substitution_and_continued_quote() {
+    let missed: Vec<_> = [
+        "case $x in a) ! tool ;; esac",
+        "case $x in\n*) ! tool ;;\nesac",
+        "x & ! tool",
+        "value=$( ! tool )\ncheck_signal \"$?\"",
+        "value=$(! tool)\ncheck_signal \"$?\"",
+        "msg=\"first line\nsecond line\"; ! tool",
+        "msg=\"first line\nsecond line\"; tool || true",
+    ]
+    .into_iter()
+    .filter(|site| unchecked_sites(&format!("new_site() {{\n{site}\n:\n")).is_empty())
+    .collect();
+    assert!(
+        missed.is_empty(),
+        "scan accepts unchecked sites: {missed:?}"
+    );
+}
