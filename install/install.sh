@@ -170,6 +170,7 @@ allowed() {
 
 # receipt_allowed <path>: 8.5, including the install-time folder identity.
 receipt_allowed() {
+  ra_folder=""
   if allowed "$1"; then :; else
     check_signal "$?"
     warn "skipped $1: not a path that watane installs"
@@ -652,6 +653,8 @@ check_foreign() {
   cf_old_ok=$R_OK
   cf_old_ver=$R_VERSION
   cf_known=""
+  cf_rule4=""
+  cf_folders=""
   while IFS= read -r cf_l; do
     case $cf_l in 'path '*) ;; *) continue ;; esac
     cf_p=${cf_l#path }
@@ -659,6 +662,15 @@ check_foreign() {
       cf_known=$(add_item "$cf_known" "$cf_p")
     else
       check_signal "$?"
+      if [ -n "$ra_folder" ] && in_list "$ENTRIES" "$cf_p" && exists "$cf_p"; then
+        cf_rule4=$(add_item "$cf_rule4" "$cf_p")
+        if ! in_list "$cf_folders" "$ra_folder"; then
+          cf_folders=$(add_item "$cf_folders" "$ra_folder")
+          # shellcheck disable=SC2088 # Show the home as a literal tilde in the fix text.
+          warn "~/$ra_folder resolves to $ra_now, not to $ra_old as at install"
+          printf 'Make ~/%s a real folder again (or point it where it was), then run this again.\n' "$ra_folder" >&2
+        fi
+      fi
     fi
   done <<EOF
 $R_LINES
@@ -682,6 +694,7 @@ EOF
   cf_found=""
   while IFS= read -r cf_p; do
     if in_list "$cf_known" "$cf_p"; then continue; fi
+    if in_list "$cf_rule4" "$cf_p"; then continue; fi
     if exists "$cf_p"; then cf_found=$(add_item "$cf_found" "$cf_p"); fi
   done <<EOF
 $ENTRIES
@@ -699,6 +712,7 @@ $cf_found
 EOF
     exit 8
   fi
+  if [ -n "$cf_rule4" ]; then check_signal; exit 8; fi
   if [ "$cf_old_ok" = 1 ]; then
     if [ "$cf_old_ver" = "$RELEASE" ]; then
       say "reinstalling watane $RELEASE"

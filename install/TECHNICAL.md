@@ -1508,6 +1508,9 @@ and the home's own `.watane` (made by opening the app); a new path deeper in a f
 existed and without `watane` is macOS's own and is skipped (step 3 of
 `vm_mac.sh` above).
 
+The `--fresh-home` comparison keeps the stricter existing rule: every new path
+outside `.local` and `Applications` fails, except non-watane paths under `Library`.
+
 With `--fresh-home` (the runner's smoke, 7.2 step 7) only steps 1 to 3 run,
 then INST-S-1 with no terminal, the three `--version` lines and the `otool`
 assertion of 12.4; no answer is typed, no toolchain is installed and no app

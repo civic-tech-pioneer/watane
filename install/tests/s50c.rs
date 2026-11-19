@@ -340,14 +340,32 @@ fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
         let requests = fx.rel.requests();
         let out = fx.run(&["--release", "0.2.0", "--no-toolchain"]);
         assert_eq!(out.code, 8, "{out:?}");
-        assert_eq!(
-            out.first_err(),
-            "watane install: found files that watane did not install:"
-        );
+        let old = if recorded {
+            fx.home
+                .canonicalize()
+                .unwrap()
+                .join(".local/share/watane-dev")
+                .display()
+                .to_string()
+        } else {
+            "an unrecorded path".to_string()
+        };
+        let now = if recorded {
+            fx.home.join("Documents")
+        } else {
+            fx.home.join(".local/share/watane-dev")
+        }
+        .canonicalize()
+        .unwrap();
+        assert!(out.stderr.contains(&format!(
+            "watane install: ~/.local/share/watane-dev resolves to {}, not to {old} as at install",
+            now.display()
+        )), "{out:?}");
+        assert!(out.stderr.contains(
+            "Make ~/.local/share/watane-dev a real folder again (or point it where it was), then run this again."
+        ), "{out:?}");
         assert!(
-            out.stderr
-                .lines()
-                .any(|l| l == "  ~/.local/share/watane-dev/vendor"),
+            !out.stderr.contains("mv ~/.local/share/watane-dev/vendor"),
             "{out:?}"
         );
         assert_eq!(snapshot(&fx.home), before);

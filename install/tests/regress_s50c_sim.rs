@@ -99,3 +99,48 @@ fn regress_s50c_home_changes_ignores_macos_media_library_writes() {
     let out = run("clean");
     assert_eq!(out.status.code(), Some(1), "{out:?}");
 }
+
+#[test]
+fn ac1_guest_home_changes_checks_top_level_and_watane_but_fresh_stays_strict() {
+    let source = include_str!("clean_mac.sh");
+    let function = source
+        .split("home_changes() {")
+        .nth(1)
+        .unwrap()
+        .split("native_dependencies() {")
+        .next()
+        .unwrap();
+    for (mode, new_path, succeeds) in [
+        ("clean", "Pictures/media/cache", true),
+        ("clt", ".cargo/bin/rustc", true),
+        ("clean", "new-folder/file", false),
+        ("clean", "Pictures/watane/cache", false),
+        ("clean", ".watane/data", true),
+        ("fresh", "Pictures/media/cache", false),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let work = temp.path().join("work");
+        fs::create_dir_all(home.join("Pictures")).unwrap();
+        fs::create_dir(&work).unwrap();
+        fs::write(
+            work.join("home-before"),
+            format!("{}\n{}\n", home.display(), home.join("Pictures").display()),
+        )
+        .unwrap();
+        write_file(&home.join(new_path), "new");
+        let helper = temp.path().join("compare.sh");
+        fs::write(&helper, format!("H=$1; work=$2; mode={mode}\nfail() {{ exit 1; }}\ncheck() {{ \"$@\" || fail; }}\nhome_changes() {{{function}\nhome_changes\n")).unwrap();
+        let out = Command::new("/bin/sh")
+            .arg(&helper)
+            .arg(&home)
+            .arg(&work)
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.success(),
+            succeeds,
+            "{mode}: {new_path}: {out:?}"
+        );
+    }
+}
