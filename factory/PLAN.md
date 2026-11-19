@@ -1252,7 +1252,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   (a) S53: answered 2026-11-15 (org `minmax-fund`, `CLAUDE_GH_TOKEN`). (b) S54: answered 2026-11-15 (GitHub Pages in `minmax-fund`). Was: S54 needs somewhere to serve a channel for real
   (GitHub Pages under that account would do). (c) S55: answered (again) 2026-11-18: use a VM on
   this Mac; the human has no easy second machine. Not a question any more.
-- S50c needs `civic-tech-pioneer/watane` public (2026-11-18). ANSWERED 2026-11-18: (a), plan for public. S50c scans the history for secrets first; the human flips the visibility; then the PO applies the tag ruleset and the `release` environment. The repository is private on the free
+- S50c needs `civic-tech-pioneer/watane` public (2026-11-18). ANSWERED 2026-11-18: (a), plan for public. Secret scan done 2026-11-19 (S50c: gitleaks 8.30.1 over all 1032 commits plus a pattern sweep): no secrets; one false positive, a z-base-32 test key in app/src. Public with it: the author email on 1762 commits and `/Users/merlijn` in 2 paths (hiding them needs a history rewrite). Next: the human makes the repository public. S50c scans the history for secrets first; the human flips the visibility; then the PO applies the tag ruleset and the `release` environment. The repository is private on the free
   plan, so (1) `curl … | sh` cannot download its Releases without a token, and (2) GitHub refuses
   rulesets and environment reviewers there (403 "Upgrade to GitHub Pro or make this repository
   public"). Options: (a) make it public before S50c's first release, then apply Q16's tag ruleset and
@@ -1275,6 +1275,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S50c (2026-11-19): GitHub retired the `macos-14` runner on 2026-11-02, so release.yml builds on
+  `macos-15`; the deployment target stays 14.0, built for but not tested (install/TECHNICAL Q4 says
+  how to raise it to 15.0). Rejected: raising the target to 15.0 now (drops 14 users for no test
+  gain).
 - The human (2026-11-16), test time: an app slice ran the whole window suite about six times
   (each validator, the foreman, the PO). Now a validator runs only its touched test files
   (`--features driver --test <file>`, app/AGENTS.md), the foreman the whole suite once, the PO only
