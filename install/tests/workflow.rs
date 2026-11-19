@@ -51,7 +51,7 @@ const PACKAGE: &[&str] = &[
     "with open(os.environ['GITHUB_OUTPUT'], 'a') as output:",
     "print(f'version={version}', file=output)",
     "if [[ $GITHUB_REF == refs/tags/* ]]; then",
-    "git merge-base --is-ancestor \"$GITHUB_SHA\" origin/main",
+    "git merge-base --is-ancestor \"$GITHUB_SHA\" refs/remotes/origin/main",
     "rustc --version",
     "cargo --version",
     "MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --locked -p watane-host -p watane-dev -p watane-node",
@@ -206,6 +206,18 @@ fn violations(text: &str) -> Vec<String> {
         errors.push("publishing the draft must be last".into());
     }
     errors
+}
+
+#[test]
+fn ac3_short_origin_main_ref_is_rejected() {
+    let original = read(".github/workflows/release.yml");
+    let broken = original.replace("refs/remotes/origin/main", "origin/main");
+    assert!(
+        violations(&broken)
+            .iter()
+            .any(|error| error.contains("refs/remotes/origin/main")),
+        "accepted the ambiguous origin/main ref"
+    );
 }
 
 #[test]

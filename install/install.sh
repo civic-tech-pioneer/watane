@@ -411,13 +411,19 @@ $R_LINES
 EOF
     fi
   fi
+  # Old-only paths use the old receipt; backups use the committed new receipt.
+  read_receipt "$RECEIPT"
   while IFS= read -r fc_p; do
-    allowed "$fc_p" || continue
+    receipt_allowed "$fc_p" || { check_signal "$?"; continue; }
     if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1" || return; fi
   done <<EOF
 $ENTRIES
 EOF
-  if exists "$fc_old"; then rm_path "$fc_old" || return; fi
+  if receipt_allowed "$RECEIPT"; then
+    if exists "$fc_old"; then rm_path "$fc_old" || return; fi
+  else
+    check_signal "$?"
+  fi
   rm -f "$SHAREW/journal.$1" || { check_signal "$?"; return 1; }
   return 0
 }
@@ -808,6 +814,14 @@ EOF
 }
 
 swap_entries() {
+  # Compare with step 4 before moving any entry (3.6 step 3).
+  for sw_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
+    resolve_dir "$sw_f" || { check_signal "$?"; }
+    if ! in_list "$FOLDERS_RESOLVED" "resolved ${sw_f#"$HOME/"} $RES"; then
+      SWAP_CHANGED="$(tilde "$sw_f") changed during the install: it now resolves to $RES"
+      return 1
+    fi
+  done
   sw_j=$SHAREW/journal.$$
   while IFS= read -r sw_p; do
     if exists "$sw_p"; then mv "$sw_p" "$sw_p.old.$$" || return; fi
@@ -835,6 +849,7 @@ do_swap() {
 
 install_files() {
   recover
+  SWAP_CHANGED=""
   while IFS= read -r if_p; do
     for if_k in new old; do
       if exists "$if_p.$if_k.$$"; then
@@ -868,6 +883,9 @@ EOF
     done <<EOF
 $if_old
 EOF
+    if [ -n "$SWAP_CHANGED" ]; then
+      die 5 "$SWAP_CHANGED" "Nothing was changed: the version that was installed still works."
+    fi
     die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
   fi
   return 0
