@@ -513,7 +513,9 @@ source scan `tests/status_audit.rs::ac3b_status_remapping_requires_a_signal_chec
 rejects new unchecked spellings. It recognizes builtin predicates (`[`,
 `read`, `command -v`), calls to the short named set of builtin-only or
 internally checked helpers, and status-preserving `|| return` and
-`|| exit "$?"` by rule. Helper bodies remain subject to the scan. Exact,
+`|| exit "$?"` by rule. Helper bodies remain subject to the scan; adding a
+helper to the set, or making one return a program's status unchecked,
+needs the same review as an exception. Exact,
 function-scoped, commented exceptions cover only signal-handler dispatch,
 the saved rustup status, the two conditional substitutions whose branches
 check their status, byte formatting and the builtin tty probe. Changes to

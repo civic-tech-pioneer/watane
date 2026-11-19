@@ -1,6 +1,8 @@
 //! Guard status-handling sites against lost signals (install/TECHNICAL 3.8).
 
 // This is a conservative source lint for this script's syntax, not a POSIX parser.
+// The scan trusts these helpers' statuses: adding one, or a program whose status
+// a helper returns unchecked, needs the same review as an exception.
 const CHECKED_HELPERS: &[&str] = &[
     "exists",
     "plain_path",
@@ -192,12 +194,16 @@ fn covered_by_rule(line: &str) -> bool {
                 return false;
             }
         }
-        if token == "!" && index > 0 && tokens[index - 1] == "if" {
+        // A negation anywhere in a condition list drops its pipeline's status.
+        if token == "!" && index > 0 && matches!(tokens[index - 1].as_str(), "if" | "&&" | "||") {
             let end = tokens[index + 1..]
                 .iter()
                 .position(|word| matches!(word.as_str(), ";" | "&&" | "||"))
                 .map_or(tokens.len(), |position| index + 1 + position);
-            if !safe_command(&tokens[index + 1..end]) {
+            if !tokens[index + 1..end]
+                .split(|word| word == "|")
+                .all(safe_command)
+            {
                 return false;
             }
         }
@@ -322,6 +328,8 @@ fn ac3b_rules_cover_builtins_checked_helpers_and_preserved_statuses() {
         assert!(unchecked_sites(&format!("if ! {helper} value; then\n")).is_empty());
     }
     assert!(!unchecked_sites("if ! unknown_helper value; then\n").is_empty());
+    assert!(!unchecked_sites("if ! [ -e x ] | tool; then\n").is_empty());
+    assert!(!unchecked_sites("if ! [ -e x ] && ! tool; then\n").is_empty());
     assert!(!unchecked_sites("unknown_helper value || return 1\n").is_empty());
     assert!(!unchecked_sites(r#"value=$(add_item "$(external_tool)" item)"#).is_empty());
 }
