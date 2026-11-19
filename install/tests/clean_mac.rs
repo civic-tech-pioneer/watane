@@ -52,17 +52,20 @@ fn ac3_refuses_cargo_in_home_before_install() {
 
 #[test]
 fn ac3_refuses_checkout_above_home_before_install() {
-    let temp = tempfile::tempdir().expect("temp");
-    let home = temp.path().join("home");
-    fs::create_dir(&home).expect("home");
-    fs::write(temp.path().join("Cargo.toml"), "[workspace]\n").expect("manifest");
-    let output = run_clean(&home);
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("12.4: checkout at"),
-        "{output:?}"
-    );
-    assert!(!home.join(".local").exists());
+    // A manifest above the home, and a worktree's `.git` file (12.4 uses -e).
+    for marker in ["Cargo.toml", ".git"] {
+        let temp = tempfile::tempdir().expect("temp");
+        let home = temp.path().join("home");
+        fs::create_dir(&home).expect("home");
+        fs::write(temp.path().join(marker), "[workspace]\n").expect("marker");
+        let output = run_clean(&home);
+        assert_eq!(output.status.code(), Some(1), "{marker}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("12.4: checkout at"),
+            "{marker}: {output:?}"
+        );
+        assert!(!home.join(".local").exists());
+    }
 }
 
 #[test]
@@ -204,6 +207,13 @@ esac
                 calls.contains("--from /Users/admin/watane-release"),
                 "{calls}"
             );
+        }
+        for line in calls
+            .lines()
+            .filter(|l| l.starts_with("tart stop ") || l.starts_with("tart delete "))
+        {
+            let name = line.split(' ').nth(2).unwrap_or_default();
+            assert!(name.starts_with("watane-run-"), "{calls}");
         }
         assert!(calls.contains("--wait"), "{calls}");
         assert!(calls.contains("ssh -tt"), "{calls}");
@@ -381,4 +391,54 @@ fn ac1_relative_release_path_survives_fresh_home() {
         String::from_utf8_lossy(&out.stdout).contains("RELATIVE-RELEASE"),
         "{out:?}"
     );
+}
+
+#[test]
+fn ac4_term_during_guest_run_stops_and_deletes_only_the_run_vm() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().expect("temp");
+    let bin = temp.path().join("bin");
+    fs::create_dir(&bin).expect("bin");
+    let log = temp.path().join("calls");
+    let marker = temp.path().join("guest-running");
+    let fake = r#"#!/bin/sh
+printf '%s %s\n' "${0##*/}" "$*" >> "$CALLS"
+case ${0##*/}:$1:$* in
+  tart:ip:*) echo 192.0.2.10 ;;
+  ssh:*clean_mac.sh*) : > "$MARKER"; sleep 2 ;;
+esac
+"#;
+    for name in ["tart", "ssh", "scp"] {
+        let path = bin.join(name);
+        fs::write(&path, fake).expect("fake");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let mut child = Command::new("/bin/sh")
+        .arg(script("vm_mac.sh"))
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("CALLS", &log)
+        .env("MARKER", &marker)
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("vm driver");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "guest run never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let killed = Command::new("/bin/kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .expect("kill");
+    assert!(killed.success());
+    let status = child.wait().expect("wait");
+    assert_eq!(status.code(), Some(1), "{status:?}");
+    let calls = fs::read_to_string(log).expect("calls");
+    let run = format!("watane-run-{}", child.id());
+    assert!(calls.contains(&format!("tart stop {run}\n")), "{calls}");
+    assert!(calls.contains(&format!("tart delete {run}\n")), "{calls}");
+    assert!(!calls.contains("--part clt"), "{calls}");
 }

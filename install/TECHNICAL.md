@@ -971,11 +971,6 @@ cd app && cargo tauri build --bundles app \
   -- --locked
 ```
 
-For S50c the exact CLI version is `2.12.5`, read from the `tauri` package
-in `Cargo.lock`: `cargo install tauri-cli --version '=2.12.5' --locked`.
-The CLI may rewrite the two Tauri dependencies to equivalent tables with
-`features = []`; restore that incidental manifest formatting after the build.
-
 `tauri-cli` passes what follows `--` to `cargo build`, so the app is built
 with the lock like the three programs of step 4; without it cargo would
 resolve the dependencies of `app` anew and the release could carry crates
@@ -1444,9 +1439,8 @@ file, with `vm_mac.sh: tart is not installed (see install/TECHNICAL.md 12.3)`.
 CLI flags and the `admin` credentials were checked with `gh api` against
 `openai/tart` at `a8d03d4a1ae34705e153a376437cee3b4f6c4f63`:
 `docs/quick-start.md` and `Sources/tart/Commands/{Clone,Run,IP,Stop,Delete}.swift`.
-The documented images currently name Tahoe, Sequoia and Sonoma rather
-than golden-gate. The task's golden-gate reference is retained; its registry
-availability is unverified until the human approves image preparation.
+The quick-start lists Tahoe, Sequoia and Sonoma images; the
+golden-gate image is a public ghcr package as well (checked 2026-11-19).
 
 `tests/clean_mac.sh [--from <dir>] [--fresh-home | --part clean | --part clt]` does the whole run
 with no person at the keyboard; each answer is typed on a pseudo-terminal by the same `script(1)` method as 12.1:

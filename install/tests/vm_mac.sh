@@ -60,8 +60,9 @@ copy() {
     -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "$@" </dev/null
 }
 boot() {
+  # Own the name only once this run created it; never delete another VM.
+  check tart clone "$1" "watane-run-$$"
   vm=watane-run-$$
-  check tart clone "$1" "$vm"
   tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
   runner=$!
   deadline=$(( $(date +%s) + 600 ))

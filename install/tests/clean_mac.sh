@@ -25,7 +25,7 @@ else
   H=$(cd "$HOME" && pwd -P)
 fi
 # The here-document is the whole test: no inherited build variables or tools.
-exec env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=dumb /bin/sh -s -- "$from" "$mode" <<'CLEAN_TEST'
+exec /usr/bin/env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin TERM=dumb /bin/sh -s -- "$from" "$mode" <<'CLEAN_TEST'
 set -eu
 from=$1
 case $from in ''|/*) ;; *) from=$(pwd -P)/$from ;; esac
@@ -204,8 +204,9 @@ installed() {
     fi
   done
   if xcode-select -p >/dev/null 2>&1; then
-    if grep -F '  xcode-select --install' "$work/install.log"; then fail 'unexpected xcode-select --install line (xcode-select -p succeeded)'; fi
+    if grep -i -e 'xcode-select' -e 'command line tools' "$work/install.log"; then fail 'unexpected command line tools text (xcode-select -p succeeded)'; fi
   else
+    contains "watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:" "$work/install.log"
     contains '  xcode-select --install' "$work/install.log"
   fi
 }
@@ -305,6 +306,8 @@ case $mode in
     check test "$target" = true
     PATH=$H/.local/bin:$PATH
     export PATH
+    check mkdir "$work/new"
+    check cd "$work/new"
     check watane-dev new reading-list
     check test -f reading-list/mod.toml
     check cd reading-list
