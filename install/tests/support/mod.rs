@@ -10,7 +10,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -118,7 +118,67 @@ pub fn which(name: &str) -> PathBuf {
     panic!("the tool {name} is not on this machine");
 }
 
+/// The shell the fakes and the fake programs run under: `dash` where there is one, since
+/// macOS's `/bin/sh` starts bash in a second process. `install.sh` itself runs under `/bin/sh`.
+pub fn fake_shell() -> &'static str {
+    if Path::new("/bin/dash").exists() {
+        "/bin/dash"
+    } else {
+        "/bin/sh"
+    }
+}
+
+/// The fakes of `tests/fakes`, under `fake_shell`, written once per test binary: `bin` holds
+/// those every test has, `rustup` holds `rustup` and `rustc`. They keep no state of their own
+/// (that is in `$FAKE_STATE`), so every test shares them.
+fn shared_fakes() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes");
+        let mut files: Vec<(String, String)> = fs::read_dir(&src)
+            .expect("fakes dir")
+            .map(|e| {
+                let e = e.expect("entry");
+                let body = fs::read_to_string(e.path()).expect("read fake");
+                let body = body.replacen("#!/bin/sh\n", &format!("#!{}\n", fake_shell()), 1);
+                (e.file_name().to_string_lossy().into_owned(), body)
+            })
+            .collect();
+        files.sort();
+        let mut h = std::hash::DefaultHasher::new();
+        std::hash::Hash::hash(&files, &mut h);
+        let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+        let dir = base.join(format!(
+            "install-fakes-{:016x}",
+            std::hash::Hasher::finish(&h)
+        ));
+        if !dir.is_dir() {
+            // Written aside, then renamed, so a test binary running at the same time never
+            // sees half a folder.
+            let tmp = base.join(format!("install-fakes-tmp-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&tmp);
+            for (name, body) in &files {
+                let sub = if matches!(name.as_str(), "rustup" | "rustc") {
+                    "rustup"
+                } else {
+                    "bin"
+                };
+                let to = tmp.join(sub).join(name);
+                fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                fs::write(&to, body).expect("write fake");
+                fs::set_permissions(&to, fs::Permissions::from_mode(0o755)).expect("chmod");
+            }
+            if fs::rename(&tmp, &dir).is_err() {
+                let _ = fs::remove_dir_all(&tmp); // another binary was first
+            }
+        }
+        dir
+    })
+}
+
 /// One test's world: a temporary `HOME` and `TMPDIR`, the fake tools, the fake release.
+/// `fakes` is this test's own folder, first on the `PATH` and empty unless the scenario adds
+/// `rustup` (`add_rustup`) or another fake; the shared fakes come after it.
 pub struct Fx {
     pub root: tempfile::TempDir,
     pub home: PathBuf,
@@ -149,16 +209,6 @@ impl Fx {
                 fs::create_dir(&p).expect("mkdir");
                 p
             });
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes");
-        for e in fs::read_dir(&src).expect("fakes dir") {
-            let e = e.expect("entry");
-            if matches!(e.file_name().to_str(), Some("rustup" | "rustc")) {
-                continue; // only a scenario that has them puts them on the PATH (add_rustup)
-            }
-            let to = fakes.join(e.file_name());
-            fs::copy(e.path(), &to).expect("copy fake");
-            fs::set_permissions(&to, fs::Permissions::from_mode(0o755)).expect("chmod");
-        }
         for t in TOOLS {
             symlink(which(t), tools.join(t)).expect("link tool");
         }
@@ -229,9 +279,8 @@ impl Fx {
 
     /// Puts the fake `rustup` and `rustc` on the `PATH`, with a sysroot that has the target or not.
     pub fn add_rustup(&self, with_target: bool) {
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes");
         for n in ["rustup", "rustc"] {
-            fs::copy(src.join(n), self.fakes.join(n)).expect("copy fake");
+            symlink(shared_fakes().join("rustup").join(n), self.fakes.join(n)).expect("link fake");
         }
         let sysroot = self.root.path().join("sysroot");
         fs::create_dir_all(sysroot.join("lib")).expect("sysroot");
@@ -265,7 +314,12 @@ chmod 755 "$HOME/.cargo/bin/rustup" "$HOME/.cargo/bin/rustc"
     }
 
     pub fn path_value(&self) -> String {
-        format!("{}:{}", self.fakes.display(), self.tools.display())
+        format!(
+            "{}:{}:{}",
+            self.fakes.display(),
+            shared_fakes().join("bin").display(),
+            self.tools.display()
+        )
     }
 
     /// The environment of a run, cleared first (TECHNICAL 12.1).
@@ -495,7 +549,7 @@ pub fn build_archive_with(version: &str, vendor: &[&str], tweak: &dyn Fn(&Path))
     for n in ["watane", "watane-dev", "watane-node"] {
         w(
             &format!("bin/{n}"),
-            &format!("#!/bin/sh\necho \"{n} {version}\"\n"),
+            &format!("#!{}\necho \"{n} {version}\"\n", fake_shell()),
             0o755,
         );
     }
@@ -627,13 +681,26 @@ impl Release {
             .remove(&format!("/release/{name}"));
     }
     /// Serves the archive and `SHA256SUMS` of this version, as one release holds them.
+    /// The archive and its sum are made once per test binary for each version and vendor list.
     pub fn set_version(&self, version: &str, vendor: &[&str]) {
-        let bytes = build_archive(version, vendor);
-        let name = archive_name(version);
-        self.put(
-            "SHA256SUMS",
-            format!("{}  {name}\n", sha256(&bytes)).into_bytes(),
+        type Made = HashMap<(String, Vec<String>), (Vec<u8>, String)>;
+        static MADE: OnceLock<Mutex<Made>> = OnceLock::new();
+        let key = (
+            version.to_string(),
+            vendor.iter().map(|v| (*v).to_string()).collect(),
         );
+        let made = MADE.get_or_init(Mutex::default);
+        let cached = made.lock().expect("made").get(&key).cloned();
+        let (bytes, sum) = cached.unwrap_or_else(|| {
+            let bytes = build_archive(version, vendor);
+            let sum = sha256(&bytes);
+            made.lock()
+                .expect("made")
+                .insert(key, (bytes.clone(), sum.clone()));
+            (bytes, sum)
+        });
+        let name = archive_name(version);
+        self.put("SHA256SUMS", format!("{sum}  {name}\n").into_bytes());
         self.put(&name, bytes);
     }
     pub fn requests(&self) -> Vec<String> {

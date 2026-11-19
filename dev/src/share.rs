@@ -403,17 +403,47 @@ fn join_commands(
     }
     commands
 }
-fn join(dir: &Path, repository: &str) -> Result<(), Problem> {
-    let new = !dir.join(".git").exists();
-    let refs = if new {
-        checked(&git(dir, &["ls-remote", "--", repository]))?
-    } else {
-        String::new()
-    };
-    execute(
+/// The origin and upstream URLs of a mod folder, read with one git call.
+fn remotes(dir: &Path) -> Result<(Option<String>, Option<String>), Problem> {
+    let (mut origin, mut upstream) = (None, None);
+    if !dir.join(".git").exists() {
+        return Ok((origin, upstream));
+    }
+    let found = read_git(
         dir,
-        &join_commands(dir, repository, new, origin(dir)?.is_some(), &refs),
-    )
+        &[
+            "config",
+            "--get-regexp",
+            r"^remote\.(origin|upstream)\.url$",
+        ],
+    )?
+    .unwrap_or_default();
+    // Like `config --get`, the last value of a key wins.
+    for line in found.lines() {
+        let (key, value) = line.split_once(' ').unwrap_or((line, ""));
+        match key {
+            "remote.origin.url" => origin = Some(value.to_string()),
+            "remote.upstream.url" => upstream = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    Ok((origin, upstream))
+}
+/// `has_origin` and `refs` (the `ls-remote` of `repository`) are passed in when the caller
+/// already read them.
+fn join(
+    dir: &Path,
+    repository: &str,
+    has_origin: bool,
+    refs: Option<String>,
+) -> Result<(), Problem> {
+    let new = !dir.join(".git").exists();
+    let refs = match refs {
+        Some(refs) if new => refs,
+        _ if new => checked(&git(dir, &["ls-remote", "--", repository]))?,
+        _ => String::new(),
+    };
+    execute(dir, &join_commands(dir, repository, new, has_origin, &refs))
 }
 fn site_commands(dir: &Path, paths: &[&str], release: &str) -> Vec<Run> {
     let mut add = vec!["add", "-A", "--"];
@@ -432,7 +462,8 @@ pub fn prepare_mod(
 ) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     (|| {
         let m = watane_pkg::Mod::read(dir).map_err(crate::check::mod_problems)?;
-        let stored = origin(dir).map_err(|e| vec![e])?;
+        let (stored, upstream_url) = remotes(dir).map_err(|e| vec![e])?;
+        let mut refs = None;
         if let Some(url) = &stored
             && m.repository().is_none_or(|r| !same_url(r, url))
         {
@@ -454,24 +485,22 @@ pub fn prepare_mod(
             let name = format!("{owner}/{}", m.slug());
             let repository = format!("https://github.com/{name}");
             let derived = m.origin().is_some();
-            let upstream_url = if dir.join(".git").exists() {
-                read_git(dir, &["config", "--get", "remote.upstream.url"]).map_err(|e| vec![e])?
-            } else {
-                None
-            };
             let upstream = upstream_url.as_deref().and_then(github_name);
             let existing = parent(&name).map_err(|e| vec![e])?;
             if let Some(p) = existing {
                 if derived && upstream.is_some_and(|u| p == u) {
                     forked = true;
-                } else if !checked(&git(dir, &["ls-remote", "--", &repository]))
-                    .map_err(|e| vec![e])?
-                    .is_empty()
-                {
-                    return Err(vec![Problem::new(Code::PublishRepositoryExists,
+                } else {
+                    let found = checked(&git(dir, &["ls-remote", "--", &repository]))
+                        .map_err(|e| vec![e])?;
+                    if found.is_empty() {
+                        refs = Some(found);
+                    } else {
+                        return Err(vec![Problem::new(Code::PublishRepositoryExists,
                         format!("{repository} exists and holds commits that watane-dev did not push for this mod"))
                         .at("mod.toml", None, None)
                         .fix(format!("Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: {rerun}"))]);
+                    }
                 }
             } else {
                 let mut reason = "no upstream repository".to_string();
@@ -562,7 +591,7 @@ pub fn prepare_mod(
             .map_err(|e| vec![Problem::internal(e)])?;
             repository
         };
-        join(dir, &repository).map_err(|e| vec![e])?;
+        join(dir, &repository, stored.is_some(), refs).map_err(|e| vec![e])?;
         Ok((
             json!({"repository":repository,"created":created,"forked":forked,"pushed":false}),
             warnings,
@@ -689,11 +718,21 @@ pub fn push(
         };
         site_result["raw"] = json!(raw(&repository, &branch));
         // Git rejects absent pathspecs; dist may have no entries yet (the fake has none).
+        let all = ["head", "entries", "packages"];
+        let tracked = if !new && all.iter().any(|p| !site.join(p).exists()) {
+            let mut args = vec!["ls-files", "-z", "--"];
+            args.extend(all);
+            read_git(site, &args)?.unwrap_or_default()
+        } else {
+            String::new()
+        };
         let mut paths = Vec::new();
-        for path in ["head", "entries", "packages"] {
+        for path in all {
             if site.join(path).exists()
-                || (!new
-                    && read_git(site, &["ls-files", "--", path])?.is_some_and(|s| !s.is_empty()))
+                || tracked.split('\0').any(|t| {
+                    t.strip_prefix(path)
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                })
             {
                 paths.push(path);
             }
@@ -727,7 +766,12 @@ pub fn push(
                 .next()
                 .unwrap_or_default()
         );
-        let branch = checked(&git(dir, &["branch", "--show-current"]));
+        // prepare_mod just put a fork on the branch watane.
+        let branch = if mod_result["forked"] == json!(true) {
+            Ok("watane".to_string())
+        } else {
+            checked(&git(dir, &["branch", "--show-current"]))
+        };
         let fork_repository = match &branch {
             Ok(branch) if branch == "watane" => Some(name.as_str()),
             Err(e) => {
