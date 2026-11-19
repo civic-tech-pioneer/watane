@@ -520,3 +520,41 @@ Validator (s50b-fix-9): the missing-path check alone called a failed undo
 whole when removing the new copy failed (the path existed, the old entry was
 still under `.old.<pid>`). The diagnosis now also counts a remaining `.old.`
 name, except the receipt's copy; validator_undo_stopped_before_restoring_reports_files_not_put_back pins it.
+
+
+### S50b-fix2: early-check signals and portable test shutdown
+
+The new ac2_substitution_fallback_checks_status_before_die failed first because
+the scan exempted both inline `|| die` and a `die` on the next line. Removing
+those exemptions exposed the root-id substitution, home resolution, recovery,
+archive extraction and temporary-directory creation. Each now checks the failed
+status in its caller before diagnosing it; die keeps its own dispatch check.
+Steps 1 to 4 were reviewed: version validation is builtin-only, tool lookup is
+checked explicitly, and platform substitutions already retain failed statuses.
+
+Stale journals use 99999999, above Linux's maximum pid limit and macOS's pid
+range. Contrary to the task brief's search result, script.rs also contained
+42-based journal fixtures, including one entering main's live-pid check; those
+fixtures and their matching paths, faults and expected texts use the same dead
+pid. No assertions were weakened.
+
+The pseudo-terminal runner drops its piped stdin before waiting for script(1),
+so util-linux script can observe EOF. The three A && B || C checks are explicit
+if statements with the same short-circuit behavior, avoiding shellcheck 0.9's
+SC2015. TECHNICAL 3.4, 3.8 and 12.1 record the caller checks, scan rule, dead
+pid and PTY close order. The 600-second waits and four-run gate are unchanged.
+No dependencies were added.
+
+Targeted validation: the new audit test was red on both the original scan and
+the original script, then all seven status_audit tests passed. The unchanged
+Mac Ctrl-C timing regression and stale-recovery Ctrl-C test passed.
+
+Final local validation: cargo test -p watane-install passed (107 passed,
+16 ignored, 10 suites; 419.85 s). Clippy --all-targets with -D warnings,
+nightly fmt --check, shellcheck -s sh install.sh package.sh (0.11.0) and
+git diff --check passed. waits.rs's ac3 shellcheck test also passed unchanged.
+The task's Linux report supplies the prior PID, PTY and shellcheck 0.9
+failures; Linux and shellcheck 0.9 were not available for local verification.
+Per the task's sandbox instructions, no existing ignored or GUI tests and no
+full --include-ignored run were started; the outside-sandbox validator must
+check inst_s7_target_missing and the remaining ignored PTY cases.

@@ -278,10 +278,9 @@ fn unchecked_sites(source: &str) -> Vec<String> {
             continue;
         }
         // Inline checks consume the status before fallback assignment or remapping.
-        // die's first command must do the same (asserted below), including a continued line.
         let fallback = line.rsplit_once("||").map(|(_, rhs)| rhs.trim());
         let inline_check = fallback.is_some_and(|rhs| {
-            if rhs.starts_with("{ check_signal \"$?\";") || rhs.starts_with("die ") {
+            if rhs.starts_with("{ check_signal \"$?\";") {
                 return true;
             }
             // A named status is safe only when captured first and checked next.
@@ -296,8 +295,6 @@ fn unchecked_sites(source: &str) -> Vec<String> {
             })
         });
         let checked = inline_check
-            || (line.ends_with("||")
-                && lines.get(index + 1).is_some_and(|next| next.starts_with("die ")))
             // Only a standalone assignment exposes its substitution's status unchanged.
             || (!line.contains("||") && !line.starts_with("if ")
                 && line.split_once("$(").is_some_and(|(prefix, _)| prefix.ends_with('='))
@@ -314,6 +311,21 @@ fn unchecked_sites(source: &str) -> Vec<String> {
         }
     }
     unchecked
+}
+
+#[test]
+fn ac2_substitution_fallback_checks_status_before_die() {
+    for site in [
+        "value=$(cmd) || die 2 'missing'",
+        "value=$(cmd) ||\n  die 2 'missing'",
+    ] {
+        assert!(!unchecked_sites(site).is_empty(), "missed {site}");
+    }
+    assert!(
+        unchecked_sites("value=$(cmd) || { check_signal \"$?\"; die 2 'missing'; }").is_empty()
+    );
+    let unchecked = unchecked_sites(include_str!("../install.sh"));
+    assert!(unchecked.is_empty(), "unchecked sites: {unchecked:#?}");
 }
 
 #[test]

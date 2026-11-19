@@ -1270,7 +1270,7 @@ fn ac1_term_rollback_from_a_prebuilt_journal() {
     for path in &paths {
         write_file(
             &path.with_file_name(format!(
-                "{}.old.42",
+                "{}.old.99999999",
                 path.file_name().expect("name").to_string_lossy()
             )),
             "old",
@@ -1279,20 +1279,23 @@ fn ac1_term_rollback_from_a_prebuilt_journal() {
         journal.push_str(&format!("old {}\n", path.display()));
     }
     fs::remove_file(fx.app()).expect("app moved aside");
-    write_file(&fx.app().with_file_name("watane.app.new.42"), "new");
-    write_file(&fx.receipt().with_file_name("receipt.new.42"), "pending");
+    write_file(&fx.app().with_file_name("watane.app.new.99999999"), "new");
+    write_file(
+        &fx.receipt().with_file_name("receipt.new.99999999"),
+        "pending",
+    );
     fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
-    write_file(&fx.share("watane/journal.42"), &journal);
+    write_file(&fx.share("watane/journal.99999999"), &journal);
     let source = baked_script("0.1.0").replace(
         "main \"$@\"",
         r#"
 HOME_R=$(cd "$HOME" && pwd -P)
 set_entries
-SWAP_PID=42
+SWAP_PID=99999999
 SWAP_ACTIVE=1
 trap cleanup EXIT
 trap 'on_signal 143' TERM
-mv "$HOME/Applications/watane.app.new.42" "$HOME/Applications/watane.app"
+mv "$HOME/Applications/watane.app.new.99999999" "$HOME/Applications/watane.app"
 "#,
     );
     fs::write(&fx.script, source).expect("fixture script");
@@ -1387,8 +1390,10 @@ fn ac4_every_undo_removal_can_be_repeated_or_recovered() {
     let removals: Vec<_> = entries[..6]
         .iter()
         .map(|p| format!("*/{p}"))
-        .chain(std::iter::once("*/share/watane/journal.42".to_string()))
-        .chain(entries.iter().map(|p| format!("*/{p}.new.42")))
+        .chain(std::iter::once(
+            "*/share/watane/journal.99999999".to_string(),
+        ))
+        .chain(entries.iter().map(|p| format!("*/{p}.new.99999999")))
         .collect();
     for mode in ["term", "sleep"] {
         for removal in &removals {
@@ -1412,15 +1417,15 @@ fn ac4_every_undo_removal_can_be_repeated_or_recovered() {
                     path.display(),
                     path.display()
                 ));
-                write_file(&fx.home.join(format!("{p}.new.42")), "staged");
+                write_file(&fx.home.join(format!("{p}.new.99999999")), "staged");
                 if kind == "old" {
-                    write_file(&fx.home.join(format!("{p}.old.42")), &fx.read(&path));
+                    write_file(&fx.home.join(format!("{p}.old.99999999")), &fx.read(&path));
                     if path != fx.receipt() {
                         fs::remove_file(&path).expect("moved aside");
                     }
                 }
             }
-            write_file(&fx.share("watane/journal.42"), &journal);
+            write_file(&fx.share("watane/journal.99999999"), &journal);
             let setup = r#"
 HOME_R=$(cd "$HOME" && pwd -P)
 set_entries
@@ -1429,7 +1434,7 @@ trap 'on_signal 143' TERM
 "#;
             let source = baked_script("0.1.0").replace(
                 "main \"$@\"",
-                &format!("{setup}\nSWAP_PID=42\nSWAP_ACTIVE=1\nrollback\n"),
+                &format!("{setup}\nSWAP_PID=99999999\nSWAP_ACTIVE=1\nrollback\n"),
             );
             fs::write(&fx.script, source).expect("undo fixture");
             fx.state_write("rm_fault", &format!("{mode}\n{removal}\n"));
@@ -1487,9 +1492,9 @@ fn ac4_recovery_keeps_replacement_at_an_undone_new_entry() {
         } else {
             fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
         }
-        write_file(&fx.share("watane/receipt.new.42"), "pending");
+        write_file(&fx.share("watane/receipt.new.99999999"), "pending");
         write_file(
-            &fx.share("watane/journal.42"),
+            &fx.share("watane/journal.99999999"),
             &format!(
                 "new {}\nmoved {}\n",
                 fx.bin("watane").display(),
@@ -1502,10 +1507,10 @@ set_entries
 "#;
         fs::write(
             &fx.script,
-            baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nundo_swap 42\n")),
+            baked_script("0.1.0").replace("main \"$@\"", &format!("{setup}\nundo_swap 99999999\n")),
         )
         .expect("undo fixture");
-        kill_at(&fx, "rm", "*/share/watane/journal.42", &[]);
+        kill_at(&fx, "rm", "*/share/watane/journal.99999999", &[]);
         write_file(&fx.bin("watane"), "mine");
         fs::write(
             &fx.script,
@@ -1527,9 +1532,9 @@ set_entries
 #[test]
 fn ac4_recovery_skips_a_fresh_entry_whose_parent_is_gone() {
     let fx = Fx::new();
-    write_file(&fx.share("watane/receipt.new.42"), "pending");
+    write_file(&fx.share("watane/receipt.new.99999999"), "pending");
     write_file(
-        &fx.share("watane/journal.42"),
+        &fx.share("watane/journal.99999999"),
         &format!(
             "new {}\nmoved {}\n",
             fx.bin("watane").display(),
@@ -1564,7 +1569,7 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
         fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
         if failure != "stale" {
             write_file(
-                &fx.share("watane/journal.42"),
+                &fx.share("watane/journal.99999999"),
                 &format!(
                     "{} {}\nmoved {}\n",
                     if matches!(failure, "restore" | "remove") {
@@ -1578,43 +1583,45 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
             );
         }
         if !matches!(failure, "committed" | "commit_journal") {
-            write_file(&fx.share("watane/receipt.new.42"), "pending");
+            write_file(&fx.share("watane/receipt.new.99999999"), "pending");
         }
         match failure {
             "marker" => {
                 let mkdir = fx.fakes.join("mkdir");
                 write_file(
                     &mkdir,
-                    "#!/bin/sh\ncase $1 in *.new.42) exit 1 ;; esac\nexec \"$FAKE_REAL/mkdir\" \"$@\"\n",
+                    "#!/bin/sh\ncase $1 in *.new.99999999) exit 1 ;; esac\nexec \"$FAKE_REAL/mkdir\" \"$@\"\n",
                 );
                 fs::set_permissions(mkdir, fs::Permissions::from_mode(0o755)).expect("chmod");
             }
             "move" => {
                 write_file(&fx.bin("watane"), "new");
-                fx.state_write("mv_fault", "fail\n*/bin/watane.new.42\n");
+                fx.state_write("mv_fault", "fail\n*/bin/watane.new.99999999\n");
             }
             "restore" => {
                 write_file(&fx.bin("watane"), "new");
-                write_file(&fx.bin("watane.old.42"), "old");
-                fx.state_write("mv_fault", "fail\n*/bin/watane.old.42\n");
+                write_file(&fx.bin("watane.old.99999999"), "old");
+                fx.state_write("mv_fault", "fail\n*/bin/watane.old.99999999\n");
             }
             "staging" | "stale" => {
-                write_file(&fx.bin("watane.new.42"), "staged");
-                fx.state_write("rm_fault", "fail\n*/bin/watane.new.42\n");
+                write_file(&fx.bin("watane.new.99999999"), "staged");
+                fx.state_write("rm_fault", "fail\n*/bin/watane.new.99999999\n");
             }
-            "journal" | "commit_journal" => fx.state_write("rm_fault", "fail\n*/journal.42\n"),
+            "journal" | "commit_journal" => {
+                fx.state_write("rm_fault", "fail\n*/journal.99999999\n")
+            }
             "remove" => {
                 write_file(&fx.bin("watane"), "new");
-                write_file(&fx.bin("watane.old.42"), "old");
+                write_file(&fx.bin("watane.old.99999999"), "old");
                 fx.state_write("rm_fault", "fail\n*/bin/watane\n");
             }
             "receipt_old" => {
-                write_file(&fx.share("watane/receipt.old.42"), "old");
-                fx.state_write("rm_fault", "fail\n*/receipt.old.42\n");
+                write_file(&fx.share("watane/receipt.old.99999999"), "old");
+                fx.state_write("rm_fault", "fail\n*/receipt.old.99999999\n");
             }
             "committed" => {
-                write_file(&fx.bin("watane.old.42"), "old");
-                fx.state_write("rm_fault", "fail\n*/bin/watane.old.42\n");
+                write_file(&fx.bin("watane.old.99999999"), "old");
+                fx.state_write("rm_fault", "fail\n*/bin/watane.old.99999999\n");
             }
             _ => unreachable!(),
         }
@@ -1633,7 +1640,7 @@ printf 'continued after recovery\n'
         let message = if failure == "stale" {
             "watane install: could not recover stale install files"
         } else {
-            "watane install: could not recover interrupted install (pid 42)"
+            "watane install: could not recover interrupted install (pid 99999999)"
         };
         assert!(out.stderr.contains(message), "{failure}: {out:?}");
         assert!(

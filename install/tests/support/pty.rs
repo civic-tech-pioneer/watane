@@ -80,8 +80,9 @@ pub fn run_bytes(fx: &Fx, args: &[&str], env: &[(&str, &str)], steps: &[(&str, &
         let _ = stdin.write_all(b"\n");
         let _ = stdin.flush();
     }
-    let status = child.wait().expect("wait");
+    // util-linux script waits for EOF on its input even after the command exits.
     drop(stdin);
+    let status = child.wait().expect("wait");
     reader.join().expect("reader");
     Out {
         code: status.code().unwrap_or(-1),

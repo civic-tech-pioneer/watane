@@ -27,7 +27,9 @@ script=$here/install.sh
 top=watane-$version-$target
 
 for p in watane watane-dev watane-node; do
-  [ -f "$rel/$p" ] && [ -x "$rel/$p" ] || die "missing part: the program $rel/$p"
+  if [ ! -f "$rel/$p" ] || [ ! -x "$rel/$p" ]; then
+    die "missing part: the program $rel/$p"
+  fi
 done
 [ -d "$app" ] || die "missing part: the app $app"
 [ -f "$app/Contents/Info.plist" ] || die "missing part: $app/Contents/Info.plist"
@@ -41,8 +43,9 @@ t=$work/$top
 mkdir -p "$t/bin" "$t/share/watane" "$t/Applications"
 
 sh "$vendor_sh" "$work/vendor" >&2 || die "missing part: the vendor folder ($vendor_sh failed)"
-[ -d "$work/vendor" ] && [ -n "$(ls -A "$work/vendor")" ] ||
+if [ ! -d "$work/vendor" ] || [ -z "$(ls -A "$work/vendor")" ]; then
   die "missing part: the vendor folder is empty"
+fi
 mkdir -p "$t/share/watane-dev"
 cp -R "$work/vendor" "$t/share/watane-dev/vendor"
 

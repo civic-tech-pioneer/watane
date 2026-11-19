@@ -177,6 +177,9 @@ In this order. Each step either succeeds or ends the script as the last
 column says; a step after step 5 that fails runs the cleanup first (3.8).
 Signals end the run at once at every step, including recovery; each failure
 path lets a pending signal end the run before it prints a cause (3.8).
+In steps 1 to 4, external checks (including `id -u` and home resolution)
+pass their failed status to `check_signal "$?"` in the caller before `die`;
+version validation uses builtins only.
 
 | # | Step | On failure |
 |---|---|---|
@@ -511,7 +514,12 @@ status through `check_signal` before interpreting it: constant `exit` or
 `return`, `die`, ignored failures (`|| true` or a fallback assignment),
 negated program predicates, and command substitutions whose status would
 otherwise be overwritten. `die` checks its incoming status as its first
-command. A negated program predicate must instead capture the unnegated
+command as a last dispatch point, but callers must explicitly check a failed
+program status before entering `die`, so macOS `sh` losing a pending trap
+under load cannot turn a signal into a diagnosis. The scan gives `|| die` no
+exemption, including a
+substitution assignment and a diagnostic on the following line.
+A negated program predicate must instead capture the unnegated
 status before checking it. Helpers may preserve and return the status to
 a caller's checkpoint; undo retains `SIGNAL=0` and propagates failures to
 the parent so it can finish recovery. Builtin-only predicates and formatting
@@ -1162,7 +1170,9 @@ for stage 5 only.
 Tests run on Linux and macOS; signing is skipped when `codesign` is absent.
 Test support uses one 600-second deadline for marker, state and request waits,
 and a process-wide gate limits live plain, pseudo-terminal and package runs
-to four per test binary. Deadlines start after admission.
+to four per test binary. Deadlines start after admission. Stale-journal
+fixtures use pid `99999999`, above Linux's maximum pid limit (4194304)
+and macOS's pid range, so a live kernel thread cannot claim the journal.
 
 `tests/script.rs` runs `sh install/install.sh` as a child with:
 - a cleared environment (`env_clear`, so no `CARGO_HOME`, `RUSTUP_HOME` or
@@ -1214,7 +1224,9 @@ to four per test binary. Deadlines start after admission.
   `script(1)` (macOS: `script -q /dev/null sh install.sh <flags>`;
   util-linux: `script -qec "sh install.sh <flags>" /dev/null`), reads
   its output until the line that ends the question (`[y/N] ` or `keep it: `) appears, then writes the answer and a newline to `script`'s
-  stdin. It needs no `expect`. These tests are `#[ignore = "slow: needs a
+  stdin. After the last answer it closes that stdin before waiting for
+  `script` to exit: util-linux `script` can wait for input EOF after its
+  command exits. It needs no `expect`. These tests are `#[ignore = "slow: needs a
   pseudo-terminal from script(1)"]`, so the gate runs them with the other
   slow tests of the files a task touched. If `script(1)` does not forward a
   piped stdin on macOS, the fallback is `openpty` in this test-only module

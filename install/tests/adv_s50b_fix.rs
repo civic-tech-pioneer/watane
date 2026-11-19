@@ -206,14 +206,18 @@ fn adv_s50b_fix_ctrl_c_in_recovery_undo_prints_a_cause() {
     let bin = fx.bin("watane");
     fs::create_dir_all(bin.parent().expect("bin")).expect("bin dir");
     fs::create_dir_all(fx.receipt().parent().expect("share")).expect("share dir");
-    fs::write(bin.with_file_name("watane.old.42"), "old\n").expect("old");
-    fs::write(fx.receipt().with_file_name("receipt.new.42"), "pending\n").expect("new");
+    fs::write(bin.with_file_name("watane.old.99999999"), "old\n").expect("old");
     fs::write(
-        fx.receipt().with_file_name("journal.42"),
+        fx.receipt().with_file_name("receipt.new.99999999"),
+        "pending\n",
+    )
+    .expect("new");
+    fs::write(
+        fx.receipt().with_file_name("journal.99999999"),
         format!("old {}\n", bin.display()),
     )
     .expect("journal");
-    mv_fake(&fx, "case \"$1\" in *.old.42) fire ;; esac");
+    mv_fake(&fx, "case \"$1\" in *.old.99999999) fire ;; esac");
     let out = fx.run(&[]);
     assert_eq!(out.code, 130, "{out:?}");
     assert!(!out.stderr.contains("watane install:"), "{out:?}");

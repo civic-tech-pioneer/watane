@@ -254,7 +254,7 @@ find_journals() {
     exists "$fj_f" || continue
     fj_n=${fj_f##*/journal.}
     case $fj_n in '' | *[!0-9]*) continue ;; esac
-    [ -f "$fj_f" ] && [ ! -L "$fj_f" ] || continue
+    if [ ! -f "$fj_f" ] || [ -L "$fj_f" ]; then continue; fi
     JOURNALS=$(add_item "$JOURNALS" "$fj_n")
   done
   return 0
@@ -382,7 +382,7 @@ EOF
 recover() {
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
   if ! allowed "$RECEIPT"; then
-    clean_stale || die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."
+    clean_stale || { check_signal "$?"; die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."; }
     return 0
   fi
   find_journals
@@ -392,12 +392,12 @@ recover() {
     if exists "$RECEIPT.new.$rc_n"; then
       undo_swap "$rc_n" || { check_signal "$?"; die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."; }
     else
-      finish_commit "$rc_n" || die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."
+      finish_commit "$rc_n" || { check_signal "$?"; die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."; }
     fi
   done <<EOF
 $JOURNALS
 EOF
-  clean_stale || die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."
+  clean_stale || { check_signal "$?"; die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."; }
   return 0
 }
 
@@ -477,8 +477,7 @@ check_version() {
 
 check_tools() {
   for ct_t in $1; do
-    command -v "$ct_t" >/dev/null 2>&1 ||
-      die 2 "the tool $ct_t is missing" "watane install uses only the tools that stock macOS ships; $ct_t was not found on your PATH."
+    command -v "$ct_t" >/dev/null 2>&1 || { check_signal "$?"; die 2 "the tool $ct_t is missing" "watane install uses only the tools that stock macOS ships; $ct_t was not found on your PATH."; }
   done
   return 0
 }
@@ -517,8 +516,7 @@ check_home() {
   if ! plain_path "$HOME" || [ "$HOME" = / ]; then
     die 2 "HOME is not a plain absolute folder: $HOME" "Set HOME to your home folder, then run this again."
   fi
-  HOME_R=$(cd "$HOME" 2>/dev/null && pwd -P) ||
-    die 2 "HOME is not a folder: $HOME" "Set HOME to your home folder, then run this again."
+  HOME_R=$(cd "$HOME" 2>/dev/null && pwd -P) || { check_signal "$?"; die 2 "HOME is not a folder: $HOME" "Set HOME to your home folder, then run this again."; }
   check_signal "$?"
   [ "$HOME_R" != / ] || die 2 "HOME resolves to /: $HOME" "Set HOME to your home folder, then run this again."
   return 0
@@ -640,8 +638,7 @@ verify_archive() {
 }
 
 extract_archive() {
-  tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null ||
-    die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."; }
   check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
     check_signal "$?"
@@ -651,8 +648,7 @@ extract_archive() {
   fi
   # a link member (type l or h in the listing) could make a later chmod or copy reach a file
   # outside the tree: refused before anything is unpacked (3.4 step 9)
-  tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null ||
-    die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."
+  tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."; }
   check_signal
   if grep -q '^[lh]' "$TMP/members.v"; then
     check_signal "$?"
@@ -662,8 +658,7 @@ extract_archive() {
   fi
   mkdir "$TMP/x" || { ea_rc=$?; check_signal "$ea_rc"; exit "$ea_rc"; }
   check_signal "$?"
-  tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" ||
-    die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."
+  tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" || { check_signal "$?"; die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."; }
   check_signal
   TOP=$TMP/x/watane-$RELEASE-$TARGET
   ea_v=""
@@ -790,8 +785,7 @@ read_answer() {
     # Keep both statuses: a pipeline would hide dd's signal status behind od.
     # dd must read exactly one byte; od alone may read ahead past that byte.
     if [ -z "$TMP" ]; then
-      TMP=$(mktemp -d "${TMPDIR:-/tmp}/watane-install.XXXXXX") ||
-        die 1 "cannot make a temporary folder in ${TMPDIR:-/tmp}"
+      TMP=$(mktemp -d "${TMPDIR:-/tmp}/watane-install.XXXXXX") || { check_signal "$?"; die 1 "cannot make a temporary folder in ${TMPDIR:-/tmp}"; }
       check_signal "$?"
     fi
     dd bs=1 count=1 >"$TMP/answer-byte" 2>/dev/null || { check_signal "$?"; }
@@ -1023,8 +1017,7 @@ final_output() {
 
 do_install() {
   TMPBASE=${TMPDIR:-/tmp}
-  TMP=$(mktemp -d "$TMPBASE/watane-install.XXXXXX") ||
-    die 1 "cannot make a temporary folder in $TMPBASE" "Set TMPDIR to a folder you can write to, then run this again."
+  TMP=$(mktemp -d "$TMPBASE/watane-install.XXXXXX") || { check_signal "$?"; die 1 "cannot make a temporary folder in $TMPBASE" "Set TMPDIR to a folder you can write to, then run this again."; }
   check_signal "$?"
   ARCHIVE=watane-$RELEASE-$TARGET.tar.gz
   BASE=${WATANE_RELEASE_BASE:-https://github.com/civic-tech-pioneer/watane/releases/download/v$RELEASE}
@@ -1199,8 +1192,8 @@ main() {
   if [ "$MODE" = install ]; then check_version "$RELEASE"; fi
 
   # step 2: root
-  main_uid=$(id -u 2>/dev/null) || die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."
-  check_signal
+  main_uid=$(id -u 2>/dev/null) || { check_signal "$?"; die 2 "the tool id is missing" "watane install uses only the tools that stock macOS ships."; }
+  check_signal "$?"
   [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
   # step 3: tools
   check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od mktemp"
