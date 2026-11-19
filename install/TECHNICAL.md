@@ -1460,6 +1460,11 @@ first failure. The VM is the guest's whole world: the host's folders are
 not shared into it (no `--dir`), so no checkout, `target` or `~/.cargo` of
 the host can be seen from it.
 
+`tests/vm_lib.sh`, sourced by each driver from its own script folder, holds
+the shared askpass setup, `remote`, `copy`, `boot <image>`, `stop_run`,
+`delete_run` and the cleanup trap. It is sourced, never run on its own.
+The caller supplies its diagnostic name and command checker.
+
 The IP command is `tart ip <name> --wait 600`; its wait and the SSH
 readiness attempts share one 600-second deadline. `SSH_ASKPASS_REQUIRE=force`
 and an executable temporary `SSH_ASKPASS` supply `admin`, even when the
@@ -1586,11 +1591,82 @@ what they need beside themselves.
 |---|---|
 | INST-S-1 to INST-S-22, INST-S-26 to 35; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-15`, by `workflow_dispatch` |
+| J3 between two machines (S55, 12.6) | this Mac and a fresh Tart clone, `sh tests/vm_two_machines.sh [--from <release-dir>]` |
 | INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (the Tart VM of 12.3, `tests/vm_mac.sh`), against a real release |
 
 `factory/check.sh` runs the first row for a task of `install`. The rows
 that need a Mac are `#[ignore = "slow: ..."]` or a shell test and are run
 by the human or the local foreman, as the `real_github` tests are.
+
+### 12.6 Two machines (S55)
+
+`sh tests/vm_two_machines.sh [--from <release-dir>]` runs J3 with Alice on
+this Mac and Bob in a fresh clone of `watane-clean`. It uses the shared
+helpers of 12.3, runs `tart run --no-graphics`, and never passes `--dir`.
+Every byte sent to Bob crosses the VM network, including the release and
+the debug app sent by scp; there is no host filesystem share.
+
+In order, the host driver:
+1. Builds `cargo build -p watane-app --features driver` and
+   `cargo test -p watane-app --features driver --test it --no-run`.
+2. Boots `watane-run-<pid>` from `watane-clean`, with the shared 600 s IP
+   and SSH deadline. In the guest, `mount` must list none of `virtiofs`,
+   `smbfs`, `nfs`, `afpfs` or `webdav`, and `/Volumes/My Shared Files` must
+   not exist. A failed assertion stops the run before installation.
+3. Installs by the one-liner of 3.1 over `ssh -T`, without a terminal, so
+   no toolchain is offered. With `--from`, copies that release folder to
+   `/Users/admin/watane-release` and runs its `install.sh` with
+   `WATANE_RELEASE_BASE=file:///Users/admin/watane-release` (3.2).
+   `~/.local/bin/watane --version` must then answer.
+4. Wraps `target/debug/watane-app` in `Bob.app`: `Contents/MacOS/watane-app`
+   and `Contents/Info.plist` with `CFBundleExecutable=watane-app`,
+   `CFBundleIdentifier=org.watane.bob-driver`, `CFBundlePackageType=APPL`.
+   Copies the bundle and `bob.sh <home_name>` to the guest. The bridge
+   makes input/output FIFOs in a fresh temporary folder and launches
+   `open -n -W -i <in> -o <out> --stderr <log> --env
+   WATANE_DRIVER_SCREEN=hidden Bob.app --args --home "$HOME/<home_name>"
+   --port 0` in the guest's logged-in GUI session. It copies stdout from
+   the output FIFO and stdin to the input FIFO; at EOF it sends `quit`.
+   It prints the app's stderr log on exit and removes the guest temp folder.
+5. Creates an empty temporary Alice home and starts
+   `/usr/bin/python3 -m http.server 0 --bind <host ip> --directory
+   <alice home>/dist/site`. The bind address is the VM bridge address,
+   read as the guest's default gateway with `route -n get default`.
+   `PYTHONUNBUFFERED=1` lets the host read the selected port from the log.
+   Stock Apple-signed Python can listen through the host firewall
+   (probed 2026-11-19); the site directory is populated by Alice's test.
+6. Runs `cargo test -p watane-app --features driver --test it
+   two_machines:: -- --ignored` with the three variables below. It prints
+   the test output and requires `two_machines::ac1_j3_two_machines` to
+   pass, then prints `TWO-MACHINES PASS`; otherwise it names the first
+   failing command. A zero-test Cargo success is not a journey pass.
+
+| Variable (s55-1 interface) | Value |
+|---|---|
+| `WATANE_VM_BOB` | A shell command that starts `ssh -T` with the authentication and host-key options of `remote`, running `sh bob.sh <home_name>`; the test appends `.watane` or `bob-tamper`. Its stdin/stdout carry driver JSON lines (app 10). A local wrapper records each SSH PID for cleanup. |
+| `WATANE_VM_ALICE_HOME` | An existing empty folder on this Mac, the temporary Alice home. |
+| `WATANE_VM_SITE_BASE` | `http://<host ip>:<port>/`, serving `$WATANE_VM_ALICE_HOME/dist/site` to Bob. |
+
+On success, failure or HUP/INT/TERM, the trap kills the web host, the
+journey command and any recorded SSH bridge, stops and deletes only the
+run's VM, and removes the host temporary folder, including Alice's home.
+It never boots or deletes `watane-clean` itself. Without Tart it exits 2
+before creating any file, with exactly:
+
+```text
+vm_two_machines.sh: tart is not installed (see install/TECHNICAL.md 12.6)
+```
+
+This proves two homes, two network stacks, no shared file system, and J3
+publication, verified installation/use and refusal of tampered bytes. It
+does not prove NAT across the internet or the release app's consent
+window. Bob uses a debug `driver` build: the consent floor requires a
+click; with SIP on and no Accessibility grant, the host cannot script a
+click on the release app in the guest (probed 2026-11-19). Driver support
+is absent from the release build (app 10). The real VM run by the foreman
+is the AC3 check; the offline fixtures in `tests/it/clean_mac.rs` check
+preflight, lifecycle, cleanup, bridge transport, syntax and lint without
+starting an app window or reaching the internet.
 
 ## 13. Provides to, and needs from, other subsystems
 

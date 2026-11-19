@@ -1,4 +1,4 @@
-//! Clean-Mac preflight and host VM driver contracts (TECHNICAL 12.3–12.5).
+//! Clean-Mac preflight and host VM driver contracts (TECHNICAL 12.3–12.6).
 
 use std::fs;
 use std::path::Path;
@@ -70,7 +70,12 @@ fn ac3_refuses_checkout_above_home_before_install() {
 
 #[test]
 fn ac3_scripts_are_posix_and_shellcheck_clean() {
-    for name in ["clean_mac.sh", "vm_mac.sh"] {
+    for name in [
+        "clean_mac.sh",
+        "vm_lib.sh",
+        "vm_mac.sh",
+        "vm_two_machines.sh",
+    ] {
         let out = Command::new("/bin/sh")
             .arg("-n")
             .arg(script(name))
@@ -104,6 +109,26 @@ fn ac4_missing_tart_touches_nothing() {
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
         "vm_mac.sh: tart is not installed (see install/TECHNICAL.md 12.3)\n"
+    );
+    assert_eq!(fs::read_dir(temp.path()).expect("listing").count(), 0);
+}
+
+#[test]
+fn ac2_two_machines_missing_tart_touches_nothing() {
+    let temp = tempfile::tempdir().expect("temp");
+    let out = Command::new("/bin/sh")
+        .arg(script("vm_two_machines.sh"))
+        .args(["--from", "/not-a-release"])
+        .env_clear()
+        .env("HOME", temp.path())
+        .env("PATH", temp.path())
+        .current_dir(temp.path())
+        .output()
+        .expect("two machines");
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "vm_two_machines.sh: tart is not installed (see install/TECHNICAL.md 12.6)\n"
     );
     assert_eq!(fs::read_dir(temp.path()).expect("listing").count(), 0);
 }
@@ -453,4 +478,377 @@ esac
     assert!(calls.contains(&format!("tart stop {run}\n")), "{calls}");
     assert!(calls.contains(&format!("tart delete {run}\n")), "{calls}");
     assert!(!calls.contains("--part clt"), "{calls}");
+}
+
+#[test]
+fn ac2_ac4_two_machines_lifecycle_failure_and_term_cleanup() {
+    use std::os::unix::fs::PermissionsExt;
+    for mode in [
+        "pass", "latest", "install", "mount", "copy", "ip", "journey", "missing", "term",
+    ] {
+        let temp = tempfile::Builder::new()
+            .prefix("two machines' ")
+            .tempdir()
+            .expect("temp");
+        let bin = temp.path().join("bin");
+        let tests = temp.path().join("install/tests");
+        fs::create_dir_all(&bin).expect("bin");
+        fs::create_dir_all(&tests).expect("tests");
+        fs::create_dir_all(temp.path().join("target/debug")).expect("target");
+        fs::write(temp.path().join("target/debug/watane-app"), "fixture").expect("app");
+        for name in ["vm_lib.sh", "vm_two_machines.sh"] {
+            let source = fs::read_to_string(script(name)).expect("source");
+            // Keep the production Apple-signed interpreter; only this offline fixture
+            // substitutes the HTTP server so the test needs no listening socket.
+            fs::write(
+                tests.join(name),
+                source.replace(
+                    "/usr/bin/python3 -m http.server 0",
+                    &format!(
+                        "'{}' -m http.server 0",
+                        bin.join("python3")
+                            .display()
+                            .to_string()
+                            .replace('\'', "'\\''")
+                    ),
+                ),
+            )
+            .expect("copy script");
+        }
+        let fake = r#"#!/bin/sh
+printf '%s %s\n' "${0##*/}" "$*" >> "$CALLS"
+case ${0##*/}:$1 in
+  tart:ip) [ "$MODE" != ip ] || exit 17; echo 192.0.2.10 ;;
+  ssh:*)
+    [ "$SSH_ASKPASS_REQUIRE" = force ] && [ "$("$SSH_ASKPASS")" = admin ] || exit 3
+    case "$*" in
+      *bob.sh*) trap 'echo bridge-stopped >> "$CALLS"; exit' TERM; : > "$BRIDGE_READY"; while :; do sleep 1; done ;;
+      *mount*) [ "$MODE" != mount ] || exit 19 ;;
+      *install.sh*) [ "$MODE" != install ] || exit 21 ;;
+      *'route -n get default'*) echo 127.0.0.1 ;;
+    esac ;;
+  scp:*) [ "$MODE" != copy ] || exit 23 ;;
+  python3:*)
+    trap 'echo web-stopped >> "$CALLS"; exit' TERM
+    echo 'Serving HTTP on 127.0.0.1 port 54321 (http://127.0.0.1:54321/) ...'
+    while :; do sleep 1; done ;;
+  cargo:test)
+    case "$*" in
+      *two_machines::*)
+        [ -d "$WATANE_VM_ALICE_HOME" ] || exit 25
+        [ "$WATANE_VM_SITE_BASE" = http://127.0.0.1:54321/ ] || exit 26
+        echo "alice=$WATANE_VM_ALICE_HOME" >> "$CALLS"
+        sh -c "$WATANE_VM_BOB .watane" >/dev/null 2>&1 &
+        # Wait for the fake SSH process to install its TERM handler.
+        while [ ! -f "$BRIDGE_READY" ]; do sleep 0.1; done
+        : > "$MARKER"
+        if [ "$MODE" = term ]; then sleep 2; fi
+        [ "$MODE" != journey ] || { echo 'journey assertion failed'; exit 27; }
+        [ "$MODE" = missing ] || echo 'test two_machines::ac1_j3_two_machines ... ok' ;;
+    esac ;;
+esac
+"#;
+        for name in ["tart", "ssh", "scp", "cargo", "python3"] {
+            let path = bin.join(name);
+            fs::write(&path, fake).expect("fake");
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        let release = temp.path().join("release with spaces");
+        fs::create_dir(&release).expect("release");
+        for name in ["install.sh", "SHA256SUMS"] {
+            fs::write(release.join(name), "fixture").expect("asset");
+        }
+        let calls = temp.path().join("calls");
+        let marker = temp.path().join("ready");
+        let tmp = temp.path().join("tmp");
+        fs::create_dir(&tmp).expect("tmp");
+        let mut command = Command::new("/usr/bin/perl");
+        command
+            .args(super::support::LAUNCH)
+            .arg("/bin/sh")
+            .arg(tests.join("vm_two_machines.sh"));
+        if mode != "latest" {
+            command.arg("--from").arg(&release);
+        }
+        command
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("CALLS", &calls)
+            .env("MARKER", &marker)
+            .env("BRIDGE_READY", temp.path().join("bridge-ready"))
+            .env("MODE", mode)
+            .env("TMPDIR", &tmp)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = super::support::spawn_run(&mut command);
+        if mode == "term" {
+            let deadline = std::time::Instant::now() + super::support::WAIT_TIMEOUT;
+            while !marker.exists() {
+                assert!(
+                    child.try_wait().expect("poll").is_none(),
+                    "driver exited early"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "journey never started"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert!(
+                Command::new("/bin/kill")
+                    .args(["-TERM", &child.id().to_string()])
+                    .status()
+                    .expect("kill")
+                    .success()
+            );
+        }
+        let pid = child.id();
+        let out = super::support::finish(child);
+        assert_eq!(
+            out.code == 0,
+            ["pass", "latest"].contains(&mode),
+            "{mode}: {out:?}"
+        );
+        let deadline = std::time::Instant::now() + super::support::WAIT_TIMEOUT;
+        let log = loop {
+            let log = fs::read_to_string(&calls).expect("calls");
+            if !["pass", "latest", "journey", "missing", "term"].contains(&mode)
+                || log.contains("bridge-stopped")
+            {
+                break log;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "bridge did not stop: {log}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let run = format!("watane-run-{pid}");
+        assert!(
+            log.contains(&format!("tart clone watane-clean {run}\n")),
+            "{log}"
+        );
+        for verb in ["stop", "delete"] {
+            assert!(log.contains(&format!("tart {verb} {run}\n")), "{log}");
+            assert!(
+                !log.contains(&format!("tart {verb} watane-clean\n")),
+                "{log}"
+            );
+        }
+        assert!(
+            !log.lines()
+                .filter(|line| line.starts_with("tart run "))
+                .any(|line| line.contains("--dir")),
+            "{log}"
+        );
+        assert_eq!(
+            fs::read_dir(&tmp).expect("tmp listing").count(),
+            0,
+            "{out:?}"
+        );
+        if ["pass", "latest", "journey", "missing", "term"].contains(&mode) {
+            assert!(log.contains("web-stopped"), "{log}");
+            assert!(log.contains("bridge-stopped"), "{log}");
+            let alice = log
+                .lines()
+                .find_map(|line| line.strip_prefix("alice="))
+                .expect("alice home");
+            assert!(!Path::new(alice).exists());
+        }
+        if ["pass", "latest"].contains(&mode) {
+            assert!(
+                log.contains("cargo build -p watane-app --features driver"),
+                "{log}"
+            );
+            assert!(log.contains("--test it --no-run"), "{log}");
+            assert!(log.contains("ssh -T"), "{log}");
+            if mode == "latest" {
+                assert!(log.contains("curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh"), "{log}");
+            } else {
+                assert!(
+                    log.contains("WATANE_RELEASE_BASE=file:///Users/admin/watane-release"),
+                    "{log}"
+                );
+            }
+            assert_eq!(out.stdout.lines().last(), Some("TWO-MACHINES PASS"));
+        } else if mode != "term" {
+            let command = match mode {
+                "install" => "install.sh",
+                "mount" => "mount",
+                "copy" => "copy",
+                "ip" => "tart ip",
+                _ => "cargo test",
+            };
+            assert!(out.stderr.contains(command), "{out:?}");
+            assert!(!out.stdout.contains("TWO-MACHINES PASS"));
+        }
+    }
+}
+
+#[test]
+fn ac3_guest_bridge_streams_driver_and_reports_open_failure() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
+    let bridge = source
+        .split("<<'BOB'\n")
+        .nth(1)
+        .expect("bridge")
+        .split("\nBOB\n")
+        .next()
+        .expect("end");
+    for mode in ["pass", "fail"] {
+        let temp = tempfile::tempdir().expect("temp");
+        let bin = temp.path().join("bin");
+        fs::create_dir(&bin).expect("bin");
+        let open = bin.join("open");
+        fs::write(
+            &open,
+            r#"#!/bin/sh
+[ "$MODE" != fail ] || { echo 'open launch failed' >&2; exit 31; }
+while [ "$#" -gt 0 ]; do
+  case $1 in -i) input=$2; shift ;; -o) output=$2; shift ;; --stderr) log=$2; shift ;; esac
+  shift
+done
+exec 3<"$input"
+exec 4>"$output"
+echo '{"event":"ready","port":1234}' >&4
+echo 'guest app stderr' > "$log"
+while IFS= read -r line <&3; do
+  case $line in *quit*) exit 0 ;; *) echo "$line" >&4 ;; esac
+done
+"#,
+        )
+        .expect("open");
+        fs::set_permissions(open, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let helper = temp.path().join("bob.sh");
+        fs::write(&helper, bridge).expect("helper");
+        let tmp = temp.path().join("tmp");
+        fs::create_dir(&tmp).expect("tmp");
+        // Bound a broken FIFO handshake without opening a real app or window.
+        let mut command = Command::new("/usr/bin/perl");
+        command
+            .args(["-MPOSIX", "-e", "POSIX::setsid(); exec @ARGV", "sh"])
+            .arg(helper)
+            .arg("bob-tamper")
+            .env("HOME", temp.path())
+            .env("TMPDIR", &tmp)
+            .env("MODE", mode)
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = super::support::spawn_run(&mut command);
+        child
+            .stdin
+            .take()
+            .expect("input")
+            .write_all(b"{\"id\":1}\n")
+            .expect("write");
+        let out = super::support::finish_within(child, super::support::WAIT_TIMEOUT)
+            .expect("bridge deadline");
+        if mode == "pass" {
+            assert!(out.code == 0, "{out:?}");
+            let output = &out.stdout;
+            assert!(
+                output.contains("ready") && output.contains("\"id\":1"),
+                "{out:?}"
+            );
+            assert!(out.stderr.contains("guest app stderr"), "{out:?}");
+        } else {
+            assert_eq!(out.code, 1, "{out:?}");
+            assert!(out.stderr.contains("open"), "{out:?}");
+        }
+        assert_eq!(fs::read_dir(tmp).expect("listing").count(), 0, "{out:?}");
+    }
+}
+
+#[test]
+fn ac6_two_machine_run_is_documented() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let technical = fs::read_to_string(root.join("TECHNICAL.md")).expect("technical");
+    let section = technical
+        .split("### 12.6 Two machines (S55)")
+        .nth(1)
+        .expect("12.6");
+    for text in [
+        "WATANE_VM_BOB",
+        "WATANE_VM_ALICE_HOME",
+        "WATANE_VM_SITE_BASE",
+        "NAT",
+        "consent",
+        "vm_two_machines.sh: tart is not installed (see install/TECHNICAL.md 12.6)",
+    ] {
+        assert!(section.contains(text), "missing {text}");
+    }
+    assert!(
+        technical
+            .split("### 12.3")
+            .nth(1)
+            .expect("12.3")
+            .split("### 12.4")
+            .next()
+            .expect("end")
+            .contains("vm_lib.sh")
+    );
+    assert!(
+        fs::read_to_string(root.join("AGENTS.md"))
+            .expect("agents")
+            .contains("sh tests/vm_two_machines.sh [--from <release-dir>]")
+    );
+}
+
+#[test]
+fn ac3_guest_rejects_each_shared_filesystem() {
+    use std::os::unix::fs::PermissionsExt;
+    let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
+    let command = source
+        .split("check remote_plain 'set -eu\n")
+        .nth(1)
+        .expect("mount check")
+        .split("'\nif [ -n")
+        .next()
+        .expect("end");
+    let temp = tempfile::tempdir().expect("temp");
+    let mount = temp.path().join("mount");
+    fs::write(&mount, "#!/bin/sh\nprintf '%s\\n' \"$MOUNT\"\n").expect("mount");
+    fs::set_permissions(mount, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let shared = temp.path().join("My Shared Files");
+    let helper = temp.path().join("check.sh");
+    fs::write(
+        &helper,
+        format!(
+            "set -eu\n{}",
+            command
+                .replace(
+                    "/tmp/watane-mounts",
+                    &temp.path().join("mounts").display().to_string()
+                )
+                .replace("/Volumes/My Shared Files", &shared.display().to_string())
+        ),
+    )
+    .expect("helper");
+    for filesystem in ["apfs", "virtiofs", "smbfs", "nfs", "afpfs", "webdav"] {
+        let out = Command::new("sh")
+            .arg(&helper)
+            .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
+            .env(
+                "MOUNT",
+                format!("share on /somewhere ({filesystem}, nodev, nosuid)"),
+            )
+            .output()
+            .expect("check");
+        assert_eq!(
+            out.status.success(),
+            filesystem == "apfs",
+            "{filesystem}: {out:?}"
+        );
+    }
+    fs::create_dir(shared).expect("shared folder");
+    let out = Command::new("sh")
+        .arg(helper)
+        .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
+        .env("MOUNT", "/dev/disk on / (apfs, local)")
+        .output()
+        .expect("check folder");
+    assert!(!out.status.success(), "{out:?}");
 }

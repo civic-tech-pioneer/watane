@@ -1,5 +1,6 @@
 #!/bin/sh
 # Tart host driver; never shares the host checkout (TECHNICAL 12.3).
+# shellcheck disable=SC2154,SC2034 # Variables are shared with sourced vm_lib.sh.
 set -eu
 if ! command -v tart >/dev/null 2>&1; then
   printf '%s\n' 'vm_mac.sh: tart is not installed (see install/TECHNICAL.md 12.3)' >&2
@@ -22,72 +23,10 @@ if [ -n "$from" ]; then
   from=$(cd "$from" && pwd -P) || fail "cd $from"
   for asset in install.sh SHA256SUMS; do check test -f "$from/$asset"; done
 fi
-work=$(mktemp -d)
-vm=
-runner=
-cleanup() {
-  status=$?
-  trap - EXIT HUP INT TERM
-  if [ -n "$vm" ]; then
-    tart stop "$vm" || :
-    [ -z "$runner" ] || kill "$runner" 2>/dev/null || :
-    [ -z "$runner" ] || wait "$runner" 2>/dev/null || :
-    if ! tart delete "$vm"; then
-      printf 'vm_mac.sh: cleanup failed: tart delete %s\n' "$vm" >&2
-      status=1
-    fi
-  fi
-  rm -rf "$work"
-  exit "$status"
-}
-trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
-printf '#!/bin/sh\nprintf "admin\\n"\n' >"$work/askpass"
-check chmod 700 "$work/askpass"
-SSH_ASKPASS=$work/askpass
-SSH_ASKPASS_REQUIRE=force
-DISPLAY=watane-test
-export SSH_ASKPASS SSH_ASKPASS_REQUIRE DISPLAY
-remote() {
-  ssh -tt -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-    -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 \
-    "admin@$ip" "$@" </dev/null
-}
-copy() {
-  scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-    -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "$@" </dev/null
-}
-boot() {
-  # Own the name only once this run created it; never delete another VM.
-  check tart clone "$1" "watane-run-$$"
-  vm=watane-run-$$
-  tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
-  runner=$!
-  deadline=$(( $(date +%s) + 600 ))
-  ip=$(tart ip "$vm" --wait 600) || { cat "$work/tart.log"; fail "tart ip $vm --wait 600"; }
-  while :; do
-    remaining=$(( deadline - $(date +%s) ))
-    [ "$remaining" -gt 0 ] || fail '600 s deadline waiting for ssh as admin'
-    # Bound the entire authentication attempt, including askpass.
-    if perl -e 'alarm shift; exec @ARGV; die "exec: $!"' "$remaining" \
-      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-      -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "admin@$ip" true \
-      </dev/null >"$work/ssh.log" 2>&1; then break; fi
-    sleep 1
-  done
-}
-stop_run() {
-  check tart stop "$vm"
-  wait "$runner" || :
-  runner=
-}
-delete_run() {
-  check tart delete "$vm"
-  vm=
-}
+driver=vm_mac.sh
+# shellcheck disable=SC1091 # vm_lib.sh is linted separately.
+# shellcheck source=vm_lib.sh
+. "$here/vm_lib.sh"
 if [ "$prepare" = yes ]; then
   base=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest
   tart get watane-clean >/dev/null 2>&1 || check tart clone "$base" watane-clean
