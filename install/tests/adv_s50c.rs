@@ -19,7 +19,10 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .output()
         .expect("git");
     assert!(out.status.success(), "git {args:?}: {out:?}");
-    String::from_utf8(out.stdout).unwrap().trim().to_string()
+    String::from_utf8(out.stdout)
+        .expect("git stdout is UTF-8")
+        .trim()
+        .to_string()
 }
 
 /// 7.1: "a tag whose commit is not on `main` is refused". The checkout of a tag run with

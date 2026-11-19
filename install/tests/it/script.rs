@@ -1613,6 +1613,23 @@ fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
         }
         if !matches!(failure, "committed" | "commit_journal") {
             write_file(&fx.share("watane/receipt.new.99999999"), "pending");
+        } else {
+            let home = fs::canonicalize(&fx.home).expect("physical home");
+            let resolved = [
+                ".local/bin",
+                ".local/share/watane",
+                ".local/share/watane-dev",
+                "Applications",
+            ]
+            .map(|folder| format!("resolved {folder} {}\n", home.join(folder).display()))
+            .join("");
+            write_file(
+                &fx.receipt(),
+                &format!(
+                    "watane-receipt 1\nversion 0.1.0\ntarget {TARGET}\npath {}\n{resolved}",
+                    fx.bin("watane").display()
+                ),
+            );
         }
         match failure {
             "marker" => {
