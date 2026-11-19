@@ -84,7 +84,7 @@ fn ac3_scripts_are_posix_and_shellcheck_clean() {
         assert!(out.status.success(), "{name}: {out:?}");
         if Command::new("shellcheck").arg("--version").output().is_ok() {
             let out = Command::new("shellcheck")
-                .args(["-s", "sh"])
+                .args(["-x", "-s", "sh"])
                 .arg(script(name))
                 .output()
                 .expect("shellcheck");

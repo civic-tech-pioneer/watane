@@ -1,6 +1,5 @@
 #!/bin/sh
 # Tart host driver; never shares the host checkout (TECHNICAL 12.3).
-# shellcheck disable=SC2154,SC2034 # Variables are shared with sourced vm_lib.sh.
 set -eu
 if ! command -v tart >/dev/null 2>&1; then
   printf '%s\n' 'vm_mac.sh: tart is not installed (see install/TECHNICAL.md 12.3)' >&2
@@ -24,8 +23,7 @@ if [ -n "$from" ]; then
   for asset in install.sh SHA256SUMS; do check test -f "$from/$asset"; done
 fi
 driver=vm_mac.sh
-# shellcheck disable=SC1091 # vm_lib.sh is linted separately.
-# shellcheck source=vm_lib.sh
+# shellcheck source-path=SCRIPTDIR source=vm_lib.sh
 . "$here/vm_lib.sh"
 if [ "$prepare" = yes ]; then
   base=ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest

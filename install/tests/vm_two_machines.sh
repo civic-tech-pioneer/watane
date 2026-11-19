@@ -1,6 +1,5 @@
 #!/bin/sh
 # J3 across the VM network (TECHNICAL 12.6).
-# shellcheck disable=SC2154,SC2034 # Variables are shared with sourced vm_lib.sh.
 set -eu
 if ! command -v tart >/dev/null 2>&1; then
   printf '%s\n' 'vm_two_machines.sh: tart is not installed (see install/TECHNICAL.md 12.6)' >&2
@@ -22,8 +21,7 @@ if [ -n "$from" ]; then
   from=$(cd "$from" && pwd -P) || fail "cd $from"
   for asset in install.sh SHA256SUMS; do check test -f "$from/$asset"; done
 fi
-# shellcheck disable=SC1091 # vm_lib.sh is linted separately.
-# shellcheck source=vm_lib.sh
+# shellcheck source-path=SCRIPTDIR source=vm_lib.sh
 . "$here/vm_lib.sh"
 check cd "$here/../.."
 check cargo build -p watane-app --features driver

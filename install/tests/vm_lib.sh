@@ -1,8 +1,7 @@
 #!/bin/sh
 # Sourced Tart lifecycle and SSH helpers (TECHNICAL 12.3, 12.6).
 # The caller supplies driver and check; sourcing allocates the run workspace.
-# shellcheck disable=SC2154 # driver is supplied by the sourcing script.
-: "$driver"
+: "${driver:?vm_lib.sh: the sourcing script sets driver}"
 work=$(mktemp -d)
 vm=
 runner=
