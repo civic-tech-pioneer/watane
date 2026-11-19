@@ -234,7 +234,10 @@ The paths to install are the entries of 3.6. Step 6 reads the receipt, if
 there is one and it is a regular file whose first line is `watane-receipt 1`,
 as the set of paths that watane installed: its `path` lines that the rule of
 8.5 allows (a refused line is ignored here, so the INST-S-27 receipt still
-upgrades); a missing, unreadable or unrecognised receipt is the empty set. A path of a journal left by a dead process (3.6) is added to the set only when the journal's rules of 3.6.1 say the swap moved it in: a valid `new <path>` line, a valid `moved <path>` line, and no `<path>.new.<n>`. A `new` line alone is not enough: it says that the path did not exist when the killed run began, not that watane put it there, and a file that the person put at that path afterwards (a `watane.app` dragged from a browser) must stay foreign (INST-S-35).
+upgrades), rule 4 included: a path whose install folder now resolves
+elsewhere than the receipt's `resolved` line (or has none) is not in the
+set, so an existing file there is foreign (exit 8) and an upgrade never
+swaps out what a link made after the install now points at (IN-42); a missing, unreadable or unrecognised receipt is the empty set. A path of a journal left by a dead process (3.6) is added to the set only when the journal's rules of 3.6.1 say the swap moved it in: a valid `new <path>` line, a valid `moved <path>` line, and no `<path>.new.<n>`. A `new` line alone is not enough: it says that the path did not exist when the killed run began, not that watane put it there, and a file that the person put at that path afterwards (a `watane.app` dragged from a browser) must stay foreign (INST-S-35).
 The receipt's own path counts as a foreign file when it exists (`-e` or `-L`)
 and is not a recognised receipt, since step 10's `mv` onto a folder would put
 the receipt inside it. For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
@@ -430,7 +433,10 @@ it, written with `set -C`, holding the run's pid and a newline. It is the
 only write outside the temporary folder before step 10, and it sits
 directly in `$HOME` so that no folder needs to be made for it. The exit
 trap (3.8) removes it, `pid` then the folder, on every exit of the run
-that made it, after the undo and before the temporary folder; a run that
+that made it (a failed undo and a signal included), after the undo and before the temporary folder;
+only a signal in the instant between `mkdir` and the run recording that it
+owns the lock can leave it, which fails safe: the next run prints the
+`rm -rf`; a run that
 did not make it never removes it. If writing `pid` fails, the run exits 5
 with `watane install: could not write install lock`; the exit trap still
 removes the lock it made. A signal status is preserved as in 3.8.
