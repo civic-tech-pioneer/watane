@@ -327,6 +327,29 @@ mod fake {
         assert_eq!(value["errors"][0]["code"], "host.declined");
         assert_eq!(value["next"], value["errors"][0]["fix"]);
     }
+    /// S93 outcome 1: host.declined's fix and `next` for install end in a complete command
+    /// (dev/TECHNICAL 2.4), not `then run install again with --wait <seconds>`.
+    #[test]
+    fn regress_s93_install_declined_next_is_a_command() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
+        let (_host, _) = start(home.path(), "--home");
+        let dir = page(root.path(), "counter");
+        let (code, value) = install(&dir, home.path());
+        assert_eq!(code, 4, "{value}");
+        assert_eq!(value["errors"][0]["code"], "host.declined");
+        let next = value["next"].as_str().unwrap();
+        assert!(
+            next.contains(&format!(
+                "then run: watane-dev install --json --dir {} --home {}",
+                dir.display(),
+                home.path().canonicalize().unwrap().display()
+            )),
+            "{next}"
+        );
+        assert!(!next.contains('<'), "{next}");
+    }
     #[test]
     fn ac4_page_only_result_and_failed_pipeline() {
         let root = tempfile::tempdir().unwrap();

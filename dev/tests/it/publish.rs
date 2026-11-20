@@ -635,3 +635,50 @@ fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
         );
     }
 }
+
+/// S93 outcome 1: every fix and `next` of a failing publish ends in a complete command
+/// (`then run: <rerun>`, dev/TECHNICAL 2.4). host.declined's fix and `next` say
+/// `then run publish again with --wait <seconds>`, and publish.version_exists's fix says
+/// `then run publish again`: neither can be pasted and run.
+#[test]
+fn regress_s93_declined_and_version_exists_fixes_end_in_a_command() {
+    let rerun = |dir: &Path, home: &Path| {
+        format!(
+            "then run: watane-dev publish --json --dir {} --home {}",
+            dir.display(),
+            home.canonicalize().unwrap().display()
+        )
+    };
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    fs::write(home.path().join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
+    let host = start(home.path());
+    let dir = page(root.path());
+    let (code, value) = publish(&dir, home.path(), &[]);
+    drop(host);
+    assert_eq!(value["errors"][0]["code"], "host.declined", "{value}");
+    assert_eq!(code, 4, "{value}");
+    for text in [&value["errors"][0]["fix"], &value["next"]] {
+        let text = text.as_str().unwrap();
+        assert!(text.contains(&rerun(&dir, home.path())), "{text}");
+        assert!(!text.contains('<'), "{text}");
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    fs::write(
+        home.path().join("fake.json"),
+        json!({"releases":[
+            {"slug":"demo","version":"0.2.3","release":"key/demo@0.2.3","seq":7,"link":null}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let _host = start(home.path());
+    let dir = page(root.path());
+    let (code, value) = publish(&dir, home.path(), &[]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(value["errors"][0]["code"], "publish.version_exists");
+    let fix = value["errors"][0]["fix"].as_str().unwrap();
+    assert!(fix.ends_with(&rerun(&dir, home.path())), "{fix}");
+}
