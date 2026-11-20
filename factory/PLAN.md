@@ -487,14 +487,15 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   its reason, not fails, where there is no `target/release`. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: install/ (script,
   packer, tests, TECHNICAL), .github/workflows/release.yml. Cloud; the PO reruns the macOS sh
   tests and `vm_mac.sh` on the Mac after the merge.
-- [ ] **S90 The manager says what happened (leftover sweep: app).** after S88 (shares app/ui/app.js)
+- [ ] **S90 The manager says what happened (leftover sweep: app).** in flight (local)
   Story: Alice manages her mods and every message names what was done or denied. Outcomes from
   `### app`: a disabled provider shows the host's message; a busy state during a hanging follow or
   add-index; installing from an index says it follows the channel; "Deny" names what was denied;
   channel rows without raw transport text; `/api/fetch` wrong shapes without serde's internal
   wording; reinstalling after "Keep data" does not mark storage `new`; `Core::mods()` memoizes the
   channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
-  versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
+  versions in the Linux runner; while the confirm panel is open, a native blur (S88: ~40 ms after
+  a consent closes) puts focus back on Cancel. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
   Local (window tests).
 - [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`)
   Story: a maker or a mod hits an edge and gets a named cause, not raw I/O text. Outcomes:
@@ -519,18 +520,15 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   dev/tests/it/publish.rs change only if the human's test-speed work there has landed; else leave
   them. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: dev/src, dev/tests, dev/src/bin/fake-watane.rs, pkg/src/world.rs (WIT
   column only), dev/TECHNICAL. Cloud.
-- [ ] **S88 The remove confirm always has Cancel focused (main fix).** in flight (local; foreman `a244ec23`, sessionId `a244ec23-a827-4f8b-87a7-5b41c3811ba1`)
-  Main's check after S55 (`5014400`) failed only `j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail`
-  (app/tests/it/j2.rs:177): about 1 run in 12, alone and on an idle Mac, the panel is open
-  (`#confirm-panel` not hidden) but `document.activeElement` is BODY, not `#confirm-cancel`. The
-  driver's windows are hidden and not key (`document.hasFocus()` false, `visibilityState`
-  `hidden`); nothing in app/ui/app.js blurs or focuses later (`warn`, :229). A PO try that reopened
-  the panel after a Library redraw did not change the rate and was reverted. Outcomes: (1) find
-  the cause (WebKit dropping `focus()` in a hidden page, a redraw, or the driver) and fix it where
-  it lives, without weakening the test (app AGENTS); (2) the test passes 50 runs in a row alone and
-  in the full `--features driver` suite; (3) if the cause also hits a visible window, APP-F-67's
-  "Cancel is the default" holds there too. Touches: app/ui/app.js, app/tests/it/j2.rs,
-  app/tests/support/driver.rs, app/src/driver* as needed, app/TECHNICAL.md, app/NOTES.md. Local.
+- [x] **S88 The remove confirm always has Cancel focused (main fix).** Delivered 2026-11-20 (main
+  `60606cc`; foreman `a244ec23`, ended). Sol runs: S88-1 1 + 5 resumes; validator round 1.
+  user-sim ACCEPTED; adversary not run (tests and notes only). Cause (app NOTES, S88): ~30-40 ms
+  after the consent window closes, WebKit natively blurs the focused element in the hidden,
+  never-key main webview; the original failures clicked Remove inside that window. Decision: the
+  test quits and reopens the app before Remove (as J2 does), every assertion kept, the focus check
+  still immediate (it fails with app.js's `focus()` removed). 50/50 alone and in the full driver
+  suite. Not proven: visible windows (front tests not run). The guard that puts focus back on
+  Cancel while the panel is open goes to S90.
 - [x] **S55 Two machines.** Delivered 2026-11-20 (main `5014400`; foreman `4a61b2b4`, sessionId
   `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`, ended). Sol runs: s55-1 1, s55-2 1, s55-fix1 2, s55-fix2 1,
   s55-fix3 1. user-sim REJECTED once (an unreachable web host and an unnamed `--from` folder gave no
@@ -1662,6 +1660,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S88) Sol's sandbox cannot start the GUI app, so the foreman ran every window test and trace itself; Sol's heavy instrumentation hid the race (60/60 with it); three fixes were wrong before traces showed the cause; a 50-run full driver suite takes about an hour.
 - (2026-11-20, S55) the Mac slept overnight and cut off a validator mid-run (long steps now under `caffeinate -i`); a widened diagnostic wait plus a build under load looked like a hang to the PO; local tauri-cli 2.12.5 (CI pins 2.12.4) rewrites app/Cargo.toml's tauri features on `cargo tauri build`; the auto-mode classifier refused a `push -f` of a branch not yet on the remote.
 - (2026-11-19, S87) iroh-blobs copies blobs up to 16 KiB into its store instead of referencing the file: a test of a changed referenced file needs a bigger blob. No full run had covered the driver window tests since the test-speed merges.
 - (2026-11-19, S50c) `workflow_dispatch` cannot dry-run a workflow not yet on main (ran as a push to a throwaway branch); Homebrew needs `brew trust` per formula for third-party taps; the macos-14 runner was retired under the slice; main's tests/it move mid-slice cost a layout commit.
@@ -2088,3 +2087,4 @@ The human may veto each one.
 - S55: Alice publishes the reading list on this Mac; Bob, in a fresh macOS VM with v0.1.0 from the
   one-liner, follows her link over the network, sees her verified, installs and uses it, and a
   tampered package is refused by name (`sh install/tests/vm_two_machines.sh`).
+- S88: the remove confirmation's focus check no longer flakes (a WebKit blur after a consent closes, in hidden test windows only).
