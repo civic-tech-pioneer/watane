@@ -334,6 +334,13 @@ fn inst_s20_s21_s26_the_run_refuses_before_it_fetches() {
         fx.state_read("curl.log")
             .contains("releases/download/v0.2.0-rc1/SHA256SUMS")
     );
+    // the real release is fetched in the secure mode (`unit_ac3g_...` pins its curl flags)
+    assert!(
+        fx.state_read("curl.log")
+            .contains("--proto =https --tlsv1.2"),
+        "{}",
+        fx.state_read("curl.log")
+    );
 }
 
 /// INST-S-8, 10 and TECHNICAL 3.4 steps 7 and 8: a sum that does not match ends the run with exit 4
