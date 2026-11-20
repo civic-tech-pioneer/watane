@@ -34,6 +34,9 @@ pub(crate) fn error(status: u16, code: &str, message: impl ToString) -> Response
         json!({"error":{"code":code,"message":message.to_string()}}),
     )
 }
+pub(crate) fn not_found() -> Response {
+    error(404, "not_found", "unknown API route")
+}
 fn host_error(error: HostError) -> Response {
     json_response(error.status(), json!({"error":error.json()}))
 }
@@ -47,7 +50,7 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
         "/api/status" | "/api/mods" => Method::GET,
         "/api/plan" => Method::POST,
         "/api/install" => Method::POST,
-        _ => return error(404, "bad_request", "unknown API route"),
+        _ => return not_found(),
     };
     if request.method() != allowed {
         let mut response = error(405, "bad_request", format!("use {allowed}"));

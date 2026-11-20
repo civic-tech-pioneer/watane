@@ -42,7 +42,12 @@ impl Preview {
         Self::start_command(command)
     }
 
-    fn start_command(mut command: Command) -> Self {
+    fn start_command(command: Command) -> Self {
+        Self::try_start_command(command).unwrap_or_else(|e| panic!("start failed: {e}"))
+    }
+
+    /// Err carries the `error` object of a failure line (`{"watane":1,"error":...}`).
+    fn try_start_command(mut command: Command) -> Result<Self, Value> {
         let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -64,17 +69,21 @@ impl Preview {
             });
         result.unwrap();
         let raw_ready: Value = serde_json::from_str(&line).unwrap();
+        if let Some(error) = raw_ready.get("error") {
+            let _ = child.wait();
+            return Err(error.clone());
+        }
         let ready = serde_json::from_value(raw_ready.clone()).unwrap_or_else(|e| {
             let _ = child.kill();
             let _ = child.wait();
             panic!("invalid ready line {line:?}: {e}")
         });
-        Self {
+        Ok(Self {
             child,
             stdout,
             ready,
             raw_ready,
-        }
+        })
     }
 
     fn client(&self, name: &str, ip: &str) -> Client {
@@ -562,22 +571,31 @@ async fn ac3_home_refuses_install_without_app() {
 fn ac4_program_defaults_to_environment_home_and_port() {
     for explicit_home in [false, true] {
         let dir = tempfile::tempdir().unwrap();
-        let free = std::net::TcpListener::bind("127.0.0.1:47341").is_ok()
-            && std::net::TcpListener::bind("[::1]:47341").is_ok();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
-        command.env("WATANE_HOME", dir.path());
-        if explicit_home {
-            command.arg("--home").arg(dir.path());
-        }
-        if !free {
-            command.args(["--port", "0"]);
-        }
-        let mut home = Preview::start_command(command);
+        let make = || {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+            command.env("WATANE_HOME", dir.path());
+            if explicit_home {
+                command.arg("--home").arg(dir.path());
+            }
+            command
+        };
+        // Start once on the default port. If another process holds it, the program
+        // names `port_in_use`; then the home defaults are checked with port 0.
+        let first = make();
+        let mut home = match Preview::try_start_command(first) {
+            Ok(home) => {
+                assert_eq!(home.ready.port, 47341);
+                home
+            }
+            Err(error) => {
+                assert_eq!(error["code"], "port_in_use");
+                let mut command = make();
+                command.args(["--port", "0"]);
+                Preview::start_command(command)
+            }
+        };
         assert_eq!(home.ready.home, dir.path().canonicalize().unwrap());
         assert_eq!(home.ready.mode, "home");
-        if free {
-            assert_eq!(home.ready.port, 47341);
-        }
         home.stop();
     }
     for unset in [false, true] {

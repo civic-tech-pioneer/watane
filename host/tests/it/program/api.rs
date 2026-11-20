@@ -7,6 +7,34 @@ use super::*;
 const HELLO_PACKAGE: &str = "d049784754023367a3cf622c78271ff06ae34063f3da42ebf812c3076dc424b6";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac1_s91_unknown_api_route_is_not_found() {
+    let home = tempfile::tempdir().unwrap();
+    let preview = Preview::start(home.path());
+    let client = preview.client("localhost", "127.0.0.1");
+    let base = format!("http://localhost:{}", preview.ready.port);
+    for path in ["/api/missing", "/api/status/extra", "/missing", "/"] {
+        let response = client.get(format!("{base}{path}")).send().await.unwrap();
+        assert_eq!(response.status(), 404, "{path}");
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            json!({"error":{"code":"not_found","message":"unknown API route"}}),
+            "{path}"
+        );
+    }
+    let response = client
+        .get(format!("{base}/api/missing"))
+        .header("Origin", "null")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["error"]["code"],
+        "forbidden"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac2_status_and_api_guards() {
     let home = tempfile::tempdir().unwrap();
     let preview = Preview::start(home.path());
@@ -403,8 +431,9 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
         .await
         .unwrap();
     assert_eq!(response.status(), 404);
-    // The 413 guard stops reading at the limit, so the peer may reset the connection
-    // while we still write. A raw socket reads the status line whatever happens.
+    // The 413 guard does not drain the refused body (host TECHNICAL 8.1): the peer may
+    // reset the connection while we still write. A raw socket reads the status line
+    // whatever happens.
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let over = vec![b'x'; 64 * 1024 + 1];
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", served.port))
@@ -431,6 +460,54 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
         "expected 413, got {line:?}"
     );
     served.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac3_s91_dropped_call_leaves_server_answering_and_shutdown_bounded() {
+    use std::time::Duration;
+    use tokio::io::AsyncWriteExt;
+    let home = tempfile::tempdir().unwrap();
+    let host = watane_host::Host::open(
+        home.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits {
+            time: Duration::from_secs(1),
+            fuel: u64::MAX,
+            ..watane_host::Limits::default()
+        },
+    )
+    .unwrap();
+    host.install_folders(&[fixture("hog")], 0).unwrap();
+    let served = host.serve(0, axum::Router::new()).await.unwrap();
+    let port = served.port;
+    let body = r#"{"fn":"api.spin","args":null}"#;
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let origin = format!("http://hog.localhost:{port}");
+    let request = format!(
+        "POST /call HTTP/1.1\r\nHost: hog.localhost:{port}\r\nOrigin: {origin}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await; // the call is now spinning
+    drop(stream);
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/api/status"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let start = std::time::Instant::now();
+    served.shutdown().await;
+    // The spin ends at its 1 s time limit; the documented bound is 5 s (TECHNICAL 12.2).
+    // The 7 s margin is for slow machines.
+    assert!(
+        start.elapsed() < Duration::from_secs(7),
+        "{:?}",
+        start.elapsed()
+    );
 }
 
 #[test]

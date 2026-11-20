@@ -112,7 +112,7 @@ impl Host {
             .route("/api/plan", builtin.clone())
             .route("/api/install", builtin)
             .merge(extra_api)
-            .fallback(|| async { api::error(404, "bad_request", "unknown API route") });
+            .fallback(|| async { api::not_found() });
         let router = api.layer(axum::middleware::from_fn_with_state(
             ServerState {
                 host,
@@ -250,7 +250,7 @@ async fn dispatch(
             return api::error(403, "forbidden", "Origin is forbidden on the local API");
         }
         if !request.uri().path().starts_with("/api/") {
-            return api::error(404, "bad_request", "unknown API route");
+            return api::not_found();
         }
         return next.run(request).await;
     }

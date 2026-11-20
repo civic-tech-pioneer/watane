@@ -166,9 +166,9 @@ Product callers pass `Limits::default()` to `Host::open`; tests lower one.
 
 `call_async` returns only after its worker releases every host reference,
 including those of the event deliveries it waits for. Within the shutdown
-bound of 12.2, `Served::shutdown` waits for routers, connections, requests
-and blocking work to release their host references. If they finish within
-that bound, dropping the last caller handle releases the home synchronously.
+bound of 12.2 (5 s in all: routers get 4 s, then connections, requests and
+blocking work get the rest), `Served::shutdown` waits for them to release
+their host references. If they finish within that bound, dropping the last caller handle releases the home synchronously.
 If the bound expires, shutdown returns anyway; running work can still hold
 the home until it ends.
 
@@ -229,6 +229,10 @@ for code `limit`. JSON form of a `HostError`:
 | `busy`, `mode_mismatch`, `missing_providers`, `cycle`, `ambiguous_provider`, `stale_plan` | 409 |
 | `invalid_mod`, `verify` | 422 |
 | `bad_home`, `port_in_use`, `already_serving`, `internal` | 500 |
+
+The local API has one more code, `not_found` (404), for an unknown API route
+(8.1). It is not a `HostError`: the transport layer answers it before any
+handler runs.
 
 | CallCode (JSON `code`) | HTTP status on `/call` |
 |---|---|
@@ -1085,9 +1089,15 @@ No response carries an `Access-Control-Allow-Origin` header. Preflight
 requests receive no `Access-Control-Allow-*` headers.
 
 On the API host, a request with an `Origin` header gets 403 `forbidden`.
-A transport refusal (a wrong `Origin`, method, type or size) answers
-`{"error":{"code":"forbidden"|"bad_request","message":"..."}}` with its
-status, before any handler runs.
+Any other path outside `/api/` and `/mcp/`, and any unknown path under
+`/api/`, gets 404 `not_found` ("unknown API route").
+A transport refusal (a wrong `Origin`, method, route, type or size) answers
+`{"error":{"code":"forbidden"|"not_found"|"bad_request","message":"..."}}`
+with its status, before any handler runs.
+A 413 refusal does not drain the refused body: the server answers and closes
+the connection, so a client that is still writing may see a reset before it
+reads the 413; the status is enough for the client to know that the body was
+too large, and no later request can read the unread bytes.
 On an uninstalled mod origin, every path answers 404 `text/plain; charset=utf-8`.
 A disabled mod answers 409 `disabled` on a valid `/call`; its pages and
 events answer 404.
@@ -1495,7 +1505,8 @@ mod without a page. A failure before the ready line prints
 `{"watane":1,"error":<HostError JSON>}` and exits 1. `watane_host::Ready`
 (Serialize, Deserialize) is the type of the ready line, for `dev`.
 
-SIGINT or SIGTERM: stop accepting, let running requests end for up to 5 s,
+SIGINT or SIGTERM: stop accepting, let running requests end for up to 5 s (routers 4 s, then connections and
+blocking work until 5 s in all),
 remove `run.json`, exit 0. Log lines on stderr start with `watane: `.
 
 ## 13. Test plan
