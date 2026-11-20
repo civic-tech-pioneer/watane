@@ -357,7 +357,7 @@ pub(crate) fn compile(
     // compiler's errors are about that stale sibling, not about the mod (6.4).
     // A stale sibling with another world gives rustc text that names no path: read the
     // `generate!` literals of the copy instead.
-    if siblings.is_empty() && (!errors.is_empty() || !output.status.success()) {
+    if siblings.is_empty() && !output.status.success() {
         siblings.extend(generate_paths_in(&copy.join("logic/src"), copy));
     }
     if !siblings.is_empty() {
