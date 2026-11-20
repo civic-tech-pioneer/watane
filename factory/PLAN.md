@@ -476,7 +476,20 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S94 install's tests fit the budget (test cost).** in flight (cloud; routine `trig_013eoogZcrq5CzENfEcRQFrb`)
+- [x] **S94 install's tests fit the budget (test cost).** Delivered 2026-11-21 through PR #6
+  (main `b5e54ab`, rebase merge on green CI; PO fix `6f4d4e6`/`b5e54ab` for macOS; routine
+  `trig_013eoogZcrq5CzENfEcRQFrb`, cloud, ~7.2 h). Runs: s94-1 1, s94-fix1 2; validator round 1
+  each. user-sim ACCEPTED (13 install.sh guard mutants caught by the default set); adversary
+  BREACHED twice (guard behaviours left slow-only, then pre-existing gaps), all pinned as default
+  tests; no third round (only main's old gaps left). A shell-script unit level (install.sh sourced
+  without its last line, each case a subshell under `set -eu`, TECHNICAL 12.1); process starts
+  ~19,100 -> ~2,000. Mac: default 125 s (was 839 to 1059 s), with ignored 483 s. PO fix: unit
+  receipt test expected the canonical `/private/var` path; the deadline test's scale 1200 left 2 s
+  of the whole bound on a loaded Mac, now 300 (16 s). Decisions: AC7 flake was the test reusing one
+  world for 40 Ctrl-C runs (now one per run, 12 delays); root-only failures fixed in the tests;
+  accepted slow-only reductions (undo sweep one per kind, pty NUL shapes as a unit). RISKs: the
+  uninstall `delete` consent is proven only by slow pty tests (as before); spec 3.6 step 0 cannot
+  happen (recover removes this run's .new/.old first), spec vs code.
   install's default integration run took 858 s on main `501c123` and 1059 s after S89 (Suite time; budget 120 s).
   Story: a maker runs `cargo test -p watane-install` and it is done in under 2 minutes, proving
   the same rules. Outcomes: (1) the default run under 120 s on a quiet Mac and in the cloud;
@@ -1111,7 +1124,7 @@ that subsystem's next slice a test-cost slice.
 | dev | 22 s | 283 s (46 slow, real `watane`) | main `393ae6c`; slow set at `e04b480` (S93), load ~10 |
 | dist | 28 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 | host | 11 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
-| install | **839 s, over budget (S94)** | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| install | 125 s (S94; cloud 8 s) | 483 s | main `b5e54ab`, Mac, integration binary, load ~6 to 11 |
 | log | 7 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 | net | 24 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 | node | 16 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
@@ -1308,6 +1321,9 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### install
 
+- From S94: check_foreign's `pid_gone` skip has no unit case; 39 `slow:` reasons are generic (the
+  rule is only in the `///` line); `target/tmp/install-cache-*` folders pile up per install.sh
+  content; spec 3.6 step 0 vs recover (see S94); Windows CI red (report only).
 - From S89: the hint's bare `watane-dev doctor` when it is off PATH; `^C` glued to the hint;
   a shell "Terminated" on TERM; uninstall leaves the empty `~/.local` and `~/Applications` it
   made, and says "uninstalled" even when entries were skipped; `--status` lists receipt paths
@@ -1755,6 +1771,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-21, S94) strace dies on a traced group's STOP/KILL (process counts need retries); RUSTC_BOOTSTRAP for --report-time rebuilt the workspace; no shellcheck in the cloud; a cloud slice's timing margins (2 s on 4 cores) failed on a loaded Mac, and a test expected `/private/var` where macOS shows `/var`: the fourth macOS-only miss from the cloud, now caught by CI's macOS job before merge.
 - (2026-11-20, S93) twelve tasks in one sweep (ten fixes from user-sim and adversary rounds): cut sweeps smaller; clippy missing in the cloud toolchain; an implementer's helper claimed no filesystem call but canonicalized (validator caught it); 18 real-`watane` dev tests cannot run in the cloud (no IPv6 loopback).
 - (2026-11-20, S90) parallel task worktrees pass alone and conflict when merged (app/NOTES.md, TECHNICAL edits): each runner should append to NOTES under its own heading; mutants on the whole suite stop at the baseline when a window test fails under load (fell back to `--lib`); Sol's sandbox never sees GUI regressions, only check.sh's slow j2 run does.
 - (2026-11-20, S89) four adversary rounds from failure texts that each made a nearby line false; the cloud runs as root with dash, so two install tests always fail there and macOS sh is unseen; `/dev/full` is Linux-only.
@@ -2197,3 +2214,4 @@ The human may veto each one.
 - S89: Alice gets a true line from install.sh at every step, interrupted or not.
 - S90: Alice's manager says what was done or denied, in her words, and hidden windows still refresh.
 - S93: a maker's agent gets a real cause and a runnable next at every dev failure we knew of.
+- S94: a maker's `cargo test -p watane-install` ends in about 2 minutes on the Mac, guards intact.
