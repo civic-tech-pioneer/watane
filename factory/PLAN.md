@@ -487,7 +487,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   its reason, not fails, where there is no `target/release`. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: install/ (script,
   packer, tests, TECHNICAL), .github/workflows/release.yml. Cloud; the PO reruns the macOS sh
   tests and `vm_mac.sh` on the Mac after the merge.
-- [ ] **S90 The manager says what happened (leftover sweep: app).** in flight (local)
+- [ ] **S90 The manager says what happened (leftover sweep: app).** in flight (local; foreman `a0945c7d`, sessionId `a0945c7d-3224-4c39-97c2-e7665d0eca4f`)
   Story: Alice manages her mods and every message names what was done or denied. Outcomes from
   `### app`: a disabled provider shows the host's message; a busy state during a hanging follow or
   add-index; installing from an index says it follows the channel; "Deny" names what was denied;
