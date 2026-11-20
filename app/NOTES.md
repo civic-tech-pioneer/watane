@@ -1583,37 +1583,35 @@ above. `cargo fmt --check` passes (stable warns about nightly-only settings).
 `cargo clippy --all-targets --features driver -- -D warnings` and
 `git diff --check` pass.
 
-#### S88 — activate hidden main before Remove
+#### S88 — reopen before checking Remove focus
 
-Cause (foreman's external macOS reproduction): the first successful element
-`focus()` in hidden, non-key main asks AppKit to activate it asynchronously.
-WebKit's first activation can clear the element just focused; originally
-`warn()` focusing Cancel triggered this. The light trace showed Cancel
-focused from `warn`, then window focus, then native blur/focusout to BODY
-with `panelHidden=false` and no JavaScript caller. Approved/installed/focus
-timestamps included 218/254/257, 216/253/257 and 226/252/256 ms: activation
-followed the Remove click. Prototype instrumentation masked the race (60/60
-passes); the original test failed on run 6.
+Cause (foreman's external macOS traces): closing consent can cause a native
+blur of main's focused element 30–40 ms later, after `approve()` and the
+Destroyed wait return, in a webview never first responder in a key window.
+Main stays non-key (`windows.focused=false`); no later signal exists to wait
+on. Trace: approve@203, approved@215, native blur:first-link-go@244 (no JS
+frame), click@253. Original failures: approved 218/216/226/224 → Cancel
+cleared 257/257/256/266, with the confirm panel still open. Heavy prototype
+instrumentation masked the race (60/60); the original failed on run 6.
 
-The passive `document.hasFocus()` wait timed out (it stays false even after
-hidden-window activation), as did waiting for a window `focus` event without
-requesting activation. Focusing Remove also timed out: Remove, its h2 and
-Keep data were in hidden sections, so focus left activeElement at BODY and
-no window focus arrived until the Remove click about 530 ms later. Focusing
-the visible recommendations launcher tile instead set activeElement to
-BUTTON and produced window focus 0–9 ms later in 3/3 runs; the following
-Remove click left Cancel focused.
+Failed fixes: `hasFocus()` never becomes true; waiting for window `focus`
+before clicking times out because it is WebKit page focus triggered by the
+first successful element focus, not AppKit activation; focusing the visible
+tile and waiting for that event still failed on run 1. The event clears
+nothing (14/14 tiles stayed focused 300 ms later). Focusing Remove earlier
+was a no-op because its section was hidden.
 
-AC8 installs a one-time main-window `focus` listener before `approve()`,
-focuses `[data-tile=recommendations]` after `installed()`, waits for that
-event, then clicks Remove. This mirrors a person's mouse-down: initial
-activation must land before `warn()` focuses Cancel. Every original assertion
-remains unchanged; all diagnostics are removed. AC3 needs no production
-regression: a visible main is key and its webview first responder before a
-person can click in it. No app.js change, dependency or specification change.
+AC8 now quits after install and checks Remove in a fresh app, as J2 already
+does on restart, with no just-closed consent. Every original assertion stays,
+including Cancel focused once the panel opens; diagnostics are removed.
+Foreman verified 50/50 standalone runs and a green full
+`cargo test --features driver`. AC3: visible-window behavior remains unproven
+(front tests were not run). Risk is low: the observed clear needs a webview
+never first responder in a key window, a person cannot click Remove within
+40 ms of answering consent, and Remove is never the default. No production
+focus change or AC3 test was added.
 
-The foreman runs AC2's 50-run loop and the window tests outside the sandbox.
 Validation here: `cargo test --features driver --no-run`,
 `cargo clippy --all-targets --features driver -- -D warnings`,
-`cargo fmt --check` and `git diff --check` pass. No post-fix window tests
-were run in the sandbox; the 50-run count is pending the foreman.
+`cargo fmt --check` and `git diff --check` pass. No window tests were run in
+the sandbox. No dependency or specification change.

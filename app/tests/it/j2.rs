@@ -145,20 +145,15 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     begin_install(&app, &both());
-    app.eval(
-        "main",
-        "window.addEventListener('focus', () => window.__activated = true, {once: true}); null",
-    );
     approve(&app);
     installed(&app, "recommendations");
-    // Focusing a visible element activates hidden main, as a person's mouse-down
-    // would; WebKit's first activation can clear page focus, so it must land
-    // before warn() focuses Cancel.
-    app.eval(
-        "main",
-        "document.querySelector('[data-tile=recommendations]').focus(); null",
-    );
-    until(&app, "main", "window.__activated === true");
+    // Reopen: a consent window that just closed can clear main's focused
+    // element in a hidden driver window ~40 ms later (app NOTES, S88).
+    assert!(app.quit().success());
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    installed(&app, "recommendations");
     app.eval(
         "main",
         "document.querySelector('[data-local=recommendations] button.remove').click(); null",
