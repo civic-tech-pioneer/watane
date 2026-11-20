@@ -1570,7 +1570,8 @@ Record each one in `release_providers` (sorted keys). Return the list.
    and nothing is written. The fix's new mod is the given slug, or
    `my-<release slug>` (cut to 40 bytes, no trailing `-`) when none was
    given or it equals the release's: it cannot share the release's slug
-   (`mod.self_dependency`); its folder is `--dir` or `./<that slug>`.
+   (`mod.self_dependency`); its folder is the destination `new --from` used:
+   `--dir`, else `./<given slug>` when a slug was given, else `./my-<release slug>`.
 4. With no `<slug>`, the slug is the release's, and the folder check of
    step 1 runs now.
 5. `package.unpack(folder)` (pkg 6.4: a new folder only; it refuses an
