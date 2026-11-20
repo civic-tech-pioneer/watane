@@ -355,6 +355,11 @@ pub(crate) fn compile(
     }
     // A relative path that leaves the copy lands in another mod's copy in the cache: the
     // compiler's errors are about that stale sibling, not about the mod (6.4).
+    // A stale sibling with another world gives rustc text that names no path: read the
+    // `generate!` literals of the copy instead.
+    if siblings.is_empty() && (!errors.is_empty() || !output.status.success()) {
+        siblings.extend(generate_paths_in(&copy.join("logic/src"), copy));
+    }
     if !siblings.is_empty() {
         return Err(reads_outside_problems(siblings.into_iter().collect()));
     }
@@ -553,6 +558,57 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
     // The folder of a read file is the one thing to name.
     let all = found.clone();
     found.retain(|p| !all.iter().any(|a| a != p && p.starts_with(a)));
+    found
+}
+
+/// The `path:` literals of `wit_bindgen::generate!` in the `.rs` files under `dir`
+/// that resolve outside `copy`.
+fn generate_paths_in(dir: &Path, copy: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(generate_paths_in(&path, copy));
+        } else if path.extension().is_some_and(|e| e == "rs")
+            && let Ok(text) = fs::read_to_string(&path)
+        {
+            found.extend(generate_paths(&text, copy));
+        }
+    }
+    found
+}
+
+/// The `path: "<literal>"` of each `generate!` in `source`, resolved against `<copy>/logic`
+/// (wit-bindgen's base) and normalized, when it is not under `copy`.
+fn generate_paths(source: &str, copy: &Path) -> Vec<PathBuf> {
+    let real_copy = copy.canonicalize().unwrap_or_else(|_| copy.to_path_buf());
+    let mut found = Vec::new();
+    for call in source.split("generate!").skip(1) {
+        let mut rest = call;
+        while let Some(at) = rest.find("path:") {
+            let after = &rest[at + 5..];
+            let word_start = rest[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+            if word_start
+                && let Some(literal) = after.trim_start().strip_prefix('"')
+                && let Some((literal, _)) = literal.split_once('"')
+            {
+                let path = normalized(&copy.join("logic").join(literal));
+                if !path.starts_with(&real_copy)
+                    && !path.starts_with(copy)
+                    && !found.contains(&path)
+                {
+                    found.push(path);
+                }
+            }
+            rest = after;
+        }
+    }
     found
 }
 
@@ -807,6 +863,18 @@ mod tests {
             .contains(k)
         }));
         assert!(args.contains(&"--offline"));
+    }
+
+    #[test]
+    fn ac3_generate_path_leaving_the_copy() {
+        let copy = Path::new("/c/build/me");
+        let far = "wit_bindgen::generate!({ world: \"x\", path: \"../../other/wit\" });";
+        assert_eq!(
+            generate_paths(far, copy),
+            [PathBuf::from("/c/build/other/wit")]
+        );
+        let own = "generate!({ world: \"x\", path: \"../wit\" });";
+        assert!(generate_paths(own, copy).is_empty());
     }
 
     #[test]
