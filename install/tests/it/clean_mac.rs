@@ -995,6 +995,9 @@ fn ac5_two_machine_recovery_and_deadlines_are_documented() {
         "1200 s",
         "3600 s",
         "WATANE_VM_TEST_SCALE",
+        "vm_step_limit",
+        "vm_whole_limit",
+        "vm_mac.sh",
         "timed out after N s",
     ] {
         assert!(section.contains(text), "missing {text}");
@@ -1011,6 +1014,13 @@ fn ac3_remote_journey_and_whole_script_deadlines() {
     fs::copy(&ssh, temp.path().join("scp")).expect("scp");
     fs::copy(&ssh, temp.path().join("cargo")).expect("cargo");
     let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
+    let limits = source
+        .split("vm_step_limit=")
+        .nth(1)
+        .expect("driver limits")
+        .split("# shellcheck")
+        .next()
+        .expect("end limits");
     let config = source
         .split("install_bound=")
         .nth(1)
@@ -1040,6 +1050,7 @@ fn ac3_remote_journey_and_whole_script_deadlines() {
             r#"set -eu
 driver=deadline-test
 fail() {{ echo "$*" >&2; exit 1; }}
+vm_step_limit={limits}
 . "$1"
 install_bound={config}
 ip=192.0.2.1
@@ -1107,4 +1118,54 @@ fn ac3_test_scale_cannot_disable_a_bound() {
             "{scale}: {out:?}"
         );
     }
+}
+
+#[test]
+fn ac3_clean_mac_remote_has_no_two_machine_deadlines() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().expect("temp");
+    let bin = temp.path().join("bin");
+    fs::create_dir(&bin).expect("bin");
+    for (name, body) in [
+        ("tart", "#!/bin/sh\nexit 0\n"),
+        ("ssh", "#!/bin/sh\nsleep 2\nprintf 'SSH-COMPLETE\\n'\n"),
+    ] {
+        let path = bin.join(name);
+        fs::write(&path, body).expect("fake");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    fs::copy(script("vm_lib.sh"), temp.path().join("vm_lib.sh")).expect("library");
+    let source = fs::read_to_string(script("vm_mac.sh")).expect("source");
+    let setup = source
+        .split_once("if [ \"$prepare\" = yes ]; then")
+        .expect("setup")
+        .0;
+    let helper = temp.path().join("vm_mac.sh");
+    fs::write(
+        &helper,
+        format!(
+            r#"{setup}
+ip=192.0.2.10
+check remote 'softwareupdate --install CLT'
+check remote 'sh clean_mac.sh --part clt'
+printf 'VM-REMOTE-PASS\n'
+"#
+        ),
+    )
+    .expect("helper");
+    let mut command = Command::new("/usr/bin/perl");
+    command
+        .args(super::support::LAUNCH)
+        .arg("sh")
+        .arg(helper)
+        .arg("--prepare")
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        // The two-machine per-call and whole-script bounds both become 1 s.
+        .env("WATANE_VM_TEST_SCALE", "3600")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let out = super::support::finish(super::support::spawn_run(&mut command));
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(out.stdout.matches("SSH-COMPLETE").count(), 2, "{out:?}");
+    assert_eq!(out.stdout.lines().last(), Some("VM-REMOTE-PASS"));
 }

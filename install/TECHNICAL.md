@@ -1658,9 +1658,16 @@ journey command and any recorded SSH bridge, stops and deletes only the
 run's VM, and removes the host temporary folder, including Alice's home.
 Cleanup runs with `set +e`; a vanished or empty bridge PID file is skipped.
 Failures while reading a PID or stopping a process cannot skip `tart stop`,
-`tart delete` or `rm -rf "$work"`. Cleanup's Tart commands also have deadlines.
+`tart delete` or `rm -rf "$work"`. `vm_two_machines.sh` also bounds cleanup's
+Tart commands.
 
-Every `remote`, `copy` and `remote_plain` call has a 300 s hard deadline;
+`vm_two_machines.sh` opts into these bounds by setting `vm_step_limit=300`
+and `vm_whole_limit=3600` before sourcing `vm_lib.sh`. `vm_mac.sh` sets
+neither: its clean-Mac preparation and guest parts retain only the existing
+600 s boot deadline (12.3), with no per-call or whole-script limit.
+
+Every `remote`, `copy` and `remote_plain` call in `vm_two_machines.sh` has a
+300 s hard deadline;
 the one-liner install (also with `--from`) has 900 s. Each Bob driver SSH
 bridge also has 300 s. The journey's `cargo test` has 1200 s. The whole
 script has 3600 s, checked before each step; each command is capped by the

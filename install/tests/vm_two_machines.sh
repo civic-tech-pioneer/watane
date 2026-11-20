@@ -21,6 +21,8 @@ if [ -n "$from" ]; then
   from=$(cd "$from" && pwd -P) || fail "cd $from"
   for asset in install.sh SHA256SUMS; do check test -f "$from/$asset"; done
 fi
+vm_step_limit=300
+vm_whole_limit=3600
 # shellcheck source-path=SCRIPTDIR source=vm_lib.sh
 . "$here/vm_lib.sh"
 check cd "$here/../.."

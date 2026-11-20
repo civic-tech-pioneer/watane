@@ -10,22 +10,40 @@ seconds() {
   [ "$scaled" -gt 0 ] || scaled=1
   printf '%s\n' "$scaled"
 }
-whole_bound=$(seconds 3600)
-whole_end=$(( $(date +%s) + whole_bound ))
-step_bound=$(seconds 300)
+# Drivers opt in before sourcing; the clean-Mac driver keeps its boot deadline only.
+whole_bound=
+whole_end=
+step_bound=
+if [ -n "${vm_whole_limit:-}" ]; then
+  whole_bound=$(seconds "$vm_whole_limit")
+  whole_end=$(( $(date +%s) + whole_bound ))
+fi
+if [ -n "${vm_step_limit:-}" ]; then
+  step_bound=$(seconds "$vm_step_limit")
+fi
 # Keep alarm in a supervisor so it can name the cause and reap the command.
 # A separate command group also bounds descendants of cargo/ssh on timeout.
-run_deadline() { perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$@"; }
+run_deadline() {
+  if [ -n "$1" ]; then
+    perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$@"
+  else
+    shift 2
+    "$@"
+  fi
+}
 whole_check() {
-  [ "$(date +%s)" -lt "$whole_end" ] || fail "whole script timed out after $whole_bound s"
+  if [ -n "$whole_bound" ]; then
+    [ "$(date +%s)" -lt "$whole_end" ] || fail "whole script timed out after $whole_bound s"
+  fi
 }
 check() { whole_check; "$@" || fail "command failed: $*"; }
 deadline_args() {
   whole_check
   bound=$1; step=$2
+  [ -n "$whole_bound" ] || return 0
   left=$(( whole_end - $(date +%s) ))
   [ "$left" -gt 0 ] || fail "whole script timed out after $whole_bound s"
-  if [ "$left" -le "$bound" ]; then
+  if [ -z "$bound" ] || [ "$left" -le "$bound" ]; then
     bound=$left
     step="whole script"
   fi
@@ -113,8 +131,12 @@ boot() {
   # Own the name only once this run created it; never delete another VM.
   check bounded "$step_bound" "tart clone" tart clone "$1" "watane-run-$$"
   vm=watane-run-$$
-  deadline_args "$whole_bound" "tart run"
-  perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
+  if [ -n "$whole_bound" ]; then
+    deadline_args "$whole_bound" "tart run"
+    perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
+  else
+    tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
+  fi
   runner=$!
   boot_bound=$(seconds 600)
   deadline=$(( $(date +%s) + boot_bound ))
@@ -133,7 +155,7 @@ boot() {
 }
 stop_run() {
   check bounded "$step_bound" "tart stop" tart stop "$vm"
-  kill "$runner" 2>/dev/null || :
+  if [ -n "$whole_bound" ]; then kill "$runner" 2>/dev/null || :; fi
   wait "$runner" || :
   runner=
 }
