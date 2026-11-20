@@ -555,11 +555,13 @@ fn escape_message(message: &str) -> String {
 
 /// Make wit-parser's rendered message exact for a person (TECHNICAL 4): its
 /// `EscapeUnicode(EscapeIterInner('\u{..}'))` debug text becomes the escaped char,
-/// and the byte column of the ` --> path:line:col` line becomes a char column.
+/// and the byte column of its `path:line:col` location becomes a char column.
+/// The source snippet after the location is left as written.
 fn fix_message(message: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -> String {
     const OPEN: &str = "EscapeUnicode(EscapeIterInner('";
+    let (head, snippet) = message.split_at(message.find("\n      |").unwrap_or(message.len()));
     let mut text = String::with_capacity(message.len());
-    let mut rest = message;
+    let mut rest = head;
     while let Some(at) = rest.find(OPEN) {
         text.push_str(&rest[..at]);
         let inner = &rest[at + OPEN.len()..];
@@ -575,30 +577,34 @@ fn fix_message(message: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -
         }
     }
     text.push_str(rest);
-    let lines: Vec<String> = text
-        .split('\n')
-        .map(|l| char_column(l, dir, sources).unwrap_or_else(|| l.to_string()))
-        .collect();
-    lines.join("\n")
+    for (file, bytes) in sources {
+        let path = format!("{}:", dir.join(file).to_string_lossy());
+        let Some(at) = text.find(&path).map(|at| at + path.len()) else {
+            continue;
+        };
+        if let Some((len, location)) = char_column(&text[at..], bytes) {
+            text.replace_range(at..at + len, &location);
+        }
+    }
+    text + snippet
 }
 
-/// The arrow `line` with its byte column rewritten as a char column, if it is one.
-fn char_column(line: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -> Option<String> {
-    let (head, location) = line.split_once("--> ")?;
-    let (rest, col) = location.rsplit_once(':')?;
-    let (path, row) = rest.rsplit_once(':')?;
-    let (row, col): (usize, usize) = (row.parse().ok()?, col.parse().ok()?);
-    let (_, bytes) = sources
-        .iter()
-        .find(|(f, _)| dir.join(f).to_string_lossy() == path)?;
-    let source = std::str::from_utf8(bytes).ok()?;
-    let before = source
-        .lines()
-        .nth(row.checked_sub(1)?)?
-        .get(..col.checked_sub(1)?)?;
-    Some(format!(
-        "{head}--> {path}:{row}:{}",
-        before.chars().count() + 1
+/// `text` starts with wit-parser's `<line>:<byte column>`: its length and
+/// `<line>:<char column>` counted in `source`.
+fn char_column(text: &str, source: &[u8]) -> Option<(usize, String)> {
+    let (row, rest) = text.split_once(':')?;
+    let col = &rest[..rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len())];
+    let (line, byte): (usize, usize) = (row.parse().ok()?, col.parse().ok()?);
+    let before = std::str::from_utf8(source)
+        .ok()?
+        .split('\n')
+        .nth(line.checked_sub(1)?)?
+        .get(..byte.checked_sub(1)?)?;
+    Some((
+        row.len() + 1 + col.len(),
+        format!("{row}:{}", before.chars().count() + 1),
     ))
 }
 
@@ -658,6 +664,25 @@ mod tests {
         assert!(m.contains("\\u{202e}"), "{m}");
         assert!(!m.contains("EscapeUnicode"), "{m}");
         assert!(m.contains("codepoint \\u{202e}\n"), "{m}");
+    }
+
+    #[test]
+    fn ac1_s93_long_line_location_counts_chars() {
+        // A line over 500 bytes: wit-parser writes `path:line:col: message`, no snippet.
+        let m = wit_message(&format!(
+            "package a:b;\n/* {} */ bad\n",
+            "\u{e9}".repeat(300)
+        ));
+        assert!(m.contains("<dir>/wit/world.wit:2:308: expected"), "{m}");
+    }
+
+    #[test]
+    fn ac2_s93_snippet_keeps_source_as_written() {
+        let m = wit_message("package a:b;\nworld w { @ } // EscapeUnicode(EscapeIterInner('x'))\n");
+        assert!(
+            m.contains("| world w { @ } // EscapeUnicode(EscapeIterInner('x'))"),
+            "{m}"
+        );
     }
 
     #[test]
