@@ -813,6 +813,21 @@ mod tests {
             [PathBuf::from("/a b/build/other/wit/w.wit")]
         );
     }
+    /// A mod's own compiler text naming the build folder itself (`<build>/`, `<build>/me/..`)
+    /// is not a sibling under `<cache>/build/`; reported, it swallows every real sibling (the
+    /// ancestor-only retain) and replaces the mod's compile errors by a reads_outside on the
+    /// whole build folder.
+    #[test]
+    fn adv_s93_sibling_paths_build_folder_itself() {
+        let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
+        for text in ["see /c/build/ here", "/c/build/me/..", "/c/build/./"] {
+            assert!(sibling_paths(text, b, c).is_empty(), "{text}");
+        }
+        assert_eq!(
+            sibling_paths("/c/build/other/wit/a.wit and /c/build/me/..", b, c),
+            [PathBuf::from("/c/build/other/wit/a.wit")]
+        );
+    }
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
         let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
