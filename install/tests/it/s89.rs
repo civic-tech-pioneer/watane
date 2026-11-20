@@ -310,6 +310,7 @@ fn ac2_int_after_the_answer_prints_no_install_it_later_lines() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "needs /dev/full, which only Linux has")]
 fn fix1_say_to_a_full_disk_ends_the_run_with_exit_1() {
     let fx = Fx::new();
     assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
