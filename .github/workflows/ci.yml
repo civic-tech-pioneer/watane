@@ -70,6 +70,9 @@ jobs:
           # dev's tests run the real watane; tests never touch the runner's home.
           export WATANE_BIN="$PWD/target/debug/watane"
           export WATANE_HOME="$RUNNER_TEMP/watane-home"; mkdir -p "$WATANE_HOME"
+          # Tests' scratch (install's shared fakes) is reused when present; a cached partial
+          # copy made 129 install tests fail. It is never worth caching.
+          rm -rf target/tmp
           cargo test --workspace --locked --features "${{ matrix.features }}" --no-fail-fast -- ${{ matrix.skip }}
       - name: Clippy
         shell: bash
