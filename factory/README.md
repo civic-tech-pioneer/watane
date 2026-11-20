@@ -216,3 +216,17 @@ stays as it is, and the slow one runs while the product owner and foremen do oth
   `#[ignore]`d there, as in `check.sh`.
 - App window (`driver`) tests: on macOS in CI (runners have a GUI session). On Linux they need
   Xvfb and a window manager (`app/scripts/linux-test.sh`, run by hand). Windows has no driver.
+
+## Windows
+
+CI builds on Windows but does not block a merge (`continue-on-error`) until the workspace
+compiles there. First run (2026-11-20): `pkg`, `dist` and `install` compile; two things stop the
+rest.
+1. `log`'s identity key file opens with `O_NOFOLLOW`, `O_NONBLOCK` and mode `0600`. That is a
+   security check (`spec/TECHNICAL.md` 6): Windows needs its own design (no-follow through
+   `FILE_FLAG_OPEN_REPARSE_POINT`, an owner-only ACL), not a `cfg` that skips it. Everything that
+   depends on `log` (`host`, `net`, `node`, `dev`, `app`) waits on it. This needs the human.
+2. `app` needs `app/icons/icon.ico` for Tauri's Windows resource file.
+After those come the next compile errors, then the tests. The shell installer (`install.sh`),
+`sandbox-exec` (DEV-S-13) and the AppKit driver are macOS-only already. Windows becomes
+blocking when its run is green.
