@@ -145,11 +145,15 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     begin_install(&app, &both());
+    app.eval(
+        "main",
+        "window.addEventListener('focus', () => window.__activated = true, {once: true}); null",
+    );
     approve(&app);
     installed(&app, "recommendations");
     // Hidden main activates asynchronously after consent closes; WebKit's
     // initial focus clears Cancel if Remove is clicked before that activation.
-    until(&app, "main", "document.hasFocus()");
+    until(&app, "main", "window.__activated === true");
     app.eval(
         "main",
         "document.querySelector('[data-local=recommendations] button.remove').click(); null",

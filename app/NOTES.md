@@ -1594,10 +1594,14 @@ JavaScript caller. Failed runs recorded approved/installed/focus at
 218/254/257, 216/253/257 and 226/252/256 ms. Prototype instrumentation masked
 the race (60/60 passes); the original test failed on run 6.
 
-AC8 now waits for `document.hasFocus()` after `installed()` and before Remove,
-matching the activation a person's click would cause. All diagnostics are
-removed and every original assertion, including immediate Cancel focus after
-the panel opens, remains. AC3 needs no production regression: visible main
+AC8 registers a one-time main-window `focus` listener before `approve()` and
+waits for its activation flag after `installed()` and before Remove, matching
+the activation a person's click would cause. The foreman observed this event
+after approve in 8/8 runs. `document.hasFocus()` stays false in the hidden
+window even after activation; waiting on it timed out on the foreman's first
+run. All diagnostics are removed and every original assertion, including
+immediate Cancel focus after the panel opens, remains. AC3 needs no
+production regression: visible main
 is key from launch, and a person's click on a non-key window activates it
 before clicking. No app.js change, dependency or specification change.
 
