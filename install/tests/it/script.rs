@@ -1192,6 +1192,23 @@ fn inst_s33_a_kill_at_the_receipt() {
     assert_all_new(&fx);
 }
 
+/// INST-S-33, 35 and TECHNICAL 3.6 step 0: a kill at the receipt move of a fresh install leaves no
+/// receipt and a journal; the next run takes the files that journal moved in as watane's, not as
+/// foreign, recovers and installs, and leaves nothing behind.
+#[test]
+#[ignore = "slow: a SIGKILL at the receipt move of a fresh install, then the run that recovers it; the foreign rule alone is `unit::unit_check_foreign_refuses_a_file_watane_did_not_install` (killed)"]
+fn inst_s33_a_kill_at_the_receipt_of_a_fresh_install() {
+    let fx = Fx::new();
+    kill_at(&fx, "mv", "*receipt.new.*", &[]);
+    assert!(!fx.receipt().exists());
+    assert!(has_leftover(&fx, "journal."));
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!out.stderr.contains("did not install"), "{out:?}");
+    fx.assert_installed("0.1.0");
+    assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+}
+
 /// INST-S-33 and TECHNICAL 3.6 step 5: a kill after the receipt move (in step 5, at a path only the old receipt held)
 /// leaves the new version and the journal, and keeps that path until the next run removes it and finishes the cleanup.
 #[test]

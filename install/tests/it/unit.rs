@@ -472,6 +472,9 @@ fn unit_home_deletable_refuses_what_is_not_a_watane_home() {
     symlink(&fx.home, fx.home.join("link")).expect("link");
     symlink(&other, fx.home.join("olink")).expect("olink");
     symlink(fx.home.join("elsewhere"), fx.home.join("ilink")).expect("ilink");
+    // a link to a folder whose name holds a line break: its resolved path is not plain
+    fs::create_dir(fx.home.join("a\nb")).expect("a\\nb");
+    symlink(fx.home.join("a\nb"), fx.home.join("nllink")).expect("nllink");
     let values = [
         ("home", "$HOME"),
         ("root", "/"),
@@ -489,6 +492,7 @@ fn unit_home_deletable_refuses_what_is_not_a_watane_home() {
         ("plain", "$HOME/elsewhere"),
         ("ilink", "$HOME/ilink"),
         ("olink", "$HOME/olink"),
+        ("nllink", "$HOME/nllink"),
     ];
     let cases: Vec<(String, String)> = values
         .iter()
@@ -526,6 +530,7 @@ fn unit_home_deletable_refuses_what_is_not_a_watane_home() {
         ("plain", 0, 0, el.clone()),
         ("ilink", 0, 0, el),
         ("olink", 1, 1, real(&other)),
+        ("nllink", 1, 0, String::new()),
     ];
     for (n, rc, out, del) in want {
         let u = case(&units, n);
