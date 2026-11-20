@@ -465,7 +465,7 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac3_s91_dropped_call_leaves_server_answering_and_shutdown_bounded() {
     use std::time::Duration;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let home = tempfile::tempdir().unwrap();
     let host = watane_host::Host::open(
         home.path(),
@@ -490,7 +490,11 @@ async fn ac3_s91_dropped_call_leaves_server_answering_and_shutdown_bounded() {
         body.len()
     );
     stream.write_all(request.as_bytes()).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await; // the call is now spinning
+    // No answer within 200 ms: the call runs (a refusal answers at once; the spin
+    // alone answers 422 `limit` after 1 s).
+    let mut buf = [0u8; 64];
+    let early = tokio::time::timeout(Duration::from_millis(200), stream.read(&mut buf)).await;
+    assert!(early.is_err(), "answered before the drop: {early:?}");
     drop(stream);
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let response = client
@@ -501,8 +505,8 @@ async fn ac3_s91_dropped_call_leaves_server_answering_and_shutdown_bounded() {
     assert_eq!(response.status(), 200);
     let start = std::time::Instant::now();
     served.shutdown().await;
-    // The spin ends at its 1 s time limit; the documented bound is 5 s (TECHNICAL 12.2).
-    // The 7 s margin is for slow machines.
+    // The documented bound is 5 s (TECHNICAL 2.1, 12.2); measured here: about 1 ms, as
+    // the dropped call's worker holds no served reference. The 7 s ceiling is margin for slow machines.
     assert!(
         start.elapsed() < Duration::from_secs(7),
         "{:?}",
