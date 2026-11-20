@@ -397,7 +397,12 @@ files (INST-F-20, INST-S-14, 32, 33).
    that existed before the run (IN-47). Just before each `rmdir` the exit trap resolves
    the folder again (`cd <folder> && pwd -P`) and removes it, by that resolved path, only when it
    is not a link and still resolves inside the resolved home (the rule of 8.5): a link swapped
-   in since step 1 is never followed out of the home. The same holds for a run that
+   in since step 1 is never followed out of the home. Decided limit (S89-fix1): if
+   another program of the same user swaps a parent that existed (`~/.local`) during the
+   run for a link to another folder inside the home that already holds an empty folder of
+   the same name, that empty folder is removed; section 6 of `spec/TECHNICAL.md` does not
+   protect against another program of the same user, and nothing outside the home or with
+   content is ever removed. The same holds for a run that
    fails with exit 3 to 5 before the commit. After the commit nothing is removed.
 5. **After the commit.** Remove the paths of the old receipt that are not
    in the new list, each only if the rule of 8.5 allows it (INST-S-27); then
