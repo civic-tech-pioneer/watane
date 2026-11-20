@@ -10,8 +10,11 @@ docker run --rm --init --platform linux/arm64 --shm-size=1g --add-host site.loca
   --mount "type=bind,source=$repo,target=/repo" \
   --mount type=volume,source=watane-app-linux-registry,target=/usr/local/cargo/registry \
   --mount type=volume,source=watane-app-linux-target,target=/linux-target \
-  --env CARGO_TARGET_DIR=/linux-target --workdir /repo "$image" bash -euc '
-    pkg-config --modversion glib-2.0 libsoup-3.0 webkit2gtk-4.1
+  --env NO_AT_BRIDGE=1 --env CARGO_TARGET_DIR=/linux-target --workdir /repo "$image" bash -euc '
+    for library in glib-2.0 libsoup-3.0 webkit2gtk-4.1; do
+      version=$(pkg-config --modversion "$library")
+      printf "%s %s\n" "$library" "$version"
+    done
     # One run: the driver build runs the default tests too. Its lone non-driver test
     # (ac1_default_dist_refuses_listed_local) is plain logic that check.sh runs on the Mac.
     # libtest cannot filter by ignore reason. These are every #[ignore = "front: ..."]

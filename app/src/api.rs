@@ -367,26 +367,35 @@ fn publish_providers(
     result
 }
 
-#[derive(serde::Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
 enum FetchQuery {
-    Link {
-        link: String,
-    },
-    Release {
-        release: String,
-    },
-    Invalid {
-        #[serde(rename = "link")]
-        _link: serde_json::Value,
-        #[serde(rename = "release")]
-        _release: serde_json::Value,
-    },
-    #[expect(
-        clippy::empty_enum_variants_with_brackets,
-        reason = "untagged serde: `Empty {}` matches the JSON `{}`, a unit variant does not"
-    )]
-    Empty {},
+    Link { link: String },
+    Release { release: String },
+}
+impl FetchQuery {
+    fn parse(value: serde_json::Value) -> Result<Self, String> {
+        let object = value
+            .as_object()
+            .ok_or("give link or release: the body must be a JSON object")?;
+        for key in object.keys() {
+            if key != "link" && key != "release" {
+                return Err(format!("give link or release: unknown field {key}"));
+            }
+        }
+        let field = match (object.contains_key("link"), object.contains_key("release")) {
+            (true, false) => "link",
+            (false, true) => "release",
+            _ => return Err("give link or release".into()),
+        };
+        let text = object[field]
+            .as_str()
+            .ok_or_else(|| format!("give link or release: {field} must be text"))?
+            .to_owned();
+        Ok(if field == "link" {
+            Self::Link { link: text }
+        } else {
+            Self::Release { release: text }
+        })
+    }
 }
 enum FetchTarget {
     Link(watane_dist::Link),
@@ -395,7 +404,7 @@ enum FetchTarget {
 async fn fetch(
     State(dist): State<Option<Home>>,
     Extension(parties): Extension<Arc<crate::words::Parties>>,
-    query: Result<Json<FetchQuery>, axum::extract::rejection::JsonRejection>,
+    query: Result<Json<serde_json::Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Some(dist) = dist else {
         return error(
@@ -404,10 +413,15 @@ async fn fetch(
             "dist did not open",
         );
     };
+    let query = match query
+        .map_err(|e| format!("give link or release: {}", e.body_text()))
+        .and_then(|Json(value)| FetchQuery::parse(value))
+    {
+        Ok(query) => query,
+        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_input", cause),
+    };
     let target = (|| -> Result<_, String> {
-        let Json(query) = query.map_err(|e| format!("give link or release: {}", e.body_text()))?;
         match query {
-            FetchQuery::Invalid { .. } | FetchQuery::Empty {} => Err("give link or release".into()),
             FetchQuery::Link { link } => {
                 let link: watane_dist::Link = link.parse().map_err(|e: DistError| e.to_string())?;
                 if link.slug().is_none() {

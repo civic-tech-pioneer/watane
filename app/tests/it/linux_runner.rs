@@ -34,7 +34,7 @@ exit "${DRIVER_EXIT:-0}"
     for (name, body) in [
         ("dbus-run-session", "exec \"$@\""),
         ("xvfb-run", "shift; exec \"$@\""),
-        ("pkg-config", "exit 0"),
+        ("pkg-config", "echo 1.2.3"),
         ("openbox", "exit 0"),
         (
             "xprop",
@@ -53,7 +53,7 @@ exit "${DRIVER_EXIT:-0}"
         let cargo_log = bin.join("cargo.log");
         fs::write(&docker_log, "").unwrap();
         fs::write(&cargo_log, "").unwrap();
-        let status = Command::new(&script)
+        let output = Command::new(&script)
             .args(if code == 0 {
                 vec![]
             } else {
@@ -67,9 +67,9 @@ exit "${DRIVER_EXIT:-0}"
             .env("DOCKER_LOG", &docker_log)
             .env("CARGO_LOG", &cargo_log)
             .env(variable, code.to_string())
-            .status()
+            .output()
             .unwrap();
-        assert_eq!(status.code(), Some(code));
+        assert_eq!(output.status.code(), Some(code));
         let cargo = fs::read_to_string(cargo_log).unwrap();
         assert_eq!(cargo.lines().count(), calls);
         for line in cargo.lines() {
@@ -84,6 +84,12 @@ exit "${DRIVER_EXIT:-0}"
         let docker = fs::read_to_string(docker_log).unwrap();
         assert!(docker.contains("linux/arm64"));
         if calls > 0 {
+            assert!(docker.contains("--env\nNO_AT_BRIDGE=1\n"));
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert_eq!(
+                stdout,
+                "glib-2.0 1.2.3\nlibsoup-3.0 1.2.3\nwebkit2gtk-4.1 1.2.3\n"
+            );
             assert!(docker.contains(
                 "type=volume,source=watane-app-linux-registry,target=/usr/local/cargo/registry"
             ));

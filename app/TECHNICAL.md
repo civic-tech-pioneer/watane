@@ -1267,7 +1267,7 @@ behind:
 | Result | Status | Body or code |
 |---|---|---|
 | fetched | 200 | `Content-Type: application/octet-stream`; the package bytes; headers `Watane-Release: <ReleaseRef>` and `Watane-Package: <package id>` |
-| bad JSON, both or neither field (including both null), a link or release that does not parse, a link with no slug | 400 | `bad_request`; non-JSON or wrong shape reads `give link or release: <serde cause>` using the rejection body text; both/neither fields keep exactly `give link or release` |
+| bad JSON, both or neither field (including both null), a link or release that does not parse, a link with no slug | 400 | `bad_input` for non-JSON or wrong shape: non-object reads `give link or release: the body must be a JSON object`; a non-text sole `link` or `release` reads `give link or release: link must be text` or `give link or release: release must be text`; an unknown key reads `give link or release: unknown field <key>`; both/neither fields keep exactly `give link or release`; non-JSON reads `give link or release: <serde_json syntax cause>`. A link or release that does not parse, or a link with no slug, keeps `bad_request` and its plain cause |
 | `NoRelease`, `Withdrawn`, `Compromised` | 409 | `fetch_refused` with dist's cause |
 | `NotFollowed` (no base known for a release), `BadUrl` (a local address) and any other `DistError` (a read, a hash or a package check failed) | 502 | `fetch_failed` with dist's cause |
 | dist did not open (APP-F-2) | 503 | `unavailable` |
@@ -1778,7 +1778,9 @@ of the build without `driver` is plain logic; `cargo test` on macOS runs it.
 Extra arguments (for example `ac5_journey_j2`) go to the cargo run.
 Named Docker volumes cache Cargo’s registry and `/linux-target`; the
 worktree’s macOS `target/` is untouched. The runner prints the image’s GLib,
-libsoup and WebKitGTK versions before testing.
+libsoup and WebKitGTK versions before testing, one line each as
+`glib-2.0 <v>`, `libsoup-3.0 <v>` and `webkit2gtk-4.1 <v>`. Docker runs
+with `--env NO_AT_BRIDGE=1` to suppress AT-SPI bridge warnings.
 Window tests spawn `env!("CARGO_BIN_EXE_watane-app")` with a temporary home
 and `--port 0`, and talk to it through `tests/support/`.
 

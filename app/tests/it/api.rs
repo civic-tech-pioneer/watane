@@ -410,7 +410,7 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
     let dist = open(home.path(), Recording::new(true), false);
     for (body, expected) in [
         ("{", "EOF while parsing an object at line 1 column 1"),
-        ("[]", "data did not match any variant"),
+        ("[]", "the body must be a JSON object"),
         ("{}", "give link or release"),
         (r#"{"link":4,"release":[]}"#, "give link or release"),
         (r#"{"link":"a","release":"b"}"#, "give link or release"),
@@ -424,6 +424,7 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         .await;
         assert_eq!(status, 400);
         let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["error"]["code"], "bad_input");
         let message = value["error"]["message"].as_str().unwrap();
         if body == "{" || body == "[]" {
             assert!(message.starts_with("give link or release: "), "{message}");
@@ -446,12 +447,21 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         br#"{"release":"bad"}"#.to_vec(),
         serde_json::to_vec(&json!({"link":carol.own_link(None).unwrap().to_string()})).unwrap(),
     ] {
+        let shape_error = serde_json::from_slice::<Value>(&bytes).map_or(true, |v| {
+            v.as_object().is_some_and(|o| {
+                o.len() != 1 || o.contains_key("link") && o.contains_key("release")
+            })
+        });
         let (status, _, bytes) =
             api_request(Some(Arc::clone(&dist)), "/api/fetch", bytes, None).await;
         assert_eq!(status, 400);
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
-            "bad_request"
+            if shape_error {
+                "bad_input"
+            } else {
+                "bad_request"
+            }
         );
     }
     let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), json!({"link":link.to_string()})).await;
@@ -706,17 +716,41 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
     let dist = Arc::new(
         watane_dist::Dist::open(home.path(), Arc::new(Answer(true)), Default::default()).unwrap(),
     );
-    for body in [
-        json!({}),
-        json!({"link":null,"release":null}),
-        json!({"link":"bad","release":"bad"}),
+    for (body, message) in [
+        (json!({}), "give link or release"),
+        (json!({"link":null,"release":null}), "give link or release"),
+        (
+            json!({"link":"bad","release":"bad"}),
+            "give link or release",
+        ),
+        (
+            json!([]),
+            "give link or release: the body must be a JSON object",
+        ),
+        (
+            json!(5),
+            "give link or release: the body must be a JSON object",
+        ),
+        (
+            json!("x"),
+            "give link or release: the body must be a JSON object",
+        ),
+        (json!({"link":5}), "give link or release: link must be text"),
+        (
+            json!({"release":true}),
+            "give link or release: release must be text",
+        ),
+        (
+            json!({"other":"x"}),
+            "give link or release: unknown field other",
+        ),
     ] {
         let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), body).await;
         assert_eq!(status, 400);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&bytes).unwrap()["error"],
-            json!({"code":"bad_request","message":"give link or release"})
-        );
+        let error = serde_json::from_slice::<Value>(&bytes).unwrap()["error"].clone();
+        assert_eq!(error, json!({"code":"bad_input","message":message}));
+        assert!(!message.contains("untagged"));
+        assert!(!message.contains("variant"));
     }
     for (path, method) in [
         ("/api/fetch", "GET"),
