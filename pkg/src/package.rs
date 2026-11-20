@@ -294,12 +294,24 @@ fn finish_unpack(dest: &Path, result: Result<Mod, PackageError>) -> Result<Mod, 
 fn pack_error(root: &Path, part: String, e: std::io::Error) -> PackageError {
     if crate::open::is_link(&e) {
         PackageError::Symlink { path: part }
+    } else if e.kind() == std::io::ErrorKind::IsADirectory {
+        path_error(&part, crate::refusal::DIRECTORY)
+    } else if e.kind() == std::io::ErrorKind::NotFound {
+        path_error(&part, crate::refusal::CHANGED)
     } else if e.kind() == std::io::ErrorKind::InvalidInput || crate::open::is_socket(&e) {
         path_error(&part, crate::refusal::SPECIAL)
     } else if e.kind() == std::io::ErrorKind::NotADirectory {
         path_error(&part, "expected a regular file or a content directory")
     } else {
         io(&root.join(part), e)
+    }
+}
+// A listing or stat that fails because the entry vanished is the CHANGED cause.
+fn listing(root: &Path, relative: &str, e: std::io::Error) -> PackageError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        path_error(relative, crate::refusal::CHANGED)
+    } else {
+        io(&root.join(relative), e)
     }
 }
 fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
@@ -353,7 +365,7 @@ fn hidden_links(root: &Path, relative: &str) -> Result<(), PackageError> {
     let mut stack = vec![relative.to_string()];
     while let Some(relative) = stack.pop() {
         let dir = open_pack_dir(root, &relative)?;
-        for (name, m) in crate::open::entries(&dir).map_err(|e| io(&root.join(&relative), e))? {
+        for (name, m) in crate::open::entries(&dir).map_err(|e| listing(root, &relative, e))? {
             let path = format!("{relative}/{}", name.to_string_lossy());
             match m.kind {
                 Kind::Link => return Err(PackageError::Symlink { path }),
@@ -390,7 +402,7 @@ impl Input {
         if m.kind == Kind::Dir && directory(relative) {
             let dir = open_pack_dir(root, relative)?;
             for (name, child) in
-                crate::open::entries(&dir).map_err(|e| io(&root.join(relative), e))?
+                crate::open::entries(&dir).map_err(|e| listing(root, relative, e))?
             {
                 if name.to_string_lossy().starts_with('.') {
                     let path = format!("{relative}/{}", name.to_string_lossy());
@@ -608,5 +620,44 @@ mod tests {
         fifo(tmp.path());
         let error = open_pack_file(tmp.path(), "ui/pipe").unwrap_err();
         assert!(matches!(error, PackageError::Path { path, .. } if path == "ui/pipe"));
+    }
+
+    #[cfg(unix)]
+    fn path_reason(error: PackageError, path: &str) -> &'static str {
+        match error {
+            PackageError::Path { path: p, reason } if p == path => reason,
+            other => panic!("expected a path refusal, got {other:?}"),
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac2_s91_file_gone_before_open_is_changed() {
+        let tmp = open_fixture();
+        fs::remove_file(tmp.path().join("ui/file")).unwrap();
+        let error = open_pack_file(tmp.path(), "ui/file").unwrap_err();
+        assert_eq!(path_reason(error, "ui/file"), crate::refusal::CHANGED);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac3_s91_file_replaced_by_directory_names_a_directory() {
+        let tmp = open_fixture();
+        fs::remove_file(tmp.path().join("ui/file")).unwrap();
+        fs::create_dir(tmp.path().join("ui/file")).unwrap();
+        let error = open_pack_file(tmp.path(), "ui/file").unwrap_err();
+        assert_eq!(path_reason(error, "ui/file"), crate::refusal::DIRECTORY);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac4_s91_open_file_tells_directory_from_special() {
+        let tmp = open_fixture();
+        fifo(tmp.path());
+        let Err((_, dir)) = crate::open::file(tmp.path(), "ui") else {
+            panic!("a directory is not a file")
+        };
+        assert_eq!(dir.kind(), std::io::ErrorKind::IsADirectory);
+        let Err((_, pipe)) = crate::open::file(tmp.path(), "ui/pipe") else {
+            panic!("a FIFO is not a file")
+        };
+        assert_eq!(pipe.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

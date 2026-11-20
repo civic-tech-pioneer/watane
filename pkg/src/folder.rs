@@ -100,7 +100,9 @@ pub(crate) fn read_file(
             if crate::open::is_socket(&e)
                 || matches!(
                     e.kind(),
-                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotADirectory
+                    std::io::ErrorKind::InvalidInput
+                        | std::io::ErrorKind::NotADirectory
+                        | std::io::ErrorKind::IsADirectory
                 ) =>
         {
             return Err(invalid(rule, file, "expected a regular file"));

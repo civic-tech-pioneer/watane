@@ -350,6 +350,10 @@ never followed, and a link swapped in after the checks is never written through.
 written as in 4.3: the temporary file is created with `create_new` and renamed over `deps.json`,
 so a link at either name is replaced, never followed.
 
+A name created, removed or replaced between preflight and write (EEXIST or ENOENT from `mkdirat`,
+`openat`, `unlinkat` or a listing) is `ModError::Invalid`, rule `path`, `changed while the mod was
+read; read it again` at the path relative to the mod, never `ModError::Io` with raw OS text.
+
 ### 4.9 `Mod::check_component`
 
 Needed only when the mod has a logic part; otherwise it returns `Ok`.
@@ -545,7 +549,12 @@ walk and lists and stats entries relative to the open directory handle, never by
 below the root (S46). The write helpers of `open.rs` act relative to an open directory: `mkdirat`
 (mode 0755), `openat` with `CREAT | EXCL | NOFOLLOW` (mode 0644) and `unlinkat` (with `REMOVEDIR`
 for a directory); `add_provider` is the only writer (S57). An entry listed and then gone or
-replaced when opened is the `changed while the mod was read` violation of 4.7.
+replaced when opened is the `changed while the mod was read` violation of 4.7. In `pack` each
+gives a `PackageError::Path` at that path: an entry gone (open, listing or stat) has the reason
+`changed while the mod was read; read it again`; a listed file that is a directory when opened,
+`expected a regular file, found a directory`; a FIFO, socket or device, the special-file reason.
+`open::file` tells these apart (`IsADirectory` against `InvalidInput`); `PackageError::Io` is left
+for errors that name no such cause.
 
 ### 6.5 Example (golden)
 

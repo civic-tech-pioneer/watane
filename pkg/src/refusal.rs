@@ -16,3 +16,5 @@ pub(crate) const SPECIAL: &str =
     "not a regular file or a directory (a FIFO, socket or device); replace or remove it";
 /// An entry that was listed and then was gone or no longer a directory when opened.
 pub(crate) const CHANGED: &str = "changed while the mod was read; read it again";
+/// A file listed by the walk that is a directory when opened.
+pub(crate) const DIRECTORY: &str = "expected a regular file, found a directory";

@@ -278,6 +278,8 @@ pub(crate) fn dir(root: &Path, relative: &str) -> Result<Dir, (String, io::Error
     }
 }
 
+/// Open the regular file `relative`; a directory handle reports `IsADirectory`, any other
+/// non-regular handle (FIFO, socket, device) reports `InvalidInput`.
 pub(crate) fn file(root: &Path, relative: &str) -> Result<File, (String, io::Error)> {
     #[cfg(unix)]
     let file = {
@@ -290,7 +292,14 @@ pub(crate) fn file(root: &Path, relative: &str) -> Result<File, (String, io::Err
     };
     #[cfg(not(unix))]
     let file = File::open(root.join(relative)).map_err(|e| (relative.into(), e))?;
-    if !file.metadata().map_err(|e| (relative.into(), e))?.is_file() {
+    let kind = file.metadata().map_err(|e| (relative.into(), e))?;
+    if kind.is_dir() {
+        return Err((
+            relative.into(),
+            io::Error::from(io::ErrorKind::IsADirectory),
+        ));
+    }
+    if !kind.is_file() {
         return Err((
             relative.into(),
             io::Error::new(io::ErrorKind::InvalidInput, "expected a regular file"),

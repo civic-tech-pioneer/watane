@@ -3,6 +3,7 @@
 
 use crate::folder::{invalid, io, read_file};
 use crate::open::{self, Dir, Kind};
+use crate::refusal::CHANGED;
 use crate::{Deps, Mod, ModError, PublisherKey, Rule};
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
@@ -15,7 +16,15 @@ fn refused(root: &Path, part: &str, e: std::io::Error) -> ModError {
     if open::is_link(&e) || e.kind() == ErrorKind::NotADirectory {
         invalid(Rule::Path, part, NOT_A_DIRECTORY)
     } else {
-        io(&root.join(part), e)
+        failed(root, part, e)
+    }
+}
+// An entry created, removed or replaced under the write is the CHANGED cause; other errors stay I/O.
+fn failed(root: &Path, relative: &str, e: std::io::Error) -> ModError {
+    if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::AlreadyExists) {
+        invalid(Rule::Path, relative, CHANGED)
+    } else {
+        io(&root.join(relative), e)
     }
 }
 fn directory(root: &Path, relative: &str) -> Result<Option<Dir>, ModError> {
@@ -45,8 +54,7 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
     let Some(handle) = directory(root, relative)? else {
         return Ok(result);
     };
-    let path = root.join(relative);
-    for (name, kind) in open::entries(&handle).map_err(|e| io(&path, e))? {
+    for (name, kind) in open::entries(&handle).map_err(|e| failed(root, relative, e))? {
         let name = name.to_string_lossy();
         let rel = format!("{relative}/{name}");
         if relative == "wit" && name == "deps" && kind.kind == Kind::Dir {
@@ -56,8 +64,8 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
             return Err(invalid(Rule::Path, &rel, "expected a regular WIT entry"));
         }
         if name.ends_with(".wit") {
-            let bytes = read_file(root, &rel, 1024 * 1024, Rule::Limit, false)?
-                .ok_or_else(|| invalid(Rule::Wit, &rel, "missing WIT file"))?;
+            let bytes = read_file(root, &rel, 1024 * 1024, Rule::Limit, true)?
+                .ok_or_else(|| invalid(Rule::Path, &rel, CHANGED))?;
             result.insert(name.into_owned(), bytes);
         }
     }
@@ -71,16 +79,16 @@ fn write_files(
     target: Option<Dir>,
     files: &Files,
 ) -> Result<(), ModError> {
-    let path = root.join(relative);
     let target = match target {
         Some(dir) => {
-            open::clear(&dir).map_err(|e| io(&path, e))?;
+            open::clear(&dir).map_err(|e| failed(root, relative, e))?;
             dir
         }
         None => below(root, parent, relative, true)?.expect("created"),
     };
     for (name, bytes) in files {
-        open::create_file(&target, name, bytes).map_err(|e| io(&path.join(name), e))?;
+        open::create_file(&target, name, bytes)
+            .map_err(|e| failed(root, &format!("{relative}/{name}"), e))?;
     }
     Ok(())
 }
@@ -98,8 +106,9 @@ pub fn add_provider(
     let main = files(source_root, "wit")?;
     let mut copies = BTreeMap::new();
     if let Some(handle) = directory(source_root, "wit/deps")? {
-        let path = source_root.join("wit/deps");
-        for (name, kind) in open::entries(&handle).map_err(|e| io(&path, e))? {
+        for (name, kind) in
+            open::entries(&handle).map_err(|e| failed(source_root, "wit/deps", e))?
+        {
             let name = name.to_string_lossy();
             let relative = format!("wit/deps/{name}");
             // Non-WIT files in deps are ignored by the WIT walk.
@@ -270,5 +279,44 @@ mod tests {
         assert_eq!(v[0].rule, Rule::Path);
         assert_eq!(v[0].file, "wit/deps/E");
         assert!(!c.path().join("wit/deps/E").exists());
+    }
+    fn changed(result: Result<(), ModError>, file: &str) {
+        let Err(ModError::Invalid(v)) = result else {
+            panic!("expected invalid, got {result:?}")
+        };
+        assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, file), "{v:?}");
+        assert_eq!(v[0].message, CHANGED);
+    }
+    #[test]
+    fn ac1_s91_name_created_at_target_after_preflight() {
+        let (_p, c, m) = setup();
+        let root = c.path().to_path_buf();
+        hook::set(move || {
+            fs::create_dir_all(root.join("wit/deps/reading-list")).unwrap();
+            fs::write(root.join("wit/deps/reading-list/world.wit"), "x").unwrap();
+        });
+        changed(
+            add_provider(c.path(), &m, None),
+            "wit/deps/reading-list/world.wit",
+        );
+    }
+    #[test]
+    fn ac1_s91_target_removed_after_preflight() {
+        let (_p, c, m) = setup();
+        add_provider(c.path(), &m, None).unwrap();
+        let root = c.path().to_path_buf();
+        hook::set(move || fs::remove_dir_all(root.join("wit/deps/reading-list")).unwrap());
+        changed(
+            add_provider(c.path(), &m, None),
+            "wit/deps/reading-list/world.wit",
+        );
+    }
+    #[test]
+    fn ac1_s91_deps_removed_after_preflight() {
+        let (_p, c, m) = setup();
+        fs::create_dir_all(c.path().join("wit/deps")).unwrap();
+        let root = c.path().to_path_buf();
+        hook::set(move || fs::remove_dir_all(root.join("wit/deps")).unwrap());
+        changed(add_provider(c.path(), &m, None), "wit/deps/reading-list");
     }
 }
