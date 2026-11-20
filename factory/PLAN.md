@@ -476,7 +476,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S89 Installing tells the truth at every step (leftover sweep: install).** in flight (cloud)
+- [ ] **S89 Installing tells the truth at every step (leftover sweep: install).** in flight (cloud; routine `trig_01BiHhgpCP7z8t1JR3CE9ExU`)
   Story: Alice installs, interrupts, checks and uninstalls watane, and every line she reads is true
   and in her own terms. Outcomes: (1) the `### install` leftovers from S50b-fix, S50b-fix2, S50c
   and S55 are fixed or written into install/TECHNICAL as a decided limit: a Ctrl-C past the commit
@@ -496,7 +496,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
   versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
   Local (window tests).
-- [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud)
+- [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`)
   Story: a maker or a mod hits an edge and gets a named cause, not raw I/O text. Outcomes:
   `add_provider` under a swap race and `pack`'s list-then-stat window give watane's own codes,
   and a directory swapped in for a file is named as such; log's identity key is opened once and
@@ -505,14 +505,14 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `Served::shutdown`'s bound is true; program.rs's port probe binds once. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: pkg/src,
   pkg/tests, log/src/identity.rs, log/tests, host/src/server.rs, host/tests/it/program*, their
   TECHNICAL. Cloud.
-- [ ] **S92 Blame the right machine (leftover sweep: dist, net, node).** in flight (cloud)
+- [ ] **S92 Blame the right machine (leftover sweep: dist, net, node).** in flight (cloud; routine `trig_01PPzACt58xPQLQu5d673Hoc`)
   Story: when Alice's install fails, she is told the real cause and whose it is. Outcomes: a local
   I/O or holder error during a download is not "unreachable <machine>" (net 5.9 says what it is);
   a failed install whose cause is a full machine's bad copy says so, not "channel is not followed";
   `StaleBases` reads "1 base", and a slug that exists nowhere is not called stale. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out.
   Touches: dist/src, dist/tests, net/src, net/tests, node/src, node/tests, their TECHNICAL; not
   app/. Cloud.
-- [ ] **S93 dev's last misleading lines (leftover sweep: dev).** in flight (cloud)
+- [ ] **S93 dev's last misleading lines (leftover sweep: dev).** in flight (cloud; routine `trig_01RZZM6VuY914sVyAGW9Vv4y`)
   Story: a maker's agent reads a cause and a `next` it can run, everywhere. Outcomes: the `### dev`
   leftovers (S56, S86) and Unsettled S30 (time a `publish` against fake-watane and settle it);
   S54's base suggestion offers GitHub Pages. The two publish texts pinned by
