@@ -424,7 +424,7 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         .await;
         assert_eq!(status, 400);
         let value: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value["error"]["code"], "bad_input");
+        assert_eq!(value["error"]["code"], "bad_request");
         let message = value["error"]["message"].as_str().unwrap();
         if body == "{" || body == "[]" {
             assert!(message.starts_with("give link or release: "), "{message}");
@@ -434,25 +434,25 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         }
     }
     for (bytes, code) in [
-        (b"{".to_vec(), "bad_input"),
+        (b"{".to_vec(), "bad_request"),
         (
             serde_json::to_vec(
                 &json!({"link":link.to_string(),"release":published.info.reference.to_string()}),
             )
             .unwrap(),
-            "bad_input",
+            "bad_request",
         ),
-        (b"{}".to_vec(), "bad_input"),
+        (b"{}".to_vec(), "bad_request"),
         (
             serde_json::to_vec(&json!({"link":link.to_string(), "release":null})).unwrap(),
-            "bad_input",
+            "bad_request",
         ),
         (
             serde_json::to_vec(
                 &json!({"link":null, "release":published.info.reference.to_string()}),
             )
             .unwrap(),
-            "bad_input",
+            "bad_request",
         ),
         (br#"{"link":"bad"}"#.to_vec(), "bad_request"),
         (br#"{"release":"bad"}"#.to_vec(), "bad_request"),
@@ -753,7 +753,34 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
         let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), body).await;
         assert_eq!(status, 400);
         let error = serde_json::from_slice::<Value>(&bytes).unwrap()["error"].clone();
-        assert_eq!(error, json!({"code":"bad_input","message":message}));
+        assert_eq!(error, json!({"code":"bad_request","message":message}));
+    }
+    dist.set_site_url("https://example.com").unwrap();
+    let published = dist.publish(package()).unwrap();
+    let valid_link = dist.own_link(Some(&published.info.release.slug)).unwrap();
+    for (body, key) in [
+        (format!(r#"{{"link":"bad","link":"{valid_link}"}}"#), "link"),
+        (
+            format!(
+                r#"{{"release":"bad","release":"{}"}}"#,
+                published.info.reference
+            ),
+            "release",
+        ),
+        (r#"{"other":1,"other":2}"#.to_owned(), "other"),
+    ] {
+        let (status, _, bytes) = api_request(
+            Some(Arc::clone(&dist)),
+            "/api/fetch",
+            body.into_bytes(),
+            None,
+        )
+        .await;
+        assert_eq!(status, 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["error"],
+            json!({"code":"bad_request", "message":format!("give link or release: duplicate field {key}")})
+        );
     }
     for (path, method) in [
         ("/api/fetch", "GET"),

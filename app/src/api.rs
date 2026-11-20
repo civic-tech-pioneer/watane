@@ -367,26 +367,59 @@ fn publish_providers(
     result
 }
 
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum FetchBody {
+    Object(FetchEntries),
+    Other(serde::de::IgnoredAny),
+}
+struct FetchEntries(Vec<(String, serde_json::Value)>);
+impl<'de> serde::Deserialize<'de> for FetchEntries {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = FetchEntries;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry()? {
+                    entries.push(entry);
+                }
+                Ok(FetchEntries(entries))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
 enum FetchQuery {
     Link { link: String },
     Release { release: String },
 }
 impl FetchQuery {
-    fn parse(value: serde_json::Value) -> Result<Self, String> {
-        let object = value
-            .as_object()
-            .ok_or("give link or release: the body must be a JSON object")?;
-        for key in object.keys() {
+    fn parse(body: FetchBody) -> Result<Self, String> {
+        let FetchBody::Object(FetchEntries(entries)) = body else {
+            return Err("give link or release: the body must be a JSON object".into());
+        };
+        let mut keys = std::collections::BTreeSet::new();
+        for (key, _) in &entries {
+            if !keys.insert(key) {
+                return Err(format!("give link or release: duplicate field {key}"));
+            }
+        }
+        for (key, _) in &entries {
             if key != "link" && key != "release" {
                 return Err(format!("give link or release: unknown field {key}"));
             }
         }
-        let field = match (object.contains_key("link"), object.contains_key("release")) {
-            (true, false) => "link",
-            (false, true) => "release",
-            _ => return Err("give link or release".into()),
+        let [(field, value)] = entries.as_slice() else {
+            return Err("give link or release".into());
         };
-        let text = object[field]
+        let text = value
             .as_str()
             .ok_or_else(|| format!("give link or release: {field} must be text"))?
             .to_owned();
@@ -404,7 +437,7 @@ enum FetchTarget {
 async fn fetch(
     State(dist): State<Option<Home>>,
     Extension(parties): Extension<Arc<crate::words::Parties>>,
-    query: Result<Json<serde_json::Value>, axum::extract::rejection::JsonRejection>,
+    query: Result<Json<FetchBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     let Some(dist) = dist else {
         return error(
@@ -418,7 +451,7 @@ async fn fetch(
         .and_then(|Json(value)| FetchQuery::parse(value))
     {
         Ok(query) => query,
-        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_input", cause),
+        Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
     };
     let target = (|| -> Result<_, String> {
         match query {

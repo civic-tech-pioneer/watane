@@ -266,6 +266,8 @@ fn ac8_specs_record_toolset_removal_and_readable_causes() {
         "give link or release: link must be text",
         "give link or release: release must be text",
         "give link or release: unknown field <key>",
+        "give link or release: duplicate field <key>",
+        "`bad_request` for non-JSON or wrong shape:",
         "both/neither fields keep exactly `give link or release`",
         "give link or release: <serde_json syntax cause>",
     ] {
