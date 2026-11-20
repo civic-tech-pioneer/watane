@@ -505,13 +505,19 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `Served::shutdown`'s bound is true; program.rs's port probe binds once. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: pkg/src,
   pkg/tests, log/src/identity.rs, log/tests, host/src/server.rs, host/tests/it/program*, their
   TECHNICAL. Cloud.
-- [ ] **S92 Blame the right machine (leftover sweep: dist, net, node).** in flight (cloud; routine `trig_01PPzACt58xPQLQu5d673Hoc`)
-  Story: when Alice's install fails, she is told the real cause and whose it is. Outcomes: a local
-  I/O or holder error during a download is not "unreachable <machine>" (net 5.9 says what it is);
-  a failed install whose cause is a full machine's bad copy says so, not "channel is not followed";
-  `StaleBases` reads "1 base", and a slug that exists nowhere is not called stale. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out.
-  Touches: dist/src, dist/tests, net/src, net/tests, node/src, node/tests, their TECHNICAL; not
-  app/. Cloud.
+- [x] **S92 Blame the right machine (leftover sweep: dist, net, node).** Delivered 2026-11-20 (main
+  `c224dd3`; routine `trig_01PPzACt58xPQLQu5d673Hoc`, cloud, ~2 h). Runs: s92-1 1, s92-2 1, s92-3 1,
+  s92-fix1 1; validator round 1 each. user-sim REJECTED once (a holder error dropped the OS cause),
+  then ACCEPTED; adversary HELD (Verification, Node). Alice's failed install on a light machine now
+  names the real cause and whose machine: a full machine's bad copy names it and "not served"; a
+  local failure reads "this machine | ... was not stored: <OS cause>" and blames no one;
+  StaleBases reads "1 base" and says "no release of <slug>" when no base holds it. Decisions:
+  dist `StaleBases.slug_held` (DD-34, app mapping unchanged); net `need_blob` returns a local
+  failure as `NetError::Io`, no event, no mark (5.8, 5.9); node keeps every need error but Off and
+  NoFullMachine and maps it to `DistError::Io` "the server"/"this machine" (5.3, NO-14, NO-4); a
+  kept net error now replaces dist's "not followed" on a light machine even when no machine could
+  have helped (accepted). Needs app: app/NOTES.md:741-745 is stale (node keeps the blob error);
+  run j8 AC6 with `--features driver` on the Mac (S90 is in app).
 - [ ] **S93 dev's last misleading lines (leftover sweep: dev).** in flight (cloud; routine `trig_01RZZM6VuY914sVyAGW9Vv4y`)
   Story: a maker's agent reads a cause and a `next` it can run, everywhere. Outcomes: the `### dev`
   leftovers (S56, S86) and Unsettled S30 (time a `publish` against fake-watane and settle it);
@@ -1274,6 +1280,13 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### net / node
 
+- From S92: with every full machine off, a light fetch still says "channel ... is not followed"
+  after ~22 s (NoFullMachine dropped by design; the most common case); a holder refusing a
+  channel reads Unreachable { server } though the cause may be local; a bad copy reads "node X is
+  unreachable" for a machine that answered; DistError::Io's top line is a bare "the server";
+  dist calls a local unpack failure BadPackage; the full-disk text repeats the temp path; the
+  server's run output says nothing about its bad copy; two chain helpers in node; mutants show
+  light-path gaps (need_channel, need_latest, choose_index).
 - From S87's adversary (older than S87): a local I/O or holder error during a download reads
   "unreachable <full machine>: package ... not fetched: <local io error, temp path>", blaming the
   remote machine; net 5.9 is silent on it.
@@ -1679,6 +1692,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S92) the cloud toolchain lacked clippy (`rustup component add clippy`); parallel tasks sharing an interface each passed alone and broke only merged (check slice/<id> after each fast-forward); three cold builds at once made each Sol run 15 to 20 min.
 - (2026-11-20, PO) main check at `501c123` under load ~40: host `program::catalog::ac1_installed_and_persisted_ids_match_pack_for_both_parts` got `Busy(<tmp home>)` once (*core*: a home lock); passes alone. Watch for a repeat.
 - (2026-11-20, PO) main's check after S88: `j2::ac7_idle_polling…` saw fewer than 2 polls in 5 s once in the full suite (load ~20 with S90 building); 3/3 alone. S90 owns the poll code. deny: RUSTSEC-2026-0587 (wasmtime-wasi 48.0.9, Windows-only), fixed by 48.0.10 on main.
 - (2026-11-20, S88) Sol's sandbox cannot start the GUI app, so the foreman ran every window test and trace itself; Sol's heavy instrumentation hid the race (60/60 with it); three fixes were wrong before traces showed the cause; a 50-run full driver suite takes about an hour.
@@ -2109,3 +2123,4 @@ The human may veto each one.
   one-liner, follows her link over the network, sees her verified, installs and uses it, and a
   tampered package is refused by name (`sh install/tests/vm_two_machines.sh`).
 - S88: the remove confirmation's focus check no longer flakes (a WebKit blur after a consent closes, in hidden test windows only).
+- S92: when Alice's install fails on a light machine she is told the real cause and whose machine it is.
