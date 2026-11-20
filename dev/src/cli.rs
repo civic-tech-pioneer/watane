@@ -928,8 +928,11 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> 
         outcome.dir = Some(dir.clone());
         let mut tested = test_local(&dir);
         if !tested.ok {
-            let rerun = rerun(&home_arg(given, &home), wait);
-            end_prose_in_rerun(&mut tested.errors, &mut tested.next, &rerun);
+            // A provider's failure already names its own `test --dir` rerun.
+            if tested.dir.as_deref() == Some(dir.as_path()) {
+                let rerun = rerun(&home_arg(given, &home), wait);
+                end_prose_in_rerun(&mut tested.errors, &mut tested.next, &rerun);
+            }
             outcome.next = tested.next;
             return Err(tested.errors);
         }
