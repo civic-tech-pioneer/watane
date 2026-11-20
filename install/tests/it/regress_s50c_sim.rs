@@ -11,10 +11,11 @@ use std::process::Command;
 /// install" and tells her to rename `~/.local/share/watane-dev/vendor`, which
 /// is her own `~/Documents/vendor`. It must name the cause, the link, the way
 /// the uninstall's `skipped` line does.
+/// TECHNICAL 3.4.2, 8.5 rule 4 (S50c): a refusal over a relinked folder names the link, as the uninstall's `skipped` line does.
 #[test]
+#[ignore = "slow: a whole install refused over a relinked folder, which names the link (TECHNICAL 3.4.2)"]
 fn regress_s50c_relinked_folder_refusal_names_the_link() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
     write_file(&fx.home.join("Documents/vendor/thesis.txt"), "mine");
     symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();

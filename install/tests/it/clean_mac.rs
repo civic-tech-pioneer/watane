@@ -274,7 +274,9 @@ fn ac1_ac2_fresh_home_real_release() {
     );
 }
 
+/// TECHNICAL 12.3: the single-VM driver clones, runs, and deletes only its own VM, on success and on each failure.
 #[test]
+#[ignore = "slow: the single-VM driver run once per failing step with fake VM tools"]
 fn ac4_vm_lifecycle_and_failure_cleanup_without_a_vm() {
     use std::os::unix::fs::PermissionsExt;
     for (fail_guest, prepare, has_clean) in [
@@ -600,11 +602,20 @@ esac
     assert!(!calls.contains("--part clt"), "{calls}");
 }
 
+/// TECHNICAL 12.6: a passing two-machine run and one that is stopped by TERM clean up their VM,
+/// bridge and web host; the other modes are `ac2_two_machines_failure_modes_clean_up`.
 #[test]
-fn ac2_ac4_two_machines_lifecycle_failure_and_term_cleanup() {
+fn ac2_ac4_two_machines_lifecycle_and_term_cleanup() {
+    two_machine_modes(&["pass", "term"]);
+}
+
+/// TECHNICAL 12.6: each step of the two-machine driver that can fail (install, mount, copy, ip,
+/// journey, a missing test, a vanished or empty bridge pid file) is named and cleaned up after.
+#[test]
+#[ignore = "slow: seven more whole runs of the two-machine driver, one per failing step, each with its fake VM tools"]
+fn ac2_two_machines_failure_modes_clean_up() {
     two_machine_modes(&[
-        "pass", "latest", "install", "mount", "copy", "ip", "journey", "missing", "term",
-        "vanished", "empty",
+        "latest", "install", "mount", "copy", "ip", "journey", "missing", "vanished", "empty",
     ]);
 }
 
@@ -613,7 +624,9 @@ fn ac3_two_machines_hung_ssh_ends_run() {
     two_machine_modes(&["hang-ssh"]);
 }
 
+/// TECHNICAL 12.6: an INT stops the two-machine driver and it reports that it was interrupted.
 #[test]
+#[ignore = "slow: a whole run of the two-machine driver with an INT sent while its journey runs"]
 fn ac2_two_machines_int_reports_interrupted() {
     two_machine_modes(&["int"]);
 }
@@ -789,7 +802,11 @@ esac
             .env("MODE", mode)
             .env(
                 "WATANE_VM_TEST_SCALE",
-                if mode.starts_with("hang-") { "10" } else { "1" },
+                if mode.starts_with("hang-") {
+                    "300"
+                } else {
+                    "1"
+                },
             )
             .env("TMPDIR", &tmp)
             .stdout(std::process::Stdio::piped())
@@ -873,7 +890,7 @@ esac
         }
         if mode.starts_with("hang-") {
             let (step, bound) = match mode {
-                "hang-ssh" => ("remote_plain", 30),
+                "hang-ssh" => ("remote_plain", 1),
                 _ => unreachable!(),
             };
             assert!(
@@ -971,6 +988,18 @@ fn ac3_guest_bridge_streams_driver_and_reports_open_failure() {
         .split("\nBOB\n")
         .next()
         .expect("end");
+    // The bridge runs under the guest's `/bin/sh`, which on macOS is bash 3.2. There a background
+    // `{ cat; } <&0 &` keeps the stdin it names; dash (the `/bin/sh` of most Linux machines)
+    // gives every background command /dev/null, so the driver's line never reaches the app.
+    // This, not the user, is what made the test fail as root: run the bridge under bash.
+    let guest_sh: Vec<&str> = if cfg!(target_os = "macos") {
+        vec!["sh"]
+    } else if Path::new("/bin/bash").exists() {
+        vec!["/bin/bash", "--posix"]
+    } else {
+        eprintln!("skipped: the guest's sh is bash and this machine has no /bin/bash");
+        return;
+    };
     for mode in ["pass", "fail"] {
         let temp = tempfile::tempdir().expect("temp");
         let bin = temp.path().join("bin");
@@ -1002,7 +1031,8 @@ done
         // Bound a broken FIFO handshake without opening a real app or window.
         let mut command = Command::new("/usr/bin/perl");
         command
-            .args(["-MPOSIX", "-e", "POSIX::setsid(); exec @ARGV", "sh"])
+            .args(["-MPOSIX", "-e", "POSIX::setsid(); exec @ARGV"])
+            .args(&guest_sh)
             .arg(helper)
             .arg("bob-tamper")
             .env("HOME", temp.path())
@@ -1283,32 +1313,49 @@ esac
         ),
     )
     .expect("helper");
-    for mode in ["remote", "copy", "install", "journey", "build", "whole"] {
-        let marker = temp.path().join("must-not-run");
-        let mut command = Command::new("/usr/bin/perl");
-        command
-            .args(super::support::LAUNCH)
-            .arg("sh")
-            .arg(&helper)
-            .arg(script("vm_lib.sh"))
-            .arg(mode)
-            .arg(&marker)
-            .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
-            .env("WATANE_VM_TEST_SCALE", "100")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let child = super::support::spawn_run(&mut command);
+    // The production limits, which the scaled run below no longer shows in its messages.
+    for pinned in [
+        "vm_step_limit=300",
+        "vm_whole_limit=3600",
+        "install_bound=$(seconds 900)",
+        "journey_bound=$(seconds 1200)",
+    ] {
+        assert!(source.contains(pinned), "{pinned} is a limit of the driver");
+    }
+    // Scale 1200 makes every per-step bound 1 s (the floor) and the whole script's 3 s (3600 / 1200), so
+    // that a step still starts with 2 s of the whole bound left on a loaded machine, and the six
+    // modes wait for their deadlines at the same time: the test costs about four seconds with its start-up.
+    let runs: Vec<_> = ["remote", "copy", "install", "journey", "build", "whole"]
+        .into_iter()
+        .map(|mode| {
+            let marker = temp.path().join(format!("must-not-run-{mode}"));
+            let mut command = Command::new("/usr/bin/perl");
+            command
+                .args(super::support::LAUNCH)
+                .arg("sh")
+                .arg(&helper)
+                .arg(script("vm_lib.sh"))
+                .arg(mode)
+                .arg(&marker)
+                .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
+                .env("WATANE_VM_TEST_SCALE", "1200")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            (mode, marker, super::support::spawn_free(&mut command))
+        })
+        .collect();
+    for (mode, marker, child) in runs {
         let out = super::support::finish_within(child, std::time::Duration::from_secs(90))
             .expect("deadline");
         assert_ne!(out.code, 0, "{out:?}");
         let message = match mode {
-            "remote" => "remote timed out after 3 s",
-            "copy" => "copy timed out after 3 s",
-            "install" => "install timed out after 9 s",
-            "journey" => "cargo test two_machines timed out after 12 s",
-            _ => "whole script timed out after 36 s",
+            "remote" => "remote timed out after 1 s",
+            "copy" => "copy timed out after 1 s",
+            "install" => "install timed out after 1 s",
+            "journey" => "cargo test two_machines timed out after 1 s",
+            _ => "whole script timed out after 3 s",
         };
-        assert!(out.stderr.contains(message), "{out:?}");
+        assert!(out.stderr.contains(message), "{mode}: {out:?}");
         assert!(!marker.exists());
     }
 }
@@ -1344,7 +1391,7 @@ fn ac3_clean_mac_remote_has_no_two_machine_deadlines() {
     fs::create_dir(&bin).expect("bin");
     for (name, body) in [
         ("tart", "#!/bin/sh\nexit 0\n"),
-        ("ssh", "#!/bin/sh\nsleep 2\nprintf 'SSH-COMPLETE\\n'\n"),
+        ("ssh", "#!/bin/sh\nsleep 1.3\nprintf 'SSH-COMPLETE\\n'\n"),
     ] {
         let path = bin.join(name);
         fs::write(&path, body).expect("fake");

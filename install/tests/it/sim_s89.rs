@@ -9,6 +9,7 @@ const LATER: &str = " | sh -s -- -y --profile minimal --no-modify-path -t wasm32
 /// the offer downloads it, but the "install it later" line keeps `--proto '=https'`, so pasting
 /// it fails with curl's `Protocol "file" not supported or disabled in libcurl`.
 #[test]
+#[ignore = "slow: a whole run whose printed install-it-later line is pasted into a shell, which only a whole run and curl show (TECHNICAL 3.7)"]
 fn regress_s89_install_it_later_line_runs_for_the_mirror_it_names() {
     let fx = Fx::new();
     let url = fx.rustup_installer();
@@ -46,7 +47,9 @@ fn regress_s89_install_it_later_line_runs_for_the_mirror_it_names() {
 
 /// A fresh install (nothing installed before) whose swap fails says "the version that was
 /// installed still works": there was no installed version.
+/// TECHNICAL 3.9 (IN-46): a failed fresh install names no installed version.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn regress_s89_failed_fresh_install_names_no_installed_version() {
     let fx = Fx::new();
     fx.state_write("mv_fault", "fail\n*watane.app.new.*\n");

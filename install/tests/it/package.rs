@@ -277,6 +277,7 @@ fn pack_and_serve(
     keep
 }
 
+/// INST-S-1, 12, 15 and TECHNICAL 4, 12.1: an archive made by `package.sh` installs, upgrades and uninstalls (the question on a pseudo-terminal).
 #[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1) for the uninstall"]
 fn ac4_install_upgrade_uninstall_of_packed_archives() {

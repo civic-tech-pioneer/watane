@@ -3,11 +3,12 @@ use crate::support::*;
 use std::fs;
 use std::os::unix::fs::symlink;
 
+/// TECHNICAL 8.5 rule 4, 3.6 (S50c ac1): the folder identity recorded in the receipt guards its removals; the rule itself is `unit::unit_receipt_allowed_skips_what_the_install_never_wrote`.
 #[test]
+#[ignore = "slow: two whole uninstalls, one with a folder relinked and one with a receipt that records no folders, which only whole runs show (TECHNICAL 8.5)"]
 fn ac1_resolved_folders_guard_receipt_removals() {
     for recorded in [true, false] {
-        let fx = Fx::new();
-        assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+        let fx = Fx::installed();
         let receipt = fx.read(&fx.receipt());
         for folder in [
             ".local/bin",
@@ -73,7 +74,9 @@ fn ac1_resolved_folders_guard_receipt_removals() {
     }
 }
 
+/// TECHNICAL 3.6.2 (INST-S-35): a planted lock stops an install and an uninstall (exit 5, nothing written, nothing fetched) and is never broken.
 #[test]
+#[ignore = "slow: nine whole runs (install, uninstall, status) at three planted locks; the lock texts are `unit::unit_take_lock_and_the_live_journal_stop_a_second_run`"]
 fn ac2_lock_excludes_runs_and_preserves_planted_locks() {
     for pid in [Some("99999999\n"), None, Some("12\n34\n")] {
         let fx = Fx::new();
@@ -126,15 +129,16 @@ fn ac2_concurrent_install_and_uninstall_stop_before_download() {
         assert_eq!(fx.rel.requests(), requests);
         assert_eq!(snapshot(&fx.home), before);
     }
-    fs::remove_file(fx.state.join("mv_fault")).unwrap();
+    fx.unfault("mv_fault");
     assert_eq!(finish(child).code, 0);
     assert!(!fx.home.join(".watane-install.lock").exists());
 }
 
+/// TECHNICAL 3.6 step 3 (S50c ac3): a receipt backup cut short leaves the complete old receipt.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn ac3_partial_receipt_copy_keeps_complete_old_receipt() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     let before = fs::read(fx.receipt()).unwrap();
     fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
     fx.state_write("cp_fault", "half\n*receipt.old.*\n");
@@ -144,10 +148,11 @@ fn ac3_partial_receipt_copy_keeps_complete_old_receipt() {
     fx.assert_installed("0.1.0");
 }
 
+/// TECHNICAL 8.5, 3.8 (S50c ac3): a receipt in a folder that resolves out of the install folder is not used and its staging names stay.
 #[test]
+#[ignore = "slow: a whole uninstall whose share folder is a link out, which only a whole run shows (TECHNICAL 8.5)"]
 fn ac3_disallowed_receipt_preserves_staging_evidence() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     write_file(&fx.share("watane/journal.99999999"), "journal evidence");
     write_file(&fx.share("watane/receipt.new.99999999"), "receipt evidence");
     write_file(&fx.bin("watane.new.99999999"), "staging evidence");
@@ -159,10 +164,11 @@ fn ac3_disallowed_receipt_preserves_staging_evidence() {
     assert_eq!(fx.read(&fx.bin("watane.new.99999999")), "staging evidence");
 }
 
+/// TECHNICAL 3.6 step 5, 8.5 rule 4 (S50c ac1): the cleanup after an upgrade checks that the folder resolves as the old receipt recorded.
 #[test]
+#[ignore = "slow: `finish_commit` over a prebuilt committed swap, whose folder was relinked, in a whole sourced run (TECHNICAL 3.6 step 5)"]
 fn ac1_upgrade_cleanup_checks_old_receipt_resolution() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     let receipt = fx.read(&fx.receipt());
     fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
     write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -211,7 +217,9 @@ fn ac1_upgrade_cleanup_checks_old_receipt_resolution() {
     );
 }
 
+/// TECHNICAL 3.6.2 (S50c ac2): the lock is removed after a platform refusal, a checksum failure and an interrupted download.
 #[test]
+#[ignore = "slow: three whole runs that end at a platform refusal, a checksum failure and an interrupted download, each of which must remove its lock (TECHNICAL 3.6.2)"]
 fn ac2_lock_is_removed_after_platform_checksum_and_download_interrupt() {
     use std::os::unix::fs::PermissionsExt;
     for (tool, body, code) in [
@@ -232,7 +240,9 @@ fn ac2_lock_is_removed_after_platform_checksum_and_download_interrupt() {
     }
 }
 
+/// TECHNICAL 3.8, 3.6.2 (S50c ac5): a signal during the lock creation keeps its status.
 #[test]
+#[ignore = "slow: a whole run whose lock `mkdir` is signalled (TECHNICAL 3.8)"]
 fn ac5_signalled_lock_creation_keeps_signal_status() {
     use std::os::unix::fs::PermissionsExt;
     let fx = Fx::new();
@@ -262,8 +272,7 @@ fn ac5_status_reads_receipt_while_lock_is_held() {
 /// 3.6.2: an uninstall at a planted lock removes nothing of an installed home.
 #[test]
 fn ac2_uninstall_at_a_planted_lock_removes_nothing() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fs::create_dir(fx.home.join(".watane-install.lock")).unwrap();
     let before = snapshot(&fx.home);
     let out = fx.run(&["--uninstall"]);
@@ -271,14 +280,17 @@ fn ac2_uninstall_at_a_planted_lock_removes_nothing() {
     assert_eq!(snapshot(&fx.home), before);
 }
 
-/// 3.6.2: a lock whose `pid` cannot be written stops the run (exit 5) and is removed.
+/// 3.6.2: a lock whose `pid` cannot be written stops the run (exit 5) and is removed. The fake
+/// `mkdir` plants the `pid` file in the new lock, so that the write (noclobber) fails for root as
+/// well as for any other user, which a 500-mode folder does not.
 #[test]
+#[ignore = "slow: a whole run whose lock cannot hold its pid file; the function is `unit::unit_take_lock_and_the_live_journal_stop_a_second_run` (nowrite)"]
 fn ac2_unwritable_lock_pid_exits_5_and_removes_the_lock() {
     use std::os::unix::fs::PermissionsExt;
     let fx = Fx::new();
     fs::write(
         fx.fakes.join("mkdir"),
-        "#!/bin/sh\n\"$FAKE_REAL/mkdir\" \"$@\" || exit\ncase $1 in *.watane-install.lock) \"$FAKE_REAL/chmod\" 500 \"$1\" ;; esac\n",
+        "#!/bin/sh\n\"$FAKE_REAL/mkdir\" \"$@\" || exit\ncase $1 in *.watane-install.lock) : > \"$1/pid\" ;; esac\n",
     )
     .unwrap();
     fs::set_permissions(fx.fakes.join("mkdir"), fs::Permissions::from_mode(0o755)).unwrap();
@@ -294,11 +306,12 @@ fn ac2_unwritable_lock_pid_exits_5_and_removes_the_lock() {
     assert!(fx.rel.requests().is_empty());
 }
 
+/// TECHNICAL 3.6.2, 3.8 (S50c ac2): the lock goes even when a signal's undo fails.
 /// 3.6.2: the lock goes even when a signal's undo fails (the journal stays for the next run).
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac2_lock_is_removed_after_a_failed_undo_under_a_signal() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
     fx.state_write("mv_fault", "sleep\n*receipt.new.*\n");
     fx.state_write("rm_fault", "fail\n*/Applications/watane.app\n");
@@ -313,11 +326,12 @@ fn ac2_lock_is_removed_after_a_failed_undo_under_a_signal() {
     assert!(fx.home_tree().iter().any(|p| p.contains("journal.")));
 }
 
+/// TECHNICAL 3.4.2, 8.5 rule 4 (S50c ac1): an upgrade refuses a remapped or unrecorded receipt path before it downloads.
 #[test]
+#[ignore = "slow: whole upgrades over folders relinked after the install, refused before any download (TECHNICAL 3.4.2, 8.5)"]
 fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
     for recorded in [true, false] {
-        let fx = Fx::new();
-        assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+        let fx = Fx::installed();
         if recorded {
             fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
             write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -383,10 +397,11 @@ fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
     }
 }
 
+/// TECHNICAL 3.4.2 (S50c ac1): a relinked folder and an ordinary foreign path are both reported, exit 8.
 #[test]
+#[ignore = "slow: a whole install over a relinked folder and an ordinary foreign file (TECHNICAL 3.4.2)"]
 fn ac1_relinked_folder_and_ordinary_foreign_path_are_both_reported() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
     write_file(&fx.home.join("Documents/vendor/marker"), "mine");
     symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();

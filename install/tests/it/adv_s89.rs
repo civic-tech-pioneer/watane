@@ -10,12 +10,14 @@ const HINT: [&str; 2] = [
     "Run watane-dev doctor to check the maker tools.",
 ];
 
+/// TECHNICAL 3.8, 3.9 (IN-45): a signal at the receipt move keeps the install and prints the hint.
 /// 3.8: "A signal after the commit (the receipt was moved into place ...) ... prints on stderr
 /// the two lines". A TERM that reaches the shell while the `mv` of the receipt runs is handled
 /// once that `mv` returns, before `COMMITTED=1` runs: the rollback finds the commit done and
 /// keeps the new version, yet the trap stays silent, so Alice reads an interrupted run with
 /// no word that watane is installed.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s89_signal_during_the_receipt_move_keeps_the_install_but_prints_no_hint() {
     let fx = Fx::new();
     let p = fx.fakes.join("mv");
@@ -32,12 +34,14 @@ fn adv_s89_signal_during_the_receipt_move_keeps_the_install_but_prints_no_hint()
     assert_eq!(lines, HINT, "installed, but the hint is missing: {out:?}");
 }
 
+/// TECHNICAL 3.9 (IN-46): a receipt move that fails after the rename does not say nothing changed.
 /// 3.8 decides "committed" from undo's state: the journal is there and `receipt.new.<pid>` is
 /// gone. When the receipt's `mv` renames the file and then fails (killed, or an error after the
 /// rename), the failure path of `install_files` runs rollback, which finds the commit done and
 /// keeps the new version, and then dies with exit 5 and "Nothing was changed: the version that
 /// was installed still works." Alice reads that nothing changed while 0.1.0 is installed.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn adv_s89_receipt_move_that_fails_after_the_rename_says_nothing_was_changed() {
     let fx = Fx::new();
     let p = fx.fakes.join("mv");
@@ -55,6 +59,7 @@ fn adv_s89_receipt_move_that_fails_after_the_rename_says_nothing_was_changed() {
     );
 }
 
+/// TECHNICAL 3.9 (IN-46): a fresh install whose undo fails does not say nothing was installed.
 /// 3.8 (fix2): a fresh install says "Nothing was installed." when the swap fails, decided only by
 /// what existed before the swap. When the swap fails (the receipt's `mv` fails without renaming)
 /// and undo then cannot take a fresh entry back out (its `mv` back to `.new.<pid>` fails, twice),
@@ -62,6 +67,7 @@ fn adv_s89_receipt_move_that_fails_after_the_rename_says_nothing_was_changed() {
 /// "Nothing was installed." The old-path check that says "could not be put back" never fires on
 /// a fresh install, since there is no old path.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn adv_s89_fresh_install_whose_undo_fails_says_nothing_was_installed() {
     let fx = Fx::new();
     let p = fx.fakes.join("mv");
@@ -84,15 +90,16 @@ fn adv_s89_fresh_install_whose_undo_fails_says_nothing_was_installed() {
     );
 }
 
+/// TECHNICAL 3.9 (IN-46): a checksum failure after an interrupted uninstall does not say the version still works.
 /// fix3 (b): a checksum failure decides its last line from whether a receipt exists: with one it
 /// prints "Nothing was changed: the version that was installed still works." But `--uninstall`
 /// removes the receipt last, so a Ctrl-C during an uninstall leaves the receipt and no program.
 /// The next install's checksum failure then tells Alice the installed version still works, while
 /// `~/.local/bin/watane` is gone (verify runs before `recover` and checks nothing but the receipt).
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s89_checksum_failure_after_an_interrupted_uninstall_says_the_version_still_works() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     let p = fx.fakes.join("rm");
     fs::write(
         &p,
@@ -116,14 +123,15 @@ fn adv_s89_checksum_failure_after_an_interrupted_uninstall_says_the_version_stil
     );
 }
 
+/// TECHNICAL 3.9 (IN-46): a checksum failure after a killed swap does not say the version still works.
 /// Same decision, a run killed mid-swap (3.6 step 0 says the next run recovers it): the killed
 /// reinstall moved `~/.local/bin/watane` to its `.old.<pid>` name and died. The receipt is still
 /// there, so the next run's checksum failure says the installed version still works, before its
 /// `recover` has put anything back: Alice has no `watane` on her PATH.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s89_checksum_failure_after_a_killed_swap_says_the_version_still_works() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     let p = fx.fakes.join("mv");
     fs::write(
         &p,

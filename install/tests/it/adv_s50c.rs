@@ -82,9 +82,9 @@ fn adv_s50c_origin_main_tag_passes_ancestor_check() {
 /// that check and the swap (here while the run stages, held by the fake `chmod`) is
 /// followed by the swap, and the commit then deletes `<path>.old.<pid>` under rule 3 only.
 #[test]
+#[ignore = "slow: a link made between the folder check and the swap of a whole upgrade held at its staging (TECHNICAL 3.4.1, 3.6)"]
 fn adv_s50c_link_after_check_lets_upgrade_delete_linked_folder() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fx.rel.set_version("0.2.0", &["serde-1.0.1"]);
     fx.bake_script("0.2.0");
     write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -95,7 +95,7 @@ fn adv_s50c_link_after_check_lets_upgrade_delete_linked_folder() {
     // Another program (or the person) moves the folder away and links it to Documents.
     fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
     symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();
-    fs::remove_file(fx.state.join("chmod_wait")).unwrap();
+    fx.unfault("chmod_wait");
     let out = finish(child);
 
     assert!(

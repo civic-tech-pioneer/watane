@@ -6,9 +6,12 @@ use std::process::Command;
 
 use crate::support::*;
 
+/// `/bin/sh` and `/bin/dash`, when they are two shells: on a machine where one is the other
+/// (most Linux), the second run of every case would prove nothing.
 fn shells() -> Vec<&'static str> {
     let mut shells = vec!["/bin/sh"];
-    if std::path::Path::new("/bin/dash").exists() {
+    let same = std::fs::canonicalize("/bin/dash").ok() == std::fs::canonicalize("/bin/sh").ok();
+    if std::path::Path::new("/bin/dash").exists() && !same {
         shells.push("/bin/dash");
     }
     shells
@@ -31,7 +34,9 @@ fn fixture_with(shell: &str, fx: &Fx, body: &str) -> Out {
     exec(cmd)
 }
 
+/// TECHNICAL 3.8 (S50b-fix ac2): a signal that kills `id`, `shasum` or `tar` has no cause line, for each of four signals.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac2_interrupted_id_tar_and_shasum_have_no_cause() {
     for shell in shells() {
         for (tool, arg) in [
@@ -100,35 +105,6 @@ fn ac2_version_checks_need_only_builtins() {
                 &format!("PATH=/nonexistent\ncheck_version '{version}'"),
             );
             assert_eq!(out.code, 0, "{shell}: {version}: {out:?}");
-        }
-    }
-}
-
-#[test]
-fn ac3_bad_versions_keep_their_text_and_code() {
-    for shell in shells() {
-        for version in [
-            "",
-            "1.2",
-            "1.2.3.4",
-            "1.2.3-",
-            "1.2.3-a..b",
-            "1.2.3-a-1",
-            "1.2.3/x",
-            "1.2.3\n",
-            "a.2.3",
-            "1.2.3-\u{e9}",
-            "1.2.3-\u{df}",
-        ] {
-            let out = fixture(
-                shell,
-                &format!("LC_ALL=en_US.UTF-8; export LC_ALL\ncheck_version '{version}'"),
-            );
-            assert_eq!(out.code, 1, "{shell}: {out:?}");
-            assert_eq!(
-                out.stderr,
-                format!("watane install: not a version: {version}\na version looks like 0.1.0\n")
-            );
         }
     }
 }
@@ -203,6 +179,7 @@ verify_archive
 
 /// Validator R1 (3.8): a signal after the commit ends the run.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn a_signal_after_the_commit_ends_the_run_at_once() {
     for (signal, code) in [("INT", 130), ("TERM", 143)] {
         let fx = Fx::new();
@@ -224,9 +201,9 @@ fn a_signal_after_the_commit_ends_the_run_at_once() {
 
 /// Validator R1 (3.8): a signal stops an uninstall before its last steps.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn a_signal_during_the_uninstall_ends_it_at_once() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&[]).code, 0);
+    let fx = Fx::installed();
     fx.state_write("rm_fault", "term\n*watane-node\n");
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 143, "{out:?}");

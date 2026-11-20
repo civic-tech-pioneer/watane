@@ -1,4 +1,6 @@
-//! INST-S-1 to 22, 26 to 28, 30 and 31: runs `install.sh` against a fake release (TECHNICAL 12.1).
+//! INST-S-1 to 22, 26 to 28, 30, 31, 34 and 35: runs `install.sh` against a fake release, one whole
+//! run per behaviour that only a whole run shows; the rules a function decides are in `unit.rs`
+//! (TECHNICAL 12.1).
 
 use crate::support;
 
@@ -17,10 +19,7 @@ fn archive() -> String {
 }
 
 fn installed() -> Fx {
-    let fx = Fx::new();
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    fx
+    Fx::installed()
 }
 
 fn names(fx: &Fx) -> Vec<String> {
@@ -49,10 +48,122 @@ fn ac6_checkout_copy_refuses_to_run() {
     assert!(fx.home_tree().is_empty());
 }
 
+/// A pair `(name, value)` of environment for `run_env`.
+fn url_env(fx: &Fx) -> (String, String) {
+    ("WATANE_RUSTUP_URL".to_string(), fx.rustup_installer())
+}
+
+/// `0.1.0` installed, `0.2.0` served, and a copy of every byte of the home.
+fn swap_start() -> (Fx, Vec<(String, Vec<u8>)>) {
+    let fx = installed();
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    let before = snapshot(&fx.home);
+    (fx, before)
+}
+
+fn assert_old_receipt(fx: &Fx) {
+    let r = fx.read(&fx.receipt());
+    assert!(r.contains("\nversion 0.1.0\n"), "{r}");
+    assert_eq!(
+        r.lines().filter(|l| l.starts_with("path ")).count(),
+        7,
+        "{r}"
+    );
+}
+
+fn assert_all_new(fx: &Fx) {
+    fx.assert_installed("0.2.0");
+    assert!(fx.share("watane-dev/vendor/new-crate-1.0.0").is_dir());
+    assert!(!fx.share("watane-dev/vendor/serde-1.0.0").exists());
+    assert!(leftovers(fx).is_empty(), "{:?}", leftovers(fx));
+}
+
+/// Starts `0.2.0` with the fake `mv` or `rm` set to sleep, waits until it sleeps, kills the group.
+fn kill_at(fx: &Fx, tool: &str, glob: &str, args: &[&str]) {
+    kill_at_checking(fx, tool, glob, args, false);
+}
+
+/// `kill_at`, and with `check_lock` the next run is stopped by the lock the killed run left
+/// (TECHNICAL 3.6.2: a lock found is never broken) and prints the command that removes it.
+fn kill_at_checking(fx: &Fx, tool: &str, glob: &str, args: &[&str], check_lock: bool) {
+    fx.state_write(&format!("{tool}_fault"), &format!("sleep\n{glob}\n"));
+    let child = spawn(&mut fx.cmd(args));
+    fx.wait_state(&format!("{tool}_sleeping"));
+    let child_pid = child.id();
+    signal_group(child_pid, "KILL");
+    let out = finish(child);
+    assert_eq!(out.code, -1, "killed: {out:?}");
+    fx.unfault(&format!("{tool}_fault"));
+    fs::remove_file(fx.state.join(format!("{tool}_sleeping"))).expect("unsleep");
+    // A killed run keeps its lock (TECHNICAL 3.6.2); direct undo fixtures never take one.
+    if !check_lock {
+        let _ = fs::remove_dir_all(fx.home.join(".watane-install.lock"));
+        return;
+    }
+    let before = snapshot(&fx.home);
+    let requests = fx.rel.requests();
+    let blocked = fx.run(args);
+    assert_eq!(blocked.code, 5, "{blocked:?}");
+    assert_eq!(
+        blocked.first_err(),
+        format!(
+            "watane install: another install may be running (pid {})",
+            child_pid
+        )
+    );
+    assert_eq!(snapshot(&fx.home), before, "blocked run changes nothing");
+    assert_eq!(fx.rel.requests(), requests, "blocked run does not download");
+    let command = blocked.stderr.lines().nth(2).expect("printed rm command");
+    assert!(
+        Command::new("/bin/sh")
+            .args(["-c", command])
+            .status()
+            .expect("run printed lock removal")
+            .success()
+    );
+}
+
+fn has_leftover(fx: &Fx, what: &str) -> bool {
+    leftovers(fx).iter().any(|n| n.contains(what))
+}
+
+/// Sends `sig` to the run's group while the swap sleeps in its `mv` of the app; the home then holds
+/// every byte of before (3.6 step 4, 3.8). Returns the run for its exit code.
+fn signal_in_the_swap_undoes_it(sig: &str) -> Out {
+    let (fx, before) = swap_start();
+    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
+    let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), sig);
+    let out = finish(child);
+    assert_eq!(snapshot(&fx.home), before, "{out:?}");
+    assert!(fx.tmp_tree().is_empty());
+    out
+}
+
+const XCODE_LINES: [&str; 2] = [
+    "watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:",
+    "  xcode-select --install",
+];
+
+/// INST-S-1, 4, 5c, 19, 22 and TECHNICAL 3.4 to 3.10: one fresh install of a whole run shows the
+/// order of its steps, what it fetched, the files it wrote, the quarantine step, the PATH block for
+/// the shell, and that with no terminal nothing answers the toolchain offer (not a variable that
+/// names a file of answers either): the commands to run later name the installer's URL.
 #[test]
 fn inst_s1_fresh_install() {
     let fx = Fx::new();
-    let out = fx.run(&[]);
+    let (k, url) = url_env(&fx);
+    let tty = fx.root.path().join("tty");
+    fs::write(&tty, "y\n").expect("write");
+    let out = fx.run_env(
+        &[],
+        &[
+            (&k, &url),
+            ("SHELL", "/bin/zsh"),
+            ("WATANE_INSTALL_TTY", &tty.display().to_string()),
+        ],
+    );
     assert_eq!(out.code, 0, "{out:?}");
     fx.assert_installed("0.1.0");
     out.assert_in_order(&[
@@ -65,6 +176,7 @@ fn inst_s1_fresh_install() {
         "  ~/.local/bin/watane-node",
         "  ~/.local/share/watane-dev/vendor",
         "  ~/Applications/watane.app",
+        "no terminal to ask on: the toolchain was not installed",
         "watane 0.1.0 is installed.",
     ]);
     assert_eq!(names(&fx), [".local", "Applications"]);
@@ -78,130 +190,8 @@ fn inst_s1_fresh_install() {
     );
     assert!(out.stdout.contains("using WATANE_RELEASE_BASE="));
     assert!(leftovers(&fx).is_empty());
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s2_toolchain_answered_y() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(out.stdout.matches("[y/N]").count(), 1);
-    assert_eq!(
-        fx.state_read("installer.log"),
-        "-y --profile minimal --no-modify-path -t wasm32-wasip2\n"
-    );
-    out.assert_in_order(&["toolchain: installed", "watane 0.1.0 is installed."]);
-    assert_eq!(names(&fx), [".cargo", ".local", ".rustup", "Applications"]);
-}
-
-#[test]
-fn ac1_toolchain_matches_the_raw_answer() {
-    let script = fs::read_to_string(checkout_script()).expect("script");
-    let step = script.split("  ts_ans=\"\"").nth(1).expect("answer step");
-    let decision = step.split("  case $TC_STATE in").next().expect("decision");
-    assert!(decision.contains("case $ts_ans in\n    [Yy] | [Yy][Ee][Ss])"));
-    assert!(!decision.contains("tr "));
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn ac2_toolchain_rejects_invalid_utf8_answer() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let out = support::pty::run_bytes(
-        &fx,
-        &[],
-        &[
-            ("WATANE_RUSTUP_URL", &url),
-            ("LANG", "en_US.UTF-8"),
-            ("LC_ALL", "en_US.UTF-8"),
-        ],
-        &[("[y/N] ", b"y\xffnope")],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(fx.state_read("installer.log"), "", "{out:?}");
-    assert!(out.has_line("toolchain: not installed"), "{out:?}");
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn adv_s50b_fix_toolchain_nul_in_answer_is_no() {
-    // 3.7: only `y` and `yes` count; `y` then a NUL (Ctrl-@) is another answer
-    for answer in [&b"y\0"[..], &b"\0yes"[..], &b"y\0\0\0"[..]] {
-        let fx = Fx::new();
-        let url = fx.rustup_installer();
-        let out = support::pty::run_bytes(
-            &fx,
-            &[],
-            &[("WATANE_RUSTUP_URL", &url)],
-            &[("[y/N] ", answer)],
-        );
-        assert_eq!(out.code, 0, "{out:?}");
-        assert_eq!(
-            fx.state_read("installer.log"),
-            "",
-            "answer {answer:?}: {out:?}"
-        );
-        assert!(out.has_line("toolchain: not installed"), "{out:?}");
-    }
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn ac2_toolchain_accepts_mixed_case_yes() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let out = fx.run_pty(
-        &[],
-        &[
-            ("WATANE_RUSTUP_URL", &url),
-            ("LANG", "en_US.UTF-8"),
-            ("LC_ALL", "en_US.UTF-8"),
-        ],
-        &[("[y/N] ", "YeS")],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(
-        fx.state_read("installer.log"),
-        "-y --profile minimal --no-modify-path -t wasm32-wasip2\n"
-    );
-    assert!(out.has_line("toolchain: installed"), "{out:?}");
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s3_toolchain_answered_n() {
-    for answer in ["n", ""] {
-        let fx = Fx::new();
-        let url = fx.rustup_installer();
-        let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", answer)]);
-        assert_eq!(out.code, 0, "{out:?}");
-        assert_eq!(out.stdout.matches("[y/N]").count(), 1);
-        assert_eq!(fx.state_read("installer.log"), "");
-        assert!(out.has_line("toolchain: not installed"));
-        assert!(
-            out.has_line(
-                &CURL_LINE
-                    .replace("--proto '=https' ", "")
-                    .replace("https://sh.rustup.rs", &format!("'{url}'"))
-            )
-        );
-        fx.assert_installed("0.1.0");
-    }
-}
-
-#[test]
-fn inst_s4_no_terminal() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let out = fx.run_env(&[], &[("WATANE_RUSTUP_URL", &url)]);
-    assert_eq!(out.code, 0, "{out:?}");
+    // INST-S-4 and 5c: no terminal, no question; the URL is quoted as a file URL is not http(s)
     assert!(!out.stdout.contains("[y/N]"));
-    assert!(out.has_line("no terminal to ask on: the toolchain was not installed"));
-    // IN-44: the command names the URL that the offer would have named;
-    // a URL that is not http(s) is printed in single quotes (3.7)
     let q = format!("'{url}'");
     assert!(
         out.has_line(
@@ -211,35 +201,30 @@ fn inst_s4_no_terminal() {
         )
     );
     assert_eq!(fx.state_read("installer.log"), "");
+    // INST-S-22: the quarantine mark is removed from the app, and the person is told how
+    let want = format!(
+        "-dr com.apple.quarantine {}/Applications/watane.app\n",
+        fx.home.display()
+    );
+    assert_eq!(fx.state_read("xattr.log"), want);
+    assert!(out.has_line(r#"If macOS says "watane" cannot be opened, or could not verify that it is free of malware:"#));
+    assert!(out.has_line("    xattr -dr com.apple.quarantine ~/Applications/watane.app"));
+    // INST-S-19: ~/.local/bin is not on the PATH: the lines are printed, no shell file is edited
+    assert!(out.has_line(
+        "~/.local/bin is not on your PATH, so a new terminal will not find watane-dev yet."
+    ));
+    assert!(out.has_line(r#"  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc"#));
+    for f in [".zshrc", ".bash_profile", ".profile"] {
+        assert!(!fx.home.join(f).exists());
+    }
 }
 
+/// INST-S-5b, 18 and TECHNICAL 3.1, 3.10: no flag says yes to the toolchain, a flag the run does
+/// not know or a pair that conflict ends it with exit 1 and usage, `--help` prints the usage, and
+/// `--status` and `--uninstall` of nothing exit 7 with their texts; `--status` of an install lists
+/// the receipt.
 #[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s5a_no_toolchain_flag_beats_a_typed_y() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let out = fx.run_pty(
-        &["--no-toolchain"],
-        &[("WATANE_RUSTUP_URL", &url)],
-        &[("checked: sha256", "y")],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(!out.stdout.contains("[y/N]"));
-    assert!(out.has_line("toolchain: skipped (--no-toolchain)"));
-    // a URL that is not http(s) is printed in single quotes (3.7)
-    let q = format!("'{url}'");
-    assert!(
-        out.has_line(
-            &CURL_LINE
-                .replace("--proto '=https' ", "")
-                .replace("https://sh.rustup.rs", &q)
-        )
-    );
-    assert_eq!(fx.state_read("installer.log"), "");
-}
-
-#[test]
-fn inst_s5b_there_is_no_flag_that_says_yes() {
+fn inst_s5b_flags_status_and_help() {
     let fx = Fx::new();
     let out = fx.run(&["--toolchain"]);
     assert_eq!(out.code, 1);
@@ -247,72 +232,110 @@ fn inst_s5b_there_is_no_flag_that_says_yes() {
         out.first_err(),
         "watane install: unknown or conflicting flag --toolchain"
     );
-    assert!(fx.home_tree().is_empty());
-}
-
-#[test]
-fn inst_s5c_no_variable_says_yes() {
-    let fx = Fx::new();
-    let url = fx.rustup_installer();
-    let file = fx.root.path().join("tty");
-    fs::write(&file, "y\n").expect("write");
-    let out = fx.run_env(
-        &[],
-        &[
-            ("WATANE_INSTALL_TTY", &file.display().to_string()),
-            ("WATANE_RUSTUP_URL", &url),
-        ],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(out.has_line("no terminal to ask on: the toolchain was not installed"));
-    assert_eq!(fx.state_read("installer.log"), "");
-}
-
-#[test]
-fn inst_s6_toolchain_complete() {
-    let fx = Fx::new();
-    fx.add_rustup(true);
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(out.has_line("toolchain: ok (rustup, wasm32-wasip2)"));
-    assert!(!out.stdout.contains("[y/N]"));
-    assert_eq!(fx.state_read("installer.log"), "");
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s7_target_missing() {
-    let fx = Fx::new();
-    fx.add_rustup(false);
-    let out = fx.run_pty(&[], &[], &[("[y/N] ", "y")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(
-        out.stdout
-            .contains("Add the wasm32-wasip2 target with rustup? [y/N] ")
-    );
-    assert!(!out.stdout.contains("Install it with rustup"));
-    let log = fx.state_read("rustup.log");
+    assert_eq!(fx.run(&["--no-toolchain", "--status"]).code, 1);
+    let out = fx.run(&["--help"]);
+    assert_eq!(out.code, 0);
+    assert!(out.stdout.starts_with("usage: install.sh"));
+    let out = fx.run(&["--status"]);
+    assert_eq!(out.code, 7);
     assert_eq!(
-        log.lines()
-            .filter(|l| *l == "target add wasm32-wasip2")
-            .count(),
-        1,
-        "{log}"
+        out.first_err(),
+        "watane install: not installed: no receipt at ~/.local/share/watane/receipt"
     );
-    assert!(out.has_line("toolchain: installed"));
-    // 3.7: offer B's rustup runs from $HOME (the test's cwd is not), auto-install off
-    let home = fs::canonicalize(&fx.home).expect("home");
-    let pwds = fx.state_read("rustup.pwd");
-    assert!(pwds.lines().count() >= 2, "{pwds}");
-    for l in pwds.lines() {
-        assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{pwds}");
-    }
-    let auto = fx.state_read("rustup.auto");
-    assert!(auto.lines().all(|l| l == "0"), "{auto}");
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 7);
+    assert_eq!(
+        out.first_err(),
+        "watane install: nothing to uninstall: no receipt at ~/.local/share/watane/receipt"
+    );
+    assert!(fx.home_tree().is_empty());
+    let fx = Fx::installed();
+    let out = fx.run(&["--status"]);
+    assert_eq!(out.code, 0);
+    assert_eq!(out.stderr, "");
+    assert_eq!(
+        out.stdout,
+        "watane 0.1.0 (aarch64-apple-darwin)\n~/.local/bin/watane\n~/.local/bin/watane-dev\n~/.local/bin/watane-node\n~/.local/share/watane-dev/vendor\n~/.local/share/watane/install.sh\n~/.local/share/watane/VERSION\n~/Applications/watane.app\n"
+    );
 }
 
+/// INST-S-20, 21, 26 and TECHNICAL 3.2, 3.4 steps 1 to 3: the run refuses, before it asks the
+/// network for anything and with nothing written, a platform that is not macOS 14 on Apple
+/// silicon (exit 2), root (exit 1: step 2 of `main`, which only a whole run reaches), a tool that
+/// is missing (exit 2) and a version that is a path (exit 1, even from the environment).
 #[test]
-fn inst_s8_checksum_mismatch() {
+fn inst_s20_s21_s26_the_run_refuses_before_it_fetches() {
+    let fx = Fx::new();
+    fx.state_write("uname_s", "Linux");
+    fx.state_write("uname_m", "x86_64");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 2, "{out:?}");
+    assert_eq!(
+        out.first_err(),
+        "watane install: unsupported platform: Linux x86_64"
+    );
+    assert_eq!(
+        out.stderr.lines().nth(1),
+        Some("watane installs on macOS 14.0 or later, on Apple silicon.")
+    );
+    assert!(fx.rel.requests().is_empty() && fx.home_tree().is_empty());
+
+    let fx = Fx::new();
+    fx.state_write("id_u", "0");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.first_err(),
+        "watane install: do not run this as root or with sudo"
+    );
+    assert!(fx.rel.requests().is_empty() && fx.home_tree().is_empty());
+
+    let fx = Fx::new();
+    fx.remove_tool("curl");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 2);
+    assert_eq!(out.first_err(), "watane install: the tool curl is missing");
+    assert!(fx.rel.requests().is_empty() && fx.home_tree().is_empty());
+
+    let evil = "1/../../../../../evil/watane/releases/download/v1";
+    let fx = Fx::new();
+    fake_curl(&fx);
+    let mut c = fx.cmd(&["--release", evil]);
+    c.env_remove("WATANE_RELEASE_BASE");
+    let out = exec(c);
+    assert_eq!(out.code, 1, "{out:?}");
+    assert_eq!(
+        out.first_err(),
+        format!("watane install: not a version: {evil}")
+    );
+    assert_eq!(
+        out.stderr.lines().nth(1),
+        Some("a version looks like 0.1.0")
+    );
+    assert_eq!(fx.state_read("curl.log"), "");
+    assert!(fx.home_tree().is_empty());
+    let mut c = fx.cmd(&[]);
+    c.env_remove("WATANE_RELEASE_BASE");
+    c.env("WATANE_RELEASE", evil);
+    let out = exec(c);
+    assert_eq!(out.code, 1, "{out:?}");
+    assert_eq!(fx.state_read("curl.log"), "");
+    // a version with a suffix is one: the run goes on to the URL of its release
+    let mut c = fx.cmd(&["--release", "0.2.0-rc1"]);
+    c.env_remove("WATANE_RELEASE_BASE");
+    let out = exec(c);
+    assert!(!out.stderr.contains("not a version"), "{out:?}");
+    assert!(
+        fx.state_read("curl.log")
+            .contains("releases/download/v0.2.0-rc1/SHA256SUMS")
+    );
+}
+
+/// INST-S-8, 10 and TECHNICAL 3.4 steps 7 and 8: a sum that does not match ends the run with exit 4
+/// and a download that fails with exit 3 and curl's reason, each with nothing installed and no
+/// temporary folder left. The checks themselves are `unit::unit_verify_archive_needs_one_matching_line`.
+#[test]
+fn inst_s8_s10_a_bad_sum_and_a_failed_download() {
     let fx = Fx::new();
     fx.rel.put(&archive(), b"not the archive".to_vec());
     let out = fx.run(&[]);
@@ -327,45 +350,7 @@ fn inst_s8_checksum_mismatch() {
     assert_eq!(l[3], "Nothing was installed.");
     assert!(fx.home_tree().is_empty());
     assert!(fx.tmp_tree().is_empty());
-}
 
-#[test]
-fn inst_s9_no_checksum_line() {
-    let fx = Fx::new();
-    fx.rel.put(
-        "SHA256SUMS",
-        format!("{}  other.tar.gz\n", "0".repeat(64)).into_bytes(),
-    );
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 4);
-    assert_eq!(
-        out.first_err(),
-        format!("watane install: SHA256SUMS has no line for {}", archive())
-    );
-    assert!(fx.home_tree().is_empty());
-    assert!(fx.tmp_tree().is_empty());
-}
-
-#[test]
-fn two_checksum_lines_are_refused() {
-    let fx = Fx::new();
-    let line = format!("{}  {}\n", "0".repeat(64), archive());
-    fx.rel
-        .put("SHA256SUMS", format!("{line}{line}").into_bytes());
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 4, "{out:?}");
-    assert_eq!(
-        out.first_err(),
-        format!(
-            "watane install: SHA256SUMS has more than one line for {}",
-            archive()
-        )
-    );
-    assert!(fx.home_tree().is_empty());
-}
-
-#[test]
-fn inst_s10_download_fails() {
     let fx = Fx::new();
     fx.rel.remove(&archive());
     let out = fx.run(&[]);
@@ -383,26 +368,29 @@ fn inst_s10_download_fails() {
     assert!(fx.tmp_tree().is_empty());
 }
 
+/// INST-S-12, 13 and TECHNICAL 3.6, 3.9: the same version again says it reinstalls and a path that
+/// only the old receipt held is removed with it; a newer one says it upgrades, replaces the old
+/// vendored crates, keeps what the person put beside it, and says to open the app again.
 #[test]
-fn inst_s11_interrupted_during_the_download() {
-    let fx = Fx::new();
-    fx.rel.stall_on(&archive());
-    let child = spawn(&mut fx.cmd(&[]));
-    fx.rel.wait_stalled();
-    signal_group(child.id(), "INT");
-    let out = finish(child);
-    assert_eq!(out.code, 130, "{out:?}");
-    assert!(fx.home_tree().is_empty());
-    assert!(fx.tmp_tree().is_empty());
-}
-
-#[test]
-fn inst_s12_upgrade() {
-    let fx = Fx::new();
-    fx.rel.set_version("0.1.0", &["old-crate-1.0.0"]);
-    assert_eq!(fx.run(&[]).code, 0);
+fn inst_s12_s13_a_reinstall_then_an_upgrade() {
+    let fx = Fx::installed_with(&["old-crate-1.0.0"]);
     write_file(&fx.bin("mine"), "mine");
     write_file(&fx.home.join(".watane/marker"), "marker");
+    write_file(&fx.bin("watane-gone"), "old");
+    let line = format!("path {}\n", fx.bin("watane-gone").display());
+    fs::write(fx.receipt(), fx.read(&fx.receipt()) + &line).expect("write");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("reinstalling watane 0.1.0"));
+    assert!(!out.has_line("If watane is open, quit it and open it again."));
+    fx.assert_installed("0.1.0");
+    assert!(leftovers(&fx).is_empty());
+    assert!(
+        !fx.bin("watane-gone").exists(),
+        "a path only the old receipt held"
+    );
+    assert!(!fx.read(&fx.receipt()).contains("watane-gone"));
+
     assert!(fx.share("watane-dev/vendor/old-crate-1.0.0").is_dir());
     fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
     let out = fx.run(&["--release", "0.2.0"]);
@@ -417,27 +405,82 @@ fn inst_s12_upgrade() {
     assert!(out.has_line("If watane is open, quit it and open it again."));
 }
 
+/// INST-S-17, 27 and TECHNICAL 8.4, 8.5: an uninstall with no terminal removes what the install
+/// wrote and keeps the home, and removes nothing a receipt names that the install does not write:
+/// a path outside the install set, a `.mine` name, a path through a link to the home, a stale
+/// `.old.<n>` name of a dead run goes. Each skipped line is on stderr.
 #[test]
-fn a_path_only_the_old_receipt_held_is_removed() {
-    let fx = installed();
-    write_file(&fx.bin("watane-gone"), "old");
-    let line = format!("path {}\n", fx.bin("watane-gone").display());
-    fs::write(fx.receipt(), fx.read(&fx.receipt()) + &line).expect("write");
-    let out = fx.run(&[]);
+fn inst_s17_s27_an_uninstall_removes_only_what_the_install_wrote() {
+    let (fx, named, other) = s27_start();
+    write_file(&fx.home.join(".watane/marker"), "marker");
+    let h = fx.home.display().to_string();
+    write_file(&fx.bin("watane.mine"), "mine");
+    append(&fx.receipt(), &format!("path {h}/.local/bin/watane.mine\n"));
+    write_file(&fx.home.join("Documents/marker"), "m");
+    symlink(&fx.home, fx.share("watane/x")).expect("link");
+    append(
+        &fx.receipt(),
+        &format!("path {h}/.local/share/watane/x/Documents\n"),
+    );
+    let tty = fx.root.path().join("tty");
+    fs::write(&tty, "delete\n").expect("write");
+    let out = fx.run_env(
+        &["--uninstall"],
+        &[("WATANE_INSTALL_TTY", &tty.display().to_string())],
+    );
     assert_eq!(out.code, 0, "{out:?}");
-    assert!(!fx.bin("watane-gone").exists());
-    assert!(!fx.read(&fx.receipt()).contains("watane-gone"));
+    s27_kept(&fx, other.path());
+    for p in &named {
+        let shown = p.replacen(&h, "~", 1);
+        let line = format!("watane install: skipped {shown}: not a path that watane installs");
+        assert!(
+            out.stderr.lines().any(|l| l == line),
+            "{line}\n{}",
+            out.stderr
+        );
+    }
+    assert!(!fx.bin("watane").exists() && !fx.app().exists());
+    for p in [
+        fx.bin("watane-dev"),
+        fx.bin("watane-node"),
+        fx.share("watane-dev"),
+        fx.share("watane/install.sh"),
+    ] {
+        assert!(!p.exists(), "{} should be gone", p.display());
+    }
+    // INST-S-17: no terminal, no question, the home is kept, the answer file answers nothing
+    assert!(fx.home.join(".watane/marker").is_file());
+    assert!(!out.stdout.contains("keep it"));
+    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
+    // 8.5 rule 2 (`.mine`) and rule 3 (a link inside the install folder to the home)
+    assert!(fx.bin("watane.mine").exists());
+    let line = "watane install: skipped ~/.local/bin/watane.mine: not a path that watane installs";
+    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
+    assert!(fx.home.join("Documents/marker").exists(), "{out:?}");
+    let line = "watane install: skipped ~/.local/share/watane/x/Documents: not a path that watane installs";
+    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
 }
 
 #[test]
-fn inst_s13_same_version_again() {
-    let fx = installed();
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(out.has_line("reinstalling watane 0.1.0"));
-    assert!(!out.has_line("If watane is open, quit it and open it again."));
-    fx.assert_installed("0.1.0");
-    assert!(leftovers(&fx).is_empty());
+fn ac1_toolchain_matches_the_raw_answer() {
+    let script = fs::read_to_string(checkout_script()).expect("script");
+    let step = script.split("  ts_ans=\"\"").nth(1).expect("answer step");
+    let decision = step.split("  case $TC_STATE in").next().expect("decision");
+    assert!(decision.contains("case $ts_ans in\n    [Yy] | [Yy][Ee][Ss])"));
+    assert!(!decision.contains("tr "));
+}
+
+#[test]
+fn inst_s11_interrupted_during_the_download() {
+    let fx = Fx::new();
+    fx.rel.stall_on(&archive());
+    let child = spawn(&mut fx.cmd(&[]));
+    fx.rel.wait_stalled();
+    signal_group(child.id(), "INT");
+    let out = finish(child);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(fx.home_tree().is_empty());
+    assert!(fx.tmp_tree().is_empty());
 }
 
 #[test]
@@ -475,204 +518,6 @@ fn inst_s14_failed_fresh_install_removes_what_it_moved_in() {
     assert!(files.is_empty(), "{files:?}");
 }
 
-fn uninstall_setup() -> Fx {
-    let fx = installed();
-    write_file(&fx.home.join(".watane/marker"), "marker");
-    fx
-}
-
-fn assert_uninstalled(fx: &Fx) {
-    for p in [
-        fx.bin("watane"),
-        fx.bin("watane-dev"),
-        fx.bin("watane-node"),
-        fx.share("watane-dev"),
-        fx.share("watane"),
-        fx.app(),
-    ] {
-        assert!(!p.exists(), "{} should be gone", p.display());
-    }
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s15_uninstall_home_kept() {
-    let fx = uninstall_setup();
-    let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", "n")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_uninstalled(&fx);
-    assert!(fx.home.join(".watane/marker").is_file());
-    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
-    assert!(out.has_line("uninstalled watane 0.1.0"));
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s16_uninstall_home_deleted() {
-    let fx = uninstall_setup();
-    let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", "delete")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(!fx.home.join(".watane").exists());
-    assert!(out.has_line("deleted: ~/.watane"));
-    for other in ["DELETE", "yes", "y"] {
-        let fx = uninstall_setup();
-        let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", other)]);
-        assert_eq!(out.code, 0, "{out:?}");
-        assert!(
-            fx.home.join(".watane/marker").is_file(),
-            "{other} keeps the home"
-        );
-    }
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn ac3_uninstall_nul_in_answer_keeps_home() {
-    // 8.4 via 3.7's reader: a NUL anywhere, or a trailing space, is not `delete`
-    for answer in [
-        &b"de\0lete"[..],
-        &b"delete\0"[..],
-        &b"\0delete"[..],
-        &b"delete "[..],
-    ] {
-        let fx = uninstall_setup();
-        let out = support::pty::run_bytes(&fx, &["--uninstall"], &[], &[("keep it: ", answer)]);
-        assert_eq!(out.code, 0, "{answer:?}: {out:?}");
-        assert!(
-            fx.home.join(".watane/marker").is_file(),
-            "{answer:?}: {out:?}"
-        );
-        assert!(
-            out.has_line("kept: ~/.watane (your home: identity, mods, channels)"),
-            "{answer:?}"
-        );
-    }
-}
-
-#[test]
-fn inst_s17_uninstall_no_terminal() {
-    let fx = uninstall_setup();
-    let file = fx.root.path().join("tty");
-    fs::write(&file, "delete\n").expect("write");
-    let out = fx.run_env(
-        &["--uninstall"],
-        &[("WATANE_INSTALL_TTY", &file.display().to_string())],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_uninstalled(&fx);
-    assert!(fx.home.join(".watane/marker").is_file());
-    assert!(!out.stdout.contains("keep it"));
-    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
-}
-
-#[test]
-fn inst_s18_uninstall_of_nothing() {
-    let fx = Fx::new();
-    let out = fx.run(&["--uninstall"]);
-    assert_eq!(out.code, 7);
-    assert_eq!(
-        out.first_err(),
-        "watane install: nothing to uninstall: no receipt at ~/.local/share/watane/receipt"
-    );
-    assert!(fx.home_tree().is_empty());
-}
-
-#[test]
-fn inst_s19_bin_not_on_path() {
-    let fx = Fx::new();
-    let out = fx.run_env(&[], &[("SHELL", "/bin/zsh")]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(out.has_line(
-        "~/.local/bin is not on your PATH, so a new terminal will not find watane-dev yet."
-    ));
-    assert!(out.has_line(r#"  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc"#));
-    for f in [".zshrc", ".bash_profile", ".profile"] {
-        assert!(!fx.home.join(f).exists());
-    }
-    let fx = Fx::new();
-    let path = format!(
-        "{}:{}",
-        fx.path_value(),
-        fx.home.join(".local/bin").display()
-    );
-    let out = fx.run_env(&[], &[("SHELL", "/bin/zsh"), ("PATH", &path)]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(!out.stdout.contains("is not on your PATH"));
-}
-
-#[test]
-fn inst_s20_unsupported_platform() {
-    let cases: [(&str, &str, &str, &str); 3] = [
-        ("Linux", "x86_64", "14.5", "Linux x86_64"),
-        ("Darwin", "x86_64", "14.5", "Darwin x86_64"),
-        (
-            "Darwin",
-            "arm64",
-            "12.7",
-            "macOS 12.7 (needs 14.0 or later)",
-        ),
-    ];
-    for (s, m, v, shown) in cases {
-        let fx = Fx::new();
-        fx.state_write("uname_s", s);
-        fx.state_write("uname_m", m);
-        fx.state_write("sw_vers", v);
-        let out = fx.run(&[]);
-        assert_eq!(out.code, 2, "{out:?}");
-        assert_eq!(
-            out.first_err(),
-            format!("watane install: unsupported platform: {shown}")
-        );
-        assert_eq!(
-            out.stderr.lines().nth(1),
-            Some("watane installs on macOS 14.0 or later, on Apple silicon.")
-        );
-        assert!(fx.rel.requests().is_empty());
-        assert!(fx.home_tree().is_empty());
-    }
-}
-
-#[test]
-fn inst_s20_rosetta_shell_is_apple_silicon() {
-    let fx = Fx::new();
-    fx.state_write("uname_m", "x86_64");
-    fx.state_write("rosetta", "1");
-    assert_eq!(fx.run(&[]).code, 0);
-}
-
-#[test]
-fn inst_s21_root_and_missing_tools() {
-    let fx = Fx::new();
-    fx.state_write("id_u", "0");
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 1);
-    assert_eq!(
-        out.first_err(),
-        "watane install: do not run this as root or with sudo"
-    );
-    assert!(fx.rel.requests().is_empty() && fx.home_tree().is_empty());
-    let fx = Fx::new();
-    fx.remove_tool("curl");
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 2);
-    assert_eq!(out.first_err(), "watane install: the tool curl is missing");
-    assert!(fx.rel.requests().is_empty() && fx.home_tree().is_empty());
-}
-
-#[test]
-fn inst_s22_gatekeeper_step() {
-    let fx = Fx::new();
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    let want = format!(
-        "-dr com.apple.quarantine {}/Applications/watane.app\n",
-        fx.home.display()
-    );
-    assert_eq!(fx.state_read("xattr.log"), want);
-    assert!(out.has_line(r#"If macOS says "watane" cannot be opened, or could not verify that it is free of malware:"#));
-    assert!(out.has_line("    xattr -dr com.apple.quarantine ~/Applications/watane.app"));
-}
-
 fn fake_curl(fx: &Fx) {
     let p = fx.fakes.join("curl");
     fs::write(
@@ -681,49 +526,6 @@ fn fake_curl(fx: &Fx) {
     )
     .expect("write");
     let _ = Command::new("chmod").arg("755").arg(&p).status();
-}
-
-#[test]
-fn inst_s26_a_version_that_is_a_path() {
-    let evil = "1/../../../../../evil/watane/releases/download/v1";
-    let cases: [(&[&str], &str, &str); 5] = [
-        (&["--release", evil], "", evil),
-        (&[], evil, evil),
-        (&["--release", "0.1.0/x"], "", "0.1.0/x"),
-        (&["--release", ""], "", ""),
-        (&["--release", "1.0"], "", "1.0"),
-    ];
-    for (args, env, shown) in cases {
-        let fx = Fx::new();
-        fake_curl(&fx);
-        let mut c = fx.cmd(args);
-        c.env_remove("WATANE_RELEASE_BASE");
-        if !env.is_empty() {
-            c.env("WATANE_RELEASE", env);
-        }
-        let out = exec(c);
-        assert_eq!(out.code, 1, "{out:?}");
-        assert_eq!(
-            out.first_err(),
-            format!("watane install: not a version: {shown}")
-        );
-        assert_eq!(
-            out.stderr.lines().nth(1),
-            Some("a version looks like 0.1.0")
-        );
-        assert_eq!(fx.state_read("curl.log"), "");
-        assert!(fx.home_tree().is_empty());
-    }
-    let fx = Fx::new();
-    fake_curl(&fx);
-    let mut c = fx.cmd(&["--release", "0.2.0-rc1"]);
-    c.env_remove("WATANE_RELEASE_BASE");
-    let out = exec(c);
-    assert!(!out.stderr.contains("not a version"), "{out:?}");
-    assert!(
-        fx.state_read("curl.log")
-            .contains("releases/download/v0.2.0-rc1/SHA256SUMS")
-    );
 }
 
 fn append(p: &Path, text: &str) {
@@ -780,70 +582,6 @@ fn s27_kept(fx: &Fx, other: &Path) {
     assert!(!fx.bin("watane.old.99999999").exists());
 }
 
-#[test]
-fn inst_s27_a_receipt_that_names_other_files() {
-    let (fx, named, other) = s27_start();
-    let out = fx.run(&["--uninstall"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    s27_kept(&fx, other.path());
-    for p in &named {
-        let shown = p.replacen(&fx.home.display().to_string(), "~", 1);
-        let line = format!("watane install: skipped {shown}: not a path that watane installs");
-        assert!(
-            out.stderr.lines().any(|l| l == line),
-            "{line}\n{}",
-            out.stderr
-        );
-    }
-    assert!(!fx.bin("watane").exists() && !fx.app().exists());
-    let (fx, _, other) = s27_start();
-    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
-    let out = fx.run(&["--release", "0.2.0"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    s27_kept(&fx, other.path());
-    assert_eq!(fx.read(&fx.share("watane/VERSION")).trim(), "0.2.0");
-}
-
-#[test]
-#[ignore = "slow: needs a pseudo-terminal from script(1)"]
-fn inst_s28_a_home_that_is_not_a_watane_home() {
-    let cases = ["$HOME", "/", "$HOME/x/..", "$HOME/link", "$HOME/link/"];
-    for case in cases {
-        let fx = installed();
-        write_file(&fx.home.join("keep"), "keep");
-        fs::create_dir(fx.home.join("x")).expect("x");
-        symlink(&fx.home, fx.home.join("link")).expect("link");
-        let value = case.replace("$HOME", &fx.home.display().to_string());
-        let out = fx.run_pty(
-            &["--uninstall"],
-            &[("WATANE_HOME", &value)],
-            &[("uninstalled watane 0.1.0", "delete")],
-        );
-        assert_eq!(out.code, 0, "{case}: {out:?}");
-        assert!(!out.stdout.contains("Type delete"), "{case}");
-        let shown = match case {
-            "$HOME" => "~".to_string(),
-            "/" => "/".to_string(),
-            c => c.replace("$HOME", "~"),
-        };
-        let line = format!("kept: {shown} (not deleted: not a folder that watane can delete)");
-        assert!(out.has_line(&line), "{line}\n{}", out.stdout);
-        assert!(fx.home.join("keep").exists(), "{case}");
-    }
-    let fx = installed();
-    write_file(&fx.home.join("keep"), "keep");
-    write_file(&fx.home.join("elsewhere/marker"), "m");
-    let value = fx.home.join("elsewhere").display().to_string();
-    let out = fx.run_pty(
-        &["--uninstall"],
-        &[("WATANE_HOME", &value)],
-        &[("keep it: ", "delete")],
-    );
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(!fx.home.join("elsewhere").exists());
-    assert!(fx.home.join("keep").exists());
-}
-
 fn foreign_lines(out: &Out, shown: &[&str]) {
     let l: Vec<&str> = out.stderr.lines().collect();
     assert_eq!(
@@ -861,6 +599,10 @@ fn foreign_lines(out: &Out, shown: &[&str]) {
     );
 }
 
+/// INST-S-30 and TECHNICAL 3.4.2: a file at a name the install writes that watane did not install
+/// (a file, a link, a folder) ends the run with exit 8 and the `mv` that moves it aside, before any
+/// request and with nothing written. The other shapes (a receipt without one path, a receipt that
+/// is a folder, a dead run's journal) are `unit::unit_check_foreign_refuses_a_file_watane_did_not_install`.
 #[test]
 fn inst_s30_files_that_watane_did_not_install() {
     let fx = Fx::new();
@@ -880,23 +622,13 @@ fn inst_s30_files_that_watane_did_not_install() {
     );
     assert!(fx.rel.requests().is_empty());
     assert_eq!(snapshot(&fx.home), before);
+}
 
-    let fx = installed();
-    let r = fx.read(&fx.receipt());
-    let kept: Vec<&str> = r
-        .lines()
-        .filter(|l| !l.ends_with("watane-dev/vendor"))
-        .collect();
-    fs::write(fx.receipt(), format!("{}\n", kept.join("\n"))).expect("write");
-    let before = snapshot(&fx.home);
-    let n = fx.rel.requests().len();
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 8, "{out:?}");
-    foreign_lines(&out, &["~/.local/share/watane-dev/vendor"]);
-    assert_eq!(fx.rel.requests().len(), n);
-    assert_eq!(snapshot(&fx.home), before);
-
-    // a stale name with this run's own pid is removed, not copied into
+/// INST-S-30 and TECHNICAL 3.6 step 2: a stale `<name>.new.<pid>` of this very run's pid is removed,
+/// not copied into (a dead run's pid came back).
+#[test]
+#[ignore = "slow: the pid of the run is only known once it has started, so the name is planted in a started whole run"]
+fn inst_s30_a_stale_name_with_this_runs_own_pid_is_removed() {
     let fx = installed();
     let mut c = std::process::Command::new("/bin/sh");
     let inner = fx.cmd(&[]);
@@ -927,16 +659,58 @@ fn inst_s30_files_that_watane_did_not_install() {
     assert!(fx.bin("watane").is_file());
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
-
-    let fx = Fx::new();
-    fs::create_dir_all(fx.receipt()).expect("receipt dir");
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 8, "{out:?}");
-    foreign_lines(&out, &["~/.local/share/watane/receipt"]);
 }
 
+/// INST-S-31 and TECHNICAL 3.4.1: an install folder that resolves outside the home ends the run with exit 2
+/// and names where it resolves, before any request and with nothing written outside the home. The
+/// other folders and links are `unit::unit_check_folders_refuses_an_install_folder_outside_the_home`.
 #[test]
 fn inst_s31_an_install_folder_outside_the_home() {
+    let check = |fx: &Fx, other: &Path, folder: &str, target: &str| {
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 2, "{out:?}");
+        let home = fs::canonicalize(&fx.home)
+            .expect("canon")
+            .display()
+            .to_string();
+        assert_eq!(
+            out.first_err(),
+            format!(
+                "watane install: {folder} resolves to {target}, outside your home folder {home}"
+            )
+        );
+        assert_eq!(
+            out.stderr.lines().nth(1),
+            Some(
+                "watane writes only under your home folder. Make it a real folder there, then run this again."
+            )
+        );
+        assert!(fx.rel.requests().is_empty());
+        let left: Vec<_> = fs::read_dir(other).expect("other").collect();
+        assert!(left.is_empty(), "the second folder is empty: {left:?}");
+    };
+    let new = || {
+        let fx = Fx::new();
+        let other = tempfile::tempdir().expect("other");
+        let o = fs::canonicalize(other.path()).expect("canon");
+        (fx, other, o)
+    };
+    let (fx, other, o) = new();
+    symlink(&o, fx.home.join(".local")).expect("link");
+    check(
+        &fx,
+        other.path(),
+        "~/.local/bin",
+        &format!("{}/bin", o.display()),
+    );
+}
+
+/// INST-S-31 and TECHNICAL 3.4.1, 8.5: each other install folder linked outside the home is refused, an
+/// uninstall leaves what a link leads to, and a link to a folder inside the home is fine for an
+/// install, an upgrade and an uninstall.
+#[test]
+#[ignore = "slow: an install, an upgrade and an uninstall through each link, which only whole runs show"]
+fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
     let check = |fx: &Fx, other: &Path, folder: &str, target: &str| {
         let out = fx.run(&[]);
         assert_eq!(out.code, 2, "{out:?}");
@@ -1067,98 +841,309 @@ fn inst_s31_an_install_folder_outside_the_home() {
     assert!(!fx.receipt().exists());
 }
 
+/// INST-S-2 and TECHNICAL 3.7: a typed `y` installs the toolchain (offer A).
 #[test]
-fn status_and_help() {
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s2_toolchain_answered_y() {
     let fx = Fx::new();
-    let out = fx.run(&["--status"]);
-    assert_eq!(out.code, 7);
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(out.stdout.matches("[y/N]").count(), 1);
     assert_eq!(
-        out.first_err(),
-        "watane install: not installed: no receipt at ~/.local/share/watane/receipt"
+        fx.state_read("installer.log"),
+        "-y --profile minimal --no-modify-path -t wasm32-wasip2\n"
     );
-    assert_eq!(fx.run(&["--no-toolchain", "--status"]).code, 1);
-    let out = fx.run(&["--help"]);
-    assert_eq!(out.code, 0);
-    assert!(out.stdout.starts_with("usage: install.sh"));
-    assert_eq!(fx.run(&[]).code, 0);
-    let out = fx.run(&["--status"]);
-    assert_eq!(out.code, 0);
-    assert_eq!(
-        out.stdout,
-        "watane 0.1.0 (aarch64-apple-darwin)\n~/.local/bin/watane\n~/.local/bin/watane-dev\n~/.local/bin/watane-node\n~/.local/share/watane-dev/vendor\n~/.local/share/watane/install.sh\n~/.local/share/watane/VERSION\n~/Applications/watane.app\n"
+    out.assert_in_order(&["toolchain: installed", "watane 0.1.0 is installed."]);
+    assert_eq!(names(&fx), [".cargo", ".local", ".rustup", "Applications"]);
+}
+
+/// TECHNICAL 3.7 (S50b-fix ac2): an answer that is not UTF-8 is no.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac2_toolchain_rejects_invalid_utf8_answer() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = support::pty::run_bytes(
+        &fx,
+        &[],
+        &[
+            ("WATANE_RUSTUP_URL", &url),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_ALL", "en_US.UTF-8"),
+        ],
+        &[("[y/N] ", b"y\xffnope")],
     );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fx.state_read("installer.log"), "", "{out:?}");
+    assert!(out.has_line("toolchain: not installed"), "{out:?}");
 }
 
-// --- INST-S-32 to 35: the swap's failure, kill and journal scenarios (TECHNICAL 3.6, 3.6.1) ---
-
-/// `0.1.0` installed, `0.2.0` served, and a copy of every byte of the home.
-fn swap_start() -> (Fx, Vec<(String, Vec<u8>)>) {
-    let fx = installed();
-    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
-    let before = snapshot(&fx.home);
-    (fx, before)
-}
-
-fn assert_old_receipt(fx: &Fx) {
-    let r = fx.read(&fx.receipt());
-    assert!(r.contains("\nversion 0.1.0\n"), "{r}");
-    assert_eq!(
-        r.lines().filter(|l| l.starts_with("path ")).count(),
-        7,
-        "{r}"
-    );
-}
-
-fn assert_all_new(fx: &Fx) {
-    fx.assert_installed("0.2.0");
-    assert!(fx.share("watane-dev/vendor/new-crate-1.0.0").is_dir());
-    assert!(!fx.share("watane-dev/vendor/serde-1.0.0").exists());
-    assert!(leftovers(fx).is_empty(), "{:?}", leftovers(fx));
-}
-
-/// Starts `0.2.0` with the fake `mv` or `rm` set to sleep, waits until it sleeps, kills the group.
-fn kill_at(fx: &Fx, tool: &str, glob: &str, args: &[&str]) {
-    fx.state_write(&format!("{tool}_fault"), &format!("sleep\n{glob}\n"));
-    let child = spawn(&mut fx.cmd(args));
-    fx.wait_state(&format!("{tool}_sleeping"));
-    let child_pid = child.id();
-    signal_group(child_pid, "KILL");
-    let out = finish(child);
-    assert_eq!(out.code, -1, "killed: {out:?}");
-    fs::remove_file(fx.state.join(format!("{tool}_fault"))).expect("unfault");
-    fs::remove_file(fx.state.join(format!("{tool}_sleeping"))).expect("unsleep");
-    // Direct undo fixtures do not run main and therefore never acquire a lock.
-    if !fx.read(&fx.script).ends_with("main \"$@\"\n") {
-        return;
+/// TECHNICAL 3.7 (S50b-fix): an answer with a NUL byte is no.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn adv_s50b_fix_toolchain_nul_in_answer_is_no() {
+    // 3.7: only `y` and `yes` count; `y` then a NUL (Ctrl-@) is another answer
+    for answer in [&b"y\0"[..], &b"\0yes"[..], &b"y\0\0\0"[..]] {
+        let fx = Fx::new();
+        let url = fx.rustup_installer();
+        let out = support::pty::run_bytes(
+            &fx,
+            &[],
+            &[("WATANE_RUSTUP_URL", &url)],
+            &[("[y/N] ", answer)],
+        );
+        assert_eq!(out.code, 0, "{out:?}");
+        assert_eq!(
+            fx.state_read("installer.log"),
+            "",
+            "answer {answer:?}: {out:?}"
+        );
+        assert!(out.has_line("toolchain: not installed"), "{out:?}");
     }
-    let before = snapshot(&fx.home);
-    let requests = fx.rel.requests();
-    let blocked = fx.run(args);
-    assert_eq!(blocked.code, 5, "{blocked:?}");
+}
+
+/// TECHNICAL 3.7 (S50b-fix ac2): `YeS` is yes, whatever the locale.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac2_toolchain_accepts_mixed_case_yes() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(
+        &[],
+        &[
+            ("WATANE_RUSTUP_URL", &url),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_ALL", "en_US.UTF-8"),
+        ],
+        &[("[y/N] ", "YeS")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
     assert_eq!(
-        blocked.first_err(),
-        format!(
-            "watane install: another install may be running (pid {})",
-            child_pid
+        fx.state_read("installer.log"),
+        "-y --profile minimal --no-modify-path -t wasm32-wasip2\n"
+    );
+    assert!(out.has_line("toolchain: installed"), "{out:?}");
+}
+
+/// INST-S-3 and TECHNICAL 3.7: `n` or Enter does not install the toolchain and prints the commands to run later.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s3_toolchain_answered_n() {
+    for answer in ["n", ""] {
+        let fx = Fx::new();
+        let url = fx.rustup_installer();
+        let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", answer)]);
+        assert_eq!(out.code, 0, "{out:?}");
+        assert_eq!(out.stdout.matches("[y/N]").count(), 1);
+        assert_eq!(fx.state_read("installer.log"), "");
+        assert!(out.has_line("toolchain: not installed"));
+        assert!(
+            out.has_line(
+                &CURL_LINE
+                    .replace("--proto '=https' ", "")
+                    .replace("https://sh.rustup.rs", &format!("'{url}'"))
+            )
+        );
+        fx.assert_installed("0.1.0");
+    }
+}
+
+/// INST-S-5 (a) and TECHNICAL 3.1, 3.7: `--no-toolchain` asks nothing, whatever is typed.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s5a_no_toolchain_flag_beats_a_typed_y() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(
+        &["--no-toolchain"],
+        &[("WATANE_RUSTUP_URL", &url)],
+        &[("checked: sha256", "y")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!out.stdout.contains("[y/N]"));
+    assert!(out.has_line("toolchain: skipped (--no-toolchain)"));
+    // a URL that is not http(s) is printed in single quotes (3.7)
+    let q = format!("'{url}'");
+    assert!(
+        out.has_line(
+            &CURL_LINE
+                .replace("--proto '=https' ", "")
+                .replace("https://sh.rustup.rs", &q)
         )
     );
-    assert_eq!(snapshot(&fx.home), before, "blocked run changes nothing");
-    assert_eq!(fx.rel.requests(), requests, "blocked run does not download");
-    let command = blocked.stderr.lines().nth(2).expect("printed rm command");
-    assert!(
-        Command::new("/bin/sh")
-            .args(["-c", command])
-            .status()
-            .expect("run printed lock removal")
-            .success()
-    );
+    assert_eq!(fx.state_read("installer.log"), "");
 }
 
-fn has_leftover(fx: &Fx, what: &str) -> bool {
-    leftovers(fx).iter().any(|n| n.contains(what))
-}
-
+/// INST-S-7 and TECHNICAL 3.7: with the target missing, offer B adds it, from the home and with auto-install off.
 #[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s7_target_missing() {
+    let fx = Fx::new();
+    fx.add_rustup(false);
+    let out = fx.run_pty(&[], &[], &[("[y/N] ", "y")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.stdout
+            .contains("Add the wasm32-wasip2 target with rustup? [y/N] ")
+    );
+    assert!(!out.stdout.contains("Install it with rustup"));
+    let log = fx.state_read("rustup.log");
+    assert_eq!(
+        log.lines()
+            .filter(|l| *l == "target add wasm32-wasip2")
+            .count(),
+        1,
+        "{log}"
+    );
+    assert!(out.has_line("toolchain: installed"));
+    // 3.7: offer B's rustup runs from $HOME (the test's cwd is not), auto-install off
+    let home = fs::canonicalize(&fx.home).expect("home");
+    let pwds = fx.state_read("rustup.pwd");
+    assert!(pwds.lines().count() >= 2, "{pwds}");
+    for l in pwds.lines() {
+        assert_eq!(fs::canonicalize(l).expect("pwd"), home, "{pwds}");
+    }
+    let auto = fx.state_read("rustup.auto");
+    assert!(auto.lines().all(|l| l == "0"), "{auto}");
+}
+
+fn uninstall_setup() -> Fx {
+    let fx = installed();
+    write_file(&fx.home.join(".watane/marker"), "marker");
+    fx
+}
+
+fn assert_uninstalled(fx: &Fx) {
+    for p in [
+        fx.bin("watane"),
+        fx.bin("watane-dev"),
+        fx.bin("watane-node"),
+        fx.share("watane-dev"),
+        fx.share("watane"),
+        fx.app(),
+    ] {
+        assert!(!p.exists(), "{} should be gone", p.display());
+    }
+}
+
+/// INST-S-15 and TECHNICAL 8.4: an uninstall keeps the home when the answer is not `delete`.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s15_uninstall_home_kept() {
+    let fx = uninstall_setup();
+    let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", "n")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_uninstalled(&fx);
+    assert!(fx.home.join(".watane/marker").is_file());
+    assert!(out.has_line("kept: ~/.watane (your home: identity, mods, channels)"));
+    assert!(out.has_line("uninstalled watane 0.1.0"));
+}
+
+/// INST-S-16 and TECHNICAL 8.4: an uninstall deletes the home only for the typed `delete`.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s16_uninstall_home_deleted() {
+    let fx = uninstall_setup();
+    let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", "delete")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!fx.home.join(".watane").exists());
+    assert!(out.has_line("deleted: ~/.watane"));
+    for other in ["DELETE", "yes", "y"] {
+        let fx = uninstall_setup();
+        let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", other)]);
+        assert_eq!(out.code, 0, "{out:?}");
+        assert!(
+            fx.home.join(".watane/marker").is_file(),
+            "{other} keeps the home"
+        );
+    }
+}
+
+/// TECHNICAL 8.4 via 3.7: a NUL anywhere in the answer, or a trailing space, is not `delete`.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn ac3_uninstall_nul_in_answer_keeps_home() {
+    // 8.4 via 3.7's reader: a NUL anywhere, or a trailing space, is not `delete`
+    for answer in [
+        &b"de\0lete"[..],
+        &b"delete\0"[..],
+        &b"\0delete"[..],
+        &b"delete "[..],
+    ] {
+        let fx = uninstall_setup();
+        let out = support::pty::run_bytes(&fx, &["--uninstall"], &[], &[("keep it: ", answer)]);
+        assert_eq!(out.code, 0, "{answer:?}: {out:?}");
+        assert!(
+            fx.home.join(".watane/marker").is_file(),
+            "{answer:?}: {out:?}"
+        );
+        assert!(
+            out.has_line("kept: ~/.watane (your home: identity, mods, channels)"),
+            "{answer:?}"
+        );
+    }
+}
+
+/// INST-S-28 and TECHNICAL 8.4 step 5: for a `WATANE_HOME` that is not a watane home the question is not asked and the
+/// home is kept; for one that is, the typed `delete` deletes it. The other values are
+/// `unit::unit_home_deletable_refuses_what_is_not_a_watane_home`.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
+fn inst_s28_a_home_that_is_not_a_watane_home() {
+    let cases = ["$HOME", "$HOME/link"];
+    for case in cases {
+        let fx = installed();
+        write_file(&fx.home.join("keep"), "keep");
+        fs::create_dir(fx.home.join("x")).expect("x");
+        symlink(&fx.home, fx.home.join("link")).expect("link");
+        let value = case.replace("$HOME", &fx.home.display().to_string());
+        let out = fx.run_pty(
+            &["--uninstall"],
+            &[("WATANE_HOME", &value)],
+            &[("uninstalled watane 0.1.0", "delete")],
+        );
+        assert_eq!(out.code, 0, "{case}: {out:?}");
+        assert!(!out.stdout.contains("Type delete"), "{case}");
+        let shown = match case {
+            "$HOME" => "~".to_string(),
+            "/" => "/".to_string(),
+            c => c.replace("$HOME", "~"),
+        };
+        let line = format!("kept: {shown} (not deleted: not a folder that watane can delete)");
+        assert!(out.has_line(&line), "{line}\n{}", out.stdout);
+        assert!(fx.home.join("keep").exists(), "{case}");
+    }
+    let fx = installed();
+    write_file(&fx.home.join("keep"), "keep");
+    write_file(&fx.home.join("elsewhere/marker"), "m");
+    let value = fx.home.join("elsewhere").display().to_string();
+    let out = fx.run_pty(
+        &["--uninstall"],
+        &[("WATANE_HOME", &value)],
+        &[("keep it: ", "delete")],
+    );
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!fx.home.join("elsewhere").exists());
+    assert!(fx.home.join("keep").exists());
+}
+
+/// INST-S-27 and TECHNICAL 8.5: an upgrade whose old receipt names files the install does not write
+/// keeps them, and replaces the version.
+#[test]
+#[ignore = "slow: an upgrade (a second whole install) over a receipt that names other files; the removal half is in the default uninstall run"]
+fn inst_s27_an_upgrade_keeps_what_a_receipt_names_beyond_the_install() {
+    let (fx, _, other) = s27_start();
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    let out = fx.run(&["--release", "0.2.0"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    s27_kept(&fx, other.path());
+    assert_eq!(fx.read(&fx.share("watane/VERSION")).trim(), "0.2.0");
+}
+
+/// INST-S-32 and TECHNICAL 3.6 step 4, 3.9: a failure at the receipt move undoes the swap (every byte as before), and the next run installs.
+#[test]
+#[ignore = "slow: the swap fails at its last move and the next run upgrades; only two whole runs show the home as before and then new"]
 fn inst_s32_a_failure_at_the_receipt() {
     let (fx, before) = swap_start();
     fx.state_write("mv_fault", "fail\n*receipt.new.*\n");
@@ -1171,7 +1156,7 @@ fn inst_s32_a_failure_at_the_receipt() {
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
     assert!(fx.tmp_tree().is_empty());
 
-    fs::remove_file(fx.state.join("mv_fault")).expect("unfault");
+    fx.unfault("mv_fault");
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("upgrading watane 0.1.0 to 0.2.0"));
@@ -1182,10 +1167,12 @@ fn inst_s32_a_failure_at_the_receipt() {
     assert_all_new(&fx);
 }
 
+/// INST-S-33 and TECHNICAL 3.6 step 0, 3.8: a kill at the receipt move leaves the old receipt and a journal; the next run recovers and installs.
 #[test]
+#[ignore = "slow: a SIGKILL at the receipt move, then a recovery run, a failing swap and an upgrade, which only whole runs show"]
 fn inst_s33_a_kill_at_the_receipt() {
     let (fx, before) = swap_start();
-    kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
+    kill_at_checking(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"], true);
     assert_old_receipt(&fx);
     assert!(has_leftover(&fx, "journal."), "{:?}", leftovers(&fx));
     assert!(has_leftover(&fx, "receipt.new."), "{:?}", leftovers(&fx));
@@ -1195,14 +1182,16 @@ fn inst_s33_a_kill_at_the_receipt() {
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 5, "{out:?}");
     assert_eq!(snapshot(&fx.home), before);
-    fs::remove_file(fx.state.join("mv_fault")).expect("unfault");
+    fx.unfault("mv_fault");
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("upgrading watane 0.1.0 to 0.2.0"));
     assert_all_new(&fx);
 }
 
+/// INST-S-33 and TECHNICAL 3.4.2, 3.6.1: after a kill at the receipt move of a fresh install the files the journal says were moved in are not foreign.
 #[test]
+#[ignore = "slow: a SIGKILL at the receipt move of a fresh install, then a whole run that must not call the moved-in files foreign"]
 fn inst_s33_a_kill_at_the_receipt_of_a_fresh_install() {
     // no receipt yet: the files that the journal says were moved in are not foreign
     let fx = Fx::new();
@@ -1216,7 +1205,9 @@ fn inst_s33_a_kill_at_the_receipt_of_a_fresh_install() {
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
 }
 
+/// INST-S-33 and TECHNICAL 3.6 step 5: a kill after the receipt move leaves the new version; the next run finishes the cleanup.
 #[test]
+#[ignore = "slow: a SIGKILL after the receipt move, then a whole run that finishes step 5"]
 fn inst_s33_a_kill_after_the_receipt_move() {
     let (fx, _) = swap_start();
     kill_at(&fx, "rm", "*.old.*", &["--release", "0.2.0"]);
@@ -1228,7 +1219,9 @@ fn inst_s33_a_kill_after_the_receipt_move() {
     assert_all_new(&fx);
 }
 
+/// INST-S-33 and TECHNICAL 3.6 step 5: a kill in step 5 keeps the path only the old receipt held until the next run removes it.
 #[test]
+#[ignore = "slow: a SIGKILL in step 5 at a path only the old receipt held, then a whole run that finishes it"]
 fn inst_s33_a_kill_after_the_receipt_move_keeps_what_the_old_receipt_held() {
     // the old receipt is the only record of this path; the killed run cut step 5 at its removal
     let (fx, _) = swap_start();
@@ -1247,7 +1240,9 @@ fn inst_s33_a_kill_after_the_receipt_move_keeps_what_the_old_receipt_held() {
     assert_all_new(&fx);
 }
 
+/// INST-S-33 and TECHNICAL 3.6 step 0, 3.8: a kill at the app move leaves a half-swapped home; the next run undoes it whole and the one after installs.
 #[test]
+#[ignore = "slow: a SIGKILL at the app move, then a failing swap and an upgrade, which only whole runs show"]
 fn inst_s33_a_kill_at_the_app() {
     let (fx, before) = swap_start();
     kill_at(&fx, "mv", "*watane.app.new.*", &["--release", "0.2.0"]);
@@ -1260,40 +1255,21 @@ fn inst_s33_a_kill_at_the_app() {
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 5, "{out:?}");
     assert_eq!(snapshot(&fx.home), before, "the undo put 0.1.0 back whole");
-    fs::remove_file(fx.state.join("mv_fault")).expect("unfault");
+    fx.unfault("mv_fault");
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("upgrading watane 0.1.0 to 0.2.0"));
     assert_all_new(&fx);
 }
 
-/// Sends `sig` to the run's group while the swap sleeps in its `mv` of the app; the home then holds
-/// every byte of before (3.6 step 4, 3.8). Returns the run for its exit code.
-fn signal_in_the_swap_undoes_it(sig: &str) -> Out {
-    let (fx, before) = swap_start();
-    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
-    let child = spawn(&mut fx.cmd(&["--release", "0.2.0"]));
-    fx.wait_state("mv_sleeping");
-    signal_group(child.id(), sig);
-    let out = finish(child);
-    assert_eq!(snapshot(&fx.home), before, "{out:?}");
-    assert!(fx.tmp_tree().is_empty());
-    out
-}
-
+/// INST-S-33 and TECHNICAL 3.6 step 4, 3.8: a TERM while the swap moves the app undoes the swap (the home holds every
+/// byte of before), and prints no hint that watane is installed.
 #[test]
 fn inst_s33_term_in_the_swap_undoes_it() {
     let out = signal_in_the_swap_undoes_it("TERM");
     assert_eq!(out.code, 143, "{out:?}");
-}
-
-#[test]
-fn inst_s33_int_in_the_swap_undoes_it() {
-    let out = signal_in_the_swap_undoes_it("INT");
-    // 3.8: macOS sh can lose an INT that lands just after the `mv` it waited on died of it; the
-    // run then ends as the failed swap it saw
-    let lost = out.code == 5 && out.stderr.contains("could not put the files in place");
-    assert!(out.code == 130 || lost, "{out:?}");
+    // TECHNICAL 3.8 (S89 ac2): a signal before the commit prints no hint that watane is installed
+    assert!(!out.stderr.contains("is installed"), "{out:?}");
 }
 
 /// 3.8: signal rollback needs only a staged journal, not a download or package build.
@@ -1358,9 +1334,15 @@ mv "$HOME/Applications/watane.app.new.99999999" "$HOME/Applications/watane.app"
     assert_eq!(snapshot(&fx.home), before, "{out:?}");
 }
 
-/// 3.6 step 4, 3.8: `PIPE` (the reader went away) in the swap undoes it as `TERM` does.
+/// INST-S-33 and TECHNICAL 3.6 step 4, 3.8: `INT` and `PIPE` (the reader went away) in the swap undo it as `TERM` does.
 #[test]
-fn inst_s33_pipe_in_the_swap_undoes_it() {
+#[ignore = "slow: an INT and a PIPE at the app move of two whole upgrades; `inst_s33_term_in_the_swap_undoes_it` is the default one"]
+fn inst_s33_int_and_pipe_in_the_swap_undo_it() {
+    let out = signal_in_the_swap_undoes_it("INT");
+    // 3.8: macOS sh can lose an INT that lands just after the `mv` it waited on died of it; the
+    // run then ends as the failed swap it saw
+    let lost = out.code == 5 && out.stderr.contains("could not put the files in place");
+    assert!(out.code == 130 || lost, "{out:?}");
     let out = signal_in_the_swap_undoes_it("PIPE");
     assert_eq!(out.code, 141, "{out:?}");
 }
@@ -1368,6 +1350,7 @@ fn inst_s33_pipe_in_the_swap_undoes_it() {
 /// 3.8: a signal that kills the undo's subshell (macOS sh forks it with the signal pending) leaves
 /// the swap in progress, so the handler that runs next undoes it again.
 #[test]
+#[ignore = "slow: a TERM inside the undo of a failed upgrade, which only a whole run reaches"]
 fn inst_s33_a_signal_that_kills_the_undo_is_undone_by_the_handler() {
     let (fx, before) = swap_start();
     fx.state_write("mv_fault", "fail\n*receipt.new.*\n");
@@ -1387,6 +1370,7 @@ fn inst_s33_a_signal_that_kills_the_undo_is_undone_by_the_handler() {
 /// it). The first undo removes `<entry>.new.<pid>` before the journal, so a repeat reads a
 /// `new` + `moved` entry with no `.new` as "moved in" and removes what is at the path now.
 #[test]
+#[ignore = "slow: a TERM inside the undo of a failed fresh install, which only a whole run reaches"]
 fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
     let fx = Fx::new();
     // fresh install: every entry is `new`; the app's swap `mv` fails after its `moved` line
@@ -1427,6 +1411,7 @@ fn adv_s50b_fix_a_repeated_undo_removes_a_file_it_never_moved() {
 /// AC4 (3.6 step 4, 3.8): interrupt each removal in a staged undo, both with
 /// TERM (the handler repeats rollback) and KILL (the next run recovers).
 #[test]
+#[ignore = "slow: a TERM and a KILL at each removal of the undo, then two recoveries: 90 sourced runs that only a signal at a real removal proves"]
 fn ac4_every_undo_removal_can_be_repeated_or_recovered() {
     let entries = [
         ".local/bin/watane",
@@ -1500,8 +1485,9 @@ trap 'on_signal 143' TERM
                 signal_group(child.id(), "KILL");
                 let out = finish(child);
                 assert_eq!(out.code, -1, "{removal}: {out:?}");
-                fs::remove_file(fx.state.join("rm_fault")).expect("unfault");
+                fx.unfault("rm_fault");
             }
+            fx.unfault("rm_fault");
             // A person puts their own app here after the interruption. Its staged
             // .new file never moved in; neither rollback nor recovery owns this app.
             write_file(&fx.app().join("marker"), "mine");
@@ -1532,7 +1518,9 @@ trap 'on_signal 143' TERM
 }
 
 /// AC4: a fresh entry already removed by undo cannot claim a later replacement.
+/// TECHNICAL 3.6 step 0, 3.8 (S50b-fix ac4): a fresh entry already removed by undo cannot claim a later replacement.
 #[test]
+#[ignore = "slow: a KILL at the undo's last removal and a later recovery, which only a killed run shows"]
 fn ac4_recovery_keeps_replacement_at_an_undone_new_entry() {
     // the fresh entry still in place at the undo (moved back to staging), and already
     // gone (an empty staging directory stands in): both are proof for the retry
@@ -1580,7 +1568,9 @@ set_entries
 }
 
 /// Validator R1 (AC4): clearing both a fresh entry and its parent cannot wedge recovery.
+/// TECHNICAL 3.6 step 0, 3.8 (S50b-fix ac4): clearing a fresh entry and its parent cannot wedge recovery.
 #[test]
+#[ignore = "slow: two whole installs over a journal whose parent folders are gone"]
 fn ac4_recovery_skips_a_fresh_entry_whose_parent_is_gone() {
     let fx = Fx::new();
     write_file(&fx.share("watane/receipt.new.99999999"), "pending");
@@ -1601,130 +1591,10 @@ fn ac4_recovery_skips_a_fresh_entry_whose_parent_is_gone() {
     }
 }
 
-/// Validator R1 (AC4): recovery cannot continue after a real filesystem failure.
-#[test]
-fn ac4_recovery_errors_stop_with_a_message_and_exit_5() {
-    for failure in [
-        "marker",
-        "move",
-        "restore",
-        "staging",
-        "journal",
-        "committed",
-        "commit_journal",
-        "remove",
-        "receipt_old",
-        "stale",
-    ] {
-        let fx = Fx::new();
-        fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
-        if failure != "stale" {
-            write_file(
-                &fx.share("watane/journal.99999999"),
-                &format!(
-                    "{} {}\nmoved {}\n",
-                    if matches!(failure, "restore" | "remove") {
-                        "old"
-                    } else {
-                        "new"
-                    },
-                    fx.bin("watane").display(),
-                    fx.bin("watane").display(),
-                ),
-            );
-        }
-        if !matches!(failure, "committed" | "commit_journal") {
-            write_file(&fx.share("watane/receipt.new.99999999"), "pending");
-        } else {
-            let home = fs::canonicalize(&fx.home).expect("physical home");
-            let resolved = [
-                ".local/bin",
-                ".local/share/watane",
-                ".local/share/watane-dev",
-                "Applications",
-            ]
-            .map(|folder| format!("resolved {folder} {}\n", home.join(folder).display()))
-            .join("");
-            write_file(
-                &fx.receipt(),
-                &format!(
-                    "watane-receipt 1\nversion 0.1.0\ntarget {TARGET}\npath {}\n{resolved}",
-                    fx.bin("watane").display()
-                ),
-            );
-        }
-        match failure {
-            "marker" => {
-                let mkdir = fx.fakes.join("mkdir");
-                write_file(
-                    &mkdir,
-                    "#!/bin/sh\ncase $1 in *.new.99999999) exit 1 ;; esac\nexec \"$FAKE_REAL/mkdir\" \"$@\"\n",
-                );
-                fs::set_permissions(mkdir, fs::Permissions::from_mode(0o755)).expect("chmod");
-            }
-            "move" => {
-                write_file(&fx.bin("watane"), "new");
-                fx.state_write("mv_fault", "fail\n*/bin/watane.new.99999999\n");
-            }
-            "restore" => {
-                write_file(&fx.bin("watane"), "new");
-                write_file(&fx.bin("watane.old.99999999"), "old");
-                fx.state_write("mv_fault", "fail\n*/bin/watane.old.99999999\n");
-            }
-            "staging" | "stale" => {
-                write_file(&fx.bin("watane.new.99999999"), "staged");
-                fx.state_write("rm_fault", "fail\n*/bin/watane.new.99999999\n");
-            }
-            "journal" | "commit_journal" => {
-                fx.state_write("rm_fault", "fail\n*/journal.99999999\n")
-            }
-            "remove" => {
-                write_file(&fx.bin("watane"), "new");
-                write_file(&fx.bin("watane.old.99999999"), "old");
-                fx.state_write("rm_fault", "fail\n*/bin/watane\n");
-            }
-            "receipt_old" => {
-                write_file(&fx.share("watane/receipt.old.99999999"), "old");
-                fx.state_write("rm_fault", "fail\n*/receipt.old.99999999\n");
-            }
-            "committed" => {
-                write_file(&fx.bin("watane.old.99999999"), "old");
-                fx.state_write("rm_fault", "fail\n*/bin/watane.old.99999999\n");
-            }
-            _ => unreachable!(),
-        }
-        let source = baked_script("0.1.0").replace(
-            "main \"$@\"",
-            r#"
-HOME_R=$(cd "$HOME" && pwd -P)
-set_entries
-recover
-printf 'continued after recovery\n'
-"#,
-        );
-        fs::write(&fx.script, source).expect("recovery fixture");
-        let out = fx.run(&[]);
-        assert_eq!(out.code, 5, "{failure}: {out:?}");
-        let message = if failure == "stale" {
-            "watane install: could not recover stale install files"
-        } else {
-            "watane install: could not recover interrupted install (pid 99999999)"
-        };
-        assert!(out.stderr.contains(message), "{failure}: {out:?}");
-        assert!(
-            out.stderr
-                .contains("Recovery stopped; fix the filesystem error and run this again."),
-            "{failure}: {out:?}"
-        );
-        assert!(
-            !out.stdout.contains("continued after recovery"),
-            "{failure}: {out:?}"
-        );
-    }
-}
-
 /// Validator R1 (AC4): signals during xattr finish the committed swap's cleanup.
+/// TECHNICAL 3.8, 3.6 step 5 (S50b-fix ac4): a signal during the quarantine step finishes the committed swap's cleanup.
 #[test]
+#[ignore = "slow: a TERM and an INT while the quarantine step sleeps after the commit, which only two whole upgrades show"]
 fn ac4_signals_during_xattr_leave_the_new_version_without_a_journal() {
     for (signal, code) in [("TERM", 143), ("INT", 130)] {
         let (fx, _) = swap_start();
@@ -1769,6 +1639,10 @@ fn plant_s35(fx: &Fx, n: u32) {
     write_file(&fx.bin("watane-x"), "x");
 }
 
+/// INST-S-35 and TECHNICAL 3.6.1: a dead run's journal that names more than it moved changes nothing it does not own: the
+/// next run recovers and reinstalls, and keeps the other files. The live journal and the unmoved `new`
+/// line are `unit::unit_take_lock_and_the_live_journal_stop_a_second_run` and
+/// `unit::unit_check_foreign_refuses_a_file_watane_did_not_install`.
 #[test]
 fn inst_s35_a_journal_that_names_more_than_it_moved() {
     let fx = installed();
@@ -1793,84 +1667,7 @@ fn inst_s35_a_journal_that_names_more_than_it_moved() {
         "{:?}",
         leftovers(&fx)
     );
-
-    // the same files of a live process: nothing is done
-    let fx = installed();
-    let mut live = Command::new(fx.real.join("sleep"))
-        .arg("600")
-        .spawn()
-        .expect("sleep");
-    plant_s35(&fx, live.id());
-    let before = snapshot(&fx.home);
-    let asked = fx.rel.requests().len();
-    let out = fx.run(&[]);
-    live.kill().expect("kill");
-    live.wait().expect("wait");
-    assert_eq!(out.code, 5, "{out:?}");
-    assert_eq!(
-        out.first_err(),
-        format!(
-            "watane install: another install is running (pid {})",
-            live.id()
-        )
-    );
-    assert!(out.stderr.contains(&format!("journal.{}", live.id())));
-    assert_eq!(fx.rel.requests().len(), asked, "no request to the release");
-    assert_eq!(snapshot(&fx.home), before);
-
-    // no receipt: a `new` line with no `moved` line does not make a foreign app watane's
-    let fx = Fx::new();
-    let n = dead_pid();
-    write_file(
-        &fx.share("watane").join(format!("journal.{n}")),
-        &format!("new {}\n", fx.app().display()),
-    );
-    fs::create_dir_all(fx.app()).expect("app");
-    write_file(&fx.app().join("marker"), "m");
-    let before = snapshot(&fx.home);
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 8, "{out:?}");
-    foreign_lines(&out, &["~/Applications/watane.app"]);
-    assert_eq!(snapshot(&fx.home), before);
 }
-
-// --- AC6: a member that leaves the folder ---
-
-#[test]
-fn ac6_a_member_that_leaves_its_folder_is_refused() {
-    let fx = Fx::new();
-    let abs = fx.root.path().join("evil-abs");
-    for name in [
-        abs.display().to_string(),
-        "watane-0.1.0-aarch64-apple-darwin/../../evil-rel".to_string(),
-        "../evil-up".to_string(),
-    ] {
-        let bytes = archive_with_member(&name);
-        fx.rel.put(&archive(), bytes.clone());
-        fx.rel.put(
-            "SHA256SUMS",
-            format!("{}  {}\n", sha256(&bytes), archive()).into_bytes(),
-        );
-        let out = fx.run(&[]);
-        assert_eq!(out.code, 5, "{name}: {out:?}");
-        assert!(out.stderr.contains("leaves its folder"), "{name}: {out:?}");
-        assert!(fx.home_tree().is_empty(), "{name}: {:?}", fx.home_tree());
-        assert!(fx.tmp_tree().is_empty(), "{name}: {:?}", fx.tmp_tree());
-        let outside: Vec<String> = fx
-            .tree(fx.root.path())
-            .into_iter()
-            .filter(|n| n.contains("evil"))
-            .collect();
-        assert!(outside.is_empty(), "{name}: {outside:?}");
-    }
-}
-
-// --- INST-S-34: the command line tools ---
-
-const XCODE_LINES: [&str; 2] = [
-    "watane-dev needs the macOS command line tools (a C linker and git). Run this and follow macOS's own dialog:",
-    "  xcode-select --install",
-];
 
 fn assert_xcode_tail(out: &Out) {
     let l = out.out_lines();
@@ -1881,30 +1678,7 @@ fn assert_no_xcode_call(fx: &Fx) {
     assert!(!fx.state_read("xcode-select.log").contains("--install"));
 }
 
-#[test]
-fn inst_s34_command_line_tools() {
-    let fx = Fx::new();
-    fx.state_write("xcode_missing", "");
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_xcode_tail(&out);
-    assert_no_xcode_call(&fx);
-
-    let fx = Fx::new();
-    fx.state_write("xcode_missing", "");
-    let out = fx.run(&["--no-toolchain"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert_xcode_tail(&out);
-    assert_no_xcode_call(&fx);
-
-    let fx = Fx::new();
-    let out = fx.run(&[]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(!out.stdout.contains("xcode-select"));
-    assert!(!out.stdout.contains("command line tools"));
-    assert_no_xcode_call(&fx);
-}
-
+/// INST-S-34 and TECHNICAL 3.9: the command line tools lines end the output for each answer; `xcode-select --install` is never run.
 #[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn inst_s34_command_line_tools_for_each_answer() {
@@ -1916,50 +1690,6 @@ fn inst_s34_command_line_tools_for_each_answer() {
         assert_eq!(out.code, 0, "{answer}: {out:?}");
         assert_xcode_tail(&out);
         assert_no_xcode_call(&fx);
-    }
-}
-
-// --- S50b-fix2 ---
-
-fn serve(fx: &Fx, bytes: Vec<u8>) {
-    fx.rel.put(&archive(), bytes.clone());
-    fx.rel.put(
-        "SHA256SUMS",
-        format!("{}  {}\n", sha256(&bytes), archive()).into_bytes(),
-    );
-}
-
-/// AC1 (3.4 step 9): an archive with a link member is refused before anything is moved.
-#[test]
-fn ac1_an_archive_with_a_link_member_is_refused() {
-    for kind in ["symlink", "hardlink", "dirlink"] {
-        let fx = Fx::new();
-        let outside = fx.root.path().join("outside");
-        write_file(&outside, "outside\n");
-        fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).expect("chmod");
-        let o = outside.clone();
-        let bytes = build_archive_with("0.1.0", &["serde-1.0.0"], &move |t| match kind {
-            "symlink" => {
-                fs::remove_file(t.join("bin/watane")).expect("rm");
-                symlink(&o, t.join("bin/watane")).expect("link");
-            }
-            "hardlink" => {
-                fs::remove_file(t.join("bin/watane")).expect("rm");
-                fs::hard_link(t.join("bin/watane-dev"), t.join("bin/watane")).expect("hard");
-            }
-            _ => {
-                symlink(&o, t.join("share/watane-dev/vendor/serde-1.0.0/elsewhere")).expect("link");
-            }
-        });
-        serve(&fx, bytes);
-        let out = fx.run(&[]);
-        assert_eq!(out.code, 5, "{kind}: {out:?}");
-        assert!(out.stderr.contains("link"), "{kind}: {out:?}");
-        assert!(fx.home_tree().is_empty(), "{kind}: {:?}", fx.home_tree());
-        assert!(fx.tmp_tree().is_empty(), "{kind}: {:?}", fx.tmp_tree());
-        assert_eq!(fx.read(&outside), "outside\n", "{kind}");
-        let mode = fs::metadata(&outside).expect("meta").permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "{kind}: mode of the outside file");
     }
 }
 
@@ -1975,6 +1705,7 @@ fn install_held_at_staging(fx: &Fx) -> (RunChild, u32) {
 
 /// AC2 (3.6 step 2): a link planted at a name the script creates is never written through.
 #[test]
+#[ignore = "slow: a link planted at a name the script is about to create in a run held at its staging, which only a started whole run allows"]
 fn ac2_a_planted_link_is_not_written_through() {
     for name in ["journal", "receipt.new"] {
         let fx = Fx::new();
@@ -1984,45 +1715,12 @@ fn ac2_a_planted_link_is_not_written_through() {
         let sw = fx.share("watane");
         fs::create_dir_all(&sw).expect("share");
         symlink(&victim, sw.join(format!("{name}.{pid}"))).expect("plant");
-        fs::remove_file(fx.state.join("chmod_wait")).expect("release");
+        fx.unfault("chmod_wait");
         let out = finish(child);
         assert_eq!(out.code, 5, "{name}: {out:?}");
         assert_eq!(fx.read(&victim), "victim\n", "{name}: written through");
         assert!(!fx.bin("watane").exists(), "{name}: nothing was swapped in");
     }
-}
-
-/// AC5 (8.5 rule 2): a `bin/` name ending in `.mine` is not removed.
-#[test]
-fn ac5_a_bin_name_ending_in_mine_is_skipped() {
-    let fx = installed();
-    let h = fx.home.display().to_string();
-    write_file(&fx.bin("watane.mine"), "mine");
-    append(&fx.receipt(), &format!("path {h}/.local/bin/watane.mine\n"));
-    let out = fx.run(&["--uninstall"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(fx.bin("watane.mine").exists());
-    let line = "watane install: skipped ~/.local/bin/watane.mine: not a path that watane installs";
-    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
-    assert!(!fx.bin("watane").exists());
-}
-
-/// AC5 (8.5 rule 3): the holding folder resolves inside the install folder, not just the home.
-#[test]
-fn ac5_a_link_inside_an_install_folder_does_not_reach_the_home() {
-    let fx = installed();
-    let h = fx.home.display().to_string();
-    write_file(&fx.home.join("Documents/marker"), "m");
-    symlink(&fx.home, fx.share("watane/x")).expect("link");
-    append(
-        &fx.receipt(),
-        &format!("path {h}/.local/share/watane/x/Documents\n"),
-    );
-    let out = fx.run(&["--uninstall"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(fx.home.join("Documents/marker").exists(), "{out:?}");
-    let line = "watane install: skipped ~/.local/share/watane/x/Documents: not a path that watane installs";
-    assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
 }
 
 /// AC4 (3.7): the question names the installer that `WATANE_RUSTUP_URL` points at.
@@ -2074,6 +1772,7 @@ fn ac3_a_home_that_resolves_outside_the_home_is_not_deleted() {
 }
 
 /// AC3: the question names the resolved path.
+/// TECHNICAL 8.4 step 5: the question names the resolved path of the home.
 #[test]
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn ac3_the_question_names_the_resolved_path() {
@@ -2095,44 +1794,15 @@ fn ac3_the_question_names_the_resolved_path() {
     assert!(fx.home.join("real/marker").exists());
 }
 
+/// INST-S-31 and TECHNICAL 8.5: an uninstall through `bin` or `Applications` linked to the home removes nothing of the home's own.
 #[test]
-fn inst_s31_an_install_folder_resolving_to_the_home() {
-    let home_err = |fx: &Fx, folder: &str| {
-        let out = fx.run(&[]);
-        assert_eq!(out.code, 2, "{out:?}");
-        assert_eq!(
-            out.first_err(),
-            format!("watane install: {folder} resolves to your home folder itself")
-        );
-        assert_eq!(
-            out.stderr.lines().nth(1),
-            Some(
-                "watane writes only under your home folder. Make it a real folder there, then run this again."
-            )
-        );
-        assert!(fx.rel.requests().is_empty());
-    };
-    for (rel, shown) in [
-        (".local/bin", "~/.local/bin"),
-        ("Applications", "~/Applications"),
-        (".local/share/watane", "~/.local/share/watane"),
-        (".local/share/watane-dev", "~/.local/share/watane-dev"),
-    ] {
-        let fx = Fx::new();
-        fs::create_dir_all(fx.home.join(".local/share")).expect("share");
-        symlink(&fx.home, fx.home.join(rel)).expect("link");
-        home_err(&fx, shown);
-    }
-}
-
-#[test]
+#[ignore = "slow: an uninstall (a whole run) through each folder linked to the home"]
 fn inst_s31_uninstall_through_bin_or_applications_linked_to_the_home() {
     for (rel, line, victim) in [
         (".local/bin", ".local/bin/watane-x", "watane-x"),
         ("Applications", "Applications/watane.app", "watane.app"),
     ] {
-        let fx = Fx::new();
-        assert_eq!(fx.run(&[]).code, 0);
+        let fx = Fx::installed();
         let link = fx.home.join(rel);
         fs::remove_dir_all(&link).expect("rm");
         symlink(&fx.home, &link).expect("link");

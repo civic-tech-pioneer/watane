@@ -1,6 +1,7 @@
 //! Regression checks for bounded test runs and generous deadlines (TECHNICAL 12.1).
 use crate::support;
 
+/// TECHNICAL 12.1: `script(1)` keeps the last typed answer until the tty reader consumes it.
 #[test]
 #[ignore = "slow: proves script(1) preserves the final answer until the tty read"]
 fn ac1_pty_preserves_the_last_answer_until_consumed() {
@@ -20,12 +21,15 @@ fn ac2_waits_allow_endpoint_security_delays() {
     assert_eq!(support::WAIT_TIMEOUT.as_secs(), 600);
 }
 
+/// TECHNICAL 12.1: the gate holds the fifth run until one ends. It is tested on a gate of its
+/// own, so that it neither waits for the runs of other tests nor holds them back.
 #[test]
 fn ac2_gate_holds_the_fifth_run_until_a_run_finishes() {
-    let permits: Vec<_> = (0..4).map(|_| support::RunPermit::acquire()).collect();
+    static GATE: support::Gate = support::Gate::new();
+    let permits: Vec<_> = (0..4).map(|_| GATE.acquire()).collect();
     let (tx, rx) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
-        let _permit = support::RunPermit::acquire();
+        let _permit = GATE.acquire();
         tx.send(()).expect("entered");
     });
     assert!(
@@ -78,7 +82,7 @@ exit 1
             .arg("sh")
             .arg(&ready)
             .arg(&cleanup);
-        let child = support::spawn(&mut command);
+        let child = support::spawn_free(&mut command);
         let start = std::time::Instant::now();
         while !ready.exists() {
             assert!(start.elapsed() < support::WAIT_TIMEOUT, "child never ready");
@@ -99,7 +103,7 @@ fn ac2_the_launcher_restores_an_ignored_int() {
         .args(["-e", "$SIG{INT} = 'IGNORE'; exec @ARGV", support::PERL])
         .args(support::LAUNCH)
         .args(["/bin/sh", "-c", "trap 'exit 7' INT; kill -s INT $$; exit 0"]);
-    let out = support::finish(support::spawn(&mut command));
+    let out = support::finish(support::spawn_free(&mut command));
     assert_eq!(out.code, 7, "{out:?}");
 }
 
@@ -112,7 +116,7 @@ fn ac2_a_run_past_its_deadline_is_killed_with_its_group() {
         .args(["/bin/sh", "-c", "/bin/sleep 600 & exit 0"]);
     let start = std::time::Instant::now();
     let out = support::finish_within(
-        support::spawn(&mut command),
+        support::spawn_free(&mut command),
         std::time::Duration::from_secs(2),
     );
     assert!(out.is_err(), "{out:?}");
