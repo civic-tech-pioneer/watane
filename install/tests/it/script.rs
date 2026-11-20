@@ -723,7 +723,11 @@ fn inst_s31_an_install_folder_outside_the_home() {
 
 /// INST-S-31 and TECHNICAL 3.4.1, 8.5: each other install folder linked outside the home is refused, an
 /// uninstall leaves what a link leads to, and a link to a folder inside the home is fine for an
-/// install, an upgrade and an uninstall.
+/// install, an upgrade and an uninstall. One whole run shows the refusal (a dangling `~/.local/bin`
+/// link, exit 2 before any request); the other install folders are
+/// `unit::unit_check_folders_refuses_an_install_folder_outside_the_home` (`o1` to `o4`, `self0` to
+/// `self3`), under `set -eu` as the run is, and the default
+/// `adv_s94::adv_s94_a_dangling_install_folder_link_out_of_the_home_exits_2`.
 #[test]
 #[ignore = "slow: an install, an upgrade and an uninstall through each link, which only whole runs show"]
 fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
@@ -762,45 +766,6 @@ fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
         let o = fs::canonicalize(other.path()).expect("canon");
         (fx, other, o)
     };
-    let (fx, other, o) = new();
-    symlink(&o, fx.home.join(".local")).expect("link");
-    check(
-        &fx,
-        other.path(),
-        "~/.local/bin",
-        &format!("{}/bin", o.display()),
-    );
-
-    let (fx, other, o) = new();
-    fs::create_dir_all(fx.home.join(".local")).expect("local");
-    symlink(&o, fx.home.join("Applications")).expect("link");
-    check(
-        &fx,
-        other.path(),
-        "~/Applications",
-        &o.display().to_string(),
-    );
-
-    let (fx, other, o) = new();
-    fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
-    symlink(&o, fx.home.join(".local/share")).expect("link");
-    check(
-        &fx,
-        other.path(),
-        "~/.local/share/watane",
-        &format!("{}/watane", o.display()),
-    );
-
-    let (fx, other, o) = new();
-    fs::create_dir_all(fx.home.join(".local/share")).expect("share");
-    symlink(&o, fx.home.join(".local/share/watane-dev")).expect("link");
-    check(
-        &fx,
-        other.path(),
-        "~/.local/share/watane-dev",
-        &o.display().to_string(),
-    );
-
     let (fx, other, o) = new();
     fs::create_dir_all(fx.home.join(".local")).expect("local");
     symlink(o.join("bin"), fx.home.join(".local/bin")).expect("link");
