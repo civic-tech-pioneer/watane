@@ -151,12 +151,12 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     );
     approve(&app);
     installed(&app, "recommendations");
-    // Focus activates hidden main as a person's mouse-down would. WebKit's
-    // first activation clears page focus, so it must land before warn()
-    // focuses Cancel.
+    // Focusing a visible element activates hidden main, as a person's mouse-down
+    // would; WebKit's first activation can clear page focus, so it must land
+    // before warn() focuses Cancel.
     app.eval(
         "main",
-        "document.querySelector('[data-local=recommendations] button.remove').focus(); null",
+        "document.querySelector('[data-tile=recommendations]').focus(); null",
     );
     until(&app, "main", "window.__activated === true");
     app.eval(
