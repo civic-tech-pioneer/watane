@@ -693,6 +693,20 @@ mod tests {
         assert!(m.contains("\n     --> <dir>/wit/world.wit:2:10\n"), "{m}");
     }
 
+    /// S93 outcome 3: the `-->` column counts chars, but the caret under the snippet still
+    /// stands at the byte column: after `é€` (5 bytes, 2 chars) it points 3 places right of the
+    /// token a person is told about.
+    #[test]
+    fn regress_s93_caret_under_the_char_column() {
+        let m = wit_message("package a:b;\n/* é€ */ bad-token-here\n");
+        assert!(m.contains("\n     --> <dir>/wit/world.wit:2:10\n"), "{m}");
+        assert!(
+            m.contains("    2 | /* é€ */ bad-token-here\n      |          ^"),
+            "{m}"
+        );
+        assert!(!m.contains("      |             ^"), "{m}");
+    }
+
     #[test]
     fn ac2_s93_wit_message_has_no_rust_debug_text() {
         let m = wit_message("package a:b;\nworld w {\n  import a\u{202e}b: func();\n}\n");
