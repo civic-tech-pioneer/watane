@@ -238,25 +238,35 @@ fn cache_dir() -> &'static Path {
     })
 }
 
-/// Writes `bytes` to `to` so that a reader sees all of it or nothing: aside, then renamed.
-fn write_atomically(to: &Path, bytes: &[u8]) {
-    let tmp = to.with_extension(format!("tmp-{}", std::process::id()));
-    fs::write(&tmp, bytes).expect("write aside");
-    fs::rename(&tmp, to).expect("rename into place");
-}
-
 /// The archive of `version` with these vendored crates and its sum, from the cache or made now.
+/// The two are written aside in one folder that is then renamed into place, so that a reader
+/// never pairs the archive of one test binary with the sum of another (`tar` stamps times, so
+/// two packings differ); the first binary to rename wins.
 fn cached_archive(version: &str, vendor: &[&str]) -> (Vec<u8>, String) {
     let name = format!("archive-{version}-{}", vendor.join("+"));
-    let tgz = cache_dir().join(format!("{name}.tar.gz"));
-    let sum = cache_dir().join(format!("{name}.sha256"));
-    if let (Ok(bytes), Ok(text)) = (fs::read(&tgz), fs::read_to_string(&sum)) {
+    let dir = cache_dir().join(&name);
+    if let (Ok(bytes), Ok(text)) = (
+        fs::read(dir.join("a.tar.gz")),
+        fs::read_to_string(dir.join("sha256")),
+    ) {
         return (bytes, text.trim().to_string());
     }
     let bytes = build_archive(version, vendor);
     let hash = sha256(&bytes);
-    write_atomically(&tgz, &bytes);
-    write_atomically(&sum, hash.as_bytes());
+    let aside = cache_dir().join(format!("{name}.tmp-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&aside);
+    fs::create_dir_all(&aside).expect("aside");
+    fs::write(aside.join("a.tar.gz"), &bytes).expect("write archive");
+    fs::write(aside.join("sha256"), hash.as_bytes()).expect("write sum");
+    if fs::rename(&aside, &dir).is_err() {
+        let _ = fs::remove_dir_all(&aside); // another binary was first: use its pair
+        if let (Ok(b), Ok(t)) = (
+            fs::read(dir.join("a.tar.gz")),
+            fs::read_to_string(dir.join("sha256")),
+        ) {
+            return (b, t.trim().to_string());
+        }
+    }
     (bytes, hash)
 }
 
@@ -767,7 +777,11 @@ fn installed_template(vendor: &[&str]) -> Arc<Template> {
             entries: tree_entries(&fx.home),
         };
         // written aside and renamed, so that a reader sees all of it or nothing
-        let aside = dir.with_extension(format!("tmp-{}", std::process::id()));
+        let aside = cache_dir().join(format!(
+            "template-{}.tmp-{}",
+            vendor.join("+"),
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&aside);
         fs::create_dir_all(aside.join("home")).expect("aside");
         tmpl.write_into(&aside.join("home"));
