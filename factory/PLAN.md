@@ -476,8 +476,8 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S94 install's tests fit the budget (test cost).** next (S89 delivered)
-  install's default integration run took 858 s on main `501c123` (Suite time; budget 120 s).
+- [ ] **S94 install's tests fit the budget (test cost).** in flight (cloud)
+  install's default integration run took 858 s on main `501c123` and 1059 s after S89 (Suite time; budget 120 s).
   Story: a maker runs `cargo test -p watane-install` and it is done in under 2 minutes, proving
   the same rules. Outcomes: (1) the default run under 120 s on a quiet Mac and in the cloud;
   (2) each moved or merged test names the rule it still proves (a shell-script unit level, one
