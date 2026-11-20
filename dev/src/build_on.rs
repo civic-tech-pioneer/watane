@@ -448,6 +448,17 @@ mod tests {
         assert_eq!(super::dependent_slug(Some("y"), "y"), "my-y");
     }
 
+    /// S93: a valid 40-byte release slug made of repeated `my-` gives itself back once
+    /// `my-` is prefixed and the result cut to 40 bytes, so the no_source fix's
+    /// `add --release` fails with mod.self_dependency (seen with the real watane-dev).
+    #[test]
+    fn regress_s93_dependent_slug_never_equals_a_periodic_release_slug() {
+        let release = format!("{}m", "my-".repeat(13));
+        assert_eq!(release.len(), 40);
+        assert_ne!(super::dependent_slug(None, &release), release);
+        assert_ne!(super::dependent_slug(Some(&release), &release), release);
+    }
+
     use super::*;
     #[test]
     fn ac1_store_recovers_partial_temps_and_keeps_existing_provider() {
