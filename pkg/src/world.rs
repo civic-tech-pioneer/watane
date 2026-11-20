@@ -693,6 +693,34 @@ mod tests {
         );
     }
 
+    /// Adversary S93: the other Hangul fillers (siblings of U+3164), the invisible math
+    /// operators, the deprecated format characters, the combining grapheme joiner and the
+    /// Khmer inherent vowels are invisible too; a WIT comment on the error line carries them
+    /// raw into the snippet of the `wit` message.
+    #[test]
+    fn adv_s93_wit_message_other_invisible_chars() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("wit")).unwrap();
+        let hidden = "\u{115f}\u{1160}\u{ffa0}\u{2061}\u{2062}\u{2063}\u{2064}\u{206a}\u{206f}\u{34f}\u{17b4}\u{17b5}";
+        std::fs::write(
+            dir.path().join("wit/world.wit"),
+            format!("package a:b;\nworld w {{ @ }} // x{hidden}y\n"),
+        )
+        .unwrap();
+        let mut violations: Vec<Violation> = Vec::new();
+        read(dir.path(), &["wit/world.wit".to_string()], &mut violations).unwrap();
+        let m = &violations
+            .iter()
+            .find(|v| v.rule == Rule::Wit)
+            .unwrap()
+            .message;
+        let raw: Vec<char> = m.chars().filter(|c| hidden.contains(*c)).collect();
+        assert!(
+            raw.is_empty(),
+            "raw invisible chars in the message: {raw:?}"
+        );
+    }
+
     #[test]
     fn ac3_s86_long_message_keeps_arrow_and_utf8_boundary() {
         // "x" then two-byte chars: every limit below falls inside a char.
