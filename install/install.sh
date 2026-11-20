@@ -555,6 +555,7 @@ cleanup() {
   # release_files checks cleanup commands with a separate, local signal flag.
   # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
+  # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ] && [ "$COMMITTED" = 1 ]; then
     set +e
     interrupted_hint

@@ -716,7 +716,9 @@ the last line was written, the exit is 0.
 ```text
 watane 0.1.0 is installed; the run was interrupted before it finished.
 Run watane-dev doctor to check the maker tools.
-``` The success output
+```
+
+The success output
 of INST-S-1 (answer `N`, `PATH` ok), exactly:
 
 ```text

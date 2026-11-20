@@ -194,10 +194,12 @@ fn ac6_an_interrupted_fresh_install_leaves_no_folder_it_made() {
         fx.wait_state("mv_sleeping");
         signal_group(child.id(), sig);
         let out = finish(child);
-        assert!(
-            out.code == 130 || out.code == 143 || out.code == 5,
-            "{out:?}"
-        );
+        // 3.8: macOS sh can lose an INT that lands just after the `mv` it waited on died of it
+        let lost = sig == "INT"
+            && out.code == 5
+            && out.stderr.contains("could not put the files in place");
+        let want = if sig == "INT" { 130 } else { 143 };
+        assert!(out.code == want || lost, "{sig}: {out:?}");
         assert_eq!(fx.home_tree(), Vec::<String>::new(), "{sig}: {out:?}");
         assert!(!out.stderr.contains("is installed"), "{out:?}");
     }
@@ -279,4 +281,30 @@ fn ac7_a_failing_rustup_still_decides_exit_6() {
         all[end + 1].starts_with("watane install: the toolchain step failed (rustup exited 3)"),
         "{out:?}"
     );
+}
+
+#[test]
+fn ac2_int_after_the_answer_prints_no_install_it_later_lines() {
+    let fx = Fx::new();
+    let url = fx.rustup_installer();
+    let path = url.trim_start_matches("file://");
+    fs::write(
+        path,
+        "#!/bin/sh\necho 'info: rustup waits'\nexec \"$FAKE_REAL/sleep\" 600\n",
+    )
+    .expect("installer");
+    let out = fx.run_pty(
+        &[],
+        &[("WATANE_RUSTUP_URL", &url)],
+        &[("[y/N] ", "y"), ("info: rustup waits", "\x03")],
+    );
+    assert_eq!(out.code, 130, "{out:?}");
+    let all = lines(&out.stdout);
+    let at = all
+        .iter()
+        .position(|l| *l == HINT[0])
+        .unwrap_or_else(|| panic!("no hint: {out:?}"));
+    assert_eq!(all[at + 1], HINT[1], "{out:?}");
+    // the question was answered: the hint is not followed by the commands of 3.7
+    assert!(!all[at..].contains(&"To install it later, run:"), "{out:?}");
 }
