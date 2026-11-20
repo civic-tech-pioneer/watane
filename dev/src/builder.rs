@@ -494,6 +494,9 @@ fn reads_outside_problems(paths: Vec<PathBuf>) -> Vec<Problem> {
     problems
 }
 
+/// The quotes and brackets around a path in compiler text: a path starts after one and ends at one.
+const PATH_EDGES: &str = "'\"`[](){}<>";
+
 /// The paths in `text` that lie in the cache's `build` folder but not in this mod's `copy`.
 /// `build` and `copy` are compared canonicalized (a symlinked cache path names the same
 /// folder); found paths are normalized lexically and must stay under `build`. A path starts at the text's
@@ -517,13 +520,13 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
             let starts = text[..offset + at]
                 .chars()
                 .next_back()
-                .is_none_or(|c| c.is_whitespace() || "'\"`[](){}<>:".contains(c));
+                .is_none_or(|c| c.is_whitespace() || c == ':' || PATH_EDGES.contains(c));
             // The path ends after the prefix (which may hold a space) at a space or a bracket.
             let end = tail[prefix.len()..]
                 .find(|c: char| {
                     c.is_whitespace()
                         || c.is_control()
-                        || "[]'\"`()".contains(c)
+                        || PATH_EDGES.contains(c)
                         || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
                             | '\u{2060}'..='\u{206F}' | '\u{FEFF}')
                 })
@@ -856,6 +859,18 @@ mod tests {
             sibling_paths("(/c/build/other/wit)", b, c),
             [PathBuf::from("/c/build/other/wit")]
         );
+        // A path starts and ends at the same brackets.
+        for text in [
+            "</c/build/other/wit>",
+            "{/c/build/other/wit}",
+            "`/c/build/other/wit`",
+        ] {
+            assert_eq!(
+                sibling_paths(text, b, c),
+                [PathBuf::from("/c/build/other/wit")],
+                "{text}"
+            );
+        }
     }
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
