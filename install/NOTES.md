@@ -776,3 +776,12 @@ and delayed PTY answer. No existing ignored or GUI test ran. Clippy
 --all-targets with -D warnings, nightly fmt --check, shellcheck of all
 four shell scripts, and git diff --check passed. The final direct smoke
 log is /tmp/s50c-3-smoke.log and its last line is CLEAN-MAC PASS.
+
+## S89-2: Node 24 actions and the release-build skip
+
+Pins now: checkout v7.0.1 (3d3c42e5...), upload-artifact v7.0.2 (cf430e03...),
+download-artifact v8.0.2 (9000827c...); all lightweight tags, so the tag object is
+the commit; each `action.yml` was fetched and says `using: node24`. READMEs checked:
+`path` of download-artifact still extracts a single named artifact directly into
+`path`; upload-artifact `include-hidden-files` still defaults to false and
+`dist-out/` has none. Earlier notes about "v4 SHAs" are history.

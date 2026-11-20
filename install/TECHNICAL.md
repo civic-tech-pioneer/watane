@@ -921,7 +921,12 @@ or replace release assets. So the build job's checkout sets
 
 A `workflow_dispatch` run is the first job only (a dry run: no release);
 it has no input that turns the release on. Actions are pinned to full
-commit SHAs. A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
+commit SHAs, each with its release tag as a trailing comment: `actions/checkout`
+v7.0.1, `actions/upload-artifact` v7.0.2 and `actions/download-artifact` v8.0.2,
+all of which run on `node24` (their `action.yml` says `using: node24`), so a run
+shows no forced-runtime warning. The inputs in use (`persist-credentials`,
+`fetch-depth`, `name`, `path`, `if-no-files-found`) mean what they meant in v4;
+hidden files are still left out of an upload (`dist-out/` has none). A tag with a `-` (`v0.2.0-rc1`) makes a prerelease, which
 `releases/latest` never serves. A tag whose commit is not on `main` is
 refused (7.2 step 2). That check guards against a mistake, not an
 attacker: a tag push runs the `release.yml` of the tagged commit, so a
@@ -931,7 +936,7 @@ tag ruleset and the `release` environment's required reviewer (IN-28).
 
 ### 7.2 Steps
 
-1. Checkout with `persist-credentials: false` and `fetch-depth: 0` (step
+1. Checkout (`actions/checkout` v7.0.1, node24) with `persist-credentials: false` and `fetch-depth: 0` (step
    2 needs `main`'s history).
 2. **Version and origin check**: the tag without `v` equals `version` in
    `host/Cargo.toml`, `dev/Cargo.toml`, `node/Cargo.toml`, `app/Cargo.toml`
@@ -1296,6 +1301,15 @@ it. The current archive contract (4.2) still requires `vendor`; this test
 does not introduce an optional archive entry.
 
 Tests run on Linux and macOS; signing is skipped when `codesign` is absent.
+
+`clean_mac::ac1_ac2_fresh_home_real_release` (macOS, `#[ignore]`) packages the
+release that `cargo build --release` left in `target/release`. When `watane`,
+`watane-dev` or `watane-node` is missing there (a fresh worktree has no
+release build), it prints `skipped: no release build at <path>; run cargo
+build --release -p watane-host -p watane-dev -p watane-node` on stderr and
+returns, so `factory/check.sh` passes; the check is the helper
+`missing_release_build`, tested on every OS. The real run is the product
+owner's, on a Mac. (S55 left it failing in that case.)
 Test support uses one 600-second deadline for marker, state and request waits,
 and a process-wide gate limits live plain, pseudo-terminal and package runs
 to four per test binary. Deadlines start after admission. Stale-journal

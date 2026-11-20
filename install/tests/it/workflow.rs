@@ -145,17 +145,17 @@ fn violations(text: &str) -> Vec<String> {
     if actions.len() != 3 {
         errors.push("exactly checkout, upload and download actions".into());
     }
-    for (line, action) in actions.iter().zip([
-        "actions/checkout",
-        "actions/upload-artifact",
-        "actions/download-artifact",
+    for (line, (action, version)) in actions.iter().zip([
+        ("actions/checkout", "v7.0.1"),
+        ("actions/upload-artifact", "v7.0.2"),
+        ("actions/download-artifact", "v8.0.2"),
     ]) {
         let (reference, comment) = line.split_once(" # ").unwrap_or((line, ""));
         let (name, sha) = reference.split_once('@').unwrap_or((reference, ""));
         if name != action
             || sha.len() != 40
             || !sha.bytes().all(|b| b.is_ascii_hexdigit())
-            || comment != "v4"
+            || comment != version
         {
             errors.push(format!(
                 "action must be SHA pinned with tag comment: {line}"
@@ -358,7 +358,7 @@ fn ac2_unsafe_additions_and_substitutions_are_rejected() {
     }
     for line in original.lines().filter(|line| line.contains("- uses:")) {
         let (action, _) = line.split_once('@').expect("pin");
-        let broken = original.replacen(line, &format!("{action}@v4 # v4"), 1);
+        let broken = original.replacen(line, &format!("{action}@v7 # v7"), 1);
         assert!(!violations(&broken).is_empty(), "accepted tag: {action}");
     }
     assert!(!violations(&format!("{original}\n          echo too-late\n")).is_empty());

@@ -157,10 +157,49 @@ fn ac2_two_machines_missing_tart_touches_nothing() {
     assert_eq!(fs::read_dir(temp.path()).expect("listing").count(), 0);
 }
 
+/// The first program `package.sh` needs that `root` has no build of, as the skip line
+/// of TECHNICAL 12.1; `None` when all three are built.
+fn missing_release_build(root: &Path) -> Option<String> {
+    ["watane", "watane-dev", "watane-node"]
+        .iter()
+        .map(|name| root.join("target/release").join(name))
+        .find(|path| !path.exists())
+        .map(|path| {
+            format!(
+                "skipped: no release build at {}; run cargo build --release -p watane-host -p watane-dev -p watane-node",
+                path.display()
+            )
+        })
+}
+
+#[test]
+fn ac3_missing_release_build_is_named_and_a_full_one_is_not() {
+    let temp = tempfile::tempdir().expect("temp");
+    let release = temp.path().join("target/release");
+    fs::create_dir_all(&release).expect("release dir");
+    for name in ["watane", "watane-dev"] {
+        fs::write(release.join(name), "").expect("program");
+    }
+    assert_eq!(
+        missing_release_build(temp.path()),
+        Some(format!(
+            "skipped: no release build at {}; run cargo build --release -p watane-host -p watane-dev -p watane-node",
+            release.join("watane-node").display()
+        ))
+    );
+    fs::write(release.join("watane-node"), "").expect("program");
+    assert_eq!(missing_release_build(temp.path()), None);
+}
+
 #[test]
 #[cfg(target_os = "macos")]
 #[ignore = "slow: needs a release build"]
 fn ac1_ac2_fresh_home_real_release() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    if let Some(line) = missing_release_build(&root) {
+        eprintln!("{line}");
+        return;
+    }
     let release = tempfile::tempdir().expect("release");
     let out = Command::new("/bin/sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("package.sh"))
