@@ -690,19 +690,19 @@ fn ac1_s92_holder_not_keeping_the_package_is_io_not_unreachable() {
     let id = full.holdings.add_blob(bytes);
     light.holdings.faults.lock().unwrap().store_blob_fails = Some("disk full".into());
     let events = light.net.events();
-    let Err(NetError::Io { cause, .. }) = light.net.need_blob(&id, bytes.len() as u64) else {
-        panic!("expected Io");
+    let err = light.net.need_blob(&id, bytes.len() as u64).unwrap_err();
+    let NetError::Io { cause, .. } = &err else {
+        panic!("expected Io, got {err:?}");
     };
     assert!(cause.starts_with(&format!("package {} was not stored: ", hex(&id.0[..4]))));
     assert!(cause.contains("disk full"), "{cause}");
-    let err = NetError::Io {
-        path: "x".into(),
-        cause: cause.clone(),
-    }
-    .to_string();
-    assert!(!err.contains(&full.key.short()) && !err.contains("unreachable"));
+    let text = err.to_string();
+    assert!(
+        !text.contains(&full.key.short()) && !text.contains("unreachable"),
+        "{text}"
+    );
     assert!(unreachable_causes(&events).is_empty());
-    assert!(light.holdings.stored_blobs.lock().unwrap().is_empty());
+    assert_eq!(light.holdings.taken_blob(&id), None);
 
     // AC2: the machine was not marked, and no temp file is left
     light.holdings.faults.lock().unwrap().store_blob_fails = None;
@@ -736,4 +736,6 @@ fn ac3_s92_local_failure_ends_the_tries() {
     ));
     // no machine is named as unreachable, whichever was asked first
     assert!(unreachable_causes(&events).is_empty());
+    // one try only: the holder got one `store_blob`, so the next machine was not fetched from
+    assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
 }
