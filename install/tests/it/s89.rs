@@ -471,9 +471,72 @@ fn fix2_a_receipt_move_failing_after_the_rename_says_watane_is_installed() {
         lines(&out.stderr),
         [
             "watane install: a step after the install failed",
-            HINT[0],
+            "watane 0.1.0 is installed.",
             HINT[1]
         ],
+        "{out:?}"
+    );
+    fx.assert_installed("0.1.0");
+}
+
+const MV_FAILS_ON_COMMIT_AND_UNDO: &str = "for a; do case $a in *receipt.new.*) exit 1 ;; esac; done\nfor last; do :; done\ncase $1 in *.new.*) ;; *) case $last in *.new.[0-9]*) exit 1 ;; esac ;; esac\nexec \"$FAKE_REAL/mv\" \"$@\"";
+
+#[test]
+fn fix3_ac2_a_reinstall_whose_undo_cannot_remove_a_new_entry_does_not_say_nothing_changed() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    // the first install's receipt lacks the program entry: it is new to the reinstall
+    let r = fx.receipt();
+    let kept: Vec<String> = fs::read_to_string(&r)
+        .expect("receipt")
+        .lines()
+        .filter(|l| !l.ends_with(".local/bin/watane"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    fs::write(&r, kept.concat()).expect("receipt");
+    fs::remove_file(fx.home.join(".local/bin/watane")).expect("remove program");
+    fake_tool(&fx, "mv", MV_FAILS_ON_COMMIT_AND_UNDO);
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(
+        fx.home.join(".local/bin/watane").exists(),
+        "setup: undo was meant to leave the new program: {out:?}"
+    );
+    assert!(!out.stderr.contains("Nothing was"), "{out:?}");
+    assert!(
+        out.stderr
+            .contains("The files could not be put back. Run this script again to restore the installed version."),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn fix3_a_fresh_install_whose_undo_fails_says_the_files_could_not_be_removed() {
+    let fx = Fx::new();
+    fake_tool(&fx, "mv", MV_FAILS_ON_COMMIT_AND_UNDO);
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(
+        lines(&out.stderr),
+        [
+            "watane install: could not put the files in place",
+            "The files could not be removed. Run this script again to finish cleaning up."
+        ],
+        "{out:?}"
+    );
+}
+
+#[test]
+fn fix3_a_checksum_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fx.rel
+        .put(&archive_name("0.1.0"), b"not the archive".to_vec());
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 4, "{out:?}");
+    assert_eq!(
+        out.stderr.lines().last(),
+        Some("Nothing was changed: the version that was installed still works."),
         "{out:?}"
     );
     fx.assert_installed("0.1.0");

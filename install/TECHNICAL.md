@@ -605,8 +605,11 @@ and `rollback`; recovery and a failed swap pass the undo status to
 so an already handled parent signal does not stop its work. A failed undo
 leaves the swap active for a safe retry. After a failed swap, `install_files`
 retries a failed undo once itself, checking each failure for signals. It then
-prints "The files could not be put back. Run this script again to restore the
-installed version." only if an old entry path is missing or an old entry other
+prints, when a new entry is still in place after undo (its retry included), on a reinstall "The files could not be
+put back. Run this script again to restore the installed version." and on a fresh
+install "The files could not be removed. Run this script again to finish cleaning
+up." (whichever entry, new or old, undo failed on). When undo ended well it prints
+the first text also if an old entry path is missing or an old entry other
 than the receipt still has its `.old.<pid>` name. Otherwise it prints
 "Nothing was changed: the version that was installed still works."
 On a fresh install (no entry of the receipt's list, the receipt included,
@@ -614,8 +617,9 @@ existed before the swap began, so there was no installed version) the second lin
 failure came after the receipt's rename (the receipt `mv` renamed the file and
 returned non-zero, e.g. killed), undo finishes the commit, the new version is
 installed, and the run exits 5 with `watane install: a step after the install
-failed` and then the two lines of the interruption hint of 3.9 (printed once),
-never "Nothing was changed". The three diagnoses exit 5. A failure that only leaves staging names behind does
+failed`, then `watane <v> is installed.` and `Run watane-dev doctor to check the
+maker tools.` (3.9; the "interrupted" wording is for a real signal only), never
+"Nothing was changed". The three diagnoses exit 5. A failure that only leaves staging names behind does
 not mean the old version needs restoring; the next run cleans those names.
 Staging, journal writes and cleanup helpers also preserve program statuses until the caller checks for signals.
 Every site that drops or remaps a program's status must pass the original
@@ -714,8 +718,13 @@ works.` (`Nothing was installed.` on a fresh install) unless an old entry the ru
 without a signal, after retrying a failed undo once (3.8). Staging cleanup
 failure alone uses the first text; both cases exit 5. A swap that fails after
 the receipt's rename (3.8) prints, instead, `watane install: a step after the
-install failed` and then the two lines of "The line after an interruption"
-below, and exits 5.
+install failed`, `watane <v> is installed.` and `Run watane-dev doctor to check the
+maker tools.`, and exits 5. A checksum or archive failure before any swap (exit 4 or 5)
+ends with `Nothing was installed.` when no receipt exists, and with `Nothing was
+changed: the version that was installed still works.` when one does. When undo failed
+twice, the second line is `The files could not be put back. Run this script again to
+restore the installed version.` (reinstall) or `The files could not be removed. Run
+this script again to finish cleaning up.` (fresh install), never "Nothing was".
 
 Stdout carries the progress and the result, stderr the errors. No colour,
 no cursor movement, no emoji; each line is a fact or a command, so an

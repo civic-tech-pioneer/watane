@@ -542,7 +542,11 @@ release_files() {
 
 # interrupted_hint: a signal after the commit left watane installed (3.8, 3.9)
 interrupted_hint() {
-  printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+  if [ "${1:-}" = failed ]; then
+    printf 'watane %s is installed.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+  else
+    printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+  fi
   if [ "$TC_ASKING" = 1 ]; then print_commands >&2; fi
   return 0
 }
@@ -746,6 +750,13 @@ EOF
   return 0
 }
 
+# not_swapped_msg: sets NS_MSG, the last line of a failure before any swap (3.9):
+# a receipt means a version is installed
+not_swapped_msg() {
+  NS_MSG='Nothing was installed.'
+  if exists "${RECEIPT:-}"; then NS_MSG='Nothing was changed: the version that was installed still works.'; fi
+}
+
 verify_archive() {
   va_want=""
   va_count=0
@@ -756,10 +767,11 @@ verify_archive() {
     va_want=$va_hash
     va_count=$((va_count + 1))
   done <"$TMP/SHA256SUMS"
+  not_swapped_msg
   if [ "$va_count" = 0 ]; then
-    die 4 "SHA256SUMS has no line for $ARCHIVE" "Nothing was installed."
+    die 4 "SHA256SUMS has no line for $ARCHIVE" "$NS_MSG"
   elif [ "$va_count" != 1 ]; then
-    die 4 "SHA256SUMS has more than one line for $ARCHIVE" "Nothing was installed."
+    die 4 "SHA256SUMS has more than one line for $ARCHIVE" "$NS_MSG"
   fi
   if command -v shasum >/dev/null 2>&1; then
     va_got=$(shasum -a 256 "$TMP/$ARCHIVE") || { check_signal "$?"; va_got=""; }
@@ -769,43 +781,44 @@ verify_archive() {
   check_signal
   va_got=${va_got%% *}
   if [ "$va_want" != "$va_got" ]; then
-    die 4 "checksum mismatch for $ARCHIVE" "expected $va_want" "got $va_got" "Nothing was installed."
+    die 4 "checksum mismatch for $ARCHIVE" "expected $va_want" "got $va_got" "$NS_MSG"
   fi
   say "checked: sha256 matches SHA256SUMS of release v$RELEASE"
   return 0
 }
 
 extract_archive() {
-  tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."; }
+  not_swapped_msg
+  tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "$NS_MSG"; }
   check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
     check_signal "$?"
-    die 5 "$ARCHIVE holds a file name that leaves its folder" "Nothing was installed."
+    die 5 "$ARCHIVE holds a file name that leaves its folder" "$NS_MSG"
   else
     check_signal "$?"
   fi
   # a link member (type l or h in the listing) could make a later chmod or copy reach a file
   # outside the tree: refused before anything is unpacked (3.4 step 9)
-  tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "Nothing was installed."; }
+  tar -tvzf "$TMP/$ARCHIVE" >"$TMP/members.v" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "$NS_MSG"; }
   check_signal
   if grep -q '^[lh]' "$TMP/members.v"; then
     check_signal "$?"
-    die 5 "$ARCHIVE holds a symbolic or hard link, which a watane archive never does" "Nothing was installed."
+    die 5 "$ARCHIVE holds a symbolic or hard link, which a watane archive never does" "$NS_MSG"
   else
     check_signal "$?"
   fi
   mkdir "$TMP/x" || { ea_rc=$?; check_signal "$ea_rc"; exit "$ea_rc"; }
   check_signal "$?"
-  tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" || { check_signal "$?"; die 5 "$ARCHIVE could not be unpacked" "Nothing was installed."; }
+  tar -xzf "$TMP/$ARCHIVE" -C "$TMP/x" || { check_signal "$?"; die 5 "$ARCHIVE could not be unpacked" "$NS_MSG"; }
   check_signal
   TOP=$TMP/x/watane-$RELEASE-$TARGET
   ea_v=""
   if [ -f "$TOP/VERSION" ]; then IFS= read -r ea_v <"$TOP/VERSION" || { check_signal "$?"; }; fi
   [ "$ea_v" = "$RELEASE" ] ||
-    die 5 "$ARCHIVE is not a watane archive of version $RELEASE" "Nothing was installed."
+    die 5 "$ARCHIVE is not a watane archive of version $RELEASE" "$NS_MSG"
   for ea_r in $RELS; do
     exists "$TOP/$ea_r" ||
-      die 5 "$ARCHIVE is not a watane archive: $ea_r is missing" "Nothing was installed."
+      die 5 "$ARCHIVE is not a watane archive: $ea_r is missing" "$NS_MSG"
   done
   return 0
 }
@@ -934,25 +947,41 @@ EOF
     # missing, or whose `.old.` name remains, means the previous version is not
     # whole. The receipt is copied, not moved, and stays old until the swap ends.
     if_old=""
+    if_new=""
+    if_moved=""
     if [ -f "$SHAREW/journal.$$" ]; then
       read_journal "$SHAREW/journal.$$"
       if_old=$J_OLD
+      if_new=$J_NEW
+      if_moved=$J_MOVED
     fi
     if_undo=0
     rollback || { if_undo=$?; check_signal "$if_undo"; }
     if [ "$if_undo" -ne 0 ]; then
-      rollback || { check_signal "$?"; }
+      if_undo=0
+      rollback || { if_undo=$?; check_signal "$if_undo"; }
     fi
     check_signal "$if_rc"
     if [ "$COMMITTED" = 1 ]; then
       # the receipt moved before the failure: undo finished the commit (3.8, 3.9)
       printf 'watane install: a step after the install failed\n' >&2
-      interrupted_hint
+      interrupted_hint failed
       exit 5
+    fi
+    # a new entry still at its path after undo: undo failed to take it out (3.8)
+    if_left=0
+    while IFS= read -r if_p; do
+      [ -n "$if_p" ] || continue
+      if in_list "$if_moved" "$if_p" && exists "$if_p"; then if_left=1; fi
+    done <<EOF
+$if_new
+EOF
+    if [ "$if_left" = 1 ] && [ "$if_fresh" = 1 ]; then
+      die 5 "could not put the files in place" "The files could not be removed. Run this script again to finish cleaning up."
     fi
     while IFS= read -r if_p; do
       [ -n "$if_p" ] || continue
-      if ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
+      if [ "$if_left" = 1 ] || ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
         die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
       fi
     done <<EOF
