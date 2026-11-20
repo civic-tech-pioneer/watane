@@ -146,14 +146,20 @@ product owner sees the turn end and needs nothing from it.
 
 ## 5. Deliver
 
+Every slice, local or cloud, reaches `main` through a pull request that merges itself when CI is
+green (`factory/README.md`, "Two feedback loops"). Nobody merges by hand.
 1. Rebase `slice/<id>` on `main`. Run every touched subsystem's tests again, the slow ones too
    (`-- --include-ignored`), once; they must pass. In briefs, ask for each criterion's test at the
-   lowest level that can show it (`factory/README.md`, "Test pyramid").
-2. Push `slice/<id>` and open a pull request to `main`, the slow sensor (`factory/README.md`,
-   "Two feedback loops"): `gh pr create --base main --head slice/<id> --title "<id>: <outcome>"
-   --body "<the report below>"`. CI tests it on Linux, macOS and Windows while the product owner
-   reads your report; do not wait for it. If `gh` is missing or not signed in (a cloud
-   container may have neither), say `no PR: <why>` in the report; the product owner opens it.
+   lowest level that can show it (`factory/README.md`, "Test pyramid"). If the slice changed a
+   `Cargo.toml`: `cargo hakari generate && cargo hakari manage-deps`, and commit that too (the
+   `workspace-hack` crate gives every package one feature set, so a `cargo test` in one
+   subsystem reuses the workspace's build instead of adding ~9 GB to `target/`).
+2. Push `slice/<id>`, open its PR and arm auto-merge:
+   `gh pr create --base main --head slice/<id> --title "<id>: <outcome>" --body "<the report>"`,
+   then `gh pr merge <n> --auto --rebase`. `main`'s ruleset holds it until `lint`,
+   `test (ubuntu-latest)` and `test (macos-26)` pass; Windows reports but does not block.
+   If `gh` is missing or not signed in (a cloud container may have neither), say
+   `no PR: <why>` in the report; the product owner opens it and arms it.
 3. Report to the product owner:
    - `DELIVERED <id>`, the branch and the PR link;
    - what a person can now do (one line), and the user-sim result;
@@ -163,6 +169,15 @@ product owner sees the turn end and needs nothing from it.
    - Sol runs per task (from `factory/runs/ledger.jsonl`);
    - suite time per touched subsystem, default and `--include-ignored`, before and after
      (`factory/README.md`, "Time and value"), and the hours the slice was in flight.
-4. A red CI run the product owner sends back is a failure on another OS: brief a fix task as for
-   a user-sim failure (a test that is red there, a `cfg` where the behaviour truly differs), push
-   to the same branch, and report `DELIVERED <id>` again. The PR runs CI again by itself.
+4. Local: stay until the PR is merged. Run `gh pr checks <n> --watch --fail-fast` with Bash
+   `run_in_background`; it wakes you on red or on green.
+   - Green: the PR merges itself. Send the product owner `MERGED <id>` and end.
+   - Red on a test that passed in your own runs: rerun the failed jobs once
+     (`gh run rerun <run> --failed`); macOS runners have 3 cores and GUI tests time out under
+     that load. Red again, or red in a build, clippy or fmt step: it is real.
+   - Real red: a failure on another OS. Brief a fix task as for a user-sim failure (a test red
+     there, a `cfg` where the behaviour truly differs), push to the same branch, and watch
+     again. Auto-merge stays armed. Report the fix as a decision line with `MERGED <id>`.
+   - Not mergeable (a conflict with a newer `main`): rebase, run the touched tests, push.
+   Cloud: you end your turn after the `DELIVERED` commit; the product owner watches the PR and
+   starts a new routine on this branch if it goes red.
