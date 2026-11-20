@@ -333,7 +333,11 @@ mod tests {
     fn ac2_s91_fix1_listed_wit_other_swaps_keep_their_cause() {
         let t = tempfile::tempdir().unwrap();
         fs::create_dir(t.path().join("wit")).unwrap();
-        rustix::fs::mkfifoat(rustix::fs::CWD, t.path().join("wit/f.wit"), 0o600.into()).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(t.path().join("wit/f.wit"))
+            .status()
+            .unwrap();
+        assert!(made.success());
         let special = (Rule::Path, "wit/f.wit".into(), SPECIAL.into());
         assert_eq!(reread(t.path(), "wit/f.wit"), special);
         let gone = (Rule::Path, "wit/g.wit".into(), CHANGED.into());
