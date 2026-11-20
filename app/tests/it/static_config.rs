@@ -261,7 +261,16 @@ fn ac8_specs_record_toolset_removal_and_readable_causes() {
     let technical = read("TECHNICAL.md");
     assert!(technical.contains("| `toolset_remove` | main | `name` | `null` |"));
     assert!(technical.contains("tools: [string]"));
-    assert!(technical.contains("give link or release: <serde cause>"));
+    for message in [
+        "give link or release: the body must be a JSON object",
+        "give link or release: link must be text",
+        "give link or release: release must be text",
+        "give link or release: unknown field <key>",
+        "both/neither fields keep exactly `give link or release`",
+        "give link or release: <serde_json syntax cause>",
+    ] {
+        assert!(technical.contains(message), "TECHNICAL missing {message}");
+    }
     assert!(read("FUNCTIONAL.md").contains("remove a saved toolset"));
     assert!(
         !std::fs::read_to_string(root().join("../host/TECHNICAL.md"))
