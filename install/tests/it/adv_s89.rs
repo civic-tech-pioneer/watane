@@ -83,3 +83,67 @@ fn adv_s89_fresh_install_whose_undo_fails_says_nothing_was_installed() {
         "~/.local/bin/watane is in place, yet the run says nothing was installed: {out:?}"
     );
 }
+
+/// fix3 (b): a checksum failure decides its last line from whether a receipt exists: with one it
+/// prints "Nothing was changed: the version that was installed still works." But `--uninstall`
+/// removes the receipt last, so a Ctrl-C during an uninstall leaves the receipt and no program.
+/// The next install's checksum failure then tells Alice the installed version still works, while
+/// `~/.local/bin/watane` is gone (verify runs before `recover` and checks nothing but the receipt).
+#[test]
+fn adv_s89_checksum_failure_after_an_interrupted_uninstall_says_the_version_still_works() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let p = fx.fakes.join("rm");
+    fs::write(
+        &p,
+        "#!/bin/sh\nfor a; do case $a in */share/watane/receipt) kill -s INT $PPID; exit 130 ;; esac; done\nexec \"$FAKE_REAL/rm\" \"$@\"\n",
+    )
+    .expect("fake rm");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let un = fx.run(&["--uninstall"]);
+    fs::remove_file(&p).expect("fake rm");
+    assert!(
+        fx.receipt().exists() && !fx.home.join(".local/bin/watane").exists(),
+        "setup: the interrupted uninstall was meant to keep the receipt only: {un:?}"
+    );
+    fx.rel
+        .put(&archive_name("0.1.0"), b"not the archive".to_vec());
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 4, "{out:?}");
+    assert!(
+        !out.stderr.contains("still works"),
+        "no program is installed, yet the run says the installed version still works: {out:?}"
+    );
+}
+
+/// Same decision, a run killed mid-swap (3.6 step 0 says the next run recovers it): the killed
+/// reinstall moved `~/.local/bin/watane` to its `.old.<pid>` name and died. The receipt is still
+/// there, so the next run's checksum failure says the installed version still works, before its
+/// `recover` has put anything back: Alice has no `watane` on her PATH.
+#[test]
+fn adv_s89_checksum_failure_after_a_killed_swap_says_the_version_still_works() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let p = fx.fakes.join("mv");
+    fs::write(
+        &p,
+        "#!/bin/sh\ncase $1 in */.local/bin/watane) \"$FAKE_REAL/mv\" \"$@\"; kill -s KILL $PPID; exit 1 ;; esac\nexec \"$FAKE_REAL/mv\" \"$@\"\n",
+    )
+    .expect("fake mv");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let killed = fx.run(&["--no-toolchain"]);
+    fs::remove_file(&p).expect("fake mv");
+    assert!(
+        fx.receipt().exists() && !fx.home.join(".local/bin/watane").exists(),
+        "setup: the killed run was meant to leave the program under its .old name: {killed:?}"
+    );
+    let _ = fs::remove_dir_all(fx.home.join(".watane-install.lock"));
+    fx.rel
+        .put(&archive_name("0.1.0"), b"not the archive".to_vec());
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 4, "{out:?}");
+    assert!(
+        !out.stderr.contains("still works"),
+        "no program is at its path, yet the run says the installed version still works: {out:?}"
+    );
+}
