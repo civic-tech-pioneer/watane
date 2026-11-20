@@ -1398,9 +1398,13 @@ proven at the lowest level that shows it:
 - **Shell unit** (`tests/it/unit.rs`, support `Fx::units` in `support/unit.rs`): one `/bin/sh`
   sources a copy of `install.sh` whose last line `main "$@"` is removed (the support asserts that
   the script ends with that line, as `baked_script` asserts `@RELEASE@`; the script itself has no
-  test-only branch), runs an optional prelude (`check_home; set_entries`) and then the cases of one
-  rule, each `(name, shell text)` in its own subshell, so that `die`'s `exit` ends the case and no
-  variable leaks into the next. Stdout, stderr and the exit status of each case are told apart by
+  test-only branch), runs an optional prelude (`check_home; set_entries`) under `set -eu`, the
+  options the script sets, and then the cases of one rule, each `(name, shell text)` in its own
+  subshell that sets `set -eu` again, so that `die`'s `exit`, or a command that `set -e` ends,
+  ends only the case and shows as its status, and no variable leaks into the next. The unit level
+  therefore fails where the real run exits early; a call that the script makes in an `if` or
+  `||` (where `set -e` is off) is made so in the case, and a case that needs `set +e` says so in
+  its own text. Stdout, stderr and the exit status of each case are told apart by
   marker lines (`@@BEGIN <name>`, `@@END <status>`) that the generated program prints to both
   streams, and come back as `Unit { out, err, code }`. The environment is the cleared one of a run
   (`HOME`, the fakes first on `PATH`, `FAKE_STATE`, `ROOT` for the folder of the world), the shell

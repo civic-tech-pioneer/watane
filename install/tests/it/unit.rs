@@ -52,6 +52,9 @@ fn unit_check_version_accepts_versions_and_refuses_the_rest() {
         "1.2.3-",
         "1.2.3-a..b",
         "1.2.3-a-1",
+        "1.2.3-a/b",
+        "1.2.3-/",
+        "1.2.3-rc1/../x",
         "1.2.3-.a",
         "1.2.3-a.",
         "1.2.3/x",
@@ -500,7 +503,7 @@ fn unit_home_deletable_refuses_what_is_not_a_watane_home() {
             (
                 (*n).to_string(),
                 format!(
-                    "HOME_OUT=0; HOME_DEL=; home_deletable \"{v}\"; rc=$?; echo \"rc=$rc out=$HOME_OUT del=$HOME_DEL\"; exit $rc"
+                    "HOME_OUT=0; HOME_DEL=; if home_deletable \"{v}\"; then rc=0; else rc=$?; fi; echo \"rc=$rc out=$HOME_OUT del=$HOME_DEL\"; exit $rc"
                 ),
             )
         })
@@ -1696,4 +1699,323 @@ fn unit_recover_skips_a_fresh_entry_whose_parent_is_gone() {
     let u = case(&units, "twice");
     assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
     assert_eq!(u.out, "first=0\nsecond=0\nno_bin_folder\n", "{u:?}");
+}
+
+/// TECHNICAL 8.5, 3.6 step 4 (`valid_entry`, `undo_swap`, S50c ac3): a dead run's journal that
+/// names the install folder after `~/.local/bin` was relinked out of the home makes the undo
+/// remove, move or restore nothing outside the home, and its cleanup of `.new.<n>` names stays
+/// inside. Mutants (each alone): `valid_entry` without `allowed` (case `journal`); in `undo_swap`
+/// the line `allowed "$ub_p" || continue` of the cleanup (case `staging`).
+#[test]
+fn unit_ac3a_undo_swap_through_a_relinked_bin_touches_nothing_outside_the_home() {
+    let fx = Fx::new();
+    let mut cases: Vec<(String, String)> = Vec::new();
+    let mut outs = Vec::new();
+    for name in ["journal", "staging"] {
+        let home = home_named(&fx, name);
+        let share = home.join(".local/share/watane");
+        fs::create_dir_all(&share).expect("share");
+        let o = outside(&fx, &format!("{name}_o"));
+        symlink(&o, home.join(".local/bin")).expect("link");
+        write_file(&share.join("receipt.new.99999999"), "pending");
+        if name == "journal" {
+            let b = home.join(".local/bin/watane");
+            write_file(&o.join("watane"), "the person's");
+            write_file(&o.join("watane.old.99999999"), "old");
+            write_file(
+                &share.join("journal.99999999"),
+                &format!("old {0}\nnew {0}\nmoved {0}\n", b.display()),
+            );
+        } else {
+            write_file(&o.join("watane.new.99999999"), "the person's");
+        }
+        outs.push((name, o));
+        cases.push((
+            name.to_string(),
+            format!(
+                "HOME=$ROOT/{name}; check_home; set_entries; undo_swap 99999999; echo \"rc=$?\""
+            ),
+        ));
+    }
+    let before: Vec<_> = outs.iter().map(|(_, o)| snapshot(o)).collect();
+    let units = table(&fx, "", &cases);
+    for ((name, o), was) in outs.iter().zip(before) {
+        let u = case(&units, name);
+        assert!(u.has_out_line("rc=0"), "{name}: {u:?}");
+        assert_eq!(snapshot(o), was, "{name}: changed outside the home: {u:?}");
+    }
+}
+
+/// TECHNICAL 3.4.2, INST-S-35 (`check_foreign`): a dead run's journal makes a path watane's only
+/// when it says the path moved and no `<path>.new.<n>` is left; with the staging name still
+/// there the path is not proven installed, so a file at it is foreign. Mutant: without
+/// `if exists "$cf_p.new.$cf_n"; then continue; fi`.
+#[test]
+fn unit_ac3b_a_moved_entry_with_its_staging_name_left_is_not_proven_installed() {
+    let fx = Fx::new();
+    let dead = dead_pid();
+    for name in ["staged", "unstaged"] {
+        let home = home_named(&fx, name);
+        let b = home.join(".local/bin/watane");
+        write_file(&b, "a file");
+        write_file(
+            &home.join(format!(".local/share/watane/journal.{dead}")),
+            &format!("new {0}\nmoved {0}\n", b.display()),
+        );
+        if name == "staged" {
+            write_file(
+                &home.join(format!(".local/bin/watane.new.{dead}")),
+                "staged",
+            );
+        }
+    }
+    let cases: Vec<(String, String)> = ["staged", "unstaged"]
+        .iter()
+        .map(|n| {
+            (
+                (*n).to_string(),
+                format!("HOME=$ROOT/{n}; check_home; set_entries; RELEASE=0.1.0; UPGRADED=0; check_foreign"),
+            )
+        })
+        .collect();
+    let units = table(&fx, "", &cases);
+    let u = case(&units, "staged");
+    assert_eq!(u.code, 8, "{u:?}");
+    foreign_lines(u, &["~/.local/bin/watane"]);
+    let u = case(&units, "unstaged");
+    assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
+}
+
+/// TECHNICAL 3.5, 8.4 (`read_receipt`): a receipt that is a link is not read, whatever it leads
+/// to. Mutant: `read_receipt` without `[ ! -L "$1" ]`.
+#[test]
+fn unit_ac3c_a_receipt_that_is_a_link_is_not_read() {
+    let fx = Fx::new();
+    let real = fx.root.path().join("real_receipt");
+    write_file(
+        &real,
+        "watane-receipt 1\nversion 0.1.0\npath /x\nresolved bin /y\n",
+    );
+    symlink(&real, fx.root.path().join("link_receipt")).expect("link");
+    let show = r#"; echo "ok=$R_OK ver=$R_VERSION lines=$R_LINES resolved=$R_RESOLVED""#;
+    let units = fx.units(
+        "",
+        &[],
+        &[
+            (
+                "file",
+                &format!("read_receipt \"$ROOT/real_receipt\"{show}"),
+            ),
+            (
+                "link",
+                &format!("read_receipt \"$ROOT/link_receipt\"{show}"),
+            ),
+        ],
+    );
+    assert_eq!(
+        case(&units, "file").out,
+        "ok=1 ver=0.1.0 lines=path /x resolved=resolved bin /y\n"
+    );
+    assert_eq!(case(&units, "link").out, "ok=0 ver= lines= resolved=\n");
+}
+
+/// TECHNICAL 3.8, 3.6 step 0 (`clean_stale`, `recover`): the names of a live run are not cleaned
+/// or recovered, and nothing is removed through a folder that leads out of the home. Mutants
+/// (each alone): `clean_stale` without `pid_gone "$cs_n" || continue` (case `stale_live`), or
+/// without `allowed "$cs_e" || continue` (case `stale_link`); `recover` without
+/// `pid_gone "$rc_n" || continue` (case `recover_live`).
+#[test]
+fn unit_ac3d_stale_cleanup_and_recovery_leave_a_live_run_and_a_link_alone() {
+    let fx = Fx::new();
+    let mut live = std::process::Command::new(fx.real.join("sleep"))
+        .arg("600")
+        .spawn()
+        .expect("sleep");
+    let (live_pid, dead) = (live.id(), dead_pid());
+    let run = |name: &str, call: &str| {
+        (
+            name.to_string(),
+            format!("HOME=$ROOT/{name}; check_home; set_entries; {call}; echo \"rc=$?\""),
+        )
+    };
+    let sl = home_named(&fx, "stale_live");
+    write_file(
+        &sl.join(format!(".local/bin/watane.new.{live_pid}")),
+        "live",
+    );
+    write_file(&sl.join(format!(".local/bin/watane.old.{dead}")), "dead");
+    write_file(&sl.join(".local/share/watane/receipt"), "x");
+    let lk = home_named(&fx, "stale_link");
+    fs::create_dir_all(lk.join(".local")).expect("local");
+    let o = outside(&fx, "stale_link_o");
+    write_file(&o.join(format!("watane.new.{dead}")), "the person's");
+    symlink(&o, lk.join(".local/bin")).expect("link");
+    let rl = home_named(&fx, "recover_live");
+    let share = rl.join(".local/share/watane");
+    write_file(&share.join(format!("journal.{live_pid}")), "old x\n");
+    write_file(&share.join(format!("receipt.new.{live_pid}")), "pending");
+    let cases = vec![
+        run("stale_live", "clean_stale"),
+        run("stale_link", "clean_stale"),
+        run("recover_live", "recover"),
+    ];
+    let units = table(&fx, "", &cases);
+    live.kill().expect("kill");
+    live.wait().expect("wait");
+    for n in ["stale_live", "stale_link", "recover_live"] {
+        let u = case(&units, n);
+        assert!(u.has_out_line("rc=0"), "{n}: {u:?}");
+    }
+    assert!(
+        sl.join(format!(".local/bin/watane.new.{live_pid}"))
+            .exists()
+    );
+    assert!(!sl.join(format!(".local/bin/watane.old.{dead}")).exists());
+    assert!(o.join(format!("watane.new.{dead}")).exists());
+    assert!(share.join(format!("journal.{live_pid}")).exists());
+    assert!(share.join(format!("receipt.new.{live_pid}")).exists());
+}
+
+/// TECHNICAL 3.4 step 4 (`check_home`): HOME is a plain absolute folder that does not resolve to
+/// `/`; each refusal ends with exit 2 and its own text. Mutants (each alone): without
+/// `plain_path` (cases `dots`, `relative`); with the test of `/` gone and a HOME of `/` accepted
+/// (case `root`: `if false; then` in place of the `plain_path` line), or without the
+/// `[ "$HOME_R" != / ]` line (case `link_to_root`).
+#[test]
+fn unit_ac3e_check_home_refuses_what_is_not_a_plain_home() {
+    let fx = Fx::new();
+    fs::create_dir(fx.root.path().join("a")).expect("a");
+    symlink("/", fx.root.path().join("to_root")).expect("link");
+    let hint = "Set HOME to your home folder, then run this again.\n";
+    let values = [
+        ("root", "/", "HOME is not a plain absolute folder: /"),
+        (
+            "dots",
+            "$ROOT/a/..",
+            "HOME is not a plain absolute folder: $ROOT/a/..",
+        ),
+        ("relative", "a", "HOME is not a plain absolute folder: a"),
+        ("empty", "", "HOME is not a plain absolute folder: "),
+        ("missing", "$ROOT/none", "HOME is not a folder: $ROOT/none"),
+        (
+            "link_to_root",
+            "$ROOT/to_root",
+            "HOME resolves to /: $ROOT/to_root",
+        ),
+    ];
+    let cases: Vec<(String, String)> = values
+        .iter()
+        .map(|(n, v, _)| ((*n).to_string(), format!("HOME=\"{v}\"; check_home")))
+        .collect();
+    let mut cases = cases;
+    cases.push((
+        "plain".into(),
+        "HOME=$ROOT/a; check_home; echo \"HOME_R=$HOME_R\"".into(),
+    ));
+    let units = table(&fx, "", &cases);
+    let root = fx.root.path().display().to_string();
+    for (n, _, msg) in values {
+        let u = case(&units, n);
+        assert_eq!(u.code, 2, "{n}: {u:?}");
+        assert_eq!(
+            u.err,
+            format!("watane install: {}\n{hint}", msg.replace("$ROOT", &root)),
+            "{n}"
+        );
+    }
+    let u = case(&units, "plain");
+    let a = fs::canonicalize(fx.root.path().join("a")).expect("canonical");
+    assert_eq!(u.out, format!("HOME_R={}\n", a.display()));
+}
+
+/// TECHNICAL 3.4 step 1, 8.4 (`do_uninstall`): an uninstall stops at the journal of a live run
+/// with exit 5 and removes nothing, and finishes what a dead run left (its journal is gone).
+/// Mutants (each alone): without `check_no_live_install` (case `live`), or without `recover`
+/// (case `dead`).
+#[test]
+fn unit_ac3f_uninstall_checks_for_a_live_run_and_recovers_a_dead_one() {
+    let fx = Fx::new();
+    let mut live = std::process::Command::new(fx.real.join("sleep"))
+        .arg("600")
+        .spawn()
+        .expect("sleep");
+    let (live_pid, dead) = (live.id(), dead_pid());
+    let lv = fx.installed_home("live");
+    write_file(
+        &lv.join(format!(".local/share/watane/journal.{live_pid}")),
+        "old x\n",
+    );
+    let dd = fx.installed_home("dead");
+    write_file(
+        &dd.join(format!(".local/share/watane/journal.{dead}")),
+        "old x\n",
+    );
+    let cases: Vec<(String, String)> = ["live", "dead"]
+        .iter()
+        .map(|n| {
+            (
+                (*n).to_string(),
+                format!("HOME=$ROOT/{n}; check_home; set_entries; do_uninstall"),
+            )
+        })
+        .collect();
+    let units = table(&fx, "", &cases);
+    live.kill().expect("kill");
+    live.wait().expect("wait");
+    let u = case(&units, "live");
+    assert_eq!(u.code, 5, "{u:?}");
+    assert_eq!(
+        u.first_err(),
+        format!("watane install: another install is running (pid {live_pid})")
+    );
+    assert!(lv.join(".local/share/watane/receipt").is_file(), "{u:?}");
+    assert!(lv.join(".local/bin/watane").exists(), "{u:?}");
+    let u = case(&units, "dead");
+    assert_eq!(u.code, 0, "{u:?}");
+    assert!(u.has_out_line("uninstalled watane 0.1.0"), "{u:?}");
+    assert!(
+        !dd.join(format!(".local/share/watane/journal.{dead}"))
+            .exists(),
+        "{u:?}"
+    );
+}
+
+/// TECHNICAL 3.2, 3.7 (`download`): the secure mode (the real release, no `WATANE_RELEASE_BASE`)
+/// asks `curl` for https only, TLS 1.2 or later, and a failure on an HTTP error; the plain mode
+/// (a test or mirror base) asks for none of the first two. A shell function stands in for `curl`
+/// and records its arguments. Mutants: `curl` without `--proto '=https'`, without `--tlsv1.2`,
+/// or without `-f`, in the secure line.
+#[test]
+fn unit_ac3g_the_secure_download_asks_curl_for_https_tls_and_failure_on_error() {
+    let fx = Fx::new();
+    let fake = r#"TMP=$ROOT; curl() { printf '%s\n' "$*" >"$ROOT/curl.args"; }"#;
+    let units = fx.units(
+        "",
+        &[],
+        &[
+            (
+                "secure",
+                &format!(
+                    "{fake}; download https://h/x \"$ROOT/out\" secure; cat \"$ROOT/curl.args\""
+                ),
+            ),
+            (
+                "plain",
+                &format!(
+                    "{fake}; download http://h/x \"$ROOT/out\" plain; cat \"$ROOT/curl.args\""
+                ),
+            ),
+        ],
+    );
+    let root = fx.root.path().display();
+    assert_eq!(
+        case(&units, "secure").out,
+        format!(
+            "-fsSL --proto =https --tlsv1.2 --retry 2 --connect-timeout 15 -o {root}/out https://h/x\n"
+        )
+    );
+    assert_eq!(
+        case(&units, "plain").out,
+        format!("-fsSL --retry 2 --connect-timeout 15 -o {root}/out http://h/x\n")
+    );
 }
