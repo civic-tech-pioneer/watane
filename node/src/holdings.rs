@@ -190,6 +190,22 @@ mod tests {
         assert!(h.wanted_blobs(Role::Full).is_empty());
     }
 
+    /// S92: a light machine's full disk read "package <hex8> was not stored: <dist path>",
+    /// without why. The holder's text is all net keeps, so it must carry the OS cause.
+    #[test]
+    fn regress_s92_store_blob_error_keeps_the_os_cause() {
+        let a = tempfile::tempdir().unwrap();
+        let h = DistHoldings::empty();
+        h.set(Arc::new(
+            Dist::open_keyless(a.path(), Default::default()).unwrap(),
+        ))
+        .unwrap();
+        let missing = a.path().join("missing.tmp");
+        let os = std::fs::File::open(&missing).unwrap_err().to_string();
+        let text = h.store_blob(&BlobId([1; 32]), &missing).unwrap_err();
+        assert!(text.contains(&os), "{text:?} lacks {os:?}");
+    }
+
     #[test]
     fn ac4_before_its_dist_is_set_it_answers_as_an_empty_holder() {
         let h = DistHoldings::empty();
