@@ -476,7 +476,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S88 The remove confirm always has Cancel focused (main fix).** in flight (local)
+- [ ] **S88 The remove confirm always has Cancel focused (main fix).** in flight (local; foreman `a244ec23`, sessionId `a244ec23-a827-4f8b-87a7-5b41c3811ba1`)
   Main's check after S55 (`5014400`) failed only `j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail`
   (app/tests/it/j2.rs:177): about 1 run in 12, alone and on an idle Mac, the panel is open
   (`#confirm-panel` not hidden) but `document.activeElement` is BODY, not `#confirm-cancel`. The
