@@ -129,13 +129,23 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
 1. Check it: the user-sim said `ACCEPTED`, the branch is rebased on `main`, and the adversary
    said `HELD` if the slice touched a security boundary (foreman skill, section 3; check its
    file table against `git diff --name-only main...slice/<id>` yourself).
-2. `git merge --ff-only slice/<id>` on `main`, then run `factory/check-main.sh` (the whole
-   workspace: build, tests, clippy, fmt, `cargo deny`; in the background) and the timing tests
-   (`factory/README.md`, "Timing tests"). On `MAIN FAIL`, fix `main` before the next merge: a
-   small fix yourself, else a fix slice next. An advisory alone in the `deny` step is not a
-   failure of the slice; add it under `Friction` with the crate and the advisory id. If the merge fails, send the foreman "rebase on main
-   and run the tests again". A cloud slice: `git fetch origin`, merge the branch
-   `watch-cloud.sh` printed, and run the tests its report lists as `not run (cloud)`.
+2. Merge only on green CI (`factory/README.md`, "Two feedback loops"). The report links the
+   slice's PR; without one (`no PR: ...`), open it: `gh pr create --base main --head <its branch>
+   --title "<id>: <outcome>" --body "<its report>"`. Run `gh pr checks <n> --watch --fail-fast`
+   with Bash `run_in_background` and go on with the loop meanwhile; never merge while it runs.
+   - Green: `git fetch origin`, `git merge --ff-only origin/<its branch>` on `main`, `git push
+     origin main` (GitHub marks the PR merged). If `main` moved since and the rebase is clean,
+     rebase the branch yourself, push it and merge without waiting again: the push to `main`
+     runs CI there too, and a red run on `main` is fixed before the next merge.
+   - Red: send the failing job's name and its error lines to the foreman (local: a message;
+     cloud: a new routine "/foreman <id>, continue from branch slice/<id>; CI failed: ...").
+     A small fix (a missing `cfg`, a clippy lint of one OS) you may push to the branch
+     yourself. A `cargo deny` advisory alone is not the slice's failure: add it under
+     `Friction` with the crate and the advisory id, and merge.
+   - Then, on `main`, the checks CI cannot run, in the background: `factory/check-main.sh`
+     (the Mac's timing tests, `README`, "Timing tests") and, for a cloud slice, the tests its
+     report lists as `not run (cloud)`. On `MAIN FAIL`, fix `main` before the next merge: a
+     small fix yourself, else a fix slice next.
    If the slice changed a `Cargo.toml`: `cargo hakari generate && cargo hakari manage-deps`
    (the `workspace-hack` crate gives every package one feature set, so a `cargo test` in one
    subsystem reuses the workspace's build instead of adding a copy of ~9 GB to `target/`).

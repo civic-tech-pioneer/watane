@@ -24,7 +24,7 @@ and no way to message the product owner. Everything below holds, with these chan
   report as `not run (cloud)`; the product owner runs them after the merge.
 - Rebase on `origin/main` (`git fetch` first).
 - Reports go through git. Push your work to `slice/<id>`, or to the branch this session was
-  given if that push is refused. Then add an empty commit
+  given if that push is refused, and open the PR as section 5 says. Then add an empty commit
   `git commit --allow-empty -m "DELIVERED <id>" -m "<the section 5 report>"`, or
   `-m "BLOCKED <id>" -m "<the section 4 question>"`, push it, and end your turn. Before a
   `BLOCKED`, commit and push all work, the briefs too: the product owner answers by starting a
@@ -149,8 +149,13 @@ product owner sees the turn end and needs nothing from it.
 1. Rebase `slice/<id>` on `main`. Run every touched subsystem's tests again, the slow ones too
    (`-- --include-ignored`), once; they must pass. In briefs, ask for each criterion's test at the
    lowest level that can show it (`factory/README.md`, "Test pyramid").
-2. Report to the product owner:
-   - `DELIVERED <id>` and the branch;
+2. Push `slice/<id>` and open a pull request to `main`, the slow sensor (`factory/README.md`,
+   "Two feedback loops"): `gh pr create --base main --head slice/<id> --title "<id>: <outcome>"
+   --body "<the report below>"`. CI tests it on Linux, macOS and Windows while the product owner
+   reads your report; do not wait for it. If `gh` is missing or not signed in (a cloud
+   container may have neither), say `no PR: <why>` in the report; the product owner opens it.
+3. Report to the product owner:
+   - `DELIVERED <id>`, the branch and the PR link;
    - what a person can now do (one line), and the user-sim result;
    - the adversary result (`HELD`, the breaches fixed, or `not run (no boundary)`);
    - decisions you made, one line each;
@@ -158,3 +163,6 @@ product owner sees the turn end and needs nothing from it.
    - Sol runs per task (from `factory/runs/ledger.jsonl`);
    - suite time per touched subsystem, default and `--include-ignored`, before and after
      (`factory/README.md`, "Time and value"), and the hours the slice was in flight.
+4. A red CI run the product owner sends back is a failure on another OS: brief a fix task as for
+   a user-sim failure (a test that is red there, a `cfg` where the behaviour truly differs), push
+   to the same branch, and report `DELIVERED <id>` again. The PR runs CI again by itself.

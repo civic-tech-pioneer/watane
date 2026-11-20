@@ -75,7 +75,7 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
        │    breach -> red test -> fix task, as for user-sim
        ├─ user-sim (Claude Opus 5.5) acts as the story's person on the real programs
        │    failure -> red regression test -> fix task (green, refactor) -> validator -> user-sim again
-       └─ DELIVERED -> product owner merges --ff-only, removes the worktree, hands out the next slice
+       └─ DELIVERED + PR -> CI on Linux, macOS, Windows -> green: product owner merges --ff-only
 ```
 
 | File | Purpose |
@@ -86,7 +86,8 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
 | `.claude/agents/user-sim.md` | Accepts a slice as its user; turns each failure into a red test |
 | `factory/impl.sh` | Runs Sol on a brief, or resumes its session with feedback; then `check.sh` |
 | `factory/check.sh` | A task's tests outside Sol's sandbox: default, clippy, fmt, slow tests of touched files, `cargo deny` if `Cargo.lock` changed |
-| `factory/check-main.sh` | The whole workspace on `main` after each merge: build, tests, clippy, fmt, `cargo deny` (`deny.toml`) |
+| `.github/workflows/ci.yml` | The slow sensor: the whole workspace on Linux, macOS and Windows for every PR to `main`: build, tests, clippy, fmt, `cargo deny` (`deny.toml`) |
+| `factory/check-main.sh` | What CI cannot run, on the Mac after each merge |
 | `.claude/agents/adversary.md` | Attacks a slice that touches a security boundary; each breach becomes a red test |
 | `factory/implementer.md` | Sol's standing instructions (test-first, fixed interface, report format) |
 | `.claude/agents/implementer.md` | Sonnet in Sol's place, for cloud foremen (no Codex there); same instructions |
@@ -183,7 +184,8 @@ the load of parallel slices, so they carry `#[ignore = "timing: run on a quiesce
 Sol and validators skip them. The product owner runs them on `main` after each merge, one at a
 time; a failure counts only if it repeats:
 `cargo test -p watane-host --test it -- --ignored --test-threads=1 runtime::` and
-`cargo test -p watane-host --test it -- --ignored --test-threads=1 program::catalog::ac3_shutdown`.
+`cargo test -p watane-host --test it -- --ignored --test-threads=1 program::catalog::ac3_shutdown`;
+`factory/check-main.sh` runs them.
 A new test of a time limit gets the same attribute. A wait that only guards against a hang is
 not such a test: give it a wide bound (30 s or more) and leave it in the normal run.
 
@@ -192,3 +194,25 @@ not such a test: give it a wide bound (30 s or more) and leave it in the normal 
 Sol's sandbox cannot start a nested `sandbox-exec` or the GUI, so DEV-S-13 (the build with network
 access denied) and the window tests run first in `factory/check.sh`, right after Sol. That is
 expected; it is not friction.
+
+## Two feedback loops
+
+| Loop | Sensors | Where | Takes | Before |
+|---|---|---|---|---|
+| Fast | `factory/check.sh`, the validator, the adversary, the user-sim | the agent loop, on the foreman's machine | minutes | each task, then the slice's delivery |
+| Slow | CI (`.github/workflows/ci.yml`): build, default tests and clippy on Linux, macOS and Windows; fmt and `cargo deny` once | GitHub, through a pull request | ~30 to 45 min | the merge to `main` |
+
+A slice is checked on one OS while it is built: the Mac (local) or Linux (cloud). A Linux slice
+broke `main` on macOS twice (S91: a Linux-only `mkfifoat`, an errno that differs), and only the
+Mac check after the merge saw it. CI closes that gap without slowing the agents: the fast loop
+stays as it is, and the slow one runs while the product owner and foremen do other work.
+
+- On delivery the foreman pushes `slice/<id>` and opens a PR to `main` (foreman skill,
+  section 5). The product owner merges only when the PR's CI is green (product-owner skill,
+  section 5); a red run goes back to the foreman as a failure on another OS.
+- `factory/check-main.sh` runs after the merge only what CI cannot: the Mac's timing tests on a
+  quiet machine, and the window (`front`) checks a cloud slice could not run.
+- CI runs the default tests only. `slow`, journey, `front`, `timing` and `real` tests stay
+  `#[ignore]`d there, as in `check.sh`.
+- App window (`driver`) tests: on macOS in CI (runners have a GUI session). On Linux they need
+  Xvfb and a window manager (`app/scripts/linux-test.sh`, run by hand). Windows has no driver.
