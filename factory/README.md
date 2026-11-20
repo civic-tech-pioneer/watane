@@ -200,7 +200,7 @@ expected; it is not friction.
 | Loop | Sensors | Where | Takes | Before |
 |---|---|---|---|---|
 | Fast | `factory/check.sh`, the validator, the adversary, the user-sim | the agent loop, on the foreman's machine | minutes | each task, then the slice's delivery |
-| Slow | CI (`.github/workflows/ci.yml`): build, default tests and clippy on Linux, macOS and Windows; fmt and `cargo deny` once | GitHub, through a pull request | ~30 to 45 min | the merge to `main` |
+| Slow | CI (`.github/workflows/ci.yml`): build, default tests and clippy on Linux, macOS and Windows; fmt and `cargo deny` once | GitHub, through a pull request | warm cache: Linux ~15 min, macOS ~30; cold ~45 | the merge to `main` |
 
 A slice is checked on one OS while it is built: the Mac (local) or Linux (cloud). A Linux slice
 broke `main` on macOS twice (S91: a Linux-only `mkfifoat`, an errno that differs), and only the
@@ -210,12 +210,15 @@ stays as it is, and the slow one runs while the product owner and foremen do oth
 - On delivery the foreman pushes `slice/<id>` and opens a PR to `main` (foreman skill,
   section 5). The product owner merges only when the PR's CI is green (product-owner skill,
   section 5); a red run goes back to the foreman as a failure on another OS.
-- `factory/check-main.sh` runs after the merge only what CI cannot: the Mac's timing tests on a
-  quiet machine, and the window (`front`) checks a cloud slice could not run.
+- After the merge, the Mac runs only what CI cannot: `factory/check-main.sh` (the timing tests,
+  one at a time) and a cloud slice's `not run (cloud)` tests (`front`, DEV-S-13).
+- A test red in CI but green in the slice's runs is rerun once before it counts (product-owner
+  skill, section 5); one that repeats is a flake to weigh ("Time and value").
 - CI runs the default tests only. `slow`, journey, `front`, `timing` and `real` tests stay
   `#[ignore]`d there, as in `check.sh`.
-- App window (`driver`) tests: on macOS in CI (runners have a GUI session). On Linux they need
-  Xvfb and a window manager (`app/scripts/linux-test.sh`, run by hand). Windows has no driver.
+- App window (`driver`) tests: on macOS in CI, `macos-26` (runners have a GUI session; on
+  `macos-15` mod windows at `*.localhost` never loaded). On Linux they need Xvfb and a window
+  manager (`app/scripts/linux-test.sh`, run by hand): a later step for CI. Windows has none.
 
 ## Windows
 

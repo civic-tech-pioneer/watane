@@ -137,7 +137,10 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
      origin main` (GitHub marks the PR merged). If `main` moved since and the rebase is clean,
      rebase the branch yourself, push it and merge without waiting again: the push to `main`
      runs CI there too, and a red run on `main` is fixed before the next merge.
-   - Red: send the failing job's name and its error lines to the foreman (local: a message;
+   - Red on a test that passed in the slice's own runs: rerun the failed jobs once (`gh run
+     rerun <run> --failed`); macOS runners have 3 cores and GUI tests time out under that
+     load. Red again, or red on a compile, clippy or fmt step: it is real.
+   - Real red: send the failing job's name and its error lines to the foreman (local: a message;
      cloud: a new routine "/foreman <id>, continue from branch slice/<id>; CI failed: ...").
      A small fix (a missing `cfg`, a clippy lint of one OS) you may push to the branch
      yourself. A `cargo deny` advisory alone is not the slice's failure: add it under
