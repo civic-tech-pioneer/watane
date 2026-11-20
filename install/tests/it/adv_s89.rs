@@ -54,3 +54,29 @@ fn adv_s89_receipt_move_that_fails_after_the_rename_says_nothing_was_changed() {
         "installed, yet the run says nothing changed: {out:?}"
     );
 }
+
+/// 3.8 (fix2): a fresh install says "Nothing was installed." when the swap fails, decided only by
+/// what existed before the swap. When the swap fails (the receipt's `mv` fails without renaming)
+/// and undo then cannot take a fresh entry back out (its `mv` back to `.new.<pid>` fails, twice),
+/// the new `watane` stays at `~/.local/bin/watane`, on Alice's PATH, and the run still ends with
+/// "Nothing was installed." The old-path check that says "could not be put back" never fires on
+/// a fresh install, since there is no old path.
+#[test]
+fn adv_s89_fresh_install_whose_undo_fails_says_nothing_was_installed() {
+    let fx = Fx::new();
+    let p = fx.fakes.join("mv");
+    fs::write(
+        &p,
+        "#!/bin/sh\nfor a; do case $a in *receipt.new.*) exit 1 ;; esac; done\nfor last; do :; done\ncase $1 in *.new.*) ;; *) case $last in *.new.[0-9]*) exit 1 ;; esac ;; esac\nexec \"$FAKE_REAL/mv\" \"$@\"\n",
+    )
+    .expect("fake mv");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    let left = fx.home.join(".local/bin/watane");
+    assert!(left.exists(), "setup: undo was meant to leave the new program: {out:?}");
+    assert!(
+        !out.stderr.contains("Nothing was installed."),
+        "~/.local/bin/watane is in place, yet the run says nothing was installed: {out:?}"
+    );
+}
