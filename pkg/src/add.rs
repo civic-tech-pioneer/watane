@@ -3,13 +3,14 @@
 
 use crate::folder::{invalid, io, read_file};
 use crate::open::{self, Dir, Kind};
-use crate::refusal::CHANGED;
+use crate::refusal::{CHANGED, DIRECTORY};
 use crate::{Deps, Mod, ModError, PublisherKey, Rule};
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::Path;
 
 type Files = BTreeMap<String, Vec<u8>>;
+const NOT_REGULAR: &str = "expected a regular file";
 const NOT_A_DIRECTORY: &str = "expected a directory without symbolic links";
 // A part that is a link or not a directory is the `path` violation at that part.
 fn refused(root: &Path, part: &str, e: std::io::Error) -> ModError {
@@ -64,12 +65,25 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
             return Err(invalid(Rule::Path, &rel, "expected a regular WIT entry"));
         }
         if name.ends_with(".wit") {
-            let bytes = read_file(root, &rel, 1024 * 1024, Rule::Limit, true)?
+            let bytes = read_file(root, &rel, 1024 * 1024, Rule::Limit, true)
+                .map_err(|e| swapped(root, &rel, e))?
                 .ok_or_else(|| invalid(Rule::Path, &rel, CHANGED))?;
             result.insert(name.into_owned(), bytes);
         }
     }
     Ok(result)
+}
+// A listed file that is no regular file when read was swapped after the listing: rule `path`.
+fn swapped(root: &Path, rel: &str, e: ModError) -> ModError {
+    match e {
+        ModError::Invalid(v)
+            if v.len() == 1 && v[0].rule == Rule::Limit && v[0].message == NOT_REGULAR =>
+        {
+            invalid(Rule::Path, rel, DIRECTORY)
+        }
+        ModError::Io { source, .. } => failed(root, rel, source),
+        e => e,
+    }
 }
 // Write below the handle of the destination directory; nothing is addressed by a path string.
 fn write_files(
@@ -286,6 +300,21 @@ mod tests {
         };
         assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, file), "{v:?}");
         assert_eq!(v[0].message, CHANGED);
+    }
+    #[test]
+    fn ac2_s91_fix1_listed_wit_swapped_for_directory() {
+        let (p, _c, _m) = setup();
+        let rel = "wit/world.wit";
+        let file = p.path().join(rel);
+        fs::remove_file(&file).unwrap();
+        fs::create_dir(&file).unwrap();
+        // The listing saw a file; the read finds a directory.
+        let e = read_file(p.path(), rel, 1024, Rule::Limit, true).unwrap_err();
+        let ModError::Invalid(v) = swapped(p.path(), rel, e) else {
+            panic!("expected invalid")
+        };
+        assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, rel));
+        assert_eq!(v[0].message, DIRECTORY);
     }
     #[test]
     fn ac1_s91_name_created_at_target_after_preflight() {

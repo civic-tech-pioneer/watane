@@ -352,7 +352,9 @@ so a link at either name is replaced, never followed.
 
 A name created, removed or replaced between preflight and write (EEXIST or ENOENT from `mkdirat`,
 `openat`, `unlinkat` or a listing) is `ModError::Invalid`, rule `path`, `changed while the mod was
-read; read it again` at the path relative to the mod, never `ModError::Io` with raw OS text.
+read; read it again` at the path relative to the mod, never `ModError::Io` with raw OS text. A listed `.wit` that is a directory when it is read (or
+below a directory that became a file) is rule `path`, `expected a regular file, found a directory`,
+never rule `limit`.
 
 ### 4.9 `Mod::check_component`
 
