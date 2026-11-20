@@ -70,7 +70,12 @@ pub fn publish(app: &App, bytes: Vec<u8>) -> std::thread::JoinHandle<(u16, Value
 pub fn consent(app: &App) {
     let deadline = std::time::Instant::now() + TIMEOUT;
     while !app.wait("consent", std::time::Duration::ZERO) {
-        let command = app.eval("main", "window.__stageC ?? null");
+        // `begin` runs in main; with main closed no command of it can be pending.
+        let command = if app.wait("main", std::time::Duration::ZERO) {
+            app.eval("main", "window.__stageC ?? null")
+        } else {
+            Value::Null
+        };
         if let Some(error) = command.get("error") {
             let text = error
                 .get("message")
