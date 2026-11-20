@@ -29,6 +29,58 @@ fn plan(app: &App) {
     }
 }
 #[test]
+fn ac5_s90_hidden_window_still_polls_library() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    assert_eq!(app.eval("main", "document.hidden"), true);
+    app.eval("main", "window.__pollMods = 0; const invoke = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = (cmd, args) => { if (cmd === 'mods_list') window.__pollMods++; return invoke(cmd, args); }; null");
+    until(&app, "main", "window.__pollMods >= 2");
+    let calls = app.log()["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["label"] == "main" && c["cmd"] == "mods_list")
+        .count();
+    assert!(calls >= 2);
+    assert!(app.quit().success());
+}
+
+#[test]
+fn ac6_s90_confirm_blur_recovers_cancel_until_closed() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    begin_install(&app, &both());
+    approve(&app);
+    installed(&app, "recommendations");
+    app.eval(
+        "main",
+        "document.querySelector('[data-local=recommendations] button.remove').click(); null",
+    );
+    until(
+        &app,
+        "main",
+        "!document.querySelector('#confirm-panel').hidden",
+    );
+    app.eval("main", "document.querySelector('#confirm-cancel').focus(); document.activeElement.blur(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
+    until(&app, "main", "window.__blurDone");
+    assert_eq!(
+        app.eval("main", "document.activeElement.id"),
+        "confirm-cancel"
+    );
+    app.eval("main", "document.querySelector('#keep-data').focus(); document.querySelector('#keep-data').click(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
+    until(&app, "main", "window.__blurDone");
+    assert_eq!(app.eval("main", "document.activeElement.id"), "keep-data");
+    app.eval("main", "document.querySelector('#confirm-cancel').click(); document.querySelector('#library-filter').focus(); document.activeElement.blur(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
+    until(&app, "main", "window.__blurDone");
+    assert_eq!(app.eval("main", "document.activeElement.tagName"), "BODY");
+    assert!(app.quit().success());
+}
+
+#[test]
 fn ac4_s2_install_order_and_s2b_withhold_storage() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
@@ -238,6 +290,34 @@ fn ac5_journey_j2() {
             "document.querySelector('#books')?.textContent.includes('Dune')",
         );
     }
+    // S90: a disabled provider's own host reason reaches the page.
+    app.close("mod-recommendations");
+    let closed_by = Instant::now() + TIMEOUT;
+    while app
+        .windows()
+        .iter()
+        .any(|w| w["label"] == "mod-recommendations")
+    {
+        assert!(
+            Instant::now() < closed_by,
+            "recommendations window did not close"
+        );
+        std::thread::yield_now();
+    }
+    invoke(&app, "mod_disable", json!({"local":"reading-list"}));
+    open(&app, "recommendations");
+    until(
+        &app,
+        "mod-recommendations",
+        "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
+    );
+    invoke(&app, "mod_enable", json!({"local":"reading-list"}));
+    until(
+        &app,
+        "mod-recommendations",
+        "document.querySelector('#books')?.textContent.includes('Dune') && document.querySelector('#error').textContent === ''",
+    );
+    open(&app, "reading-list");
     let key = "call mods:reading-list/books@0.1.0 from local/reading-list";
     invoke(
         &app,
@@ -248,7 +328,7 @@ fn ac5_journey_j2() {
     until(
         &app,
         "mod-recommendations",
-        "document.body.textContent.includes('not granted')",
+        "document.body.textContent.includes('not granted') && document.body.textContent.includes('no provider is linked')",
     );
     invoke(
         &app,

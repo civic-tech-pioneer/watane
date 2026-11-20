@@ -444,6 +444,9 @@ selected and the note names them all (`Book club and Notes are
 installed.`, `Book club, Notes and Stats are installed.`) and has no
 `It adds to` line (S84: it would read as the selected mod's). Installs by a local program or a managing mod change
 nothing in the view (only the grid).
+For `install_release` and `install_link`, read `result?.followed || []`:
+for each party label, append `watane now follows <label>, so its updates
+reach you.` in the note. An absent or empty array leaves the note unchanged.
 
 #### 5.3.4 Details
 
@@ -508,7 +511,9 @@ entry; the panel is the details. In order:
    enabled mod uses or extends and that is not the main mod asks nothing,
    as before; Remove always opens the panel. The ids
    `#dependency-dialog`, `#dependency-cancel`, `#dependency-continue` and
-   `#remove-dialog` are gone.
+   `#remove-dialog` are gone. While the panel is open, a `focusout` with
+   null `relatedTarget` restores Cancel on the next task if focus is still
+   on BODY. A real focus move is left alone; closing removes the guard.
 6. `What it may do` (label): one row per grant, `[data-key=<key>]`: a
    32 px glyph box (`▤` storage, `◎` network, `→` call, `⇄` subscribe,
    `⚙` manage), `GrantLine.short` (section 4) with `GrantLine.text` as its
@@ -595,6 +600,9 @@ The view is a column of at most 920 px, centred, padding 36 × 24, gap 22:
    `#follow-channel`, and `#channels` with the rows and controls of 9.3
    and 9.6 (`Unfollow`, `Use as index`, `Include in my index`, `List in
    my index`, `End a listing`), as cards in the same style.
+   While `channel_follow` or `index_choose` from `#add-index` runs, its
+   button is disabled with `aria-busy="true"` and reads `Following…` or
+   `Adding…`. On success or error, restore its old text and enable it.
 
 `#refresh-find` is gone: `Check now` in Updates refreshes, and Find runs
 its last search again after each refresh.
@@ -669,11 +677,14 @@ Stage I itself adds no machine command.
 The manager tabs use `#mods` (Library), `#find`, and `#updates`;
 `#settings` selects Settings and immediately refreshes status, machines and
 restore hints, including when the native window is hidden. Navigation does
-not depend on the visible-window polling timer.
+not depend on the polling timer. The library polls every 2 s while
+visible, every 10 s while hidden; focus and `visibilitychange` refresh
+at once.
 The library filter matches every entered word
 against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
-disabling or removing; Cancel is focused and Escape cancels.
+disabling or removing; Cancel is focused, a blur to nothing restores it on
+the next task while the panel is open, and Escape cancels.
 
 S81 built `.main-mark`, the focus move of a connection and the two warning
 sentences in the layout before 5.3.1; 5.3.3 and 5.3.4 now hold them, with
@@ -1106,7 +1117,8 @@ Behaviour:
   passphrase)`. dist refuses when the own channel holds a statement
   (APP-F-31). After a restore, the page shows the step of section 9.1.
 - Polling: the main page calls `status` and `mods_list` at load, on window
-  `focus`, after each action, and every 2 s while visible. The app sends no
+  `focus` and `visibilitychange`, after each action, and every 2 s while
+  visible, every 10 s while hidden. The app sends no
   Tauri events.
 
 The pages call commands only through `ui/ipc.js`:
@@ -1334,6 +1346,12 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
 `dist.followed()` to `ChannelRow`. The status is `compromised` for
 `Status::Compromised`, `failed` with the cause of the last
 `Outcome::Failed`, else `ok`.
+
+The row shows `partyLabel(channel)`, then `Read <ago>` from `readAt`
+(the serialized `read_at`) for `ok`, `Couldn't read: <cause>` for `failed`,
+or `Compromised: <cause>` for `compromised`. The cause is the same complete
+text as the Updates failed-channel card. The base URL may be the row's
+`title`, never its text; raw status tokens are not shown.
 
 ### 9.4 Install from a link
 
@@ -1838,7 +1856,10 @@ script from the test listener; `window.open`; a navigation to
 Fixtures `tests/fixtures/reading-list` and `tests/fixtures/recommendations`
 are mod folders like those of pkg's acceptance A2 (`recommendations` calls
 and subscribes to `reading-list`). The `recommendations` page shows
-`not granted` when its call fails with that code. Built `logic.wasm` files are
+`not granted: <host message>` when its call fails with that code; other
+errors show their message. The disabled-provider journey checks `disabled
+or unavailable`, the withdrawn grant checks `no provider is linked`, and
+a successful read after enabling or restoring the grant clears `#error`. Built `logic.wasm` files are
 committed alongside the fixtures. `tests/fixtures/build.sh` builds them manually
 from `tests/fixtures/src/`; no test builds a mod. J3 invokes dev's publish pipeline with the
 committed component and no `logic/` source folder.

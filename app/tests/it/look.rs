@@ -14,6 +14,36 @@ fn manager_criterion(scenario: &str) {
     );
 }
 #[test]
+fn ac6_s90_confirm_recovers_only_focus_lost_to_nothing() {
+    manager_criterion("s90-blur");
+}
+
+#[test]
+fn ac5_s90_poll_cadence_and_immediate_refresh() {
+    manager_criterion("s90-poll");
+}
+
+#[test]
+fn ac4_s90_installed_note_names_newly_followed_channels() {
+    manager_criterion("s90-followed");
+}
+
+#[test]
+fn ac3_s90_channel_rows_use_manager_words() {
+    manager_criterion("s90-channels");
+}
+
+#[test]
+fn ac2_s90_follow_and_index_busy_until_settled() {
+    manager_criterion("s90-busy");
+}
+
+#[test]
+fn ac1_s90_page_keeps_host_not_granted_reason() {
+    manager_criterion("s90-page");
+}
+
+#[test]
 fn ac1_ac2_update_band_version_grants_and_short_button() {
     manager_criterion("update-band");
 }

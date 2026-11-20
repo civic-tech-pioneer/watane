@@ -41,7 +41,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-20** When the participant chooses one or more mod folders, or drops them on the manager, the app shall ask the host for a plan of all of them and install the plan after consent. Traces: F-INST-1, F-INST-2, F-INST-4, J2.
 - **APP-F-21** If a plan needs a provider that is not installed and not supplied, then the app shall name each missing provider and install nothing. Traces: F-INST-4, F-QUAL-3.
 - **APP-F-22** The app shall show, for each mod, its name and installed version next to each other outside Details, publisher or "local", grants in words, page origin and package id. Traces: F-APP-5.
-- **APP-F-23** The participant shall be able to open, disable, enable and remove each mod, withdraw each grant, and give back a withdrawn or withheld grant. Traces: F-INST-5, J2.
+- **APP-F-23** The participant shall be able to open, disable, enable and remove each mod, withdraw each grant, and give back a withdrawn or withheld grant. A page whose call is not granted shows `not granted` with the host's message. Traces: F-INST-5, J2.
 - **APP-F-24** When the participant removes a mod, the app shall ask whether to delete its data, with "keep data" as the default. Traces: F-INST-5.
 
 ### Main mod and manager (stage I)
@@ -51,7 +51,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-64** The app menu shall hold `Mods…` (⇧⌘M on macOS, Ctrl+Shift+M elsewhere), which opens or focuses the main window on the manager, and `Settings…` (⌘, on macOS, Ctrl+, elsewhere), which opens it on the settings. The usual edit commands (cut, copy, paste, undo, select all) shall work in every field and page. The app shall quit when its last window other than the consent view closes. Traces: F-APP-7.
 - **APP-F-65** The manager shall hold the views Library, Find and Updates, and the details of one mod. The views of the identity, the site, the backup, the agents and the own machines shall be in Settings, not in the manager. Followed channels and indexes shall be in Find. Traces: F-APP-8.
 - **APP-F-66** The details of a mod shall show its connections, each a link to that mod's details: the mods it calls (`Uses`), the mods whose events or collects it receives (`Adds to`), the mods that call it (`Used by`) and the mods that receive its events or collects (`Extended by`). Following a connection link shall open the target details and move keyboard focus to its first control or heading. Only granted links of installed mods count. A mod with none shall read `Works on its own: it uses no mod and no mod uses it.` Traces: F-APP-9, J9.
-- **APP-F-67** When the participant disables or removes a mod that an enabled mod calls or receives events from, the app shall first ask `Disable <name>?` or `Remove <name>?`, naming enabled callers with `These mods use it: <names>.` and enabled subscribers with `These mods extend it: <names>.` Only granted links count. Empty groups are omitted; when both apply, uses comes first, and a mod in both groups appears in both. A mod that only extends it shall not be called a user. Disabling or removing the main mod shall also ask, and say what then opens at start. The button that confirms a removal that deletes the mod's data shall say so; `Cancel` is the default and Escape cancels. Traces: F-APP-9, F-INST-5.
+- **APP-F-67** When the participant disables or removes a mod that an enabled mod calls or receives events from, the app shall first ask `Disable <name>?` or `Remove <name>?`, naming enabled callers with `These mods use it: <names>.` and enabled subscribers with `These mods extend it: <names>.` Only granted links count. Empty groups are omitted; when both apply, uses comes first, and a mod in both groups appears in both. A mod that only extends it shall not be called a user. Disabling or removing the main mod shall also ask, and say what then opens at start. The button that confirms a removal that deletes the mod's data shall say so; `Cancel` is the default and Escape cancels. While the panel is open, a blur to nothing returns focus to Cancel on the next task; a real focus move is left alone. Traces: F-APP-9, F-INST-5.
 - **APP-F-68** The library shall list the main mod first, then the mods with a problem, then those with an update, then the rest by name. It shall filter its entries by words in the name or the publisher, and by published or local. When nothing matches, it shall say so and link to Find. Traces: F-APP-8.
 - **APP-F-69** Updates shall list, in this order: the offers that need the participant (a new grant, a withdrawal, a compromised channel), the channels that could not be read, and the updates that installed without a question since the app started, newest first. Traces: F-INST-7, F-INST-8, F-APP-8.
 - **APP-F-76** The app views shall follow the light or dark appearance of the system. Traces: F-APP-8.
@@ -76,7 +76,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-34** When the participant enters a link, the app shall follow its channel. When the link names a release, the app shall fetch that release, plan its install with each provider fetched, and install it after consent. Traces: F-PUB-6, F-INST-6, F-INST-4, J3.
 - **APP-F-35** The app shall show the publisher of each published mod by its profile name and key fingerprint, with "signature verified". Traces: F-APP-3, F-APP-5, J3.
 - **APP-F-36** The app shall refresh each followed channel at start, every 10 minutes and on request. Traces: F-PUB-6, F-QUAL-1.
-- **APP-F-37** If a refresh, a fetch or a verification fails, then the app shall show the channel or the release with the cause that dist names. If a channel is compromised, then the app shall show it as compromised. Errors use plain Display text, with each cause once and no Debug or serde diagnostics. A failed index read says `Could not read <index>: <cause>` using its name, else its fingerprint. Mod refresh notices use the same channel name and cause text. A wrong-channel follow names both the served and expected parties, using stored profiles, `you` for the own identity, else fingerprints. Only the latest main-window action may set its error line; a fast retry clears an earlier failure and an older pending failure cannot return. Traces: F-PUB-7, F-QUAL-3, J3.
+- **APP-F-37** If a refresh, a fetch or a verification fails, then the app shall show the channel or the release with the cause that dist names. If a channel is compromised, then the app shall show it as compromised. Followed-channel rows show the party label and `Read <ago>`, `Couldn't read: <cause>` or `Compromised: <cause>`, with no base URL or raw status token in the text. Following a channel or adding an index disables its button with `aria-busy="true"` and `Following…` or `Adding…` until it settles, then restores the button on success or error. Errors use plain Display text, with each cause once and no Debug or serde diagnostics. A failed index read says `Could not read <index>: <cause>` using its name, else its fingerprint. Mod refresh notices use the same channel name and cause text. A wrong-channel follow names both the served and expected parties, using stored profiles, `you` for the own identity, else fingerprints. Only the latest main-window action may set its error line; a fast retry clears an earlier failure and an older pending failure cannot return. Traces: F-PUB-7, F-QUAL-3, J3.
 
 ## Step 4: Find
 
@@ -169,8 +169,7 @@ participant disables the mod, then the window no longer exists.
 
 **S9 Withdraw a grant** (APP-F-23, J2). Given `recommendations` with its
 call grant, when the participant withdraws it and adds a book in
-`reading-list`, then the `recommendations` page shows its "not granted"
-text. When the participant gives the grant back in the library, with no consent view, then the page
+`reading-list`, then the `recommendations` page shows `not granted` with the host's message (`no provider is linked`). With its provider disabled, opening the page shows the host's `disabled or unavailable`; enabling the provider lets the page read again and clears its error. When the participant gives the grant back in the library, with no consent view, then the page
 shows the book again.
 
 **S10 Remove** (APP-F-24). Given `recommendations`, when the participant
@@ -353,7 +352,7 @@ call grant, `Uses` and `Used by` are gone.
 
 **S41 Warn before disable** (APP-F-67). Given S40, when the participant
 disables `reading-list`, then the page names `Recommendations` and
-`Cancel` has the focus; Cancel leaves both enabled.
+`Cancel` has the focus; a blur to nothing restores Cancel on the next task, a real focus move is left alone, and the guard ends when the panel closes. Cancel leaves both enabled.
 
 **S42 Settings apart** (APP-F-65). The library, Find and Updates views
 hold no control of identity, site, backup, agents or machines; Settings

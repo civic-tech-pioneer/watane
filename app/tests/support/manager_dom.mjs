@@ -44,6 +44,7 @@ class Node {
   scrollIntoView() {}
   listeners = {};
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  removeEventListener(type, listener) { this.listeners[type] = (this.listeners[type] || []).filter(fn => fn !== listener); }
   dispatchEvent(event) { for (const listener of this.listeners[event.type] || []) listener(event); }
   click() { return this.onclick?.(); }
 }
@@ -71,7 +72,7 @@ const calls=[]; let commandResult={}, nextMods=null;
 const context = vm.createContext({document, $, launcher, element, ...manager, ...words,
   // monogram closes over its module's global document.
   monogram(mod,size) { globalThis.document=document; return words.monogram(mod,size); },
-  location:{hash:'#mods'}, console, getComputedStyle:()=>({gridTemplateColumns:'200px 200px'}),
+  setTimeout, location:{hash:'#mods'}, console, getComputedStyle:()=>({gridTemplateColumns:'200px 200px'}),
   call(cmd,args={}) { calls.push({cmd,args}); return Promise.resolve(cmd === 'search' ? [] : commandResult); },
   errors:{begin:()=>1,current:()=>1}, readRefresh:()=>Promise.resolve(),
   taggedError:e=>e, showError(error) { throw error; },
@@ -345,4 +346,88 @@ if (['find-updates','ac11','ac12'].includes(which)) {
   assert.equal($('#update-offers').textContent,'Nothing needs you.');
   assert.equal($('#update-channels').parent.hidden,true);
   assert.equal($('#update-done').textContent,'None since the app started.');
+}
+
+if (which === 's90-page') {
+  const books=new Node('pre'), errorBody=new Node('body');
+  let read, failure={code:'not_granted',message:'provider disabled or unavailable'};
+  const page=vm.createContext({document:{getElementById:()=>books,createElement:tag=>new Node(tag),body:errorBody},
+    watane:{on:fn=>read=fn,call:async()=>{if(failure) throw failure; return [];}}});
+  vm.runInContext(readFileSync(new URL('../fixtures/recommendations/ui/app.js',import.meta.url),'utf8'),page);
+  await read(); assert.equal(errorBody.textContent,'not granted: provider disabled or unavailable');
+  failure={code:'not_granted',message:'no provider is linked'};
+  await read(); assert.equal(errorBody.textContent,'not granted: no provider is linked');
+  failure={code:'other',message:'exact cause'}; await read(); assert.equal(errorBody.textContent,'exact cause');
+  failure=null; await read(); assert.equal(errorBody.textContent,'');
+}
+
+if (which === 's90-busy') {
+  vm.runInContext(source.slice(source.indexOf('let lastChannels ='),source.indexOf("$('#identity-backup').onclick")).replaceAll('export function ', 'function '),context);
+  context.showError=()=>{};
+  for (const [id,cmd,busy] of [['follow-channel','channel_follow','Following…'],['add-index','index_choose','Adding…']]) {
+    const button=$('#'+id), old=button.textContent;
+    for (const fail of [false,true]) {
+      let settle;
+      context.call=(name)=>{assert.equal(name,cmd);return new Promise((resolve,reject)=>settle=()=>fail ? reject(new Error('whole cause')) : resolve({}));};
+      const pending=button.click(); await tick();
+      assert.equal(button.disabled,true); assert.equal(button.getAttribute('aria-busy'),'true'); assert.equal(button.textContent,busy);
+      settle(); await pending;
+      assert.equal(button.disabled,false); assert.notEqual(button.getAttribute('aria-busy'),'true'); assert.equal(button.textContent,old);
+    }
+  }
+}
+
+if (which === 's90-channels') {
+  context.canSign=false;
+  vm.runInContext(source.slice(source.indexOf('let lastChannels ='),source.indexOf('let query =')),context);
+  for (const [status,expected] of [['ok','Read 3 min ago'],['failed',"Couldn't read: whole: nested cause"],['compromised','Compromised: whole: nested cause']]) {
+    const channel={channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test',status,cause:status==='ok' ? null : 'whole: nested cause',readAt:Date.now()-180000};
+    context.call=async cmd=>cmd==='channels_list' ? [channel] : [];
+    await vm.runInContext('channelsView()',context);
+    const row=$('#channels .channel-card');
+    assert.ok(row.textContent.includes('Alice (fp)'));
+    assert.ok(row.textContent.includes(expected),row.textContent);
+    assert.ok(!row.textContent.includes(channel.base));
+    assert.ok(!/\b(ok|failed|compromised)\b/.test(row.textContent));
+  }
+}
+
+if (which === 's90-followed') {
+  for (const cmd of ['install_link','install_release']) {
+    for (const followed of [undefined,[],['Alice','Bob <img>']]) {
+      render([mod('old')]);
+      commandResult={installed:['new'],...(followed ? {followed} : {})}; nextMods=[mod('old'),mod('new')];
+      context.cmd=cmd; await vm.runInContext('action(cmd)',context);
+      const expected='NEW is installed.'+(followed || []).map(label=>` watane now follows ${label}, so its updates reach you.`).join('')+'✕';
+      assert.equal($('#installed-note').textContent,expected);
+      assert.equal($('#installed-note img'),null);
+    }
+  }
+}
+
+if (which === 's90-poll') {
+  const intervals=[], events={}; let reads=0;
+  context.window={addEventListener:(type,fn)=>events[type]=fn};
+  context.setInterval=(fn,ms)=>intervals.push({fn,ms});
+  context.readRefresh=()=>{reads++;return Promise.resolve();};
+  vm.runInContext(source.slice(source.indexOf("window.addEventListener('focus'"),source.indexOf('let lastReleases')),context);
+  for (const hidden of [false,true]) {
+    document.hidden=hidden; reads=0;
+    for(let ms=2000;ms<=20000;ms+=2000) for(const timer of intervals) if(ms%timer.ms===0) timer.fn();
+    assert.equal(reads,hidden ? 2 : 10);
+    reads=0; events.focus(); assert.equal(reads,1);
+    reads=0; document.dispatchEvent({type:'visibilitychange'}); assert.equal(reads,1);
+  }
+}
+
+if (which === 's90-blur') {
+  render([mod('a')]); entry('a').querySelector('.remove').click(); await tick();
+  const panel=$('#confirm-panel');
+  document.activeElement=document.body; panel.dispatchEvent({type:'focusout',relatedTarget:null});
+  await new Promise(resolve=>setTimeout(resolve,0)); assert.equal(document.activeElement,$('#confirm-cancel'));
+  const other=$('#keep-data'); other.focus(); panel.dispatchEvent({type:'focusout',relatedTarget:other});
+  await tick(); assert.equal(document.activeElement,other);
+  document.activeElement=document.body; panel.dispatchEvent({type:'focusout',relatedTarget:null}); $('#confirm-cancel').click();
+  await new Promise(resolve=>setTimeout(resolve,0)); assert.equal(document.activeElement,document.body);
+  panel.dispatchEvent({type:'focusout',relatedTarget:null}); await tick(); assert.equal(document.activeElement,document.body);
 }

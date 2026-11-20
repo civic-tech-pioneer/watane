@@ -26,7 +26,7 @@ async function action(cmd, args = {}) {
     const added = (result?.installed || []).filter(local => !before.has(local)).map(local => currentMods.find(mod => mod.local === local)).filter(Boolean);
     if (added.length) {
       $('#library-filter').value = ''; sourceFilter = ''; selected = added[0].local;
-      location.hash = '#mods'; route(); filterLibrary(); installedNote(added);
+      location.hash = '#mods'; route(); filterLibrary(); installedNote(added, result?.followed || []);
     }
     closeAdd();
   }
@@ -67,6 +67,14 @@ async function runAction(work) {
     throw error;
   }
 }
+async function busyAction(selector, text, cmd, args) {
+  const button = $(selector), old = button.textContent;
+  if (button.disabled) return;
+  button.disabled = true; button.setAttribute('aria-busy', 'true'); button.textContent = text;
+  try { await action(cmd, args); }
+  catch (e) { showError(e); }
+  finally { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = old; }
+}
 function button(parent, text, className, callback) {
   const b = element('button', text, parent, `btn ${className || ''}`);
   b.onclick = () => Promise.resolve().then(callback).catch(showError); return b;
@@ -74,7 +82,7 @@ function button(parent, text, className, callback) {
 let lastMods = '', currentMods = [];
 let managerTab = 'library', selected = null, sourceFilter = '', noteSelection = null;
 function dismissInstalled() { $('#installed-note').hidden = true; noteSelection = null; }
-function installedNote(mods) {
+function installedNote(mods, followed = []) {
   const note = $('#installed-note'); note.replaceChildren();
   note.append(icon('check', 18, 'verified'));
   const text = element('div', '', note);
@@ -83,6 +91,7 @@ function installedNote(mods) {
   element('strong', `${label} ${mods.length === 1 ? 'is' : 'are'} installed.`, text);
   const targets = [...new Set(mods.flatMap(m => connections(m, currentMods).addsTo))].map(local => currentMods.find(m => m.local === local)?.name).filter(Boolean);
   if (mods.length === 1 && targets.length) { text.append(document.createTextNode(' ')); element('span', `It adds to ${targets.join(' and ')}.`, text, 'hint'); }
+  for (const label of followed) { text.append(document.createTextNode(' ')); element('span', `watane now follows ${label}, so its updates reach you.`, text, 'hint'); }
   const dismiss = button(note, '✕', 'quiet dismiss', dismissInstalled); dismiss.setAttribute('aria-label', 'Dismiss');
   noteSelection = selected; note.hidden = false;
 }
@@ -201,8 +210,15 @@ export function modsView(mods) {
   filterLibrary(); headerView();
 }
 let confirming = null;
+function restoreCancelFocus(event) {
+  if (event.relatedTarget) return;
+  const open = confirming;
+  setTimeout(() => {
+    if (open && confirming === open && document.activeElement === document.body) $('#confirm-cancel').focus();
+  }, 0);
+}
 function cancelConfirm() {
-  const panel = $('#confirm-panel'); panel.hidden = true;
+  const panel = $('#confirm-panel'); panel.removeEventListener('focusout', restoreCancelFocus); panel.hidden = true;
   if (confirming) confirming.entry.querySelector('.actions').hidden = false;
   confirming = null;
 }
@@ -216,6 +232,7 @@ function warn(mod, verb) {
   actions.hidden = true;
   actions.after(panel);
   confirming = {mod,verb,entry};
+  panel.addEventListener('focusout', restoreCancelFocus);
   $('#confirm-title').textContent = `${verb} ${mod.name}?`;
   const warning = $('#dependency-warning'); warning.replaceChildren();
   warning.append(icon('warning', 18));
@@ -316,8 +333,9 @@ function refresh() {
   return refreshing;
 }
 window.addEventListener('focus', () => readRefresh().catch(showError));
-document.addEventListener('visibilitychange', () => { if (!document.hidden) readRefresh().catch(showError); });
+document.addEventListener('visibilitychange', () => readRefresh().catch(showError));
 setInterval(() => { if (!document.hidden) readRefresh().catch(showError); }, 2000);
+setInterval(() => { if (document.hidden) readRefresh().catch(showError); }, 10000);
 readRefresh().catch(showError);
 
 let lastReleases = '', canSign = false;
@@ -352,10 +370,12 @@ async function channelsView() {
   const channels = await call('channels_list');
   knownChannels = channels;
   const mods = await Promise.all(channels.map(channel => call('search', {text: '', publisher: channel.channel, interface: null})));
-  const signature = JSON.stringify([channels, mods, canSign]); if (signature === lastChannels) return;
+  const signature = JSON.stringify([channels, mods, canSign, channels.map(c => c.readAt == null ? null : ago(c.readAt))]); if (signature === lastChannels) return;
   lastChannels = signature; $('#channels').replaceChildren();
   for (const [i, channel] of channels.entries()) {
-    const row = element('div', `${partyLabel(channel)} · ${channel.base || ''} · ${channel.status}${channel.cause ? ': ' + channel.cause : ''} `, $('#channels'), 'card channel-card');
+    const state = channel.status === 'ok' ? `Read ${ago(channel.readAt)}` : channel.status === 'failed' ? `Couldn't read: ${channel.cause}` : `Compromised: ${channel.cause}`;
+    const row = element('div', `${partyLabel(channel)} · ${state} `, $('#channels'), 'card channel-card');
+    row.title = channel.base || '';
     row.dataset.channel = channel.channel;
     button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));
     if (!channel.base) continue;
@@ -459,7 +479,7 @@ $('#show-index').onclick = () => {
   const open = $('#index-entry').hidden; $('#index-entry').hidden = !open;
   $('#show-index').setAttribute('aria-expanded',String(open)); if (open) $('#index-link').focus();
 };
-$('#add-index').onclick = () => action('index_choose', {link: $('#index-link').value}).catch(showError);
+$('#add-index').onclick = () => busyAction('#add-index', 'Adding…', 'index_choose', {link: $('#index-link').value});
 $('#search').onclick = () => {
   errors.begin();
   const parties = [...knownIndexes, ...knownChannels];
@@ -474,7 +494,7 @@ $('#install-from-link').onclick = () => action('install_link', {link: $('#instal
 $('#set-name').onclick = () => action('identity_set_name', {name: $('#profile-name').value}).catch(showError);
 $('#set-site').onclick = () => action('site_set_url', {url: $('#site-url').value}).catch(showError);
 $('#copy-link').onclick = () => runAction(() => navigator.clipboard.writeText($('#own-link').textContent)).catch(showError);
-$('#follow-channel').onclick = () => action('channel_follow', {link: $('#follow-link').value}).catch(showError);
+$('#follow-channel').onclick = () => busyAction('#follow-channel', 'Following…', 'channel_follow', {link: $('#follow-link').value});
 $('#refresh-channels').onclick = () => refreshChannels().catch(showError);
 $('#identity-backup').onclick = async () => {
   errors.begin();

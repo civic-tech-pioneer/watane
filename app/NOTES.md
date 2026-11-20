@@ -1615,3 +1615,26 @@ Validation here: `cargo test --features driver --no-run`,
 `cargo clippy --all-targets --features driver -- -D warnings`,
 `cargo fmt --check` and `git diff --check` pass. No window tests were run in
 the sandbox. No dependency or specification change.
+
+
+## S90 — manager outcome words and hidden refresh
+
+The recommendations fixture now keeps the host's not-granted reason.
+Follow/index buttons stay busy until settlement, channel rows use manager
+words, and install notes name channels followed by that install. Hidden
+or occluded windows refresh every 10 s (visible windows keep 2 s).
+The inline confirm panel recovers Cancel after focus leaves to nothing,
+including the delayed WebKit blur observed in S88; real focus moves remain
+untouched and closing removes the listener. The S88 removal test restart
+and its assertions remain in place.
+
+Node DOM tests observed each new behavior fail before its implementation.
+New hidden-poll and confirm-blur window tests, and the extended J2 journey,
+are left for the outside-sandbox driver run; this sandbox cannot run GUI tests.
+
+Validation: all 54 default integration tests pass, including the six S90
+DOM scenarios. Clippy with all targets and `driver` passes. The default
+crate test run passed 111 unit tests but stopped at the existing
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`:
+`Failed to create netmon monitor` in this sandbox. No security or network
+monitor code was changed. Nightly formatting passes.
