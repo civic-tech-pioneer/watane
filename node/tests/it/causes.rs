@@ -133,8 +133,19 @@ impl WaitStderr for Child {
     }
 }
 
-#[test]
-fn ac1_a_removed_light_machine_is_told_the_server_refused() {
+/// Alice's anchor, her server run by `watane-node run`, and a light laptop that knows a
+/// release whose package (of `size` bytes) the server has stored.
+struct Stored {
+    dirs: Vec<tempfile::TempDir>,
+    anchor: Node,
+    light: Node,
+    server: Prog,
+    server_key: watane_net::NodeKey,
+    published: watane_dist::Published,
+    size: u64,
+}
+
+fn stored() -> Stored {
     let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
     let anchor = app(dirs[0].path());
     let light = keyless(dirs[2].path());
@@ -173,19 +184,34 @@ fn ac1_a_removed_light_machine_is_told_the_server_refused() {
     .len();
     // the server stores the package
     assert!(wait_for(20, || has_file_of(dirs[1].path(), size)));
+    Stored {
+        dirs,
+        anchor,
+        light,
+        server,
+        server_key,
+        published,
+        size,
+    }
+}
 
+#[test]
+fn ac1_a_removed_light_machine_is_told_the_server_refused() {
+    let Stored {
+        dirs: _dirs,
+        anchor,
+        light,
+        mut server,
+        server_key,
+        published,
+        ..
+    } = stored();
     let after = anchor.net().remove_device(&key_of(&light)).unwrap();
     server.line(15, |l| l.starts_with(&format!("machines {}:", after.seq)));
 
     // only the server answers: the anchor would refuse the removed machine too
     anchor.net().set_options(Default::default()).unwrap();
-    let error = light.fetch(&published.info.reference).unwrap_err();
-    let mut chain = String::new();
-    let mut at: Option<&dyn std::error::Error> = Some(&error);
-    while let Some(e) = at {
-        chain.push_str(&format!("{e} | "));
-        at = e.source();
-    }
+    let chain = chain(&light.fetch(&published.info.reference).unwrap_err());
     assert!(
         chain.contains(&format!("node {} refused: not_allowed", server_key.short())),
         "{chain}"
@@ -195,59 +221,34 @@ fn ac1_a_removed_light_machine_is_told_the_server_refused() {
 
 #[test]
 fn ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed() {
-    let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
-    let anchor = app(dirs[0].path());
-    let light = keyless(dirs[2].path());
-    pair(&anchor, &light, Role::Light, false);
-
-    let code = anchor.net().pair_code(Role::Full).unwrap().to_string();
-    assert_eq!(join_yes(&anchor, dirs[1].path(), &code).code, 0);
-    let port = free_port();
-    let bind = format!("127.0.0.1:{port}");
-    let mut server = Prog::start(dirs[1].path(), &["run", "--bind", &bind]);
-    server.line(10, |l| l.starts_with("running as full, node "));
-    let server_key = anchor
-        .net()
-        .devices()
-        .unwrap()
-        .devices
-        .iter()
-        .find(|(k, r)| *r == Role::Full && *k != key_of(&anchor))
-        .unwrap()
-        .0;
-    light.net().add_addrs(&server_key, &[bind.parse().unwrap()]);
-
-    let published = anchor.publish(package("1.0.0")).unwrap();
-    let alice = anchor.dist().identity().unwrap();
-    // the light laptop learns the release (not the package) while it is still a machine
-    assert!(wait_for(15, || {
-        light.net().need(&alice).is_ok() && head(&light, &alice).is_some()
-    }));
-    let size = std::fs::metadata(
-        anchor
-            .dist()
-            .package_file(&published.info.release.package)
-            .unwrap(),
-    )
-    .unwrap()
-    .len();
-    // the server stores the package
-    assert!(wait_for(20, || has_file_of(dirs[1].path(), size)));
-
+    let Stored {
+        dirs,
+        anchor,
+        light,
+        server: _server,
+        server_key,
+        published,
+        size,
+    } = stored();
     // the server's stored package no longer matches its hash
     corrupt_file_of(dirs[1].path(), size);
 
     // only the server answers
     anchor.net().set_options(Default::default()).unwrap();
-    let error = light.fetch(&published.info.reference).unwrap_err();
+    let chain = chain(&light.fetch(&published.info.reference).unwrap_err());
+    assert!(chain.contains(&server_key.short()), "{chain}");
+    assert!(!chain.contains("is not followed"), "{chain}");
+}
+
+/// The error and its sources, each followed by ` | `.
+fn chain(error: &dyn std::error::Error) -> String {
     let mut chain = String::new();
-    let mut at: Option<&dyn std::error::Error> = Some(&error);
+    let mut at = Some(error);
     while let Some(e) = at {
         chain.push_str(&format!("{e} | "));
         at = e.source();
     }
-    assert!(chain.contains(&server_key.short()), "{chain}");
-    assert!(!chain.contains("is not followed"), "{chain}");
+    chain
 }
 
 /// Overwrites every file of `size` bytes under `dir` with other bytes of that size.

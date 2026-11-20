@@ -385,15 +385,38 @@ mod tests {
         assert!(kept(Err(NetError::NoFullMachine)).is_none());
         assert!(kept(Ok(())).is_none());
         let timeout = || Some(NetError::Timeout { node });
-        let no_release = DistError::NoRelease {
-            channel,
+        let release = ReleaseRef {
+            publisher: watane_dist::PublisherKey::from_bytes(*channel.as_bytes()),
             slug: "x".parse().unwrap(),
+            version: "1.0.0".parse().unwrap(),
         };
-        let _ = path(cause_or(timeout(), no_release));
-        let stands = DistError::Compromised { channel, seq: 1 };
+        let no_source = [
+            none(),
+            DistError::NoRelease {
+                channel,
+                slug: "x".parse().unwrap(),
+            },
+            DistError::UnknownRelease {
+                release: release.clone(),
+            },
+            DistError::StaleBases {
+                release: release.clone(),
+                bases: 1,
+            },
+        ];
+        for error in no_source {
+            assert_eq!(
+                path(cause_or(timeout(), error)),
+                std::path::Path::new("the server")
+            );
+        }
+        let stands = DistError::Withdrawn {
+            release,
+            reason: "x".into(),
+        };
         assert!(matches!(
             cause_or(timeout(), stands),
-            DistError::Compromised { .. }
+            DistError::Withdrawn { .. }
         ));
     }
 
