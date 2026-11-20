@@ -767,6 +767,7 @@ verify_archive() {
     va_want=$va_hash
     va_count=$((va_count + 1))
   done <"$TMP/SHA256SUMS"
+  not_swapped_msg
   if [ "$va_count" = 0 ]; then
     die 4 "SHA256SUMS has no line for $ARCHIVE" "$NS_MSG"
   elif [ "$va_count" != 1 ]; then
@@ -787,6 +788,7 @@ verify_archive() {
 }
 
 extract_archive() {
+  not_swapped_msg
   tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "$NS_MSG"; }
   check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
@@ -1282,7 +1284,6 @@ do_install() {
   download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" "$DLMODE"
   say "downloading $ARCHIVE"
   download "$BASE/$ARCHIVE" "$TMP/$ARCHIVE" "$DLMODE"
-  not_swapped_msg
   verify_archive
   extract_archive
   install_files
