@@ -151,8 +151,13 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     );
     approve(&app);
     installed(&app, "recommendations");
-    // Hidden main activates asynchronously after consent closes; WebKit's
-    // initial focus clears Cancel if Remove is clicked before that activation.
+    // Focus activates hidden main as a person's mouse-down would. WebKit's
+    // first activation clears page focus, so it must land before warn()
+    // focuses Cancel.
+    app.eval(
+        "main",
+        "document.querySelector('[data-local=recommendations] button.remove').focus(); null",
+    );
     until(&app, "main", "window.__activated === true");
     app.eval(
         "main",

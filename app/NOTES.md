@@ -1583,27 +1583,28 @@ above. `cargo fmt --check` passes (stable warns about nightly-only settings).
 `cargo clippy --all-targets --features driver -- -D warnings` and
 `git diff --check` pass.
 
-#### S88 — wait for hidden main's initial activation before Remove
+#### S88 — activate hidden main before Remove
 
-Cause (foreman's external macOS reproduction): in `Screen::Hidden`, main
-starts non-key. After consent closes, AppKit asynchronously makes it key;
-WebKit's initial page focus clears an element focused before that activation.
-The light trace showed `focusin:confirm-cancel` from `warn`, then window
-focus, then native `blur`/`focusout` to BODY with `panelHidden=false` and no
-JavaScript caller. Failed runs recorded approved/installed/focus at
-218/254/257, 216/253/257 and 226/252/256 ms. Prototype instrumentation masked
-the race (60/60 passes); the original test failed on run 6.
+Cause (foreman's external macOS reproduction): in `Screen::Hidden`, main's
+webview is not first responder. `warn()` focusing Cancel asks AppKit to
+activate the window asynchronously; WebKit's first activation then clears
+the element just focused. The light trace showed Cancel focused from `warn`,
+then window focus, then native blur/focusout to BODY with `panelHidden=false`
+and no JavaScript caller. Approved/installed/focus timestamps included
+218/254/257, 216/253/257 and 226/252/256 ms: activation followed the Remove
+click, not consent closing. Prototype instrumentation masked the race
+(60/60 passes); the original test failed on run 6.
 
-AC8 registers a one-time main-window `focus` listener before `approve()` and
-waits for its activation flag after `installed()` and before Remove, matching
-the activation a person's click would cause. The foreman observed this event
-after approve in 8/8 runs. `document.hasFocus()` stays false in the hidden
-window even after activation; waiting on it timed out on the foreman's first
-run. All diagnostics are removed and every original assertion, including
-immediate Cancel focus after the panel opens, remains. AC3 needs no
-production regression: visible main
-is key from launch, and a person's click on a non-key window activates it
-before clicking. No app.js change, dependency or specification change.
+Both passive waits timed out on the foreman's first run: `document.hasFocus()`
+stays false even after hidden-window activation, and a window `focus` event
+never arrives before Remove unless activation is requested. AC8 now installs
+a one-time main-window `focus` listener before `approve()`, focuses Remove
+after `installed()`, waits for that event, then clicks Remove. This mirrors
+a person's mouse-down: initial activation must finish before `warn()` focuses
+Cancel. Every original assertion remains unchanged; all diagnostics are
+removed. AC3 needs no production regression: a visible main is key and its
+webview first responder before a person can click in it. No app.js change,
+dependency or specification change.
 
 The foreman runs AC2's 50-run loop and the window tests outside the sandbox.
 Validation here: `cargo test --features driver --no-run`,
