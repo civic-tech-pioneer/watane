@@ -1126,7 +1126,7 @@ The runs, in order:
    path that is a strict descendant of `<cache>/build/` (normalized; a path starts at the text's start or after whitespace, a quote, a bracket or `:`, and ends, after the cache prefix, at the first character that is not printable ASCII, or at a quote or bracket) but not under this copy, those errors are the
    stale sibling's, and dev gives only `build.reads_outside` for that folder
    (a file whose folder is named too counts once, as the folder), not the
-   `build.compile` errors. A stale sibling with another world gives rustc text that names no path, so when the build fails and that text names none, dev also reads the `path:` string literals of `wit_bindgen::generate!` in the copy's `logic/src/**/*.rs`, resolves each against the copy's `logic/`, normalizes it, and gives the same `build.reads_outside` for each one that leaves the copy.
+   `build.compile` errors. A stale sibling with another world gives rustc text that names no path, so when the build fails and that text names none, dev also reads the `path:` string literals of `wit_bindgen::generate!` in the copy's `logic/src/**/*.rs`, resolves each against the copy's `logic/`, normalizes it as text (a literal is never touched on disk), and gives the same `build.reads_outside` for each one that leaves the copy.
 7. dev copies the `.wasm` to `<mod>/logic.wasm`, then runs
    `watane_pkg::Mod::read(dir)?.check_component()`. Each violation is
    `build.imports`, and dev deletes `<mod>/logic.wasm` again.

@@ -590,6 +590,12 @@ fn generate_paths_in(dir: &Path, copy: &Path) -> Vec<PathBuf> {
 /// (wit-bindgen's base) and normalized, when it is not under `copy`.
 fn generate_paths(source: &str, copy: &Path) -> Vec<PathBuf> {
     let real_copy = copy.canonicalize().unwrap_or_else(|_| copy.to_path_buf());
+    generate_paths_text(source, copy, &real_copy)
+}
+
+/// `generate_paths` as text only: no filesystem call, so a literal the mod picks (an autofs
+/// `/net/<host>/...`) is never touched. `real_copy` is the copy's canonical form.
+fn generate_paths_text(source: &str, copy: &Path, real_copy: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for call in source.split("generate!").skip(1) {
         // Only the macro's own arguments, up to its first `)`.
@@ -605,9 +611,7 @@ fn generate_paths(source: &str, copy: &Path) -> Vec<PathBuf> {
                 && let Some((literal, _)) = literal.split_once('"')
             {
                 let path = normalized(&copy.join("logic").join(literal));
-                if !path.starts_with(&real_copy)
-                    && !path.starts_with(copy)
-                    && !found.contains(&path)
+                if !path.starts_with(real_copy) && !path.starts_with(copy) && !found.contains(&path)
                 {
                     found.push(path);
                 }
@@ -897,6 +901,16 @@ mod tests {
         ] {
             generate_paths(crafted, copy);
         }
+    }
+
+    #[test]
+    fn ac1_generate_literal_is_resolved_as_text() {
+        let copy = Path::new("/nonexistent/c/build/me");
+        let src = "generate!({ path: \"/net/host/x/wit\" });";
+        assert_eq!(
+            generate_paths_text(src, copy, copy),
+            [PathBuf::from("/net/host/x/wit")]
+        );
     }
 
     #[test]
