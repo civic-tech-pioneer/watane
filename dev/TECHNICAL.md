@@ -228,7 +228,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run: <rerun>` (file `wit/world.wit`) |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names no release for it), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
-| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new <slug> --dir <canonical destination folder, quoted> && watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <same folder>[ --home <resolved home>]` |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new <slug, or my-<release slug> when none given> --dir <canonical destination folder, quoted> && watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <same folder>[ --home <resolved home>]` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>`, plus ` --dir <canonical mod folder>` when `serve` was given `--dir` and ` --home <resolved home>` when given `--home` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
@@ -1567,7 +1567,10 @@ Record each one in `release_providers` (sorted keys). Return the list.
    is the folder, else `./<slug>`; it must not exist (`usage.exists`).
 2. Resolve the home and check the app status as `install` (9.6 step 1).
 3. `Client::fetch({"link"})`. `!package.has_source()`: `usage.no_source`,
-   and nothing is written.
+   and nothing is written. The fix's new mod is the given slug, or
+   `my-<release slug>` (cut to 40 bytes, no trailing `-`) when none was
+   given or it equals the release's: it cannot share the release's slug
+   (`mod.self_dependency`); its folder is `--dir` or `./<that slug>`.
 4. With no `<slug>`, the slug is the release's, and the folder check of
    step 1 runs now.
 5. `package.unpack(folder)` (pkg 6.4: a new folder only; it refuses an

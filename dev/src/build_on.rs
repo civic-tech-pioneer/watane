@@ -277,6 +277,19 @@ pub fn add_release(
     )
 }
 
+/// The slug of the mod that depends on a release without source: the given one, or
+/// `my-<release slug>` (cut to 40 bytes, no trailing `-`) when none or the release's own.
+fn dependent_slug(given: Option<&str>, release: &str) -> String {
+    match given {
+        Some(slug) if slug != release => slug.to_string(),
+        _ => {
+            let mut slug = format!("my-{release}");
+            slug.truncate(40);
+            slug.trim_end_matches('-').to_string()
+        }
+    }
+}
+
 pub fn new_from(
     destination: Option<&Path>,
     slug: Option<&str>,
@@ -288,7 +301,8 @@ pub fn new_from(
     let (release, package) = client.fetch(target).map_err(|e| vec![e])?;
     if !package.has_source() {
         // The mod that would depend on it is the one this run would have created.
-        let slug = slug.unwrap_or(release.slug.as_str());
+        let slug = dependent_slug(slug, release.slug.as_str());
+        let slug = slug.as_str();
         let dest = destination
             .map(Path::to_path_buf)
             .or_else(|| std::env::current_dir().ok().map(|cwd| cwd.join(slug)));
@@ -423,6 +437,17 @@ pub(crate) fn exists(dir: &Path) -> Problem {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ac3_dependent_slug_is_cut_without_trailing_dash() {
+        let long = "a".repeat(40);
+        let slug = super::dependent_slug(None, &long);
+        assert_eq!(slug, format!("my-{}", "a".repeat(37)));
+        let dashed = format!("{}-b", "a".repeat(36));
+        assert!(!super::dependent_slug(None, &dashed).ends_with('-'));
+        assert_eq!(super::dependent_slug(Some("x"), "y"), "x");
+        assert_eq!(super::dependent_slug(Some("y"), "y"), "my-y");
+    }
+
     use super::*;
     #[test]
     fn ac1_store_recovers_partial_temps_and_keeps_existing_provider() {
