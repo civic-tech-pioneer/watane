@@ -343,6 +343,44 @@ fn s93_ac5_relative_generate_path_into_a_cache_sibling_reads_outside() {
     );
 }
 
+/// S93 outcome 4: another mod's stale copy in the cache declares its own world (as a real
+/// sibling does). A relative `generate!` path into it must read as `build.reads_outside`, not
+/// as `build.compile` "World `hello` not found in package `mods:other@0.1.0`".
+#[test]
+#[ignore = "slow: cold build reaches a stale sibling copy with another world through generate!"]
+fn regress_s93_generate_path_into_a_sibling_with_its_own_world_reads_outside() {
+    let f = Fixture::new();
+    let sibling = f.temp.path().join("cache/build/other/wit");
+    fs::create_dir_all(&sibling).unwrap();
+    fs::write(
+        sibling.join("world.wit"),
+        "package mods:other@0.1.0;\n\nworld other {}\n",
+    )
+    .unwrap();
+    let source = f.dir.join("logic/src/lib.rs");
+    let text = fs::read_to_string(&source).unwrap();
+    fs::write(
+        &source,
+        text.replace("path: \"../wit\"", "path: \"../../other/wit\""),
+    )
+    .unwrap();
+    let (status, v) = output(&mut {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        c.current_dir(&f.dir)
+            .args(["test", "--json"])
+            .env("WATANE_DEV_CACHE", f.temp.path().join("cache"));
+        c
+    });
+    assert_eq!(status, 1, "{v}");
+    let sibling = sibling.canonicalize().unwrap();
+    assert_eq!(v["errors"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(v["errors"][0]["code"], "build.reads_outside", "{v}");
+    assert_eq!(
+        v["errors"][0]["message"],
+        format!("the build read {}, outside the mod", sibling.display())
+    );
+}
+
 #[test]
 #[ignore = "slow: cold test build clears maker environment"]
 fn ac4_test_build_does_not_receive_shell_secret() {
