@@ -591,7 +591,8 @@ fn escape_message(message: &str) -> String {
 /// Make wit-parser's rendered message exact for a person (TECHNICAL 4): its
 /// `EscapeUnicode(EscapeIterInner('\u{..}'))` debug text becomes the escaped char,
 /// and the byte column of its `path:line:col` location becomes a char column.
-/// The source snippet after the location is left as written.
+/// The source snippet after the location is left as written, except that its caret
+/// stands under the character column.
 fn fix_message(message: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -> String {
     const OPEN: &str = "EscapeUnicode(EscapeIterInner('";
     let (head, snippet) = message.split_at(message.find("\n      |").unwrap_or(message.len()));
@@ -621,7 +622,31 @@ fn fix_message(message: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -
             text.replace_range(at..at + len, &location);
         }
     }
-    text + snippet
+    text + &fix_caret(snippet)
+}
+
+/// The snippet's marker line (`      | <spaces>^`) has wit-parser's byte offset as leading
+/// spaces; make it the number of characters of the source line as shown (escaped).
+fn fix_caret(snippet: &str) -> String {
+    let mut lines: Vec<String> = snippet.split('\n').map(str::to_string).collect();
+    for i in 1..lines.len() {
+        let Some(marker) = lines[i].strip_prefix("      | ") else {
+            continue;
+        };
+        let spaces = marker.len() - marker.trim_start_matches(' ').len();
+        let Some((_, source)) = lines[i - 1].split_once(" | ") else {
+            continue;
+        };
+        if !marker[spaces..].starts_with('^') {
+            continue;
+        }
+        let Some(before) = source.get(..spaces) else {
+            continue;
+        };
+        let shown = escape_message(before).chars().count();
+        lines[i] = format!("      | {}{}", " ".repeat(shown), &marker[spaces..]);
+    }
+    lines.join("\n")
 }
 
 /// `text` starts with wit-parser's `<line>:<byte column>`: its length and
