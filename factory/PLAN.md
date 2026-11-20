@@ -1069,6 +1069,15 @@ that subsystem's next slice a test-cost slice.
 
 | Subsystem | Default | With ignored | Measured |
 |---|---|---|---|
+| app | 70 s (+ driver window tests) | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| dev | 37 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| dist | 29 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| host | 12 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| install | **858 s, over budget** | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| log | 34 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| net | 32 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| node | 27 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| pkg | 50 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 
 ## Stage coverage
 
@@ -1670,6 +1679,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, PO) main check at `501c123` under load ~40: host `program::catalog::ac1_installed_and_persisted_ids_match_pack_for_both_parts` got `Busy(<tmp home>)` once (*core*: a home lock); passes alone. Watch for a repeat.
 - (2026-11-20, PO) main's check after S88: `j2::ac7_idle_polling…` saw fewer than 2 polls in 5 s once in the full suite (load ~20 with S90 building); 3/3 alone. S90 owns the poll code. deny: RUSTSEC-2026-0587 (wasmtime-wasi 48.0.9, Windows-only), fixed by 48.0.10 on main.
 - (2026-11-20, S88) Sol's sandbox cannot start the GUI app, so the foreman ran every window test and trace itself; Sol's heavy instrumentation hid the race (60/60 with it); three fixes were wrong before traces showed the cause; a 50-run full driver suite takes about an hour.
 - (2026-11-20, S55) the Mac slept overnight and cut off a validator mid-run (long steps now under `caffeinate -i`); a widened diagnostic wait plus a build under load looked like a hang to the PO; local tauri-cli 2.12.5 (CI pins 2.12.4) rewrites app/Cargo.toml's tauri features on `cargo tauri build`; the auto-mode classifier refused a `push -f` of a branch not yet on the remote.
