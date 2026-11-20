@@ -389,6 +389,13 @@ if (which === 's90-channels') {
     assert.ok(!row.textContent.includes(channel.base));
     assert.ok(!/\b(ok|failed|compromised)\b/.test(row.textContent));
   }
+  // read_at is memory-only and set by refresh, not follow; dist may mark a channel compromised with no failure cause.
+  for (const [status,expected] of [['ok','Alice (fp) '],['compromised','Alice (fp) · Compromised ']]) {
+    context.call=async cmd=>cmd==='channels_list' ? [{channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test',status,cause:null,readAt:null}] : [];
+    await vm.runInContext('channelsView()',context);
+    const text=$('#channels .channel-card').textContent;
+    assert.ok(text.startsWith(expected+'Unfollow'),text); assert.ok(!/null|ago/.test(text),text);
+  }
 }
 
 if (which === 's90-followed') {

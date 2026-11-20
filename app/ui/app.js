@@ -365,8 +365,8 @@ async function channelsView() {
   const signature = JSON.stringify([channels, mods, canSign, channels.map(c => c.readAt == null ? null : ago(c.readAt))]); if (signature === lastChannels) return;
   lastChannels = signature; $('#channels').replaceChildren();
   for (const [i, channel] of channels.entries()) {
-    const state = channel.status === 'ok' ? `Read ${ago(channel.readAt)}` : channel.status === 'failed' ? `Couldn't read: ${channel.cause}` : `Compromised: ${channel.cause}`;
-    const row = element('div', `${partyLabel(channel)} · ${state} `, $('#channels'), 'card channel-card');
+    const state = channel.status === 'ok' ? (channel.readAt == null ? '' : `Read ${ago(channel.readAt)}`) : channel.status === 'failed' ? `Couldn't read: ${channel.cause}` : channel.cause ? `Compromised: ${channel.cause}` : 'Compromised';
+    const row = element('div', `${[partyLabel(channel), state].filter(Boolean).join(' · ')} `, $('#channels'), 'card channel-card');
     row.title = channel.base || '';
     row.dataset.channel = channel.channel;
     button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));

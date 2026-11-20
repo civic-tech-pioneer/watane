@@ -1345,8 +1345,9 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
 `Outcome::Failed`, else `ok`.
 
 The row shows `partyLabel(channel)`, then `Read <ago>` from `readAt`
-(the serialized `read_at`) for `ok`, `Couldn't read: <cause>` for `failed`,
-or `Compromised: <cause>` for `compromised`. The cause is the same complete
+(the serialized `read_at`) for `ok` (nothing while `readAt` is null: only
+`refresh` sets it, not `channel_follow`), `Couldn't read: <cause>` for `failed`,
+or `Compromised: <cause>` for `compromised` (`Compromised` with no cause). The cause is the same complete
 text as the Updates failed-channel card. The base URL may be the row's
 `title`, never its text; raw status tokens are not shown.
 
