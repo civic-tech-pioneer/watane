@@ -7,20 +7,22 @@ use watane_dist::{
 };
 use watane_net::{DeviceList, NetError, PairCode};
 
-/// The refusal a full machine answered a light machine's `need` with, if any (5.3).
-type Refusal = Option<NetError>;
+/// The error net answered a light machine's `need` with, if it had something to say (5.3).
+type NetCause = Option<NetError>;
 
-fn refusal(result: Result<(), NetError>) -> Refusal {
+/// Every error but `Off` and `NoFullMachine`, which say nothing about any machine.
+fn kept(result: Result<(), NetError>) -> NetCause {
     result
         .err()
-        .filter(|e| matches!(e, NetError::Refused { .. }))
+        .filter(|e| !matches!(e, NetError::Off | NetError::NoFullMachine))
 }
 
-/// A failed dist call after a refused `need`: when dist found no source (`NotFollowed`,
-/// `NoRelease`, `UnknownRelease`, `StaleBases`), the refusal is the cause (5.3). Every
+/// A failed dist call after a failed `need`: when dist found no source (`NotFollowed`,
+/// `NoRelease`, `UnknownRelease`, `StaleBases`), net's error is the cause (5.3). Every
 /// other verdict of dist (`Compromised`, `Withdrawn`, web-host errors) stands.
-/// The chain reads `the server: node K refused: not_allowed`.
-fn refused_or(refused: Refusal, error: DistError) -> DistError {
+/// The chain reads `the server: node K refused: not_allowed`; a local failure
+/// is `this machine: ...`.
+fn cause_or(cause: NetCause, error: DistError) -> DistError {
     let no_source = matches!(
         error,
         DistError::NotFollowed { .. }
@@ -28,11 +30,21 @@ fn refused_or(refused: Refusal, error: DistError) -> DistError {
             | DistError::UnknownRelease { .. }
             | DistError::StaleBases { .. }
     );
-    match refused {
-        Some(net) if no_source => DistError::Io {
-            path: "the server".into(),
-            source: std::io::Error::other(net),
-        },
+    match cause {
+        Some(net) if no_source => {
+            let other = matches!(
+                net,
+                NetError::Refused { .. }
+                    | NetError::Unreachable { .. }
+                    | NetError::Timeout { .. }
+                    | NetError::TooLarge { .. }
+                    | NetError::BadObject { .. }
+            );
+            DistError::Io {
+                path: if other { "the server" } else { "this machine" }.into(),
+                source: std::io::Error::other(net),
+            }
+        }
         _ => error,
     }
 }
@@ -86,17 +98,17 @@ impl Node {
         self.machine() == Machine::Light
     }
 
-    /// `need` on a light machine; only a refusal is kept (5.3).
-    fn need_channel(&self, channel: &PublicKey) -> Refusal {
+    /// `need` on a light machine; every error but Off and NoFullMachine is kept (5.3).
+    fn need_channel(&self, channel: &PublicKey) -> NetCause {
         if self.is_light() {
-            refusal(self.net.need(channel))
+            kept(self.net.need(channel))
         } else {
             None
         }
     }
 
     /// The package of a stored release, from a full machine when this one lacks it.
-    fn need_package(&self, package: &watane_dist::PackageId, size: u64) -> Refusal {
+    fn need_package(&self, package: &watane_dist::PackageId, size: u64) -> NetCause {
         if self.dist.package_file(package).is_some() {
             return None;
         }
@@ -106,24 +118,24 @@ impl Node {
         if result.is_ok() && self.dist.package_file(package).is_some() {
             self.holdings.asked_done(&id);
         }
-        refusal(result)
+        kept(result)
     }
 
-    fn need_release(&self, release: &ReleaseRef) -> Refusal {
+    fn need_release(&self, release: &ReleaseRef) -> NetCause {
         if !self.is_light() {
             return None;
         }
         let Ok(channel) = PublicKey::from_bytes(release.publisher.as_bytes()) else {
             return None;
         };
-        let mut refused = None;
+        let mut cause = None;
         let stored = self
             .dist
             .channel(&channel)
             .ok()
             .and_then(|view| view.releases.into_iter().find(|r| r.reference == *release));
         let stored = stored.or_else(|| {
-            refused = refusal(self.net.need(&channel));
+            cause = kept(self.net.need(&channel));
             self.dist
                 .channel(&channel)
                 .ok()?
@@ -134,25 +146,25 @@ impl Node {
         match stored {
             Some(info) => self
                 .need_package(&info.release.package, info.release.size)
-                .or(refused),
-            None => refused,
+                .or(cause),
+            None => cause,
         }
     }
 
-    fn need_latest(&self, link: &Link) -> Refusal {
+    fn need_latest(&self, link: &Link) -> NetCause {
         if !self.is_light() {
             return None;
         }
         let channel = link.channel();
-        let refused = refusal(self.net.need(&channel));
+        let cause = kept(self.net.need(&channel));
         if let Some(slug) = link.slug()
             && let Ok(Some(info)) = self.dist.latest(&channel, slug)
         {
             return self
                 .need_package(&info.release.package, info.release.size)
-                .or(refused);
+                .or(cause);
         }
-        refused
+        cause
     }
 
     pub fn set_name(&self, name: &str) -> Result<Entry, DistError> {
@@ -187,46 +199,46 @@ impl Node {
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
-        let refused = self.need_channel(&link.channel());
+        let cause = self.need_channel(&link.channel());
         self.reading(|| self.dist.follow(link))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn refresh(&self) -> Vec<RefreshReport> {
         self.reading(|| self.dist.refresh())
     }
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError> {
-        let refused = self.need_channel(channel);
+        let cause = self.need_channel(channel);
         self.reading(|| self.dist.refresh_channel(channel))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
-        let refused = self.need_channel(&link.channel());
+        let cause = self.need_channel(&link.channel());
         self.reading(|| self.dist.choose_index(link))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError> {
-        let refused = self.need_release(release);
+        let cause = self.need_release(release);
         self.reading(|| self.dist.fetch(release))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn fetch_for(
         &self,
         release: &ReleaseRef,
         consumer: Option<&PublicKey>,
     ) -> Result<Fetched, DistError> {
-        let refused = self.need_release(release);
+        let cause = self.need_release(release);
         self.reading(|| self.dist.fetch_for(release, consumer))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
-        let refused = self.need_latest(link);
+        let cause = self.need_latest(link);
         self.reading(|| self.dist.open_link(link))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
     pub fn read_link(&self, link: &Link) -> Result<Fetched, DistError> {
-        let refused = self.need_latest(link);
+        let cause = self.need_latest(link);
         self.reading(|| self.dist.read_link(link))
-            .map_err(|e| refused_or(refused, e))
+            .map_err(|e| cause_or(cause, e))
     }
 
     /// After an install of `fetched` (NODE-F-11): a replica keeps a channel that has no link.
@@ -264,15 +276,15 @@ impl Node {
     pub fn confirm_own_hint(&self, hint: &OwnHint) -> Result<(), NodeError> {
         let head = hint.head.ok_or(NodeError::EmptyHint)?;
         let own = self.dist.identity().ok_or(DistError::NoIdentity)?;
-        let mut refused = refusal(self.net.need(&own));
+        let mut cause = kept(self.net.need(&own));
         if let Ok(view) = self.dist.own() {
             for info in view.releases.iter().filter(|r| r.withdrawn.is_none()) {
-                refused = refused.or(self.need_package(&info.release.package, info.release.size));
+                cause = cause.or(self.need_package(&info.release.package, info.release.size));
             }
         }
         self.dist
             .confirm_own_head(head.seq, &head.id)
-            .map_err(|e| refused.map_or(NodeError::Dist(e), NodeError::Net))
+            .map_err(|e| cause.map_or(NodeError::Dist(e), NodeError::Net))
     }
 }
 
@@ -281,10 +293,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn refused_or_replaces_only_a_missing_source() {
+    fn cause_or_replaces_only_a_missing_source() {
         use std::error::Error;
         let node = watane_net::NodeKey::from_bytes([7; 32]);
-        let refused = || {
+        let cause = || {
             Some(NetError::Refused {
                 node,
                 code: watane_net::Code::NotAllowed,
@@ -293,18 +305,15 @@ mod tests {
         let channel = (1..=255u8)
             .find_map(|m| PublicKey::from_bytes(&[m; 32]).ok())
             .unwrap();
-        let kept = refused_or(refused(), DistError::Compromised { channel, seq: 1 });
+        let kept = cause_or(cause(), DistError::Compromised { channel, seq: 1 });
         assert!(matches!(kept, DistError::Compromised { .. }));
         let web = DistError::Network {
             url: "https://example.invalid/".into(),
             cause: "reset".into(),
         };
-        assert!(matches!(
-            refused_or(refused(), web),
-            DistError::Network { .. }
-        ));
-        let replaced = refused_or(
-            refused(),
+        assert!(matches!(cause_or(cause(), web), DistError::Network { .. }));
+        let replaced = cause_or(
+            cause(),
             DistError::NotFollowed {
                 channel,
                 local_only: false,
@@ -320,7 +329,7 @@ mod tests {
             chain.join(": "),
             format!("the server: node {} refused: not_allowed", node.short())
         );
-        let none = refused_or(
+        let none = cause_or(
             None,
             DistError::NotFollowed {
                 channel,
@@ -328,6 +337,64 @@ mod tests {
             },
         );
         assert!(matches!(none, DistError::NotFollowed { .. }));
+    }
+
+    #[test]
+    fn ac1_net_errors_are_kept_with_the_machine_they_name() {
+        let node = watane_net::NodeKey::from_bytes([7; 32]);
+        let channel = (1..=255u8)
+            .find_map(|m| PublicKey::from_bytes(&[m; 32]).ok())
+            .unwrap();
+        let none = || DistError::NotFollowed {
+            channel,
+            local_only: false,
+        };
+        let path = |e: DistError| match e {
+            DistError::Io { path, .. } => path,
+            other => panic!("not kept: {other}"),
+        };
+        let server = [
+            NetError::Unreachable {
+                node,
+                cause: "x".into(),
+            },
+            NetError::BadObject {
+                node,
+                cause: "x".into(),
+            },
+            NetError::Timeout { node },
+            NetError::TooLarge { node },
+            NetError::Refused {
+                node,
+                code: watane_net::Code::NotAllowed,
+            },
+        ];
+        for net in server {
+            let got = cause_or(kept(Err(net)), none());
+            assert_eq!(path(got), std::path::Path::new("the server"));
+        }
+        let io = NetError::Io {
+            path: "p".into(),
+            cause: "x".into(),
+        };
+        assert_eq!(
+            path(cause_or(kept(Err(io)), none())),
+            std::path::Path::new("this machine")
+        );
+        assert!(kept(Err(NetError::Off)).is_none());
+        assert!(kept(Err(NetError::NoFullMachine)).is_none());
+        assert!(kept(Ok(())).is_none());
+        let timeout = || Some(NetError::Timeout { node });
+        let no_release = DistError::NoRelease {
+            channel,
+            slug: "x".parse().unwrap(),
+        };
+        let _ = path(cause_or(timeout(), no_release));
+        let stands = DistError::Compromised { channel, seq: 1 };
+        assert!(matches!(
+            cause_or(timeout(), stands),
+            DistError::Compromised { .. }
+        ));
     }
 
     #[test]

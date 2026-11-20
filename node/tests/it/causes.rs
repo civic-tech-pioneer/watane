@@ -193,6 +193,75 @@ fn ac1_a_removed_light_machine_is_told_the_server_refused() {
     assert!(!chain.contains("is not followed"), "{chain}");
 }
 
+#[test]
+fn ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed() {
+    let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
+    let anchor = app(dirs[0].path());
+    let light = keyless(dirs[2].path());
+    pair(&anchor, &light, Role::Light, false);
+
+    let code = anchor.net().pair_code(Role::Full).unwrap().to_string();
+    assert_eq!(join_yes(&anchor, dirs[1].path(), &code).code, 0);
+    let port = free_port();
+    let bind = format!("127.0.0.1:{port}");
+    let mut server = Prog::start(dirs[1].path(), &["run", "--bind", &bind]);
+    server.line(10, |l| l.starts_with("running as full, node "));
+    let server_key = anchor
+        .net()
+        .devices()
+        .unwrap()
+        .devices
+        .iter()
+        .find(|(k, r)| *r == Role::Full && *k != key_of(&anchor))
+        .unwrap()
+        .0;
+    light.net().add_addrs(&server_key, &[bind.parse().unwrap()]);
+
+    let published = anchor.publish(package("1.0.0")).unwrap();
+    let alice = anchor.dist().identity().unwrap();
+    // the light laptop learns the release (not the package) while it is still a machine
+    assert!(wait_for(15, || {
+        light.net().need(&alice).is_ok() && head(&light, &alice).is_some()
+    }));
+    let size = std::fs::metadata(
+        anchor
+            .dist()
+            .package_file(&published.info.release.package)
+            .unwrap(),
+    )
+    .unwrap()
+    .len();
+    // the server stores the package
+    assert!(wait_for(20, || has_file_of(dirs[1].path(), size)));
+
+    // the server's stored package no longer matches its hash
+    corrupt_file_of(dirs[1].path(), size);
+
+    // only the server answers
+    anchor.net().set_options(Default::default()).unwrap();
+    let error = light.fetch(&published.info.reference).unwrap_err();
+    let mut chain = String::new();
+    let mut at: Option<&dyn std::error::Error> = Some(&error);
+    while let Some(e) = at {
+        chain.push_str(&format!("{e} | "));
+        at = e.source();
+    }
+    assert!(chain.contains(&server_key.short()), "{chain}");
+    assert!(!chain.contains("is not followed"), "{chain}");
+}
+
+/// Overwrites every file of `size` bytes under `dir` with other bytes of that size.
+fn corrupt_file_of(dir: &Path, size: u64) {
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let m = e.metadata().unwrap();
+        if m.is_dir() {
+            corrupt_file_of(&e.path(), size);
+        } else if m.len() == size {
+            std::fs::write(e.path(), vec![0x5au8; size as usize]).unwrap();
+        }
+    }
+}
+
 fn has_file_of(dir: &Path, size: u64) -> bool {
     let Ok(read) = std::fs::read_dir(dir) else {
         return false;
