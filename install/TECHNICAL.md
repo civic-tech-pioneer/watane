@@ -28,11 +28,13 @@ install/
   package.sh          the packer (section 4)
   tests/
     it/main.rs        the one test binary: each file of it/ is a module
-    it/script.rs      INST-S-1 to INST-S-22, INST-S-26 to 28, 30 to 35: runs install.sh against a fake release (section 12)
+    it/script.rs      INST-S-1 to INST-S-22, INST-S-26 to 28, 30 to 35: runs install.sh against a fake release, one whole run per behaviour (section 12)
+    it/unit.rs        the shell unit level: the rules a function of install.sh decides (check_version, allowed, read_journal, check_folders, home_deletable, verify_archive, extract_archive, check_foreign, take_lock, ...), many cases in one sh (12.1)
     it/workflow.rs    INST-S-29: the rules of 7.1 and 7.2 read from .github/workflows/release.yml
     it/package.rs     the tree package.sh gives (section 4.2), with fake programs
     support/mod.rs    the fake release, the fake tools
     support/pty.rs    runs a command on a real pseudo-terminal and types an answer; and runs one with no controlling terminal (12.1)
+    support/unit.rs   `Fx::units`: loads the functions of install.sh into one sh and runs cases of one rule in subshells (12.1)
     clean_mac.sh      INST-S-23 to INST-S-25 and the clean-machine proof (12.3); only on a Mac, inside the VM
     vm_mac.sh         drives the Tart VM of 12.3 from the host: clone, run, ssh clean_mac.sh, delete
     it/clean_mac.rs   offline preflight, syntax/lint and fake VM lifecycle; ignored release smoke and PTY fixture
@@ -1387,6 +1389,60 @@ for stage 5 only.
 
 ### 12.1 In `cargo test` (stage 1 and 3)
 
+**Levels** (factory/README.md, "Test pyramid" and "Time and value"). The cost of a test here is
+process starts, not CPU: one run of `install.sh` is about 40 of them (about 55 ms each on a Mac), so
+the default run starts at most 2,500 processes and the `--include-ignored` run at most 11,000
+(measured with `strace -f -e trace=execve` on the test binary, summed over every module). Each rule is
+proven at the lowest level that shows it:
+
+- **Shell unit** (`tests/it/unit.rs`, support `Fx::units` in `support/unit.rs`): one `/bin/sh`
+  sources a copy of `install.sh` whose last line `main "$@"` is removed (the support asserts that
+  the script ends with that line, as `baked_script` asserts `@RELEASE@`; the script itself has no
+  test-only branch), runs an optional prelude (`check_home; set_entries`) and then the cases of one
+  rule, each `(name, shell text)` in its own subshell, so that `die`'s `exit` ends the case and no
+  variable leaks into the next. Stdout, stderr and the exit status of each case are told apart by
+  marker lines (`@@BEGIN <name>`, `@@END <status>`) that the generated program prints to both
+  streams, and come back as `Unit { out, err, code }`. The environment is the cleared one of a run
+  (`HOME`, the fakes first on `PATH`, `FAKE_STATE`, `ROOT` for the folder of the world), the shell
+  starts in a new session as a run does (no `/dev/tty`), and a case may replace a tool by a shell
+  function (`mv() { ...; }`) to make one call fail. A case that needs files makes them in a home of
+  its own (`<root>/<name>`, set with `HOME=$ROOT/<name>`), or uses `Fx::installed_home`. The rules
+  at this level are the version check (INST-S-26), `allowed` and `receipt_allowed` (8.5,
+  INST-S-27), `read_journal` (3.6.1, INST-S-35), `check_folders`, `resolve_dir`, `in_home` and
+  `below_home` (3.4.1, INST-S-31), `home_deletable` (8.4 step 5, INST-S-28), `verify_archive`
+  (INST-S-8, 9), `extract_archive` (3.4 step 9), `check_foreign` (3.4.2, INST-S-30), `take_lock` and
+  `check_no_live_install` (3.6.2), `recover` (3.6 step 0), `check_platform` and `check_tools`
+  (INST-S-20), `detect_toolchain`, `toolchain_step` without a terminal, `print_commands` and
+  `final_output` (3.7, 3.9, INST-S-4 to 7, 19, 22, 34), `do_status` and the quoting helpers. The step
+  2 of `main` (root, INST-S-21) is not a function: it stays a whole run.
+- **Whole run** (`script.rs` and the files of regressions): one run of the script per *behaviour that
+  only a whole run shows* (the order of its steps, an exit code and its stderr, what is left on disk
+  after an interrupt), with several assertions on that run, and `Fx::installed()` instead of an
+  install as the start of a test that needs an installed home. `installed()` copies the home of one
+  real install, made once per test binary, with its own paths in the receipt rewritten, so that the
+  start costs no process.
+- **Slow** (`#[ignore = "slow: ..."]`): the runs that need many whole installs (a signal or a fault at
+  each step of a swap, a kill and the recovery runs after it), the questions on a pseudo-terminal, and
+  the failing steps of the two-machine driver. Every reason names what no cheaper test proves, and the
+  test's `///` line names the rule it proves.
+
+The fakes `cp`, `mv`, `rm` and `chmod` are shells that run the real tool, so each call costs two
+process starts: they sit in a folder per tool (`faults-<tool>`) and are on a test's `PATH` only after
+the test wrote that tool's fault file with `state_write` (`cp_fault`, `mv_fault`, `rm_fault`,
+`chmod_wait`); `unfault` removes the file and the folder from the `PATH`. A test that makes its own
+fake puts it in its own folder, first on the `PATH`.
+
+The gate that lets at most four runs of the script live at once is a `Gate`; a test of the launcher
+or of a helper that starts no run (`waits.rs`, the deadline tests of the two-machine drivers)
+neither waits on it nor holds it (`spawn_free`, or a `Gate` of its own), and the deadline tests of
+`clean_mac.rs` use `WATANE_VM_TEST_SCALE=1200` (every per-step bound is its 1 s floor, the whole script's is 3600 s / 1200 = 3 s) and wait
+for their six modes at the same time, with the production limits asserted from the source. The guest
+bridge of `vm_two_machines.sh` (`clean_mac::ac3_guest_bridge_...`) runs under `bash --posix` off
+macOS, because the guest's `/bin/sh` is bash 3.2, where a background `{ cat; } <&0 &` keeps the stdin
+it names, and dash gives every background command `/dev/null`; the lock test of S50c plants the
+`pid` file in the lock to make its write fail (a folder without write permission fails nothing for
+root).
+
 INST-S-37 tests the old-only `vendor` removal with a prebuilt committed
 swap and step 5 cleanup: the new receipt omits `vendor`, the old one keeps
 it. The current archive contract (4.2) still requires `vendor`; this test
@@ -1420,6 +1476,7 @@ regressions. `tests/it/script.rs` runs `sh install/install.sh` as a child with:
   folder and `TMPDIR` another;
 - `PATH` = `<test fakes>:<shared fakes>:<symlink dir>`: the test's own folder
   (empty unless the scenario adds `rustup` and `rustc`, or another fake), then the
+  `faults-<tool>` folders of the tools whose fault file the test wrote, then the
   fakes of `tests/fakes/` written once per test binary under `CARGO_TARGET_TMPDIR`
   (they hold no state: every answer comes from files of the test in
   `$FAKE_STATE`) with `#!/bin/dash` where there is one, since macOS's `/bin/sh`
@@ -1701,7 +1758,8 @@ what they need beside themselves.
 
 | Test | Where |
 |---|---|
-| INST-S-1 to INST-S-22, INST-S-26 to 35; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud) |
+| INST-S-1 to INST-S-22, INST-S-26 to 35; the package test | `cargo test` of `watane-install`, anywhere (Linux, macOS, cloud): the rules a function decides at the shell unit level (`unit.rs`), the behaviours of a whole run in `script.rs` and the regression files |
+| the slow set: signal and fault sweeps over whole runs, the pseudo-terminal questions, the failing steps of the two-machine driver | `cargo test -p watane-install -- --include-ignored`, anywhere; at most 11,000 process starts (12.1) |
 | the workflow's dry run and its smoke (12.3 `--fresh-home`, INST-S-1 and the 12.4 assertions) | GitHub `macos-15`, by `workflow_dispatch` |
 | J3 between two machines (S55, 12.6) | this Mac and a fresh Tart clone, `sh tests/vm_two_machines.sh [--from <release-dir>]` |
 | INST-S-23 to INST-S-25 and the full 12.4 | the clean Mac (the Tart VM of 12.3, `tests/vm_mac.sh`), against a real release |

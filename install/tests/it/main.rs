@@ -21,5 +21,6 @@ mod s89;
 mod script;
 mod sim_s89;
 mod status_audit;
+mod unit;
 mod waits;
 mod workflow;
