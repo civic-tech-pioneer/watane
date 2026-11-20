@@ -476,6 +476,18 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
+- [ ] **S88 The remove confirm always has Cancel focused (main fix).** in flight (local)
+  Main's check after S55 (`5014400`) failed only `j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail`
+  (app/tests/it/j2.rs:177): about 1 run in 12, alone and on an idle Mac, the panel is open
+  (`#confirm-panel` not hidden) but `document.activeElement` is BODY, not `#confirm-cancel`. The
+  driver's windows are hidden and not key (`document.hasFocus()` false, `visibilityState`
+  `hidden`); nothing in app/ui/app.js blurs or focuses later (`warn`, :229). A PO try that reopened
+  the panel after a Library redraw did not change the rate and was reverted. Outcomes: (1) find
+  the cause (WebKit dropping `focus()` in a hidden page, a redraw, or the driver) and fix it where
+  it lives, without weakening the test (app AGENTS); (2) the test passes 50 runs in a row alone and
+  in the full `--features driver` suite; (3) if the cause also hits a visible window, APP-F-67's
+  "Cancel is the default" holds there too. Touches: app/ui/app.js, app/tests/it/j2.rs,
+  app/tests/support/driver.rs, app/src/driver* as needed, app/TECHNICAL.md, app/NOTES.md. Local.
 - [x] **S55 Two machines.** Delivered 2026-11-20 (main `5014400`; foreman `4a61b2b4`, sessionId
   `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`, ended). Sol runs: s55-1 1, s55-2 1, s55-fix1 2, s55-fix2 1,
   s55-fix3 1. user-sim REJECTED once (an unreachable web host and an unnamed `--from` folder gave no
