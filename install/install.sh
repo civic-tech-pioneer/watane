@@ -540,15 +540,9 @@ release_files() {
   )
 }
 
-# doctor_hint: the hint's second line (3.9)
-doctor_hint() {
-  printf 'Run watane-dev doctor to check the maker tools.\n' >&2
-}
-
 # interrupted_hint: a signal after the commit left watane installed (3.8, 3.9)
 interrupted_hint() {
-  printf 'watane %s is installed; the run was interrupted before it finished.\n' "$RELEASE" >&2
-  doctor_hint
+  printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
   if [ "$TC_ASKING" = 1 ]; then print_commands >&2; fi
   return 0
 }
@@ -927,6 +921,13 @@ install_files() {
   done <<EOF
 $ENTRIES_ALL
 EOF
+  # fresh: no entry of an installed version exists before the swap (3.8)
+  if_fresh=1
+  while IFS= read -r if_p; do
+    if exists "$if_p"; then if_fresh=0; fi
+  done <<EOF
+$ENTRIES_ALL
+EOF
   if do_swap; then :; else
     if_rc=$?
     # Save the old paths before undo retires the journal. An old path that is
@@ -945,8 +946,8 @@ EOF
     check_signal "$if_rc"
     if [ "$COMMITTED" = 1 ]; then
       # the receipt moved before the failure: undo finished the commit (3.8, 3.9)
-      printf 'watane install: a step after the install failed\nwatane %s is installed; the run was interrupted before it finished.\n' "$RELEASE" >&2
-      doctor_hint
+      printf 'watane install: a step after the install failed\n' >&2
+      interrupted_hint
       exit 5
     fi
     while IFS= read -r if_p; do
@@ -958,7 +959,7 @@ EOF
 $if_old
 EOF
     if_msg="Nothing was changed: the version that was installed still works."
-    if [ -z "$if_old" ]; then if_msg="Nothing was installed."; fi
+    if [ "$if_fresh" = 1 ]; then if_msg="Nothing was installed."; fi
     if [ -n "$SWAP_CHANGED" ]; then
       die 5 "$SWAP_CHANGED" "$if_msg"
     fi

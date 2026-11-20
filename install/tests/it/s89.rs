@@ -418,3 +418,63 @@ fn fix2_install_it_later_quotes_a_leading_tilde_or_equals() {
         assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
     }
 }
+
+const CP_FAILS_ON_NEW: &str =
+    "for a; do case $a in *.new.*) exit 1 ;; esac; done\nexec \"$FAKE_REAL/cp\" \"$@\"";
+
+#[test]
+fn fix2_a_reinstall_failing_while_staging_says_nothing_was_changed() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fake_tool(&fx, "cp", CP_FAILS_ON_NEW);
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(
+        lines(&out.stderr),
+        [
+            "watane install: could not put the files in place",
+            "Nothing was changed: the version that was installed still works."
+        ],
+        "{out:?}"
+    );
+    fx.assert_installed("0.1.0");
+}
+
+#[test]
+fn fix2_a_fresh_install_failing_while_staging_says_nothing_was_installed() {
+    let fx = Fx::new();
+    fake_tool(&fx, "cp", CP_FAILS_ON_NEW);
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(
+        lines(&out.stderr),
+        [
+            "watane install: could not put the files in place",
+            "Nothing was installed."
+        ],
+        "{out:?}"
+    );
+    assert!(!fx.receipt().exists(), "{out:?}");
+}
+
+#[test]
+fn fix2_a_receipt_move_failing_after_the_rename_says_watane_is_installed() {
+    let fx = Fx::new();
+    fake_tool(
+        &fx,
+        "mv",
+        "for a; do case $a in *receipt.new.*) \"$FAKE_REAL/mv\" \"$@\"; exit 1 ;; esac; done\nexec \"$FAKE_REAL/mv\" \"$@\"",
+    );
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(
+        lines(&out.stderr),
+        [
+            "watane install: a step after the install failed",
+            HINT[0],
+            HINT[1]
+        ],
+        "{out:?}"
+    );
+    fx.assert_installed("0.1.0");
+}
