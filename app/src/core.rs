@@ -2044,6 +2044,8 @@ pub(crate) fn install_result(
     )
 }
 
+// Views by channel key while heads and the follow/site stamps hold
+// (TECHNICAL 9.2). `listed_by` is not keyed: do not read it from here.
 #[derive(Default)]
 pub(crate) struct ChannelMemo {
     entries:
@@ -2052,17 +2054,20 @@ pub(crate) struct ChannelMemo {
     #[cfg(test)]
     builds: std::sync::atomic::AtomicUsize,
 }
-type Stamp = Option<(std::time::SystemTime, u64)>;
+type Stamp = Option<(std::time::SystemTime, u64, u64)>;
 type FollowedKeys = (Stamp, Vec<watane_dist::PublicKey>);
 struct MemoEntry {
     head: Option<watane_dist::HeadState>,
-    follows: Option<(std::time::SystemTime, u64)>,
-    site: Option<(std::time::SystemTime, u64)>,
+    follows: Stamp,
+    site: Stamp,
     view: watane_dist::ChannelView,
 }
-fn file_stamp(path: &std::path::Path) -> std::io::Result<Option<(std::time::SystemTime, u64)>> {
+// Dist rewrites both files by rename, so the inode tells apart two writes of
+// equal length within one mtime tick.
+fn file_stamp(path: &std::path::Path) -> std::io::Result<Stamp> {
+    use std::os::unix::fs::MetadataExt;
     match std::fs::metadata(path) {
-        Ok(meta) => Ok(Some((meta.modified()?, meta.len()))),
+        Ok(meta) => Ok(Some((meta.modified()?, meta.len(), meta.ino()))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }

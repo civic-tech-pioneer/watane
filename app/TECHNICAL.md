@@ -1324,9 +1324,13 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
   failed profile read is shown in the sign details with its full cause.
 - The parties cache also memoizes each local `ChannelView` by dist home and
   channel key. Reuse requires the same `dist.heads(Some(&[key]))` state
-  (entry identity, sequence and fork mark) and the same mtime and length of
-  `<home>/dist/follows.json` and `site.json` (the own channel's base).
+  (entry identity, sequence and fork mark) and the same mtime, length and inode of
+  `<home>/dist/follows.json` and `site.json` (the own channel's base; dist
+  rewrites both by rename). The stamps are read before the view is built, so
+  a concurrent write can only cause one extra rebuild, never a stale reuse.
   Missing files have their own stamp; other metadata failures retain their cause.
+  The key does not cover `listed_by`, which depends on index channels' logs:
+  the app never reads `listed_by` from a memoized view.
   `cache_channels`, followed views and installed origins share this memo.
   The followed key list comes from dist again whenever the follow stamp changes.
   Every render still traverses the related channels and remembers their profiles,
