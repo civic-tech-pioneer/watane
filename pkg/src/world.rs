@@ -256,7 +256,7 @@ pub(crate) fn read(
     let (resolve, main, sources, own_package_copy) = match parsed {
         Ok(Ok(value)) => value,
         Ok(Err(e)) => {
-            let message = format!("{e:#}");
+            let message = fix_message(&format!("{e:#}"), dir, &checked);
             let file = files
                 .iter()
                 .find(|f| message.contains(&dir.join(f).to_string_lossy().to_string()))
@@ -543,7 +543,7 @@ fn escape_message(message: &str) -> String {
         } else if c.is_control() {
             out.extend(c.escape_debug());
         } else if matches!(c, '\u{61c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-            || matches!(c, '\u{2028}' | '\u{2029}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{e0000}'..='\u{e007f}')
+            || matches!(c, '\u{ad}' | '\u{180e}' | '\u{3164}' | '\u{2028}' | '\u{2029}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{e0000}'..='\u{e007f}')
         {
             out.extend(c.escape_unicode());
         } else {
@@ -551,6 +551,55 @@ fn escape_message(message: &str) -> String {
         }
     }
     out
+}
+
+/// Make wit-parser's rendered message exact for a person (TECHNICAL 4): its
+/// `EscapeUnicode(EscapeIterInner('\u{..}'))` debug text becomes the escaped char,
+/// and the byte column of the ` --> path:line:col` line becomes a char column.
+fn fix_message(message: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -> String {
+    const OPEN: &str = "EscapeUnicode(EscapeIterInner('";
+    let mut text = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(at) = rest.find(OPEN) {
+        text.push_str(&rest[..at]);
+        let inner = &rest[at + OPEN.len()..];
+        match inner.find("'))") {
+            Some(end) => {
+                text.push_str(&inner[..end]);
+                rest = &inner[end + 3..];
+            }
+            None => {
+                rest = &rest[at..];
+                break;
+            }
+        }
+    }
+    text.push_str(rest);
+    let lines: Vec<String> = text
+        .split('\n')
+        .map(|l| char_column(l, dir, sources).unwrap_or_else(|| l.to_string()))
+        .collect();
+    lines.join("\n")
+}
+
+/// The arrow `line` with its byte column rewritten as a char column, if it is one.
+fn char_column(line: &str, dir: &Path, sources: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+    let (head, location) = line.split_once("--> ")?;
+    let (rest, col) = location.rsplit_once(':')?;
+    let (path, row) = rest.rsplit_once(':')?;
+    let (row, col): (usize, usize) = (row.parse().ok()?, col.parse().ok()?);
+    let (_, bytes) = sources
+        .iter()
+        .find(|(f, _)| dir.join(f).to_string_lossy() == path)?;
+    let source = std::str::from_utf8(bytes).ok()?;
+    let before = source
+        .lines()
+        .nth(row.checked_sub(1)?)?
+        .get(..col.checked_sub(1)?)?;
+    Some(format!(
+        "{head}--> {path}:{row}:{}",
+        before.chars().count() + 1
+    ))
 }
 
 /// Cut `message` at a UTF-8 boundary to at most 2000 bytes, keeping the
@@ -582,7 +631,42 @@ fn cap_message(message: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{cap_message, escape_message};
+    use super::{cap_message, escape_message, read};
+    use crate::{Rule, Violation};
+
+    fn wit_message(world: &str) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("wit")).unwrap();
+        std::fs::write(dir.path().join("wit/world.wit"), world).unwrap();
+        let mut violations: Vec<Violation> = Vec::new();
+        let files = vec!["wit/world.wit".to_string()];
+        read(dir.path(), &files, &mut violations).unwrap();
+        let v = violations.iter().find(|v| v.rule == Rule::Wit).unwrap();
+        v.message
+            .replace(&dir.path().to_string_lossy().to_string(), "<dir>")
+    }
+
+    #[test]
+    fn ac1_s93_wit_column_counts_chars_not_bytes() {
+        let m = wit_message("package a:b;\n/* é€ */ bad-token-here\n");
+        assert!(m.contains("\n     --> <dir>/wit/world.wit:2:10\n"), "{m}");
+    }
+
+    #[test]
+    fn ac2_s93_wit_message_has_no_rust_debug_text() {
+        let m = wit_message("package a:b;\nworld w {\n  import a\u{202e}b: func();\n}\n");
+        assert!(m.contains("\\u{202e}"), "{m}");
+        assert!(!m.contains("EscapeUnicode"), "{m}");
+        assert!(m.contains("codepoint \\u{202e}\n"), "{m}");
+    }
+
+    #[test]
+    fn ac3_s93_escape_message_covers_soft_hyphen_mongolian_hangul_filler() {
+        assert_eq!(
+            escape_message("a\u{ad}b\u{180e}c\u{3164}d"),
+            "a\\u{ad}b\\u{180e}c\\u{3164}d"
+        );
+    }
 
     #[test]
     fn ac3_s86_long_message_keeps_arrow_and_utf8_boundary() {
