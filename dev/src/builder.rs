@@ -500,8 +500,8 @@ const PATH_EDGES: &str = "'\"`[](){}<>";
 /// The paths in `text` that lie in the cache's `build` folder but not in this mod's `copy`.
 /// `build` and `copy` are compared canonicalized (a symlinked cache path names the same
 /// folder); found paths are normalized lexically and must stay under `build`. A path starts at the text's
-/// start or after whitespace, a quote, a bracket or `:`; it stops at whitespace, a control or
-/// bidi/invisible format character, a bracket or a quote; only a strict descendant of `build`
+/// start or after whitespace, a quote, a bracket or `:`; it stops at the first character that is not
+/// printable ASCII or is a bracket or a quote; only a strict descendant of `build`
 /// counts.
 fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
     let real_build = build.canonicalize().unwrap_or_else(|_| build.to_path_buf());
@@ -523,13 +523,7 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
                 .is_none_or(|c| c.is_whitespace() || c == ':' || PATH_EDGES.contains(c));
             // The path ends after the prefix (which may hold a space) at a space or a bracket.
             let end = tail[prefix.len()..]
-                .find(|c: char| {
-                    c.is_whitespace()
-                        || c.is_control()
-                        || PATH_EDGES.contains(c)
-                        || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-                            | '\u{2060}'..='\u{206F}' | '\u{FEFF}')
-                })
+                .find(|c: char| !c.is_ascii_graphic() || PATH_EDGES.contains(c))
                 .map_or(tail.len(), |n| n + prefix.len());
             let mut path = &tail[..end];
             // `world.wit:19:10` names a line and a column.
@@ -887,6 +881,14 @@ mod tests {
                 ch as u32
             );
         }
+    }
+    #[test]
+    fn s93_fix4_non_ascii_ends_path() {
+        let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
+        assert_eq!(
+            sibling_paths("/c/build/other/wit/é.wit", b, c),
+            [PathBuf::from("/c/build/other/wit")]
+        );
     }
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
