@@ -476,6 +476,49 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
+- [ ] **S89 Installing tells the truth at every step (leftover sweep: install).** in flight (cloud)
+  Story: Alice installs, interrupts, checks and uninstalls watane, and every line she reads is true
+  and in her own terms. Outcomes: (1) the `### install` leftovers from S50b-fix, S50b-fix2, S50c
+  and S55 are fixed or written into install/TECHNICAL as a decided limit: a Ctrl-C past the commit
+  or at the toolchain question says what is installed; `--status | head -1` exits quietly; paths
+  print as `~`; "install it later" names the URL the offer used; no empty folders after an
+  interrupted fresh install; rustup's text is set apart; (2) release.yml's actions run on Node 24
+  natively (no forced-runtime warning); (3) `clean_mac::ac1_ac2_fresh_home_real_release` skips with
+  its reason, not fails, where there is no `target/release`. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: install/ (script,
+  packer, tests, TECHNICAL), .github/workflows/release.yml. Cloud; the PO reruns the macOS sh
+  tests and `vm_mac.sh` on the Mac after the merge.
+- [ ] **S90 The manager says what happened (leftover sweep: app).** after S88 (shares app/ui/app.js)
+  Story: Alice manages her mods and every message names what was done or denied. Outcomes from
+  `### app`: a disabled provider shows the host's message; a busy state during a hanging follow or
+  add-index; installing from an index says it follows the channel; "Deny" names what was denied;
+  channel rows without raw transport text; `/api/fetch` wrong shapes without serde's internal
+  wording; reinstalling after "Keep data" does not mark storage `new`; `Core::mods()` memoizes the
+  channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
+  versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
+  Local (window tests).
+- [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud)
+  Story: a maker or a mod hits an edge and gets a named cause, not raw I/O text. Outcomes:
+  `add_provider` under a swap race and `pack`'s list-then-stat window give watane's own codes,
+  and a directory swapped in for a file is named as such; log's identity key is opened once and
+  checked on the handle (no check-then-open); host's unknown `/api` route is `not_found`; the 413
+  guard drains or the test says why it need not; an abrupt `/call` disconnect has a test and
+  `Served::shutdown`'s bound is true; program.rs's port probe binds once. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: pkg/src,
+  pkg/tests, log/src/identity.rs, log/tests, host/src/server.rs, host/tests/it/program*, their
+  TECHNICAL. Cloud.
+- [ ] **S92 Blame the right machine (leftover sweep: dist, net, node).** in flight (cloud)
+  Story: when Alice's install fails, she is told the real cause and whose it is. Outcomes: a local
+  I/O or holder error during a download is not "unreachable <machine>" (net 5.9 says what it is);
+  a failed install whose cause is a full machine's bad copy says so, not "channel is not followed";
+  `StaleBases` reads "1 base", and a slug that exists nowhere is not called stale. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out.
+  Touches: dist/src, dist/tests, net/src, net/tests, node/src, node/tests, their TECHNICAL; not
+  app/. Cloud.
+- [ ] **S93 dev's last misleading lines (leftover sweep: dev).** in flight (cloud)
+  Story: a maker's agent reads a cause and a `next` it can run, everywhere. Outcomes: the `### dev`
+  leftovers (S56, S86) and Unsettled S30 (time a `publish` against fake-watane and settle it);
+  S54's base suggestion offers GitHub Pages. The two publish texts pinned by
+  dev/tests/it/publish.rs change only if the human's test-speed work there has landed; else leave
+  them. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: dev/src, dev/tests, dev/src/bin/fake-watane.rs, pkg/src/world.rs (WIT
+  column only), dev/TECHNICAL. Cloud.
 - [ ] **S88 The remove confirm always has Cancel focused (main fix).** in flight (local; foreman `a244ec23`, sessionId `a244ec23-a827-4f8b-87a7-5b41c3811ba1`)
   Main's check after S55 (`5014400`) failed only `j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail`
   (app/tests/it/j2.rs:177): about 1 run in 12, alone and on an idle Mac, the panel is open
