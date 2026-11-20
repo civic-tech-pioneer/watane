@@ -352,10 +352,13 @@ mod fake {
         fs::write(dir.join("mod.toml"), "invalid").unwrap();
         let (code, value) = install(&dir, home.path());
         assert_eq!(code, 1, "{value}");
-        assert_eq!(
-            value["next"],
-            "Correct mod.toml according to the reported rule"
+        let fix = format!(
+            "Correct mod.toml according to the reported rule, then run: watane-dev install --json --dir {} --home {}",
+            dir.canonicalize().unwrap().display(),
+            home.path().canonicalize().unwrap().display()
         );
+        assert_eq!(value["errors"][0]["fix"], json!(fix), "{value}");
+        assert_eq!(value["next"], json!(fix), "{value}");
         let requests = fs::read_dir(home.path().join("requests")).unwrap().count();
         assert_eq!(requests, 1, "a failed pipeline sends no request");
     }

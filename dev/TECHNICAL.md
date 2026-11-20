@@ -267,8 +267,8 @@ complete this command; ask the person to check the watane app, then run: <rerun>
 A fix made where the command is not known (`build.compile`, `build.reads_outside`,
 `internal`) is written without its ending, and cli.rs ends it `, then run:
 <rerun>` with the command as given (`--dir` and `--home` only as given). A
-`test` or `serve` that fails before any build (a check error with a prose fix)
-ends its fix and `next` the same way, with its own rerun. `check` and `new`
+`test`, `serve`, `install` or `publish` that fails before any build (a check
+error with a prose fix) ends its fix and `next` the same way, with its own rerun. `check` and `new`
 `next` keep the `--dir` they were given; the `next` of `search` keeps a filter
 value that starts with `-` as `--publisher=-x` (the `=` form), so it parses back.
 

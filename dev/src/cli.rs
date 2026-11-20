@@ -400,7 +400,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             }),
         Command::Test { .. } => {
             let mut tested = test_with(&dir, &args);
-            end_prose_in_rerun(&mut tested.errors, &mut tested.next, "test", &args);
+            end_prose_in_rerun(&mut tested.errors, &mut tested.next, &format!("watane-dev test --json{args}"));
             return tested;
         }
         Command::Add { release: Some(target), home, .. } => {
@@ -460,7 +460,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                                 error.fix = rewritten_fix(error, "serve", &args);
                             }
                             let mut next = Some(next);
-                            end_prose_in_rerun(&mut tested.errors, &mut next, "serve", &args);
+                            end_prose_in_rerun(&mut tested.errors, &mut next, &format!("watane-dev serve --json{args}"));
                             next
                         } else {
                             tested.next
@@ -704,14 +704,9 @@ fn rewritten_fix(error: &Problem, command: &str, args: &str) -> Option<String> {
     })
 }
 
-/// A failed `test` or `serve` whose fix is prose (a check error before any build)
-/// ends in the command's own rerun, as its build failures do.
-fn end_prose_in_rerun(
-    errors: &mut [Problem],
-    next: &mut Option<String>,
-    command: &str,
-    args: &str,
-) {
+/// A failed `test`, `serve`, `install` or `publish` whose fix is prose (a check error
+/// before any build) ends in the command's own `rerun`, as its build failures do.
+fn end_prose_in_rerun(errors: &mut [Problem], next: &mut Option<String>, rerun: &str) {
     if errors
         .first()
         .is_some_and(|e| e.code.class() == crate::outcome::Class::Env)
@@ -722,7 +717,7 @@ fn end_prose_in_rerun(
         let Some(old) = error.fix.clone().filter(|fix| !fix.contains("then run:")) else {
             continue;
         };
-        let new = format!("{old}, then run: watane-dev {command} --json{args}");
+        let new = format!("{old}, then run: {rerun}");
         if next.as_ref() == Some(&old) {
             *next = Some(new.clone());
         }
@@ -927,11 +922,14 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> 
             }
             next
         };
+        let given = home.is_some();
         let (home, client) = app_client(&mut outcome, home, &rerun, wait)?;
         let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
         outcome.dir = Some(dir.clone());
-        let tested = test_local(&dir);
+        let mut tested = test_local(&dir);
         if !tested.ok {
+            let rerun = rerun(&home_arg(given, &home), wait);
+            end_prose_in_rerun(&mut tested.errors, &mut tested.next, &rerun);
             outcome.next = tested.next;
             return Err(tested.errors);
         }
@@ -1233,9 +1231,10 @@ fn publish(
         } else {
             None
         };
-        let tested = test(dir);
+        let mut tested = test(dir);
         outcome.dir = tested.dir;
         if !tested.ok {
+            end_prose_in_rerun(&mut tested.errors, &mut tested.next, &rerun);
             outcome.next = tested.next;
             return Err(tested.errors);
         }
@@ -1243,7 +1242,7 @@ fn publish(
             watane_pkg::PackageError::Mod(e) => check::mod_problems(e),
             e => vec![
                 Problem::new(Code::ModInvalid, e.to_string())
-                    .fix("Fix the package contents, then run publish again"),
+                    .fix(format!("Fix the package contents, then run: {rerun}")),
             ],
         })?;
         let config = deps::read_config(dir).map_err(|e| vec![e])?;
@@ -1499,7 +1498,11 @@ mod tests {
                     .fix("Correct mod.toml according to the reported rule"),
             ];
             let mut next = errors[0].fix.clone();
-            end_prose_in_rerun(&mut errors, &mut next, command, args);
+            end_prose_in_rerun(
+                &mut errors,
+                &mut next,
+                &format!("watane-dev {command} --json{args}"),
+            );
             let fix = format!(
                 "Correct mod.toml according to the reported rule, then run: watane-dev {command} --json{args}"
             );

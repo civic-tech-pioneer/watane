@@ -502,9 +502,10 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
     let mut rest = text;
     while let Some(at) = rest.find(&prefix) {
         let tail = &rest[at..];
-        let end = tail
-            .find(|c: char| c.is_whitespace() || "]['\")`\"".contains(c))
-            .unwrap_or(tail.len());
+        // The path ends after the prefix (which may hold a space) at a space or a bracket.
+        let end = tail[prefix.len()..]
+            .find(|c: char| c.is_whitespace() || "[]'\"`()".contains(c))
+            .map_or(tail.len(), |n| n + prefix.len());
         let mut path = &tail[..end];
         // `world.wit:19:10` names a line and a column.
         while let Some((head, last)) = path.rsplit_once(':')
@@ -787,6 +788,12 @@ mod tests {
         assert_eq!(
             sibling_paths(text, Path::new("/c/build"), Path::new("/c/build/other")),
             [PathBuf::from("/c/build/hello/logic/src/lib.rs")]
+        );
+        // A cache folder with a space: the copy's own path is not a sibling.
+        let text = "failed to read [/a b/build/hello/wits] and (/a b/build/other/wit/w.wit:1:2)";
+        assert_eq!(
+            sibling_paths(text, Path::new("/a b/build"), Path::new("/a b/build/hello")),
+            [PathBuf::from("/a b/build/other/wit/w.wit")]
         );
     }
     #[test]
