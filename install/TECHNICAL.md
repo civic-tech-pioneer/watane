@@ -782,7 +782,7 @@ do. Exit codes:
 | Code | Meaning |
 |---|---|
 | 0 | done, or `--help`, or `--status` with a receipt, or uninstall done; includes the answer `N` |
-| 1 | usage, root, no temporary folder |
+| 1 | usage, root, no temporary folder, a write to stdout that failed with no signal (3.9) |
 | 2 | unsupported platform, a missing tool, or an install folder that resolves outside the home or to the home itself (3.4.1) |
 | 3 | a download failed |
 | 4 | the checksum does not match, or `SHA256SUMS` has no line for the archive |

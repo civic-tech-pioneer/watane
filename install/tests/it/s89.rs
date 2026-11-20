@@ -362,3 +362,46 @@ fn fix1_install_it_later_quotes_an_odd_url() {
     let l = "  curl --proto '=https' --tlsv1.2 -sSf 'http://x/a b;c' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2";
     assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
 }
+
+#[test]
+fn fix1_a_created_folder_swapped_for_a_link_into_the_home_is_kept() {
+    let fx = Fx::new();
+    let keep = fx.home.join("keep");
+    fs::create_dir_all(&keep).expect("keep");
+    symlink(which("rmdir"), fx.real.join("rmdir")).expect("link real rmdir");
+    // the first rmdir of the cleanup swaps the run-created watane-dev for a link to ~/keep
+    fake_tool(
+        &fx,
+        "rmdir",
+        &format!(
+            "if [ ! -e \"$FAKE_STATE/swapped\" ]; then echo 1 > \"$FAKE_STATE/swapped\"; \"$FAKE_REAL/mv\" \"$HOME/.local/share/watane-dev\" \"$HOME/.moved\" && '{}' -s \"$HOME/keep\" \"$HOME/.local/share/watane-dev\"; fi\nexec \"$FAKE_REAL/rmdir\" \"$@\"",
+            which("ln").display(),
+        ),
+    );
+    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
+    let child = spawn(&mut fx.cmd(&["--no-toolchain"]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), "TERM");
+    let out = finish(child);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(!fx.state_read("swapped").is_empty(), "{out:?}");
+    assert!(keep.is_dir(), "a folder that existed was removed: {out:?}");
+}
+
+#[test]
+fn fix1_a_signal_while_staging_prints_no_hint() {
+    let fx = Fx::new();
+    // staging copies run before the receipt's `.new.<pid>` and the journal exist
+    fake_tool(
+        &fx,
+        "cp",
+        "for a; do case $a in *.new.*) echo up > \"$FAKE_STATE/cp_sleeping\"; exec \"$FAKE_REAL/sleep\" 600 ;; esac; done\nexec \"$FAKE_REAL/cp\" \"$@\"",
+    );
+    let child = spawn(&mut fx.cmd(&["--no-toolchain"]));
+    fx.wait_state("cp_sleeping");
+    signal_group(child.id(), "TERM");
+    let out = finish(child);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(!out.stderr.contains("is installed"), "{out:?}");
+    assert!(!fx.receipt().exists(), "{out:?}");
+}
