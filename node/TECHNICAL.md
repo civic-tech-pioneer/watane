@@ -189,6 +189,8 @@ read from a web host (NODE-F-7).
 
 `wanted_blobs(Light)` lists the packages that `need_blob` asked for and that `dist.package_file` still lacks (built in stage 2). A second `set` is `NodeError::HolderSet` and keeps the first `Dist`.
 
+A dist error is given as its cause chain: its text, then the text of each `source()`, joined by ": " (`store_blob` and `Ingested::Failed`).
+
 `DistHoldings` is made before the `Dist` exists (5.6) and holds it in a
 `OnceLock`. Until it is set, every method answers as an empty holder:
 `false`, no heads, no entries, `Failed("the home is opening")`. An empty

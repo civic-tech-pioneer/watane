@@ -43,6 +43,18 @@ impl DistHoldings {
     }
 }
 
+/// A dist error as text: itself, then each `source()`, joined by ": " (TECHNICAL 4.1).
+fn chain(e: &dyn std::error::Error) -> String {
+    let mut text = e.to_string();
+    let mut next = e.source();
+    while let Some(s) = next {
+        text.push_str(": ");
+        text.push_str(&s.to_string());
+        next = s.source();
+    }
+    text
+}
+
 impl Holdings for DistHoldings {
     fn is_anchor(&self) -> bool {
         self.dist.get().is_some_and(|d| d.identity().is_some())
@@ -123,14 +135,14 @@ impl Holdings for DistHoldings {
             watane_dist::Ingested::Stored(seq) => Ingested::Stored(seq),
             watane_dist::Ingested::NotWanted => Ingested::NotWanted,
             watane_dist::Ingested::Compromised { .. } => Ingested::Compromised,
-            watane_dist::Ingested::Failed(e) => Ingested::Failed(e.to_string()),
+            watane_dist::Ingested::Failed(e) => Ingested::Failed(chain(&e)),
         }
     }
 
     fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String> {
         let dist = self.dist.get().ok_or("the home is opening")?;
         dist.store_package(&convert::package_id(id), file)
-            .map_err(|e| e.to_string())
+            .map_err(|e| chain(&e))
     }
 
     fn search(&self, query: &Query) -> Vec<Hit> {
