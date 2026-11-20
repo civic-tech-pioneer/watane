@@ -5,6 +5,6 @@
 [ -n "${FAKE_REAL:-}" ] || exec /bin/chmod "$@"
 if [ -f "$FAKE_STATE/chmod_wait" ]; then
   echo "$*" > "$FAKE_STATE/chmod_waiting"
-  while [ -f "$FAKE_STATE/chmod_wait" ]; do "$FAKE_REAL/sleep" 0.05; done
+  while [ -f "$FAKE_STATE/chmod_wait" ]; do "$FAKE_REAL/sleep" 0.2; done
 fi
 exec "$FAKE_REAL/chmod" "$@"

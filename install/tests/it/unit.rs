@@ -47,9 +47,11 @@ fn unit_check_version_accepts_versions_and_refuses_the_rest() {
     let bad = [
         "",
         "1.0",
+        "1.2",
         "1.2.3.4",
         "1.2.3-",
         "1.2.3-a..b",
+        "1.2.3-a-1",
         "1.2.3-.a",
         "1.2.3-a.",
         "1.2.3/x",
@@ -810,7 +812,9 @@ fn unit_extract_archive_refuses_what_leaves_its_folder() {
             "{name}"
         );
     }
-    for name in ["abs", "rel", "up", "garbage"] {
+    for name in [
+        "abs", "rel", "up", "garbage", "symlink", "hardlink", "dirlink",
+    ] {
         assert!(
             !fx.root.path().join(name).join("x").exists(),
             "{name}: nothing was unpacked"
@@ -1607,4 +1611,84 @@ fn unit_recover_stops_on_a_filesystem_failure() {
             "{failure}: {u:?}"
         );
     }
+}
+
+/// TECHNICAL 3.7, 8.4 (`read_answer`): an answer is one line of at most six bytes, and a NUL byte
+/// anywhere (which a shell would silently drop) makes it no answer at all, so `y`, `yes` and `delete`
+/// are only ever the typed words; an answer that is not UTF-8 is taken as it is.
+#[test]
+fn unit_read_answer_refuses_a_nul_and_a_long_answer() {
+    let fx = Fx::new();
+    let inputs: [(&str, &[u8]); 10] = [
+        ("y", b"y\n"),
+        ("delete", b"delete\n"),
+        ("eof", b""),
+        ("nul_after", b"y\0\n"),
+        ("nul_before", b"\0yes\n"),
+        ("nul_inside", b"de\0lete\n"),
+        ("trailing_space", b"delete \n"),
+        ("not_utf8", b"y\xff\n"),
+        ("six_bytes_not_utf8", b"y\xffnope\n"),
+        ("seven_bytes", b"yes1234\n"),
+    ];
+    let mut cases = Vec::new();
+    for (name, bytes) in inputs {
+        fs::write(fx.root.path().join(format!("in_{name}")), bytes).expect("input");
+        cases.push((
+            name.to_string(),
+            format!("read_answer <\"$ROOT/in_{name}\"; printf '[%s] len=%s\\n' \"$ANSWER\" \"${{#ANSWER}}\""),
+        ));
+    }
+    let units = table(&fx, "", &cases);
+    for (name, want) in [
+        ("y", "[y] len=1\n"),
+        ("delete", "[delete] len=6\n"),
+        ("eof", "[] len=0\n"),
+        ("nul_after", "[] len=0\n"),
+        ("nul_before", "[] len=0\n"),
+        ("nul_inside", "[] len=0\n"),
+        ("trailing_space", "[] len=0\n"),
+        ("seven_bytes", "[] len=0\n"),
+    ] {
+        let u = case(&units, name);
+        assert_eq!((u.code, u.out.as_str()), (0, want), "{name}: {u:?}");
+    }
+    let u = case(&units, "not_utf8");
+    assert_eq!(u.code, 0, "{u:?}");
+    assert!(u.out.ends_with("] len=2\n"), "{u:?}");
+    let u = case(&units, "six_bytes_not_utf8");
+    assert!(
+        u.out.ends_with("] len=6\n") && !u.out.starts_with("[y]"),
+        "{u:?}"
+    );
+}
+
+/// TECHNICAL 3.6 step 0, 3.8 (`recover`; S50b-fix ac4): recovery of a journal that names a fresh entry,
+/// when that entry and its folder are both gone, finishes and can be repeated: it cannot wedge the
+/// next install.
+#[test]
+fn unit_recover_skips_a_fresh_entry_whose_parent_is_gone() {
+    let fx = Fx::new();
+    let home = home_named(&fx, "gone");
+    let bin = home.join(".local/bin/watane");
+    write_file(
+        &home.join(".local/share/watane/receipt.new.99999999"),
+        "pending",
+    );
+    write_file(
+        &home.join(".local/share/watane/journal.99999999"),
+        &format!("new {0}\nmoved {0}\n", bin.display()),
+    );
+    let units = table(
+        &fx,
+        "",
+        &[(
+            "twice".to_string(),
+            "HOME=$ROOT/gone; check_home; set_entries; recover; echo first=$?; recover; echo second=$?; ls -A \"$SHAREW\"; test ! -e \"$HOME/.local/bin\" && echo no_bin_folder"
+                .to_string(),
+        )],
+    );
+    let u = case(&units, "twice");
+    assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
+    assert_eq!(u.out, "first=0\nsecond=0\nno_bin_folder\n", "{u:?}");
 }

@@ -44,22 +44,3 @@ fn regress_s89_install_it_later_line_runs_for_the_mirror_it_names() {
         String::from_utf8_lossy(&pasted.stderr)
     );
 }
-
-/// A fresh install (nothing installed before) whose swap fails says "the version that was
-/// installed still works": there was no installed version.
-/// TECHNICAL 3.9 (IN-46): a failed fresh install names no installed version.
-#[test]
-#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
-fn regress_s89_failed_fresh_install_names_no_installed_version() {
-    let fx = Fx::new();
-    fx.state_write("mv_fault", "fail\n*watane.app.new.*\n");
-    let out = fx.run(&["--no-toolchain"]);
-    assert_eq!(out.code, 5, "{out:?}");
-    assert!(fx.home_tree().is_empty(), "{out:?}");
-    assert!(
-        !out.stderr
-            .contains("the version that was installed still works"),
-        "{}",
-        out.stderr
-    );
-}

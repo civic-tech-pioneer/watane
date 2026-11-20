@@ -724,7 +724,7 @@ case ${0##*/}:$1 in
           kill "$pid"
           if [ "$MODE" = vanished ]; then
             # The fake bridge removes its PID file in its TERM handler.
-            while [ -f "$1" ]; do sleep 0.02; done
+            while [ -f "$1" ]; do sleep 0.1; done
           else
             : > "$1"
           fi
@@ -763,7 +763,7 @@ case ${0##*/}:$1 in
         echo "alice=$WATANE_VM_ALICE_HOME" >> "$CALLS"
         sh -c "$WATANE_VM_BOB .watane" >/dev/null 2>&1 &
         # Wait for the fake SSH process to install its TERM handler.
-        while [ ! -f "$BRIDGE_READY" ]; do sleep 0.1; done
+        while [ ! -f "$BRIDGE_READY" ]; do sleep 0.2; done
         : > "$MARKER"
         if [ "$MODE" = term ] || [ "$MODE" = int ]; then sleep 2; fi
         [ "$MODE" != journey ] || { echo 'journey assertion failed'; exit 27; }

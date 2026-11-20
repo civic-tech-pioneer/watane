@@ -1412,15 +1412,18 @@ proven at the lowest level that shows it:
   `below_home` (3.4.1, INST-S-31), `home_deletable` (8.4 step 5, INST-S-28), `verify_archive`
   (INST-S-8, 9), `extract_archive` (3.4 step 9), `check_foreign` (3.4.2, INST-S-30), `take_lock` and
   `check_no_live_install` (3.6.2), `recover` (3.6 step 0), `check_platform` and `check_tools`
-  (INST-S-20), `detect_toolchain`, `toolchain_step` without a terminal, `print_commands` and
+  (INST-S-20), `read_answer` (3.7), `detect_toolchain`, `toolchain_step` without a terminal, `print_commands` and
   `final_output` (3.7, 3.9, INST-S-4 to 7, 19, 22, 34), `do_status` and the quoting helpers. The step
   2 of `main` (root, INST-S-21) is not a function: it stays a whole run.
 - **Whole run** (`script.rs` and the files of regressions): one run of the script per *behaviour that
   only a whole run shows* (the order of its steps, an exit code and its stderr, what is left on disk
   after an interrupt), with several assertions on that run, and `Fx::installed()` instead of an
   install as the start of a test that needs an installed home. `installed()` copies the home of one
-  real install, made once per test binary, with its own paths in the receipt rewritten, so that the
-  start costs no process.
+  real install, with its own paths in the receipt rewritten, so that the start costs no process. That
+  home, and the fake archives of the releases a test serves, are made once and kept between runs in
+  `install-cache-<hash>` under `CARGO_TARGET_TMPDIR` (the hash covers `install.sh`, `support/mod.rs` and
+  the folder of the fakes, so a stale one is never read), so that a run of one module does not make them
+  again.
 - **Slow** (`#[ignore = "slow: ..."]`): the runs that need many whole installs (a signal or a fault at
   each step of a swap, a kill and the recovery runs after it), the questions on a pseudo-terminal, and
   the failing steps of the two-machine driver. Every reason names what no cheaper test proves, and the
