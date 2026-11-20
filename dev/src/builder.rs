@@ -570,9 +570,14 @@ fn generate_paths_in(dir: &Path, copy: &Path) -> Vec<PathBuf> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        // `file_type` does not follow a symlink: the scan stays inside the copy.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
             found.extend(generate_paths_in(&path, copy));
-        } else if path.extension().is_some_and(|e| e == "rs")
+        } else if kind.is_file()
+            && path.extension().is_some_and(|e| e == "rs")
             && let Ok(text) = fs::read_to_string(&path)
         {
             found.extend(generate_paths(&text, copy));
@@ -587,7 +592,8 @@ fn generate_paths(source: &str, copy: &Path) -> Vec<PathBuf> {
     let real_copy = copy.canonicalize().unwrap_or_else(|_| copy.to_path_buf());
     let mut found = Vec::new();
     for call in source.split("generate!").skip(1) {
-        let mut rest = call;
+        // Only the macro's own arguments, up to its first `)`.
+        let mut rest = call.split_once(')').map_or(call, |(args, _)| args);
         while let Some(at) = rest.find("path:") {
             let after = &rest[at + 5..];
             let word_start = rest[..at]
@@ -875,6 +881,40 @@ mod tests {
         );
         let own = "generate!({ world: \"x\", path: \"../wit\" });";
         assert!(generate_paths(own, copy).is_empty());
+        let later = "generate!({ path: \"../wit\" }); const C: X = X { path: \"../../o\" };";
+        assert!(generate_paths(later, copy).is_empty());
+        let not_word = "generate!({ xpath: \"../../o\", path: \"../wit\" });";
+        assert!(generate_paths(not_word, copy).is_empty());
+        let absolute = "generate!({ path: \"/etc/wit\" }); generate!({ path: \"/etc/wit\" });";
+        assert_eq!(generate_paths(absolute, copy), [PathBuf::from("/etc/wit")]);
+        for crafted in [
+            "generate!({ path: r\"../../o\" })",
+            "generate!({ path: \"../../\\\"o\" })",
+            "generate!({ path: \"../../é\u{1F600}",
+            "generate!(path:",
+            "generate!",
+            "éépath:path:\"",
+        ] {
+            generate_paths(crafted, copy);
+        }
+    }
+
+    #[test]
+    fn s93_fix6_generate_scan_follows_no_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let (copy, outside) = (temp.path().join("copy"), temp.path().join("outside"));
+        fs::create_dir_all(copy.join("logic/src")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("lib.rs"), "generate!({ path: \"/far/wit\" });").unwrap();
+        std::os::unix::fs::symlink(&outside, copy.join("logic/src/dir")).unwrap();
+        std::os::unix::fs::symlink(outside.join("lib.rs"), copy.join("logic/src/x.rs")).unwrap();
+        assert!(generate_paths_in(&copy.join("logic/src"), &copy).is_empty());
+        fs::create_dir_all(copy.join("logic/src/real")).unwrap();
+        fs::copy(outside.join("lib.rs"), copy.join("logic/src/real/y.rs")).unwrap();
+        assert_eq!(
+            generate_paths_in(&copy.join("logic/src"), &copy),
+            [PathBuf::from("/far/wit")]
+        );
     }
 
     #[test]
