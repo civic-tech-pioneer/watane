@@ -44,7 +44,6 @@ class Node {
   scrollIntoView() {}
   listeners = {};
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
-  removeEventListener(type, listener) { this.listeners[type] = (this.listeners[type] || []).filter(fn => fn !== listener); }
   dispatchEvent(event) { for (const listener of this.listeners[event.type] || []) listener(event); }
   click() { return this.onclick?.(); }
 }
@@ -72,7 +71,7 @@ const calls=[]; let commandResult={}, nextMods=null;
 const context = vm.createContext({document, $, launcher, element, ...manager, ...words,
   // monogram closes over its module's global document.
   monogram(mod,size) { globalThis.document=document; return words.monogram(mod,size); },
-  setTimeout, location:{hash:'#mods'}, console, getComputedStyle:()=>({gridTemplateColumns:'200px 200px'}),
+  location:{hash:'#mods'}, console, getComputedStyle:()=>({gridTemplateColumns:'200px 200px'}),
   call(cmd,args={}) { calls.push({cmd,args}); return Promise.resolve(cmd === 'search' ? [] : commandResult); },
   errors:{begin:()=>1,current:()=>1}, readRefresh:()=>Promise.resolve(),
   taggedError:e=>e, showError(error) { throw error; },
@@ -418,16 +417,4 @@ if (which === 's90-poll') {
     reads=0; events.focus(); assert.equal(reads,1);
     reads=0; document.dispatchEvent({type:'visibilitychange'}); assert.equal(reads,1);
   }
-}
-
-if (which === 's90-blur') {
-  render([mod('a')]); entry('a').querySelector('.remove').click(); await tick();
-  const panel=$('#confirm-panel');
-  document.activeElement=document.body; panel.dispatchEvent({type:'focusout',relatedTarget:null});
-  await new Promise(resolve=>setTimeout(resolve,0)); assert.equal(document.activeElement,$('#confirm-cancel'));
-  const other=$('#keep-data'); other.focus(); panel.dispatchEvent({type:'focusout',relatedTarget:other});
-  await tick(); assert.equal(document.activeElement,other);
-  document.activeElement=document.body; panel.dispatchEvent({type:'focusout',relatedTarget:null}); $('#confirm-cancel').click();
-  await new Promise(resolve=>setTimeout(resolve,0)); assert.equal(document.activeElement,document.body);
-  panel.dispatchEvent({type:'focusout',relatedTarget:null}); await tick(); assert.equal(document.activeElement,document.body);
 }

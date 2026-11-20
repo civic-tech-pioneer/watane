@@ -14,11 +14,6 @@ fn manager_criterion(scenario: &str) {
     );
 }
 #[test]
-fn ac6_s90_confirm_recovers_only_focus_lost_to_nothing() {
-    manager_criterion("s90-blur");
-}
-
-#[test]
 fn ac5_s90_poll_cadence_and_immediate_refresh() {
     manager_criterion("s90-poll");
 }

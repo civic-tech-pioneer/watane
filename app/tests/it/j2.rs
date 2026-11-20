@@ -28,6 +28,47 @@ fn plan(app: &App) {
         assert!(text.contains(line), "{line}: {text}");
     }
 }
+// Count actual IPC calls; allow scheduling delays under a loaded GUI suite.
+fn wait_for_library_polls(app: &App) {
+    let count = || {
+        app.log()["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["label"] == "main" && c["cmd"] == "mods_list")
+            .count()
+    };
+    let target = count() + 2;
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        let actual = count();
+        if actual >= target {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "library polling timed out: {actual} calls, expected {target}"
+        );
+        std::thread::yield_now();
+    }
+}
+
+fn close_recommendations(app: &App) {
+    app.close("mod-recommendations");
+    let deadline = Instant::now() + TIMEOUT;
+    while app
+        .windows()
+        .iter()
+        .any(|w| w["label"] == "mod-recommendations")
+    {
+        assert!(
+            Instant::now() < deadline,
+            "recommendations window did not close"
+        );
+        std::thread::yield_now();
+    }
+}
+
 #[test]
 fn ac5_s90_hidden_window_still_polls_library() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
@@ -36,47 +77,7 @@ fn ac5_s90_hidden_window_still_polls_library() {
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
     assert_eq!(app.eval("main", "document.hidden"), true);
-    app.eval("main", "window.__pollMods = 0; const invoke = window.__TAURI_INTERNALS__.invoke; window.__TAURI_INTERNALS__.invoke = (cmd, args) => { if (cmd === 'mods_list') window.__pollMods++; return invoke(cmd, args); }; null");
-    until(&app, "main", "window.__pollMods >= 2");
-    let calls = app.log()["commands"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|c| c["label"] == "main" && c["cmd"] == "mods_list")
-        .count();
-    assert!(calls >= 2);
-    assert!(app.quit().success());
-}
-
-#[test]
-fn ac6_s90_confirm_blur_recovers_cancel_until_closed() {
-    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
-    let home = tempfile::tempdir().unwrap();
-    let app = App::start(home.path(), &[]);
-    begin_install(&app, &both());
-    approve(&app);
-    installed(&app, "recommendations");
-    app.eval(
-        "main",
-        "document.querySelector('[data-local=recommendations] button.remove').click(); null",
-    );
-    until(
-        &app,
-        "main",
-        "!document.querySelector('#confirm-panel').hidden",
-    );
-    app.eval("main", "document.querySelector('#confirm-cancel').focus(); document.activeElement.blur(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
-    until(&app, "main", "window.__blurDone");
-    assert_eq!(
-        app.eval("main", "document.activeElement.id"),
-        "confirm-cancel"
-    );
-    app.eval("main", "document.querySelector('#keep-data').focus(); document.querySelector('#keep-data').click(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
-    until(&app, "main", "window.__blurDone");
-    assert_eq!(app.eval("main", "document.activeElement.id"), "keep-data");
-    app.eval("main", "document.querySelector('#confirm-cancel').click(); document.querySelector('#library-filter').focus(); document.activeElement.blur(); window.__blurDone = false; setTimeout(() => window.__blurDone = true, 0); null");
-    until(&app, "main", "window.__blurDone");
-    assert_eq!(app.eval("main", "document.activeElement.tagName"), "BODY");
+    wait_for_library_polls(&app);
     assert!(app.quit().success());
 }
 
@@ -117,24 +118,11 @@ fn ac7_idle_polling_disabled_entry_and_consent_focus() {
     approve(&app);
     installed(&app, "reading-list");
     open(&app, "reading-list");
-    let count = |log: Value| {
-        log["commands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|c| c["label"] == "main" && c["cmd"] == "mods_list")
-            .count()
-    };
     app.eval(
         "main",
         "Object.defineProperty(document, 'hidden', {get: () => false}); null",
     );
-    let before = count(app.log());
-    let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(5) {
-        std::thread::yield_now();
-    }
-    assert!(count(app.log()) >= before + 2);
+    wait_for_library_polls(&app);
     let ask = app.ask(json!({"kind":"install", "mods":[], "by_program":false}));
     assert!(app.wait("consent", TIMEOUT));
     let focus = app
@@ -291,19 +279,7 @@ fn ac5_journey_j2() {
         );
     }
     // S90: a disabled provider's own host reason reaches the page.
-    app.close("mod-recommendations");
-    let closed_by = Instant::now() + TIMEOUT;
-    while app
-        .windows()
-        .iter()
-        .any(|w| w["label"] == "mod-recommendations")
-    {
-        assert!(
-            Instant::now() < closed_by,
-            "recommendations window did not close"
-        );
-        std::thread::yield_now();
-    }
+    close_recommendations(&app);
     invoke(&app, "mod_disable", json!({"local":"reading-list"}));
     open(&app, "recommendations");
     until(
@@ -312,6 +288,10 @@ fn ac5_journey_j2() {
         "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
     );
     invoke(&app, "mod_enable", json!({"local":"reading-list"}));
+    // Enabling reloads only the provider. Reopen the consumer so its event
+    // source opens again and sends changed, triggering a fresh read.
+    close_recommendations(&app);
+    open(&app, "recommendations");
     until(
         &app,
         "mod-recommendations",

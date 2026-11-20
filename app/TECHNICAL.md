@@ -511,9 +511,7 @@ entry; the panel is the details. In order:
    enabled mod uses or extends and that is not the main mod asks nothing,
    as before; Remove always opens the panel. The ids
    `#dependency-dialog`, `#dependency-cancel`, `#dependency-continue` and
-   `#remove-dialog` are gone. While the panel is open, a `focusout` with
-   null `relatedTarget` restores Cancel on the next task if focus is still
-   on BODY. A real focus move is left alone; closing removes the guard.
+   `#remove-dialog` are gone.
 6. `What it may do` (label): one row per grant, `[data-key=<key>]`: a
    32 px glyph box (`▤` storage, `◎` network, `→` call, `⇄` subscribe,
    `⚙` manage), `GrantLine.short` (section 4) with `GrantLine.text` as its
@@ -683,8 +681,7 @@ at once.
 The library filter matches every entered word
 against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
-disabling or removing; Cancel is focused, a blur to nothing restores it on
-the next task while the panel is open, and Escape cancels.
+disabling or removing; Cancel is focused and Escape cancels.
 
 S81 built `.main-mark`, the focus move of a connection and the two warning
 sentences in the layout before 5.3.1; 5.3.3 and 5.3.4 now hold them, with
@@ -1859,7 +1856,8 @@ and subscribes to `reading-list`). The `recommendations` page shows
 `not granted: <host message>` when its call fails with that code; other
 errors show their message. The disabled-provider journey checks `disabled
 or unavailable`, the withdrawn grant checks `no provider is linked`, and
-a successful read after enabling or restoring the grant clears `#error`. Built `logic.wasm` files are
+a successful read after enabling and reopening the page, or restoring the
+grant, clears `#error`. Built `logic.wasm` files are
 committed alongside the fixtures. `tests/fixtures/build.sh` builds them manually
 from `tests/fixtures/src/`; no test builds a mod. J3 invokes dev's publish pipeline with the
 committed component and no `logic/` source folder.

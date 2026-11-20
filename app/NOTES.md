@@ -1638,3 +1638,34 @@ crate test run passed 111 unit tests but stopped at the existing
 `consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`:
 `Failed to create netmon monitor` in this sandbox. No security or network
 monitor code was changed. Nightly formatting passes.
+
+
+### S90 follow-up — accepted blur limit, reopen and polling waits
+
+The product owner dropped the confirm-panel focus guard. Its UI listener,
+DOM scenario and window test are removed, and the contracts again describe
+only initial Cancel focus and Escape. The S88 native-blur race is an accepted
+limit; the existing removal test's restart and assertions remain intact.
+
+The outside-sandbox J2 run timed out waiting for Recommendations to recover
+after Reading list was enabled. `Host::enable` sends reload to the enabled
+provider only; Recommendations' existing event source remains open and gets
+no new open-time changed event. J2 now closes Recommendations, waits for its
+window to be destroyed, and opens it again after enabling Reading list. The
+new source's changed event triggers the read. The assertion still requires
+Dune and an empty error, and the withdrawn-grant assertions are unchanged.
+
+Both visible and hidden polling window tests now wait for two additional
+main-window mods_list calls in the real driver log, with a 90-second deadline
+and an early return once the count is reached. The visible test retains its
+document.hidden override; the hidden test has no visibility override or IPC
+wrapper. This replaces the fixed five-second assertion window and allows
+loaded GUI scheduling without changing the required count or UI cadence.
+
+Follow-up validation: all 53 default integration tests pass after removal
+of the guard scenario. Clippy (all targets, driver, warnings denied),
+nightly fmt check and diff check pass. The full default run again passed
+111 unit tests and stopped at the existing pairing test's sandbox
+`Failed to create netmon monitor` error. No GUI or slow tests were run in
+this sandbox; J2 and both poll window tests await the external validator.
+No dependency added.

@@ -51,7 +51,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-64** The app menu shall hold `Mods…` (⇧⌘M on macOS, Ctrl+Shift+M elsewhere), which opens or focuses the main window on the manager, and `Settings…` (⌘, on macOS, Ctrl+, elsewhere), which opens it on the settings. The usual edit commands (cut, copy, paste, undo, select all) shall work in every field and page. The app shall quit when its last window other than the consent view closes. Traces: F-APP-7.
 - **APP-F-65** The manager shall hold the views Library, Find and Updates, and the details of one mod. The views of the identity, the site, the backup, the agents and the own machines shall be in Settings, not in the manager. Followed channels and indexes shall be in Find. Traces: F-APP-8.
 - **APP-F-66** The details of a mod shall show its connections, each a link to that mod's details: the mods it calls (`Uses`), the mods whose events or collects it receives (`Adds to`), the mods that call it (`Used by`) and the mods that receive its events or collects (`Extended by`). Following a connection link shall open the target details and move keyboard focus to its first control or heading. Only granted links of installed mods count. A mod with none shall read `Works on its own: it uses no mod and no mod uses it.` Traces: F-APP-9, J9.
-- **APP-F-67** When the participant disables or removes a mod that an enabled mod calls or receives events from, the app shall first ask `Disable <name>?` or `Remove <name>?`, naming enabled callers with `These mods use it: <names>.` and enabled subscribers with `These mods extend it: <names>.` Only granted links count. Empty groups are omitted; when both apply, uses comes first, and a mod in both groups appears in both. A mod that only extends it shall not be called a user. Disabling or removing the main mod shall also ask, and say what then opens at start. The button that confirms a removal that deletes the mod's data shall say so; `Cancel` is the default and Escape cancels. While the panel is open, a blur to nothing returns focus to Cancel on the next task; a real focus move is left alone. Traces: F-APP-9, F-INST-5.
+- **APP-F-67** When the participant disables or removes a mod that an enabled mod calls or receives events from, the app shall first ask `Disable <name>?` or `Remove <name>?`, naming enabled callers with `These mods use it: <names>.` and enabled subscribers with `These mods extend it: <names>.` Only granted links count. Empty groups are omitted; when both apply, uses comes first, and a mod in both groups appears in both. A mod that only extends it shall not be called a user. Disabling or removing the main mod shall also ask, and say what then opens at start. The button that confirms a removal that deletes the mod's data shall say so; `Cancel` is the default and Escape cancels. Traces: F-APP-9, F-INST-5.
 - **APP-F-68** The library shall list the main mod first, then the mods with a problem, then those with an update, then the rest by name. It shall filter its entries by words in the name or the publisher, and by published or local. When nothing matches, it shall say so and link to Find. Traces: F-APP-8.
 - **APP-F-69** Updates shall list, in this order: the offers that need the participant (a new grant, a withdrawal, a compromised channel), the channels that could not be read, and the updates that installed without a question since the app started, newest first. Traces: F-INST-7, F-INST-8, F-APP-8.
 - **APP-F-76** The app views shall follow the light or dark appearance of the system. Traces: F-APP-8.
@@ -169,7 +169,7 @@ participant disables the mod, then the window no longer exists.
 
 **S9 Withdraw a grant** (APP-F-23, J2). Given `recommendations` with its
 call grant, when the participant withdraws it and adds a book in
-`reading-list`, then the `recommendations` page shows `not granted` with the host's message (`no provider is linked`). With its provider disabled, opening the page shows the host's `disabled or unavailable`; enabling the provider lets the page read again and clears its error. When the participant gives the grant back in the library, with no consent view, then the page
+`reading-list`, then the `recommendations` page shows `not granted` with the host's message (`no provider is linked`). With its provider disabled, opening the page shows the host's `disabled or unavailable`; enabling the provider and reopening the page lets it read again and clears its error. When the participant gives the grant back in the library, with no consent view, then the page
 shows the book again.
 
 **S10 Remove** (APP-F-24). Given `recommendations`, when the participant
@@ -352,7 +352,7 @@ call grant, `Uses` and `Used by` are gone.
 
 **S41 Warn before disable** (APP-F-67). Given S40, when the participant
 disables `reading-list`, then the page names `Recommendations` and
-`Cancel` has the focus; a blur to nothing restores Cancel on the next task, a real focus move is left alone, and the guard ends when the panel closes. Cancel leaves both enabled.
+`Cancel` has the focus; Cancel leaves both enabled.
 
 **S42 Settings apart** (APP-F-65). The library, Find and Updates views
 hold no control of identity, site, backup, agents or machines; Settings

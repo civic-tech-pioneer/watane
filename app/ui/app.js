@@ -210,15 +210,8 @@ export function modsView(mods) {
   filterLibrary(); headerView();
 }
 let confirming = null;
-function restoreCancelFocus(event) {
-  if (event.relatedTarget) return;
-  const open = confirming;
-  setTimeout(() => {
-    if (open && confirming === open && document.activeElement === document.body) $('#confirm-cancel').focus();
-  }, 0);
-}
 function cancelConfirm() {
-  const panel = $('#confirm-panel'); panel.removeEventListener('focusout', restoreCancelFocus); panel.hidden = true;
+  const panel = $('#confirm-panel'); panel.hidden = true;
   if (confirming) confirming.entry.querySelector('.actions').hidden = false;
   confirming = null;
 }
@@ -232,7 +225,6 @@ function warn(mod, verb) {
   actions.hidden = true;
   actions.after(panel);
   confirming = {mod,verb,entry};
-  panel.addEventListener('focusout', restoreCancelFocus);
   $('#confirm-title').textContent = `${verb} ${mod.name}?`;
   const warning = $('#dependency-warning'); warning.replaceChildren();
   warning.append(icon('warning', 18));
