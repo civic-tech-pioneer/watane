@@ -1,8 +1,8 @@
 #!/bin/bash
-# factory/check-main.sh: the whole workspace's checks, for `main` after each merge. check.sh checks
-# one task's subsystem; this catches the breakage that lands between subsystems (S85: app clippy red
-# on sibling log/pkg code). Build, default tests, clippy, fmt and cargo deny, over every crate.
-# The product owner runs it after each merge (product-owner skill, section 5). About 5 to 15 minutes.
+# factory/check-main.sh: what CI (.github/workflows/ci.yml) cannot run, on `main` after each merge:
+# the timing tests, one at a time on the Mac while no slice builds (factory/README.md, "Timing
+# tests"). Build, default tests, clippy, fmt and cargo deny on Linux, macOS and Windows are CI's,
+# before the merge ("Two feedback loops"). A failure counts only if it repeats.
 # Log: factory/runs/main.check.log of the main checkout. Prints `MAIN PASS <commit>` or
 # `MAIN FAIL <commit>: <steps>`; exits 1 on a failure.
 set -u
@@ -20,13 +20,10 @@ step() {
   echo "== $1: ${*:2}" >> "$LOG"
   "${@:2}" >> "$LOG" 2>&1 || { FAILED+=("$1"); echo "== $1 FAILED" >> "$LOG"; }
 }
-# app's `driver` and dev's `fake-host` as check.sh uses them; never app's `real-github`.
-FEAT=(--features watane-app/driver,watane-dev/fake-host)
+T=(-- --ignored --test-threads=1)
 cargo build -q -p watane-host >> "$LOG" 2>&1; export WATANE_BIN=${CARGO_TARGET_DIR:-$W/target}/debug/watane  # dev's tests
-step build cargo build --workspace "${FEAT[@]}"
-step test cargo test --workspace "${FEAT[@]}" --no-fail-fast
-step clippy cargo clippy --workspace --all-targets "${FEAT[@]}" -- -D warnings
-step fmt cargo +nightly fmt --all --check
-step deny cargo deny check  # advisories too: a new one is news for the product owner, not a task
+step host-runtime cargo test -p watane-host --test it "${T[@]}" runtime::ac6_limits
+step host-shutdown cargo test -p watane-host --test it "${T[@]}" program::catalog::ac3_shutdown
+step dev-unit cargo test -p watane-dev --test it "${T[@]}" unit_tests::ac10_endless
 if [ ${#FAILED[@]} -eq 0 ]; then echo "MAIN PASS $HEAD" | tee -a "$LOG"; exit 0; fi
 echo "MAIN FAIL $HEAD: ${FAILED[*]} (log $LOG)" | tee -a "$LOG"; exit 1
