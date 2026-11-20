@@ -1709,6 +1709,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, PO) main check at `5899450`: three Linux-only or load-only failures. log `s91_2_ac2_socket_key_is_not_plain` failed on every macOS run (a socket open is EOPNOTSUPP there, ENXIO on Linux; PO fix `b0c4357`, a cloud slice cannot see it); node `causes::ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed` got `Ok` once under load (a good package, likely the anchor answering before its net turned off: a test race, not a verification gap; 3/3 alone); app `manage::ac2_s47` once (2/2 alone). S91's `mkfifoat` was Linux-only too (PO fix `5899450`). Cloud slices touching OS calls need a Mac run before merge.
 - (2026-11-20, S91) the cloud container lacked clippy, nightly rustfmt, cargo-deny and cargo-hakari (installed by hand) and has no IPv6, so host's server tests need a local shim there; the app cannot build there (GTK); one IPv6 test's changed expectation surfaced only on the Mac.
 - (2026-11-20, PO) main check at `c224dd3` (S92) under load ~30 (S90 building): `j2::ac7` failed again (S90 reworks it) and net `regress_s75::ac1_ac2_light_reaches_the_full_machine_with_the_anchor_closed` once (*core*); the latter passed 5/5 alone at load 33. app's integration run took 206 s against 70 s earlier: Suite time figures need a quiet Mac.
 - (2026-11-20, S92) the cloud toolchain lacked clippy (`rustup component add clippy`); parallel tasks sharing an interface each passed alone and broke only merged (check slice/<id> after each fast-forward); three cold builds at once made each Sol run 15 to 20 min.
