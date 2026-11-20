@@ -814,3 +814,8 @@ http(s)-plain and drops `--proto` when WATANE_RUSTUP_URL is set. Not done: the h
 full path when <prefix>/bin is off PATH, because adv_s89's signal test (unchangeable) pins the bare line
 with a PATH that lacks the bin folder. Edited besides: tests/fakes/chmod (real chmod when FAKE_REAL is
 unset, for the pasted line of sim_s89) and the tests that pinned `--proto` with a set URL.
+
+S89-fix4: a failure before any swap (verify_archive, extract_archive) runs before `recover`, so with a receipt
+it says only `Nothing was changed.`; "still works" stays for a failed swap after undo. `rollback` reads the
+journal only as a regular file, not a link. The fresh-install undo failure now says a rerun "removes them and
+installs watane". Left over: the post-undo "still works" line (INST-F-18).

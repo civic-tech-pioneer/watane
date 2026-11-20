@@ -520,7 +520,7 @@ fn fix3_a_fresh_install_whose_undo_fails_says_the_files_could_not_be_removed() {
         lines(&out.stderr),
         [
             "watane install: could not put the files in place",
-            "The files could not be removed. Run this script again to finish cleaning up."
+            "The files could not be removed. Run this script again: it removes them and installs watane."
         ],
         "{out:?}"
     );
@@ -536,7 +536,7 @@ fn fix3_a_checksum_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
     assert_eq!(out.code, 4, "{out:?}");
     assert_eq!(
         out.stderr.lines().last(),
-        Some("Nothing was changed: the version that was installed still works."),
+        Some("Nothing was changed."),
         "{out:?}"
     );
     fx.assert_installed("0.1.0");
@@ -562,7 +562,7 @@ fn fix3_an_archive_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
         lines(&out.stderr),
         [
             format!("watane install: {name} is not a watane archive of version 0.1.0").as_str(),
-            "Nothing was changed: the version that was installed still works."
+            "Nothing was changed."
         ],
         "{out:?}"
     );

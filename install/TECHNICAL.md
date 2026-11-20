@@ -608,7 +608,7 @@ retries a failed undo once itself, checking each failure for signals. It then
 decides the second line from where the entries are after undo (its retry
 included), not from undo's status. When a new entry (`new` in the journal, moved
 by the run) is still at its path, it prints on a fresh install "The files could
-not be removed. Run this script again to finish cleaning up." and on a reinstall
+not be removed. Run this script again: it removes them and installs watane." and on a reinstall
 "The files could not be put back. Run this script again to restore the installed
 version." It prints the second text also if an old entry path is missing or an
 old entry other than the receipt still has its `.old.<pid>` name. Otherwise it prints
@@ -722,10 +722,11 @@ the receipt's rename (3.8) prints, instead, `watane install: a step after the
 install failed`, `watane <v> is installed.` and `Run watane-dev doctor to check the
 maker tools.`, and exits 5. A checksum or archive failure before any swap (exit 4 or 5)
 ends with `Nothing was installed.` when no receipt exists, and with `Nothing was
-changed: the version that was installed still works.` when one does. When undo, after
+changed.` when one does: such a failure runs before `recover` (3.6 step 0), so it cannot know whether the
+installed version still works (an interrupted uninstall or killed swap may have left it incomplete). When undo, after
 its retry, left a new entry at its path, the second line is `The files could not be put
 back. Run this script again to restore the installed version.` (reinstall) or `The files
-could not be removed. Run this script again to finish cleaning up.` (fresh install),
+could not be removed. Run this script again: it removes them and installs watane.` (fresh install),
 never "Nothing was".
 
 Stdout carries the progress and the result, stderr the errors. No colour,

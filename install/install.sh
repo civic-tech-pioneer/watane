@@ -483,7 +483,7 @@ rollback() {
   if [ "$SWAP_ACTIVE" = 1 ]; then
     # Committed is what undo itself decides on: the journal is there and the receipt's
     # `.new.<pid>` is gone (3.8). Read it before undo removes either.
-    if [ -f "$SHAREW/journal.$SWAP_PID" ] && ! exists "$RECEIPT.new.$SWAP_PID"; then COMMITTED=1; fi
+    if [ -f "$SHAREW/journal.$SWAP_PID" ] && [ ! -L "$SHAREW/journal.$SWAP_PID" ] && ! exists "$RECEIPT.new.$SWAP_PID"; then COMMITTED=1; fi
     undo_swap "$SWAP_PID" || return
     SWAP_ACTIVE=0
   fi
@@ -751,10 +751,11 @@ EOF
 }
 
 # not_swapped_msg: sets NS_MSG, the last line of a failure before any swap (3.9):
-# a receipt means a version is installed
+# a receipt means a version was installed, but this runs before recover (3.6 step 0),
+# so it cannot claim the version still works
 not_swapped_msg() {
   NS_MSG='Nothing was installed.'
-  if exists "${RECEIPT:-}"; then NS_MSG='Nothing was changed: the version that was installed still works.'; fi
+  if exists "${RECEIPT:-}"; then NS_MSG='Nothing was changed.'; fi
 }
 
 verify_archive() {
@@ -977,7 +978,7 @@ $if_new
 EOF
     if [ "$if_left" = 1 ]; then
       if [ "$if_fresh" = 1 ]; then
-        die 5 "could not put the files in place" "The files could not be removed. Run this script again to finish cleaning up."
+        die 5 "could not put the files in place" "The files could not be removed. Run this script again: it removes them and installs watane."
       fi
       die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
     fi
