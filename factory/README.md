@@ -151,6 +151,31 @@ Rules:
   the tests the cloud could not run. The user-sim runs no suite; it uses the programs.
 - A failure the user-sim finds becomes a test at the lowest level that shows it.
 
+## Time and value
+
+Agents do not feel time pass, so test suites grew to over an hour and a cosmetic flake took a
+day without anyone flinching. These checkpoints stand in for that feeling. They are not quotas:
+they catch an excess early, while turning back is cheap.
+
+- **Weigh what the work protects** before a fix slice, a new slow test or another round:
+  - *guard*: authorization, consent, signatures, isolation, data loss (`spec/TECHNICAL.md` 6).
+    Worth what it takes. A flake here is chased to its cause and never ignored on a hunch.
+  - *core*: a journey step, or a feature a person relies on.
+  - *polish*: wording, layout, default focus, convenience. One attempt: one diagnosis of a
+    flake, one task for a fix. If that is not enough, it becomes an accepted limit in `PLAN.md`
+    (a flaky test gets `#[ignore = "flaky: <cause>, accepted <date>"]`), not another slice.
+- **Suite time is a budget.** Each delivery reports, per touched subsystem, the wall time of its
+  default `cargo test` and of its `--include-ignored` run, before and after the slice. The product
+  owner keeps them in `PLAN.md`'s `Suite time` table. A default run over 2 minutes, a slow set
+  over 10, or either growing more than 20% in one slice: that subsystem's next slice moves tests
+  down the pyramid or deletes duplicates before it adds features.
+- **Elapsed time is a signal.** A task past 3 Sol runs, a flake past one diagnosis, or a slice
+  in flight for more than a working day: stop and weigh again. Is what it protects still worth
+  the time? Write the answer as a decision line. Continuing is fine; continuing without asking
+  is not.
+- **A new test that starts a process, a window or a VM** says what a unit or fixture test cannot
+  show. That is in the pyramid's rules too; the validator holds to it.
+
 ## Timing tests
 
 Tests that assert a spec'd time limit (a call stopped after 200 ms and before 2 s) fail under

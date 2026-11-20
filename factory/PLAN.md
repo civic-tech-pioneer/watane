@@ -1060,6 +1060,16 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
+## Suite time
+
+Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
+default `cargo test` (budget 2 min) and `--include-ignored` (budget 10 min). From the main check
+after each merge; under load, say so. A row over budget, or up more than 20% in one slice, makes
+that subsystem's next slice a test-cost slice.
+
+| Subsystem | Default | With ignored | Measured |
+|---|---|---|---|
+
 ## Stage coverage
 
 One row per stage of each subsystem's build plan (its TECHNICAL "Build plan" table), with the

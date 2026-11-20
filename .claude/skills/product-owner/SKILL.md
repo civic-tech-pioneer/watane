@@ -29,6 +29,9 @@ journey (J1, J2, ...) passes on the real programs and every stage of that step i
    next slices so they own disjoint files over waiting.
 3. While slices are in flight: answer their questions (section 4) and sketch the next one.
    A foreman's turn ending is not news: pass nothing to the human until it delivers or blocks.
+   You do not feel time pass, so look at the clock on each wake: a slice in flight for more than
+   a working day, or a fix chasing a *polish* item, gets weighed again (`factory/README.md`,
+   "Time and value"). Cut it, accept the limit, or let it go on, with a decision line saying why.
 4. On a delivery: accept it (section 5), then go to 1.
 
 ## 2. Sketch a slice
@@ -38,7 +41,9 @@ subsystem it needs, thinly. The subsystems' build-plan tables are a menu of part
 In `PLAN.md` a sketch holds:
 - the story, and 2 to 5 outcomes that a user-sim can check on the real programs;
 - the subsystems it touches, and the interfaces between them that it creates or changes;
-- what it may fake or stub (as the subsystem's spec says), and what it leaves out.
+- what it may fake or stub (as the subsystem's spec says), and what it leaves out;
+- for a fix or a flake: what it protects (*guard*, *core* or *polish*, `factory/README.md`,
+  "Time and value"). A *polish* flake gets no slice: one diagnosis, then an accepted limit.
 
 Keep it a sketch: the foreman writes the task briefs. Re-read the sketch after each delivery;
 what the last slice taught usually changes it.
@@ -138,7 +143,9 @@ A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its 
    (`git push origin --delete slice/<id>`; the transcript stays). Mark the slice
    done in `PLAN.md` with one digest line (what a
    person can now do), and copy its decisions and friction lines there. Update `Stage coverage`:
-   each stage the slice finished or advanced, and each `ponytail:` it left. Commit.
+   each stage the slice finished or advanced, and each `ponytail:` it left. Copy its suite times
+   into `Suite time` and the hours it was in flight onto its line; a subsystem over budget gets a
+   test-cost slice next (`factory/README.md`, "Time and value"). Commit.
 4. Report to the human: one line per slice, decisions first.
 
 `BLOCKED <id>`: treat its question by section 4, then resume that foreman or re-cut the slice.

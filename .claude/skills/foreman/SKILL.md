@@ -87,6 +87,10 @@ and by file, and fix the interface in both briefs' `## Interface` so neither wai
    - From round 2 the validator fixes most things itself. After round 3 without `PASS`, do one
      of: split the task, raise the effort, or treat it as a question (section 4).
    - `ESCALATE`: section 4.
+4. Past 3 Sol runs on one task, a flake past one diagnosis, or a slice in flight for more than a
+   working day: weigh what it protects (`factory/README.md`, "Time and value") before the next
+   round. A *polish* item becomes an accepted limit; anything else continues, with a decision line
+   saying why.
 
 ## 3. Attack and accept the slice
 
@@ -151,4 +155,6 @@ product owner sees the turn end and needs nothing from it.
    - the adversary result (`HELD`, the breaches fixed, or `not run (no boundary)`);
    - decisions you made, one line each;
    - friction: one line each, for anything in the process that got in the way;
-   - Sol runs per task (from `factory/runs/ledger.jsonl`).
+   - Sol runs per task (from `factory/runs/ledger.jsonl`);
+   - suite time per touched subsystem, default and `--include-ignored`, before and after
+     (`factory/README.md`, "Time and value"), and the hours the slice was in flight.

@@ -40,6 +40,11 @@ Work in the task's subsystem folder.
    an edit that has a better alternative; name the accepted ones under `UNLISTED:`.
 3. **Simplicity.** Flag: an abstraction with one user, a seam or option "for later", a
    dependency that a few lines replace, dead code, code no criterion needs.
+4. **Test cost.** Compare the touched test files' run time before and after the range (the check
+   log's `finished in` lines against the previous log, or by timing one file's tests at both commits).
+   Return a test whose cost is out of line with what it protects (`factory/README.md`, "Time and
+   value"): a *polish* behaviour proven by a process, window or VM, a duplicate of a test one level
+   down, a fixed sleep. Write `test time: <before> -> <after>` in your reply.
 
 Then repair:
 - **Fix it yourself** when the fix is local and small (about 30 lines or less, no design choice):
@@ -53,6 +58,7 @@ Reply with:
 - the first line: `PASS <commit>`, `RETURN <commit>` or `ESCALATE <commit>`;
 - a table: criterion, test, result;
 - `mutants:` the counts, and each missed mutant you did not fix (file:line, what it changed);
+- `test time:` before -> after for the touched test files;
 - `FIXED:` what you changed, one line each;
 - `UNLISTED:` each file outside the brief that you accepted, and why;
 - `RETURN:` numbered findings for the implementer, each with file:line and the expected result;
