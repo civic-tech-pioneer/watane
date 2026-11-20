@@ -87,6 +87,7 @@ cleanup() {
   exit "$status"
 }
 # Preserve diagnostics while a guest call redirects stderr into a temporary log.
+# Background children close fd 3, so a leaked one cannot hold the caller's stderr open.
 exec 3>&2
 trap cleanup EXIT
 trap 'printf "%s: interrupted\n" "$driver" >&3; exit 1' HUP INT TERM
@@ -135,9 +136,9 @@ boot() {
   vm=watane-run-$$
   if [ -n "$whole_bound" ]; then
     deadline_args "$whole_bound" "tart run"
-    perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
+    perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 3>&- &
   else
-    tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 &
+    tart run --no-graphics "$vm" >"$work/tart.log" 2>&1 3>&- &
   fi
   runner=$!
   boot_bound=$(seconds 600)

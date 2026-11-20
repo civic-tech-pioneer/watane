@@ -644,6 +644,7 @@ case ${0##*/}:$1 in
   scp:*) [ "$MODE" != copy ] || exit 23 ;;
   python3:*)
     echo $$ > "$WEB_PID"
+    [ ! -e /dev/fd/3 ] || echo web-holds-fd3 >> "$CALLS"
     # A single process: emergency fixture cleanup must not orphan a sleep child.
     exec /usr/bin/perl -e '
       $| = 1;
@@ -791,6 +792,7 @@ esac
                 "{out:?}"
             );
         }
+        assert!(!log.contains("web-holds-fd3"), "{log}");
         for line in log.lines().filter(|line| line.starts_with("scp ")) {
             assert!(line.contains("-o LogLevel=ERROR"), "{line}");
         }

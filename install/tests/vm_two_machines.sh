@@ -129,7 +129,7 @@ WATANE_VM_ALICE_HOME=$work/alice
 # The HTTP directory may be created after the listener starts: Alice publishes
 # through the app test. Stock Apple's Python is allowed by the host firewall.
 PYTHONUNBUFFERED=1 /usr/bin/python3 -m http.server 0 --bind "$host_ip" \
-  --directory "$WATANE_VM_ALICE_HOME/dist/site" >"$work/web.log" 2>&1 &
+  --directory "$WATANE_VM_ALICE_HOME/dist/site" >"$work/web.log" 2>&1 3>&- &
 web=$!
 listener_bound=$(seconds 30)
 deadline=$(( $(date +%s) + listener_bound ))
@@ -182,7 +182,7 @@ WATANE_VM_SITE_BASE=http://$host_ip:$port/
 export WATANE_VM_BOB WATANE_VM_ALICE_HOME WATANE_VM_SITE_BASE
 deadline_args "$journey_bound" "cargo test two_machines"
 perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" cargo test -p watane-app --features driver --test it two_machines:: -- --ignored \
-  >"$work/journey.log" 2>&1 &
+  >"$work/journey.log" 2>&1 3>&- &
 journey=$!
 if wait "$journey"; then
   journey=
