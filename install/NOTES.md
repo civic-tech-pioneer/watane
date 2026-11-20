@@ -807,3 +807,10 @@ the commit; each `action.yml` was fetched and says `using: node24`. READMEs chec
 `path` of download-artifact still extracts a single named artifact directly into
 `path`; upload-artifact `include-hidden-files` still defaults to false and
 `dist-out/` has none. Earlier notes about "v4 SHAs" are history.
+
+S89-fix2: a swap that fails after the receipt's rename now exits 5 with `a step after the install failed`
+and the hint; fresh-install failure says `Nothing was installed.`; "install it later" quotes any URL not
+http(s)-plain and drops `--proto` when WATANE_RUSTUP_URL is set. Not done: the hint's doctor line with the
+full path when <prefix>/bin is off PATH, because adv_s89's signal test (unchangeable) pins the bare line
+with a PATH that lacks the bin folder. Edited besides: tests/fakes/chmod (real chmod when FAKE_REAL is
+unset, for the pasted line of sim_s89) and the tests that pinned `--proto` with a set URL.

@@ -572,7 +572,7 @@ Then `watane-dev doctor` checks it again.
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
 command.) When `WATANE_RUSTUP_URL` is set, line 3 names that URL in place of
-`https://sh.rustup.rs`, the URL the question named (IN-44). A URL that holds anything but letters, digits and `._/:@%+,=~-` is printed in single quotes (`shell_quote`), so pasting the line runs one `curl`; the default and plain URLs stay as they are. The block names it in every case that prints
+`https://sh.rustup.rs`, the URL the question named (IN-44). The URL is printed bare only when it starts with `https://` or `http://` and holds only letters, digits and `._/:@%+,=~-`; any other URL (a leading `~`, `=` or `-`, a `file://` URL, any odd byte) is printed in single quotes (`shell_quote`), so pasting the line runs one `curl` on that word. A leading `-` is still a `curl` option inside quotes: a decided limit, since only the person sets the variable (AGENTS rule 4). When `WATANE_RUSTUP_URL` is set the offer downloads without `--proto '=https'` (3.2), so the line omits `--proto '=https'` too and runs for the URL it names; the default line keeps it. The block names it in every case that prints
 it, including `--no-toolchain` and no terminal, where no question is shown: the URL
 is `WATANE_RUSTUP_URL` whenever that is set, else `https://sh.rustup.rs`. For `no target`: `  rustup target add wasm32-wasip2`; for B:
 `  rustup toolchain install stable --profile minimal -t wasm32-wasip2` and
@@ -609,7 +609,13 @@ prints "The files could not be put back. Run this script again to restore the
 installed version." only if an old entry path is missing or an old entry other
 than the receipt still has its `.old.<pid>` name. Otherwise it prints
 "Nothing was changed: the version that was installed still works."
-Both diagnoses exit 5. A failure that only leaves staging names behind does
+On a fresh install (the swap moved no existing entry aside, so there was no
+installed version) the second line is `Nothing was installed.` instead. When the
+failure came after the receipt's rename (the receipt `mv` renamed the file and
+returned non-zero, e.g. killed), undo finishes the commit, the new version is
+installed, and the run exits 5 with `watane install: a step after the install
+failed` and then the two lines of the interruption hint of 3.9 (printed once),
+never "Nothing was changed". The three diagnoses exit 5. A failure that only leaves staging names behind does
 not mean the old version needs restoring; the next run cleans those names.
 Staging, journal writes and cleanup helpers also preserve program statuses until the caller checks for signals.
 Every site that drops or remaps a program's status must pass the original
@@ -703,7 +709,7 @@ left by an earlier process that had the same pid). Any other name (`watane.old.m
 
 After a failed swap (exit 5), stderr reports `could not put the files in
 place`, then `Nothing was changed: the version that was installed still
-works.` unless an old entry the run moved is missing or not yet back from its `.old.<pid>` name, or
+works.` (`Nothing was installed.` on a fresh install) unless an old entry the run moved is missing or not yet back from its `.old.<pid>` name, or
 `The files could not be put back. Run this script again to restore the installed version.` if such an entry is not back
 without a signal, after retrying a failed undo once (3.8). Staging cleanup
 failure alone uses the first text; both cases exit 5.

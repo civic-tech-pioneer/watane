@@ -175,7 +175,7 @@ fn ac5_install_it_later_names_the_url_of_the_offer() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.stdout.contains(&format!("from {url},")), "{out:?}");
     let l = format!(
-        "  curl --proto '=https' --tlsv1.2 -sSf {url} | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+        "  curl --tlsv1.2 -sSf {url} | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
     );
     assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
     assert!(!out.stdout.contains("sh.rustup.rs"), "{out:?}");
@@ -359,7 +359,7 @@ fn fix1_install_it_later_quotes_an_odd_url() {
     let url = "http://x/a b;c";
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", url)], &[("[y/N] ", "N")]);
     assert_eq!(out.code, 0, "{out:?}");
-    let l = "  curl --proto '=https' --tlsv1.2 -sSf 'http://x/a b;c' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2";
+    let l = "  curl --tlsv1.2 -sSf 'http://x/a b;c' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2";
     assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
 }
 
@@ -404,4 +404,17 @@ fn fix1_a_signal_while_staging_prints_no_hint() {
     assert_eq!(out.code, 143, "{out:?}");
     assert!(!out.stderr.contains("is installed"), "{out:?}");
     assert!(!fx.receipt().exists(), "{out:?}");
+}
+
+#[test]
+fn fix2_install_it_later_quotes_a_leading_tilde_or_equals() {
+    for url in ["~root/x", "=x"] {
+        let fx = Fx::new();
+        let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", url)], &[("[y/N] ", "N")]);
+        assert_eq!(out.code, 0, "{out:?}");
+        let l = format!(
+            "  curl --tlsv1.2 -sSf '{url}' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+        );
+        assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
+    }
 }

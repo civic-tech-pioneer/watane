@@ -540,9 +540,15 @@ release_files() {
   )
 }
 
+# doctor_hint: the hint's second line (3.9)
+doctor_hint() {
+  printf 'Run watane-dev doctor to check the maker tools.\n' >&2
+}
+
 # interrupted_hint: a signal after the commit left watane installed (3.8, 3.9)
 interrupted_hint() {
-  printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+  printf 'watane %s is installed; the run was interrupted before it finished.\n' "$RELEASE" >&2
+  doctor_hint
   if [ "$TC_ASKING" = 1 ]; then print_commands >&2; fi
   return 0
 }
@@ -937,6 +943,12 @@ EOF
       rollback || { check_signal "$?"; }
     fi
     check_signal "$if_rc"
+    if [ "$COMMITTED" = 1 ]; then
+      # the receipt moved before the failure: undo finished the commit (3.8, 3.9)
+      printf 'watane install: a step after the install failed\nwatane %s is installed; the run was interrupted before it finished.\n' "$RELEASE" >&2
+      doctor_hint
+      exit 5
+    fi
     while IFS= read -r if_p; do
       [ -n "$if_p" ] || continue
       if ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
@@ -945,10 +957,12 @@ EOF
     done <<EOF
 $if_old
 EOF
+    if_msg="Nothing was changed: the version that was installed still works."
+    if [ -z "$if_old" ]; then if_msg="Nothing was installed."; fi
     if [ -n "$SWAP_CHANGED" ]; then
-      die 5 "$SWAP_CHANGED" "Nothing was changed: the version that was installed still works."
+      die 5 "$SWAP_CHANGED" "$if_msg"
     fi
-    die 5 "could not put the files in place" "Nothing was changed: the version that was installed still works."
+    die 5 "could not put the files in place" "$if_msg"
   fi
   return 0
 }
@@ -1037,11 +1051,16 @@ print_commands() {
     none_a)
       rustup_src
       pc_url=$RUSTUP_SRC
-      # quoted only when the shell would read it as more than one plain word (3.7)
+      # unquoted only as an http(s) URL of the safe characters; any other is quoted (3.7)
       case $pc_url in
         '' | *[!A-Za-z0-9._/:@%+,=~-]*) pc_url=$(shell_quote "$pc_url") || { check_signal "$?"; } ;;
+        https://* | http://*) ;;
+        *) pc_url=$(shell_quote "$pc_url") || { check_signal "$?"; } ;;
       esac
-      say "  curl --proto '=https' --tlsv1.2 -sSf $pc_url | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+      # the offer downloads without --proto when WATANE_RUSTUP_URL is set (3.2)
+      pc_proto="--proto '=https' "
+      if [ -n "${WATANE_RUSTUP_URL:-}" ]; then pc_proto=""; fi
+      say "  curl ${pc_proto}--tlsv1.2 -sSf $pc_url | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
       ;;
     target) say '  rustup target add wasm32-wasip2' ;;
     none_b)

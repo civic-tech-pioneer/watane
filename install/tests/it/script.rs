@@ -181,7 +181,13 @@ fn inst_s3_toolchain_answered_n() {
         assert_eq!(out.stdout.matches("[y/N]").count(), 1);
         assert_eq!(fx.state_read("installer.log"), "");
         assert!(out.has_line("toolchain: not installed"));
-        assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
+        assert!(
+            out.has_line(
+                &CURL_LINE
+                    .replace("--proto '=https' ", "")
+                    .replace("https://sh.rustup.rs", &format!("'{url}'"))
+            )
+        );
         fx.assert_installed("0.1.0");
     }
 }
@@ -194,8 +200,16 @@ fn inst_s4_no_terminal() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(!out.stdout.contains("[y/N]"));
     assert!(out.has_line("no terminal to ask on: the toolchain was not installed"));
-    // IN-44: the command names the URL that the offer would have named
-    assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
+    // IN-44: the command names the URL that the offer would have named;
+    // a URL that is not http(s) is printed in single quotes (3.7)
+    let q = format!("'{url}'");
+    assert!(
+        out.has_line(
+            &CURL_LINE
+                .replace("--proto '=https' ", "")
+                .replace("https://sh.rustup.rs", &q)
+        )
+    );
     assert_eq!(fx.state_read("installer.log"), "");
 }
 
@@ -212,7 +226,15 @@ fn inst_s5a_no_toolchain_flag_beats_a_typed_y() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(!out.stdout.contains("[y/N]"));
     assert!(out.has_line("toolchain: skipped (--no-toolchain)"));
-    assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
+    // a URL that is not http(s) is printed in single quotes (3.7)
+    let q = format!("'{url}'");
+    assert!(
+        out.has_line(
+            &CURL_LINE
+                .replace("--proto '=https' ", "")
+                .replace("https://sh.rustup.rs", &q)
+        )
+    );
     assert_eq!(fx.state_read("installer.log"), "");
 }
 
