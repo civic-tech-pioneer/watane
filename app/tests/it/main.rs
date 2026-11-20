@@ -22,6 +22,7 @@ mod look;
 mod machines;
 mod manage;
 mod manager;
+mod regress_s55;
 mod static_config;
 mod static_style;
 mod support_selftest;
