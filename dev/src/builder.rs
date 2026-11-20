@@ -872,6 +872,22 @@ mod tests {
             );
         }
     }
+    /// TECHNICAL 6.4 ends a path at a bidi or invisible format character; U+061C (ARABIC
+    /// LETTER MARK, a Unicode Bidi_Control), U+00AD (soft hyphen), U+180E and the tag block
+    /// (all in pkg's INVISIBLE table) do not end it, so the reported path carries them.
+    #[test]
+    fn adv_s93_sibling_paths_other_format_chars() {
+        let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
+        for ch in ['\u{061C}', '\u{00AD}', '\u{180E}', '\u{E0041}', '\u{FFF9}'] {
+            let text = format!("/c/build/other/wit{ch}gnp.a");
+            assert_eq!(
+                sibling_paths(&text, b, c),
+                [PathBuf::from("/c/build/other/wit")],
+                "U+{:04X}",
+                ch as u32
+            );
+        }
+    }
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
         let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
