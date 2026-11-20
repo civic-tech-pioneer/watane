@@ -888,7 +888,26 @@ fn regress_s93_no_source_fix_runs_as_written() {
     let dest = dest.to_str().unwrap();
     let fix = v["errors"][0]["fix"].as_str().unwrap();
     assert!(fix.contains(&format!("--dir {dest}")), "{fix}");
-    // The fix's command, argument by argument.
+    // The fix's commands, argument by argument: `new <slug> --dir <dest> && add --release ...`
+    // (foreman, S93-fix5: the fix makes the mod first, since new --from writes nothing).
+    assert!(
+        fix.contains(&format!(
+            "watane-dev new ratings --dir {dest} && watane-dev add --release"
+        )),
+        "{fix}"
+    );
+    let (code, v) = in_process::dev(
+        f.root.path(),
+        &[
+            OsStr::new("new"),
+            OsStr::new("ratings"),
+            OsStr::new("--dir"),
+            OsStr::new(dest),
+            OsStr::new("--json"),
+        ],
+        &[("WATANE_DEV_CACHE", Some(f.cache.as_os_str()))],
+    );
+    assert_eq!(code, 0, "{v}");
     let (code, v) = f.run(&["add", "--release", &link("reading-list"), "--dir", dest]);
     assert_ne!(v["errors"][0]["code"], "usage.not_a_mod", "{v}");
     assert_eq!(code, 0, "{v}");
