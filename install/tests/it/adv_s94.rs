@@ -77,7 +77,7 @@ fn adv_s94_swap_stops_at_a_folder_relinked_after_the_check() {
             "relinked",
             r#"HOME=$ROOT/h; check_home; set_entries; check_folders
 rmdir "$HOME/.local/bin" && mv "$HOME/binlink" "$HOME/.local/bin" || exit 99
-swap_entries; echo "rc=$?"; printf 'changed<%s>\n' "$SWAP_CHANGED""#,
+if swap_entries; then rc=0; else rc=$?; fi; echo "rc=$rc"; printf 'changed<%s>\n' "$SWAP_CHANGED""#,
         )],
     );
     let u = case(&units, "relinked");
@@ -283,12 +283,12 @@ fn adv_s94_undo_keeps_the_receipt_when_its_copy_was_cut_short() {
 
 /// INST-S-31, TECHNICAL 3.4.1: a whole run whose `~/.local/bin` is a link to a missing folder
 /// outside the home ends with exit 2 and names where it leads. The unit level cannot show this:
-/// it runs the functions under `set +e`, and the real run is `set -eu`. Mutant: in
+/// it ran the functions under `set +e` (S94-1), and the real run is `set -eu`; the unit level now
+/// runs each case under `set -eu` too (S94 fix1). Mutant: in
 /// `check_folders` replace `if ! resolve_dir "$ch_f" || ! below_home "$RES"; then` by
 /// `resolve_dir "$ch_f"; if ! below_home "$RES"; then`; the real run then ends with exit 1 and no
-/// text, while `unit::unit_check_folders_refuses_an_install_folder_outside_the_home` (case `o5`)
-/// still passes (only the `slow:` `script::inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it`
-/// sees it).
+/// text, and so does case `o5` of
+/// `unit::unit_check_folders_refuses_an_install_folder_outside_the_home`, which is red as well.
 #[test]
 fn adv_s94_a_dangling_install_folder_link_out_of_the_home_exits_2() {
     let fx = Fx::new();

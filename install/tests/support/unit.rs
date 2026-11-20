@@ -41,8 +41,12 @@ pub fn functions_of_script(version: &str) -> String {
 impl Fx {
     /// Runs the cases against the functions of `install.sh` in one `/bin/sh` with this world's
     /// environment (cleared, `HOME`, the fakes first on the `PATH`), after `prelude`
-    /// (for example `check_home; set_entries`). Each case is `(name, shell text)` and runs in a
-    /// subshell, so `die`'s `exit` ends the case, and its variables are gone after it. `$ROOT` is
+    /// (for example `check_home; set_entries`), both under `set -eu` as `install.sh` sets them. Each
+    /// case is `(name, shell text)` and runs in a subshell that sets `set -eu` itself, so `die`'s
+    /// `exit` and a command that `set -e` ends end only the case (its status is `code`, its output
+    /// so far stays its own), and its variables are gone after it. A case that calls a function
+    /// the script calls in `||` or `if` (where `set -e` is off) does the same, as `if f; then
+    /// rc=0; else rc=$?; fi`; one that needs `set +e` says it in its own text. `$ROOT` is
     /// the folder of the world; `extra` adds environment variables.
     pub fn units(
         &self,
@@ -52,14 +56,14 @@ impl Fx {
     ) -> Vec<Unit> {
         let functions = self.root.path().join("functions.sh");
         fs::write(&functions, functions_of_script("0.1.0")).expect("write functions");
-        let mut prog = format!(". '{}'\nset +e\n{prelude}\n", functions.display());
+        let mut prog = format!(". '{}'\nset -eu\n{prelude}\n", functions.display());
         for (name, body) in cases {
             assert!(
                 name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
                 "a case name is a word: {name}"
             );
             prog.push_str(&format!(
-                "printf '@@BEGIN {name}\\n'; printf '@@BEGIN {name}\\n' >&2\n(\n{body}\n)\nprintf '\\n@@END %s\\n' \"$?\"; printf '\\n@@END\\n' >&2\n"
+                "printf '@@BEGIN {name}\\n'; printf '@@BEGIN {name}\\n' >&2\nset +e\n(\nset -eu\n{body}\n)\nunit_rc=$?\nprintf '\\n@@END %s\\n' \"$unit_rc\"; printf '\\n@@END\\n' >&2\n"
             ));
         }
         let file = self.root.path().join("units.sh");

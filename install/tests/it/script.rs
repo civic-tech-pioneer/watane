@@ -1134,7 +1134,7 @@ fn inst_s28_a_home_that_is_not_a_watane_home() {
 /// INST-S-27 and TECHNICAL 8.5: an upgrade whose old receipt names files the install does not write
 /// keeps them, and replaces the version.
 #[test]
-#[ignore = "slow: an upgrade (a second whole install) over a receipt that names other files; the removal half is in the default uninstall run"]
+#[ignore = "slow: an upgrade (a second whole install) over a receipt that names other files; the uninstall goes through do_uninstall's own receipt_allowed call, and finish_commit's is proven by adv_s94::adv_s94_an_upgrade_commit_keeps_what_the_old_receipt_names_beyond_the_install"]
 fn inst_s27_an_upgrade_keeps_what_a_receipt_names_beyond_the_install() {
     let (fx, _, other) = s27_start();
     fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
