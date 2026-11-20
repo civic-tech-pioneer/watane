@@ -169,7 +169,7 @@ participant disables the mod, then the window no longer exists.
 
 **S9 Withdraw a grant** (APP-F-23, J2). Given `recommendations` with its
 call grant, when the participant withdraws it and adds a book in
-`reading-list`, then the `recommendations` page shows `not granted` with the host's message (`no provider is linked`). With its provider disabled, opening the page shows the host's `disabled or unavailable`; enabling the provider and reopening the page lets it read again and clears its error. When the participant gives the grant back in the library, with no consent view, then the page
+`reading-list`, then the `recommendations` page shows `not granted` with the host's message (`no provider is linked`). With its provider disabled, opening the page shows the host's `disabled or unavailable`; after enabling the provider, the page reads again and clears its error. When the participant gives the grant back in the library, with no consent view, then the page
 shows the book again.
 
 **S10 Remove** (APP-F-24). Given `recommendations`, when the participant

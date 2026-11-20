@@ -1115,7 +1115,10 @@ Behaviour:
   (APP-F-31). After a restore, the page shows the step of section 9.1.
 - Polling: the main page calls `status` and `mods_list` at load, on window
   `focus` and `visibilitychange`, after each action, and every 2 s while
-  visible, every 10 s while hidden. The app sends no
+  visible, every 10 s while hidden. The main window alone disables WebKit
+  background throttling (`BackgroundThrottlingPolicy::Disabled`, macOS 14+),
+  because hidden-page timer suspension would otherwise stop the 10 s poll.
+  Mod and consent windows retain default throttling. The app sends no
   Tauri events.
 
 The pages call commands only through `ui/ipc.js`:
@@ -1879,7 +1882,7 @@ and subscribes to `reading-list`). The `recommendations` page shows
 `not granted: <host message>` when its call fails with that code; other
 errors show their message. The disabled-provider journey checks `disabled
 or unavailable`, the withdrawn grant checks `no provider is linked`, and
-a successful read after enabling and reopening the page, or restoring the
+a successful read after enabling the provider, or restoring the
 grant, clears `#error`. Built `logic.wasm` files are
 committed alongside the fixtures. `tests/fixtures/build.sh` builds them manually
 from `tests/fixtures/src/`; no test builds a mod. J3 invokes dev's publish pipeline with the
@@ -2302,6 +2305,14 @@ Ivy's index, as `tests/it/find.rs` does.
 | `tests/it/j10.rs` (J) | J10 on the real app: the steps of spec/FUNCTIONAL.md J10 with the fixtures above | the window labels the driver reports; the consent DOM text; `<home>/mods/` and `<home>/app/main` read with `std::fs`; Desk's page DOM text |
 
 Scenarios of `tests/it/manage.rs`:
+
+- **Provider reload** (S90). `Core::enable` and `Core::disable` reload the
+  open page of every mod whose resolved host links name that provider,
+  once per consumer (calls and subscriptions both count). As with the
+  grant-change reload, clear the driver's loaded state before reloading.
+  J2 keeps Recommendations open when enabling Reading list: its fresh
+  read shows Dune and clears `#error`; disabling also reloads consumers
+  so the host's disabled-or-unavailable reason is shown immediately.
 
 - **Grant reload** (S81). Hold the response of a real Desk request while
   withdrawing or giving back its `manage` grant. Wait for page load; the

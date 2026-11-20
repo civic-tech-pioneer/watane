@@ -1718,3 +1718,39 @@ were not run, as required by the task; j4, j3 and find remain for the
 external macOS runner. `cargo +nightly fmt --check` passes.
 `cargo clippy --all-targets --features driver -- -D warnings` and
 `git diff --check` also pass. Changes are confined to the listed app files.
+
+
+### S90 round 2 — keep hidden manager timers running, reload consumers
+
+The validator found that WebKit suspends the hidden manager's timers when
+nothing wakes the page. The main window builder now sets
+`BackgroundThrottlingPolicy::Disabled` (supported by Tauri on macOS 14+).
+Mod and consent builders keep their default policy. The unchanged hidden
+poll test still requires two additional real mods_list calls within its
+90-second deadline; no artificial wakeup or visibility override was added.
+The builder's unit/static test failed before this option was added.
+
+Enabling or disabling a provider now reloads every open consumer page
+selected by the host's resolved links. Calls and subscriptions both count,
+each consumer is selected once, and a reload clears the driver's loaded
+state just as Core::grant does. The unit test uses prebuilt fixture metadata
+and literal served page URLs to test selection without a listener or GUI.
+It covers each link kind, repeated links, withdrawn grants, disabled
+consumers, missing providers and absent pages. J2 leaves Recommendations
+open after re-enabling Reading list, waits for its fresh page load, and
+retains the Dune/empty-error assertion. It also checks live disable/enable
+reloads, then waits for the manager's enabled button before opening the
+provider again. The previous close/reopen recovery workaround is removed.
+
+The sandbox restriction on window tests remains: the actual Mac hidden
+poll and J2 must be rerun by the external validator. Neither runtime result
+is claimed here. No dependency added; no change to the accepted S88 blur
+limit.
+
+Round-2 sandbox validation: both new S90 unit/static tests and all 53
+default integration tests pass. Clippy with all targets/driver, nightly
+fmt check and diff check pass. The default crate run passed 118 unit tests
+and stopped at the unchanged pairing test's `Failed to create netmon
+monitor` sandbox error. The GUI/slow test prohibition was respected; the
+unchanged Mac hidden-poll assertion and the updated live J2 journey remain
+pending external validation.

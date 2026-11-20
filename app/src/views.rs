@@ -54,6 +54,7 @@ fn main_window_at(app: &tauri::AppHandle, hash: &str) -> tauri::Result<()> {
         WebviewUrl::App(format!("index.html{hash}").into()),
     )
     .title("watane")
+    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
     .inner_size(1000., 720.)
     .on_page_load(loaded);
     let w = screen_builder(app, builder).build()?;
@@ -310,6 +311,31 @@ pub(crate) fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ac5_s90_only_main_disables_background_throttling() {
+        let source = include_str!("views.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production code");
+        let main = source
+            .split("fn main_window_at(")
+            .nth(1)
+            .expect("main builder")
+            .split("pub(crate) fn open_mod(")
+            .next()
+            .expect("main body");
+        assert!(
+            main.contains(".background_throttling(")
+                && main.contains("BackgroundThrottlingPolicy::Disabled"),
+            "hidden main must keep its polling timers running"
+        );
+        assert_eq!(
+            source.matches(".background_throttling(").count(),
+            1,
+            "mod and consent builders retain default throttling"
+        );
+    }
+
     #[test]
     fn ac6_drop_scripts_are_constant_class_changes_without_path_formatting() {
         assert_eq!(

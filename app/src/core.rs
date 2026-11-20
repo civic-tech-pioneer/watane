@@ -108,6 +108,17 @@ fn map_follow(
         }
     })
 }
+fn consumer_pages(mods: &[watane_host::InstalledMod], provider: &LocalName) -> Vec<LocalName> {
+    mods.iter()
+        .filter(|m| {
+            m.page.is_some()
+                && m.links
+                    .iter()
+                    .any(|link| link.provider.as_ref() == Some(provider))
+        })
+        .map(|m| m.local.clone())
+        .collect()
+}
 pub(crate) struct Core {
     pub node: Arc<watane_node::Node>,
     pub machines: Arc<crate::machines::Machines>,
@@ -445,8 +456,24 @@ impl Core {
             .map(|m| self.view(m, &followed, &names)))
     }
     pub fn enable(&self, local: &str) -> Result<(), CmdError> {
-        self.manager_notices
-            .enable(&self.host, &LocalName::parse(local)?)
+        let name = LocalName::parse(local)?;
+        self.manager_notices.enable(&self.host, &name)?;
+        self.reload_consumers(&name)
+    }
+    fn reload_consumers(&self, provider: &LocalName) -> Result<(), CmdError> {
+        for local in consumer_pages(&self.host.mods(), provider) {
+            if let Some(window) = self.app.get_webview_window(&format!("mod-{local}")) {
+                // As for a grant change, a subsequent wait must observe the
+                // replacement document's page-load event.
+                #[cfg(feature = "driver")]
+                self.app
+                    .state::<crate::AppState>()
+                    .driver
+                    .loaded(window.label(), false);
+                window.reload()?;
+            }
+        }
+        Ok(())
     }
     pub fn post_close(&self, local: String) {
         let app = self.app.clone();
@@ -487,7 +514,8 @@ impl Core {
     pub fn disable(&self, local: &str) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
         views::close_mod(&self.app, local)?;
-        Ok(self.host.disable(&name)?)
+        self.host.disable(&name)?;
+        self.reload_consumers(&name)
     }
     pub fn remove(&self, local: &str, delete_data: bool) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
@@ -2899,6 +2927,83 @@ mod find_integration_tests {
 #[cfg(test)]
 mod manager_tests {
     use super::*;
+    #[tokio::test]
+    async fn ac1_s90_consumer_pages_follow_resolved_bindings() {
+        let home = tempfile::tempdir().unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let plan = host
+            .plan(
+                ["reading-list", "recommendations"]
+                    .into_iter()
+                    .map(|n| watane_host::Source::Folder(fixtures.join(n)))
+                    .collect(),
+            )
+            .unwrap();
+        host.install(plan, watane_host::Requester::App)
+            .await
+            .unwrap();
+        let provider = LocalName::parse("reading-list").unwrap();
+        let recommendations = LocalName::parse("recommendations").unwrap();
+        let mut mods = host.mods();
+        // An unserved host has no page URLs. Supply the literal URLs a served
+        // host exposes; page selection itself needs neither a listener nor GUI.
+        for m in &mut mods {
+            m.page = Some(format!("http://{}.localhost:1234/", m.local));
+        }
+        assert_eq!(
+            consumer_pages(&mods, &provider),
+            vec![recommendations.clone()]
+        );
+        assert!(consumer_pages(&mods, &recommendations).is_empty());
+        for kind in [
+            watane_host::LinkKind::Call,
+            watane_host::LinkKind::Subscribe,
+        ] {
+            let mut single = mods.clone();
+            single
+                .iter_mut()
+                .find(|m| m.local == recommendations)
+                .unwrap()
+                .links
+                .retain(|link| std::mem::discriminant(&link.kind) == std::mem::discriminant(&kind));
+            assert_eq!(
+                consumer_pages(&single, &provider),
+                vec![recommendations.clone()]
+            );
+        }
+        // Resolved links, including subscriptions and bindings to a different
+        // provider identity, select pages once regardless of grant or enable state.
+        let consumer = mods
+            .iter_mut()
+            .find(|m| m.local == recommendations)
+            .unwrap();
+        consumer.enabled = false;
+        consumer.grants.iter_mut().for_each(|g| g.granted = false);
+        consumer.binds.clear();
+        consumer
+            .links
+            .retain(|l| matches!(l.kind, watane_host::LinkKind::Subscribe));
+        consumer.links.push(consumer.links[0].clone());
+        assert_eq!(
+            consumer_pages(&mods, &provider),
+            vec![recommendations.clone()]
+        );
+        let consumer = mods
+            .iter_mut()
+            .find(|m| m.local == recommendations)
+            .unwrap();
+        consumer.links.iter_mut().for_each(|l| l.provider = None);
+        assert!(consumer_pages(&mods, &provider).is_empty());
+        let consumer = mods
+            .iter_mut()
+            .find(|m| m.local == recommendations)
+            .unwrap();
+        consumer.links[0].provider = Some(provider.clone());
+        consumer.page = None;
+        assert!(consumer_pages(&mods, &provider).is_empty());
+    }
+
     #[tokio::test]
     async fn ac7_links_follow_host_bindings_and_withdrawn_grants() {
         let home = tempfile::tempdir().unwrap();

@@ -288,14 +288,32 @@ fn ac5_journey_j2() {
         "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
     );
     invoke(&app, "mod_enable", json!({"local":"reading-list"}));
-    // Enabling reloads only the provider. Reopen the consumer so its event
-    // source opens again and sends changed, triggering a fresh read.
-    close_recommendations(&app);
-    open(&app, "recommendations");
+    // The consumer stays open: enabling its provider reloads it and reads again.
+    assert!(app.wait("mod-recommendations", TIMEOUT));
     until(
         &app,
         "mod-recommendations",
         "document.querySelector('#books')?.textContent.includes('Dune') && document.querySelector('#error').textContent === ''",
+    );
+    // Disable must refresh the already-open consumer too, without a reopen.
+    invoke(&app, "mod_disable", json!({"local":"reading-list"}));
+    assert!(app.wait("mod-recommendations", TIMEOUT));
+    until(
+        &app,
+        "mod-recommendations",
+        "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
+    );
+    invoke(&app, "mod_enable", json!({"local":"reading-list"}));
+    assert!(app.wait("mod-recommendations", TIMEOUT));
+    until(
+        &app,
+        "mod-recommendations",
+        "document.querySelector('#books')?.textContent.includes('Dune') && document.querySelector('#error').textContent === ''",
+    );
+    until(
+        &app,
+        "main",
+        "!!document.querySelector('[data-local=reading-list] button.open')",
     );
     open(&app, "reading-list");
     let key = "call mods:reading-list/books@0.1.0 from local/reading-list";
