@@ -706,6 +706,34 @@ mod stage_d_tests {
             );
             assert!(!error.message.contains("statement refused"));
         }
+        // Other errors keep each command's own mapping.
+        let error = sign_error(
+            watane_dist::DistError::BadReason { cause: "x" },
+            "withdraw",
+            "t",
+        );
+        assert_eq!(error.code, "bad_input");
+        for kind in ["list", "include", "unlist"] {
+            let error = sign_error(watane_dist::DistError::BadNote { cause: "x" }, kind, "t");
+            assert_eq!(error.code, "bad_input", "{kind}");
+        }
+        struct Never;
+        impl watane_dist::Confirm for Never {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Refuse
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist =
+            watane_dist::Dist::open(home.path(), std::sync::Arc::new(Never), Default::default())
+                .unwrap();
+        let key = dist.identity().unwrap();
+        let parties = crate::words::Parties::default();
+        parties.set_own(key.to_string());
+        let slug: watane_dist::Slug = "book".parse().unwrap();
+        let link = |slug| watane_dist::Link::new(key, "https://x.example/", slug).unwrap();
+        assert_eq!(listing_label(&link(Some(&slug)), &parties), "book by you");
+        assert_eq!(listing_label(&link(None), &parties), "you");
     }
     #[test]
     fn ac6_withdraw_errors_preserve_dist_cause() {
