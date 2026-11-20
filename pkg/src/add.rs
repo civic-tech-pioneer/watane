@@ -1,16 +1,15 @@
 //! `add_provider` (TECHNICAL 4.8): adds a provider's WIT and `deps.json` entry
 //! to a mod folder without following any link that appears during the write.
 
-use crate::folder::{invalid, io, read_file};
+use crate::folder::{invalid, io};
 use crate::open::{self, Dir, Kind};
-use crate::refusal::{CHANGED, DIRECTORY};
+use crate::refusal::{self, CHANGED, DIRECTORY, SPECIAL};
 use crate::{Deps, Mod, ModError, PublisherKey, Rule};
 use std::collections::BTreeMap;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::path::Path;
 
 type Files = BTreeMap<String, Vec<u8>>;
-const NOT_REGULAR: &str = "expected a regular file";
 const NOT_A_DIRECTORY: &str = "expected a directory without symbolic links";
 // A part that is a link or not a directory is the `path` violation at that part.
 fn refused(root: &Path, part: &str, e: std::io::Error) -> ModError {
@@ -65,25 +64,40 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
             return Err(invalid(Rule::Path, &rel, "expected a regular WIT entry"));
         }
         if name.ends_with(".wit") {
-            let bytes = read_file(root, &rel, 1024 * 1024, Rule::Limit, true)
-                .map_err(|e| swapped(root, &rel, e))?
-                .ok_or_else(|| invalid(Rule::Path, &rel, CHANGED))?;
-            result.insert(name.into_owned(), bytes);
+            result.insert(name.into_owned(), wit(root, &rel)?);
         }
     }
     Ok(result)
 }
-// A listed file that is no regular file when read was swapped after the listing: rule `path`.
-fn swapped(root: &Path, rel: &str, e: ModError) -> ModError {
-    match e {
-        ModError::Invalid(v)
-            if v.len() == 1 && v[0].rule == Rule::Limit && v[0].message == NOT_REGULAR =>
-        {
-            invalid(Rule::Path, rel, DIRECTORY)
-        }
-        ModError::Io { source, .. } => failed(root, rel, source),
-        e => e,
+// A listed `.wit` read again: what it became since the listing is named by its `path` cause.
+fn wit(root: &Path, rel: &str) -> Result<Vec<u8>, ModError> {
+    const LIMIT: u64 = 1024 * 1024;
+    let file = open::file(root, rel).map_err(|(part, e)| {
+        let cause = if open::is_link(&e) {
+            refusal::link(&part)
+        } else if open::is_socket(&e) || e.kind() == ErrorKind::InvalidInput {
+            SPECIAL
+        } else if e.kind() == ErrorKind::IsADirectory {
+            DIRECTORY
+        } else if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) {
+            CHANGED
+        } else {
+            return io(&root.join(&part), e);
+        };
+        invalid(Rule::Path, &part, cause)
+    })?;
+    let mut bytes = Vec::new();
+    file.take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| io(&root.join(rel), e))?;
+    if bytes.len() as u64 > LIMIT {
+        return Err(invalid(
+            Rule::Limit,
+            rel,
+            format!("file exceeds {LIMIT} bytes"),
+        ));
     }
+    Ok(bytes)
 }
 // Write below the handle of the destination directory; nothing is addressed by a path string.
 fn write_files(
@@ -301,20 +315,48 @@ mod tests {
         assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, file), "{v:?}");
         assert_eq!(v[0].message, CHANGED);
     }
-    #[test]
-    fn ac2_s91_fix1_listed_wit_swapped_for_directory() {
-        let (p, _c, _m) = setup();
-        let rel = "wit/world.wit";
-        let file = p.path().join(rel);
-        fs::remove_file(&file).unwrap();
-        fs::create_dir(&file).unwrap();
-        // The listing saw a file; the read finds a directory.
-        let e = read_file(p.path(), rel, 1024, Rule::Limit, true).unwrap_err();
-        let ModError::Invalid(v) = swapped(p.path(), rel, e) else {
+    // The listing saw a regular `.wit`; the read finds what it became since.
+    fn reread(root: &Path, rel: &str) -> (Rule, String, String) {
+        let Err(ModError::Invalid(v)) = wit(root, rel) else {
             panic!("expected invalid")
         };
-        assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, rel));
-        assert_eq!(v[0].message, DIRECTORY);
+        (v[0].rule, v[0].file.clone(), v[0].message.clone())
+    }
+    #[test]
+    fn ac2_s91_fix1_listed_wit_swapped_for_directory() {
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join("wit/world.wit")).unwrap();
+        let expected = (Rule::Path, "wit/world.wit".into(), DIRECTORY.into());
+        assert_eq!(reread(t.path(), "wit/world.wit"), expected);
+    }
+    #[test]
+    fn ac2_s91_fix1_listed_wit_other_swaps_keep_their_cause() {
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir(t.path().join("wit")).unwrap();
+        rustix::fs::mkfifoat(rustix::fs::CWD, t.path().join("wit/f.wit"), 0o600.into()).unwrap();
+        let special = (Rule::Path, "wit/f.wit".into(), SPECIAL.into());
+        assert_eq!(reread(t.path(), "wit/f.wit"), special);
+        let gone = (Rule::Path, "wit/g.wit".into(), CHANGED.into());
+        assert_eq!(reread(t.path(), "wit/g.wit"), gone);
+        fs::write(t.path().join("deps"), "x").unwrap();
+        let parent = (Rule::Path, "deps".into(), CHANGED.into());
+        assert_eq!(reread(t.path(), "deps/a.wit"), parent);
+        symlink("f.wit", t.path().join("wit/l.wit")).unwrap();
+        let link = (
+            Rule::Path,
+            "wit/l.wit".into(),
+            refusal::link("wit/l.wit").into(),
+        );
+        assert_eq!(reread(t.path(), "wit/l.wit"), link);
+        fs::write(t.path().join("wit/big.wit"), vec![b'x'; 1024 * 1024 + 1]).unwrap();
+        let big = (
+            Rule::Limit,
+            "wit/big.wit".into(),
+            "file exceeds 1048576 bytes".into(),
+        );
+        assert_eq!(reread(t.path(), "wit/big.wit"), big);
+        fs::write(t.path().join("wit/ok.wit"), vec![b'x'; 1024 * 1024]).unwrap();
+        assert_eq!(wit(t.path(), "wit/ok.wit").unwrap().len(), 1024 * 1024);
     }
     #[test]
     fn ac1_s91_name_created_at_target_after_preflight() {
