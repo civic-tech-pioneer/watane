@@ -494,8 +494,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   channel rows without raw transport text; `/api/fetch` wrong shapes without serde's internal
   wording; reinstalling after "Keep data" does not mark storage `new`; `Core::mods()` memoizes the
   channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
-  versions in the Linux runner; while the confirm panel is open, a native blur (S88: ~40 ms after
-  a consent closes) puts focus back on Cancel. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
+  versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
   Local (window tests).
 - [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`)
   Story: a maker or a mod hits an edge and gets a named cause, not raw I/O text. Outcomes:
@@ -527,8 +526,9 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   never-key main webview; the original failures clicked Remove inside that window. Decision: the
   test quits and reopens the app before Remove (as J2 does), every assertion kept, the focus check
   still immediate (it fails with app.js's `focus()` removed). 50/50 alone and in the full driver
-  suite. Not proven: visible windows (front tests not run). The guard that puts focus back on
-  Cancel while the panel is open goes to S90.
+  suite. Not proven: visible windows (front tests not run). Accepted limit (the human, 2026-11-20):
+  no guard for WebKit's native blur; if the focus check flakes again in hidden windows, mark it
+  `#[ignore]` with this reason rather than chase it.
 - [x] **S55 Two machines.** Delivered 2026-11-20 (main `5014400`; foreman `4a61b2b4`, sessionId
   `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`, ended). Sol runs: s55-1 1, s55-2 1, s55-fix1 2, s55-fix2 1,
   s55-fix3 1. user-sim REJECTED once (an unreachable web host and an unnamed `--from` folder gave no
