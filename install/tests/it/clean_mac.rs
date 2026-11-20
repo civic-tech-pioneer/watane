@@ -551,7 +551,8 @@ case ${0##*/}:$1 in
       *bob.sh*)
         trap 'echo bridge-stopped >> "$CALLS"; if [ "$MODE" = vanished ]; then rm -f "${SSH_ASKPASS%/*}"/bridge-*.pid; fi; exit' TERM
         : > "$BRIDGE_READY"
-        while :; do sleep 1; done ;;
+        # wait, not a foreground sleep, so TERM runs the trap before a group KILL a second later.
+        while :; do sleep 1 & wait "$!"; done ;;
       *mount*) [ "$MODE" != hang-ssh ] || exec /usr/bin/perl -e 'sleep 1 while 1' ; [ "$MODE" != mount ] || exit 19 ;;
       *install.sh*) [ "$MODE" != install ] || exit 21 ;;
       *'route -n get default'*) echo 127.0.0.1 ;;
