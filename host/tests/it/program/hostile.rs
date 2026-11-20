@@ -430,7 +430,7 @@ fn ac5_mod_and_api_routes_do_not_cross_origins() {
             "Content-Type: application/json\r\n",
             r#"{"fn":"api.add","args":null}"#,
         )
-        .error(404, "bad_request");
+        .error(404, "not_found");
     }
     counter_call(&preview, "api.get", 0);
 }
