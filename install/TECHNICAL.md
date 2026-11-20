@@ -1362,13 +1362,17 @@ does not introduce an optional archive entry.
 Tests run on Linux and macOS; signing is skipped when `codesign` is absent.
 
 `clean_mac::ac1_ac2_fresh_home_real_release` (macOS, `#[ignore]`) packages the
-release that `cargo build --release` left in `target/release`. When `watane`,
-`watane-dev` or `watane-node` is missing there (a fresh worktree has no
-release build), it prints `skipped: no release build at <path>; run cargo
-build --release -p watane-host -p watane-dev -p watane-node` on stderr and
-returns, so `factory/check.sh` passes; the check is the helper
-`missing_release_build`, tested on every OS. The real run is the product
-owner's, on a Mac. (S55 left it failing in that case.)
+release that the builds of 7.2 left in `target/release`. When anything that
+`package.sh` needs from there is missing, with the checks `package.sh` makes
+(`watane`, `watane-dev` and `watane-node` as executable files;
+`bundle/macos/watane.app` as a folder with `Contents/Info.plist`), it prints
+on stderr `skipped: no release build at <path>; run cargo build --release -p
+watane-host -p watane-dev -p watane-node` (for a program) or `skipped: no
+release build at <path>; run cargo tauri build (install/TECHNICAL.md 7.3)`
+(for the app), and returns, so `factory/check.sh` passes in a fresh
+worktree; the check is the helper `missing_release_build`, tested on every
+OS. The real run is the product owner's, on a Mac. (S55 left it failing in
+that case.)
 
 Test support uses one 600-second deadline for marker, state and request waits,
 and a process-wide gate limits live plain, pseudo-terminal and package runs

@@ -157,19 +157,44 @@ fn ac2_two_machines_missing_tart_touches_nothing() {
     assert_eq!(fs::read_dir(temp.path()).expect("listing").count(), 0);
 }
 
-/// The first program `package.sh` needs that `root` has no build of, as the skip line
-/// of TECHNICAL 12.1; `None` when all three are built.
+fn is_executable_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+/// The first thing `package.sh` needs from `target/release` that `root` has not built
+/// (the checks of package.sh: `-f` and `-x` for the programs, `-d` for the app and `-f`
+/// for its `Info.plist`), as the skip line of TECHNICAL 12.1; `None` when all is built.
 fn missing_release_build(root: &Path) -> Option<String> {
-    ["watane", "watane-dev", "watane-node"]
-        .iter()
-        .map(|name| root.join("target/release").join(name))
-        .find(|path| !path.exists())
-        .map(|path| {
-            format!(
-                "skipped: no release build at {}; run cargo build --release -p watane-host -p watane-dev -p watane-node",
-                path.display()
-            )
-        })
+    let release = root.join("target/release");
+    let skip = |path: &Path, command: &str| {
+        Some(format!(
+            "skipped: no release build at {}; run {command}",
+            path.display()
+        ))
+    };
+    for name in ["watane", "watane-dev", "watane-node"] {
+        let path = release.join(name);
+        if !is_executable_file(&path) {
+            return skip(
+                &path,
+                "cargo build --release -p watane-host -p watane-dev -p watane-node",
+            );
+        }
+    }
+    let app = release.join("bundle/macos/watane.app");
+    if !app.is_dir() || !app.join("Contents/Info.plist").is_file() {
+        return skip(&app, "cargo tauri build (install/TECHNICAL.md 7.3)");
+    }
+    None
 }
 
 #[test]
@@ -177,17 +202,47 @@ fn ac3_missing_release_build_is_named_and_a_full_one_is_not() {
     let temp = tempfile::tempdir().expect("temp");
     let release = temp.path().join("target/release");
     fs::create_dir_all(&release).expect("release dir");
+    let build = "cargo build --release -p watane-host -p watane-dev -p watane-node";
+    let tauri = "cargo tauri build (install/TECHNICAL.md 7.3)";
+    let line = |path: std::path::PathBuf, command: &str| {
+        Some(format!(
+            "skipped: no release build at {}; run {command}",
+            path.display()
+        ))
+    };
+    let program = |name: &str| fs::write(release.join(name), "").expect("program");
+    #[cfg(unix)]
+    let make_executable = |name: &str| {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(release.join(name), fs::Permissions::from_mode(0o755)).expect("chmod");
+    };
+    #[cfg(not(unix))]
+    let make_executable = |_: &str| {};
+    assert_eq!(
+        missing_release_build(temp.path()),
+        line(release.join("watane"), build)
+    );
     for name in ["watane", "watane-dev"] {
-        fs::write(release.join(name), "").expect("program");
+        program(name);
+        make_executable(name);
     }
     assert_eq!(
         missing_release_build(temp.path()),
-        Some(format!(
-            "skipped: no release build at {}; run cargo build --release -p watane-host -p watane-dev -p watane-node",
-            release.join("watane-node").display()
-        ))
+        line(release.join("watane-node"), build)
     );
-    fs::write(release.join("watane-node"), "").expect("program");
+    // Present but not executable (on Unix) is as good as missing.
+    program("watane-node");
+    #[cfg(unix)]
+    assert_eq!(
+        missing_release_build(temp.path()),
+        line(release.join("watane-node"), build)
+    );
+    make_executable("watane-node");
+    let app = release.join("bundle/macos/watane.app");
+    assert_eq!(missing_release_build(temp.path()), line(app.clone(), tauri));
+    fs::create_dir_all(app.join("Contents")).expect("bundle");
+    assert_eq!(missing_release_build(temp.path()), line(app.clone(), tauri));
+    fs::write(app.join("Contents/Info.plist"), "").expect("plist");
     assert_eq!(missing_release_build(temp.path()), None);
 }
 
