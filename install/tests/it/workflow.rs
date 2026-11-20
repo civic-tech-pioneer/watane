@@ -360,6 +360,12 @@ fn ac2_unsafe_additions_and_substitutions_are_rejected() {
         let (action, _) = line.split_once('@').expect("pin");
         let broken = original.replacen(line, &format!("{action}@v7 # v7"), 1);
         assert!(!violations(&broken).is_empty(), "accepted tag: {action}");
+        let (pin, _) = line.split_once(" # ").expect("tag comment");
+        let stale = original.replacen(line, &format!("{pin} # v4"), 1);
+        assert!(
+            !violations(&stale).is_empty(),
+            "accepted stale comment: {line}"
+        );
     }
     assert!(!violations(&format!("{original}\n          echo too-late\n")).is_empty());
 }
