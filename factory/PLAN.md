@@ -540,13 +540,22 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   kept net error now replaces dist's "not followed" on a light machine even when no machine could
   have helped (accepted). Needs app: app/NOTES.md:741-745 is stale (node keeps the blob error);
   run j8 AC6 with `--features driver` on the Mac (S90 is in app).
-- [ ] **S93 dev's last misleading lines (leftover sweep: dev).** in flight (cloud; routine `trig_01RZZM6VuY914sVyAGW9Vv4y`)
-  Story: a maker's agent reads a cause and a `next` it can run, everywhere. Outcomes: the `### dev`
-  leftovers (S56, S86) and Unsettled S30 (time a `publish` against fake-watane and settle it);
-  S54's base suggestion offers GitHub Pages. The two publish texts pinned by
-  dev/tests/it/publish.rs change only if the human's test-speed work there has landed; else leave
-  them. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: dev/src, dev/tests, dev/src/bin/fake-watane.rs, pkg/src/world.rs (WIT
-  column only), dev/TECHNICAL. Cloud.
+- [x] **S93 dev's last misleading lines (leftover sweep: dev).** Delivered 2026-11-20 (main
+  `e04b480`; routine `trig_01RZZM6VuY914sVyAGW9Vv4y`, cloud, ~5 h). Runs: S93-1, S93-2, S93-fix1
+  to fix10, 1 each: twelve tasks, cut too big for one sweep. user-sim REJECTED three times, then
+  ACCEPTED; adversary BREACHED three times (invisible characters in pkg's wit message; sibling
+  paths), each fixed with a rule rather than a longer list, then HELD. A maker's agent gets a real
+  cause and a runnable `next` at every dev failure in the leftover lines; a WIT error has a
+  character column; publish --push offers the GitHub Pages URL. S30 settled by measurement (warm
+  publish ~1.1 s, cold ~31 s, all before the post and outside --wait; dev TECHNICAL 9.7).
+  Decisions: host.no_answer's rerun doubles the --wait in force (none counts as 600); pkg's
+  escape_message escapes Unicode 16.0 Default_Ignorable, Cf, Hangul fillers and U+2028/2029 by
+  range table (pkg TECHNICAL 4); sibling_paths names only strict descendants of the canonical build
+  folder; usage.no_source's fix is `new my-<slug> --dir <dest> && add --release <ref> --dir <dest>`;
+  host.declined's fix asks the person, then reruns; push.site.pages is
+  `https://<o>.github.io/<r>/`. Adversary risks left (diagnostic choice only): the escape set is
+  not wider (U+2800, Mn, Co); a prefix after `//`, `=` or `,` is not a path start; cutting before
+  normalizing can name a false sibling; a stray generate! literal can replace real errors.
 - [x] **S88 The remove confirm always has Cancel focused (main fix).** Delivered 2026-11-20 (main
   `60606cc`; foreman `a244ec23`, ended). Sol runs: S88-1 1 + 5 resumes; validator round 1.
   user-sim ACCEPTED; adversary not run (tests and notes only). Cause (app NOTES, S88): ~30-40 ms
@@ -1235,6 +1244,11 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### dev
 
+- From S93: search's no-result template next; local_dependency's fix has no command; text-mode
+  fixes say --json; a publish --push success rerun gives version_exists; the preview host's error
+  hides behind serde's "missing field mode" (dev/src/preview.rs:104); `new --dir` into a missing
+  parent gives internal with no path; reads_outside names the cache path, not the maker's; folder
+  name vs slug when the release's own slug is given; `add --release` shows "path: missing".
 Re-checked and swept by S86 (2026-11-18); these remain.
 
 - [S56] a relative `generate!` path can resolve into a stale cache sibling, giving a misleading
@@ -1432,6 +1446,14 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- (2026-11-20, from S93; not blocking) The build boundary: wit-bindgen, run by rustc during a
+  mod build, opens an absolute `generate!`/include path the mod names (e.g. a macOS autofs
+  `/net/<host>/...`) before dev's dep-info check rejects it. dev's own check no longer touches it.
+  May a mod's build reach such a path at all? Options: (a) refuse absolute or outside paths in
+  `generate!`/include by scanning the source before the build (recommended: cheap, no build
+  starts; undo: drop the scan); (b) run the build with no read access outside the mod and the
+  cache (sandbox-exec on macOS; strong, platform-specific); (c) accept it as a known limit (the
+  maker's own machine, their own mod). PO leans (a).
 - ANSWERED 2026-11-19: (a), Tart (155 GB free). S50c's VM (asked by the S50c foreman): may it install Tart (macOS VM CLI on
   Virtualization.framework, Homebrew, FSL-1.1-ALv2 licence, tens of MB) and download
   `ghcr.io/cirruslabs/macos-golden-gate-vanilla` (macOS 27, ~30 GB download, ~35 GB on disk, 156 GB
@@ -1732,6 +1754,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S93) twelve tasks in one sweep (ten fixes from user-sim and adversary rounds): cut sweeps smaller; clippy missing in the cloud toolchain; an implementer's helper claimed no filesystem call but canonicalized (validator caught it); 18 real-`watane` dev tests cannot run in the cloud (no IPv6 loopback).
 - (2026-11-20, S90) parallel task worktrees pass alone and conflict when merged (app/NOTES.md, TECHNICAL edits): each runner should append to NOTES under its own heading; mutants on the whole suite stop at the baseline when a window test fails under load (fell back to `--lib`); Sol's sandbox never sees GUI regressions, only check.sh's slow j2 run does.
 - (2026-11-20, S89) four adversary rounds from failure texts that each made a nearby line false; the cloud runs as root with dash, so two install tests always fail there and macOS sh is unseen; `/dev/full` is Linux-only.
 - (2026-11-20, PO) main check at `5899450`: three Linux-only or load-only failures. log `s91_2_ac2_socket_key_is_not_plain` failed on every macOS run (a socket open is EOPNOTSUPP there, ENXIO on Linux; PO fix `b0c4357`, a cloud slice cannot see it); node `causes::ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed` got `Ok` once under load (a good package, likely the anchor answering before its net turned off: a test race, not a verification gap; 3/3 alone); app `manage::ac2_s47` once (2/2 alone). S91's `mkfifoat` was Linux-only too (PO fix `5899450`). Cloud slices touching OS calls need a Mac run before merge.
@@ -2172,3 +2195,4 @@ The human may veto each one.
 - S91: a maker or mod that hits a race or an odd file in pkg, log or host gets watane's own named cause.
 - S89: Alice gets a true line from install.sh at every step, interrupted or not.
 - S90: Alice's manager says what was done or denied, in her words, and hidden windows still refresh.
+- S93: a maker's agent gets a real cause and a runnable next at every dev failure we knew of.
