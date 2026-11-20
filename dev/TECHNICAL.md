@@ -1124,7 +1124,7 @@ The runs, in order:
    `<cache>/build/` (a relative `wit_bindgen::generate!` path such as
    `../../<other>/wit`) stops macro expansion before rustc lists it, so the
    dep-info does not show it: when the rustc errors' `rendered` text names a
-   path under `<cache>/build/` (normalized, and under the build folder) but not under this copy, those errors are the
+   path that is a strict descendant of `<cache>/build/` (normalized; a path starts at the text's start or after whitespace, a quote, a bracket or `:`, and ends at whitespace, a control, bidi or invisible format character, a bracket or a quote) but not under this copy, those errors are the
    stale sibling's, and dev gives only `build.reads_outside` for that folder
    (a file whose folder is named too counts once, as the folder), not the
    `build.compile` errors.

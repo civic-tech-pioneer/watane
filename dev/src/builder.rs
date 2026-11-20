@@ -496,8 +496,10 @@ fn reads_outside_problems(paths: Vec<PathBuf>) -> Vec<Problem> {
 
 /// The paths in `text` that lie in the cache's `build` folder but not in this mod's `copy`.
 /// `build` and `copy` are compared canonicalized (a symlinked cache path names the same
-/// folder); found paths are normalized lexically and must stay under `build`. A path stops at
-/// whitespace, a control character or a bracket or quote.
+/// folder); found paths are normalized lexically and must stay under `build`. A path starts at the text's
+/// start or after whitespace, a quote, a bracket or `:`; it stops at whitespace, a control or
+/// bidi/invisible format character, a bracket or a quote; only a strict descendant of `build`
+/// counts.
 fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
     let real_build = build.canonicalize().unwrap_or_else(|_| build.to_path_buf());
     let real_copy = copy.canonicalize().unwrap_or_else(|_| copy.to_path_buf());
@@ -509,11 +511,22 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
     for base in prefixes {
         let prefix = format!("{}/", base.display());
         let mut rest = text;
+        let mut offset = 0;
         while let Some(at) = rest.find(&prefix) {
             let tail = &rest[at..];
+            let starts = text[..offset + at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| c.is_whitespace() || "'\"`[](){}<>:".contains(c));
             // The path ends after the prefix (which may hold a space) at a space or a bracket.
             let end = tail[prefix.len()..]
-                .find(|c: char| c.is_whitespace() || c.is_control() || "[]'\"`()".contains(c))
+                .find(|c: char| {
+                    c.is_whitespace()
+                        || c.is_control()
+                        || "[]'\"`()".contains(c)
+                        || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+                            | '\u{2060}'..='\u{206F}' | '\u{FEFF}')
+                })
                 .map_or(tail.len(), |n| n + prefix.len());
             let mut path = &tail[..end];
             // `world.wit:19:10` names a line and a column.
@@ -527,13 +540,16 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
                 Ok(inner) => real_build.join(inner),
                 _ => path,
             };
-            if path.starts_with(&real_build)
+            if starts
+                && path.starts_with(&real_build)
+                && path != real_build
                 && !path.starts_with(&real_copy)
                 && !found.contains(&path)
             {
                 found.push(path);
             }
             rest = &tail[end..];
+            offset += at + end;
         }
     }
     // The folder of a read file is the one thing to name.
@@ -826,6 +842,19 @@ mod tests {
         assert_eq!(
             sibling_paths("/c/build/other/wit/a.wit and /c/build/me/..", b, c),
             [PathBuf::from("/c/build/other/wit/a.wit")]
+        );
+    }
+    #[test]
+    fn s93_fix3_sibling_path_ends_at_format_char_and_starts_at_boundary() {
+        let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
+        assert_eq!(
+            sibling_paths("/c/build/other/wit\u{202e}gnp.a", b, c),
+            [PathBuf::from("/c/build/other/wit")]
+        );
+        assert!(sibling_paths("/x/c/build/other/wit", b, c).is_empty());
+        assert_eq!(
+            sibling_paths("(/c/build/other/wit)", b, c),
+            [PathBuf::from("/c/build/other/wit")]
         );
     }
     #[test]
