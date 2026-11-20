@@ -524,7 +524,7 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
             }
             let path = normalized(Path::new(path.trim_end_matches(':')));
             let path = match path.strip_prefix(build) {
-                Ok(inner) if base == build => real_build.join(inner),
+                Ok(inner) => real_build.join(inner),
                 _ => path,
             };
             if path.starts_with(&real_build)
@@ -832,6 +832,16 @@ mod tests {
         assert!(
             sibling_paths(&text, &dir.join("link/build"), &dir.join("real/build/me")).is_empty()
         );
+        // A sibling named through the link or by its real path is one sibling, in real form.
+        let real = dir.join("real").canonicalize().unwrap();
+        let linked = format!("{}/link/build/other/wit", dir.display());
+        let canonical = format!("{}/build/other/wit", real.display());
+        for text in [&linked, &canonical, &format!("{linked} and {canonical}")] {
+            assert_eq!(
+                sibling_paths(text, &dir.join("link/build"), &dir.join("real/build/me")),
+                [real.join("build/other/wit")]
+            );
+        }
         let _ = fs::remove_dir_all(&dir);
     }
     #[test]
