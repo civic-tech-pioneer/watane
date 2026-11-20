@@ -533,8 +533,45 @@ pub(crate) fn read(
     }))
 }
 
-/// Write every control character other than `\n`, every bidi format
-/// character and every invisible or line-separator character of `message` in its escaped form (TECHNICAL 4).
+/// Characters that are Unicode Default_Ignorable_Code_Point or general category Cf
+/// (DerivedCoreProperties and DerivedGeneralCategory of Unicode 16.0), the Hangul
+/// fillers and the line and paragraph separators, as sorted inclusive ranges.
+const INVISIBLE: &[(u32, u32)] = &[
+    (0xad, 0xad),
+    (0x34f, 0x34f),
+    (0x600, 0x605),
+    (0x61c, 0x61c),
+    (0x6dd, 0x6dd),
+    (0x70f, 0x70f),
+    (0x890, 0x891),
+    (0x8e2, 0x8e2),
+    (0x115f, 0x1160),
+    (0x17b4, 0x17b5),
+    (0x180b, 0x180f),
+    (0x200b, 0x200f),
+    (0x2028, 0x202e),
+    (0x2060, 0x206f),
+    (0x3164, 0x3164),
+    (0xfe00, 0xfe0f),
+    (0xfeff, 0xfeff),
+    (0xffa0, 0xffa0),
+    (0xfff0, 0xfffb),
+    (0x110bd, 0x110bd),
+    (0x110cd, 0x110cd),
+    (0x13430, 0x1343f),
+    (0x1bca0, 0x1bca3),
+    (0x1d173, 0x1d17a),
+    (0xe0000, 0xe0fff),
+];
+
+fn is_invisible(c: char) -> bool {
+    let c = c as u32;
+    INVISIBLE.iter().any(|&(lo, hi)| (lo..=hi).contains(&c))
+}
+
+/// Write every control character other than `\n`, and every invisible character
+/// (default-ignorable, format, Hangul filler, line or paragraph separator) of `message`
+/// in its escaped form (TECHNICAL 4).
 fn escape_message(message: &str) -> String {
     let mut out = String::with_capacity(message.len());
     for c in message.chars() {
@@ -542,9 +579,7 @@ fn escape_message(message: &str) -> String {
             out.push(c);
         } else if c.is_control() {
             out.extend(c.escape_debug());
-        } else if matches!(c, '\u{61c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-            || matches!(c, '\u{ad}' | '\u{180e}' | '\u{3164}' | '\u{2028}' | '\u{2029}' | '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{e0000}'..='\u{e007f}')
-        {
+        } else if is_invisible(c) {
             out.extend(c.escape_unicode());
         } else {
             out.push(c);
@@ -719,6 +754,12 @@ mod tests {
             raw.is_empty(),
             "raw invisible chars in the message: {raw:?}"
         );
+    }
+
+    #[test]
+    fn ac3_s93_visible_text_passes_through() {
+        let text = "é€日本 😀 مرحبا";
+        assert_eq!(escape_message(text), text);
     }
 
     #[test]
