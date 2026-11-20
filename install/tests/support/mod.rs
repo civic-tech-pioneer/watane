@@ -2,6 +2,7 @@
 #![allow(dead_code, reason = "s50b-3 and the other test files use the rest")]
 
 pub mod pty;
+pub mod unit;
 
 use std::collections::HashMap;
 use std::fs;
@@ -9,7 +10,7 @@ use std::io::Write;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -27,31 +28,54 @@ pub const LAUNCH: [&str; 3] = [
 
 /// Endpoint security can queue each exec for tens of seconds on a loaded Mac.
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(600);
-static RUNS: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+/// How many runs of the script may be alive at once (TECHNICAL 12.1).
+const GATE_LIMIT: usize = 4;
 
-pub struct RunPermit;
+/// Counts the runs alive; `acquire` waits while `GATE_LIMIT` are.
+pub struct Gate {
+    used: Mutex<usize>,
+    ready: Condvar,
+}
+
+impl Gate {
+    pub const fn new() -> Self {
+        Gate {
+            used: Mutex::new(0),
+            ready: Condvar::new(),
+        }
+    }
+
+    pub fn acquire(&'static self) -> RunPermit {
+        let mut used = self
+            .ready
+            .wait_while(self.used.lock().expect("runs"), |n| *n >= GATE_LIMIT)
+            .expect("runs");
+        *used += 1;
+        RunPermit(self)
+    }
+}
+
+/// The gate of the test binary: a test that starts the script takes a permit first.
+static RUNS: Gate = Gate::new();
+
+pub struct RunPermit(&'static Gate);
 
 impl RunPermit {
     pub fn acquire() -> Self {
-        let (count, ready) = &RUNS;
-        let mut count = ready
-            .wait_while(count.lock().expect("runs"), |n| *n >= 4)
-            .expect("runs");
-        *count += 1;
-        Self
+        RUNS.acquire()
     }
 }
 
 impl Drop for RunPermit {
     fn drop(&mut self) {
-        *RUNS.0.lock().expect("runs") -= 1;
-        RUNS.1.notify_one();
+        *self.0.used.lock().expect("runs") -= 1;
+        self.0.ready.notify_one();
     }
 }
 
 pub struct RunChild {
     child: Child,
-    _permit: RunPermit,
+    _permit: Option<RunPermit>,
 }
 
 impl std::ops::Deref for RunChild {
@@ -72,8 +96,22 @@ pub fn spawn_run(c: &mut Command) -> RunChild {
     let permit = RunPermit::acquire();
     RunChild {
         child: c.spawn().expect("spawn"),
-        _permit: permit,
+        _permit: Some(permit),
     }
+}
+
+/// `spawn_run` without the gate, for a test of the launcher or of a test helper that starts no
+/// run of the script: it need not wait for the runs of other tests, nor hold one back.
+pub fn spawn_free(c: &mut Command) -> RunChild {
+    c.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = RunChild {
+        child: c.spawn().expect("spawn"),
+        _permit: None,
+    };
+    drop(child.stdin.take());
+    child
 }
 
 /// What a run printed and how it ended.
@@ -129,7 +167,10 @@ pub fn fake_shell() -> &'static str {
 }
 
 /// The fakes of `tests/fakes`, under `fake_shell`, written once per test binary: `bin` holds
-/// those every test has, `rustup` holds `rustup` and `rustc`. They keep no state of their own
+/// those every test has, `faults-cp`, `faults-mv`, `faults-rm` and `faults-chmod` hold the fake of
+/// that name (each a shell that runs the real tool, so a run that does not inject a fault would pay
+/// two process starts for every call: only a test that writes the fault file of a tool puts that
+/// tool's folder on the `PATH`), `rustup` holds `rustup` and `rustc`. They keep no state of their own
 /// (that is in `$FAKE_STATE`), so every test shares them.
 fn shared_fakes() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -147,6 +188,7 @@ fn shared_fakes() -> &'static Path {
         files.sort();
         let mut h = std::hash::DefaultHasher::new();
         std::hash::Hash::hash(&files, &mut h);
+        std::hash::Hash::hash("layout: bin, faults-<tool>, rustup", &mut h);
         let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
         let dir = base.join(format!(
             "install-fakes-{:016x}",
@@ -158,10 +200,10 @@ fn shared_fakes() -> &'static Path {
             let tmp = base.join(format!("install-fakes-tmp-{}", std::process::id()));
             let _ = fs::remove_dir_all(&tmp);
             for (name, body) in &files {
-                let sub = if matches!(name.as_str(), "rustup" | "rustc") {
-                    "rustup"
-                } else {
-                    "bin"
+                let sub = match name.as_str() {
+                    "rustup" | "rustc" => "rustup".to_string(),
+                    "cp" | "mv" | "rm" | "chmod" => format!("faults-{name}"),
+                    _ => "bin".to_string(),
                 };
                 let to = tmp.join(sub).join(name);
                 fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
@@ -189,11 +231,23 @@ pub struct Fx {
     pub real: PathBuf,
     pub script: PathBuf,
     pub rel: Release,
+    /// Set by `state_write` of a fault file: the fake of that tool is on the `PATH` (one bit per
+    /// entry of `FAULT_FILES`).
+    faulty: AtomicU8,
 }
 
-const TOOLS: [&str; 20] = [
+/// The fault file of each fake that has one: the fake of the tool is on the `PATH` while a test
+/// has written it (`tests/fakes`).
+const FAULT_FILES: [(&str, &str); 4] = [
+    ("cp_fault", "cp"),
+    ("mv_fault", "mv"),
+    ("rm_fault", "rm"),
+    ("chmod_wait", "chmod"),
+];
+
+const TOOLS: [&str; 22] = [
     "sh", "curl", "tar", "mktemp", "mkdir", "cp", "rmdir", "ls", "cat", "chmod", "grep", "sed",
-    "awk", "tr", "head", "dirname", "readlink", "dd", "od",
+    "awk", "tr", "head", "dirname", "readlink", "dd", "od", "mv", "rm",
     // GNU tar runs gzip; macOS tar has it built in, so the script does not name it
     "gzip",
 ];
@@ -236,10 +290,36 @@ impl Fx {
             real,
             script,
             rel,
+            faulty: AtomicU8::new(0),
         };
         fx.bake_script("0.1.0");
         fx.rel.set_version("0.1.0", &["serde-1.0.0"]);
         fx
+    }
+
+    /// A world in which `0.1.0` is installed, as `Fx::new()` then one run of the script leaves it,
+    /// but without that run: the home of one real install is made once per test binary and
+    /// written again here (its own paths in the receipt rewritten), so that a test that starts
+    /// from an installed home does not pay the ~45 process starts of an install.
+    pub fn installed() -> Fx {
+        Fx::installed_with(&["serde-1.0.0"])
+    }
+
+    /// `installed()` with the release `0.1.0` holding these vendored crates.
+    pub fn installed_with(vendor: &[&str]) -> Fx {
+        let fx = Fx::new();
+        fx.rel.set_version("0.1.0", vendor);
+        write_installed(&installed_template(vendor), &fx.home);
+        fx
+    }
+
+    /// A second home of this world, `<root>/<name>`, with the `0.1.0` install in it (see
+    /// `installed`), for a rule that is run against several homes in one process.
+    pub fn installed_home(&self, name: &str) -> PathBuf {
+        let home = self.root.path().join(name);
+        fs::create_dir(&home).expect("home");
+        write_installed(&installed_template(&["serde-1.0.0"]), &home);
+        home
     }
 
     /// The script under test: a copy of the checkout's `install.sh` with `@RELEASE@` replaced.
@@ -266,7 +346,17 @@ impl Fx {
     }
 
     pub fn state_write(&self, name: &str, content: &str) {
+        if let Some(i) = FAULT_FILES.iter().position(|(f, _)| *f == name) {
+            self.faulty.fetch_or(1 << i, Ordering::SeqCst);
+        }
         fs::write(self.state.join(name), content).expect("state write");
+    }
+    /// Removes a fault file the test wrote, and takes the fake of its tool off the `PATH` again.
+    pub fn unfault(&self, name: &str) {
+        let _ = fs::remove_file(self.state.join(name));
+        if let Some(i) = FAULT_FILES.iter().position(|(f, _)| *f == name) {
+            self.faulty.fetch_and(!(1 << i), Ordering::SeqCst);
+        }
     }
     pub fn state_read(&self, name: &str) -> String {
         fs::read_to_string(self.state.join(name)).unwrap_or_default()
@@ -315,8 +405,20 @@ chmod 755 "$HOME/.cargo/bin/rustup" "$HOME/.cargo/bin/rustc"
     }
 
     pub fn path_value(&self) -> String {
+        let on = self.faulty.load(Ordering::SeqCst);
+        let faults: String = FAULT_FILES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| on & (1 << i) != 0)
+            .map(|(_, (_, tool))| {
+                format!(
+                    "{}:",
+                    shared_fakes().join(format!("faults-{tool}")).display()
+                )
+            })
+            .collect();
         format!(
-            "{}:{}:{}",
+            "{}:{faults}{}:{}",
             self.fakes.display(),
             shared_fakes().join("bin").display(),
             self.tools.display()
@@ -583,6 +685,105 @@ pub fn build_archive_with(version: &str, vendor: &[&str], tweak: &dyn Fn(&Path))
         .expect("tar");
     assert!(o.status.success());
     o.stdout
+}
+
+/// The home of one real install of `0.1.0` with this vendor list, made once per test binary.
+fn installed_template(vendor: &[&str]) -> Arc<Template> {
+    static MADE: OnceLock<Mutex<HashMap<Vec<String>, Arc<Template>>>> = OnceLock::new();
+    let key: Vec<String> = vendor.iter().map(|v| (*v).to_string()).collect();
+    let made = MADE.get_or_init(Mutex::default);
+    let cached = made.lock().expect("made").get(&key).cloned();
+    cached.unwrap_or_else(|| {
+        let fx = Fx::new();
+        fx.rel.set_version("0.1.0", vendor);
+        let out = fx.run(&[]);
+        assert_eq!(out.code, 0, "the template install: {out:?}");
+        let t = Arc::new(Template {
+            home: fx.home.display().to_string(),
+            home_r: fs::canonicalize(&fx.home)
+                .expect("canonical home")
+                .display()
+                .to_string(),
+            entries: tree_entries(&fx.home),
+        });
+        made.lock().expect("made").insert(key, Arc::clone(&t));
+        t
+    })
+}
+
+/// Writes the template into the empty folder `home`, its own paths in the receipt rewritten.
+fn write_installed(tmpl: &Template, home: &Path) {
+    tmpl.write_into(home);
+    let home_r = fs::canonicalize(home).expect("canonical home");
+    // the longer (canonical) form first: it holds the other as its tail on macOS
+    let swaps = [
+        (tmpl.home_r.clone(), home_r.display().to_string()),
+        (tmpl.home.clone(), home.display().to_string()),
+    ];
+    let p = home.join(".local/share/watane/receipt");
+    let mut text = fs::read_to_string(&p).expect("receipt");
+    for (from, to) in &swaps {
+        text = text.replace(from.as_str(), to);
+    }
+    fs::write(&p, text).expect("write receipt");
+}
+
+/// One node of a home, as `tree_entries` records it.
+enum Node {
+    Dir(u32),
+    File(u32, Vec<u8>),
+}
+
+/// The home of one real install (`Fx::installed`).
+struct Template {
+    home: String,
+    home_r: String,
+    entries: Vec<(String, Node)>,
+}
+
+impl Template {
+    fn write_into(&self, home: &Path) {
+        for (rel, node) in &self.entries {
+            let p = home.join(rel);
+            match node {
+                Node::Dir(mode) => {
+                    fs::create_dir_all(&p).expect("mkdir");
+                    fs::set_permissions(&p, fs::Permissions::from_mode(*mode)).expect("chmod");
+                }
+                Node::File(mode, bytes) => {
+                    fs::write(&p, bytes).expect("write");
+                    fs::set_permissions(&p, fs::Permissions::from_mode(*mode)).expect("chmod");
+                }
+            }
+        }
+    }
+}
+
+/// Every folder and file under `root`, parents first, with modes; the install makes no link.
+fn tree_entries(root: &Path) -> Vec<(String, Node)> {
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<(String, Node)>) {
+        let mut es: Vec<_> = fs::read_dir(dir)
+            .expect("read_dir")
+            .map(|e| e.expect("e"))
+            .collect();
+        es.sort_by_key(|e| e.file_name());
+        for e in es {
+            let p = e.path();
+            let rel = p.strip_prefix(base).expect("prefix").display().to_string();
+            let md = fs::symlink_metadata(&p).expect("md");
+            let mode = md.permissions().mode() & 0o7777;
+            if md.is_dir() {
+                out.push((rel, Node::Dir(mode)));
+                walk(base, &p, out);
+            } else {
+                assert!(md.is_file(), "the install made a link: {}", p.display());
+                out.push((rel, Node::File(mode, fs::read(&p).expect("read"))));
+            }
+        }
+    }
+    let mut v = Vec::new();
+    walk(root, root, &mut v);
+    v
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
