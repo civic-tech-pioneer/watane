@@ -605,12 +605,13 @@ and `rollback`; recovery and a failed swap pass the undo status to
 so an already handled parent signal does not stop its work. A failed undo
 leaves the swap active for a safe retry. After a failed swap, `install_files`
 retries a failed undo once itself, checking each failure for signals. It then
-prints, when a new entry is still in place after undo (its retry included), on a reinstall "The files could not be
-put back. Run this script again to restore the installed version." and on a fresh
-install "The files could not be removed. Run this script again to finish cleaning
-up." (whichever entry, new or old, undo failed on). When undo ended well it prints
-the first text also if an old entry path is missing or an old entry other
-than the receipt still has its `.old.<pid>` name. Otherwise it prints
+decides the second line from where the entries are after undo (its retry
+included), not from undo's status. When a new entry (`new` in the journal, moved
+by the run) is still at its path, it prints on a fresh install "The files could
+not be removed. Run this script again to finish cleaning up." and on a reinstall
+"The files could not be put back. Run this script again to restore the installed
+version." It prints the second text also if an old entry path is missing or an
+old entry other than the receipt still has its `.old.<pid>` name. Otherwise it prints
 "Nothing was changed: the version that was installed still works."
 On a fresh install (no entry of the receipt's list, the receipt included,
 existed before the swap began, so there was no installed version) the second line is `Nothing was installed.` instead. When the
@@ -721,10 +722,11 @@ the receipt's rename (3.8) prints, instead, `watane install: a step after the
 install failed`, `watane <v> is installed.` and `Run watane-dev doctor to check the
 maker tools.`, and exits 5. A checksum or archive failure before any swap (exit 4 or 5)
 ends with `Nothing was installed.` when no receipt exists, and with `Nothing was
-changed: the version that was installed still works.` when one does. When undo failed
-twice, the second line is `The files could not be put back. Run this script again to
-restore the installed version.` (reinstall) or `The files could not be removed. Run
-this script again to finish cleaning up.` (fresh install), never "Nothing was".
+changed: the version that was installed still works.` when one does. When undo, after
+its retry, left a new entry at its path, the second line is `The files could not be put
+back. Run this script again to restore the installed version.` (reinstall) or `The files
+could not be removed. Run this script again to finish cleaning up.` (fresh install),
+never "Nothing was".
 
 Stdout carries the progress and the result, stderr the errors. No colour,
 no cursor movement, no emoji; each line is a fact or a command, so an
@@ -1870,7 +1872,7 @@ otherwise.
 | IN-41 | Two runs at once are excluded by a `mkdir` lock `~/.watane-install.lock` taken before the receipt is read; the script removes only its own lock, and a lock it finds stops it (exit 5) with the `rm -rf` to run (3.6.2). | Breaking a stale lock cannot be made safe with the tools of 3.3 (pid reuse; two runs breaking one lock). After a `SIGKILL` the person removes it once. Undo: drop the lock; the journal check stays. |
 | IN-42 | The receipt records each install folder's resolved path, and a removal read from a receipt is skipped when its folder now resolves elsewhere (8.5 rule 4). | A same-user link made after the install inside the home must not let a receipt line empty another folder. Added before the first release, when the receipt format cost nothing to change. |
 | IN-44 | With `WATANE_RUSTUP_URL` set, the "install it later" command of offer A names that URL, as the question did. | The command and the question must name the one place the download comes from (3.7). |
-| IN-45 | An interruption after the commit, or while the toolchain question waits, prints that watane is installed and what to run next, from the exit trap; a swap failure after the commit prints the same two lines after its cause (3.9). | Alice must not think a Ctrl-C undid an install that stayed (3.8, 3.9). The trap is the one place every signal path passes. |
+| IN-45 | An interruption after the commit, or while the toolchain question waits, prints that watane is installed and what to run next, from the exit trap; a swap failure after the commit prints, after its cause, `watane <v> is installed.` and the same second line (3.9). | Alice must not think a Ctrl-C undid an install that stayed (3.8, 3.9). The trap is the one place every signal path passes. |
 | IN-46 | rustup's own output is framed by `--- rustup's own output follows ---` and `--- end of rustup's output ---`. | Its text is not watane's and must not read as such (3.7). |
 | IN-47 | A run that does not commit removes the folders it created, only when empty, deepest first. | An interrupted fresh install must leave the home as it found it (3.6 step 4). |
 | IN-48 | Paths inside the home print as `~/...` even when the home resolves elsewhere; `--status` with a closed reader is quiet. | The person's terms, not `/private/var/...`; no `printf: write error` text (3.9). |

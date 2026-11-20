@@ -541,3 +541,30 @@ fn fix3_a_checksum_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
     );
     fx.assert_installed("0.1.0");
 }
+
+#[test]
+fn fix3_an_archive_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    // a well-formed archive whose sum matches but whose VERSION is another release's
+    let bytes = build_archive_with("0.1.0", &["serde-1.0.0"], &|t| {
+        fs::write(t.join("VERSION"), "0.2.0\n").expect("version");
+    });
+    let name = archive_name("0.1.0");
+    fx.rel.put(
+        "SHA256SUMS",
+        format!("{}  {name}\n", sha256(&bytes)).into_bytes(),
+    );
+    fx.rel.put(&name, bytes);
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert_eq!(
+        lines(&out.stderr),
+        [
+            format!("watane install: {name} is not a watane archive of version 0.1.0").as_str(),
+            "Nothing was changed: the version that was installed still works."
+        ],
+        "{out:?}"
+    );
+    fx.assert_installed("0.1.0");
+}

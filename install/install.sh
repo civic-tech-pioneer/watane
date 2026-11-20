@@ -767,7 +767,6 @@ verify_archive() {
     va_want=$va_hash
     va_count=$((va_count + 1))
   done <"$TMP/SHA256SUMS"
-  not_swapped_msg
   if [ "$va_count" = 0 ]; then
     die 4 "SHA256SUMS has no line for $ARCHIVE" "$NS_MSG"
   elif [ "$va_count" != 1 ]; then
@@ -788,7 +787,6 @@ verify_archive() {
 }
 
 extract_archive() {
-  not_swapped_msg
   tar -tzf "$TMP/$ARCHIVE" >"$TMP/members" 2>/dev/null || { check_signal "$?"; die 5 "$ARCHIVE is not a watane archive" "$NS_MSG"; }
   check_signal
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP/members"; then
@@ -958,8 +956,7 @@ EOF
     if_undo=0
     rollback || { if_undo=$?; check_signal "$if_undo"; }
     if [ "$if_undo" -ne 0 ]; then
-      if_undo=0
-      rollback || { if_undo=$?; check_signal "$if_undo"; }
+      rollback || { check_signal "$?"; }
     fi
     check_signal "$if_rc"
     if [ "$COMMITTED" = 1 ]; then
@@ -976,12 +973,15 @@ EOF
     done <<EOF
 $if_new
 EOF
-    if [ "$if_left" = 1 ] && [ "$if_fresh" = 1 ]; then
-      die 5 "could not put the files in place" "The files could not be removed. Run this script again to finish cleaning up."
+    if [ "$if_left" = 1 ]; then
+      if [ "$if_fresh" = 1 ]; then
+        die 5 "could not put the files in place" "The files could not be removed. Run this script again to finish cleaning up."
+      fi
+      die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
     fi
     while IFS= read -r if_p; do
       [ -n "$if_p" ] || continue
-      if [ "$if_left" = 1 ] || ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
+      if ! exists "$if_p" || { [ "$if_p" != "$RECEIPT" ] && exists "$if_p.old.$$"; }; then
         die 5 "could not put the files in place" "The files could not be put back. Run this script again to restore the installed version."
       fi
     done <<EOF
@@ -1282,6 +1282,7 @@ do_install() {
   download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" "$DLMODE"
   say "downloading $ARCHIVE"
   download "$BASE/$ARCHIVE" "$TMP/$ARCHIVE" "$DLMODE"
+  not_swapped_msg
   verify_archive
   extract_archive
   install_files
