@@ -344,7 +344,7 @@ later hardening.
    `fstat`, never the path:
    - missing: create the key (below);
    - a link (the open fails with `ELOOP`): `NotPlain { expected: "regular file", link: true }`;
-   - not a regular file (a FIFO, a directory): `NotPlain { expected: "regular file", link: false }`;
+   - not a regular file (a FIFO, a directory, or a socket, whose open fails with `ENXIO`): `NotPlain { expected: "regular file", link: false }`;
    - `mode & 0o077 != 0`: `Exposed`, and the file is not changed;
    - else read it from that handle. A length other than 32 is `CorruptKey`.
 5. Open the store (section 4.8).

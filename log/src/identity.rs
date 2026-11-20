@@ -51,6 +51,10 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
         Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
             return Err(not_plain(path, "regular file", true));
         }
+        // A socket cannot be opened (ENXIO): it is not a regular file either.
+        Err(e) if e.raw_os_error() == Some(libc::ENXIO) => {
+            return Err(not_plain(path, "regular file", false));
+        }
         Err(e) => return Err(io_error(path, e)),
     };
     let meta = file.metadata().map_err(|e| io_error(path, e))?;

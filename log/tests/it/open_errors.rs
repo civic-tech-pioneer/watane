@@ -82,7 +82,14 @@ fn s91_2_ac2_fifo_key_is_not_plain_and_does_not_hang() {
         .status()
         .unwrap();
     assert!(status.success());
-    let err = Log::open(&path).err().unwrap();
+    // A blocking open of a FIFO waits for a writer: fail instead of hanging.
+    let (tx, rx) = std::sync::mpsc::channel();
+    let opener = path.clone();
+    std::thread::spawn(move || tx.send(Log::open(&opener).err()).unwrap());
+    let err = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("Log::open on a FIFO key returned promptly")
+        .unwrap();
     assert!(matches!(
         err,
         Error::NotPlain {
@@ -109,4 +116,25 @@ fn s91_2_ac1_dangling_key_link_is_not_plain() {
             ..
         }
     ));
+}
+
+#[test]
+fn s91_2_ac2_socket_key_is_not_plain() {
+    let d = dir();
+    let path = d.path().join("log");
+    std::fs::create_dir(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let _socket = std::os::unix::net::UnixListener::bind(path.join("identity.key")).unwrap();
+    let err = Log::open(&path).err().unwrap();
+    assert!(
+        matches!(
+            err,
+            Error::NotPlain {
+                expected: "regular file",
+                link: false,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
 }
