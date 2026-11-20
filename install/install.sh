@@ -32,6 +32,9 @@ UPGRADED=0
 SIGNAL=0
 LOCK_OWNED=0
 CLEANUP_ACTIVE=0
+COMMITTED=0
+TC_ASKING=0
+CREATED=""
 
 usage() {
   printf '%s\n' \
@@ -41,7 +44,9 @@ usage() {
     '       install.sh --help | -h'
 }
 
-say() { printf '%s\n' "$*"; }
+# A reader that went away (`--status | head -1`) must not make printf print a write error:
+# the PIPE trap ends the run with 141; without a signal the line is simply lost (3.9).
+say() { printf '%s\n' "$*" 2>/dev/null || { check_signal "$?"; }; }
 warn() { printf 'watane install: %s\n' "$*" >&2; }
 
 # die <code> <cause> [<what to do> ...]
@@ -173,7 +178,7 @@ receipt_allowed() {
   ra_folder=""
   if allowed "$1"; then :; else
     check_signal "$?"
-    warn "skipped $1: not a path that watane installs"
+    warn "skipped $(tilde "$1"): not a path that watane installs"
     return 1
   fi
   ra_folder=${al_root#"$HOME/"}
@@ -187,7 +192,7 @@ receipt_allowed() {
 $R_RESOLVED
 EOF
   if [ "$ra_old" = "$ra_now" ]; then return 0; fi
-  warn "skipped $1: ~/$ra_folder resolves to $ra_now, not to $ra_old as at install"
+  warn "skipped $(tilde "$1"): ~/$ra_folder resolves to $(tilde_r "$ra_now"), not to $(tilde_r "$ra_old") as at install"
   return 1
 }
 
@@ -525,9 +530,17 @@ release_files() {
       rm -f "$LOCK/pid" || { check_signal "$?"; }
       rmdir "$LOCK" || { check_signal "$?"; }
     fi
+    remove_created
     if [ -n "$TMP" ]; then rm -rf "$TMP" || { check_signal "$?"; }; fi
     exit 0
   )
+}
+
+# interrupted_hint: a signal after the commit left watane installed (3.8, 3.9)
+interrupted_hint() {
+  printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+  if [ "$TC_ASKING" = 1 ]; then print_commands >&2; fi
+  return 0
 }
 
 cleanup() {
@@ -542,6 +555,10 @@ cleanup() {
   # release_files checks cleanup commands with a separate, local signal flag.
   # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
+  if [ "$SIGNAL" != 0 ] && [ "$COMMITTED" = 1 ]; then
+    set +e
+    interrupted_hint
+  fi
   exit "$cl_rc"
 }
 
@@ -667,7 +684,7 @@ check_foreign() {
         if ! in_list "$cf_folders" "$ra_folder"; then
           cf_folders=$(add_item "$cf_folders" "$ra_folder")
           # shellcheck disable=SC2088 # Show the home as a literal tilde in the fix text.
-          warn "~/$ra_folder resolves to $ra_now, not to $ra_old as at install"
+          warn "~/$ra_folder resolves to $(tilde_r "$ra_now"), not to $(tilde_r "$ra_old") as at install"
           printf 'Make ~/%s a real folder again (or point it where it was), then run this again.\n' "$ra_folder" >&2
         fi
       fi
@@ -788,7 +805,27 @@ extract_archive() {
   return 0
 }
 
+# note_created: CREATED lists the folders this run is about to create, shallowest first (3.6 step 1)
+note_created() {
+  CREATED=""
+  for nc_f in "$HOME/.local" "$HOME/.local/bin" "$HOME/.local/share" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
+    if exists "$nc_f"; then :; else CREATED=$(add_item "$CREATED" "$nc_f"); fi
+  done
+  return 0
+}
+
+# remove_created: an install that did not commit takes away the empty folders it made (3.6 step 4)
+remove_created() {
+  [ "$COMMITTED" != 1 ] || return 0
+  for rc_f in "$HOME/Applications" "$HOME/.local/share/watane-dev" "$HOME/.local/share/watane" "$HOME/.local/share" "$HOME/.local/bin" "$HOME/.local"; do
+    in_list "$CREATED" "$rc_f" || continue
+    rmdir "$rc_f" 2>/dev/null || { check_signal "$?"; }
+  done
+  return 0
+}
+
 stage_files() {
+  note_created
   for sf_r in $RELS; do
     dest_of "$sf_r"
     mkdir -p "${DEST%/*}" || return
@@ -832,7 +869,7 @@ swap_entries() {
   for sw_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     resolve_dir "$sw_f" || { check_signal "$?"; }
     if ! in_list "$FOLDERS_RESOLVED" "resolved ${sw_f#"$HOME/"} $RES"; then
-      SWAP_CHANGED="$(tilde "$sw_f") changed during the install: it now resolves to $RES"
+      SWAP_CHANGED="$(tilde "$sw_f") changed during the install: it now resolves to $(tilde_r "$RES")"
       return 1
     fi
   done
@@ -847,6 +884,7 @@ EOF
   if exists "$RECEIPT"; then cp -p "$RECEIPT" "$RECEIPT.old.$$" || return; fi
   printf 'moved %s\n' "$RECEIPT" >>"$sw_j" || return
   mv "$RECEIPT.new.$$" "$RECEIPT" || return
+  COMMITTED=1
   return 0
 }
 
@@ -976,10 +1014,20 @@ detect_toolchain() {
   return 0
 }
 
+# rustup_src: RUSTUP_SRC is where offer A downloads from (3.7)
+rustup_src() {
+  RUSTUP_SRC=https://sh.rustup.rs
+  if [ -n "${WATANE_RUSTUP_URL:-}" ]; then RUSTUP_SRC=$WATANE_RUSTUP_URL; fi
+  return 0
+}
+
 print_commands() {
   say 'To install it later, run:'
   case $TC_STATE in
-    none_a) say "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2" ;;
+    none_a)
+      rustup_src
+      say "  curl --proto '=https' --tlsv1.2 -sSf $RUSTUP_SRC | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+      ;;
     target) say '  rustup target add wasm32-wasip2' ;;
     none_b)
       say '  rustup toolchain install stable --profile minimal -t wasm32-wasip2'
@@ -995,11 +1043,14 @@ print_commands() {
 # rustup_step <command...>: run it, or end with exit 6
 rustup_step() {
   rs_rc=0
+  say "--- rustup's own output follows ---"
   ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
   if [ "$rs_rc" != 0 ]; then
     check_signal "$rs_rc"
+    say "--- end of rustup's output ---"
     die 6 "the toolchain step failed (rustup exited $rs_rc)" "watane is installed; run the step yourself, then \`watane-dev doctor\`."
   fi
+  say "--- end of rustup's output ---"
   return 0
 }
 
@@ -1023,7 +1074,10 @@ toolchain_step() {
     return 0
   fi
   ts_src=https://sh.rustup.rs
-  if [ "$TC_STATE" = none_a ] && [ -n "${WATANE_RUSTUP_URL:-}" ]; then ts_src=$WATANE_RUSTUP_URL; fi
+  if [ "$TC_STATE" = none_a ]; then
+    rustup_src
+    ts_src=$RUSTUP_SRC
+  fi
   case $TC_STATE in
     target)
       printf '%s\n%s [y/N] ' \
@@ -1037,7 +1091,9 @@ toolchain_step() {
       ;;
   esac
   ts_ans=""
+  TC_ASKING=1
   read_answer </dev/tty || { check_signal "$?"; ANSWER=""; }
+  TC_ASKING=0
   ts_ans=$ANSWER
   case $ts_ans in
     [Yy] | [Yy][Ee][Ss]) ;;

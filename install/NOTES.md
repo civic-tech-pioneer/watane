@@ -776,3 +776,16 @@ and delayed PTY answer. No existing ignored or GUI test ran. Clippy
 --all-targets with -D warnings, nightly fmt --check, shellcheck of all
 four shell scripts, and git diff --check passed. The final direct smoke
 log is /tmp/s50c-3-smoke.log and its last line is CLEAN-MAC PASS.
+
+## S89-1 (install.sh tells the truth)
+
+Decided in TECHNICAL 3.6 to 3.9, 8.1, 8.5 and IN-44 to IN-48: the post-commit and
+question-time interruption lines (printed by the exit trap, flag `COMMITTED` set right
+after the receipt's `mv`), `say` swallowing printf's write error so `--status | head -1`
+ends by the PIPE trap (141, or 0), `~` for resolved paths through `tilde_r`, the offer's
+URL in "install it later", empty folders the run created removed in `release_files`
+(only when the run did not commit, only with `rmdir`), rustup's output framed per
+rustup command (offer B prints two frames). Limits: a signal landing between the receipt's
+`mv` and `COMMITTED=1` gets no hint (the install is whole; the swap's undo finishes the
+commit); a lost INT on macOS sh reaches the same trap through `check_signal`. Tests: `tests/it/s89.rs`
+(run on Linux; macOS-only sh behaviours are for the PO's Mac run).

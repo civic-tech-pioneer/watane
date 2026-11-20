@@ -16,6 +16,7 @@ mod regress_s50c;
 mod regress_s50c_sim;
 mod regress_s55;
 mod s50c;
+mod s89;
 mod script;
 mod status_audit;
 mod waits;

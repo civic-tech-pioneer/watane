@@ -194,7 +194,8 @@ fn inst_s4_no_terminal() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(!out.stdout.contains("[y/N]"));
     assert!(out.has_line("no terminal to ask on: the toolchain was not installed"));
-    assert!(out.has_line(CURL_LINE));
+    // IN-44: the command names the URL that the offer would have named
+    assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
     assert_eq!(fx.state_read("installer.log"), "");
 }
 
@@ -764,7 +765,8 @@ fn inst_s27_a_receipt_that_names_other_files() {
     assert_eq!(out.code, 0, "{out:?}");
     s27_kept(&fx, other.path());
     for p in &named {
-        let line = format!("watane install: skipped {p}: not a path that watane installs");
+        let shown = p.replacen(&fx.home.display().to_string(), "~", 1);
+        let line = format!("watane install: skipped {shown}: not a path that watane installs");
         assert!(
             out.stderr.lines().any(|l| l == line),
             "{line}\n{}",
@@ -1001,10 +1003,8 @@ fn inst_s31_an_install_folder_outside_the_home() {
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(o.join("vendor/marker").exists());
-    let line = format!(
-        "watane install: skipped {}/.local/share/watane-dev/vendor: not a path that watane installs",
-        fx.home.display()
-    );
+    let line =
+        "watane install: skipped ~/.local/share/watane-dev/vendor: not a path that watane installs";
     assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
 
     // uninstall removes nothing through a link at the folder of the receipt and the journals
@@ -1980,9 +1980,7 @@ fn ac5_a_bin_name_ending_in_mine_is_skipped() {
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(fx.bin("watane.mine").exists());
-    let line = format!(
-        "watane install: skipped {h}/.local/bin/watane.mine: not a path that watane installs"
-    );
+    let line = "watane install: skipped ~/.local/bin/watane.mine: not a path that watane installs";
     assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
     assert!(!fx.bin("watane").exists());
 }
@@ -2001,9 +1999,7 @@ fn ac5_a_link_inside_an_install_folder_does_not_reach_the_home() {
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(fx.home.join("Documents/marker").exists(), "{out:?}");
-    let line = format!(
-        "watane install: skipped {h}/.local/share/watane/x/Documents: not a path that watane installs"
-    );
+    let line = "watane install: skipped ~/.local/share/watane/x/Documents: not a path that watane installs";
     assert!(out.stderr.lines().any(|l| l == line), "{}", out.stderr);
 }
 

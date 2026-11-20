@@ -58,7 +58,7 @@ fn ac1_resolved_folders_guard_receipt_removals() {
                 }
             }
             assert!(!fx.receipt().exists(), "{out:?}");
-            assert!(out.stderr.lines().any(|l| l == format!("watane install: skipped {}: ~/.local/share/watane-dev resolves to {}, not to {} as at install", fx.share("watane-dev/vendor").display(), fs::canonicalize(fx.home.join("Documents")).unwrap().display(), fs::canonicalize(&fx.home).unwrap().join(".local/share/watane-dev").display())));
+            assert!(out.stderr.lines().any(|l| l == "watane install: skipped ~/.local/share/watane-dev/vendor: ~/.local/share/watane-dev resolves to ~/Documents, not to ~/.local/share/watane-dev as at install"));
         } else {
             assert_eq!(snapshot(&fx.home), before);
             assert!(fx.bin("watane").exists());
@@ -340,25 +340,17 @@ fn ac1_upgrade_refuses_remapped_or_unrecorded_receipt_paths_before_download() {
         let out = fx.run(&["--release", "0.2.0", "--no-toolchain"]);
         assert_eq!(out.code, 8, "{out:?}");
         let old = if recorded {
-            fx.home
-                .canonicalize()
-                .unwrap()
-                .join(".local/share/watane-dev")
-                .display()
-                .to_string()
+            "~/.local/share/watane-dev"
         } else {
-            "an unrecorded path".to_string()
+            "an unrecorded path"
         };
         let now = if recorded {
-            fx.home.join("Documents")
+            "~/Documents"
         } else {
-            fx.home.join(".local/share/watane-dev")
-        }
-        .canonicalize()
-        .unwrap();
+            "~/.local/share/watane-dev"
+        };
         assert!(out.stderr.contains(&format!(
-            "watane install: ~/.local/share/watane-dev resolves to {}, not to {old} as at install",
-            now.display()
+            "watane install: ~/.local/share/watane-dev resolves to {now}, not to {old} as at install"
         )), "{out:?}");
         assert!(out.stderr.contains(
             "Make ~/.local/share/watane-dev a real folder again (or point it where it was), then run this again."

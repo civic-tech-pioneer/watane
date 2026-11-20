@@ -263,7 +263,7 @@ the link; for each such folder the script prints instead, to stderr, and
 exits 8 the same way:
 
 ```text
-watane install: ~/.local/share/watane-dev resolves to /Users/alice/Documents, not to /Users/alice/.local/share/watane-dev as at install
+watane install: ~/.local/share/watane-dev resolves to ~/Documents, not to ~/.local/share/watane-dev as at install
 Make ~/.local/share/watane-dev a real folder again (or point it where it was), then run this again.
 ```
 
@@ -326,7 +326,10 @@ files (INST-F-20, INST-S-14, 32, 33).
    when nothing (a link included) is at the name, with `set -C`
    (noclobber) around the write; if something is, the run fails as any
    failure of the swap does (undo, exit 5) and nothing is written through
-   it (IN-35).
+   it (IN-35). Before the first `mkdir -p`, the script notes which of
+   `~/.local`, `~/.local/bin`, `~/.local/share`, `~/.local/share/watane`,
+   `~/.local/share/watane-dev` and `~/Applications` do not exist yet (`-e` or
+   `-L`): these are the folders this run creates (IN-47).
 2. **Journal.** Write `<prefix>/share/watane/journal.<pid>`, one line for
    each entry, the receipt included: `old <path>` if `<path>` exists now
    (`-e` or `-L`), else `new <path>`. It is written directly, with no
@@ -337,7 +340,7 @@ files (INST-F-20, INST-S-14, 32, 33).
    folder, and compare it with the path step 4 resolved: if one differs (a
    link made or changed since), undo as step 4 below and exit 5 with
    `watane install: <folder> changed during the install: it now resolves to
-   <now>` (`<folder>` as `~/...`), before any entry is moved. Then, for each entry in the order of the list above, the receipt
+   <now>` (`<folder>` as `~/...`, `<now>` as `~/...` inside the home, 3.9), before any entry is moved. Then, for each entry in the order of the list above, the receipt
    last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then append the
    line `moved <path>` to the journal; then
    `mv <path>.new.<pid> <path>`. The receipt alone is not moved aside: it is
@@ -386,7 +389,13 @@ files (INST-F-20, INST-S-14, 32, 33).
    names and any `receipt.old.<pid>`; exit 5 (or 129, 130,
    141, 143). A running `watane` keeps its open file; the next start uses the new
    one. The old version and the old receipt are then as before the run
-   (INST-S-14, 32).
+   (INST-S-14, 32). The exit trap then removes, with `rmdir` (which
+   refuses a folder that is not empty), each folder that step 1 noted as
+   created by this run, deepest first, so an install that did not commit
+   leaves no `~/.local/bin`, `~/.local/share/watane-dev`, `~/.local/share/watane`,
+   `~/.local/share`, `~/Applications` or `~/.local` that it made, and never one
+   that existed before the run (IN-47). The same holds for a run that
+   fails with exit 3 to 5 before the commit. After the commit nothing is removed.
 5. **After the commit.** Remove the paths of the old receipt that are not
    in the new list, each only if the rule of 8.5 allows it (INST-S-27); then
    `rm -rf` each `.old.<pid>` whose install folder still resolves as the new
@@ -499,7 +508,7 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 |---|---|---|---|
 | ok | rustc found and the target present | none | none; prints `toolchain: ok (rustup, wasm32-wasip2)` |
 | no target | rustup and rustc, no target | `rustup target add wasm32-wasip2` | `watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.` newline `Add the wasm32-wasip2 target with rustup? [y/N]` |
-| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]`; when offer A is the one and `WATANE_RUSTUP_URL` is set, `https://sh.rustup.rs` is that URL (IN-37) |
+| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]`; when offer A is the one and `WATANE_RUSTUP_URL` is set, `https://sh.rustup.rs` is that URL (IN-37), here and in the "install it later" command below (IN-44) |
 
 **Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
@@ -526,10 +535,18 @@ IN-24, IN-25).
   <temporary folder>/rustup-init.sh -y --profile minimal --no-modify-path
   -t wasm32-wasip2 < /dev/null`. `--no-modify-path` keeps rustup from
   editing the person's shell files; it still prints its own lines, which
-  the script lets through. Then print the note `rustup put its programs in
+  the script lets through, set apart from its own (below). Then print the note `rustup put its programs in
   ~/.cargo/bin; watane-dev finds them there. To use cargo yourself, add
   that folder to your PATH.`
 - no target, and B: run the rustup commands shown, in order.
+- Each of these runs (the installer, `rustup target add`, each command of B) is
+  framed on stdout: the line `--- rustup's own output follows ---` before it
+  and the line `--- end of rustup's output ---` after it, so what rustup
+  prints (on stdout and stderr, as it prints it) lies between the two and
+  watane's own lines never do (IN-46). The end line is also printed when
+  rustup failed, before the exit 6 text; it is not printed when a signal
+  ends the run. The exit status of rustup decides exit 6 and the signal
+  mapping (3.8) as before.
 - Print `toolchain: installed` and re-run the detection once; if it is
   not `ok`, print `toolchain: still incomplete after the install` and exit
   6.
@@ -546,7 +563,8 @@ Then `watane-dev doctor` checks it again.
 ```
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
-command.) For `no target`: `  rustup target add wasm32-wasip2`; for B:
+command.) When `WATANE_RUSTUP_URL` is set, line 3 names that URL in place of
+`https://sh.rustup.rs`, the URL the question named (IN-44). For `no target`: `  rustup target add wasm32-wasip2`; for B:
 `  rustup toolchain install stable --profile minimal -t wasm32-wasip2` and
 `  rustup default stable`.
 With no terminal the first line is `no terminal to ask on: the toolchain
@@ -636,6 +654,21 @@ installed and cleanup and rollback still run. A signal during final
 cleanup may leave the temporary folder and the lock (3.6.2). A signal while a question waits
 is acted on when the read returns. Cleanup preserves the signal code.
 
+**A signal after the commit** (the receipt was moved into place, 3.6 step 4's
+move of `receipt.new.<pid>`, so the new version is installed and stays): the
+exit trap, once the swap's cleanup is done and the temporary folder removed,
+prints on stderr the two lines of 3.9 (`watane <v> is installed; the run was
+interrupted before it finished.` and `Run watane-dev doctor to check the
+maker tools.`) and the run exits with the signal's code. This covers every
+point from the commit to the end of the success block, the toolchain
+question included. A signal while the toolchain question waits also prints,
+after those two lines and on stderr, the "install it later" block of 3.7 for the
+state found (the same lines as for the answer `N`, without `toolchain: not
+installed`). A signal before the commit prints neither (nothing is installed
+or the old version stays), and leaves no folder the run created (3.6 step 4; IN-47).
+These lines are printed once, by the exit trap, whichever way the
+signal reached it (IN-45).
+
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).
 The swap remains active through quarantine removal (`xattr`) and the
@@ -665,7 +698,23 @@ failure alone uses the first text; both cases exit 5.
 
 Stdout carries the progress and the result, stderr the errors. No colour,
 no cursor movement, no emoji; each line is a fact or a command, so an
-agent can read it (F-MAKE-5). `$HOME` is shown as `~`. The success output
+agent can read it (F-MAKE-5). `$HOME` is shown as `~`; so is the resolved
+home (`pwd -P`, which differs from `$HOME` when the home is reached through a
+link, such as `/var` -> `/private/var` on macOS), in every path the script
+prints: each `skipped <path>: ...` line and each `... resolves to <path>`
+line (8.5 rule 4, 3.4.2) name a path inside the home as `~/...`, the entry
+and the resolved folder alike, and a path outside the home stays absolute (IN-48).
+A reader that closes the output early (`--status | head -1`) gets no
+`write error` text from the script: the next write ends the run with `PIPE`
+(exit 141, 3.8) and nothing on stderr; when the reader closes only after
+the last line was written, the exit is 0.
+
+**The line after an interruption** (3.8). Exactly, on stderr:
+
+```text
+watane 0.1.0 is installed; the run was interrupted before it finished.
+Run watane-dev doctor to check the maker tools.
+``` The success output
 of INST-S-1 (answer `N`, `PATH` ok), exactly:
 
 ```text
@@ -1038,7 +1087,9 @@ A person learns the version with:
 | the app | `Info.plist` `CFBundleShortVersionString` = `0.1.0`; Finder's Get Info shows it |
 | `sh ~/.local/share/watane/install.sh --status` | the receipt, below |
 
-`--status` prints, for the receipt of INST-S-1 (exit 0):
+`--status` writes nothing but these lines. When its reader has closed the
+output (`--status | head -1`) it exits 141 with nothing on stderr (3.9), or 0
+if all lines were written before the reader went away. It prints, for the receipt of INST-S-1 (exit 0):
 
 ```text
 watane 0.1.0 (aarch64-apple-darwin)
@@ -1181,8 +1232,10 @@ no `.` or `..` component). A path is allowed only when:
    folder the path is listed under, and the folder resolves now to exactly
    `<R>`. Otherwise the path is left in place with `watane install: skipped
    <path>: <folder> resolves to <now>, not to <R> as at install` on stderr
-   (`<folder>` as `~/<folder>`; `<R>` reads `an unrecorded path` when the
-   line is missing). So a link made after the install inside the home
+   (`<folder>` as `~/<folder>`; `<path>`, `<now>` and `<R>` as `~/...` when they lie
+   inside the home, absolute otherwise, 3.9; `<R>` reads `an unrecorded path` when the
+   line is missing). The line `skipped <path>: not a path that watane installs`
+   (rules 1 to 3) names `<path>` the same way. So a link made after the install inside the home
    (`~/.local/share/watane-dev -> ~/Documents`), which rule 3 allows, does
    not make a receipt line empty the folder it now points at (IN-42).
 
@@ -1761,6 +1814,11 @@ otherwise.
 | IN-16 | "Clean Mac" is a fresh Tart VM of macOS on the human's Mac, cloned per run from a vanilla image (with and without the command line tools), plus an asserted `env -i` environment (12.3, 12.4). Changed in S50c from a second macOS user. | A second user shares the machine's tools and cannot show J7 without them (Q10); a clone per run is clean by construction and S55 reuses it; the assertion, not the machine, is still the proof. |
 | IN-41 | Two runs at once are excluded by a `mkdir` lock `~/.watane-install.lock` taken before the receipt is read; the script removes only its own lock, and a lock it finds stops it (exit 5) with the `rm -rf` to run (3.6.2). | Breaking a stale lock cannot be made safe with the tools of 3.3 (pid reuse; two runs breaking one lock). After a `SIGKILL` the person removes it once. Undo: drop the lock; the journal check stays. |
 | IN-42 | The receipt records each install folder's resolved path, and a removal read from a receipt is skipped when its folder now resolves elsewhere (8.5 rule 4). | A same-user link made after the install inside the home must not let a receipt line empty another folder. Added before the first release, when the receipt format cost nothing to change. |
+| IN-44 | With `WATANE_RUSTUP_URL` set, the "install it later" command of offer A names that URL, as the question did. | The command and the question must name the one place the download comes from (3.7). |
+| IN-45 | An interruption after the commit, or while the toolchain question waits, prints that watane is installed and what to run next, from the exit trap. | Alice must not think a Ctrl-C undid an install that stayed (3.8, 3.9). The trap is the one place every signal path passes. |
+| IN-46 | rustup's own output is framed by `--- rustup's own output follows ---` and `--- end of rustup's output ---`. | Its text is not watane's and must not read as such (3.7). |
+| IN-47 | A run that does not commit removes the folders it created, only when empty, deepest first. | An interrupted fresh install must leave the home as it found it (3.6 step 4). |
+| IN-48 | Paths inside the home print as `~/...` even when the home resolves elsewhere; `--status` with a closed reader is quiet. | The person's terms, not `/private/var/...`; no `printf: write error` text (3.9). |
 | IN-43 | The undo restores `receipt.old.<pid>` only with its `moved` line; step 0 does nothing when the receipt's own path is not allowed. | A `cp -p` cut short must not replace a whole receipt with a part of it; stale names are evidence while a journal may exist. |
 | IN-17 | The home is deleted on uninstall only by the typed word `delete` on a real terminal; no flag, variable or file answers it. | A deliberate act, since an identity cannot be restored without a backup (F-APP-6). It does not stop a same-user program from deleting the home (spec/TECHNICAL 6). |
 | IN-18 | Nothing checks for a new version and nothing runs after the script ends. | VISION; INST-F-23. |

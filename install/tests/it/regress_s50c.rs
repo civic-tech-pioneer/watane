@@ -25,10 +25,7 @@ fn ac2_folder_changed_during_staging_aborts_before_swap() {
     assert_eq!(out.code, 5, "{out:?}");
     assert_eq!(
         out.first_err(),
-        format!(
-            "watane install: ~/.local/share/watane-dev changed during the install: it now resolves to {}",
-            fx.home.join("Documents").canonicalize().unwrap().display()
-        )
+        "watane install: ~/.local/share/watane-dev changed during the install: it now resolves to ~/Documents"
     );
     assert_eq!(fs::read(fx.share("watane/receipt")).unwrap(), receipt);
     assert_eq!(
@@ -85,10 +82,9 @@ printf '%s' "$FAKE_INSTALL_PID" > "$FAKE_STATE/cleanup_pid"
         "mine"
     );
     assert!(
-        out.stderr.contains(&format!(
-            "skipped {}: ~/.local/share/watane-dev resolves to",
-            fx.share("watane-dev/vendor").display()
-        )),
+        out.stderr.contains(
+            "skipped ~/.local/share/watane-dev/vendor: ~/.local/share/watane-dev resolves to"
+        ),
         "{out:?}"
     );
     assert_eq!(fx.read(&fx.share("watane/VERSION")), "0.2.0\n");
