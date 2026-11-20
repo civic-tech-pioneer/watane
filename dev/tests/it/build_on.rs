@@ -912,3 +912,36 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_ne!(v["errors"][0]["code"], "usage.not_a_mod", "{v}");
     assert_eq!(code, 0, "{v}");
 }
+#[test]
+fn regress_s93_no_source_fix_without_slug_runs_as_written() {
+    // `new --from <link>` with no slug: the fix names the release's own slug, so the new mod
+    // and the release share it, and the fix's `add --release` refuses it as a self-dependency.
+    let f = Fixture::new();
+    let p = page(&f.root.path().join("source"), "reading-list", false);
+    f.config("reading-list", &p);
+    let _h = start(&f.home);
+    let (code, v) = f.run_process(&["new", "--from", &link("reading-list")]);
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(v["errors"][0]["code"], "usage.no_source");
+    let fix = v["errors"][0]["fix"].as_str().unwrap();
+    let commands = fix.split_once(": ").unwrap().1;
+    let bin = Path::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .parent()
+        .unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(commands)
+        .current_dir(f.root.path())
+        .env("PATH", path)
+        .env("WATANE_DEV_CACHE", &f.cache)
+        .env("WATANE_BIN", env!("CARGO_BIN_EXE_fake-watane"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{commands}\n{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
