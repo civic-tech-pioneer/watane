@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" viewBox="0 0 680 330" role="img"><title>Intent drift: one-shot versus agentic agility</title><desc>A one-shot agent trajectory curves increasingly away from the intent line, with a sub-agent branch diverging further. An agile trajectory zigzags within a tolerance band around intent, corrected at human checkpoints.</desc>
+<style>:root{--bg-neutral:#f1efe8;--t:#5f5e5a}.th{font:500 14px sans-serif;fill:#2c2c2a}.ts{font:12px sans-serif;fill:#5f5e5a}.arr{stroke:#5f5e5a;stroke-width:1}</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="60" y="140" width="460" height="60" rx="4" fill="var(--bg-neutral)"/>
+<line x1="60" y1="170" x2="520" y2="170" stroke="var(--t)" stroke-width="1" stroke-dasharray="4 4"/>
+<line x1="60" y1="260" x2="530" y2="260" class="arr" marker-end="url(#arrow)"/>
+<text class="ts" x="60" y="282">Agent work (steps, tokens, sub-agents)</text>
+<text class="ts" x="60" y="30">Distance from intent</text>
+<path d="M60 170 C 200 166, 340 125, 520 40" fill="none" stroke="#D85A30" stroke-width="2"/>
+<path d="M330 128 C 370 110, 400 90, 450 52" fill="none" stroke="#D85A30" stroke-width="1" stroke-dasharray="5 4"/>
+<path d="M60 170 L150 152 L150 170 L240 188 L240 170 L330 154 L330 170 L420 186 L420 170 L520 158" fill="none" stroke="#1D9E75" stroke-width="2"/>
+<circle cx="150" cy="152" r="4" fill="#1D9E75"/>
+<circle cx="240" cy="188" r="4" fill="#1D9E75"/>
+<circle cx="330" cy="154" r="4" fill="#1D9E75"/>
+<circle cx="420" cy="186" r="4" fill="#1D9E75"/>
+<text class="th" x="532" y="44">One-shot</text>
+<text class="ts" x="460" y="70">sub-agent</text>
+<text class="th" x="532" y="150">Agile loop</text>
+<text class="ts" x="532" y="186">Intent</text>
+<rect x="60" y="300" width="14" height="10" rx="2" fill="var(--bg-neutral)"/>
+<text class="ts" x="80" y="309">Acceptable variance</text>
+<circle cx="240" cy="305" r="4" fill="#1D9E75"/>
+<text class="ts" x="250" y="309">Human checkpoint</text>
+<line x1="380" y1="305" x2="400" y2="305" stroke="#D85A30" stroke-width="1" stroke-dasharray="5 4"/>
+<text class="ts" x="406" y="309">Telephone game</text>
+</svg>

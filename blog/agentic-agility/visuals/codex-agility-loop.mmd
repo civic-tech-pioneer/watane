@@ -1,0 +1,10 @@
+flowchart TD
+    A["Current goal and constraints"] --> B["Investigate or build a small experiment"]
+    B --> C["Surface consequential uncertainties"]
+    C --> D["Human resolves tradeoffs or redirects"]
+    D --> E["Update decisions and acceptance examples"]
+    E --> F["Execute and verify within agreed bounds"]
+    F --> G{"New consequential uncertainty?"}
+    G -- Yes --> C
+    G -- No --> H["Continue autonomous work"]
+    H --> F
