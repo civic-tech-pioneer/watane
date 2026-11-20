@@ -2019,3 +2019,54 @@ fn unit_ac3g_the_secure_download_asks_curl_for_https_tls_and_failure_on_error() 
         format!("-fsSL --retry 2 --connect-timeout 15 -o {root}/out http://h/x\n")
     );
 }
+
+/// TECHNICAL 3.6 step 4 (`undo_swap`): the undo takes back only what the journal says moved; an
+/// entry named `new` but not `moved` (the swap stopped before it) is left as it is. Mutant: in
+/// `undo_swap` the line `in_list "$J_MOVED" "$ub_p" || continue` of the `J_NEW` loop.
+#[test]
+fn unit_undo_swap_leaves_an_entry_that_did_not_move() {
+    let fx = Fx::new();
+    let home = home_named(&fx, "h");
+    let b = home.join(".local/bin/watane");
+    write_file(&b, "kept");
+    let share = home.join(".local/share/watane");
+    write_file(&share.join("receipt.new.99999999"), "pending");
+    write_file(
+        &share.join("journal.99999999"),
+        &format!("new {}\n", b.display()),
+    );
+    let units = fx.units(
+        "",
+        &[],
+        &[(
+            "undo",
+            "HOME=$ROOT/h; check_home; set_entries; undo_swap 99999999; echo \"rc=$?\"",
+        )],
+    );
+    let u = case(&units, "undo");
+    assert_eq!(u.out, "rc=0\n", "{u:?}");
+    assert_eq!(fs::read_to_string(&b).expect("kept"), "kept", "{u:?}");
+}
+
+/// TECHNICAL 12.1: each case runs under `set -eu`, as the script does. A command that fails ends
+/// the case with its status and the output it had, an unset variable ends it too, and the next
+/// case starts clean.
+#[test]
+fn unit_cases_run_under_set_eu() {
+    let fx = Fx::new();
+    let units = fx.units(
+        "",
+        &[],
+        &[
+            ("stops", "echo before; false; echo after"),
+            ("unset", "echo \"$NO_SUCH_VARIABLE\"; echo after"),
+            ("next", "echo next"),
+        ],
+    );
+    let u = case(&units, "stops");
+    assert_eq!((u.code, u.out.as_str()), (1, "before\n"), "{u:?}");
+    let u = case(&units, "unset");
+    assert!(u.code != 0 && u.out.is_empty(), "{u:?}");
+    let u = case(&units, "next");
+    assert_eq!((u.code, u.out.as_str()), (0, "next\n"), "{u:?}");
+}
