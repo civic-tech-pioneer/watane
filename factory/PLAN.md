@@ -556,6 +556,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   `https://<o>.github.io/<r>/`. Adversary risks left (diagnostic choice only): the escape set is
   not wider (U+2800, Mn, Co); a prefix after `//`, `=` or `,` is not a path start; cutting before
   normalizing can name a false sibling; a stray generate! literal can replace real errors.
+  On the Mac: dev's slow set 46/46 (283 s, the 18 real-`watane` tests included), pkg green.
 - [x] **S88 The remove confirm always has Cancel focused (main fix).** Delivered 2026-11-20 (main
   `60606cc`; foreman `a244ec23`, ended). Sol runs: S88-1 1 + 5 resumes; validator round 1.
   user-sim ACCEPTED; adversary not run (tests and notes only). Cause (app NOTES, S88): ~30-40 ms
@@ -1107,7 +1108,7 @@ that subsystem's next slice a test-cost slice.
 | Subsystem | Default | With ignored | Measured |
 |---|---|---|---|
 | app | 9 s; 95 s with `--features driver` | 79 s (11 slow, no front/real/vm; S90) | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
-| dev | 22 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| dev | 22 s | 283 s (46 slow, real `watane`) | main `393ae6c`; slow set at `e04b480` (S93), load ~10 |
 | dist | 28 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 | host | 11 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 | install | **839 s, over budget (S94)** | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
