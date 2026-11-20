@@ -495,29 +495,46 @@ fn reads_outside_problems(paths: Vec<PathBuf>) -> Vec<Problem> {
 }
 
 /// The paths in `text` that lie in the cache's `build` folder but not in this mod's `copy`.
+/// `build` and `copy` are compared canonicalized (a symlinked cache path names the same
+/// folder); found paths are normalized lexically and must stay under `build`. A path stops at
+/// whitespace, a control character or a bracket or quote.
 fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
-    let prefix = format!("{}/", build.display());
-    let copy = normalized(copy);
+    let real_build = build.canonicalize().unwrap_or_else(|_| build.to_path_buf());
+    let real_copy = copy.canonicalize().unwrap_or_else(|_| copy.to_path_buf());
+    let mut prefixes = vec![build.to_path_buf()];
+    if real_build != build {
+        prefixes.push(real_build.clone());
+    }
     let mut found = Vec::new();
-    let mut rest = text;
-    while let Some(at) = rest.find(&prefix) {
-        let tail = &rest[at..];
-        // The path ends after the prefix (which may hold a space) at a space or a bracket.
-        let end = tail[prefix.len()..]
-            .find(|c: char| c.is_whitespace() || "[]'\"`()".contains(c))
-            .map_or(tail.len(), |n| n + prefix.len());
-        let mut path = &tail[..end];
-        // `world.wit:19:10` names a line and a column.
-        while let Some((head, last)) = path.rsplit_once(':')
-            && last.chars().all(|c| c.is_ascii_digit())
-        {
-            path = head;
+    for base in prefixes {
+        let prefix = format!("{}/", base.display());
+        let mut rest = text;
+        while let Some(at) = rest.find(&prefix) {
+            let tail = &rest[at..];
+            // The path ends after the prefix (which may hold a space) at a space or a bracket.
+            let end = tail[prefix.len()..]
+                .find(|c: char| c.is_whitespace() || c.is_control() || "[]'\"`()".contains(c))
+                .map_or(tail.len(), |n| n + prefix.len());
+            let mut path = &tail[..end];
+            // `world.wit:19:10` names a line and a column.
+            while let Some((head, last)) = path.rsplit_once(':')
+                && last.chars().all(|c| c.is_ascii_digit())
+            {
+                path = head;
+            }
+            let path = normalized(Path::new(path.trim_end_matches(':')));
+            let path = match path.strip_prefix(build) {
+                Ok(inner) if base == build => real_build.join(inner),
+                _ => path,
+            };
+            if path.starts_with(&real_build)
+                && !path.starts_with(&real_copy)
+                && !found.contains(&path)
+            {
+                found.push(path);
+            }
+            rest = &tail[end..];
         }
-        let path = normalized(Path::new(path.trim_end_matches(':')));
-        if !path.starts_with(&copy) && !found.contains(&path) {
-            found.push(path);
-        }
-        rest = &tail[end..];
     }
     // The folder of a read file is the one thing to name.
     let all = found.clone();
@@ -795,6 +812,27 @@ mod tests {
             sibling_paths(text, Path::new("/a b/build"), Path::new("/a b/build/hello")),
             [PathBuf::from("/a b/build/other/wit/w.wit")]
         );
+    }
+    #[test]
+    fn s93_fix2_sibling_paths_are_real_siblings() {
+        let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));
+        // AC1
+        assert!(sibling_paths("error at /c/build/hello/../../../etc/passwd:1:2", b, c).is_empty());
+        // AC2
+        assert_eq!(
+            sibling_paths("/c/build/a\x1b[2J", b, c),
+            [PathBuf::from("/c/build/a")]
+        );
+        // AC3
+        let dir = std::env::temp_dir().join(format!("watane-fix2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("real/build/me")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let text = format!("{}/link/build/me/logic/missing.rs", dir.display());
+        assert!(
+            sibling_paths(&text, &dir.join("link/build"), &dir.join("real/build/me")).is_empty()
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
     #[test]
     fn ac3_compiler_failure_code_location_and_fix() {
