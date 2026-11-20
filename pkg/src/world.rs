@@ -733,6 +733,16 @@ mod tests {
     }
 
     #[test]
+    fn s93_caret_counts_escaped_chars_before_it() {
+        // `\u{ad}` is shown as 6 chars: the caret moves past all of them.
+        let m = wit_message("package a:b;\n/* \u{ad} */ bad-token-here\n");
+        assert!(
+            m.contains("    2 | /* \\u{ad} */ bad-token-here\n      |              ^"),
+            "{m}"
+        );
+    }
+
+    #[test]
     fn ac2_s93_wit_message_has_no_rust_debug_text() {
         let m = wit_message("package a:b;\nworld w {\n  import a\u{202e}b: func();\n}\n");
         assert!(m.contains("\\u{202e}"), "{m}");
