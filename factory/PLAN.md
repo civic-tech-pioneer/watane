@@ -500,15 +500,20 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   parent swap can remove an empty folder in the home); a leading `-` in WATANE_RUSTUP_URL is still
   a curl option (limit). On the Mac: install 193 passed; the `/dev/full` test is Linux-only (PO
   `cfg_attr` ignore). vm_mac.sh not rerun (messages only; the real-release run passed on v0.1.0).
-- [ ] **S90 The manager says what happened (leftover sweep: app).** in flight (local; foreman `a0945c7d`, sessionId `a0945c7d-3224-4c39-97c2-e7665d0eca4f`)
-  Story: Alice manages her mods and every message names what was done or denied. Outcomes from
-  `### app`: a disabled provider shows the host's message; a busy state during a hanging follow or
-  add-index; installing from an index says it follows the channel; "Deny" names what was denied;
-  channel rows without raw transport text; `/api/fetch` wrong shapes without serde's internal
-  wording; reinstalling after "Keep data" does not mark storage `new`; `Core::mods()` memoizes the
-  channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
-  versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
-  Local (window tests).
+- [x] **S90 The manager says what happened (leftover sweep: app).** Delivered 2026-11-20 (main
+  `393ae6c`; foreman `a0945c7d`, ended; ~3 h). Sol runs: S90-1 1+2, S90-2 1, S90-3 1+2; validator
+  PASS by round 2. user-sim ACCEPTED (7/7); adversary HELD (Local API, app/src/api.rs). Alice sees
+  what was done or denied: a disabled provider's own reason on the open page, busy Follow/Add,
+  channel rows in manager words, "watane now follows <X>", "You denied <what>; nothing was
+  signed.", plain /api/fetch shape errors, hidden windows that still refresh. Decisions: hidden
+  main refreshes every 10 s, visible every 2 s, main alone without WebKit background throttling;
+  enable/disable of a provider reloads open consumer pages (FUNCTIONAL S9); /api/fetch shape errors
+  stay 400 `bad_request` and repeated keys are refused; the channel-view memo is keyed on dist.heads
+  plus (mtime, length, inode) of follows.json and site.json; J8 AC6 requires `node <server>
+  refused: not_allowed` after S92; app/src/api.rs joins the foreman skill's Local API row; the
+  focus guard dropped (the human). `j2::ac7` no longer counts polls in a fixed 5 s. Not fixed:
+  "Keep data, reinstall marks storage new" needs host (`new_grants`, host/src/catalog.rs:470, no
+  kept-state query).
 - [x] **S91 Small truths in pkg, log and host (leftover sweep).** Delivered 2026-11-20 (main
   `54da8c9`, PO fix `b6fdede`; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`, cloud, ~2.5 h). Runs:
   S91-1 1, S91-2 1, S91-3 1, S91-fix1 1 (Claude implementer); validator round 1 each. user-sim
@@ -1092,7 +1097,7 @@ that subsystem's next slice a test-cost slice.
 
 | Subsystem | Default | With ignored | Measured |
 |---|---|---|---|
-| app | 70 s (+ driver window tests) | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| app | 9 s (92 s with `--features driver`, 161 tests) | 79 s (11 slow, no front/real/vm) | S90's foreman, quiet Mac (load 5 to 15) |
 | dev | 37 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | dist | 29 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | host | 12 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
@@ -1248,6 +1253,14 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
+- From S90: "Keep data, then reinstall marks storage `new`" needs a host task (`Host::has_state`,
+  or excluding Storage from `new_grants` when the identity has state); the busy-port window keeps
+  Install-a-mod and the link box enabled; a failed channel row shows dist's transport cause (a URL
+  plus "os error 61"); a failed follow does not say "Couldn't follow X"; index rows show `ok`;
+  /api/fetch non-JSON carries the parser text; the Settings site URL gives no confirmation; the
+  channel memo never evicts (bounded by stored channels); on Linux a reused inode with the same
+  mtime and length could keep a stale follow or base field; `Core::enable` can return an error
+  after it succeeded when a consumer reload fails.
 - [S12a] a disabled provider shows the fixture page's "not granted" and hides the host's message
   (app/tests/fixtures/recommendations/ui/app.js:5, asserted by app/tests/it/j2.rs:212).
 - [S12a] there is no grant-change message, so the app reloads the whole window
@@ -1719,6 +1732,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S90) parallel task worktrees pass alone and conflict when merged (app/NOTES.md, TECHNICAL edits): each runner should append to NOTES under its own heading; mutants on the whole suite stop at the baseline when a window test fails under load (fell back to `--lib`); Sol's sandbox never sees GUI regressions, only check.sh's slow j2 run does.
 - (2026-11-20, S89) four adversary rounds from failure texts that each made a nearby line false; the cloud runs as root with dash, so two install tests always fail there and macOS sh is unseen; `/dev/full` is Linux-only.
 - (2026-11-20, PO) main check at `5899450`: three Linux-only or load-only failures. log `s91_2_ac2_socket_key_is_not_plain` failed on every macOS run (a socket open is EOPNOTSUPP there, ENXIO on Linux; PO fix `b0c4357`, a cloud slice cannot see it); node `causes::ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed` got `Ok` once under load (a good package, likely the anchor answering before its net turned off: a test race, not a verification gap; 3/3 alone); app `manage::ac2_s47` once (2/2 alone). S91's `mkfifoat` was Linux-only too (PO fix `5899450`). Cloud slices touching OS calls need a Mac run before merge.
 - (2026-11-20, S91) the cloud container lacked clippy, nightly rustfmt, cargo-deny and cargo-hakari (installed by hand) and has no IPv6, so host's server tests need a local shim there; the app cannot build there (GTK); one IPv6 test's changed expectation surfaced only on the Mac.
@@ -2157,3 +2171,4 @@ The human may veto each one.
 - S92: when Alice's install fails on a light machine she is told the real cause and whose machine it is.
 - S91: a maker or mod that hits a race or an odd file in pkg, log or host gets watane's own named cause.
 - S89: Alice gets a true line from install.sh at every step, interrupted or not.
+- S90: Alice's manager says what was done or denied, in her words, and hidden windows still refresh.
