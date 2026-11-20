@@ -17,7 +17,12 @@ pub fn dist(home: &std::path::Path) -> watane_dist::Dist {
 }
 
 pub fn choose(app: &App, link: &str) {
-    until(app, "main", "document.body.dataset.ready === 'true'");
+    // A click while an earlier add is still busy is ignored (TECHNICAL 5.3.5 item 6).
+    until(
+        app,
+        "main",
+        "document.body.dataset.ready === 'true' && !document.querySelector('#add-index').disabled",
+    );
     app.eval("main", &format!("document.querySelector('#index-link').value = {}; document.querySelector('#add-index').click(); null", json!(link)));
     until(
         app,
