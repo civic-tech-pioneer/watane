@@ -31,3 +31,26 @@ fn adv_s89_signal_during_the_receipt_move_keeps_the_install_but_prints_no_hint()
     let lines: Vec<&str> = out.stderr.lines().collect();
     assert_eq!(lines, HINT, "installed, but the hint is missing: {out:?}");
 }
+
+/// 3.8 decides "committed" from undo's state: the journal is there and `receipt.new.<pid>` is
+/// gone. When the receipt's `mv` renames the file and then fails (killed, or an error after the
+/// rename), the failure path of `install_files` runs rollback, which finds the commit done and
+/// keeps the new version, and then dies with exit 5 and "Nothing was changed: the version that
+/// was installed still works." Alice reads that nothing changed while 0.1.0 is installed.
+#[test]
+fn adv_s89_receipt_move_that_fails_after_the_rename_says_nothing_was_changed() {
+    let fx = Fx::new();
+    let p = fx.fakes.join("mv");
+    fs::write(
+        &p,
+        "#!/bin/sh\nfor a; do case $a in *receipt.new.*) \"$FAKE_REAL/mv\" \"$@\"; exit 1 ;; esac; done\nexec \"$FAKE_REAL/mv\" \"$@\"\n",
+    )
+    .expect("fake mv");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let out = fx.run(&["--no-toolchain"]);
+    fx.assert_installed("0.1.0");
+    assert!(
+        !out.stderr.contains("Nothing was changed"),
+        "installed, yet the run says nothing changed: {out:?}"
+    );
+}
