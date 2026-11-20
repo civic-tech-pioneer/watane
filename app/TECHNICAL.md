@@ -1078,6 +1078,10 @@ Behaviour:
   `Source::Folder`s and `host.install(plan, Requester::App).await`; host's
   `missing_providers` and `refused` pass through (APP-F-20, APP-F-21).
 - `mod_disable`, `mod_remove`: `views::close_mod` first, then host.
+- `mod_enable`, `mod_disable` (S90): after host, reload the open page of
+  every mod whose resolved host links (calls or subscriptions) name that
+  mod, once per consumer, clearing the driver's loaded state first as for
+  a grant change. J2 checks it with Recommendations kept open.
 - `install_paths` (I): as `install_folders` with the dropped paths in
   place of the dialog; a path that is not a directory gives `bad_request`.
 - `main_set` (I): `null` deletes `<home>/app/main`; a local name of an
@@ -2305,14 +2309,6 @@ Ivy's index, as `tests/it/find.rs` does.
 | `tests/it/j10.rs` (J) | J10 on the real app: the steps of spec/FUNCTIONAL.md J10 with the fixtures above | the window labels the driver reports; the consent DOM text; `<home>/mods/` and `<home>/app/main` read with `std::fs`; Desk's page DOM text |
 
 Scenarios of `tests/it/manage.rs`:
-
-- **Provider reload** (S90). `Core::enable` and `Core::disable` reload the
-  open page of every mod whose resolved host links name that provider,
-  once per consumer (calls and subscriptions both count). As with the
-  grant-change reload, clear the driver's loaded state before reloading.
-  J2 keeps Recommendations open when enabling Reading list: its fresh
-  read shows Dune and clears `#error`; disabling also reloads consumers
-  so the host's disabled-or-unavailable reason is shown immediately.
 
 - **Grant reload** (S81). Hold the response of a real Desk request while
   withdrawing or giving back its `manage` grant. Wait for page load; the
