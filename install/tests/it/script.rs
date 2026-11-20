@@ -181,7 +181,7 @@ fn inst_s3_toolchain_answered_n() {
         assert_eq!(out.stdout.matches("[y/N]").count(), 1);
         assert_eq!(fx.state_read("installer.log"), "");
         assert!(out.has_line("toolchain: not installed"));
-        assert!(out.has_line(CURL_LINE));
+        assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
         fx.assert_installed("0.1.0");
     }
 }
@@ -212,7 +212,7 @@ fn inst_s5a_no_toolchain_flag_beats_a_typed_y() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(!out.stdout.contains("[y/N]"));
     assert!(out.has_line("toolchain: skipped (--no-toolchain)"));
-    assert!(out.has_line(CURL_LINE));
+    assert!(out.has_line(&CURL_LINE.replace("https://sh.rustup.rs", &url)));
     assert_eq!(fx.state_read("installer.log"), "");
 }
 

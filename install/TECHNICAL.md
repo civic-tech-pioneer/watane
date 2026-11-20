@@ -564,7 +564,9 @@ Then `watane-dev doctor` checks it again.
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
 command.) When `WATANE_RUSTUP_URL` is set, line 3 names that URL in place of
-`https://sh.rustup.rs`, the URL the question named (IN-44). For `no target`: `  rustup target add wasm32-wasip2`; for B:
+`https://sh.rustup.rs`, the URL the question named (IN-44). The block names it in every case that prints
+it, including `--no-toolchain` and no terminal, where no question is shown: the URL
+is `WATANE_RUSTUP_URL` whenever that is set, else `https://sh.rustup.rs`. For `no target`: `  rustup target add wasm32-wasip2`; for B:
 `  rustup toolchain install stable --profile minimal -t wasm32-wasip2` and
 `  rustup default stable`.
 With no terminal the first line is `no terminal to ask on: the toolchain
