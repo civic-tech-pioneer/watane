@@ -1008,6 +1008,7 @@ fn ac3_remote_journey_and_whole_script_deadlines() {
     fs::write(&ssh, "#!/bin/sh\nexec /usr/bin/perl -e 'sleep 1 while 1'\n").expect("ssh");
     fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).expect("chmod");
     fs::copy(&ssh, temp.path().join("scp")).expect("scp");
+    fs::copy(&ssh, temp.path().join("cargo")).expect("cargo");
     let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
     let config = source
         .split("install_bound=")
@@ -1023,6 +1024,14 @@ fn ac3_remote_journey_and_whole_script_deadlines() {
         .split("check remote_plain")
         .next()
         .expect("end remote functions");
+    // The script's own journey launch, so its supervisor and bound are what is tested.
+    let journey = source
+        .split("deadline_args \"$journey_bound\"")
+        .nth(1)
+        .expect("journey")
+        .split("# Cargo succeeds")
+        .next()
+        .expect("end journey");
     let helper = temp.path().join("run.sh");
     fs::write(
         &helper,
@@ -1037,7 +1046,7 @@ remote_plain() {{{plain}
 case $2 in
   whole) whole_end=0; check touch "$3" ;;
   build) bounded "$whole_bound" "cargo build" ssh ;;
-  journey) bounded "$journey_bound" "cargo test" ssh ;;
+  journey) deadline_args "$journey_bound"{journey} ;;
   remote) check remote true ;;
   copy) check copy fixture admin@192.0.2.1: ;;
   install) check remote_install fixture ;;
@@ -1068,10 +1077,33 @@ esac
             "remote" => "remote timed out after 3 s",
             "copy" => "copy timed out after 3 s",
             "install" => "install timed out after 9 s",
-            "journey" => "cargo test timed out after 12 s",
+            "journey" => "cargo test two_machines timed out after 12 s",
             _ => "whole script timed out after 36 s",
         };
         assert!(out.stderr.contains(message), "{out:?}");
         assert!(!marker.exists());
+    }
+}
+
+#[test]
+fn ac3_test_scale_cannot_disable_a_bound() {
+    let temp = tempfile::tempdir().expect("temp");
+    for scale in ["0", "00", "08", "abc", "-3", "1.5"] {
+        let out = Command::new("/bin/sh")
+            .args([
+                "-c",
+                "set -eu; driver=scale-test; fail() { echo \"$*\" >&2; exit 1; }; . \"$1\"; echo sourced",
+                "sh",
+            ])
+            .arg(script("vm_lib.sh"))
+            .env("WATANE_VM_TEST_SCALE", scale)
+            .env("TMPDIR", temp.path())
+            .output()
+            .expect("source");
+        assert!(!out.status.success(), "{scale}: {out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("invalid WATANE_VM_TEST_SCALE"),
+            "{scale}: {out:?}"
+        );
     }
 }

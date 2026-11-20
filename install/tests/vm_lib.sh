@@ -4,7 +4,7 @@
 : "${driver:?vm_lib.sh: the sourcing script sets driver}"
 # Test helpers alone accept a divisor; every effective bound is at least 1 s.
 vm_scale=${WATANE_VM_TEST_SCALE:-1}
-case $vm_scale in ''|*[!0-9]*|0) fail 'invalid WATANE_VM_TEST_SCALE' ;; esac
+case $vm_scale in ''|*[!0-9]*|0*) fail 'invalid WATANE_VM_TEST_SCALE' ;; esac
 seconds() {
   scaled=$(( $1 / vm_scale ))
   [ "$scaled" -gt 0 ] || scaled=1
