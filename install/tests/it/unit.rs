@@ -174,7 +174,9 @@ fn unit_allowed_is_the_install_set_and_nothing_else() {
 #[test]
 fn unit_receipt_allowed_skips_what_the_install_never_wrote() {
     let fx = Fx::new();
-    let other = outside(&fx, "other");
+    outside(&fx, "other");
+    // Not canonical: install.sh names the path as given (macOS: /var, not /private/var).
+    let other = fx.root.path().join("other");
     let named = [
         "$HOME/.local/../Documents",
         "$HOME/.local/share/fish",

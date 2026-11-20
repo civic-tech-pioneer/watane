@@ -1322,9 +1322,10 @@ esac
     ] {
         assert!(source.contains(pinned), "{pinned} is a limit of the driver");
     }
-    // Scale 1200 makes every per-step bound 1 s (the floor) and the whole script's 3 s (3600 / 1200), so
-    // that a step still starts with 2 s of the whole bound left on a loaded machine, and the six
-    // modes wait for their deadlines at the same time: the test costs about four seconds with its start-up.
+    // Scale 300 makes every per-step bound 1 s (the floor; install 900 / 300 = 3 s, the journey
+    // 1200 / 300 = 4 s) and the whole script's 12 s (3600 / 300), so that a step still starts with
+    // 11 s of the whole bound left on a loaded Mac (3 s and 6 s were not), and the six modes wait for
+    // their deadlines at the same time: the test costs about sixteen seconds with its start-up.
     let runs: Vec<_> = ["remote", "copy", "install", "journey", "build", "whole"]
         .into_iter()
         .map(|mode| {
@@ -1338,7 +1339,7 @@ esac
                 .arg(mode)
                 .arg(&marker)
                 .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
-                .env("WATANE_VM_TEST_SCALE", "1200")
+                .env("WATANE_VM_TEST_SCALE", "300")
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
             (mode, marker, super::support::spawn_free(&mut command))
@@ -1351,9 +1352,9 @@ esac
         let message = match mode {
             "remote" => "remote timed out after 1 s",
             "copy" => "copy timed out after 1 s",
-            "install" => "install timed out after 1 s",
-            "journey" => "cargo test two_machines timed out after 1 s",
-            _ => "whole script timed out after 3 s",
+            "install" => "install timed out after 3 s",
+            "journey" => "cargo test two_machines timed out after 4 s",
+            _ => "whole script timed out after 12 s",
         };
         assert!(out.stderr.contains(message), "{mode}: {out:?}");
         assert!(!marker.exists());
