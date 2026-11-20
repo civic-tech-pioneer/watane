@@ -158,16 +158,9 @@ fn ac2_two_machines_missing_tart_touches_nothing() {
 }
 
 fn is_executable_file(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// The first thing `package.sh` needs from `target/release` that `root` has not built
@@ -211,17 +204,21 @@ fn ac3_missing_release_build_is_named_and_a_full_one_is_not() {
         ))
     };
     let program = |name: &str| fs::write(release.join(name), "").expect("program");
-    #[cfg(unix)]
     let make_executable = |name: &str| {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(release.join(name), fs::Permissions::from_mode(0o755)).expect("chmod");
     };
-    #[cfg(not(unix))]
-    let make_executable = |_: &str| {};
     assert_eq!(
         missing_release_build(temp.path()),
         line(release.join("watane"), build)
     );
+    // A folder is not a program, even with its x bits (package.sh's `-f`).
+    fs::create_dir(release.join("watane")).expect("folder");
+    assert_eq!(
+        missing_release_build(temp.path()),
+        line(release.join("watane"), build)
+    );
+    fs::remove_dir(release.join("watane")).expect("remove folder");
     for name in ["watane", "watane-dev"] {
         program(name);
         make_executable(name);
@@ -230,9 +227,8 @@ fn ac3_missing_release_build_is_named_and_a_full_one_is_not() {
         missing_release_build(temp.path()),
         line(release.join("watane-node"), build)
     );
-    // Present but not executable (on Unix) is as good as missing.
+    // Present but not executable is as good as missing.
     program("watane-node");
-    #[cfg(unix)]
     assert_eq!(
         missing_release_build(temp.path()),
         line(release.join("watane-node"), build)
