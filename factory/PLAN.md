@@ -1097,15 +1097,15 @@ that subsystem's next slice a test-cost slice.
 
 | Subsystem | Default | With ignored | Measured |
 |---|---|---|---|
-| app | 9 s (92 s with `--features driver`, 161 tests) | 79 s (11 slow, no front/real/vm) | S90's foreman, quiet Mac (load 5 to 15) |
-| dev | 37 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| dist | 29 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| host | 12 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| install | **1059 s, over budget** | not measured | main `1a4ea99` (S89), integration binary, load ~10 to 17 |
-| log | 34 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| net | 32 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| node | 27 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| pkg | 50 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| app | 9 s; 95 s with `--features driver` | 79 s (11 slow, no front/real/vm; S90) | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| dev | 22 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| dist | 28 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| host | 11 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| install | **839 s, over budget (S94)** | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| log | 7 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| net | 24 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| node | 16 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
+| pkg | 8 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 
 ## Stage coverage
 
