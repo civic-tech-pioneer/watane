@@ -95,12 +95,12 @@ pub enum DistError {
     NoRelease { channel: PublicKey, slug: Slug },
     #[error("unknown release {release}")]
     UnknownRelease { release: ReleaseRef },
-    #[error(
-        "release {release} is not on any base that serves its channel: the {bases} base(s) read \
-         hold an older copy of the channel; follow the publisher's own link, or try again when the \
-         mirrors catch up"
-    )]
-    StaleBases { release: ReleaseRef, bases: usize },
+    #[error("{}", stale_bases_text(release, *bases, *slug_held))]
+    StaleBases {
+        release: ReleaseRef,
+        bases: usize,
+        slug_held: bool,
+    },
     #[error("release {release} withdrawn: {}", reason.escape_debug())]
     Withdrawn { release: ReleaseRef, reason: String },
     #[error("not found: {}", url.escape_debug())]
@@ -168,6 +168,28 @@ impl From<watane_log::Error> for DistError {
             watane_log::Error::NoIdentity => Self::NoIdentity,
             other => Self::Log(other),
         }
+    }
+}
+
+/// The text of `DistError::StaleBases` (DD-34, S92).
+fn stale_bases_text(release: &ReleaseRef, bases: usize, slug_held: bool) -> String {
+    let read = if bases == 1 {
+        "1 base read holds".to_owned()
+    } else {
+        format!("{bases} bases read hold")
+    };
+    let head = format!("release {release} is not on any base that serves its channel: the {read}");
+    if slug_held {
+        format!(
+            "{head} an older copy of the channel; follow the publisher's own link, or try again \
+             when the mirrors catch up"
+        )
+    } else {
+        format!(
+            "{head} no release of {}; it may be newer than their copy (follow the publisher's own \
+             link), or the name may be wrong",
+            release.slug
+        )
     }
 }
 
@@ -337,28 +359,54 @@ mod tests {
         assert!(!text.contains(['\u{1b}', '\n']));
     }
 
-    #[test]
-    fn ac3_stale_bases_text() {
+    fn stale(bases: usize, slug_held: bool) -> (DistError, String) {
         let key = PublicKey::from_bytes(&[1; 32]).unwrap();
-        let error = DistError::StaleBases {
-            release: ReleaseRef {
-                publisher: PublisherKey::from_bytes(*key.as_bytes()),
-                slug: "ratings".parse().unwrap(),
-                version: "1.0.0".parse().unwrap(),
+        let release = ReleaseRef {
+            publisher: PublisherKey::from_bytes(*key.as_bytes()),
+            slug: "ratings".parse().unwrap(),
+            version: "1.0.0".parse().unwrap(),
+        };
+        let text = release.to_string();
+        (
+            DistError::StaleBases {
+                release,
+                bases,
+                slug_held,
             },
-            bases: 1,
-        };
-        let release = match &error {
-            DistError::StaleBases { release, .. } => release.to_string(),
-            _ => unreachable!(),
-        };
+            text,
+        )
+    }
+
+    #[test]
+    fn ac1_stale_bases_text() {
+        let (error, release) = stale(1, true);
         assert_eq!(
             error.to_string(),
             format!(
-                "release {release} is not on any base that serves its channel: the 1 base(s) \
-                 read hold an older copy of the channel; follow the publisher's own link, or \
-                 try again when the mirrors catch up"
+                "release {release} is not on any base that serves its channel: the 1 base read \
+                 holds an older copy of the channel; follow the publisher's own link, or try \
+                 again when the mirrors catch up"
             )
         );
+        let (error, release) = stale(2, true);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "release {release} is not on any base that serves its channel: the 2 bases read \
+                 hold an older copy of the channel; follow the publisher's own link, or try \
+                 again when the mirrors catch up"
+            )
+        );
+        let (error, release) = stale(1, false);
+        let text = error.to_string();
+        assert_eq!(
+            text,
+            format!(
+                "release {release} is not on any base that serves its channel: the 1 base read \
+                 holds no release of ratings; it may be newer than their copy (follow the \
+                 publisher's own link), or the name may be wrong"
+            )
+        );
+        assert!(!text.contains("base(s)"));
     }
 }

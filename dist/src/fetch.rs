@@ -155,9 +155,15 @@ impl Dist {
             }
             // Every base that served was stale: say so (DD-34).
             if served.is_none() && answered > 0 {
+                let slug_held = self
+                    .channel(&key)?
+                    .releases
+                    .iter()
+                    .any(|r| r.reference.slug == reference.slug);
                 return Err(DistError::StaleBases {
                     release: reference.clone(),
                     bases: answered,
+                    slug_held,
                 });
             }
             if served.is_none() && !stored {

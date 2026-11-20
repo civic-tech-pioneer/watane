@@ -570,11 +570,22 @@ fn ac3_all_bases_stale_is_stale_bases() {
         )
         .unwrap_err();
     assert!(
-        matches!(error, DistError::StaleBases { bases: 2, .. }),
+        matches!(
+            error,
+            DistError::StaleBases {
+                bases: 2,
+                slug_held: false,
+                ..
+            }
+        ),
         "{error}"
     );
     let text = error.to_string();
-    assert!(text.contains("older copy of the channel"), "{text}");
+    assert!(
+        text.contains("2 bases read hold no release of ratings"),
+        "{text}"
+    );
+    assert!(!text.contains("older copy"), "{text}");
     assert!(text.contains("follow the publisher's own link"), "{text}");
     // DD-34: both stale bases were read, neither got a package request.
     for (host, before) in [&mirror, &second].into_iter().zip(before) {
@@ -582,4 +593,32 @@ fn ac3_all_bases_stale_is_stale_bases() {
         let paths = host.requests.lock().unwrap();
         assert!(!paths.iter().any(|p| p.starts_with("/packages/")));
     }
+}
+#[test]
+fn ac3_stale_base_holding_slug_says_older_copy() {
+    let (carol, _dave, eve, _mirror, _old) = stale_setup();
+    carol
+        .dist
+        .publish(origin_fixture("one", "1.1.0", None))
+        .unwrap();
+    let newer: ReleaseRef = format!("{}/one@1.1.0", carol.dist.identity().unwrap())
+        .parse()
+        .unwrap();
+    let error = eve.dist.fetch_for(&newer, None).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DistError::StaleBases {
+                bases: 1,
+                slug_held: true,
+                ..
+            }
+        ),
+        "{error}"
+    );
+    let text = error.to_string();
+    assert!(
+        text.contains("1 base read holds an older copy of the channel"),
+        "{text}"
+    );
 }
