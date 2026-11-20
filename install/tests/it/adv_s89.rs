@@ -74,7 +74,10 @@ fn adv_s89_fresh_install_whose_undo_fails_says_nothing_was_installed() {
     let out = fx.run(&["--no-toolchain"]);
     assert_eq!(out.code, 5, "{out:?}");
     let left = fx.home.join(".local/bin/watane");
-    assert!(left.exists(), "setup: undo was meant to leave the new program: {out:?}");
+    assert!(
+        left.exists(),
+        "setup: undo was meant to leave the new program: {out:?}"
+    );
     assert!(
         !out.stderr.contains("Nothing was installed."),
         "~/.local/bin/watane is in place, yet the run says nothing was installed: {out:?}"
