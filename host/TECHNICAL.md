@@ -25,9 +25,9 @@ path = "src/bin/watane.rs"
 [dependencies]
 watane-pkg = { path = "../pkg" }
 watane-log = { path = "../log" }            # added in stage 8 (section 15)
-wasmtime = "48.0.9"                          # LTS line; default features
-wasmtime-wasi = "48.0.9"
-wasmtime-wasi-http = "48.0.9"
+wasmtime = "48.0.10"                          # LTS line; default features
+wasmtime-wasi = "48.0.10"
+wasmtime-wasi-http = "48.0.10"
 wit-parser = "0.254.2"                       # doc comments; version already resolved in Cargo.lock
 axum = "0.8.9"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
