@@ -743,6 +743,9 @@
   blob error, so neither the server's key nor `not_allowed` reaches the
   app. If net's text ever reaches it, the test requires
   `node <server> refused: not_allowed`.
+- Later (S90, after S92 on main): node now keeps net's blob error, so the
+  removed light's fetch reads `the server: node <server> refused:
+  not_allowed` (checked natively on the Mac); J8 AC6 now requires it.
 - Validation: J8's driver `--no-run` compile and all-targets driver clippy
   with `-D warnings` pass; formatting is clean after rustfmt. No native J8
   run was attempted in this sandbox, per the validator's return

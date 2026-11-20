@@ -295,25 +295,14 @@ fn ac1_journey_j8() {
     assert_eq!(error["error"]["code"], "fetch_failed");
     let message = error["error"]["message"].as_str().unwrap();
     assert!(!message.is_empty(), "AC6: {error}");
-    // client.rs renders a protocol denial as NetError::Refused. However,
-    // light::need_blob reports blob denial as Unreachable, and Node's
-    // need_package discards that error before dist's no-base fallback.
+    // Since S92, node keeps net's blob error, so the server's own refusal
+    // (net's NetError::Refused Display) reaches the app's cause chain.
     // Check the returned cause chain, not events (Refused events mean a
-    // bad object). These literals come from net's error Display/path text.
-    if message.contains("not_allowed") {
-        assert!(
-            message.contains(&format!("node {server_key} refused: not_allowed")),
-            "AC6: {error}"
-        );
-    } else {
-        for no_path in [
-            "unreachable",
-            "no full machine is reachable",
-            "no direct path",
-        ] {
-            assert!(!message.contains(no_path), "AC6: {error}");
-        }
-    }
+    // bad object).
+    assert!(
+        message.contains(&format!("node {server_key} refused: not_allowed")),
+        "AC6: {error}"
+    );
     assert_eq!(
         machines(&light)["machine"],
         "light",

@@ -103,7 +103,7 @@ boundary. It does if any of these holds; check all three, do not judge "it is on
 | Boundary (section 6) | Files |
 |---|---|
 | Sandbox, Linker | `host/src/runtime/` |
-| Origin, Broker, Toolset, Local API, Manager | `host/src/server.rs`, `api.rs`, `tools.rs`, `bus.rs`, `pages.rs`, `manage.rs`, `watane.js` |
+| Origin, Broker, Toolset, Local API, Manager | `host/src/server.rs`, `api.rs`, `tools.rs`, `bus.rs`, `pages.rs`, `manage.rs`, `watane.js`; `app/src/api.rs` (the app's /api/fetch and publish routes) |
 | Confirmation floor | `host/src/confirm.rs`, `pkg/src/grant.rs`, `app/src/confirm.rs`, `app/src/consent.rs`, `app/capabilities/` |
 | Builder | `dev/src/builder.rs`, `dev/src/allowlist.rs`, `dev/allowlist`, `dev/template/` |
 | Verification | `log/src/`, `dist/src/`, `pkg/src/package.rs`, `pkg/src/release.rs`, `pkg/src/folder.rs` |
