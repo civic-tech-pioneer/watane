@@ -476,6 +476,16 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
+- [ ] **S94 install's tests fit the budget (test cost).** after S89 (shares install/tests)
+  install's default integration run took 858 s on main `501c123` (Suite time; budget 120 s).
+  Story: a maker runs `cargo test -p watane-install` and it is done in under 2 minutes, proving
+  the same rules. Outcomes: (1) the default run under 120 s on a quiet Mac and in the cloud;
+  (2) each moved or merged test names the rule it still proves (a shell-script unit level, one
+  script run per behaviour not per case, shared fixtures); the tests that truly need a whole
+  install run become `slow:` with their reason; (3) nothing that guards a *guard* behaviour
+  (the receipt and journal checks, refusing foreign files, signature and checksum checks) loses
+  coverage; the validator's mutants show it. Touches: install/tests/, install/TECHNICAL (test
+  section). Cloud, with the macOS sh run by the PO after.
 - [ ] **S89 Installing tells the truth at every step (leftover sweep: install).** in flight (cloud; routine `trig_01BiHhgpCP7z8t1JR3CE9ExU`)
   Story: Alice installs, interrupts, checks and uninstalls watane, and every line she reads is true
   and in her own terms. Outcomes: (1) the `### install` leftovers from S50b-fix, S50b-fix2, S50c
