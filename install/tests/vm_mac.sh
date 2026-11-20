@@ -19,7 +19,8 @@ while [ "$#" -gt 0 ]; do
 done
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 if [ -n "$from" ]; then
-  from=$(cd "$from" && pwd -P) || fail "cd $from"
+  resolved_from=$(cd "$from" && pwd -P) || fail "cd $from"
+  from=$resolved_from
   for asset in install.sh SHA256SUMS; do check test -f "$from/$asset"; done
 fi
 driver=vm_mac.sh

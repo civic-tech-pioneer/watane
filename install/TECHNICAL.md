@@ -1471,8 +1471,9 @@ and an executable temporary `SSH_ASKPASS` supply `admin`, even when the
 host has a terminal. SSH/scp disable public-key authentication and use
 no persistent known-hosts file for these disposable guests. The run trap
 stops and deletes only `watane-run-<pid>` and removes the temporary askpass
-file on success, failure or HUP/INT/TERM. Preparation leaves the two named
-templates, then runs both test parts; the CLT template is cloned from a
+file on success, failure or HUP/INT/TERM. On HUP, INT or TERM it prints
+`vm_mac.sh: interrupted` before cleanup and exits 1. Preparation leaves the
+two named templates, then runs both test parts; the CLT template is cloned from a
 stopped preparation VM, so neither template is booted by a test.
 Only CLT image preparation uses passwordless `sudo` inside the disposable
 guest for Apple's `softwareupdate`; neither the installer nor the guest
@@ -1653,8 +1654,9 @@ In order, the host driver:
 | `WATANE_VM_ALICE_HOME` | An existing empty folder on this Mac, the temporary Alice home. |
 | `WATANE_VM_SITE_BASE` | `http://<host ip>:<port>/`, serving `$WATANE_VM_ALICE_HOME/dist/site` to Bob. |
 
-On success, failure or HUP/INT/TERM, the trap kills the web host, the
-journey command and any recorded SSH bridge, stops and deletes only the
+On HUP, INT or TERM, the driver prints `vm_two_machines.sh: interrupted`
+before cleanup and exits 1. On success, failure or HUP/INT/TERM, the trap
+kills the web host, the journey command and any recorded SSH bridge, stops and deletes only the
 run's VM, and removes the host temporary folder, including Alice's home.
 Cleanup runs with `set +e`; a vanished or empty bridge PID file is skipped.
 Failures while reading a PID or stopping a process cannot skip `tart stop`,

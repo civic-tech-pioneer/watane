@@ -94,6 +94,30 @@ fn ac3_scripts_are_posix_and_shellcheck_clean() {
 }
 
 #[test]
+fn ac1_vm_mac_missing_from_dir_is_named() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().expect("temp");
+    let tart = temp.path().join("tart");
+    fs::write(&tart, "#!/bin/sh\nexit 99\n").expect("tart");
+    fs::set_permissions(&tart, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let missing = temp.path().join("missing release");
+    let out = Command::new("/bin/sh")
+        .arg(script("vm_mac.sh"))
+        .arg("--from")
+        .arg(&missing)
+        .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
+        .output()
+        .expect("driver");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .any(|line| line == format!("vm_mac.sh: cd {}", missing.display())),
+        "{out:?}"
+    );
+}
+
+#[test]
 fn ac4_missing_tart_touches_nothing() {
     let temp = tempfile::tempdir().expect("temp");
     let out = Command::new("/bin/sh")
@@ -450,12 +474,13 @@ esac
         fs::write(&path, fake).expect("fake");
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
     }
-    let mut child = Command::new("/bin/sh")
+    let child = Command::new("/bin/sh")
         .arg(script("vm_mac.sh"))
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .env("CALLS", &log)
         .env("MARKER", &marker)
         .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("vm driver");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
@@ -471,10 +496,15 @@ esac
         .status()
         .expect("kill");
     assert!(killed.success());
-    let status = child.wait().expect("wait");
-    assert_eq!(status.code(), Some(1), "{status:?}");
+    let pid = child.id();
+    let out = child.wait_with_output().expect("wait");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("vm_mac.sh: interrupted"),
+        "{out:?}"
+    );
     let calls = fs::read_to_string(log).expect("calls");
-    let run = format!("watane-run-{}", child.id());
+    let run = format!("watane-run-{pid}");
     assert!(calls.contains(&format!("tart stop {run}\n")), "{calls}");
     assert!(calls.contains(&format!("tart delete {run}\n")), "{calls}");
     assert!(!calls.contains("--part clt"), "{calls}");
@@ -491,6 +521,60 @@ fn ac2_ac4_two_machines_lifecycle_failure_and_term_cleanup() {
 #[test]
 fn ac3_two_machines_hung_ssh_ends_run() {
     two_machine_modes(&["hang-ssh"]);
+}
+
+#[test]
+fn ac2_two_machines_int_reports_interrupted() {
+    two_machine_modes(&["int"]);
+}
+
+// Own the fake web host even if a fixture assertion unwinds before driver cleanup.
+struct FakeWebHost(std::path::PathBuf);
+
+impl Drop for FakeWebHost {
+    fn drop(&mut self) {
+        if let Ok(pid) = fs::read_to_string(&self.0)
+            && let Ok(pid) = pid.trim().parse::<u32>()
+            && pid > 0
+        {
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+}
+
+#[test]
+fn ac4_fake_web_host_is_removed_when_fixture_unwinds() {
+    let temp = tempfile::tempdir().expect("temp");
+    let pidfile = temp.path().join("web.pid");
+    let mut child = Command::new("/usr/bin/perl")
+        .args(["-e", "sleep 1 while 1"])
+        .spawn()
+        .expect("fake web host");
+    fs::write(&pidfile, child.id().to_string()).expect("pid");
+    let result = std::thread::spawn(move || {
+        let _web = FakeWebHost(pidfile);
+        panic!("fixture assertion failed");
+    })
+    .join();
+    assert!(result.is_err());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let stopped = loop {
+        if child.try_wait().expect("poll").is_some() {
+            break true;
+        }
+        if std::time::Instant::now() >= deadline {
+            break false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    if !stopped {
+        child.kill().expect("remove fake");
+        child.wait().expect("reap fake");
+    }
+    assert!(stopped, "fixture left the fake web host running");
 }
 
 fn two_machine_modes(modes: &[&str]) {
@@ -559,9 +643,14 @@ case ${0##*/}:$1 in
     esac ;;
   scp:*) [ "$MODE" != copy ] || exit 23 ;;
   python3:*)
-    trap 'echo web-stopped >> "$CALLS"; exit' TERM
-    echo 'Serving HTTP on 127.0.0.1 port 54321 (http://127.0.0.1:54321/) ...'
-    while :; do sleep 1; done ;;
+    echo $$ > "$WEB_PID"
+    # A single process: emergency fixture cleanup must not orphan a sleep child.
+    exec /usr/bin/perl -e '
+      $| = 1;
+      $SIG{TERM} = sub { open my $log, ">>", $ENV{CALLS} or die $!;
+        print $log "web-stopped\n"; exit };
+      print "Serving HTTP on 127.0.0.1 port 54321 (http://127.0.0.1:54321/) ...\n";
+      sleep 1 while 1' ;;
   cargo:test)
     case "$*" in
       *two_machines::*)
@@ -572,7 +661,7 @@ case ${0##*/}:$1 in
         # Wait for the fake SSH process to install its TERM handler.
         while [ ! -f "$BRIDGE_READY" ]; do sleep 0.1; done
         : > "$MARKER"
-        if [ "$MODE" = term ]; then sleep 2; fi
+        if [ "$MODE" = term ] || [ "$MODE" = int ]; then sleep 2; fi
         [ "$MODE" != journey ] || { echo 'journey assertion failed'; exit 27; }
         [ "$MODE" = missing ] || echo 'test two_machines::ac1_j3_two_machines ... ok' ;;
     esac ;;
@@ -605,6 +694,7 @@ esac
             .env("CALLS", &calls)
             .env("MARKER", &marker)
             .env("BRIDGE_READY", temp.path().join("bridge-ready"))
+            .env("WEB_PID", temp.path().join("web.pid"))
             .env("MODE", mode)
             .env(
                 "WATANE_VM_TEST_SCALE",
@@ -613,8 +703,9 @@ esac
             .env("TMPDIR", &tmp)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        let _web = FakeWebHost(temp.path().join("web.pid"));
         let mut child = super::support::spawn_run(&mut command);
-        if mode == "term" {
+        if ["term", "int"].contains(&mode) {
             let deadline = std::time::Instant::now() + super::support::WAIT_TIMEOUT;
             while !marker.exists() {
                 assert!(
@@ -629,7 +720,10 @@ esac
             }
             assert!(
                 Command::new("/bin/kill")
-                    .args(["-TERM", &child.id().to_string()])
+                    .args([
+                        if mode == "int" { "-INT" } else { "-TERM" },
+                        &child.id().to_string()
+                    ])
                     .status()
                     .expect("kill")
                     .success()
@@ -642,11 +736,18 @@ esac
             ["pass", "latest", "vanished", "empty"].contains(&mode),
             "{mode}: {out:?}"
         );
+        if ["term", "int"].contains(&mode) {
+            assert_eq!(out.code, 1, "{out:?}");
+            assert!(
+                out.stderr.contains("vm_two_machines.sh: interrupted"),
+                "{out:?}"
+            );
+        }
         let deadline = std::time::Instant::now() + super::support::WAIT_TIMEOUT;
         let log = loop {
             let log = fs::read_to_string(&calls).expect("calls");
             if ![
-                "pass", "latest", "journey", "missing", "term", "vanished", "empty",
+                "pass", "latest", "journey", "missing", "term", "int", "vanished", "empty",
             ]
             .contains(&mode)
                 || log.contains("bridge-stopped")
@@ -659,6 +760,26 @@ esac
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
+        if let Ok(web_pid) = fs::read_to_string(temp.path().join("web.pid")) {
+            let alive = Command::new("/bin/kill")
+                .args(["-0", web_pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("check web pid")
+                .success();
+            if alive {
+                Command::new("/bin/kill")
+                    .args(["-KILL", web_pid.trim()])
+                    .status()
+                    .expect("remove leaked fake web host");
+            }
+            fs::remove_file(temp.path().join("web.pid")).expect("remove reaped web pid");
+            assert!(
+                !alive,
+                "{mode}: fake web host {} survived: {log}",
+                web_pid.trim()
+            );
+        }
         if mode.starts_with("hang-") {
             let (step, bound) = match mode {
                 "hang-ssh" => ("remote_plain", 30),
@@ -669,6 +790,9 @@ esac
                     && out.stderr.contains(&format!("timed out after {bound} s")),
                 "{out:?}"
             );
+        }
+        for line in log.lines().filter(|line| line.starts_with("scp ")) {
+            assert!(line.contains("-o LogLevel=ERROR"), "{line}");
         }
         let run = format!("watane-run-{pid}");
         assert!(
@@ -694,7 +818,7 @@ esac
             "{out:?}"
         );
         if [
-            "pass", "latest", "journey", "missing", "term", "vanished", "empty",
+            "pass", "latest", "journey", "missing", "term", "int", "vanished", "empty",
         ]
         .contains(&mode)
         {
@@ -728,7 +852,7 @@ esac
                 );
             }
             assert_eq!(out.stdout.lines().last(), Some("TWO-MACHINES PASS"));
-        } else if mode != "term" {
+        } else if !["term", "int"].contains(&mode) {
             let command = match mode {
                 "install" => "install.sh",
                 "mount" => "mount",

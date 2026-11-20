@@ -86,8 +86,10 @@ cleanup() {
   rm -rf "$work"
   exit "$status"
 }
+# Preserve diagnostics while a guest call redirects stderr into a temporary log.
+exec 3>&2
 trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
+trap 'printf "%s: interrupted\n" "$driver" >&3; exit 1' HUP INT TERM
 cat >"$work/deadline.pl" <<'PERL'
 my ($whole, $bound, $step, @cmd) = @ARGV;
 my $pid = fork(); defined $pid or die "fork: $!";
@@ -123,7 +125,7 @@ remote() {
     "admin@$ip" "$@" </dev/null
 }
 copy() {
-  bounded "$step_bound" copy scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  bounded "$step_bound" copy scp -r -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "$@" </dev/null
 }
