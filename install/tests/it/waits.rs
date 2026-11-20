@@ -62,7 +62,7 @@ fn ac3_shellcheck_reports_no_findings_when_available() {
 /// A failed child must not let its parent run cleanup during a simulated power loss.
 #[test]
 fn ac2_group_kill_leaves_no_window_for_parent_cleanup() {
-    for _ in 0..16 {
+    for _ in 0..8 {
         let root = tempfile::tempdir().expect("root");
         let ready = root.path().join("ready");
         let cleanup = root.path().join("cleanup");

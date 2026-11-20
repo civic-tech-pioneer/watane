@@ -9,7 +9,7 @@ if [ -f "$FAKE_STATE/mv_fault" ]; then
         case $mode in
           fail) echo "fake mv: failing on $a" >&2; exit 1 ;;
           wait) echo "$a" > "$FAKE_STATE/mv_sleeping"
-            while [ -f "$FAKE_STATE/mv_fault" ]; do "$FAKE_REAL/sleep" 0.1; done ;;
+            while [ -f "$FAKE_STATE/mv_fault" ]; do "$FAKE_REAL/sleep" 0.25; done ;;
           sleep) echo "$a" > "$FAKE_STATE/mv_sleeping"; exec "$FAKE_REAL/sleep" 600 ;;
         esac ;;
     esac

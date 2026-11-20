@@ -218,6 +218,48 @@ fn shared_fakes() -> &'static Path {
     })
 }
 
+/// A folder under `CARGO_TARGET_TMPDIR` for what the tests make once and keep between runs: the
+/// fake archives and the home of one install, so that a run of one module, or of the whole
+/// binary, starts no process to make them again. Its name holds a hash of everything their content
+/// depends on (`install.sh`, this file, the folder of the fakes), so a stale one is never read.
+fn cache_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let mut h = std::hash::DefaultHasher::new();
+        std::hash::Hash::hash(&fs::read(checkout_script()).expect("install.sh"), &mut h);
+        std::hash::Hash::hash(include_str!("mod.rs"), &mut h);
+        std::hash::Hash::hash(&shared_fakes().display().to_string(), &mut h);
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "install-cache-{:016x}",
+            std::hash::Hasher::finish(&h)
+        ));
+        fs::create_dir_all(&dir).expect("cache dir");
+        dir
+    })
+}
+
+/// Writes `bytes` to `to` so that a reader sees all of it or nothing: aside, then renamed.
+fn write_atomically(to: &Path, bytes: &[u8]) {
+    let tmp = to.with_extension(format!("tmp-{}", std::process::id()));
+    fs::write(&tmp, bytes).expect("write aside");
+    fs::rename(&tmp, to).expect("rename into place");
+}
+
+/// The archive of `version` with these vendored crates and its sum, from the cache or made now.
+fn cached_archive(version: &str, vendor: &[&str]) -> (Vec<u8>, String) {
+    let name = format!("archive-{version}-{}", vendor.join("+"));
+    let tgz = cache_dir().join(format!("{name}.tar.gz"));
+    let sum = cache_dir().join(format!("{name}.sha256"));
+    if let (Ok(bytes), Ok(text)) = (fs::read(&tgz), fs::read_to_string(&sum)) {
+        return (bytes, text.trim().to_string());
+    }
+    let bytes = build_archive(version, vendor);
+    let hash = sha256(&bytes);
+    write_atomically(&tgz, &bytes);
+    write_atomically(&sum, hash.as_bytes());
+    (bytes, hash)
+}
+
 /// One test's world: a temporary `HOME` and `TMPDIR`, the fake tools, the fake release.
 /// `fakes` is this test's own folder, first on the `PATH` and empty unless the scenario adds
 /// `rustup` (`add_rustup`) or another fake; the shared fakes come after it.
@@ -689,26 +731,56 @@ pub fn build_archive_with(version: &str, vendor: &[&str], tweak: &dyn Fn(&Path))
 
 /// The home of one real install of `0.1.0` with this vendor list, made once per test binary.
 fn installed_template(vendor: &[&str]) -> Arc<Template> {
-    static MADE: OnceLock<Mutex<HashMap<Vec<String>, Arc<Template>>>> = OnceLock::new();
+    // One cell per vendor list: the first test that needs it builds it while the others wait, so
+    // that the number of installs made does not depend on how many tests start together.
+    type Cells = HashMap<Vec<String>, Arc<OnceLock<Arc<Template>>>>;
+    static MADE: OnceLock<Mutex<Cells>> = OnceLock::new();
     let key: Vec<String> = vendor.iter().map(|v| (*v).to_string()).collect();
-    let made = MADE.get_or_init(Mutex::default);
-    let cached = made.lock().expect("made").get(&key).cloned();
-    cached.unwrap_or_else(|| {
+    let cell = Arc::clone(
+        MADE.get_or_init(Mutex::default)
+            .lock()
+            .expect("made")
+            .entry(key)
+            .or_default(),
+    );
+    Arc::clone(cell.get_or_init(|| {
+        let dir = cache_dir().join(format!("template-{}", vendor.join("+")));
+        if let Ok(meta) = fs::read_to_string(dir.join("meta")) {
+            let mut l = meta.lines();
+            let (home, home_r) = (l.next().expect("home"), l.next().expect("home_r"));
+            return Arc::new(Template {
+                home: home.to_string(),
+                home_r: home_r.to_string(),
+                entries: tree_entries(&dir.join("home")),
+            });
+        }
         let fx = Fx::new();
         fx.rel.set_version("0.1.0", vendor);
         let out = fx.run(&[]);
         assert_eq!(out.code, 0, "the template install: {out:?}");
-        let t = Arc::new(Template {
+        let tmpl = Template {
             home: fx.home.display().to_string(),
             home_r: fs::canonicalize(&fx.home)
                 .expect("canonical home")
                 .display()
                 .to_string(),
             entries: tree_entries(&fx.home),
-        });
-        made.lock().expect("made").insert(key, Arc::clone(&t));
-        t
-    })
+        };
+        // written aside and renamed, so that a reader sees all of it or nothing
+        let aside = dir.with_extension(format!("tmp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&aside);
+        fs::create_dir_all(aside.join("home")).expect("aside");
+        tmpl.write_into(&aside.join("home"));
+        fs::write(
+            aside.join("meta"),
+            format!("{}\n{}\n", tmpl.home, tmpl.home_r),
+        )
+        .expect("meta");
+        if fs::rename(&aside, &dir).is_err() {
+            let _ = fs::remove_dir_all(&aside); // another binary was first
+        }
+        Arc::new(tmpl)
+    }))
 }
 
 /// Writes the template into the empty folder `home`, its own paths in the receipt rewritten.
@@ -885,22 +957,22 @@ impl Release {
     /// Serves the archive and `SHA256SUMS` of this version, as one release holds them.
     /// The archive and its sum are made once per test binary for each version and vendor list.
     pub fn set_version(&self, version: &str, vendor: &[&str]) {
-        type Made = HashMap<(String, Vec<String>), (Vec<u8>, String)>;
+        // One cell per version and vendor list, built by the first test that asks while the others
+        // wait (the packing runs `tar` and `gzip`: how many tests start together must not count).
+        type Made = HashMap<(String, Vec<String>), Arc<OnceLock<(Vec<u8>, String)>>>;
         static MADE: OnceLock<Mutex<Made>> = OnceLock::new();
         let key = (
             version.to_string(),
             vendor.iter().map(|v| (*v).to_string()).collect(),
         );
-        let made = MADE.get_or_init(Mutex::default);
-        let cached = made.lock().expect("made").get(&key).cloned();
-        let (bytes, sum) = cached.unwrap_or_else(|| {
-            let bytes = build_archive(version, vendor);
-            let sum = sha256(&bytes);
-            made.lock()
+        let cell = Arc::clone(
+            MADE.get_or_init(Mutex::default)
+                .lock()
                 .expect("made")
-                .insert(key, (bytes.clone(), sum.clone()));
-            (bytes, sum)
-        });
+                .entry(key)
+                .or_default(),
+        );
+        let (bytes, sum) = cell.get_or_init(|| cached_archive(version, vendor)).clone();
         let name = archive_name(version);
         self.put("SHA256SUMS", format!("{sum}  {name}\n").into_bytes());
         self.put(&name, bytes);

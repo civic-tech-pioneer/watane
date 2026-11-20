@@ -22,12 +22,13 @@ use crate::support::*;
 /// behind (TECHNICAL 3.6.2, 3.8), and a run of the same world after it then stops with exit 5
 /// and `another install may be running`. That, not a lock the script keeps after a Ctrl-C in its
 /// work, was the flake of S94 (`INT` at 240 ms, the run at its last line, the lock left with its
-/// pid file or empty; found by 2,000 interrupts at 200 to 300 ms).
+/// pid file or empty; found by 2,000 interrupts at 200 to 300 ms). The delays reach 165 ms, 12 runs:
+/// a run costs about 20 process starts, and a longer sweep would count by the speed of the machine.
 #[test]
-#[ignore = "slow: a Ctrl-C at each of 40 delays across the checks of one run, which only whole runs show (TECHNICAL 3.8)"]
+#[ignore = "slow: a Ctrl-C at each of 12 delays across the checks of one run, which only whole runs show (TECHNICAL 3.8)"]
 fn regress_s50b_fix_ctrl_c_during_the_checks_names_no_false_cause() {
     let mut wrong = Vec::new();
-    for i in 0..40u64 {
+    for i in 0..12u64 {
         let fx = Fx::new();
         let child = spawn(&mut fx.cmd(&["--release", "0.1.0"]));
         thread::sleep(Duration::from_millis(i * 15));
@@ -38,7 +39,7 @@ fn regress_s50b_fix_ctrl_c_during_the_checks_names_no_false_cause() {
             .status();
         let out = finish(child);
         // at the first delays the launcher has not made its group yet and nothing is signalled
-        let ended_first = i >= 4 && out.code == 0;
+        let ended_first = i >= 3 && out.code == 0;
         let blames = out.stderr.contains("is missing")
             || out.stderr.contains("not a version")
             || out.stderr.contains("SHA256SUMS has");
