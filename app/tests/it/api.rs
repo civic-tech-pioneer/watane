@@ -740,6 +740,10 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
             json!("x"),
             "give link or release: the body must be a JSON object",
         ),
+        (
+            json!(["x"]),
+            "give link or release: the body must be a JSON object",
+        ),
         (json!({"link":5}), "give link or release: link must be text"),
         (
             json!({"release":true}),
