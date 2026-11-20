@@ -358,6 +358,7 @@ pub(crate) async fn install_link(
 ) -> Result<Value, CmdError> {
     record(&webview, "install_link");
     let core = Arc::clone(core(&state)?);
+    let before = crate::core::followed_keys(&core.dist, &core.parties)?;
     let planner = Arc::clone(&core);
     let host = Arc::clone(&planner.host);
     let (plan, fetched) = blocking(move || planner.plan_link(&link)).await?;
@@ -365,10 +366,9 @@ pub(crate) async fn install_link(
     core.clear_update_failures(&installed);
     blocking(move || {
         core.follow_fetched(&fetched);
-        Ok(())
+        crate::core::install_result(&core.dist, &core.parties, before, installed)
     })
-    .await?;
-    Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
+    .await
 }
 #[tauri::command]
 pub(crate) async fn identity_set_name(
@@ -379,7 +379,9 @@ pub(crate) async fn identity_set_name(
     record(&webview, "identity_set_name");
     let core = Arc::clone(core(&state)?);
     blocking(move || {
-        core.node.set_name(&name)?;
+        core.node
+            .set_name(&name)
+            .map_err(|e| sign_error(e, "profile", &name))?;
         core.channels()?;
         Ok(())
     })
@@ -576,6 +578,25 @@ pub(crate) async fn release_install(
     let installed = core(&state)?.install_release(release, None).await?;
     Ok(json!({"installed":installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
 }
+fn sign_error(error: watane_dist::DistError, kind: &str, target: &str) -> CmdError {
+    match error {
+        watane_dist::DistError::Refused => {
+            CmdError::new("dist", crate::words::sign_denied(kind, target))
+        }
+        other => match kind {
+            "withdraw" => withdraw_error(other),
+            "list" | "include" | "unlist" => index_error(other),
+            _ => other.into(),
+        },
+    }
+}
+fn listing_label(link: &watane_dist::Link, parties: &crate::words::Parties) -> String {
+    let label =
+        crate::words::party_label(&crate::words::party(&link.channel().to_string(), parties));
+    link.slug()
+        .map(|slug| format!("{slug} by {label}"))
+        .unwrap_or(label)
+}
 fn withdraw_error(error: watane_dist::DistError) -> CmdError {
     match error {
         watane_dist::DistError::BadReason { cause } => {
@@ -595,7 +616,13 @@ pub(crate) async fn release_withdraw(
     let release = parse_release(&release)?;
     let node = Arc::clone(&core(&state)?.node);
     blocking(move || {
-        node.withdraw(&release, &reason).map_err(withdraw_error)?;
+        node.withdraw(&release, &reason).map_err(|e| {
+            sign_error(
+                e,
+                "withdraw",
+                &format!("{} {}", release.slug, release.version),
+            )
+        })?;
         Ok(())
     })
     .await
@@ -645,8 +672,40 @@ mod stage_d_tests {
             "This reason cannot be used: other cause."
         );
         let error = watane_dist::DistError::Refused;
-        let expected = error.to_string();
-        assert_eq!(withdraw_error(error).message, expected);
+        assert_eq!(
+            sign_error(error, "withdraw", "reading-list 0.1.0").message,
+            "You denied withdrawing reading-list 0.1.0; nothing was signed."
+        );
+    }
+    #[test]
+    fn ac2_signing_denials_name_each_command_kind() {
+        for (kind, target, expected) in [
+            (
+                "withdraw",
+                "reading-list 0.1.0",
+                "withdrawing reading-list 0.1.0",
+            ),
+            ("profile", "Alice", "setting your name to Alice"),
+            (
+                "list",
+                "book by Ivy (yyyyyyyyyy)",
+                "listing book by Ivy (yyyyyyyyyy)",
+            ),
+            ("include", "Ivy (yyyyyyyyyy)", "including Ivy (yyyyyyyyyy)"),
+            (
+                "unlist",
+                "book by Ivy (yyyyyyyyyy)",
+                "unlisting book by Ivy (yyyyyyyyyy)",
+            ),
+        ] {
+            let error = sign_error(watane_dist::DistError::Refused, kind, target);
+            assert_eq!(error.code, "dist");
+            assert_eq!(
+                error.message,
+                format!("You denied {expected}; nothing was signed.")
+            );
+            assert!(!error.message.contains("statement refused"));
+        }
     }
     #[test]
     fn ac6_withdraw_errors_preserve_dist_cause() {
@@ -837,8 +896,10 @@ pub(crate) async fn install_release(
     record(&webview, "install_release");
     let release = parse_release(&release)?;
     let link = link.as_deref().map(parse_link).transpose()?;
-    let installed = core(&state)?.install_release(release, link).await?;
-    Ok(json!({"installed":installed.into_iter().map(|m|m.local).collect::<Vec<_>>()}))
+    let core = core(&state)?;
+    let before = crate::core::followed_keys(&core.dist, &core.parties)?;
+    let installed = core.install_release(release, link).await?;
+    crate::core::install_result(&core.dist, &core.parties, before, installed)
 }
 #[tauri::command]
 pub(crate) async fn index_list(
@@ -851,7 +912,9 @@ pub(crate) async fn index_list(
     let link = parse_link(&link)?;
     let core = Arc::clone(core(&state)?);
     blocking(move || {
-        core.node.list(&link, &note).map_err(index_error)?;
+        core.node
+            .list(&link, &note)
+            .map_err(|e| sign_error(e, "list", &listing_label(&link, &core.parties)))?;
         core.channels()?;
         Ok(())
     })
@@ -872,7 +935,7 @@ pub(crate) async fn index_include(
             watane_dist::DistError::AlreadyListed { .. } => {
                 CmdError::new("dist", crate::words::already_listed(true))
             }
-            other => index_error(other),
+            other => sign_error(other, "include", &listing_label(&link, &core.parties)),
         })?;
         core.channels()?;
         Ok(())
@@ -889,7 +952,19 @@ pub(crate) async fn index_unlist(
     let entry = parse_entry(&entry)?;
     let core = Arc::clone(core(&state)?);
     blocking(move || {
-        core.node.unlist(&entry)?;
+        core.node.unlist(&entry).map_err(|error| {
+            let target = if matches!(error, watane_dist::DistError::Refused) {
+                core.dist
+                    .own()
+                    .ok()
+                    .and_then(|own| own.listings.into_iter().find(|l| l.entry == entry))
+                    .map(|l| listing_label(&l.listing.link, &core.parties))
+                    .unwrap_or_else(|| entry.to_string())
+            } else {
+                entry.to_string()
+            };
+            sign_error(error, "unlist", &target)
+        })?;
         core.channels()?;
         Ok(())
     })

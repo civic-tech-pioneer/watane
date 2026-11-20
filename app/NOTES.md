@@ -1669,3 +1669,52 @@ nightly fmt check and diff check pass. The full default run again passed
 `Failed to create netmon monitor` error. No GUI or slow tests were run in
 this sandbox; J2 and both poll window tests await the external validator.
 No dependency added.
+
+## S90-2: install outcomes, signing denials and channel views
+
+`install_link` and `install_release` snapshot followed keys before any
+planning/following and return `followed: Vec<String>` beside `installed`.
+The labels use the same stored profile/fingerprint words as channels.
+An already-followed publisher adds no label; provider follows are included.
+The legacy `release_install` result is unchanged.
+
+Signing refusals for withdraw, profile name, list/include/unlist and the
+publish route name the denied action through `words::sign_denied`, ending
+`; nothing was signed.` Command codes stay `dist`; publish stays 403
+`refused`. Dist's public refusal carries no release data, so only a denied
+publish decodes/unpacks its retained package through pkg to recover the
+slug/version, using a private temporary directory removed on return. No
+new dependency was added.
+
+The shared parties cache memoizes local channel views by home/key, public
+head state (including forked), and mtime/length of follows.json and
+site.json. Dist still owns the followed key list; it is reread when the
+follow stamp changes. Installed and related parties are still traversed
+before rendering, with memoized views. A mods refresh reads host.mods()
+once and passes its name snapshot to every row, including grant labels.
+
+Tests added: core's `ac1_install_reports_only_newly_followed_labels`
+(real dist and preview host, install twice),
+`ac3_mods_channel_snapshot_reuses_followed_views` (the channel snapshot used
+by mods: no second build, one changed head rebuild, unfollow, equality with
+dist), `ac3_channel_memo_reuses_and_invalidates_views` (related channels,
+profile and follow/unfollow); commands'
+`ac2_signing_denials_name_each_command_kind`; api's
+`ac2_publish_denial_names_the_release` (real route and refusing dist).
+Changed assertion: commands::stage_d_tests::
+`ac3_withdraw_reason_mapping_and_refusal` now expects the denied withdrawal
+words rather than DistError::Refused's Display. The existing
+`ac5_install_hit_follows_before_fetch_and_keeps_dist_cause` is unchanged.
+Search of tests/it (including j3, j5 and publish cases in api.rs) found no
+signing-message assertion needing a change; no integration assertion changed.
+
+Sandbox validation: focused tests pass. The one final default
+`cargo test -p watane-app` ran 117 unit tests: 116 passed; the existing
+consent::machines_pairing_tests::
+ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing failed
+opening net with `Failed to create netmon monitor`. Cargo stopped before
+integration tests. No test was weakened or skipped. Driver/window tests
+were not run, as required by the task; j4, j3 and find remain for the
+external macOS runner. `cargo +nightly fmt --check` passes.
+`cargo clippy --all-targets --features driver -- -D warnings` and
+`git diff --check` also pass. Changes are confined to the listed app files.

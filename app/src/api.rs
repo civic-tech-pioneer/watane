@@ -213,6 +213,7 @@ async fn publish(
         Ok(links) => links,
         Err(cause) => return error(StatusCode::BAD_REQUEST, "bad_request", cause),
     };
+    let publish_bytes = bytes.clone();
     match tauri::async_runtime::spawn_blocking(move || {
         let p = dist.publish(bytes.to_vec())?;
         let providers = publish_providers(&dist, &p.info.release, &links);
@@ -238,6 +239,27 @@ async fn publish(
                 _ => (StatusCode::CONFLICT, "publish_refused"),
             };
             let message = match e {
+                DistError::Refused => {
+                    match tauri::async_runtime::spawn_blocking(move || {
+                        crate::core::publish_denied(publish_bytes.to_vec())
+                    })
+                    .await
+                    {
+                        Ok(Ok(message)) => message,
+                        Ok(Err(cause)) => crate::words::sign_denied(
+                            "publish",
+                            &format!(
+                                "the requested release (could not read its label: {})",
+                                cause.message
+                            ),
+                        ),
+                        Err(cause) => crate::words::sign_denied(
+                            "publish",
+                            &format!("the requested release (could not read its label: {cause})"),
+                        ),
+                    }
+                }
+
                 DistError::Package(watane_host::watane_pkg::PackageError::Mod(
                     watane_host::watane_pkg::ModError::Invalid(mut violations),
                 )) => {
@@ -497,6 +519,26 @@ mod tests {
     fn open(home: &tempfile::TempDir) -> Arc<Dist> {
         Arc::new(Dist::open(home.path(), Arc::new(Approve), Default::default()).unwrap())
     }
+    #[tokio::test]
+    async fn ac2_publish_denial_names_the_release() {
+        struct Deny;
+        impl watane_dist::Confirm for Deny {
+            fn confirm(&self, _: &watane_dist::SignRequest) -> watane_dist::Decision {
+                watane_dist::Decision::Refuse
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let dist = Arc::new(Dist::open(home.path(), Arc::new(Deny), Default::default()).unwrap());
+        let (status, _, body) =
+            request(router(Some(dist)), Method::POST, "/api/publish", package()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"]["code"], "refused");
+        assert_eq!(
+            body["error"]["message"],
+            "You denied publishing reading-list 0.1.0; nothing was signed."
+        );
+    }
+
     fn package() -> Vec<u8> {
         watane_host::watane_pkg::pack(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reading-list"),

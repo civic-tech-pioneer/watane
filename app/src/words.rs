@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use watane_host::watane_pkg::{Grant, Provider};
 #[derive(Default)]
 pub struct Parties {
+    pub(crate) channels: crate::core::ChannelMemo,
     names: std::sync::RwLock<BTreeMap<String, String>>,
     own: std::sync::RwLock<Option<String>>,
 }
@@ -285,6 +286,20 @@ pub(crate) fn bad_note(cause: &str) -> String {
     } else {
         format!("This note cannot be used: {cause}.")
     }
+}
+
+/// The participant declined the exact signing action, rather than a dist failure.
+pub(crate) fn sign_denied(kind: &str, target: &str) -> String {
+    let verb = match kind {
+        "withdraw" => "withdrawing",
+        "profile" => "setting your name to",
+        "list" => "listing",
+        "include" => "including",
+        "unlist" => "unlisting",
+        "publish" => "publishing",
+        _ => unreachable!("known signing command"),
+    };
+    format!("You denied {verb} {target}; nothing was signed.")
 }
 
 #[cfg(test)]

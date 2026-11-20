@@ -990,7 +990,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `tokens_list` | main | — | `[{id, toolset, handle}]` | B |
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
-| `install_link` | main | `link` | `{installed: [local]}` | C |
+| `install_link` | main | `link` | `{installed: [local], followed: [label]}` | C |
 | `release_install` | main | `release` (ReleaseRef text) | `{installed: [local]}` | D |
 | `release_withdraw` | main | `release` (ReleaseRef text), `reason` | null | D |
 | `identity_set_name` | main | `name` | `null` | C |
@@ -1006,7 +1006,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `index_choose` | main | `link` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
 | `search` | main | `text`, `publisher: string \| null`, `interface: string \| null`, `origin: string \| null` (step 5: `<key>/<slug>`, for the derived list of 9.7) | `[HitView]` | D |
-| `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local]}` | D |
+| `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local], followed: [label]}` | D |
 | `index_list` | main | `link` (with a slug), `note` | `null` | D |
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
@@ -1322,6 +1322,16 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
   fills the parties named by its sign request from local channel views before
   asking the broker; no network read or reference cycle is introduced. A
   failed profile read is shown in the sign details with its full cause.
+- The parties cache also memoizes each local `ChannelView` by dist home and
+  channel key. Reuse requires the same `dist.heads(Some(&[key]))` state
+  (entry identity, sequence and fork mark) and the same mtime and length of
+  `<home>/dist/follows.json` and `site.json` (the own channel's base).
+  Missing files have their own stamp; other metadata failures retain their cause.
+  `cache_channels`, followed views and installed origins share this memo.
+  The followed key list comes from dist again whenever the follow stamp changes.
+  Every render still traverses the related channels and remembers their profiles,
+  using memoized views where valid. `Core::mods()` reads `host.mods()` once and
+  shares that snapshot's names across all rows.
 - HostConfirm receives a weak host reference immediately after `Host::open`,
   avoiding a host/confirmation reference cycle while resolving installed providers.
 - `HostConfirm::install(InstallRequest { entries, requester })` (also an
@@ -1376,6 +1386,11 @@ text as the Updates failed-channel card. The base URL may be the row's
    that a provider's updates and withdrawals keep coming. A failed follow
    does not undo the install; it shows as that channel's failure
    (APP-F-37).
+
+6. Return `{installed: [local], followed: [label]}`. `followed` contains the
+   `words::party_label` of each channel followed after the command that was
+   not followed before it started, including providers. It is empty for an
+   already followed publisher; a failed follow adds no label.
 
 dist and host verify. The app passes their cause through (APP-F-37).
 
@@ -1487,7 +1502,8 @@ sign-title wording functions, shared by the pages and their wording tests.
   `Link::from_str`; then dist 5.10 "Install a hit" (follow the link when
   it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the
   fetched release as the first source. The consent view shows the plan as
-  for a link.
+  for a link. Return the same `installed` and newly `followed` labels as 9.4,
+  taking the before snapshot before following the hit's link.
 - `index_list`, `index_include`, `index_unlist`: `dist.list`,
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view
@@ -1929,6 +1945,16 @@ text in its `Display`. Display is used for package errors and URLs; no Debug
 or serde diagnostic reaches the error line. Each main-window action has an
 increasing id; starting it clears the line. Its asynchronous errors (including
 refreshes) may update the line only while that id is still the latest.
+
+A dist signing `Refused` uses one wording function, `words::sign_denied`:
+`You denied <action>; nothing was signed.` The actions are `withdrawing
+<slug> <version>`, `setting your name to <name>`, `listing <mod by party>`,
+`including <party>`, `unlisting <mod by party or party>`, and `publishing
+<slug> <version>`. Party labels are those of the channels list. Command codes
+stay `dist`; the publish route stays HTTP 403 with code `refused`. No signing
+denial exposes dist's bare `statement refused`. The publish route decodes
+its denied package through pkg only on refusal to recover its slug and
+version; its private temporary directory is removed afterward.
 
 Wrong-channel follows use `words::wrong_channel`:
 `<url> serves <found label>, not <expected label>`. Labels use locally stored

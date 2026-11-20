@@ -258,8 +258,11 @@ impl Core {
             update_failures: Mutex::new(Default::default()),
         })
     }
-    fn cache_installed_parties(&self) -> Result<(), CmdError> {
-        let mods = self.host.mods();
+    fn installed_channels(
+        dist: &watane_dist::Dist,
+        parties: &Parties,
+        mods: &[watane_host::InstalledMod],
+    ) -> Result<Vec<watane_dist::ChannelView>, CmdError> {
         let keys = mods
             .iter()
             .flat_map(|m| {
@@ -285,7 +288,8 @@ impl Core {
                     )
             })
             .filter_map(|k| k.parse().ok());
-        Ok(cache_channels(&self.dist, &self.parties, keys)?)
+        cache_channels(dist, parties, keys)?;
+        Ok(parties.channels.followed(dist)?)
     }
     pub(crate) fn cache_plan_parties(&self, plan: &watane_host::Plan) -> Result<(), CmdError> {
         let keys = plan
@@ -321,7 +325,12 @@ impl Core {
             .as_ref()
             .map_or(0, |s| s.port)
     }
-    fn view(&self, m: watane_host::InstalledMod, followed: &[watane_dist::ChannelView]) -> ModView {
+    fn view(
+        &self,
+        m: watane_host::InstalledMod,
+        followed: &[watane_dist::ChannelView],
+        names: &std::collections::BTreeMap<String, String>,
+    ) -> ModView {
         let channel = m.publisher.as_ref().and_then(|p| {
             followed
                 .iter()
@@ -343,19 +352,13 @@ impl Core {
             });
         let offer = release_offer(m.release.as_ref(), channel);
         let mut offer_grants = offer_grants(offer.as_ref(), channel, &m.grants, &self.parties);
-        let names = self
-            .host
-            .mods()
-            .into_iter()
-            .map(|m| (m.identity, m.name))
-            .collect();
         for line in &mut offer_grants {
             if let Some(grant) = offer
                 .as_ref()
                 .and_then(|offer| channel?.releases.iter().find(|r| &r.reference == offer))
                 .and_then(|r| r.release.grants.iter().find(|g| g.to_string() == line.key))
             {
-                line.short = words::grant_short_bound(grant, &m.binds, &self.parties, &names);
+                line.short = words::grant_short_bound(grant, &m.binds, &self.parties, names);
             }
         }
         let offer = offer.map(|r| r.to_string());
@@ -363,7 +366,7 @@ impl Core {
             .origin
             .as_ref()
             .and_then(|r| r.publisher.to_string().parse().ok())
-            .and_then(|key| self.dist.channel(&key).ok());
+            .and_then(|key| self.parties.channels.channel(&self.dist, &key).ok());
         let derived_from_label =
             origin_label(m.origin.as_ref(), origin_channel.as_ref(), &self.parties);
         let metadata = watane_host::watane_pkg::Mod::read(
@@ -407,9 +410,9 @@ impl Core {
                         false,
                     );
                     line.short = if m.binds.is_empty() {
-                        words::grant_short(&g.grant, &self.parties, &names)
+                        words::grant_short(&g.grant, &self.parties, names)
                     } else {
-                        words::grant_short_bound(&g.grant, &m.binds, &self.parties, &names)
+                        words::grant_short_bound(&g.grant, &m.binds, &self.parties, names)
                     };
                     line
                 })
@@ -417,20 +420,29 @@ impl Core {
         }
     }
     pub fn mods(&self) -> Result<Vec<ModView>, CmdError> {
-        self.cache_installed_parties()?;
-        let followed = self.dist.followed()?;
-        Ok(self
-            .host
-            .mods()
+        let mods = self.host.mods();
+        let followed = Self::installed_channels(&self.dist, &self.parties, &mods)?;
+        let names = mods
+            .iter()
+            .map(|m| (m.identity.clone(), m.name.clone()))
+            .collect();
+        Ok(mods
             .into_iter()
-            .map(|m| self.view(m, &followed))
+            .map(|m| self.view(m, &followed, &names))
             .collect())
     }
     pub fn get(&self, local: &str) -> Result<Option<ModView>, CmdError> {
-        self.cache_installed_parties()?;
         let name = LocalName::parse(local)?;
-        let followed = self.dist.followed()?;
-        Ok(self.host.get(&name).map(|m| self.view(m, &followed)))
+        let mods = self.host.mods();
+        let followed = Self::installed_channels(&self.dist, &self.parties, &mods)?;
+        let names = mods
+            .iter()
+            .map(|m| (m.identity.clone(), m.name.clone()))
+            .collect();
+        Ok(self
+            .host
+            .get(&name)
+            .map(|m| self.view(m, &followed, &names)))
     }
     pub fn enable(&self, local: &str) -> Result<(), CmdError> {
         self.manager_notices
@@ -666,7 +678,7 @@ impl Core {
     }
 
     pub fn channels(&self) -> Result<Vec<ChannelRow>, CmdError> {
-        let followed = self.dist.followed()?;
+        let followed = self.parties.channels.followed(&self.dist)?;
         self.parties.remember(&party_views(&self.dist)?);
         if let Some(key) = self.dist.identity() {
             self.parties.set_own(key.to_string());
@@ -700,7 +712,7 @@ impl Core {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .finish(&reports, at);
-        let followed = self.dist.followed()?;
+        let followed = self.parties.channels.followed(&self.dist)?;
         let mut updates = Vec::new();
         for report in reports {
             if let Some(channel) = followed.iter().find(|c| c.channel == report.channel) {
@@ -1061,7 +1073,7 @@ impl Core {
                     .insert(item.info.channel.to_string(), CmdError::from(error).message);
             }
         }
-        if let Ok(followed) = self.dist.followed() {
+        if let Ok(followed) = self.parties.channels.followed(&self.dist) {
             let links = crate::build_on::follow_links(
                 fetched.iter().filter_map(|f| f.link.clone()),
                 followed.iter().map(|c| c.channel),
@@ -1977,6 +1989,178 @@ fn index_row(
     }).collect::<Vec<_>>()));
     row
 }
+// Dist does not attach the refused release to Refused. Decode it through pkg,
+// only on denial, to use the same slug and version validation as publication.
+pub(crate) fn publish_denied(bytes: Vec<u8>) -> Result<String, CmdError> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|e| CmdError::new("io", e.to_string()))?;
+    let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let path = std::env::temp_dir().join(format!("watane-denied-{suffix}"));
+    std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let cleanup = Cleanup(path);
+    let package = watane_dist::Package::from_bytes(bytes).map_err(watane_dist::DistError::from)?;
+    let m = package
+        .unpack(&cleanup.0.join("mod"))
+        .map_err(watane_dist::DistError::from)?;
+    Ok(words::sign_denied(
+        "publish",
+        &format!("{} {}", m.slug(), m.version()),
+    ))
+}
+
+pub(crate) fn followed_keys(
+    dist: &watane_dist::Dist,
+    parties: &Parties,
+) -> Result<std::collections::BTreeSet<watane_dist::PublicKey>, CmdError> {
+    Ok(parties
+        .channels
+        .followed(dist)?
+        .into_iter()
+        .map(|v| v.channel)
+        .collect())
+}
+pub(crate) fn install_result(
+    dist: &watane_dist::Dist,
+    parties: &Parties,
+    before: std::collections::BTreeSet<watane_dist::PublicKey>,
+    installed: Vec<watane_host::InstalledMod>,
+) -> Result<serde_json::Value, CmdError> {
+    let views = parties.channels.followed(dist)?;
+    parties.remember(&views);
+    let followed: Vec<String> = views
+        .iter()
+        .filter(|v| !before.contains(&v.channel))
+        .map(|v| words::party_label(&words::party(&v.channel.to_string(), parties)))
+        .collect();
+    Ok(
+        serde_json::json!({"installed": installed.into_iter().map(|m| m.local).collect::<Vec<_>>(), "followed": followed}),
+    )
+}
+
+#[derive(Default)]
+pub(crate) struct ChannelMemo {
+    entries:
+        Mutex<std::collections::BTreeMap<(std::path::PathBuf, watane_dist::PublicKey), MemoEntry>>,
+    followed: Mutex<std::collections::BTreeMap<std::path::PathBuf, FollowedKeys>>,
+    #[cfg(test)]
+    builds: std::sync::atomic::AtomicUsize,
+}
+type Stamp = Option<(std::time::SystemTime, u64)>;
+type FollowedKeys = (Stamp, Vec<watane_dist::PublicKey>);
+struct MemoEntry {
+    head: Option<watane_dist::HeadState>,
+    follows: Option<(std::time::SystemTime, u64)>,
+    site: Option<(std::time::SystemTime, u64)>,
+    view: watane_dist::ChannelView,
+}
+fn file_stamp(path: &std::path::Path) -> std::io::Result<Option<(std::time::SystemTime, u64)>> {
+    match std::fs::metadata(path) {
+        Ok(meta) => Ok(Some((meta.modified()?, meta.len()))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+impl ChannelMemo {
+    pub(crate) fn channel(
+        &self,
+        dist: &watane_dist::Dist,
+        key: &watane_dist::PublicKey,
+    ) -> Result<watane_dist::ChannelView, watane_dist::DistError> {
+        let dir = dist
+            .site_dir()
+            .parent()
+            .expect("dist/site has a parent")
+            .to_path_buf();
+        let stamp = |name| {
+            let path = dir.join(name);
+            file_stamp(&path).map_err(|source| watane_dist::DistError::Io { path, source })
+        };
+        let follows = stamp("follows.json")?;
+        let site = stamp("site.json")?;
+        let head = dist.heads(Some(&[*key]))?[0].1;
+        let mut entries = self.entries.lock().expect("channel memo lock poisoned");
+        let entry_key = (dir, *key);
+        if let Some(entry) = entries.get(&entry_key)
+            && entry.head == head
+            && entry.follows == follows
+            && entry.site == site
+        {
+            return Ok(entry.view.clone());
+        }
+        let view = dist.channel(key)?;
+        #[cfg(test)]
+        self.builds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        entries.insert(
+            entry_key,
+            MemoEntry {
+                head,
+                follows,
+                site,
+                view: view.clone(),
+            },
+        );
+        Ok(view)
+    }
+    fn followed(
+        &self,
+        dist: &watane_dist::Dist,
+    ) -> Result<Vec<watane_dist::ChannelView>, watane_dist::DistError> {
+        let dir = dist
+            .site_dir()
+            .parent()
+            .expect("dist/site has a parent")
+            .to_path_buf();
+        let path = dir.join("follows.json");
+        let stamp =
+            file_stamp(&path).map_err(|source| watane_dist::DistError::Io { path, source })?;
+        let mut followed = self.followed.lock().expect("followed memo lock poisoned");
+        if let Some((previous, keys)) = followed.get(&dir)
+            && *previous == stamp
+        {
+            return keys.iter().map(|key| self.channel(dist, key)).collect();
+        }
+        // Dist owns which channels are followed. Refresh this key list only
+        // when its records change; otherwise even followed() rebuilds views.
+        let heads: std::collections::BTreeMap<_, _> = dist.heads(None)?.into_iter().collect();
+        let site_path = dir.join("site.json");
+        let site = file_stamp(&site_path).map_err(|source| watane_dist::DistError::Io {
+            path: site_path,
+            source,
+        })?;
+        let views = dist.followed()?;
+        let keys: Vec<_> = views.iter().map(|view| view.channel).collect();
+        let mut entries = self.entries.lock().expect("channel memo lock poisoned");
+        for view in &views {
+            #[cfg(test)]
+            self.builds
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            entries.insert(
+                (dir.clone(), view.channel),
+                MemoEntry {
+                    head: heads.get(&view.channel).copied().flatten(),
+                    follows: stamp,
+                    site,
+                    view: view.clone(),
+                },
+            );
+        }
+        followed.insert(dir, (stamp, keys));
+        Ok(views)
+    }
+    #[cfg(test)]
+    fn builds(&self) -> usize {
+        self.builds.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 pub(crate) fn cache_channels(
     dist: &watane_dist::Dist,
     parties: &Parties,
@@ -1991,7 +2175,7 @@ pub(crate) fn cache_channels(
         if !seen.insert(key) {
             continue;
         }
-        let view = dist.channel(&key)?;
+        let view = parties.channels.channel(dist, &key)?;
         pending.extend(
             view.listings
                 .iter()
@@ -2237,6 +2421,119 @@ mod find_integration_tests {
         )
         .unwrap()
         .into_bytes()
+    }
+
+    #[test]
+    fn ac1_install_reports_only_newly_followed_labels() {
+        let publisher_home = tempfile::tempdir().unwrap();
+        let publisher = open(&publisher_home);
+        publisher.set_name("Alice").unwrap();
+        let site = Site::serve(publisher.site_dir());
+        publisher.set_site_url(&site.base).unwrap();
+        let published = publisher.publish(package()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let host = Host::open(home.path(), watane_host::Mode::Preview, Default::default()).unwrap();
+        let reader = open(&home);
+        let parties = Parties::new();
+        for expected in [
+            vec![format!("Alice ({})", publisher.fingerprint().unwrap())],
+            vec![],
+        ] {
+            let before = followed_keys(&reader, &parties).unwrap();
+            let fetched = reader.open_link(published.link.as_ref().unwrap()).unwrap();
+            let plan = host
+                .plan(vec![watane_host::Source::Release {
+                    package: fetched.package,
+                    entry: fetched.entry,
+                }])
+                .unwrap();
+            let installed = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(host.install(plan, watane_host::Requester::App))
+                .unwrap();
+            reader.follow(published.link.as_ref().unwrap()).unwrap();
+            let result = install_result(&reader, &parties, before, installed).unwrap();
+            assert_eq!(result["installed"], serde_json::json!(["reading-list"]));
+            assert_eq!(result["followed"], serde_json::json!(expected));
+        }
+    }
+
+    #[test]
+    fn ac3_mods_channel_snapshot_reuses_followed_views() {
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
+        alice.set_name("Alice").unwrap();
+        let ivy_home = tempfile::tempdir().unwrap();
+        let ivy = open(&ivy_home);
+        let ivy_site = Site::serve(ivy.site_dir());
+        ivy.set_site_url(&ivy_site.base).unwrap();
+        ivy.set_name("Ivy").unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let dist = open(&home);
+        dist.follow(&alice.own_link(None).unwrap()).unwrap();
+        dist.follow(&ivy.own_link(None).unwrap()).unwrap();
+        let parties = Parties::new();
+        let first = Core::installed_channels(&dist, &parties, &[]).unwrap();
+        let before = parties.channels.builds();
+        let second = Core::installed_channels(&dist, &parties, &[]).unwrap();
+        assert_eq!(parties.channels.builds(), before);
+        assert_eq!(format!("{first:?}"), format!("{second:?}"));
+        let entry = alice.set_name("New Alice").unwrap();
+        assert!(matches!(
+            dist.ingest(&alice.identity().unwrap(), vec![entry], Reason::Asked),
+            Ingested::Stored(_)
+        ));
+        let changed = Core::installed_channels(&dist, &parties, &[]).unwrap();
+        assert_eq!(parties.channels.builds(), before + 1);
+        assert_eq!(
+            format!("{changed:?}"),
+            format!("{:?}", dist.followed().unwrap())
+        );
+        dist.unfollow(&ivy.identity().unwrap()).unwrap();
+        let remaining = Core::installed_channels(&dist, &parties, &[]).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(parties.channels.builds() > before + 1);
+    }
+
+    #[test]
+    fn ac3_channel_memo_reuses_and_invalidates_views() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = open(&home);
+        let other_home = tempfile::tempdir().unwrap();
+        let other = open(&other_home);
+        let key = dist.identity().unwrap();
+        let other_key = other.identity().unwrap();
+        let parties = Parties::new();
+        cache_channels(&dist, &parties, [key, other_key]).unwrap();
+        assert_eq!(parties.channels.builds(), 2);
+        cache_channels(&dist, &parties, [key, other_key]).unwrap();
+        assert_eq!(parties.channels.builds(), 2);
+        dist.set_name("Alice").unwrap();
+        cache_channels(&dist, &parties, [key, other_key]).unwrap();
+        assert_eq!(parties.channels.builds(), 3);
+        let site = Site::serve(other.site_dir());
+        other.set_site_url(&site.base).unwrap();
+        other.set_name("Ivy").unwrap();
+        dist.follow(&other.own_link(None).unwrap()).unwrap();
+        assert!(
+            parties
+                .channels
+                .channel(&dist, &other_key)
+                .unwrap()
+                .followed
+        );
+        let before = parties.channels.builds();
+        dist.unfollow(&other_key).unwrap();
+        assert!(
+            !parties
+                .channels
+                .channel(&dist, &other_key)
+                .unwrap()
+                .followed
+        );
+        assert_eq!(parties.channels.builds(), before + 1);
     }
 
     #[test]
