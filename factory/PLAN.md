@@ -1702,6 +1702,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, PO) main check at `c224dd3` (S92) under load ~30 (S90 building): `j2::ac7` failed again (S90 reworks it) and net `regress_s75::ac1_ac2_light_reaches_the_full_machine_with_the_anchor_closed` once (*core*); the latter passed 5/5 alone at load 33. app's integration run took 206 s against 70 s earlier: Suite time figures need a quiet Mac.
 - (2026-11-20, S92) the cloud toolchain lacked clippy (`rustup component add clippy`); parallel tasks sharing an interface each passed alone and broke only merged (check slice/<id> after each fast-forward); three cold builds at once made each Sol run 15 to 20 min.
 - (2026-11-20, PO) main check at `501c123` under load ~40: host `program::catalog::ac1_installed_and_persisted_ids_match_pack_for_both_parts` got `Busy(<tmp home>)` once (*core*: a home lock); passes alone. Watch for a repeat.
 - (2026-11-20, PO) main's check after S88: `j2::ac7_idle_polling…` saw fewer than 2 polls in 5 s once in the full suite (load ~20 with S90 building); 3/3 alone. S90 owns the poll code. deny: RUSTSEC-2026-0587 (wasmtime-wasi 48.0.9, Windows-only), fixed by 48.0.10 on main.
