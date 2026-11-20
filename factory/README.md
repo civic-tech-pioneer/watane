@@ -75,7 +75,7 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
        │    breach -> red test -> fix task, as for user-sim
        ├─ user-sim (Claude Opus 5.5) acts as the story's person on the real programs
        │    failure -> red regression test -> fix task (green, refactor) -> validator -> user-sim again
-       └─ DELIVERED + PR -> CI on Linux, macOS, Windows -> green: product owner merges --ff-only
+       └─ DELIVERED + PR with auto-merge -> CI on Linux, macOS, Windows -> green: GitHub merges
 ```
 
 | File | Purpose |
@@ -207,9 +207,15 @@ broke `main` on macOS twice (S91: a Linux-only `mkfifoat`, an errno that differs
 Mac check after the merge saw it. CI closes that gap without slowing the agents: the fast loop
 stays as it is, and the slow one runs while the product owner and foremen do other work.
 
-- On delivery the foreman pushes `slice/<id>` and opens a PR to `main` (foreman skill,
-  section 5). The product owner merges only when the PR's CI is green (product-owner skill,
-  section 5); a red run goes back to the foreman as a failure on another OS.
+- On delivery the foreman, local or cloud, pushes `slice/<id>`, opens a PR to `main` and arms
+  auto-merge (`gh pr merge --auto --rebase`; foreman skill, section 5). `main`'s ruleset
+  ("main: CI green before merge") requires `lint`, `test (ubuntu-latest)` and `test (macos-26)`,
+  so the PR merges itself when they pass. Nobody merges by hand. A red run is a failure on
+  another OS: the local foreman fixes it on its branch; for a cloud slice the product owner
+  starts a new routine (product-owner skill, section 5).
+- The ruleset's admin bypass lets the product owner push its own commits (`PLAN.md`, a small
+  fix) straight to `main`; it also forbids force-pushing or deleting `main`. GitHub deletes a
+  merged PR's branch.
 - After the merge, the Mac runs only what CI cannot: `factory/check-main.sh` (the timing tests,
   one at a time) and a cloud slice's `not run (cloud)` tests (`front`, DEV-S-13).
 - A test red in CI but green in the slice's runs is rerun once before it counts (product-owner

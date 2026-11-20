@@ -1,6 +1,6 @@
 ---
 name: product-owner
-description: Runs the watane factory loop as product owner and the human's deputy. Keeps factory/PLAN.md, sketches the next vertical slice just in time, hands each slice to a foreman session (/foreman <slice>) in its own worktree, answers the foremen's questions, merges delivered slices, and escalates to the human only what needs them. Use when the user says "/product-owner", "run the factory" or "keep building".
+description: Runs the watane factory loop as product owner and the human's deputy. Keeps factory/PLAN.md, sketches the next vertical slice just in time, hands each slice to a foreman session (/foreman <slice>) in its own worktree, answers the foremen's questions, sees delivered slices through CI to an auto-merge, and escalates to the human only what needs them. Use when the user says "/product-owner", "run the factory" or "keep building".
 ---
 
 # /product-owner
@@ -125,41 +125,35 @@ Either way: one question, its options, your recommendation, and the cost to undo
 
 ## 5. Accept a delivery
 
-A foreman reports `DELIVERED <id>` with its branch, the user-sim result and its decisions.
-1. Check it: the user-sim said `ACCEPTED`, the branch is rebased on `main`, and the adversary
+Slices merge themselves: the foreman's PR has auto-merge armed, and `main`'s ruleset holds it
+until CI is green (`factory/README.md`, "Two feedback loops"). You check, unblock and record.
+1. On `DELIVERED <id>`, while CI runs (~30 min): the user-sim said `ACCEPTED`, and the adversary
    said `HELD` if the slice touched a security boundary (foreman skill, section 3; check its
-   file table against `git diff --name-only main...slice/<id>` yourself).
-2. Merge only on green CI (`factory/README.md`, "Two feedback loops"). The report links the
-   slice's PR; without one (`no PR: ...`), open it: `gh pr create --base main --head <its branch>
-   --title "<id>: <outcome>" --body "<its report>"`. Run `gh pr checks <n> --watch --fail-fast`
-   with Bash `run_in_background` and go on with the loop meanwhile; never merge while it runs.
-   - Green: `git fetch origin`, `git merge --ff-only origin/<its branch>` on `main`, `git push
-     origin main` (GitHub marks the PR merged). If `main` moved since and the rebase is clean,
-     rebase the branch yourself, push it and merge without waiting again: the push to `main`
-     runs CI there too, and a red run on `main` is fixed before the next merge.
-   - Red on a test that passed in the slice's own runs: rerun the failed jobs once (`gh run
-     rerun <run> --failed`); macOS runners have 3 cores and GUI tests time out under that
-     load. Red again, or red on a compile, clippy or fmt step: it is real.
-   - Real red: send the failing job's name and its error lines to the foreman (local: a message;
-     cloud: a new routine "/foreman <id>, continue from branch slice/<id>; CI failed: ...").
-     A small fix (a missing `cfg`, a clippy lint of one OS) you may push to the branch
-     yourself. A `cargo deny` advisory alone is not the slice's failure: add it under
-     `Friction` with the crate and the advisory id, and merge.
-   - Then, on `main`, the checks CI cannot run, in the background: `factory/check-main.sh`
-     (the Mac's timing tests, `README`, "Timing tests") and, for a cloud slice, the tests its
-     report lists as `not run (cloud)`. On `MAIN FAIL`, fix `main` before the next merge: a
-     small fix yourself, else a fix slice next.
-   If the slice changed a `Cargo.toml`: `cargo hakari generate && cargo hakari manage-deps`
-   (the `workspace-hack` crate gives every package one feature set, so a `cargo test` in one
-   subsystem reuses the workspace's build instead of adding a copy of ~9 GB to `target/`).
-3. `claude stop <id>` (local), then remove its worktree and branch, and the branch on `origin` if the foreman pushed it
-   (`git push origin --delete slice/<id>`; the transcript stays). Mark the slice
-   done in `PLAN.md` with one digest line (what a
-   person can now do), and copy its decisions and friction lines there. Update `Stage coverage`:
-   each stage the slice finished or advanced, and each `ponytail:` it left. Copy its suite times
-   into `Suite time` and the hours it was in flight onto its line; a subsystem over budget gets a
-   test-cost slice next (`factory/README.md`, "Time and value"). Commit.
-4. Report to the human: one line per slice, decisions first.
+   file table against `gh pr diff <n> --name-only` yourself). If either fails, stop the merge
+   with `gh pr merge <n> --disable-auto` and send the foreman what is missing.
+   `no PR: ...` in the report: open it and arm it (`gh pr create --base main --head <its
+   branch> ...`, then `gh pr merge <n> --auto --rebase`).
+2. A local foreman watches its own PR and sends `MERGED <id>`. A cloud one cannot: run
+   `gh pr checks <n> --watch --fail-fast` with Bash `run_in_background` yourself. On red, rerun
+   the failed jobs once if it is a test that passed in the slice's own runs (`gh run rerun <run>
+   --failed`); if it is red again, or red in a build, clippy or fmt step, start a new routine
+   "/foreman <id>, continue from branch slice/<id>; CI failed: <job, error lines>". A
+   `cargo deny` advisory alone is not the slice's failure: add it under `Friction` with the
+   crate and the advisory id, and fix it on `main`.
+3. Once merged: `git pull --rebase origin main` in the main checkout. Then, in the background,
+   what CI cannot run: `factory/check-main.sh` (the Mac's timing tests, `README`, "Timing tests")
+   and, for a cloud slice, the tests its report lists as `not run (cloud)`. On `MAIN FAIL`, or a
+   red CI run on `main`'s push, fix `main` first: a small fix yourself, else a fix slice next,
+   and `gh pr merge <n> --disable-auto` on the open PRs until it is green.
+4. `claude stop <id>` (local), then remove its worktree and local branch (GitHub deletes the
+   remote one on merge; the transcript stays). Mark the slice done in `PLAN.md` with one digest
+   line (what a person can now do), and copy its decisions and friction lines there. Update
+   `Stage coverage`: each stage the slice finished or advanced, and each `ponytail:` it left.
+   Copy its suite times into `Suite time` and the hours it was in flight onto its line; a
+   subsystem over budget gets a test-cost slice next (`factory/README.md`, "Time and value").
+   Commit and push: your own commits to `main` (`PLAN.md`, a small fix) go straight in, by the
+   ruleset's admin bypass.
+5. Report to the human: one line per slice, decisions first.
 
 `BLOCKED <id>`: treat its question by section 4, then resume that foreman or re-cut the slice.
 
