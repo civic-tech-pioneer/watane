@@ -308,3 +308,57 @@ fn ac2_int_after_the_answer_prints_no_install_it_later_lines() {
     // the question was answered: the hint is not followed by the commands of 3.7
     assert!(!all[at..].contains(&"To install it later, run:"), "{out:?}");
 }
+
+#[test]
+fn fix1_say_to_a_full_disk_ends_the_run_with_exit_1() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let mut c = fx.cmd(&["--status"]);
+    c.stdin(Stdio::null())
+        .stdout(
+            fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/full")
+                .expect("full"),
+        )
+        .stderr(Stdio::piped());
+    let out = finish(spawn_run(&mut c));
+    assert_eq!(out.code, 1, "{out:?}");
+    assert_eq!(out.stderr, "", "{out:?}");
+}
+
+#[test]
+fn fix1_a_link_swapped_in_after_note_created_is_not_followed_out_of_the_home() {
+    let fx = Fx::new();
+    let outside = fx.root.path().join("outside");
+    fs::create_dir_all(outside.join("share/watane-dev")).expect("outside");
+    symlink(which("rmdir"), fx.real.join("rmdir")).expect("link real rmdir");
+    // the first rmdir of the cleanup (the lock's) swaps the run-created ~/.local for a link
+    fake_tool(
+        &fx,
+        "rmdir",
+        &format!(
+            "if [ ! -e \"$FAKE_STATE/swapped\" ]; then echo 1 > \"$FAKE_STATE/swapped\"; \"$FAKE_REAL/mv\" \"$HOME/.local\" \"$HOME/.moved\" && '{}' -s '{}' \"$HOME/.local\"; fi\nexec \"$FAKE_REAL/rmdir\" \"$@\"",
+            which("ln").display(),
+            outside.display()
+        ),
+    );
+    fx.state_write("mv_fault", "sleep\n*watane.app.new.*\n");
+    let child = spawn(&mut fx.cmd(&["--no-toolchain"]));
+    fx.wait_state("mv_sleeping");
+    signal_group(child.id(), "TERM");
+    let out = finish(child);
+    assert_eq!(out.code, 143, "{out:?}");
+    assert!(!fx.state_read("swapped").is_empty(), "{out:?}");
+    assert!(outside.join("share/watane-dev").is_dir(), "{out:?}");
+}
+
+#[test]
+fn fix1_install_it_later_quotes_an_odd_url() {
+    let fx = Fx::new();
+    let url = "http://x/a b;c";
+    let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", url)], &[("[y/N] ", "N")]);
+    assert_eq!(out.code, 0, "{out:?}");
+    let l = "  curl --proto '=https' --tlsv1.2 -sSf 'http://x/a b;c' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2";
+    assert!(out.stdout.lines().any(|x| x == l), "{out:?}");
+}

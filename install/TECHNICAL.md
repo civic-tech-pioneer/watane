@@ -394,7 +394,10 @@ files (INST-F-20, INST-S-14, 32, 33).
    created by this run, deepest first, so an install that did not commit
    leaves no `~/.local/bin`, `~/.local/share/watane-dev`, `~/.local/share/watane`,
    `~/.local/share`, `~/Applications` or `~/.local` that it made, and never one
-   that existed before the run (IN-47). The same holds for a run that
+   that existed before the run (IN-47). Just before each `rmdir` the exit trap resolves
+   the folder again (`cd <folder> && pwd -P`) and removes it, by that resolved path, only when it
+   is not a link and still resolves inside the resolved home (the rule of 8.5): a link swapped
+   in since step 1 is never followed out of the home. The same holds for a run that
    fails with exit 3 to 5 before the commit. After the commit nothing is removed.
 5. **After the commit.** Remove the paths of the old receipt that are not
    in the new list, each only if the rule of 8.5 allows it (INST-S-27); then
@@ -564,7 +567,7 @@ Then `watane-dev doctor` checks it again.
 
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
 command.) When `WATANE_RUSTUP_URL` is set, line 3 names that URL in place of
-`https://sh.rustup.rs`, the URL the question named (IN-44). The block names it in every case that prints
+`https://sh.rustup.rs`, the URL the question named (IN-44). A URL that holds anything but letters, digits and `._/:@%+,=~-` is printed in single quotes (`shell_quote`), so pasting the line runs one `curl`; the default and plain URLs stay as they are. The block names it in every case that prints
 it, including `--no-toolchain` and no terminal, where no question is shown: the URL
 is `WATANE_RUSTUP_URL` whenever that is set, else `https://sh.rustup.rs`. For `no target`: `  rustup target add wasm32-wasip2`; for B:
 `  rustup toolchain install stable --profile minimal -t wasm32-wasip2` and
@@ -671,6 +674,8 @@ or the old version stays), and leaves no folder the run created (3.6 step 4; IN-
 These lines are printed once, by the exit trap, whichever way the
 signal reached it (IN-45).
 
+"After the commit" is decided by the state undo uses: the journal exists and `receipt.new.<pid>` is gone; the exit trap reads that before undo runs, so a signal that lands between the receipt's `mv` and the next command still prints the hint (no flag set after the `mv` decides it).
+
 The trap runs `rm -rf <temporary folder>` on `EXIT`, and on `HUP`, `INT`,
 `PIPE` and `TERM` first undoes a swap in progress (3.6 step 4), then exits with 129, 130, 141 and 143. `PIPE` is what a closed reader (`curl ... | sh | head`) sends at the next write; the handler ignores further `HUP`, `INT`, `PIPE` and `TERM` so its own messages and a second signal cannot kill it. An undo removes its journal before cleaning any staging names (3.6 step 4).
 The swap remains active through quarantine removal (`xattr`) and the
@@ -709,7 +714,9 @@ and the resolved folder alike, and a path outside the home stays absolute (IN-48
 A reader that closes the output early (`--status | head -1`) gets no
 `write error` text from the script: the next write ends the run with `PIPE`
 (exit 141, 3.8) and nothing on stderr; when the reader closes only after
-the last line was written, the exit is 0.
+the last line was written, the exit is 0. Only a signal hides printf's error text: any other
+write error to stdout (a full disk, a closed stdout, an ignored `PIPE`) ends the run with exit 1
+and no text of printf's, never a silent carry-on.
 
 **The line after an interruption** (3.8). Exactly, on stderr:
 

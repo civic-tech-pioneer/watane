@@ -45,8 +45,9 @@ usage() {
 }
 
 # A reader that went away (`--status | head -1`) must not make printf print a write error:
-# the PIPE trap ends the run with 141; without a signal the line is simply lost (3.9).
-say() { printf '%s\n' "$*" 2>/dev/null || { check_signal "$?"; }; }
+# the PIPE trap ends the run with 141. Any other write error (a full disk, a closed stdout, a
+# PIPE that is ignored) still ends the run, with exit 1 and no text of printf's (3.9).
+say() { printf '%s\n' "$*" 2>/dev/null || { say_rc=$?; check_signal "$say_rc"; exit 1; }; }
 warn() { printf 'watane install: %s\n' "$*" >&2; }
 
 # die <code> <cause> [<what to do> ...]
@@ -480,6 +481,9 @@ EOF
 # handler that runs next must then undo it again.
 rollback() {
   if [ "$SWAP_ACTIVE" = 1 ]; then
+    # Committed is what undo itself decides on: the journal is there and the receipt's
+    # `.new.<pid>` is gone (3.8). Read it before undo removes either.
+    if [ -f "$SHAREW/journal.$SWAP_PID" ] && ! exists "$RECEIPT.new.$SWAP_PID"; then COMMITTED=1; fi
     undo_swap "$SWAP_PID" || return
     SWAP_ACTIVE=0
   fi
@@ -820,7 +824,12 @@ remove_created() {
   [ "$COMMITTED" != 1 ] || return 0
   for rc_f in "$HOME/Applications" "$HOME/.local/share/watane-dev" "$HOME/.local/share/watane" "$HOME/.local/share" "$HOME/.local/bin" "$HOME/.local"; do
     in_list "$CREATED" "$rc_f" || continue
-    rmdir "$rc_f" 2>/dev/null || { check_signal "$?"; }
+    # A link swapped in since note_created must not be followed out of the home (3.4.1)
+    rc_r=$(cd "$rc_f" 2>/dev/null && pwd -P) || { check_signal "$?"; continue; }
+    check_signal "$?"
+    [ ! -L "$rc_f" ] || continue
+    below_home "$rc_r" || continue
+    rmdir "$rc_r" 2>/dev/null || { check_signal "$?"; }
   done
   return 0
 }
@@ -1027,7 +1036,12 @@ print_commands() {
   case $TC_STATE in
     none_a)
       rustup_src
-      say "  curl --proto '=https' --tlsv1.2 -sSf $RUSTUP_SRC | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+      pc_url=$RUSTUP_SRC
+      # quoted only when the shell would read it as more than one plain word (3.7)
+      case $pc_url in
+        '' | *[!A-Za-z0-9._/:@%+,=~-]*) pc_url=$(shell_quote "$pc_url") || { check_signal "$?"; } ;;
+      esac
+      say "  curl --proto '=https' --tlsv1.2 -sSf $pc_url | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
       ;;
     target) say '  rustup target add wasm32-wasip2' ;;
     none_b)

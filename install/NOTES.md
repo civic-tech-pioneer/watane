@@ -780,7 +780,7 @@ log is /tmp/s50c-3-smoke.log and its last line is CLEAN-MAC PASS.
 ## S89-1 (install.sh tells the truth)
 
 Decided in TECHNICAL 3.6 to 3.9, 8.1, 8.5 and IN-44 to IN-48: the post-commit and
-question-time interruption lines (printed by the exit trap, flag `COMMITTED` set right
+question-time interruption lines (printed by the exit trap, flag `COMMITTED` (see S89-fix1) set right
 after the receipt's `mv`), `say` swallowing printf's write error so `--status | head -1`
 ends by the PIPE trap (141, or 0), `~` for resolved paths through `tilde_r`, the offer's
 URL in "install it later", empty folders the run created removed in `release_files`
@@ -789,6 +789,15 @@ rustup command (offer B prints two frames). Limits: a signal landing between the
 `mv` and `COMMITTED=1` gets no hint (the install is whole; the swap's undo finishes the
 commit); a lost INT on macOS sh reaches the same trap through `check_signal`. Tests: `tests/it/s89.rs`
 (run on Linux; macOS-only sh behaviours are for the PO's Mac run).
+
+## S89-fix1
+
+"Committed" for the hint and `remove_created` is read in `rollback` from the journal plus the
+receipt's `.new.<pid>` being gone (undo's own test); the `COMMITTED=1` after the `mv` stays only for
+the normal success path. `say` exits 1 on a write error that no signal ended (pinned by
+`fix1_say_to_a_full_disk_...`). `remove_created` re-resolves and skips links/outside-home folders.
+The odd-URL quote applies when the URL has characters outside a plain-word set, not for every URL
+other than the default, because s89 `ac5` (unchanged) expects an ordinary URL unquoted.
 
 ## S89-2: Node 24 actions and the release-build skip
 
