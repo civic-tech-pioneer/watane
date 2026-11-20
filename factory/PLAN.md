@@ -476,7 +476,21 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S55 Two machines.** in flight (local; foreman `4a61b2b4`, sessionId `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`) Alice publishes on one machine, Bob installs on another and uses the
+- [x] **S55 Two machines.** Delivered 2026-11-20 (main `5014400`; foreman `4a61b2b4`, sessionId
+  `4a61b2b4-c5d7-4988-a8cf-2bf6cbe171b6`, ended). Sol runs: s55-1 1, s55-2 1, s55-fix1 2, s55-fix2 1,
+  s55-fix3 1. user-sim REJECTED once (an unreachable web host and an unnamed `--from` folder gave no
+  cause), fixed, then ACCEPTED: TWO-MACHINES PASS three times on the real VM. adversary not run (no
+  boundary: tests, specs and briefs only). Proves two homes and two network stacks (no host share,
+  checked; every byte over the VM network), not NAT across the internet. Bob's app in the guest is
+  a debug `driver` build in a minimal Bob.app, so the release app's consent window is not exercised
+  there (a script cannot click it: SIP, no Accessibility); the installed v0.1.0 is checked by
+  `--version` only. Decisions: Bob's app is launched in the guest's GUI session with `open -n -W`
+  and driven over ssh (`App::over`, app TECHNICAL 11, install TECHNICAL 12.6); the fake web host is
+  stock `/usr/bin/python3 http.server` (Apple-signed, so no firewall prompt); Bob.app copies
+  NSAppTransportSecurity from app/Info.plist at run time (without it ATS blocked the mod page; the
+  release app has it); VM helpers moved to install/tests/vm_lib.sh; hard deadlines (300 s per VM
+  step, 900 s install, 1200 s journey, 3600 s run) in vm_two_machines.sh only; cleanup runs with
+  `set +e`. Story: Alice publishes on one machine, Bob installs on another and uses the
   mod. This is VISION success criterion 3 stated as it is written, and it has never run between two
   homes that did not share a filesystem. After S50, S53 and S54. The second machine is a VM on
   this Mac (the human, 2026-11-18, said more than once before): its own disk and its own address
@@ -1180,7 +1194,11 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   `/private/...` paths, not `~`; after an uninstall through a re-linked folder, watane's vendor
   stays there with no hint; rustup's own text lands in the middle of watane's output; an upgrade
   writes a new entry through a folder re-linked inside the home (specs silent); actions pinned at
-  v4 run on forced Node 24 (warning).
+  v4 run on forced Node 24 (warning). Also seen on v0.1.0's release run (checkout,
+  upload-artifact, download-artifact).
+- From S55: the release app's consent window is never clicked in a VM (Bob's app there is a driver
+  build); `clean_mac::ac1_ac2_fresh_home_real_release` fails in every fresh worktree without
+  `target/release`, so check.sh reports CHECK FAIL for install tasks there.
 
 ### net / node
 
@@ -1589,6 +1607,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S55) the Mac slept overnight and cut off a validator mid-run (long steps now under `caffeinate -i`); a widened diagnostic wait plus a build under load looked like a hang to the PO; local tauri-cli 2.12.5 (CI pins 2.12.4) rewrites app/Cargo.toml's tauri features on `cargo tauri build`; the auto-mode classifier refused a `push -f` of a branch not yet on the remote.
 - (2026-11-19, S87) iroh-blobs copies blobs up to 16 KiB into its store instead of referencing the file: a test of a changed referenced file needs a bigger blob. No full run had covered the driver window tests since the test-speed merges.
 - (2026-11-19, S50c) `workflow_dispatch` cannot dry-run a workflow not yet on main (ran as a push to a throwaway branch); Homebrew needs `brew trust` per formula for third-party taps; the macos-14 runner was retired under the slice; main's tests/it move mid-slice cost a layout commit.
 - (2026-11-19, S50b-fix2) a slice id that equals an old task id collides with its brief (`factory/tasks/s50b-fix2.md`); the foreman used `s50b-fix2-1`. Pick slice ids that no task brief uses.
@@ -2011,3 +2030,6 @@ The human may veto each one.
   v0.1.0 is out, and its one-liner passes on a clean Mac.
 - S87: when Alice's full machine holds a changed package file, her laptop's Machines view always
   names that machine and why, whatever order the events come in. wasmtime 48.0.9 (8 advisories).
+- S55: Alice publishes the reading list on this Mac; Bob, in a fresh macOS VM with v0.1.0 from the
+  one-liner, follows her link over the network, sees her verified, installs and uses it, and a
+  tampered package is refused by name (`sh install/tests/vm_two_machines.sh`).
