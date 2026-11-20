@@ -3,7 +3,7 @@
 //! red against the mutant of `install.sh` named in its `///` line, and green on `install.sh`.
 
 use std::fs;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::PathBuf;
 
 use crate::support::unit::*;
@@ -348,4 +348,52 @@ fn adv_s94_the_commit_keeps_an_old_name_when_its_folder_changed_after_the_commit
         ),
         "{u:?}"
     );
+}
+
+/// TECHNICAL 3.6 step 1: the three programs and `install.sh` are staged with mode 755 whatever
+/// mode the archive gave them, so no other account can rewrite a program the person runs.
+/// Mutant (already open at `9c743c3`, and not covered by S94 fix1): in `stage_files` replace
+/// `chmod 755 "$DEST.new.$$"` by `chmod 777 "$DEST.new.$$"`; every default and slow test then
+/// passes. Gain: another local account rewrites `~/.local/bin/watane` (and `install.sh`), which
+/// the person then runs.
+#[test]
+fn adv_s94_staged_programs_are_mode_755() {
+    let fx = Fx::new();
+    let home = fx.root.path().join("m");
+    fs::create_dir(&home).expect("home");
+    let top = fx.root.path().join("top");
+    let rels = [
+        "bin/watane",
+        "bin/watane-dev",
+        "bin/watane-node",
+        "share/watane/install.sh",
+    ];
+    for r in rels {
+        write_file(&top.join(r), "#!/bin/sh\n");
+        fs::set_permissions(top.join(r), fs::Permissions::from_mode(0o700)).expect("chmod");
+    }
+    let units = fx.units(
+        "",
+        &[],
+        &[(
+            "stage",
+            &format!(
+                "HOME=$ROOT/m; check_home; set_entries; FOLDERS_RESOLVED=''; RELEASE=0.1.0; TOP=$ROOT/top; RELS='{}'; if stage_files; then rc=0; else rc=$?; fi; echo \"rc=$rc pid=$$\"",
+                rels.join(" ")
+            ),
+        )],
+    );
+    let u = case(&units, "stage");
+    let line = u
+        .out
+        .lines()
+        .find(|l| l.starts_with("rc="))
+        .unwrap_or_else(|| panic!("{u:?}"));
+    assert!(line.starts_with("rc=0 "), "{u:?}");
+    let pid = line.rsplit("pid=").next().expect("pid");
+    for r in rels {
+        let p = home.join(format!(".local/{r}.new.{pid}"));
+        let mode = fs::metadata(&p).expect("staged").permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o755, "{}", p.display());
+    }
 }
