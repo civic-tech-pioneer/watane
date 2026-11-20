@@ -456,19 +456,22 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
 
 // Resolve real files (including symlinks); lexical normalization also supports literal dep-info tests.
 fn normalized(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| {
-        let mut result = PathBuf::new();
-        for part in path.components() {
-            match part {
-                Component::ParentDir => {
-                    result.pop();
-                }
-                Component::CurDir => {}
-                part => result.push(part),
+    path.canonicalize().unwrap_or_else(|_| lexical(path))
+}
+
+/// `path` with `.` and `..` resolved as text: no filesystem call.
+fn lexical(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                result.pop();
             }
+            Component::CurDir => {}
+            part => result.push(part),
         }
-        result
-    })
+    }
+    result
 }
 
 /// One problem for all outside `.wit` paths, then one for each other path.
@@ -594,7 +597,8 @@ fn generate_paths(source: &str, copy: &Path) -> Vec<PathBuf> {
 }
 
 /// `generate_paths` as text only: no filesystem call, so a literal the mod picks (an autofs
-/// `/net/<host>/...`) is never touched. `real_copy` is the copy's canonical form.
+/// `/net/<host>/...`) is never touched. `real_copy` is the copy's canonical form: a relative
+/// literal is resolved from it, and an absolute one may name either form.
 fn generate_paths_text(source: &str, copy: &Path, real_copy: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for call in source.split("generate!").skip(1) {
@@ -610,7 +614,7 @@ fn generate_paths_text(source: &str, copy: &Path, real_copy: &Path) -> Vec<PathB
                 && let Some(literal) = after.trim_start().strip_prefix('"')
                 && let Some((literal, _)) = literal.split_once('"')
             {
-                let path = normalized(&copy.join("logic").join(literal));
+                let path = lexical(&real_copy.join("logic").join(literal));
                 if !path.starts_with(real_copy) && !path.starts_with(copy) && !found.contains(&path)
                 {
                     found.push(path);
@@ -911,6 +915,29 @@ mod tests {
             generate_paths_text(src, copy, copy),
             [PathBuf::from("/net/host/x/wit")]
         );
+        // A symlinked cache path (macOS `/var` -> `/private/var`): a relative literal resolves
+        // from the real copy, an absolute one may name either form, and a literal that is
+        // itself a symlink into the copy is not followed (it is never touched).
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().canonicalize().unwrap().join("real");
+        fs::create_dir_all(real.join("build/me/wit")).unwrap();
+        std::os::unix::fs::symlink(&real, temp.path().join("link")).unwrap();
+        std::os::unix::fs::symlink(real.join("build/me/wit"), temp.path().join("out")).unwrap();
+        let copy = temp.path().join("link/build/me");
+        let real_copy = copy.canonicalize().unwrap();
+        assert_eq!(real_copy, real.join("build/me"));
+        let sibling = "generate!({ path: \"../../other/wit\" });";
+        assert_eq!(
+            generate_paths(sibling, &copy),
+            [real.join("build/other/wit")]
+        );
+        for own in [copy.join("wit"), real_copy.join("wit")] {
+            let src = format!("generate!({{ path: \"{}\" }});", own.display());
+            assert!(generate_paths(&src, &copy).is_empty(), "{src}");
+        }
+        let out = temp.path().join("out");
+        let src = format!("generate!({{ path: \"{}\" }});", out.display());
+        assert_eq!(generate_paths(&src, &copy), [out]);
     }
 
     #[test]
