@@ -1582,3 +1582,36 @@ Validation: `cargo test` reports 111 passing unit tests and one failure in
 above. `cargo fmt --check` passes (stable warns about nightly-only settings).
 `cargo clippy --all-targets --features driver -- -D warnings` and
 `git diff --check` pass.
+
+#### S88 — remove confirmation investigation (blocked before reproduction)
+
+The cause is not established; no focus fix has been applied. The instrumented
+`j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail` could not reach
+page readiness in this sandbox: `_LSModifyNotification` returned -50 and
+`com.apple.hiservices-xpcservice` reported an invalid connection, followed by
+the driver's 30-second startup timeout. This is not a failing focus trace.
+A changed `modsView` signature calls `cancelConfirm` before moving the shared
+panel, so that path alone does not explain an open panel losing focus; the
+remaining candidates need a trace from a logged-in Mac. In particular,
+`installed()` waits only for the section, whereas the install handler later
+sets `selected = added[0].local` and calls `filterLibrary()`. That could hide
+a different mod's section after `warn()` without hiding the panel itself;
+this is a code-reading hypothesis, not an observed cause.
+
+Temporary diagnostics live only in that test: focus/blur/visibility events,
+`hidden` writes, focus calls and confirmation-node moves record their stacks,
+active element and ancestor visibility. On the original focus assertion's
+failure it prints `FOCUS TRACE`. Every original assertion remains, with no
+focus wait or retry. Production `app.js` instrumentation was removed. Remove
+the test diagnostics after collecting the failing trace, then add the
+cause-specific regression and fix. AC1's cause/evidence/fix and AC2's 50
+consecutive passes remain outstanding; zero successful native runs here.
+
+Validation: default `cargo test` has 111 passing unit tests and the existing
+pairing failure `Failed to create netmon monitor`; driver clippy with
+`-D warnings`, `cargo fmt --check` and `git diff --check` pass. No dependency
+or specification was changed.
+The requested `--include-ignored j2::` group reports 0 passed / 4 failed,
+each before page readiness with the same native service errors. The shell
+loop targeting 50 AC8 passes stopped on its first startup failure: 0/50.
+Logs: `/tmp/watane-s88-{default,j2,clippy,fmt,repeat-last}.log`.
