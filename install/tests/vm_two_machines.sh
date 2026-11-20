@@ -24,12 +24,19 @@ fi
 # shellcheck source-path=SCRIPTDIR source=vm_lib.sh
 . "$here/vm_lib.sh"
 check cd "$here/../.."
-check cargo build -p watane-app --features driver
-check cargo test -p watane-app --features driver --test it --no-run
+check bounded "$whole_bound" "cargo build" cargo build -p watane-app --features driver
+check bounded "$whole_bound" "cargo test --no-run" cargo test -p watane-app --features driver --test it --no-run
+install_bound=$(seconds 900)
+journey_bound=$(seconds 1200)
 boot watane-clean
 # No controlling terminal: both installation and the driver channel require -T.
 remote_plain() {
-  ssh -T -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  bounded "$step_bound" remote_plain ssh -T -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+    -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "admin@$ip" "$@" </dev/null
+}
+remote_install() {
+  bounded "$install_bound" install ssh -T -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 "admin@$ip" "$@" </dev/null
 }
@@ -43,9 +50,9 @@ check remote_plain 'set -eu
 if [ -n "$from" ]; then
   check remote_plain 'mkdir -p /Users/admin/watane-release'
   check copy "$from/." "admin@$ip:/Users/admin/watane-release/"
-  check remote_plain 'WATANE_RELEASE_BASE=file:///Users/admin/watane-release sh /Users/admin/watane-release/install.sh'
+  check remote_install 'WATANE_RELEASE_BASE=file:///Users/admin/watane-release sh /Users/admin/watane-release/install.sh'
 else
-  check remote_plain 'curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh'
+  check remote_install 'curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh'
 fi
 # shellcheck disable=SC2016 # HOME expands in the guest.
 check remote_plain '"$HOME/.local/bin/watane" --version'
@@ -60,6 +67,8 @@ cat >"$work/Bob.app/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>
 PLIST
+ats=$(plutil -extract NSAppTransportSecurity json -o - app/Info.plist) || fail 'plutil: extract release ATS'
+check plutil -insert NSAppTransportSecurity -json "$ats" "$work/Bob.app/Contents/Info.plist"
 cat >"$work/bob.sh" <<'BOB'
 #!/bin/sh
 # Guest GUI-session bridge (TECHNICAL 12.6).
@@ -119,9 +128,11 @@ WATANE_VM_ALICE_HOME=$work/alice
 PYTHONUNBUFFERED=1 /usr/bin/python3 -m http.server 0 --bind "$host_ip" \
   --directory "$WATANE_VM_ALICE_HOME/dist/site" >"$work/web.log" 2>&1 &
 web=$!
-deadline=$(( $(date +%s) + 30 ))
+listener_bound=$(seconds 30)
+deadline=$(( $(date +%s) + listener_bound ))
 port=
 while [ -z "$port" ]; do
+  whole_check
   port=$(sed -n 's/.* port \([0-9][0-9]*\) .*/\1/p' "$work/web.log" | head -n 1)
   [ -z "$port" ] || break
   if ! kill -0 "$web" 2>/dev/null || [ "$(date +%s)" -ge "$deadline" ]; then
@@ -132,6 +143,7 @@ while [ -z "$port" ]; do
 done
 # The wrapper removes its SSH PID file on exit so the run trap never keeps
 # a stale PID from an earlier, normally closed driver connection.
+quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 cat >"$work/bridge.sh" <<BRIDGE
 #!/bin/sh
 pidfile="\${SSH_ASKPASS%/*}/bridge-\$\$.pid"
@@ -146,19 +158,27 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+perl -e 'alarm shift; exec @ARGV; die "exec: \$!"' "$step_bound" \\
 ssh -T -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \\
   -o PreferredAuthentications=password -o PubkeyAuthentication=no \\
   -o NumberOfPasswordPrompts=1 -o ConnectTimeout=5 admin@$ip sh bob.sh "\$@" <&0 &
 bridge=\$!
 printf '%s\\n' "\$bridge" >"\$pidfile"
-wait "\$bridge"
+if wait "\$bridge"; then
+  bridge=
+else
+  status=\$?
+  bridge=
+  [ "\$status" -ne 142 ] || printf '%s\\n' 'Bob bridge ssh timed out after $step_bound s' >&2
+  exit "\$status"
+fi
 BRIDGE
 # Use a quoted shell path because the command is consumed by sh -c in the test.
-quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 WATANE_VM_BOB="sh $(quote "$work/bridge.sh")"
 WATANE_VM_SITE_BASE=http://$host_ip:$port/
 export WATANE_VM_BOB WATANE_VM_ALICE_HOME WATANE_VM_SITE_BASE
-cargo test -p watane-app --features driver --test it two_machines:: -- --ignored \
+deadline_args "$journey_bound" "cargo test two_machines"
+perl -MPOSIX "$work/deadline.pl" "$whole_bound" "$bound" "$step" cargo test -p watane-app --features driver --test it two_machines:: -- --ignored \
   >"$work/journey.log" 2>&1 &
 journey=$!
 if wait "$journey"; then
@@ -166,7 +186,7 @@ if wait "$journey"; then
   cat "$work/journey.log"
 else
   journey=
-  cat "$work/journey.log"
+  cat "$work/journey.log" >&2
   fail 'command failed: cargo test -p watane-app --features driver --test it two_machines:: -- --ignored'
 fi
 # Cargo succeeds even when a filter selects zero tests. Require the fixed

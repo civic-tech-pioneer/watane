@@ -482,10 +482,20 @@ esac
 
 #[test]
 fn ac2_ac4_two_machines_lifecycle_failure_and_term_cleanup() {
-    use std::os::unix::fs::PermissionsExt;
-    for mode in [
+    two_machine_modes(&[
         "pass", "latest", "install", "mount", "copy", "ip", "journey", "missing", "term",
-    ] {
+        "vanished", "empty",
+    ]);
+}
+
+#[test]
+fn ac3_two_machines_hung_ssh_ends_run() {
+    two_machine_modes(&["hang-ssh"]);
+}
+
+fn two_machine_modes(modes: &[&str]) {
+    use std::os::unix::fs::PermissionsExt;
+    for &mode in modes {
         let temp = tempfile::Builder::new()
             .prefix("two machines' ")
             .tempdir()
@@ -518,12 +528,31 @@ fn ac2_ac4_two_machines_lifecycle_failure_and_term_cleanup() {
         let fake = r#"#!/bin/sh
 printf '%s %s\n' "${0##*/}" "$*" >> "$CALLS"
 case ${0##*/}:$1 in
+  plutil:*) [ "$1" != -extract ] || echo '{}' ;;
+  cat:*)
+    case "$1" in
+      */bridge-*.pid)
+        if [ "$MODE" = vanished ] || [ "$MODE" = empty ]; then
+          pid=$(/bin/cat "$1")
+          kill "$pid"
+          if [ "$MODE" = vanished ]; then
+            # The fake bridge removes its PID file in its TERM handler.
+            while [ -f "$1" ]; do sleep 0.02; done
+          else
+            : > "$1"
+          fi
+        fi ;;
+    esac
+    exec /bin/cat "$@" ;;
   tart:ip) [ "$MODE" != ip ] || exit 17; echo 192.0.2.10 ;;
   ssh:*)
     [ "$SSH_ASKPASS_REQUIRE" = force ] && [ "$("$SSH_ASKPASS")" = admin ] || exit 3
     case "$*" in
-      *bob.sh*) trap 'echo bridge-stopped >> "$CALLS"; exit' TERM; : > "$BRIDGE_READY"; while :; do sleep 1; done ;;
-      *mount*) [ "$MODE" != mount ] || exit 19 ;;
+      *bob.sh*)
+        trap 'echo bridge-stopped >> "$CALLS"; if [ "$MODE" = vanished ]; then rm -f "${SSH_ASKPASS%/*}"/bridge-*.pid; fi; exit' TERM
+        : > "$BRIDGE_READY"
+        while :; do sleep 1; done ;;
+      *mount*) [ "$MODE" != hang-ssh ] || exec /usr/bin/perl -e 'sleep 1 while 1' ; [ "$MODE" != mount ] || exit 19 ;;
       *install.sh*) [ "$MODE" != install ] || exit 21 ;;
       *'route -n get default'*) echo 127.0.0.1 ;;
     esac ;;
@@ -548,7 +577,7 @@ case ${0##*/}:$1 in
     esac ;;
 esac
 "#;
-        for name in ["tart", "ssh", "scp", "cargo", "python3"] {
+        for name in ["tart", "ssh", "scp", "cargo", "python3", "plutil", "cat"] {
             let path = bin.join(name);
             fs::write(&path, fake).expect("fake");
             fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -576,6 +605,10 @@ esac
             .env("MARKER", &marker)
             .env("BRIDGE_READY", temp.path().join("bridge-ready"))
             .env("MODE", mode)
+            .env(
+                "WATANE_VM_TEST_SCALE",
+                if mode.starts_with("hang-") { "10" } else { "1" },
+            )
             .env("TMPDIR", &tmp)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -605,13 +638,16 @@ esac
         let out = super::support::finish(child);
         assert_eq!(
             out.code == 0,
-            ["pass", "latest"].contains(&mode),
+            ["pass", "latest", "vanished", "empty"].contains(&mode),
             "{mode}: {out:?}"
         );
         let deadline = std::time::Instant::now() + super::support::WAIT_TIMEOUT;
         let log = loop {
             let log = fs::read_to_string(&calls).expect("calls");
-            if !["pass", "latest", "journey", "missing", "term"].contains(&mode)
+            if ![
+                "pass", "latest", "journey", "missing", "term", "vanished", "empty",
+            ]
+            .contains(&mode)
                 || log.contains("bridge-stopped")
             {
                 break log;
@@ -622,6 +658,17 @@ esac
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
+        if mode.starts_with("hang-") {
+            let (step, bound) = match mode {
+                "hang-ssh" => ("remote_plain", 30),
+                _ => unreachable!(),
+            };
+            assert!(
+                out.stderr.contains(step)
+                    && out.stderr.contains(&format!("timed out after {bound} s")),
+                "{out:?}"
+            );
+        }
         let run = format!("watane-run-{pid}");
         assert!(
             log.contains(&format!("tart clone watane-clean {run}\n")),
@@ -645,7 +692,11 @@ esac
             0,
             "{out:?}"
         );
-        if ["pass", "latest", "journey", "missing", "term"].contains(&mode) {
+        if [
+            "pass", "latest", "journey", "missing", "term", "vanished", "empty",
+        ]
+        .contains(&mode)
+        {
             assert!(log.contains("web-stopped"), "{log}");
             assert!(log.contains("bridge-stopped"), "{log}");
             let alice = log
@@ -654,12 +705,18 @@ esac
                 .expect("alice home");
             assert!(!Path::new(alice).exists());
         }
-        if ["pass", "latest"].contains(&mode) {
+        if ["pass", "latest", "vanished", "empty"].contains(&mode) {
             assert!(
                 log.contains("cargo build -p watane-app --features driver"),
                 "{log}"
             );
             assert!(log.contains("--test it --no-run"), "{log}");
+            let clone_at = log.find("tart clone").expect("clone");
+            assert!(log.find("cargo build").expect("build") < clone_at, "{log}");
+            assert!(
+                log.find("--test it --no-run").expect("compile tests") < clone_at,
+                "{log}"
+            );
             assert!(log.contains("ssh -T"), "{log}");
             if mode == "latest" {
                 assert!(log.contains("curl -fsSL https://github.com/civic-tech-pioneer/watane/releases/latest/download/install.sh | sh"), "{log}");
@@ -675,6 +732,7 @@ esac
                 "install" => "install.sh",
                 "mount" => "mount",
                 "copy" => "copy",
+                "hang-ssh" => "remote_plain",
                 "ip" => "tart ip",
                 _ => "cargo test",
             };
@@ -851,4 +909,169 @@ fn ac3_guest_rejects_each_shared_filesystem() {
         .output()
         .expect("check folder");
     assert!(!out.status.success(), "{out:?}");
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn ac1_bob_bundle_copies_release_ats_at_runtime() {
+    let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
+    let bundle = source
+        .split("check mkdir -p \"$work/Bob.app/Contents/MacOS\"")
+        .nth(1)
+        .expect("bundle")
+        .split("cat >\"$work/bob.sh\"")
+        .next()
+        .expect("end");
+    let temp = tempfile::tempdir().expect("temp");
+    fs::create_dir_all(temp.path().join("Bob.app/Contents/MacOS")).expect("bundle directory");
+    let helper = temp.path().join("bundle.sh");
+    fs::write(
+        &helper,
+        format!("set -eu\nwork=$1\ncheck() {{ \"$@\"; }}\n{bundle}"),
+    )
+    .expect("helper");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("root");
+    // Substitute only the prebuilt executable; generate the real plist and copy its live ATS value.
+    let helper_source = fs::read_to_string(&helper).expect("helper");
+    fs::write(
+        &helper,
+        helper_source.replace("target/debug/watane-app", "/usr/bin/true"),
+    )
+    .expect("fixture");
+    let out = Command::new("sh")
+        .arg(helper)
+        .arg(temp.path())
+        .current_dir(root)
+        .output()
+        .expect("bundle");
+    assert!(out.status.success(), "{out:?}");
+    let extract = |path: &Path| {
+        let out = Command::new("plutil")
+            .args(["-extract", "NSAppTransportSecurity", "json", "-o", "-"])
+            .arg(path)
+            .output()
+            .expect("plutil");
+        assert!(out.status.success(), "{out:?}");
+        // plutil's JSON key order is unspecified; XML output is canonical for this dictionary.
+        let json = temp.path().join("ats.json");
+        fs::write(&json, out.stdout).expect("json");
+        let out = Command::new("plutil")
+            .args(["-convert", "xml1", "-o", "-"])
+            .arg(json)
+            .output()
+            .expect("xml");
+        assert!(out.status.success(), "{out:?}");
+        out.stdout
+    };
+    assert_eq!(
+        extract(&temp.path().join("Bob.app/Contents/Info.plist")),
+        extract(&root.join("app/Info.plist"))
+    );
+}
+
+#[test]
+fn ac5_two_machine_recovery_and_deadlines_are_documented() {
+    let technical = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("TECHNICAL.md"))
+        .expect("technical");
+    let section = technical
+        .split("### 12.6 Two machines (S55)")
+        .nth(1)
+        .expect("12.6")
+        .split("## 13.")
+        .next()
+        .expect("end");
+    for text in [
+        "NSAppTransportSecurity",
+        "app/Info.plist",
+        "bare test binary",
+        "set +e",
+        "vanished",
+        "empty",
+        "300 s",
+        "900 s",
+        "1200 s",
+        "3600 s",
+        "WATANE_VM_TEST_SCALE",
+        "timed out after N s",
+    ] {
+        assert!(section.contains(text), "missing {text}");
+    }
+}
+
+#[test]
+fn ac3_remote_journey_and_whole_script_deadlines() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().expect("temp");
+    let ssh = temp.path().join("ssh");
+    fs::write(&ssh, "#!/bin/sh\nexec /usr/bin/perl -e 'sleep 1 while 1'\n").expect("ssh");
+    fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).expect("chmod");
+    fs::copy(&ssh, temp.path().join("scp")).expect("scp");
+    let source = fs::read_to_string(script("vm_two_machines.sh")).expect("source");
+    let config = source
+        .split("install_bound=")
+        .nth(1)
+        .expect("bounds")
+        .split("boot watane-clean")
+        .next()
+        .expect("end bounds");
+    let plain = source
+        .split("remote_plain() {")
+        .nth(1)
+        .expect("remote functions")
+        .split("check remote_plain")
+        .next()
+        .expect("end remote functions");
+    let helper = temp.path().join("run.sh");
+    fs::write(
+        &helper,
+        format!(
+            r#"set -eu
+driver=deadline-test
+fail() {{ echo "$*" >&2; exit 1; }}
+. "$1"
+install_bound={config}
+ip=192.0.2.1
+remote_plain() {{{plain}
+case $2 in
+  whole) whole_end=0; check touch "$3" ;;
+  build) bounded "$whole_bound" "cargo build" ssh ;;
+  journey) bounded "$journey_bound" "cargo test" ssh ;;
+  remote) check remote true ;;
+  copy) check copy fixture admin@192.0.2.1: ;;
+  install) check remote_install fixture ;;
+esac
+"#
+        ),
+    )
+    .expect("helper");
+    for mode in ["remote", "copy", "install", "journey", "build", "whole"] {
+        let marker = temp.path().join("must-not-run");
+        let mut command = Command::new("/usr/bin/perl");
+        command
+            .args(super::support::LAUNCH)
+            .arg("sh")
+            .arg(&helper)
+            .arg(script("vm_lib.sh"))
+            .arg(mode)
+            .arg(&marker)
+            .env("PATH", format!("{}:/usr/bin:/bin", temp.path().display()))
+            .env("WATANE_VM_TEST_SCALE", "100")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let child = super::support::spawn_run(&mut command);
+        let out = super::support::finish_within(child, std::time::Duration::from_secs(90))
+            .expect("deadline");
+        assert_ne!(out.code, 0, "{out:?}");
+        let message = match mode {
+            "remote" => "remote timed out after 3 s",
+            "copy" => "copy timed out after 3 s",
+            "install" => "install timed out after 9 s",
+            "journey" => "cargo test timed out after 12 s",
+            _ => "whole script timed out after 36 s",
+        };
+        assert!(out.stderr.contains(message), "{out:?}");
+        assert!(!marker.exists());
+    }
 }

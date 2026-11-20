@@ -1621,6 +1621,12 @@ In order, the host driver:
 4. Wraps `target/debug/watane-app` in `Bob.app`: `Contents/MacOS/watane-app`
    and `Contents/Info.plist` with `CFBundleExecutable=watane-app`,
    `CFBundleIdentifier=org.watane.bob-driver`, `CFBundlePackageType=APPL`.
+   At run time it takes `NSAppTransportSecurity` from `app/Info.plist` with
+   `plutil -extract NSAppTransportSecurity json -o -`, then inserts the value
+   with `plutil -insert NSAppTransportSecurity -json`. The bundle gets ATS;
+   the bare test binary does not. This copies the release exception for
+   `http://<local>.localhost:<port>/` so Bob's mod pages can load (app 12),
+   without a second copy of the policy that could drift.
    Copies the bundle and `bob.sh <home_name>` to the guest. The bridge
    makes input/output FIFOs in a fresh temporary folder and launches
    `open -n -W -i <in> -o <out> --stderr <log> --env
@@ -1650,6 +1656,21 @@ In order, the host driver:
 On success, failure or HUP/INT/TERM, the trap kills the web host, the
 journey command and any recorded SSH bridge, stops and deletes only the
 run's VM, and removes the host temporary folder, including Alice's home.
+Cleanup runs with `set +e`; a vanished or empty bridge PID file is skipped.
+Failures while reading a PID or stopping a process cannot skip `tart stop`,
+`tart delete` or `rm -rf "$work"`. Cleanup's Tart commands also have deadlines.
+
+Every `remote`, `copy` and `remote_plain` call has a 300 s hard deadline;
+the one-liner install (also with `--from`) has 900 s. Each Bob driver SSH
+bridge also has 300 s. The journey's `cargo test` has 1200 s. The whole
+script has 3600 s, checked before each step; each command is capped by the
+remaining whole-script time, including builds before `tart clone`.
+The IP/SSH boot deadline remains 600 s and the HTTP listener has 30 s.
+Deadlines use Perl `alarm`, report the step and `timed out after N s`, and
+stop the command's process group. Cleanup still runs after a timeout.
+Only the test helpers read `WATANE_VM_TEST_SCALE` (default 1): a positive
+integer divisor of every bound, rounded down with a minimum of one second,
+so offline fixtures can prove hung commands terminate without a long wait.
 It never boots or deletes `watane-clean` itself. Without Tart it exits 2
 before creating any file, with exactly:
 
