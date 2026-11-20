@@ -789,3 +789,12 @@ rustup command (offer B prints two frames). Limits: a signal landing between the
 `mv` and `COMMITTED=1` gets no hint (the install is whole; the swap's undo finishes the
 commit); a lost INT on macOS sh reaches the same trap through `check_signal`. Tests: `tests/it/s89.rs`
 (run on Linux; macOS-only sh behaviours are for the PO's Mac run).
+
+## S89-2: Node 24 actions and the release-build skip
+
+Pins now: checkout v7.0.1 (3d3c42e5...), upload-artifact v7.0.2 (cf430e03...),
+download-artifact v8.0.2 (9000827c...); all lightweight tags, so the tag object is
+the commit; each `action.yml` was fetched and says `using: node24`. READMEs checked:
+`path` of download-artifact still extracts a single named artifact directly into
+`path`; upload-artifact `include-hidden-files` still defaults to false and
+`dist-out/` has none. Earlier notes about "v4 SHAs" are history.
