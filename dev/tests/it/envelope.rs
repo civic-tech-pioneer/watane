@@ -92,7 +92,7 @@ fn ac1_new_counter_template_envelope() {
         value["next"],
         format!(
             "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json --dir {}",
-            root.display()
+            root.canonicalize().unwrap().display()
         )
     );
 }

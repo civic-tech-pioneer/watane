@@ -1417,8 +1417,8 @@ participant in the app. `--wait <seconds>` (default 600) bounds this request.
 No answer is `host.no_answer`: `no answer from the home host in <n> s`,
 fix `Run again with a longer --wait: <rerun with --wait doubled>` (2.2). A `refused` answer is
 `host.declined`: say the person declined installing the requested consumer
-slug (or its mod folder) in their watane app. The fix asks the person
-whether they want it installed, then ends in the rerun (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
+slug (or its mod folder) in their watane app. The fix is 2.2's `The person declined in
+the app. Ask them, then run: <rerun>`. `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
 proves the message and fix; the fix must not say "correct". App 5xx errors
 follow 2.2: 503 `unavailable` is `env.host_not_running`, message
 `the watane app of <home> runs but could not open its data: <app message>`,
@@ -1474,8 +1474,8 @@ next command and fixes of `serve`.
    and `source` (`Package::has_source()`), as in 2.4, and step 5's `providers`.
 
 A `refused` answer is `host.declined`: `The person declined publishing
-<slug> from their watane app`, with fix `Ask the person whether they want
-<slug> published, then run: <rerun>` (2.2).
+<slug> from their watane app`, with 2.2's fix `The person declined in the
+app. Ask them, then run: <rerun>`.
 The CLI supplies the slug; the fixed `Client::publish` interface carries
 only a package and duration. A timeout uses the message and fix of 9.6;
 a 409 `version_exists` answer (a race after step 2b) is
