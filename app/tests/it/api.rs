@@ -433,35 +433,40 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
             assert_eq!(message, expected);
         }
     }
-    for bytes in [
-        b"{".to_vec(),
-        serde_json::to_vec(
-            &json!({"link":link.to_string(),"release":published.info.reference.to_string()}),
-        )
-        .unwrap(),
-        b"{}".to_vec(),
-        serde_json::to_vec(&json!({"link":link.to_string(), "release":null})).unwrap(),
-        serde_json::to_vec(&json!({"link":null, "release":published.info.reference.to_string()}))
+    for (bytes, code) in [
+        (b"{".to_vec(), "bad_input"),
+        (
+            serde_json::to_vec(
+                &json!({"link":link.to_string(),"release":published.info.reference.to_string()}),
+            )
             .unwrap(),
-        br#"{"link":"bad"}"#.to_vec(),
-        br#"{"release":"bad"}"#.to_vec(),
-        serde_json::to_vec(&json!({"link":carol.own_link(None).unwrap().to_string()})).unwrap(),
+            "bad_input",
+        ),
+        (b"{}".to_vec(), "bad_input"),
+        (
+            serde_json::to_vec(&json!({"link":link.to_string(), "release":null})).unwrap(),
+            "bad_input",
+        ),
+        (
+            serde_json::to_vec(
+                &json!({"link":null, "release":published.info.reference.to_string()}),
+            )
+            .unwrap(),
+            "bad_input",
+        ),
+        (br#"{"link":"bad"}"#.to_vec(), "bad_request"),
+        (br#"{"release":"bad"}"#.to_vec(), "bad_request"),
+        (
+            serde_json::to_vec(&json!({"link":carol.own_link(None).unwrap().to_string()})).unwrap(),
+            "bad_request",
+        ),
     ] {
-        let shape_error = serde_json::from_slice::<Value>(&bytes).map_or(true, |v| {
-            v.as_object().is_some_and(|o| {
-                o.len() != 1 || o.contains_key("link") && o.contains_key("release")
-            })
-        });
         let (status, _, bytes) =
             api_request(Some(Arc::clone(&dist)), "/api/fetch", bytes, None).await;
         assert_eq!(status, 400);
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
-            if shape_error {
-                "bad_input"
-            } else {
-                "bad_request"
-            }
+            code
         );
     }
     let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), json!({"link":link.to_string()})).await;
@@ -749,8 +754,6 @@ async fn ac4_fetch_shape_and_wrong_methods_have_plain_json_errors() {
         assert_eq!(status, 400);
         let error = serde_json::from_slice::<Value>(&bytes).unwrap()["error"].clone();
         assert_eq!(error, json!({"code":"bad_input","message":message}));
-        assert!(!message.contains("untagged"));
-        assert!(!message.contains("variant"));
     }
     for (path, method) in [
         ("/api/fetch", "GET"),
