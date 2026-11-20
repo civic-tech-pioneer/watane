@@ -506,15 +506,19 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   channel views across the 2 s poll; hidden windows poll without focus; `NO_AT_BRIDGE` and named
   versions in the Linux runner. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: app/ (src, ui, tests, scripts, TECHNICAL).
   Local (window tests).
-- [ ] **S91 Small truths in pkg, log and host (leftover sweep).** in flight (cloud; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`)
-  Story: a maker or a mod hits an edge and gets a named cause, not raw I/O text. Outcomes:
-  `add_provider` under a swap race and `pack`'s list-then-stat window give watane's own codes,
-  and a directory swapped in for a file is named as such; log's identity key is opened once and
-  checked on the handle (no check-then-open); host's unknown `/api` route is `not_found`; the 413
-  guard drains or the test says why it need not; an abrupt `/call` disconnect has a test and
-  `Served::shutdown`'s bound is true; program.rs's port probe binds once. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: pkg/src,
-  pkg/tests, log/src/identity.rs, log/tests, host/src/server.rs, host/tests/it/program*, their
-  TECHNICAL. Cloud.
+- [x] **S91 Small truths in pkg, log and host (leftover sweep).** Delivered 2026-11-20 (main
+  `54da8c9`, PO fix `b6fdede`; routine `trig_01DwQcTobkjJsLJ8rJcL9toc`, cloud, ~2.5 h). Runs:
+  S91-1 1, S91-2 1, S91-3 1, S91-fix1 1 (Claude implementer); validator round 1 each. user-sim
+  REJECTED once (a .wit swapped for a directory read as rule `limit`), then ACCEPTED; adversary
+  HELD (Verification, Origin/Local API, add_provider writes). A maker or mod that hits a race or
+  an odd file gets watane's own cause. Decisions: pkg races give rule `path` with CHANGED, a
+  directory swapped in for a file `refusal::DIRECTORY` (4.8, 6.4); log opens identity.key once
+  with O_NOFOLLOW|O_NONBLOCK and checks it with fstat (libc added to log; a mode hiding the key
+  from its owner now reads Io, still refused); host's unknown route on the API host is 404
+  `not_found`, outside HostError (2.2, 8.1); 413 is not drained, 8.1 says why that is enough;
+  `Served::shutdown` 4 s for routers, 5 s in all (2.1, 12.2); the port test starts once. The cloud
+  could not run host's 5 IPv6 tests; on the Mac one (`hostile::ac5`) still expected
+  `bad_request`, fixed by the PO to `not_found` per 8.1, host 170 passed.
 - [x] **S92 Blame the right machine (leftover sweep: dist, net, node).** Delivered 2026-11-20 (main
   `c224dd3`; routine `trig_01PPzACt58xPQLQu5d673Hoc`, cloud, ~2 h). Runs: s92-1 1, s92-2 1, s92-3 1,
   s92-fix1 1; validator round 1 each. user-sim REJECTED once (a holder error dropped the OS cause),
@@ -1197,6 +1201,7 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### pkg
 
+- From S91: `watane-dev add` on a provider with invalid WIT says only "is not a mod folder"; a pack entry gone during listing is sometimes named at its parent; pkg/tests/it/s91.rs is a race test of up to 5 s in the default run.
 - [S57] under a live swap race `add_provider` refuses safely, but with plain I/O text ("wit/deps: File
   exists", "No such file or directory").
 - [S57] `pack` has the same list-then-stat window `Mod::read` had (`pack_error` gives `Io`), and
@@ -1204,11 +1209,13 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### log
 
+- From S91's adversary: a hard link at identity.key is accepted (no nlink or uid check); a device node at identity.key is opened before fstat (same user only).
 - [S57] log/src/identity.rs still does `symlink_metadata` and then `File::open` on the key path: a
   check-then-open, inside a 0700 dir.
 
 ### host
 
+- From S91: an over-declared Content-Length whose body never arrives waits instead of a 413 at once.
 - [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
   (host/tests/it/program.rs:567); the probe-to-bind window stands.
 - [S45] the 413 guard passes because the test tolerates a reset, not because the server drains the
@@ -1702,6 +1709,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S91) the cloud container lacked clippy, nightly rustfmt, cargo-deny and cargo-hakari (installed by hand) and has no IPv6, so host's server tests need a local shim there; the app cannot build there (GTK); one IPv6 test's changed expectation surfaced only on the Mac.
 - (2026-11-20, PO) main check at `c224dd3` (S92) under load ~30 (S90 building): `j2::ac7` failed again (S90 reworks it) and net `regress_s75::ac1_ac2_light_reaches_the_full_machine_with_the_anchor_closed` once (*core*); the latter passed 5/5 alone at load 33. app's integration run took 206 s against 70 s earlier: Suite time figures need a quiet Mac.
 - (2026-11-20, S92) the cloud toolchain lacked clippy (`rustup component add clippy`); parallel tasks sharing an interface each passed alone and broke only merged (check slice/<id> after each fast-forward); three cold builds at once made each Sol run 15 to 20 min.
 - (2026-11-20, PO) main check at `501c123` under load ~40: host `program::catalog::ac1_installed_and_persisted_ids_match_pack_for_both_parts` got `Busy(<tmp home>)` once (*core*: a home lock); passes alone. Watch for a repeat.
@@ -2135,3 +2143,4 @@ The human may veto each one.
   tampered package is refused by name (`sh install/tests/vm_two_machines.sh`).
 - S88: the remove confirmation's focus check no longer flakes (a WebKit blur after a consent closes, in hidden test windows only).
 - S92: when Alice's install fails on a light machine she is told the real cause and whose machine it is.
+- S91: a maker or mod that hits a race or an odd file in pkg, log or host gets watane's own named cause.
