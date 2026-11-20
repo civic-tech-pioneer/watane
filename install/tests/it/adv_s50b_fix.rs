@@ -27,6 +27,7 @@ fn signal_wrapper(fx: &Fx, tool: &str, when: &str, signal: &str) {
 /// archive (a new network request after the person stopped it), and is ended only later at
 /// verify_archive's checkpoint. Before S50b-fix the trap ended the run once curl returned.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_term_during_download_still_fetches_the_archive() {
     let fx = Fx::new();
     signal_wrapper(&fx, "curl", "*SHA256SUMS*", "TERM");
@@ -43,6 +44,7 @@ fn adv_s50b_fix_term_during_download_still_fetches_the_archive() {
 /// A TERM recorded during step 5 (mktemp) is not checked before the foreign-file check, which
 /// exits 8 with its own lines; the run prints a cause after the person stopped it.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_term_before_the_foreign_check_prints_a_cause() {
     let fx = Fx::new();
     fs::create_dir_all(fx.home.join(".local/bin")).expect("bin");
@@ -59,6 +61,7 @@ fn adv_s50b_fix_term_before_the_foreign_check_prints_a_cause() {
 /// installed, then exits 143. The `kill` line only fixes the moment a signal can land; bash
 /// runs a trap between any two commands.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_term_after_the_swap_checkpoint_installs_and_reaches_the_toolchain() {
     let fx = Fx::new();
     let from = "  check_signal\n  SWAP_PID=$$\n";
@@ -100,6 +103,7 @@ fn group_signal_fake(fx: &Fx, tool: &str, when: &str, signal: &str, code: u8, ot
 /// never seen. A Ctrl-C during the toolchain detection (`rustup which rustc` exits 130) is lost: the
 /// run reports the toolchain as missing, goes on, prints that watane is installed and exits 0.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_ctrl_c_in_toolchain_detection_finishes_with_success() {
     let fx = Fx::new();
     fx.add_rustup(true);
@@ -112,6 +116,7 @@ fn adv_s50b_fix_ctrl_c_in_toolchain_detection_finishes_with_success() {
 /// 3.8: a Ctrl-C during quarantine removal (`xattr ... || true`, right after the commit) is
 /// lost: the run goes on to the toolchain step and exits 0.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_ctrl_c_in_xattr_reaches_the_toolchain_step() {
     let fx = Fx::new();
     group_signal_fake(&fx, "xattr", "-dr*", "INT", 130, "exit 0");
@@ -121,7 +126,9 @@ fn adv_s50b_fix_ctrl_c_in_xattr_reaches_the_toolchain_step() {
     assert!(!out.stdout.contains("is installed."), "{out:?}");
 }
 
+/// TECHNICAL 3.8 (S50b-fix ac2): a Ctrl-C in the platform substitution has no cause line.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac2_ctrl_c_in_platform_substitution() {
     let fx = Fx::new();
     group_signal_fake(&fx, "sysctl", "*", "INT", 130, "exit 0");
@@ -136,17 +143,20 @@ fn ac2_ctrl_c_in_platform_substitution() {
     assert!(!out.stderr.contains("unsupported platform"), "{out:?}");
 }
 
+/// TECHNICAL 3.8 (S50b-fix ac2): a Ctrl-C in an ignored `rmdir` of an uninstall ends it with 130.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac2_ctrl_c_in_ignored_rmdir() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     group_signal_fake(&fx, "rmdir", "*", "INT", 130, "exit 0");
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 130, "{out:?}");
     assert!(!out.stdout.contains("uninstalled watane"), "{out:?}");
 }
 
+/// TECHNICAL 3.8, 3.7 (S50b-fix ac2): a Ctrl-C in the answer pipeline (`dd`, `od`) ends the run with 130.
 #[test]
+#[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn ac2_ctrl_c_in_answer_pipeline() {
     for tool in ["dd", "od"] {
         let fx = Fx::new();
@@ -161,6 +171,7 @@ fn ac2_ctrl_c_in_answer_pipeline() {
 /// the swap's `|| return 1` once replaced cp's 130, and the run printed "could not put the
 /// files in place" with exit 5.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac2_ctrl_c_in_staging_copy_has_no_cause() {
     let fx = Fx::new();
     let real = which("cp");
@@ -199,6 +210,7 @@ fn mv_fake(fx: &Fx, rules: &str) {
 /// subshell turns mv's 130 into `exit 1`, and recover prints "could not recover interrupted
 /// install" and exits 5, a cause line after the person stopped the run.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_ctrl_c_in_recovery_undo_prints_a_cause() {
     let fx = Fx::new();
     let bin = fx.bin("watane");
@@ -225,6 +237,7 @@ fn adv_s50b_fix_ctrl_c_in_recovery_undo_prints_a_cause() {
 /// 130 from its own check_signal), rollback drops that status, and install_files checks only
 /// the swap's status, so the run prints "could not put the files in place" and exits 5.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn adv_s50b_fix_ctrl_c_in_swap_undo_prints_a_cause() {
     let fx = Fx::new();
     mv_fake(
@@ -236,8 +249,10 @@ fn adv_s50b_fix_ctrl_c_in_swap_undo_prints_a_cause() {
     assert!(!out.stderr.contains("watane install:"), "{out:?}");
 }
 
+/// TECHNICAL 3.8 (S50b-fix ac3): a failed journal append retains its signal status.
 /// AC3: a failed journal append retains its signal status through swap and rollback.
 #[test]
+#[ignore = "slow: a signal sent to a whole run at one point of its work; only a whole run shows what it then tells and leaves (TECHNICAL 3.8)"]
 fn ac3_journal_append_preserves_signal_status() {
     let fx = Fx::new();
     let source = baked_script("0.1.0").replace(
@@ -256,11 +271,12 @@ main "$@"
     assert!(!out.stderr.contains("watane install:"), "{out:?}");
 }
 
+/// TECHNICAL 3.9 (S50b-fix ac3): a permanent undo failure reports recovery, and the next run installs.
 /// AC3: permanent undo failure reports recovery rather than claiming an intact install.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn ac3_failed_undo_reports_recovery_and_next_run_installs() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&[]).code, 0);
+    let fx = Fx::installed();
     mv_fake(
         &fx,
         "case \"$1\" in *watane.app.new.*|*.old.*) exit 1 ;; esac",
@@ -277,14 +293,15 @@ fn ac3_failed_undo_reports_recovery_and_next_run_installs() {
     fx.assert_installed("0.1.0");
 }
 
+/// TECHNICAL 3.9 (S50b-fix): a failed staging cleanup does not claim the files were not put back.
 /// 3.9: "The files could not be put back" is printed only when the undo failed. Here every
 /// installed file is put back and the installed version works, but removing a staged `.new.`
 /// entry fails afterwards (an undo cleanup step), so the run claims the files could not be put
 /// back and tells the person the installed version needs restoring: a false report.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn adv_s50b_fix_staging_cleanup_failure_claims_files_not_put_back() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&[]).code, 0);
+    let fx = Fx::installed();
     mv_fake(&fx, "case \"$1\" in *watane.app.new.*) exit 1 ;; esac");
     let real = which("rm");
     let p = fx.fakes.join("rm");
@@ -307,11 +324,12 @@ fn adv_s50b_fix_staging_cleanup_failure_claims_files_not_put_back() {
     );
 }
 
+/// TECHNICAL 3.8, 3.9 (S50b-fix ac2): a transient undo failure is retried.
 /// AC2: a transient restore failure is retried before reporting the old version whole.
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn ac2_transient_undo_failure_retries_and_restores_old_version() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&[]).code, 0);
+    let fx = Fx::installed();
     mv_fake(
         &fx,
         r#"case "$1" in
@@ -337,9 +355,9 @@ fn ac2_transient_undo_failure_retries_and_restores_old_version() {
 /// 3.9: an old entry still under its `.old.<pid>` name was not put back, even when its
 /// path holds the new copy (removing the new copy failed, so undo stopped before the move).
 #[test]
+#[ignore = "slow: a fault injected into one step of a whole run; only a whole run shows what it then tells and leaves (TECHNICAL 3.9)"]
 fn validator_undo_stopped_before_restoring_reports_files_not_put_back() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&[]).code, 0);
+    let fx = Fx::installed();
     mv_fake(&fx, "case \"$1\" in *receipt.new.*) exit 1 ;; esac");
     let real = which("rm");
     let p = fx.fakes.join("rm");

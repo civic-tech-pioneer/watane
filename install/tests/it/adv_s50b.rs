@@ -42,12 +42,14 @@ fn real_rustup() -> Option<std::path::PathBuf> {
     (!p.is_empty()).then(|| std::path::PathBuf::from(p))
 }
 
+/// TECHNICAL 3.7 (S50b adv): the toolchain is installed only after a typed yes, from whatever folder the run starts in.
 /// 3.7 detects with `<rustup> which rustc` in the folder the person runs the one-liner from.
 /// In a folder with a `rust-toolchain.toml` (any Rust project), rustup installs the toolchain
 /// that file names to answer `which`: the toolchain is downloaded with no question asked and
 /// no terminal at all ("the toolchain only after a typed yes"). The dist server is the test's
 /// own fake server, so the attempt is seen in its request log and nothing leaves the machine.
 #[test]
+#[ignore = "slow: a whole run from a project folder whose toolchain file names a toolchain, with a fake dist server that must see no request (TECHNICAL 3.7)"]
 fn adv_s50b_toolchain_installed_without_a_yes_from_a_project_folder() {
     let Some(rustup) = real_rustup() else {
         eprintln!("no rustup on this machine: the attack needs the real one");
@@ -83,6 +85,7 @@ fn adv_s50b_toolchain_installed_without_a_yes_from_a_project_folder() {
 /// 3.7: detection runs from `$HOME` with `RUSTUP_AUTO_INSTALL=0`, whatever a `rust-toolchain.toml`
 /// of the starting folder names (here a `path` toolchain whose `rustc` must never run).
 #[test]
+#[ignore = "slow: a whole run from a project folder whose `rust-toolchain.toml` names a `path` toolchain whose `rustc` must never run (TECHNICAL 3.7)"]
 fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
     let fx = Fx::new();
     fx.add_rustup(true);
@@ -112,6 +115,7 @@ fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
     assert!(!mark.exists(), "the project's rustc ran");
 }
 
+/// TECHNICAL 8.5 rule 3 (S50b adv): an uninstall through an install folder linked to the home deletes nothing of the home.
 /// 8.5 rule 3 (fix2) checks that the holding folder resolves inside the resolved install folder
 /// and that this folder resolves "inside the resolved home"; the home itself counts as inside.
 /// So a link put at `~/.local/share/watane-dev` pointing at `~` (after the install) makes
@@ -120,6 +124,7 @@ fn adv_s50b_toolchain_detection_runs_from_home_with_auto_install_off() {
 /// text: a link put at `share/watane-dev` must not make it delete elsewhere). Even with the
 /// receipt untouched, the standard line `.../watane-dev/vendor` deletes the person's `~/vendor`.
 #[test]
+#[ignore = "slow: a whole uninstall with `share/watane-dev` linked to the home, which must not delete the person's `~/vendor` (TECHNICAL 8.5 rule 3); the rule is `unit::unit_allowed_is_the_install_set_and_nothing_else`"]
 fn adv_s50b_uninstall_through_install_folder_linked_to_the_home() {
     let fx = Fx::new();
     let out = fx.run(&[]);

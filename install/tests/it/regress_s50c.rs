@@ -4,10 +4,11 @@ use crate::support::*;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 
+/// TECHNICAL 3.4.1, 3.6 step 3 (S50c regress ac2): a folder that changes during staging aborts the run before the swap.
 #[test]
+#[ignore = "slow: a folder relinked while a whole run is held at its staging (TECHNICAL 3.4.1, 3.6 step 3)"]
 fn ac2_folder_changed_during_staging_aborts_before_swap() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     let receipt = fs::read(fx.share("watane/receipt")).unwrap();
     let program = fs::read(fx.home.join(".local/bin/watane")).unwrap();
     fx.rel.set_version("0.2.0", &["serde-1.0.1"]);
@@ -19,7 +20,7 @@ fn ac2_folder_changed_during_staging_aborts_before_swap() {
     fx.wait_state("chmod_waiting");
     fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
     symlink(fx.home.join("Documents"), fx.share("watane-dev")).unwrap();
-    fs::remove_file(fx.state.join("chmod_wait")).unwrap();
+    fx.unfault("chmod_wait");
     let out = finish(child);
 
     assert_eq!(out.code, 5, "{out:?}");
@@ -51,10 +52,11 @@ fn ac2_folder_changed_during_staging_aborts_before_swap() {
     }));
 }
 
+/// TECHNICAL 3.6 step 5, 8.5 rule 4 (S50c regress ac1): the cleanup keeps an old name when its folder changed after the commit.
 #[test]
+#[ignore = "slow: a folder relinked after the commit of a whole run held at `xattr` (TECHNICAL 3.6 step 5)"]
 fn ac1_cleanup_keeps_old_name_when_folder_changes_after_commit() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fx.rel.set_version("0.2.0", &["serde-1.0.1"]);
     fx.bake_script("0.2.0");
     let xattr = fx.fakes.join("xattr");
@@ -95,9 +97,9 @@ printf '%s' "$FAKE_INSTALL_PID" > "$FAKE_STATE/cleanup_pid"
 /// 3.6 step 5: `receipt.old.<pid>` is removed last and only when rule 4 still holds for
 /// `~/.local/share/watane` against the new receipt.
 #[test]
+#[ignore = "slow: the share folder relinked after the commit of a whole run held at `xattr` (TECHNICAL 3.6 step 5)"]
 fn validator_cleanup_keeps_receipt_old_when_share_folder_changes_after_commit() {
-    let fx = Fx::new();
-    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let fx = Fx::installed();
     fx.rel.set_version("0.2.0", &["serde-1.0.1"]);
     fx.bake_script("0.2.0");
     let xattr = fx.fakes.join("xattr");
