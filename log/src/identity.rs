@@ -14,23 +14,14 @@ fn io_error(path: &Path, source: io::Error) -> Error {
         source,
     }
 }
-fn check(path: &Path, directory: bool) -> Result<(), Error> {
-    let meta = fs::symlink_metadata(path).map_err(|e| io_error(path, e))?;
-    if !(if directory {
-        meta.is_dir()
-    } else {
-        meta.is_file()
-    }) {
-        return Err(Error::NotPlain {
-            path: path.to_owned(),
-            expected: if directory {
-                "directory"
-            } else {
-                "regular file"
-            },
-            link: meta.file_type().is_symlink(),
-        });
+fn not_plain(path: &Path, expected: &'static str, link: bool) -> Error {
+    Error::NotPlain {
+        path: path.to_owned(),
+        expected,
+        link,
     }
+}
+fn check_mode(path: &Path, meta: &fs::Metadata) -> Result<(), Error> {
     let mode = meta.permissions().mode() & 0o7777;
     if mode & 0o077 != 0 {
         return Err(Error::Exposed {
@@ -40,10 +31,34 @@ fn check(path: &Path, directory: bool) -> Result<(), Error> {
     }
     Ok(())
 }
-fn read(path: &Path) -> Result<SigningKey, Error> {
-    check(path, false)?;
+fn check_dir(path: &Path) -> Result<(), Error> {
+    let meta = fs::symlink_metadata(path).map_err(|e| io_error(path, e))?;
+    if !meta.is_dir() {
+        return Err(not_plain(path, "directory", meta.file_type().is_symlink()));
+    }
+    check_mode(path, &meta)
+}
+/// Opens the key without following a link and without blocking, then checks
+/// type and mode on that handle. A missing file is `Ok(None)`.
+fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
+    let mut file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+            return Err(not_plain(path, "regular file", true));
+        }
+        Err(e) => return Err(io_error(path, e)),
+    };
+    let meta = file.metadata().map_err(|e| io_error(path, e))?;
+    if !meta.is_file() {
+        return Err(not_plain(path, "regular file", false));
+    }
+    check_mode(path, &meta)?;
     let mut seed = Zeroizing::new([0; 32]);
-    let mut file = File::open(path).map_err(|e| io_error(path, e))?;
     file.read_exact(&mut seed[..]).map_err(|e| {
         if e.kind() == io::ErrorKind::UnexpectedEof {
             Error::CorruptKey {
@@ -59,7 +74,7 @@ fn read(path: &Path) -> Result<SigningKey, Error> {
             path: path.to_owned(),
         });
     }
-    Ok(SigningKey::from_bytes(&seed))
+    Ok(Some(SigningKey::from_bytes(&seed)))
 }
 pub(crate) fn prepare_dir(dir: &Path) -> Result<(), Error> {
     if dir.as_os_str().is_empty() {
@@ -74,7 +89,7 @@ pub(crate) fn prepare_dir(dir: &Path) -> Result<(), Error> {
         Err(e) => return Err(io_error(dir, e)),
         _ => {}
     }
-    check(dir, true)
+    check_dir(dir)
 }
 pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
     prepare_dir(dir)?;
@@ -88,10 +103,8 @@ pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
 pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     prepare_dir(dir)?;
     let path = dir.join("identity.key");
-    match fs::symlink_metadata(&path) {
-        Ok(_) => return read(&path),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(io_error(&path, e)),
+    if let Some(key) = read(&path)? {
+        return Ok(key);
     }
     let mut seed = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
@@ -123,7 +136,7 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     File::open(dir)
         .and_then(|f| f.sync_all())
         .map_err(|e| io_error(dir, e))?;
-    read(&path)
+    read(&path)?.ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))
 }
 
 pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {

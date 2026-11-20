@@ -339,11 +339,14 @@ later hardening.
    (`DirBuilder::recursive(true).mode(0o700)`).
 3. `symlink_metadata(dir)`: not a directory is `NotPlain { expected: "directory", link }` (`link` is true for a symbolic link); `mode & 0o077 != 0`
    is `Exposed`.
-4. `symlink_metadata(dir/identity.key)`:
+4. Open `dir/identity.key` once for reading with `O_NOFOLLOW | O_NONBLOCK` (so
+   a link is not followed and a FIFO cannot hang), then check the handle with
+   `fstat`, never the path:
    - missing: create the key (below);
-   - not a regular file (a link included): `NotPlain { expected: "regular file", link }`;
+   - a link (the open fails with `ELOOP`): `NotPlain { expected: "regular file", link: true }`;
+   - not a regular file (a FIFO, a directory): `NotPlain { expected: "regular file", link: false }`;
    - `mode & 0o077 != 0`: `Exposed`, and the file is not changed;
-   - else read it. A length other than 32 is `CorruptKey`.
+   - else read it from that handle. A length other than 32 is `CorruptKey`.
 5. Open the store (section 4.8).
 
 Create the key: 32 bytes from `getrandom::fill`. Write them to

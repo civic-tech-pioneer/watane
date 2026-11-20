@@ -70,3 +70,43 @@ fn ac3_empty_path() {
     assert!(matches!(e, Error::EmptyPath));
     assert_eq!(e.to_string(), "the log directory path is empty");
 }
+
+#[test]
+fn s91_2_ac2_fifo_key_is_not_plain_and_does_not_hang() {
+    let d = dir();
+    let path = d.path().join("log");
+    std::fs::create_dir(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let status = std::process::Command::new("mkfifo")
+        .arg(path.join("identity.key"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let err = Log::open(&path).err().unwrap();
+    assert!(matches!(
+        err,
+        Error::NotPlain {
+            expected: "regular file",
+            link: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn s91_2_ac1_dangling_key_link_is_not_plain() {
+    let d = dir();
+    let path = d.path().join("log");
+    std::fs::create_dir(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    symlink(d.path().join("none"), path.join("identity.key")).unwrap();
+    let err = Log::open(&path).err().unwrap();
+    assert!(matches!(
+        err,
+        Error::NotPlain {
+            expected: "regular file",
+            link: true,
+            ..
+        }
+    ));
+}
