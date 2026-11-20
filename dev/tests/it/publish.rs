@@ -238,7 +238,8 @@ fn ac4_declined_names_publishing_and_asks_before_retry() {
     let home = tempfile::tempdir().unwrap();
     fs::write(home.path().join("fake.json"), r#"{"answer":"decline"}"#).unwrap();
     let _host = start(home.path());
-    let (code, value) = publish(&page(root.path()), home.path(), &[]);
+    let dir = page(root.path());
+    let (code, value) = publish(&dir, home.path(), &[]);
     assert_eq!(code, 4, "{value}");
     assert_eq!(value["errors"][0]["code"], "host.declined");
     assert_eq!(
@@ -247,7 +248,11 @@ fn ac4_declined_names_publishing_and_asks_before_retry() {
     );
     assert_eq!(
         value["errors"][0]["fix"],
-        "Ask the person whether they want demo published, then run publish again with --wait <seconds>"
+        format!(
+            "The person declined in the app. Ask them, then run: watane-dev publish --json --dir {} --home {}",
+            dir.display(),
+            home.path().canonicalize().unwrap().display()
+        )
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
 }
@@ -287,7 +292,11 @@ fn ac2_existing_version_reports_release_and_link_without_post() {
         assert_eq!(value["errors"][0]["file"], "wit/world.wit");
         assert_eq!(
             value["errors"][0]["fix"],
-            "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"
+            format!(
+                "This version is already published. To publish changes, raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
+                dir.display(),
+                home.path().canonicalize().unwrap().display()
+            )
         );
         assert_eq!(
             value["next"],

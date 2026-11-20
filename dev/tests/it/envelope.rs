@@ -90,7 +90,10 @@ fn ac1_new_counter_template_envelope() {
     );
     assert_eq!(
         value["next"],
-        "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json"
+        format!(
+            "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json --dir {}",
+            root.display()
+        )
     );
 }
 #[test]

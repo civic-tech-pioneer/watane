@@ -226,9 +226,9 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
-| `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
+| `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run: <rerun>` (file `wit/world.wit`) |
 | `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names no release for it), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
-| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <canonical destination folder, quoted>[ --home <resolved home>]` |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new <slug> --dir <canonical destination folder, quoted> && watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <same folder>[ --home <resolved home>]` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>`, plus ` --dir <canonical mod folder>` when `serve` was given `--dir` and ` --home <resolved home>` when given `--home` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
@@ -237,7 +237,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `publish.origin_differs` | 1 | step 6: the mod folder's git remote `origin` is not the `repository` of `mod.toml`, or there is no `repository` | `the mod folder's git remote origin is <url>, and mod.toml names <repository, or no repository>` (file `mod.toml`) | `Set repository in mod.toml to the https URL of the origin repository, or change the origin with: git -C '<dir>' remote set-url origin <repository>; then run: <rerun>` |
 | `publish.repository_exists` | 1 | step 6: `<owner>/<slug>` exists on GitHub, is not empty, and `mod.toml` names no repository | `https://github.com/<owner>/<slug> exists and holds commits that watane-dev did not push for this mod` (file `mod.toml`) | `Set repository in mod.toml to the https URL of an empty or new repository for this mod, then run: <rerun>` |
 | `publish.push_failed` | 4 | step 6: a git or gh command of 10.4.1 failed | `<command> failed in <folder>: <git's or gh's last 5 non-empty stderr lines, a repeated leading "remote: " collapsed to one, trailing whitespace trimmed>` | `<the failed command and the rest of its list>`, shown without dev's transfer guard flags (`-c http.lowSpeed*`), which dev still passes to git |
-| `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
+| `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | `The person declined in the app. Ask them, then run: <rerun>` (install and publish; the rerun as given) |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
 | `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run: <rerun>` |
 | `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run again with a longer --wait: <rerun with --wait doubled>`; the wait in force is `--wait`, or 600 when none was given, so without `--wait` the rerun carries `--wait 1200`. If the person approved meanwhile, publish reports the release and its link on retry |
@@ -351,7 +351,7 @@ They end with `<command>: failed`, never a blank command name.
 ```json
 {"slug": "reading-list", "dir": "/abs/reading-list", "files": ["AGENTS.md", "CLAUDE.md", "..."]}
 ```
-`files` are relative paths, sorted. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`.
+`files` are relative paths, sorted. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
 
 **check** (also the `check` field of `test`)
 ```json
@@ -521,8 +521,7 @@ Run it once the person has started the app. Other `env.*` errors use
 
 A declined install returns `host.declined` with the consumer slug (or mod
 folder), says the person declined installing it in their watane app, and
-asks whether they want it installed before running install again with
-`--wait <seconds>` (9.6). Its `next` is the first error's fix. Every refusal
+says to ask them and then run the install rerun (2.2). Its `next` is the first error's fix. Every refusal
 has a `next`; when no more specific follow-up applies, use the first error's
 fix, or `watane-dev test --json` if no fix is known.
 
@@ -1419,8 +1418,7 @@ No answer is `host.no_answer`: `no answer from the home host in <n> s`,
 fix `Run again with a longer --wait: <rerun with --wait doubled>` (2.2). A `refused` answer is
 `host.declined`: say the person declined installing the requested consumer
 slug (or its mod folder) in their watane app. The fix asks the person
-whether they want it installed, then says to run install again with
-`--wait <seconds>` (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
+whether they want it installed, then ends in the rerun (2.2). `api::tests::regress_s12b_declined_fix_does_not_ask_to_correct_and_retry`
 proves the message and fix; the fix must not say "correct". App 5xx errors
 follow 2.2: 503 `unavailable` is `env.host_not_running`, message
 `the watane app of <home> runs but could not open its data: <app message>`,
@@ -1430,9 +1428,9 @@ with `[<code>] <message>` and the app-log fix of 2.2. 4xx keeps
 `host.refused` and its current fixes (or `host.declined` for consent).
 Step 5: a `missing_providers` answer that names
 a provider with a publisher gets the fix `Install <ReleaseRef> in the
-watane app (from its link), then run install again`. When
+watane app (from its link), then run: <rerun>`. When
 `.watane-dev.json` `release_providers.<slug>.link` is present, use
-`Install <ReleaseRef> in the watane app from its link <link>, then run install again`.
+`Install <ReleaseRef> in the watane app from its link <link>, then run: <rerun>`.
 A home installs a release only through the app. dev reports the `installed` answer.
 Pipeline failures send no install request and retain the provider-specific
 next command and fixes of `serve`.
@@ -1477,7 +1475,7 @@ next command and fixes of `serve`.
 
 A `refused` answer is `host.declined`: `The person declined publishing
 <slug> from their watane app`, with fix `Ask the person whether they want
-<slug> published, then run publish again with --wait <seconds>`.
+<slug> published, then run: <rerun>` (2.2).
 The CLI supplies the slug; the fixed `Client::publish` interface carries
 only a package and duration. A timeout uses the message and fix of 9.6;
 a 409 `version_exists` answer (a race after step 2b) is

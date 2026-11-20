@@ -383,6 +383,8 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
+                // The new folder is not the current one: serve must be told where it is.
+                let args = if dir_given { args.clone() } else { rerun_args(true, &dir, None) };
                 outcome.next = Some(format!("Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json{args}"));
             }),
         Command::Check => dir
@@ -1207,7 +1209,7 @@ fn publish(
                     ),
                 )
                 .at("wit/world.wit", None, None)
-                .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"),
+                .fix(format!("This version is already published. To publish changes, raise the version in wit/world.wit, then run: {rerun}")),
             ]);
         }
         let login = if push {
@@ -1259,12 +1261,13 @@ fn publish(
             })
             .collect();
         let timeout = publish_timeout(&providers, &releases, wait.unwrap_or(DEFAULT_WAIT));
-        let answer = client.publish_with_links(&package, timeout, &links)
+        let answer = client
+            .publish_with_links(&package, timeout, &links)
             .map_err(|mut e| {
                 if e.code == Code::HostDeclined {
                     let slug = deps::label(dir);
-                    e.message = format!("The person declined publishing {slug} from their watane app");
-                    e.fix = Some(format!("Ask the person whether they want {slug} published, then run publish again with --wait <seconds>"));
+                    e.message =
+                        format!("The person declined publishing {slug} from their watane app");
                 }
                 outcome.next = retry_next(e.code).or_else(|| e.fix.clone());
                 vec![e]

@@ -227,15 +227,16 @@ fn ac2_no_source_writes_nothing() {
     assert_eq!(
         v["errors"][0]["fix"],
         format!(
-            "Build on a release that includes its source, or depend on this one with: watane-dev add --release '{}' --dir {} --home {}",
+            "Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new ratings --dir {dest} && watane-dev add --release '{}' --dir {dest} --home {}",
             link("reading-list"),
-            f.root
+            f.home.canonicalize().unwrap().display(),
+            dest = f
+                .root
                 .path()
                 .canonicalize()
                 .unwrap()
                 .join("ratings")
                 .display(),
-            f.home.canonicalize().unwrap().display()
         )
     );
     assert!(!f.root.path().join("ratings").exists());

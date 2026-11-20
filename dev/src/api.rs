@@ -224,7 +224,7 @@ impl Client {
                         .unwrap_or("version already published"),
                 )
                 .at("wit/world.wit", None, None)
-                .fix("This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"));
+                .fix(self.then("This version is already published. To publish changes, raise the version in wit/world.wit")));
             }
             let code =
                 if !matches!(path, "releases" | "search") && value["error"]["code"] == "refused" {
@@ -252,11 +252,7 @@ impl Client {
             .fix(if path == "search" && status.as_u16() == 400 {
                 "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)".into()
             } else if code == Code::HostDeclined {
-                if path == "publish" {
-                    "The person declined in the app. Ask them before you run publish again".into()
-                } else {
-                    "The person declined in the app. Ask them before you run install again".into()
-                }
+                self.then("The person declined in the app. Ask them")
             } else {
                 self.then(
                     "The watane app could not complete this command; ask the person to check the watane app",
@@ -467,8 +463,8 @@ impl Client {
                                         let link = crate::deps::read_config(dir).ok()
                                             .and_then(|config| config.release_providers.get(slug.as_str()).and_then(|record| record.link.clone()));
                                         e.fix = Some(match link {
-                                            Some(link) => format!("Install {release} in the watane app from its link {link}, then run install again"),
-                                            None => format!("Install {release} in the watane app (from its link), then run install again"),
+                                            Some(link) => then_run(&format!("Install {release} in the watane app from its link {link}"), self.rerun.as_deref()),
+                                            None => then_run(&format!("Install {release} in the watane app (from its link)"), self.rerun.as_deref()),
                                         });
                                         return e;
                                     }
@@ -480,7 +476,6 @@ impl Client {
                 if e.code == Code::HostDeclined {
                     let name = folders.last().map_or_else(|| "the mod".into(), |dir| crate::deps::label(dir));
                     e.message = format!("The person declined installing {name} in their watane app");
-                    e.fix = Some(format!("Ask the person whether they want {name} installed in their watane app, then run install again with --wait <seconds>"));
                 }
                 e
             })?;
@@ -623,7 +618,7 @@ mod tests {
         assert_eq!(
             error.fix,
             Some(format!(
-                "Install {key}/ratings@0.1.0 in the watane app from its link watane:ratings-link, then run install again"
+                "Install {key}/ratings@0.1.0 in the watane app from its link watane:ratings-link, then run: watane-dev cmd --json"
             ))
         );
     }
@@ -656,7 +651,7 @@ mod tests {
         assert_eq!(
             error.fix,
             Some(format!(
-                "Install {key}/ratings@0.1.0 in the watane app (from its link), then run install again"
+                "Install {key}/ratings@0.1.0 in the watane app (from its link), then run: watane-dev cmd --json"
             ))
         );
     }
@@ -1138,7 +1133,7 @@ mod tests {
         assert_eq!(
             e.fix.as_deref(),
             Some(
-                "This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again"
+                "This version is already published. To publish changes, raise the version in wit/world.wit, then run: watane-dev cmd --json"
             )
         );
     }
@@ -1200,7 +1195,7 @@ mod tests {
                 Duration::ZERO,
                 Code::HostDeclined,
                 "declined",
-                "The person declined in the app. Ask them before you run publish again",
+                "The person declined in the app. Ask them, then run: watane-dev cmd --json",
             ),
             (
                 409,
@@ -1317,9 +1312,7 @@ mod tests {
         );
         assert_eq!(
             e.fix.as_deref(),
-            Some(
-                "Ask the person whether they want counter installed in their watane app, then run install again with --wait <seconds>"
-            )
+            Some("The person declined in the app. Ask them, then run: watane-dev cmd --json")
         );
         assert!(!e.fix.as_deref().unwrap().to_lowercase().contains("correct"));
         assert_ne!(
@@ -1363,7 +1356,7 @@ mod tests {
             assert_eq!(
                 e.fix.as_deref(),
                 Some(if expected == Code::HostDeclined {
-                    "Ask the person whether they want the mod installed in their watane app, then run install again with --wait <seconds>"
+                    "The person declined in the app. Ask them, then run: watane-dev cmd --json"
                 } else if expected == Code::HostFailed {
                     "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
