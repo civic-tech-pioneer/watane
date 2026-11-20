@@ -521,7 +521,8 @@ fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
                 .chars()
                 .next_back()
                 .is_none_or(|c| c.is_whitespace() || c == ':' || PATH_EDGES.contains(c));
-            // The path ends after the prefix (which may hold a space) at a space or a bracket.
+            // The path ends after the prefix (which may hold a space) at a char that is not
+            // printable ASCII, or at a quote or bracket.
             let end = tail[prefix.len()..]
                 .find(|c: char| !c.is_ascii_graphic() || PATH_EDGES.contains(c))
                 .map_or(tail.len(), |n| n + prefix.len());
