@@ -287,8 +287,16 @@ pub fn new_from(
 ) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     let (release, package) = client.fetch(target).map_err(|e| vec![e])?;
     if !package.has_source() {
+        // The mod that would depend on it is the one this run would have created.
+        let mod_dir = destination.map(Path::to_path_buf).or_else(|| {
+            let slug = slug.unwrap_or(release.slug.as_str());
+            std::env::current_dir().ok().map(|cwd| cwd.join(slug))
+        });
+        let mod_dir = mod_dir.map_or_else(String::new, |dir| {
+            format!(" --dir {}", crate::cli::quote(&dir))
+        });
         return Err(vec![Problem::new(Code::UsageNoSource, format!("the release {release} holds no source (no logic/Cargo.toml, logic/src/ or tests/)"))
-        .fix(format!("Build on a release that includes its source, or depend on this one with: watane-dev add --release {}{home}", crate::cli::quote(Path::new(target))))]);
+        .fix(format!("Build on a release that includes its source, or depend on this one with: watane-dev add --release {}{mod_dir}{home}", crate::cli::quote(Path::new(target))))]);
     }
     let slug: Slug = slug
         .unwrap_or(release.slug.as_str())

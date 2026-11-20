@@ -165,7 +165,7 @@ fn compiler_problem(message: &Value, copy: &Path, slug: &Slug) -> Problem {
             .as_str()
             .unwrap_or("Rust compilation failed"),
     )
-    .fix("Correct the Rust error at the reported location and run the command again");
+    .fix("Correct the Rust error at the reported location");
     if let Some(span) = message["spans"]
         .as_array()
         .and_then(|spans| spans.iter().find(|s| s["is_primary"] == true))
@@ -312,6 +312,7 @@ pub(crate) fn compile(
         .output()
         .map_err(|e| vec![Problem::internal(e)])?;
     let mut errors = Vec::new();
+    let mut siblings = BTreeSet::new();
     let mut artifacts = Vec::new();
     for line in output.stdout.split(|b| *b == b'\n') {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
@@ -319,6 +320,11 @@ pub(crate) fn compile(
         };
         if value["reason"] == "compiler-message" && value["message"]["level"] == "error" {
             errors.push(compiler_problem(&value["message"], copy, slug));
+            siblings.extend(sibling_paths(
+                value["message"]["rendered"].as_str().unwrap_or_default(),
+                &ctx.env.cache.join("build"),
+                copy,
+            ));
         }
         if value["reason"] == "compiler-artifact"
             && if args[0] == "test" {
@@ -346,6 +352,11 @@ pub(crate) fn compile(
                 artifacts.push(PathBuf::from(path));
             }
         }
+    }
+    // A relative path that leaves the copy lands in another mod's copy in the cache: the
+    // compiler's errors are about that stale sibling, not about the mod (6.4).
+    if !siblings.is_empty() {
+        return Err(reads_outside_problems(siblings.into_iter().collect()));
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -483,6 +494,36 @@ fn reads_outside_problems(paths: Vec<PathBuf>) -> Vec<Problem> {
     problems
 }
 
+/// The paths in `text` that lie in the cache's `build` folder but not in this mod's `copy`.
+fn sibling_paths(text: &str, build: &Path, copy: &Path) -> Vec<PathBuf> {
+    let prefix = format!("{}/", build.display());
+    let copy = normalized(copy);
+    let mut found = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(&prefix) {
+        let tail = &rest[at..];
+        let end = tail
+            .find(|c: char| c.is_whitespace() || "]['\")`\"".contains(c))
+            .unwrap_or(tail.len());
+        let mut path = &tail[..end];
+        // `world.wit:19:10` names a line and a column.
+        while let Some((head, last)) = path.rsplit_once(':')
+            && last.chars().all(|c| c.is_ascii_digit())
+        {
+            path = head;
+        }
+        let path = normalized(Path::new(path.trim_end_matches(':')));
+        if !path.starts_with(&copy) && !found.contains(&path) {
+            found.push(path);
+        }
+        rest = &tail[end..];
+    }
+    // The folder of a read file is the one thing to name.
+    let all = found.clone();
+    found.retain(|p| !all.iter().any(|a| a != p && p.starts_with(a)));
+    found
+}
+
 fn wit_fix(path: &Path) -> String {
     format!(
         "Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: \"../wit\"), not at {}",
@@ -491,7 +532,9 @@ fn wit_fix(path: &Path) -> String {
 }
 
 fn reads_outside_problem(path: &Path) -> Problem {
-    let fix = if path.extension().is_some_and(|e| e == "wit") {
+    let fix = if path.extension().is_some_and(|e| e == "wit")
+        || path.file_name().is_some_and(|n| n == "wit")
+    {
         wit_fix(path)
     } else {
         "Remove the include_bytes!, include_str!, include! or #[path] that names it".into()
@@ -735,6 +778,18 @@ mod tests {
     }
 
     #[test]
+    fn s93_ac5_sibling_cache_paths_in_compiler_text() {
+        let text = "failed to resolve directory while parsing WIT for path [/c/build/other/wit]\n\nCaused by:\n  package 'watane:host@0.1.0' not found\n     --> /c/build/other/wit/world.wit:19:10\n  also /c/build/hello/logic/src/lib.rs:3:1 and /elsewhere/x.wit";
+        assert_eq!(
+            sibling_paths(text, Path::new("/c/build"), Path::new("/c/build/hello")),
+            [PathBuf::from("/c/build/other/wit")]
+        );
+        assert_eq!(
+            sibling_paths(text, Path::new("/c/build"), Path::new("/c/build/other")),
+            [PathBuf::from("/c/build/hello/logic/src/lib.rs")]
+        );
+    }
+    #[test]
     fn ac3_compiler_failure_code_location_and_fix() {
         let message = serde_json::json!({"message":"test-only compile failure", "spans":[{
             "is_primary":true,"file_name":"/watane-dev/build/counter/logic/src/lib.rs", "line_start":71,"column_start":1
@@ -748,7 +803,7 @@ mod tests {
             serde_json::to_value(error).unwrap(),
             serde_json::json!({
                 "code":"build.compile","message":"test-only compile failure","file":"logic/src/lib.rs","line":71,"column":1,
-                "fix":"Correct the Rust error at the reported location and run the command again"
+                "fix":"Correct the Rust error at the reported location"
             })
         );
     }

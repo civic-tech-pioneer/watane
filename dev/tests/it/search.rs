@@ -290,7 +290,10 @@ fn ac5_search_error_next_is_the_fix() {
     );
     assert_eq!(
         value["next"],
-        "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+        format!(
+            "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev search --json reading --home {}",
+            home.path().canonicalize().unwrap().display()
+        )
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
 }

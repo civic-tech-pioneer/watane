@@ -245,7 +245,7 @@ fn ac1_first_push_runs_the_commands_of_10_4_1() {
     );
     assert_eq!(
         run.value["result"]["push"],
-        json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
+        json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","pages":"https://alice.github.io/watane-channel/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
     );
     for dir in [&f.dir, &f.home.join("site")] {
         assert_eq!(
@@ -1219,12 +1219,12 @@ fn ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository() {
     assert_eq!(code, 0, "{v}");
     assert_eq!(
         v["result"]["push"],
-        json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
+        json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","pages":"https://alice.github.io/watane-channel/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
     );
     assert_eq!(
         v["next"],
         format!(
-            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/, then run: watane-dev publish --json --dir {} --home {} --push",
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/ (or to https://alice.github.io/watane-channel/ if GitHub Pages serves this repository), then run: watane-dev publish --json --dir {} --home {} --push",
             shell_quote(&f.dir),
             shell_quote(&f.home)
         )

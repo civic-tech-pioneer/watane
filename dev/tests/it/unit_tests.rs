@@ -298,7 +298,11 @@ fn ac5_logic_requires_contract_file_but_page_only_does_not() {
         assert_eq!(v["errors"][0]["code"], "mod.no_contract_tests", "{v}");
         assert_eq!(
             v["errors"][0]["fix"],
-            "Add tests/<name>.json (see AGENTS.md)"
+            if command == "test" {
+                "Add tests/<name>.json (see AGENTS.md), then run: watane-dev test --json"
+            } else {
+                "Add tests/<name>.json (see AGENTS.md)"
+            }
         );
     }
     fs::remove_dir_all(f.dir.join("logic")).unwrap();

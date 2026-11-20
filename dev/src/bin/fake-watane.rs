@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", serde_json::to_string(&ready)?);
     io::stdout().flush()?;
     let mut count = 0;
+    let mut parked = Vec::new();
     for mut request in server.incoming_requests() {
         let path = request.url().to_owned();
         let config: Value = fs::read(home.join("fake.json"))
@@ -188,10 +189,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             continue;
         }
         if config["answer"] == "never" && matches!(path.as_str(), "/api/install" | "/api/publish") {
-            // Hold the request unanswered until the process is killed.
-            loop {
-                std::thread::park();
-            }
+            // Hold this request unanswered (open) until the process is killed;
+            // later requests are still answered.
+            parked.push(request);
+            continue;
         }
         if path == "/api/publish"
             && let Some(header) = request

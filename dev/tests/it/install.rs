@@ -274,9 +274,47 @@ mod fake {
             value["errors"][0]["message"],
             "no answer from the home host in 1 s"
         );
-        let fix = "Run the command again with a longer --wait";
-        assert_eq!(value["errors"][0]["fix"], fix, "{value}");
+        let fix = format!(
+            "Run again with a longer --wait: watane-dev install --json --dir {} --home {} --wait 2",
+            dir.canonicalize().unwrap().display(),
+            home.path().canonicalize().unwrap().display()
+        );
+        assert_eq!(value["errors"][0]["fix"], json!(fix), "{value}");
         assert_eq!(value["next"], fix, "{value}");
+    }
+    /// S93 AC4: a parked install does not park the fake: a later request is answered.
+    #[test]
+    fn s93_ac4_never_mode_parks_only_the_unanswered_request() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join("fake.json"), r#"{"answer":"never"}"#).unwrap();
+        let (_host, ready) = start(home.path(), "--home");
+        let port = ready["port"].as_u64().unwrap();
+        let agent = |seconds| -> ureq::Agent {
+            ureq::Agent::config_builder()
+                .proxy(None)
+                .timeout_global(Some(std::time::Duration::from_secs(seconds)))
+                .http_status_as_error(false)
+                .build()
+                .into()
+        };
+        let parked = std::thread::spawn(move || {
+            agent(4)
+                .post(format!("http://localhost:{port}/api/install"))
+                .send(r#"{"folders":[]}"#)
+                .is_err()
+        });
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let started = std::time::Instant::now();
+        for _ in 0..2 {
+            let mut status = agent(2)
+                .get(format!("http://localhost:{port}/api/status"))
+                .call()
+                .unwrap();
+            let status: Value = status.body_mut().read_json().unwrap();
+            assert_eq!(status["watane"], 1, "{status}");
+        }
+        assert!(started.elapsed().as_secs() < 2);
+        assert!(parked.join().unwrap(), "the parked install got no answer");
     }
     #[test]
     fn ac5_declined_next_is_first_fix() {
@@ -621,21 +659,17 @@ fn ac2_missing_home_component_before_parent_is_environment_error() {
             value["errors"][0]["message"],
             "no watane app runs for the home x/../h (x does not exist)"
         );
-        // s86: publish keeps its older fix text.
         let again = match command {
-            "install" => {
-                "watane-dev install --json --dir ".to_string()
-                    + root.path().canonicalize().unwrap().to_str().unwrap()
-                    + " --home <folder>"
-            }
             "search" => "watane-dev search --json --home <folder>".to_string(),
-            _ => "this command again".to_string(),
+            _ => format!(
+                "watane-dev {command} --json --dir {} --home <folder>",
+                root.path().canonicalize().unwrap().display()
+            ),
         };
-        let then = if command == "publish" { " " } else { ": " };
         assert_eq!(
             value["errors"][0]["fix"],
             format!(
-                "Pass --home the folder that the watane app uses (x does not exist), then run{then}{again}"
+                "Pass --home the folder that the watane app uses (x does not exist), then run: {again}"
             )
         );
     }

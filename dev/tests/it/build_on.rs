@@ -227,8 +227,14 @@ fn ac2_no_source_writes_nothing() {
     assert_eq!(
         v["errors"][0]["fix"],
         format!(
-            "Build on a release that includes its source, or depend on this one with: watane-dev add --release '{}' --home {}",
+            "Build on a release that includes its source, or depend on this one with: watane-dev add --release '{}' --dir {} --home {}",
             link("reading-list"),
+            f.root
+                .path()
+                .canonicalize()
+                .unwrap()
+                .join("ratings")
+                .display(),
             f.home.canonicalize().unwrap().display()
         )
     );
@@ -434,7 +440,11 @@ fn ac5_missing_released_cache_has_actionable_fix() {
             dir.canonicalize().unwrap().display()
         );
         assert_eq!(v["errors"][0]["fix"], fix);
-        assert_eq!(v["next"], fix);
+        assert_eq!(
+            v["next"],
+            fix.strip_prefix("Start the watane app, then run: ")
+                .unwrap()
+        );
     }
 }
 

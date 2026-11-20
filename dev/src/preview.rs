@@ -175,7 +175,7 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Prob
     })
 }
 
-pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
+pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
     let folders = deps::local_order(dir).map_err(|e| vec![e])?;
 
@@ -193,13 +193,15 @@ pub fn serve(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
             }
             start(&home, &folder, &log)?
         };
-        let client = Client::for_home(&home)?.ok_or_else(|| {
-            Problem::new(
-                Code::EnvPreviewStart,
-                "the preview stopped before installation",
-            )
-            .fix(format!("Read {}", log.display()))
-        })?;
+        let client = Client::for_home(&home)?
+            .ok_or_else(|| {
+                Problem::new(
+                    Code::EnvPreviewStart,
+                    "the preview stopped before installation",
+                )
+                .fix(format!("Read {}", log.display()))
+            })?
+            .with_rerun(rerun);
         let installed = client.install(&folders)?;
         ready.mods = installed
             .iter()
@@ -403,7 +405,7 @@ mod tests {
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
-        let result = serve(&dir, &env).unwrap();
+        let result = serve(&dir, &env, "watane-dev serve --json").unwrap();
         assert_eq!(result["reused"], true);
         assert_eq!(
             result["pages"],

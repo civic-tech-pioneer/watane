@@ -309,6 +309,19 @@ fn raw(repository: &str, branch: &str) -> Option<String> {
         "https://raw.githubusercontent.com/{name}/{branch}/"
     ))
 }
+/// Where GitHub Pages serves a GitHub repository, if it serves it: `https://<o>.github.io/<r>/`,
+/// or `https://<o>.github.io/` for the repository `<o>.github.io` (TECHNICAL 10.4.1).
+fn pages(repository: &str) -> Option<String> {
+    let name = normalize(repository).strip_prefix("https://github.com/")?;
+    let (owner, repo) = name.split_once('/')?;
+    Some(
+        if repo.eq_ignore_ascii_case(&format!("{owner}.github.io")) {
+            format!("https://{owner}.github.io/")
+        } else {
+            format!("https://{owner}.github.io/{repo}/")
+        },
+    )
+}
 fn gh_code(stderr: &str) -> Option<Code> {
     if stderr.contains("HTTP 404") {
         None
@@ -653,7 +666,8 @@ pub fn push(
     prepared: Option<Value>,
 ) -> (Value, Vec<Problem>) {
     let mut errors = Vec::new();
-    let mut site_result = json!({"repository":null,"raw":null,"created":false,"pushed":false});
+    let mut site_result =
+        json!({"repository":null,"raw":null,"pages":null,"created":false,"pushed":false});
     let site_run = (|| {
         let stored = origin(site)?;
         let new = !site.join(".git").exists();
@@ -688,6 +702,7 @@ pub fn push(
             checked(&git(site, &["branch", "--show-current"]))?
         };
         site_result["raw"] = json!(raw(&repository, &branch));
+        site_result["pages"] = json!(pages(&repository).filter(|_| site_result["raw"].is_string()));
         // Git rejects absent pathspecs; dist may have no entries yet (the fake has none).
         let mut paths = Vec::new();
         for path in ["head", "entries", "packages"] {
@@ -941,6 +956,31 @@ mod tests {
         );
         assert_eq!(raw("git@github.com:o/r", "main"), None);
         assert_eq!(raw("https://example.test/o/r", "main"), None);
+    }
+    #[test]
+    fn s93_ac7_pages_from_the_site_repository() {
+        for (repository, expected) in [
+            ("https://github.com/o/r", Some("https://o.github.io/r/")),
+            ("https://github.com/o/r.git", Some("https://o.github.io/r/")),
+            ("https://github.com/o/r/", Some("https://o.github.io/r/")),
+            (
+                "https://github.com/o/o.github.io",
+                Some("https://o.github.io/"),
+            ),
+            (
+                "https://github.com/O/o.GitHub.io.git",
+                Some("https://O.github.io/"),
+            ),
+            (
+                "https://github.com/o/other.github.io",
+                Some("https://o.github.io/other.github.io/"),
+            ),
+            ("git@github.com:o/r", None),
+            ("ssh://git@github.com/o/r", None),
+            ("https://example.test/o/r", None),
+        ] {
+            assert_eq!(pages(repository).as_deref(), expected, "{repository}");
+        }
     }
     #[test]
     fn ac3_gh_stderr_classes() {

@@ -9,12 +9,19 @@ use std::time::Duration;
 use watane_host::{InstalledMod, RunInfo};
 const FETCH_FIX: &str =
     "Pass a mod link watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>";
-/// A fix that ends in the command's rerun: `<step>, then run: <rerun>`.
-/// Without a rerun it keeps the older prose (publish does: s86, below).
+/// A fix that ends in the command's rerun: `<step>, then run: <rerun>`. A client
+/// made only to read a status (no rerun) never gives a fix to a maker.
 fn then_run(step: &str, rerun: Option<&str>) -> String {
     match rerun {
         Some(rerun) => format!("{step}, then run: {rerun}"),
-        None => format!("{step}, then run this command again"),
+        None => step.to_string(),
+    }
+}
+/// The `host.no_answer` fix after `--wait`: the rerun with a longer wait.
+fn then_run_longer(rerun: Option<&str>) -> String {
+    match rerun {
+        Some(rerun) => format!("Run again with a longer --wait: {rerun}"),
+        None => "Run again with a longer --wait".to_string(),
     }
 }
 #[derive(Debug)]
@@ -22,14 +29,16 @@ pub struct Client {
     port: u16,
     home: PathBuf,
     /// The command's own rerun (built in cli.rs), which ends the fixes that
-    /// ask for a retry; `None` keeps the older prose.
+    /// ask for a retry; `None` for a client that only reads a status.
     rerun: Option<String>,
+    /// The rerun with a longer `--wait`, which ends the `host.no_answer` fix.
+    longer_wait: Option<String>,
 }
 impl Client {
-    pub fn for_app(home: &Path, rerun: Option<&str>) -> Result<Self, Problem> {
+    pub fn for_app(home: &Path, rerun: &str) -> Result<Self, Problem> {
         let missing = |message| {
             Problem::new(Code::EnvHostNotRunning, message)
-                .fix(then_run("Start the watane app", rerun))
+                .fix(then_run("Start the watane app", Some(rerun)))
         };
         let absent = || {
             missing(format!(
@@ -41,7 +50,8 @@ impl Client {
         let client = Self {
             port: run.port,
             home: home.to_path_buf(),
-            rerun: rerun.map(str::to_string),
+            rerun: Some(rerun.to_string()),
+            longer_wait: None,
         };
         let status = client
             .request("status", None, Duration::from_secs(2))
@@ -78,6 +88,7 @@ impl Client {
             port: run.port,
             home: home.to_path_buf(),
             rerun: None,
+            longer_wait: None,
         }
         .request("status", None, Duration::from_secs(2))
         .ok()?;
@@ -96,6 +107,7 @@ impl Client {
             port: run.port,
             home: home.to_path_buf(),
             rerun: None,
+            longer_wait: None,
         };
         let status = match client.request("status", None, Duration::from_secs(2)) {
             Ok(v) => v,
@@ -110,6 +122,16 @@ impl Client {
         } else {
             Ok(None)
         }
+    }
+    /// The rerun that gives the host more time (`host.no_answer` after `--wait`).
+    pub fn with_longer_wait(mut self, rerun: &str) -> Self {
+        self.longer_wait = Some(rerun.to_string());
+        self
+    }
+    /// The rerun of the command, for a client made without one (a preview's).
+    pub fn with_rerun(mut self, rerun: &str) -> Self {
+        self.rerun = Some(rerun.to_string());
+        self
     }
     fn bad_fetch_answer(&self, detail: impl std::fmt::Display) -> Problem {
         Problem::new(Code::HostRefused, format!("[bad_answer] {detail}")).fix(self.then(
@@ -176,14 +198,13 @@ impl Client {
             agent.get(&url).call()
         };
         let mut response = response.map_err(|e| {
-            Problem::new(Code::HostNoAnswer, e.to_string())
-                .fix("Check the preview log and run the command again")
+            Problem::new(Code::HostNoAnswer, e.to_string()).fix(self.then("Check the preview log"))
         })?;
         let status = response.status();
         let value: Value = response.body_mut().read_json().map_err(|e| {
             if matches!(e, ureq::Error::Timeout(_)) {
                 Problem::new(Code::HostNoAnswer, e.to_string())
-                    .fix("Check the preview log and run the command again")
+                    .fix(self.then("Check the preview log"))
             } else {
                 Problem::internal(e)
             }
@@ -229,15 +250,17 @@ impl Client {
                 },
             )
             .fix(if path == "search" && status.as_u16() == 400 {
-                "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)"
+                "Check --publisher (a 52-character key) and --interface (for example mods:reading-list/books or mods:reading-list/books@0.1.0)".into()
             } else if code == Code::HostDeclined {
                 if path == "publish" {
-                    "The person declined in the app. Ask them before you run publish again"
+                    "The person declined in the app. Ask them before you run publish again".into()
                 } else {
-                    "The person declined in the app. Ask them before you run install again"
+                    "The person declined in the app. Ask them before you run install again".into()
                 }
             } else {
-                "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                self.then(
+                    "The watane app could not complete this command; ask the person to check the watane app",
+                )
             }));
         }
         Ok(value)
@@ -397,7 +420,17 @@ impl Client {
             wait,
             links,
         )
-        .map_err(|e| home_wait_error(e, wait))
+        .map_err(|e| self.home_wait_error(e, wait))
+    }
+
+    fn home_wait_error(&self, mut e: Problem, wait: Duration) -> Problem {
+        if e.code == Code::HostNoAnswer {
+            e.message = format!("no answer from the home host in {} s", wait.as_secs());
+            e.fix = Some(then_run_longer(
+                self.longer_wait.as_deref().or(self.rerun.as_deref()),
+            ));
+        }
+        e
     }
 
     pub fn install_wait(
@@ -406,7 +439,7 @@ impl Client {
         wait: u64,
     ) -> Result<Vec<InstalledMod>, Problem> {
         self.install_timeout(folders, Duration::from_secs(wait))
-            .map_err(|e| home_wait_error(e, Duration::from_secs(wait)))
+            .map_err(|e| self.home_wait_error(e, Duration::from_secs(wait)))
     }
     pub fn install(&self, folders: &[PathBuf]) -> Result<Vec<InstalledMod>, Problem> {
         self.install_timeout(folders, Duration::from_secs(60))
@@ -457,14 +490,6 @@ impl Client {
     }
 }
 
-fn home_wait_error(mut e: Problem, wait: Duration) -> Problem {
-    if e.code == Code::HostNoAnswer {
-        e.message = format!("no answer from the home host in {} s", wait.as_secs());
-        e.fix = Some("Run the command again with a longer --wait".into());
-    }
-    e
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,6 +501,7 @@ mod tests {
             port,
             home: PathBuf::from("/home/test"),
             rerun: Some("watane-dev cmd --json".into()),
+            longer_wait: Some("watane-dev cmd --json --wait 2".into()),
         }
     }
 
@@ -968,7 +994,7 @@ mod tests {
                 } else if status == 500 {
                     "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
-                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                    "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev cmd --json"
                 })
             );
         }
@@ -1041,6 +1067,7 @@ mod tests {
                 port,
                 home: PathBuf::from("/home/test"),
                 rerun: None,
+                longer_wait: None,
             }
             .releases()
             .unwrap(),
@@ -1057,6 +1084,7 @@ mod tests {
                 port,
                 home: PathBuf::from("/home/test"),
                 rerun: None,
+                longer_wait: None,
             }
             .releases()
             .unwrap_err()
@@ -1085,7 +1113,7 @@ mod tests {
                 Some(if status == 500 {
                     "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
-                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                    "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev cmd --json"
                 })
             );
             thread.join().unwrap();
@@ -1180,7 +1208,7 @@ mod tests {
                 Duration::ZERO,
                 Code::HostRefused,
                 "[conflict] already published",
-                "The watane app could not complete this command; ask the person to check the watane app, then run the command again",
+                "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev cmd --json",
             ),
             (
                 200,
@@ -1188,7 +1216,7 @@ mod tests {
                 Duration::from_millis(1200),
                 Code::HostNoAnswer,
                 "no answer from the home host in 1 s",
-                "Run the command again with a longer --wait",
+                "Run again with a longer --wait: watane-dev cmd --json --wait 2",
             ),
         ] {
             let (port, thread) = stub(status, value, delay);
@@ -1232,7 +1260,7 @@ mod tests {
                 json!({"watane":1,"pid":1,"port":port,"mode":mode}).to_string(),
             )
             .unwrap();
-            let e = Client::for_app(home.path(), Some("watane-dev cmd --json"))
+            let e = Client::for_app(home.path(), "watane-dev cmd --json")
                 .err()
                 .unwrap();
             assert_eq!(e.code, Code::EnvHostNotRunning);
@@ -1297,7 +1325,7 @@ mod tests {
         assert_ne!(
             e.fix.as_deref(),
             Some(
-                "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev cmd --json"
             ),
             "a declined install has nothing to correct; retrying asks the person again"
         );
@@ -1311,7 +1339,7 @@ mod tests {
         assert_eq!(e.message, "no answer from the home host in 1 s");
         assert_eq!(
             e.fix.as_deref(),
-            Some("Run the command again with a longer --wait")
+            Some("Run again with a longer --wait: watane-dev cmd --json --wait 2")
         );
         thread.join().unwrap();
         for (status, code, expected, message) in [
@@ -1339,7 +1367,7 @@ mod tests {
                 } else if expected == Code::HostFailed {
                     "The watane app failed on this request; ask the person to read the watane app's log, then run: watane-dev cmd --json"
                 } else {
-                    "The watane app could not complete this command; ask the person to check the watane app, then run the command again"
+                    "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev cmd --json"
                 })
             );
             thread.join().unwrap();
@@ -1364,19 +1392,38 @@ mod tests {
     }
 
     #[test]
-    fn s86_for_app_without_a_rerun_keeps_the_older_fix() {
+    fn s86_for_app_fix_ends_in_the_rerun() {
         let home = tempfile::tempdir().unwrap();
-        let e = Client::for_app(home.path(), None).err().unwrap();
-        assert_eq!(
-            e.fix.as_deref(),
-            Some("Start the watane app, then run this command again")
-        );
-        let e = Client::for_app(home.path(), Some("watane-dev x --json"))
+        let e = Client::for_app(home.path(), "watane-dev x --json")
             .err()
             .unwrap();
         assert_eq!(
             e.fix.as_deref(),
             Some("Start the watane app, then run: watane-dev x --json")
+        );
+    }
+
+    #[test]
+    fn s93_ac2_no_answer_fixes_end_in_the_rerun() {
+        // A request the app never answers: the preview-log fix, with the rerun.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let e = client(port).releases().unwrap_err();
+        assert_eq!(e.code, Code::HostNoAnswer);
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Check the preview log, then run: watane-dev cmd --json")
+        );
+        let (port, thread) = stub(200, json!({}), Duration::from_millis(2200));
+        let e = client(port).releases().unwrap_err();
+        thread.join().unwrap();
+        assert_eq!(e.code, Code::HostNoAnswer);
+        assert_eq!(
+            e.fix.as_deref(),
+            Some("Check the preview log, then run: watane-dev cmd --json")
         );
     }
 }

@@ -76,7 +76,7 @@ fn ac1_local_providers_precede_status_and_pipeline() {
             assert_eq!(
                 error["message"],
                 format!(
-                    "mods:{slug} is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers"
+                    "mods:{slug} is a local provider (deps.json names no release for it), and a published mod can depend only on released providers"
                 )
             );
             assert_eq!(
@@ -107,7 +107,11 @@ fn ac2_no_app_precedes_pipeline() {
     );
     assert_eq!(
         value["errors"][0]["fix"],
-        "Start the watane app, then run this command again"
+        format!(
+            "Start the watane app, then run: watane-dev publish --json --dir {} --home {} --wait 17",
+            home.display(),
+            home.display()
+        )
     );
     assert_eq!(
         value["next"],
@@ -620,9 +624,10 @@ fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
         assert_eq!(
             value["next"],
             format!(
-                "{prefix}watane-dev publish --json --dir {} --home {} --no-source --wait 1",
+                "{prefix}watane-dev publish --json --dir {} --home {} --no-source --wait {}",
                 dir.display(),
-                root.path().canonicalize().unwrap().display()
+                root.path().canonicalize().unwrap().display(),
+                if timeout { 2 } else { 1 }
             )
         );
     }

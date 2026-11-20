@@ -210,8 +210,7 @@ impl Problem {
         self
     }
     pub fn internal(error: impl ToString) -> Self {
-        Self::new(Code::Internal, error.to_string())
-            .fix("Check the paths and permissions, then run the command again")
+        Self::new(Code::Internal, error.to_string()).fix("Check the paths and permissions")
     }
 }
 #[derive(Debug, Serialize)]

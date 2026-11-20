@@ -208,7 +208,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
-| `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run: <rerun>`; for a home with a missing ancestor, `Pass --home the folder that the watane app uses (<missing> does not exist), then run: <rerun with its --home value replaced by the literal <folder>>`. `<rerun>` is the command's own rerun (2.4); publish keeps `..., then run this command again` (s86 exception) |
+| `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run: <rerun>`; for a home with a missing ancestor, `Pass --home the folder that the watane app uses (<missing> does not exist), then run: <rerun with its --home value replaced by the literal <folder>>`. `<rerun>` is the command's own rerun (2.4), for publish too; `next` is `<rerun>` for every command that needs the app (install, publish, search, `add --release`, `new --from`), and for `test` and `serve` the command of the fix without its `Start the watane app, then run: ` |
 | `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file`; preserve wit-parser `--> <file>:<line>:<col>` locations when present, using the more specific WIT file relative to the mod | — |
 | `mod.cargo_key` | 1 | a key of `logic/Cargo.toml` outside 5.2 | ``logic/Cargo.toml: `<key>` is not allowed`` | `Remove it. Allowed: <list>` |
 | `mod.dependency` | 1 | a dependency outside the allowlist, or of a refused form | ``dependency `<name>` is not in the allowlist`` / `... must be a version requirement` / `... requires <req>, the allowlist has <version>` | `Use only: <direct crates with versions>` |
@@ -219,16 +219,16 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | From `add`: `Do not add <provider slug>: it already depends on this mod`. From traversal: `Remove mods:<slug> from deps.json and wit/deps/<slug>/ in <absolute folder>` (without ` and wit/deps/<slug>/` when that folder does not exist) for the edge that closes the cycle. |
 | `mod.provider_missing` | 1 | a local provider has no folder in `.watane-dev.json`, or the folder is gone | `the local provider <slug> has no known folder` | `Run: watane-dev add <folder of <slug>>` |
 | `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>` |
-| `build.compile` | 1 | each rustc error | the rustc message, with its location | — |
-| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod`; for n > 1 outside `.wit` paths, one problem: `the build read <n> .wit files under <folder>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` (`<folder>`, their deepest common ancestor, for n > 1) |
+| `build.compile` | 1 | each rustc error | the rustc message, with its location | `Correct the Rust error at the reported location, then run: <rerun>` |
+| `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod`; for n > 1 outside `.wit` paths, one problem: `the build read <n> .wit files under <folder>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` (`<folder>`, their deepest common ancestor, for n > 1); each ends `, then run: <rerun>` |
 | `build.imports` | 1 | each `Violation` of `Mod::check_component` | `[component] <message>` | — |
 | `test.unit` | 1 | each failed unit test | the panic message | — |
 | `test.unit_limit` | 1 | a unit test binary passed the time or memory limit | `unit tests stopped at <test> after <n> s` / `... used more than 512 MiB` | — |
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run publish again` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names its folder, not a release), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` (dev/tests/it/publish.rs pins the first text for the case with no folder known) | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
-| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link or ReleaseRef as the maker passed it, quoted>[ --home <resolved home>]` |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names no release for it), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or depend on this one with: watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <canonical destination folder, quoted>[ --home <resolved home>]` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>`, plus ` --dir <canonical mod folder>` when `serve` was given `--dir` and ` --home <resolved home>` when given `--home` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
@@ -240,8 +240,8 @@ The exit status is the class of the first error; 0 when there is none.
 | `host.declined` | 4 | the host answers with error code `refused` | install: `The person declined installing <slug> in their watane app`; publish: `The person declined publishing <slug> from their watane app` (or the mod folder) | install: `Ask the person whether they want <slug> installed in their watane app, then run install again with --wait <seconds>`; publish: `Ask the person whether they want <slug> published, then run publish again with --wait <seconds>` |
 | `host.refused` | 4 | 4xx or other non-5xx error answers of the host or app; fetch 502 `fetch_failed` is also a refusal | `[<code>] <message>` | — |
 | `host.failed` | 4 | app 5xx, except 503 `unavailable` and fetch 502 `fetch_failed` | `[<code>] <message>` | `The watane app failed on this request; ask the person to read the watane app's log, then run: <rerun>` |
-| `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run the command again with a longer --wait`. If the person approved meanwhile, publish reports the release and its link on retry |
-| `internal` | 5 | anything else | the error chain | — |
+| `host.no_answer` | 4 | `--wait` passed | `no answer from the home host in <n> s` | `Run again with a longer --wait: <rerun with --wait doubled>`; the wait in force is `--wait`, or 600 when none was given, so without `--wait` the rerun carries `--wait 1200`. If the person approved meanwhile, publish reports the release and its link on retry |
+| `internal` | 5 | anything else | the error chain | `Check the paths and permissions, then run: <rerun>` |
 
 App 503 `unavailable` is `env.host_not_running` with message
 `the watane app of <home> runs but could not open its data: <app message>`
@@ -258,9 +258,19 @@ reachable, then run: <rerun>`). cli.rs builds the rerun once per command and
 hands it to `Client::for_app`. The reruns: install's of 9.6; search's (10); `add
 --release`: `watane-dev add --release <link> --json --dir <dir>[ --home <h>]`;
 `new --from`: `watane-dev new [<slug>] --from <link> --json [--dir <dir>][ --home <h>]`.
-**Exception, publish:** its fixes keep the older `..., then run this command again`
-(`Client::for_app(home, None)`), because dev/tests/it/publish.rs pins them; a
-follow-up moves publish to the rerun of 9.7.
+Publish's rerun is the canonical one of 9.7 (with `--push`, `--owner`,
+`--no-source` and `--wait` as given). The fix of a request the app never
+answers (`host.no_answer` outside `--wait`) is `Check the preview log, then run:
+<rerun>`; the one of a `--wait` that ran out is the longer-wait rerun above;
+the fix of any other `host.refused` the app gives is `The watane app could not
+complete this command; ask the person to check the watane app, then run: <rerun>`.
+A fix made where the command is not known (`build.compile`, `build.reads_outside`,
+`internal`) is written without its ending, and cli.rs ends it `, then run:
+<rerun>` with the command as given (`--dir` and `--home` only as given). A
+`test` or `serve` that fails before any build (a check error with a prose fix)
+ends its fix and `next` the same way, with its own rerun. `check` and `new`
+`next` keep the `--dir` they were given; the `next` of `search` keeps a filter
+value that starts with `-` as `--publisher=-x` (the `=` form), so it parses back.
 
 In step 6, `<rerun>` is the canonical publish rerun of 9.7 with `--push`.
 A `mod.invalid` from a pkg `mod-toml` violation whose message starts with
@@ -541,7 +551,7 @@ keeps null. The general null-to-`missing` rule of 2.3 is unchanged.
 Every publish refusal has a `next`:
 
 - `publish.version_exists`: `Raise the version in wit/world.wit, then run: <rerun>`.
-- `host.no_answer`: `Run again with a longer --wait: <rerun>`.
+- `host.no_answer`: `Run again with a longer --wait: <rerun with --wait doubled>` (2.2).
   Both use the complete canonical publish rerun of 9.7; error fixes stay as in 2.2.
 - `publish.local_dependency`: `watane-dev publish --json --dir <absolute provider folder>`
   for the first local provider whose folder `.watane-dev.json` knows; quote the
@@ -1110,6 +1120,14 @@ The runs, in order:
    Relative dependencies resolve from the copy's `logic/` working folder;
    canonicalization resolves `..` and symlinks before checking roots. A
    successful compilation without a mod dependency file is an internal error.
+   A path that leaves the copy and lands in another mod's copy in
+   `<cache>/build/` (a relative `wit_bindgen::generate!` path such as
+   `../../<other>/wit`) stops macro expansion before rustc lists it, so the
+   dep-info does not show it: when the rustc errors' `rendered` text names a
+   path under `<cache>/build/` but not under this copy, those errors are the
+   stale sibling's, and dev gives only `build.reads_outside` for that folder
+   (a file whose folder is named too counts once, as the folder), not the
+   `build.compile` errors.
 7. dev copies the `.wasm` to `<mod>/logic.wasm`, then runs
    `watane_pkg::Mod::read(dir)?.check_component()`. Each violation is
    `build.imports`, and dev deletes `<mod>/logic.wasm` again.
@@ -1398,7 +1416,7 @@ without the app"). Run 9.2, then one `POST /api/install` with
 `{"folders": [...]}`. The host packs the folders, plans, and waits for the
 participant in the app. `--wait <seconds>` (default 600) bounds this request.
 No answer is `host.no_answer`: `no answer from the home host in <n> s`,
-fix `Run the command again with a longer --wait`. A `refused` answer is
+fix `Run again with a longer --wait: <rerun with --wait doubled>` (2.2). A `refused` answer is
 `host.declined`: say the person declined installing the requested consumer
 slug (or its mod folder) in their watane app. The fix asks the person
 whether they want it installed, then says to run install again with
@@ -1406,7 +1424,7 @@ whether they want it installed, then says to run install again with
 proves the message and fix; the fix must not say "correct". App 5xx errors
 follow 2.2: 503 `unavailable` is `env.host_not_running`, message
 `the watane app of <home> runs but could not open its data: <app message>`,
-fix `Ask the person to restart the watane app, then run this command again`.
+fix `Ask the person to restart the watane app, then run: <rerun>`.
 Other 5xx answers from install, publish, search and releases are `host.failed`
 with `[<code>] <message>` and the app-log fix of 2.2. 4xx keeps
 `host.refused` and its current fixes (or `host.declined` for consent).
@@ -1441,7 +1459,10 @@ next command and fixes of `serve`.
 5. `Client::publish_with_links(&package, wait, &links)` posts to `/api/publish` with
    `Content-Type: application/octet-stream` and `Package::as_bytes()` as
    the body, using the proxy-free localhost transport of `install`.
-   `--wait` defaults to 600 seconds. The app asks the participant, who sees
+   `--wait` defaults to 600 seconds and counts only this request: the test
+   pipeline of step 4 runs before it (measured in S93 against `fake-watane`, warm
+   cache: about 1.1 s to the request and in all; a cold cache about 31 s, all of
+   it before the request). The app asks the participant, who sees
    whether source is included; consent is the agreement to include it
    (F-PUB-4). Step 5: the header `Watane-Provider-Links` carries the
    non-null `link` of each `release_providers` entry whose slug is a
@@ -1463,7 +1484,7 @@ a 409 `version_exists` answer (a race after step 2b) is
 `publish.version_exists`, with the app's message unchanged and the same
 version-bump fix and file as the preflight refusal. Both version-conflict
 paths use `Raise the version in wit/world.wit, then run: <rerun>` for `next`;
-`host.no_answer` uses `Run again with a longer --wait: <rerun>`.
+`host.no_answer` uses `Run again with a longer --wait: <rerun with --wait doubled>`.
 The rerun is `watane-dev publish --json --dir <canonical mod> [--home <canonical home>]`
 (`--home` only when the command was given `--home`),
 with `--no-source`, `--push` and an explicit `--owner <account>` (step 6), and explicit `--wait <n>` retained, paths shell quoted.
@@ -1477,7 +1498,7 @@ to the fix. Success chooses the link-dependent instruction of 2.4.
 `search` needs no mod folder (`dir` is null). It resolves the home and
 checks the app status as `install` does (9.6, step 1: `env.host_not_running`
 with the same causes). On a missing app, `next` repeats
-`watane-dev search --json <same words> [--publisher <key>] [--interface <name>] [--home <absolute home>]` (`--home` only when given);
+`watane-dev search --json <same words> [--publisher <key>] [--interface <name>] [--home <absolute home>]` (`--home` only when given; a filter value that starts with `-` is written `--publisher=<value>`);
 quote each word and option value for the shell as in 2.4 (including empty words).
 No mod folder is read, even with `--dir`. Then send one `POST /api/search` with
 `{"text": <the words joined with one space, or "">, "publisher", "interface"}`
@@ -1508,7 +1529,7 @@ slug of the asked link. Missing or unparseable `Watane-Release` or
 slug/version mismatch are all `host.refused` `[bad_answer] <detail>`;
 nothing is stored. Each uses the fix `The watane app answered with a package
 that does not match the request; ask the person to update the watane app,
-then run this command again`. `Link` belongs to dist, which dev does
+then run: <rerun>`. `Link` belongs to dist, which dev does
 not depend on: dev reads only the key between `watane:` and the first `@`,
 and the slug after the last `#`, to match `Watane-Release`; the app validates
 the link and answers 400 when it is invalid. dev trusts
@@ -1520,7 +1541,7 @@ watane:<key>@<url>#<slug> or a release <key>/<slug>@<version>`.
 fix `Check the link or release with the person who shared it: the watane
 app found no release to fetch for it`. 502 `fetch_failed` also stays
 `host.refused`, fix `Check the link and that its publisher's site is
-reachable, then run this command again`. Other 5xx follow 9.6
+reachable, then run: <rerun>`. Other 5xx follow 9.6
 (503 `unavailable` → `env.host_not_running`; others → `host.failed`).
 No fetch refusal fix asks the agent to check the app.
 
@@ -1757,7 +1778,8 @@ Result (2.4 `publish` plus `push`):
 ```json
 "push": {
   "site": {"repository": "https://github.com/alice/watane-channel", "created": true,
-           "pushed": true, "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/"},
+           "pushed": true, "raw": "https://raw.githubusercontent.com/alice/watane-channel/main/",
+           "pages": "https://alice.github.io/watane-channel/"},
   "mod": {"repository": "https://github.com/alice/reading-list", "created": true,
           "forked": false, "tag": "<Alice key>/reading-list@0.1.0", "pushed": true}
 }
@@ -1770,12 +1792,18 @@ Result (2.4 `publish` plus `push`):
 - `raw`: when the site's repository is `https://github.com/<o>/<r>` (an
   optional `.git` removed), `https://raw.githubusercontent.com/<o>/<r>/<branch>/`
   with `<branch>` from `git branch --show-current`; else null.
+- `pages`: where GitHub Pages would serve the same repository, for the same
+  `https://github.com/<o>/<r>` (an optional `.git` removed):
+  `https://<o>.github.io/<r>/`, or `https://<o>.github.io/` when `<r>` is
+  `<o>.github.io` (compared case-insensitively); null exactly when `raw` is
+  null. `raw` stays the default (spec W30): `pages` only names the other choice.
 - `mod` is null with `--no-source`. `push` holds the parts that ran, also
   in a failed result; it is absent without `--push`.
 
 `next` on success: with a link, `Give the person this link to share:
 <link>`; without a link and with `raw`, `Ask the person to set the site
-URL in the watane app to <raw>, then run: <rerun>`;
+URL in the watane app to <raw> (or to <pages> if GitHub Pages serves this
+repository), then run: <rerun>` (the parenthesis only when `pages` is not null);
 without either, the 2.4 text. With `publish.push_failed`, the commands of
 each `push_failed` fix, joined with ` && `. The raw URL can serve an older
 file for a few minutes after a push; the link stays valid because each
@@ -2331,7 +2359,10 @@ file, and the fake keeps serving subsequent requests. `fake.json` `"providers"`
 assertions, the fake records `Watane-Provider-Links` in `<n>-provider-links`.
 It stores each request body as
 `<dir>/requests/<n>-<path>`. `<dir>/fake.json` (`{"answer": "approve" |
-"decline"}`, default approve) sets the answer; decline answers 403
+"decline" | "never"}`, default approve) sets the answer; `never` holds each
+`/api/install` and `/api/publish` request open and unanswered until the fake is
+killed, and still answers every other request (status, releases, search, a
+second install); decline answers 403
 `{"error":{"code":"refused","message":"declined"}}`. An installed folder
 gets local name = mod slug (including cached folders named by package id)
 and a page URL if it has `ui/`. Publish approves

@@ -202,6 +202,116 @@ pub fn run(cli: Cli) -> Outcome {
     run_in(cli, std::env::current_dir())
 }
 fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
+    let rerun = fallback_rerun(&cli, cwd.as_ref().ok().map(PathBuf::as_path));
+    end_in_rerun(run_command(cli, cwd), &rerun)
+}
+
+/// The command as it was given, as a rerun (`--dir` and `--home` only as given).
+fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
+    let word = |value: &str| quote(Path::new(value));
+    let path = |path: &Path| match cwd {
+        Some(cwd) => quote(&resolved_path(&cwd.join(path)).unwrap_or_else(|_| path.to_path_buf())),
+        None => quote(path),
+    };
+    let dir = cli
+        .dir
+        .as_deref()
+        .map_or_else(String::new, |dir| format!(" --dir {}", path(dir)));
+    let home_of = |home: &Option<PathBuf>| {
+        home.as_deref()
+            .map_or_else(String::new, |home| format!(" --home {}", path(home)))
+    };
+    match &cli.command {
+        Command::New { slug, from, home } => format!(
+            "watane-dev new{}{} --json{dir}{}",
+            slug.as_deref()
+                .map_or_else(String::new, |s| format!(" {}", word(s))),
+            from.as_deref()
+                .map_or_else(String::new, |f| format!(" --from {}", word(f))),
+            home_of(home)
+        ),
+        Command::Check => format!("watane-dev check --json{dir}"),
+        Command::Doctor => format!("watane-dev doctor --json{dir}"),
+        Command::Test { home } => format!("watane-dev test --json{dir}{}", home_of(home)),
+        Command::Serve { stop, home } => format!(
+            "watane-dev serve{} --json{dir}{}",
+            if *stop { " --stop" } else { "" },
+            home_of(home)
+        ),
+        Command::Add {
+            provider,
+            release,
+            home,
+        } => format!(
+            "watane-dev add{}{} --json{dir}{}",
+            provider
+                .as_deref()
+                .map_or_else(String::new, |p| format!(" {}", quote(p))),
+            release
+                .as_deref()
+                .map_or_else(String::new, |r| format!(" --release {}", word(r))),
+            home_of(home)
+        ),
+        Command::Install { home, wait } => format!(
+            "watane-dev install --json{dir}{}{}",
+            home_of(home),
+            wait.map_or_else(String::new, |w| format!(" --wait {w}"))
+        ),
+        Command::Publish {
+            push,
+            owner,
+            no_source,
+            home,
+            wait,
+        } => format!(
+            "watane-dev publish --json{dir}{}{}{}{}{}",
+            home_of(home),
+            if *push { " --push" } else { "" },
+            owner
+                .as_deref()
+                .filter(|_| *push)
+                .map_or_else(String::new, |o| format!(" --owner {o}")),
+            if *no_source { " --no-source" } else { "" },
+            wait.map_or_else(String::new, |w| format!(" --wait {w}"))
+        ),
+        Command::Search {
+            text,
+            publisher,
+            interface,
+            home,
+        } => search_command(
+            text,
+            publisher.as_deref(),
+            interface.as_deref(),
+            &home_of(home),
+        ),
+    }
+}
+
+/// Fixes that end in the command's rerun where the code that made them does not
+/// know it (`build.compile`, `build.reads_outside`, `internal`): `<fix>, then run: <rerun>`.
+fn end_in_rerun(mut outcome: Outcome, rerun: &str) -> Outcome {
+    use crate::outcome::Code;
+    for error in &mut outcome.errors {
+        if !matches!(
+            error.code,
+            Code::Internal | Code::BuildCompile | Code::BuildReadsOutside
+        ) {
+            continue;
+        }
+        let Some(old) = error.fix.clone().filter(|fix| !fix.contains(", then run:")) else {
+            continue;
+        };
+        let new = format!("{old}, then run: {rerun}");
+        if outcome.next.as_ref() == Some(&old) {
+            outcome.next = Some(new.clone());
+        }
+        error.fix = Some(new);
+    }
+    outcome
+}
+
+fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     let name = match cli.command {
         Command::New { .. } => "new",
         Command::Check => "check",
@@ -273,7 +383,7 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             .map_err(|e| vec![e])
             .and_then(|report| serde_json::to_value(report).map_err(|e| vec![Problem::internal(e)]))
             .inspect(|_| {
-                outcome.next = Some("Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json".into());
+                outcome.next = Some(format!("Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json{args}"));
             }),
         Command::Check => dir
             .canonicalize()
@@ -289,15 +399,22 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                 })
             }),
         Command::Test { .. } => {
-            return test_with(&dir, &args);
+            let mut tested = test_with(&dir, &args);
+            end_prose_in_rerun(&mut tested.errors, &mut tested.next, "test", &args);
+            return tested;
         }
         Command::Add { release: Some(target), home, .. } => {
             let result = (|| {
                 let given = home.is_some();
                 let rerun = |home: &str| format!("watane-dev add --release {} --json --dir {}{home}", quote(Path::new(&target)), quote(&dir));
-                let home = app_home(home, Some(&rerun))?;
+                let home = app_home(home, &rerun)?;
                 let shown = home_arg(given, &home);
-                let client = crate::api::Client::for_app(&home, Some(&rerun(&shown))).map_err(|e|vec![e])?;
+                let client = crate::api::Client::for_app(&home, &rerun(&shown)).map_err(|e| {
+                    if e.code == crate::outcome::Code::EnvHostNotRunning {
+                        outcome.next = Some(rerun(&shown));
+                    }
+                    vec![e]
+                })?;
                 let env = Env::from_process().map_err(|e|vec![e])?;
                 crate::build_on::add_release(&dir, &target, &client, &env, &shown)
             })();
@@ -309,7 +426,9 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     outcome
                 }
                 Err(e) => {
-                    outcome.next = e.first().and_then(|p| p.fix.clone());
+                    if outcome.next.is_none() {
+                        outcome.next = e.first().and_then(|p| p.fix.clone());
+                    }
                     outcome.fail(e)
                 }
             };
@@ -340,7 +459,9 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                             for error in &mut tested.errors {
                                 error.fix = rewritten_fix(error, "serve", &args);
                             }
-                            Some(next)
+                            let mut next = Some(next);
+                            end_prose_in_rerun(&mut tested.errors, &mut next, "serve", &args);
+                            next
                         } else {
                             tested.next
                         };
@@ -349,7 +470,7 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                         }
                         return Err(tested.errors);
                     }
-                    preview::serve(&dir, &env)
+                    preview::serve(&dir, &env, &format!("watane-dev serve --json{args}"))
                 }
             }),
     };
@@ -373,7 +494,9 @@ fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                 && e.first()
                     .is_some_and(|p| p.code.class() == crate::outcome::Class::Mod)
             {
-                outcome.next = Some("Fix the errors, then run: watane-dev check --json".into());
+                outcome.next = Some(format!(
+                    "Fix the errors, then run: watane-dev check --json{args}"
+                ));
             }
             outcome.fail(e)
         }
@@ -420,10 +543,14 @@ fn derive(
                 quote(Path::new(target))
             )
         };
-        let home = app_home(home, Some(&rerun))?;
+        let home = app_home(home, &rerun)?;
         let shown = home_arg(given, &home);
-        let client =
-            crate::api::Client::for_app(&home, Some(&rerun(&shown))).map_err(|e| vec![e])?;
+        let client = crate::api::Client::for_app(&home, &rerun(&shown)).map_err(|e| {
+            if e.code == crate::outcome::Code::EnvHostNotRunning {
+                outcome.next = Some(rerun(&shown));
+            }
+            vec![e]
+        })?;
         let env = Env::from_process().map_err(|e| vec![e])?;
         crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env, &shown)
     })();
@@ -464,7 +591,9 @@ fn derive(
             outcome
         }
         Err(errors) => {
-            outcome.next = errors.first().and_then(|e| e.fix.clone());
+            if outcome.next.is_none() {
+                outcome.next = errors.first().and_then(|e| e.fix.clone());
+            }
             outcome.fail(errors)
         }
     }
@@ -575,10 +704,48 @@ fn rewritten_fix(error: &Problem, command: &str, args: &str) -> Option<String> {
     })
 }
 
+/// A failed `test` or `serve` whose fix is prose (a check error before any build)
+/// ends in the command's own rerun, as its build failures do.
+fn end_prose_in_rerun(
+    errors: &mut [Problem],
+    next: &mut Option<String>,
+    command: &str,
+    args: &str,
+) {
+    if errors
+        .first()
+        .is_some_and(|e| e.code.class() == crate::outcome::Class::Env)
+    {
+        return;
+    }
+    for error in errors {
+        let Some(old) = error.fix.clone().filter(|fix| !fix.contains("then run:")) else {
+            continue;
+        };
+        let new = format!("{old}, then run: watane-dev {command} --json{args}");
+        if next.as_ref() == Some(&old) {
+            *next = Some(new.clone());
+        }
+        error.fix = Some(new);
+    }
+}
+
 fn failed_test_next(errors: &[Problem], command: &str, args: &str) -> String {
     errors
         .first()
-        .and_then(|error| rewritten_fix(error, command, args))
+        .and_then(|error| {
+            let fix = rewritten_fix(error, command, args)?;
+            // Without the app, `next` is the command alone: the fix names the step, then it.
+            match (
+                error.code,
+                fix.strip_prefix("Start the watane app, then run: "),
+            ) {
+                (crate::outcome::Code::ModReleaseProviderMissing, Some(rerun)) => {
+                    Some(rerun.to_string())
+                }
+                _ => Some(fix),
+            }
+        })
         .unwrap_or_else(|| format!("watane-dev {command} --json{args}"))
 }
 
@@ -680,7 +847,9 @@ fn search_command(
     }
     for (flag, value) in [("publisher", publisher), ("interface", interface)] {
         if let Some(value) = value {
-            next.push_str(&format!(" --{flag} {}", quote(Path::new(value))));
+            // A value that starts with `-` would read as a flag: the `=` form binds it.
+            let join = if value.starts_with('-') { '=' } else { ' ' };
+            next.push_str(&format!(" --{flag}{join}{}", quote(Path::new(value))));
         }
     }
     next.push_str(home);
@@ -701,10 +870,10 @@ fn search(
     let given = home.is_some();
     let result: Result<serde_json::Value, Vec<Problem>> = (|| {
         let rerun = |home: &str| search_command(words, publisher, interface, home);
-        let home = app_home(home, Some(&rerun))?;
+        let home = app_home(home, &rerun)?;
         let shown = home_arg(given, &home);
         let rerun = rerun(&shown);
-        let client = crate::api::Client::for_app(&home, Some(&rerun)).map_err(|e| {
+        let client = crate::api::Client::for_app(&home, &rerun).map_err(|e| {
             outcome.next = Some(rerun.clone());
             vec![e]
         })?;
@@ -747,7 +916,18 @@ fn search(
 fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> Outcome {
     let mut outcome = Outcome::new("install", Some(dir.to_path_buf()));
     let result = (|| {
-        let (home, client) = app_client(&mut outcome, home, wait)?;
+        let shown_dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        let rerun = |home: &str, wait: Option<u64>| {
+            let mut next = format!(
+                "watane-dev install --json --dir {}{home}",
+                quote(&shown_dir)
+            );
+            if let Some(wait) = wait {
+                next.push_str(&format!(" --wait {wait}"));
+            }
+            next
+        };
+        let (home, client) = app_client(&mut outcome, home, &rerun, wait)?;
         let dir = dir.canonicalize().map_err(|e| vec![Problem::internal(e)])?;
         outcome.dir = Some(dir.clone());
         let tested = test_local(&dir);
@@ -761,7 +941,7 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> 
             .filter(|p| !is_cached_provider(p))
             .collect();
         let installed = client
-            .install_wait(&folders, wait.unwrap_or(600))
+            .install_wait(&folders, wait.unwrap_or(DEFAULT_WAIT))
             .map_err(|e| vec![e])?;
         let installed: Vec<_> = installed.into_iter().map(|m| serde_json::json!({
             "slug":m.slug, "local":m.local, "version":m.version, "package":m.package, "page":m.page
@@ -844,7 +1024,7 @@ fn resolved_path(path: &Path) -> std::io::Result<PathBuf> {
 type Rerun<'a> = &'a dyn Fn(&str) -> String;
 
 /// The fix of a missing home: pass the folder, then run the rerun with a placeholder.
-fn app_home(home: Option<PathBuf>, rerun: Option<Rerun>) -> Result<PathBuf, Vec<Problem>> {
+fn app_home(home: Option<PathBuf>, rerun: Rerun) -> Result<PathBuf, Vec<Problem>> {
     let home = home
         .map(Ok)
         .unwrap_or_else(watane_host::default_home)
@@ -869,16 +1049,10 @@ fn app_home(home: Option<PathBuf>, rerun: Option<Rerun>) -> Result<PathBuf, Vec<
                         home.display()
                     ),
                 )
-                .fix(match rerun {
-                    Some(rerun) => format!(
-                        "Pass --home the folder that the watane app uses ({detail}), then run: {}",
-                        rerun(" --home <folder>")
-                    ),
-                    // s86: publish keeps its older fix text (dev/tests/publish.rs pins it).
-                    None => format!(
-                        "Pass --home the folder that the watane app uses ({detail}), then run this command again"
-                    ),
-                }),
+                .fix(format!(
+                    "Pass --home the folder that the watane app uses ({detail}), then run: {}",
+                    rerun(" --home <folder>")
+                )),
             ]
         } else {
             vec![Problem::internal(e)]
@@ -886,33 +1060,35 @@ fn app_home(home: Option<PathBuf>, rerun: Option<Rerun>) -> Result<PathBuf, Vec<
     })
 }
 
+/// The command's rerun for a given ` --home <h>` argument and `--wait` (or none).
+type AppRerun<'a> = &'a dyn Fn(&str, Option<u64>) -> String;
+/// The seconds that `install` and `publish` wait for the person without `--wait`.
+const DEFAULT_WAIT: u64 = 600;
+
+/// One rule for a longer wait: double the wait in force (no `--wait` counts as 600).
+fn longer_wait(wait: Option<u64>) -> u64 {
+    wait.unwrap_or(DEFAULT_WAIT).saturating_mul(2)
+}
+
 fn app_client(
     outcome: &mut Outcome,
     home: Option<PathBuf>,
+    rerun: AppRerun,
     wait: Option<u64>,
 ) -> Result<(PathBuf, crate::api::Client), Vec<Problem>> {
     let given = home.is_some();
-    let command = outcome.command;
-    let dir = outcome.dir.as_ref().expect("command has a mod folder");
-    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-    let rerun = |home: &str| {
-        let mut next = format!("watane-dev {command} --json --dir {}{home}", quote(&dir));
-        if let Some(wait) = wait {
-            next.push_str(&format!(" --wait {wait}"));
-        }
-        next
-    };
-    // s86: publish keeps the older fix text of its tests; install gets the rerun.
-    let fixed = (command != "publish").then_some(&rerun as Rerun);
-    let home = app_home(home, fixed)?;
-    let rerun = rerun(&home_arg(given, &home));
-    let client =
-        crate::api::Client::for_app(&home, fixed.map(|_| rerun.as_str())).map_err(|e| {
+    let home = app_home(home, &|home: &str| rerun(home, wait))?;
+    let shown = home_arg(given, &home);
+    let plain = rerun(&shown, wait);
+    let longer = rerun(&shown, Some(longer_wait(wait)));
+    let client = crate::api::Client::for_app(&home, &plain)
+        .map_err(|e| {
             if e.code == crate::outcome::Code::EnvHostNotRunning {
-                outcome.next = Some(rerun.clone());
+                outcome.next = Some(plain.clone());
             }
             vec![e]
-        })?;
+        })?
+        .with_longer_wait(&longer);
     Ok((home, client))
 }
 
@@ -935,9 +1111,8 @@ fn publish(
             .iter()
             .filter(|(_, publisher)| publisher.is_none())
             .map(|(slug, _)| {
-                // dev/tests/publish.rs pins this text for a null entry with no folder known.
                 let names = local.get(&slug.to_string()).map_or_else(
-                    || "its folder, not a release".to_string(),
+                    || "no release for it".to_string(),
                     |path| {
                         let path = dir.join(path);
                         let path = path.canonicalize().unwrap_or(path);
@@ -972,45 +1147,36 @@ fn publish(
                 });
             return Err(errors);
         }
-        let (home, client) = app_client(&mut outcome, home, wait).inspect_err(|_| {
-            if let Some(next) = &mut outcome.next {
-                if push {
-                    next.push_str(" --push");
-                    if let Some(owner) = requested_owner {
-                        next.push_str(&format!(" --owner {owner}"));
-                    }
-                }
-                if push && no_source {
-                    next.push_str(" --no-source");
+        let rerun_for = |home: &str, wait: Option<u64>| {
+            let mut rerun = format!("watane-dev publish --json --dir {}{home}", quote(dir));
+            if push {
+                rerun.push_str(" --push");
+                if let Some(owner) = requested_owner {
+                    rerun.push_str(&format!(" --owner {owner}"));
                 }
             }
-        })?;
-        let mut rerun = format!(
-            "watane-dev publish --json --dir {}{}",
-            quote(dir),
-            home_arg(home_given, &home)
-        );
-        if push {
-            rerun.push_str(" --push");
-            if let Some(owner) = requested_owner {
-                rerun.push_str(&format!(" --owner {owner}"));
+            if no_source {
+                rerun.push_str(" --no-source");
             }
-        }
-        if no_source {
-            rerun.push_str(" --no-source");
-        }
-        if let Some(wait) = wait {
-            rerun.push_str(&format!(" --wait {wait}"));
-        }
+            if let Some(wait) = wait {
+                rerun.push_str(&format!(" --wait {wait}"));
+            }
+            rerun
+        };
+        let (home, client) = app_client(&mut outcome, home, &rerun_for, wait)?;
+        let rerun = rerun_for(&home_arg(home_given, &home), wait);
         let retry_next = |code| match code {
+            Code::HostNoAnswer => Some(format!(
+                "Run again with a longer --wait: {}",
+                rerun_for(&home_arg(home_given, &home), Some(longer_wait(wait)))
+            )),
             Code::PublishVersionExists => Some(format!(
                 "Raise the version in wit/world.wit, then run: {rerun}"
             )),
-            Code::HostNoAnswer => Some(format!("Run again with a longer --wait: {rerun}")),
             _ => None,
         };
         let releases = client.releases().map_err(|e| {
-            outcome.next = retry_next(e.code);
+            outcome.next = retry_next(e.code).or_else(|| e.fix.clone());
             vec![e]
         })?;
         // Mod owns WIT identity parsing. Invalid mods retain the pipeline's diagnostics.
@@ -1090,7 +1256,7 @@ fn publish(
                     .and_then(|r| r.link.clone())
             })
             .collect();
-        let timeout = publish_timeout(&providers, &releases, wait.unwrap_or(600));
+        let timeout = publish_timeout(&providers, &releases, wait.unwrap_or(DEFAULT_WAIT));
         let answer = client.publish_with_links(&package, timeout, &links)
             .map_err(|mut e| {
                 if e.code == Code::HostDeclined {
@@ -1147,8 +1313,10 @@ fn publish(
             if let Some(link) = answer["link"].as_str() {
                 outcome.next = Some(format!("Give the person this link to share: {link}"));
             } else if let Some(raw) = value["push"]["site"]["raw"].as_str() {
-                outcome.next = Some(format!(
-                    "Ask the person to set the site URL in the watane app to {raw}, then run: {rerun}"
+                outcome.next = Some(push_site_next(
+                    raw,
+                    value["push"]["site"]["pages"].as_str(),
+                    &rerun,
                 ));
             }
         }
@@ -1184,6 +1352,16 @@ fn publish(
     }
 }
 
+/// The success `next` of `publish --push` without a link (TECHNICAL 10.4.1).
+fn push_site_next(raw: &str, pages: Option<&str>, rerun: &str) -> String {
+    let pages = pages.map_or_else(String::new, |pages| {
+        format!(" (or to {pages} if GitHub Pages serves this repository)")
+    });
+    format!(
+        "Ask the person to set the site URL in the watane app to {raw}{pages}, then run: {rerun}"
+    )
+}
+
 fn publish_timeout(
     providers: &watane_pkg::Deps,
     releases: &serde_json::Value,
@@ -1214,6 +1392,230 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn s93_ac7_push_next_offers_pages_beside_raw() {
+        assert_eq!(
+            push_site_next(
+                "https://raw.githubusercontent.com/o/r/main/",
+                Some("https://o.github.io/r/"),
+                "watane-dev publish --json --push"
+            ),
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/ (or to https://o.github.io/r/ if GitHub Pages serves this repository), then run: watane-dev publish --json --push"
+        );
+        assert_eq!(
+            push_site_next("https://raw.githubusercontent.com/o/r/main/", None, "x"),
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/, then run: x"
+        );
+    }
+
+    #[test]
+    fn s93_ac2_fixes_that_lacked_a_rerun_end_in_one() {
+        use crate::outcome::Code;
+        let mut outcome = Outcome::new("test", None).fail(vec![
+            Problem::new(Code::BuildCompile, "bad")
+                .fix("Correct the Rust error at the reported location"),
+            Problem::internal("disk"),
+            Problem::new(Code::BuildReadsOutside, "bad")
+                .fix("Remove the include_bytes! that names it"),
+            Problem::new(Code::TestUnit, "bad").fix("Fix it, then run: watane-dev test --json"),
+        ]);
+        outcome.next = outcome.errors[0].fix.clone();
+        let outcome = end_in_rerun(outcome, "watane-dev test --json --dir /m");
+        let fixes: Vec<_> = outcome
+            .errors
+            .iter()
+            .map(|e| e.fix.as_deref().unwrap())
+            .collect();
+        assert_eq!(
+            fixes,
+            [
+                "Correct the Rust error at the reported location, then run: watane-dev test --json --dir /m",
+                "Check the paths and permissions, then run: watane-dev test --json --dir /m",
+                "Remove the include_bytes! that names it, then run: watane-dev test --json --dir /m",
+                "Fix it, then run: watane-dev test --json",
+            ]
+        );
+        assert_eq!(outcome.next.as_deref(), Some(fixes[0]));
+    }
+
+    #[test]
+    fn s93_ac2_every_command_has_the_rerun_it_was_given_as() {
+        let cwd = std::path::Path::new("/w");
+        let rerun = |args: &[&str]| {
+            let cli =
+                Cli::try_parse_from(std::iter::once("watane-dev").chain(args.iter().copied()))
+                    .unwrap();
+            fallback_rerun(&cli, Some(cwd))
+        };
+        assert_eq!(
+            rerun(&["check", "--dir", "m x"]),
+            "watane-dev check --json --dir '/w/m x'"
+        );
+        assert_eq!(
+            rerun(&["test", "--home", "/h"]),
+            "watane-dev test --json --home /h"
+        );
+        assert_eq!(
+            rerun(&["serve", "--stop"]),
+            "watane-dev serve --stop --json"
+        );
+        assert_eq!(
+            rerun(&["new", "a", "--from", "k/p@1.0.0"]),
+            "watane-dev new a --from 'k/p@1.0.0' --json"
+        );
+        assert_eq!(
+            rerun(&["add", "../p", "--dir", "m"]),
+            "watane-dev add ../p --json --dir /w/m"
+        );
+        assert_eq!(
+            rerun(&[
+                "publish",
+                "--push",
+                "--owner",
+                "bob",
+                "--no-source",
+                "--wait",
+                "5"
+            ]),
+            "watane-dev publish --json --push --owner bob --no-source --wait 5"
+        );
+        assert_eq!(
+            rerun(&["install", "--wait", "5"]),
+            "watane-dev install --json --wait 5"
+        );
+        assert_eq!(
+            rerun(&["search", "--publisher=-x", "w"]),
+            "watane-dev search --json w --publisher=-x"
+        );
+    }
+
+    #[test]
+    fn s93_ac2_check_time_failures_of_test_and_serve_end_in_their_rerun() {
+        use crate::outcome::Code;
+        for (command, args) in [("test", ""), ("serve", " --dir /m --home /h")] {
+            let mut errors = vec![
+                Problem::new(Code::ModInvalid, "bad")
+                    .fix("Correct mod.toml according to the reported rule"),
+            ];
+            let mut next = errors[0].fix.clone();
+            end_prose_in_rerun(&mut errors, &mut next, command, args);
+            let fix = format!(
+                "Correct mod.toml according to the reported rule, then run: watane-dev {command} --json{args}"
+            );
+            assert_eq!(errors[0].fix.as_deref(), Some(fix.as_str()));
+            assert_eq!(next, Some(fix));
+        }
+    }
+
+    #[test]
+    fn s93_ac2_no_app_next_is_the_rerun_for_add_and_new_from() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().canonicalize().unwrap();
+        let dir = home.join("m");
+        template::new_mod(&dir, "m").unwrap();
+        let rerun = format!(
+            "watane-dev add --release 'k/p@0.1.0' --json --dir {} --home {}",
+            dir.display(),
+            home.display()
+        );
+        let outcome = run(Cli {
+            json: true,
+            dir: Some(dir.clone()),
+            command: Command::Add {
+                provider: None,
+                release: Some("k/p@0.1.0".into()),
+                home: Some(home.clone()),
+            },
+        });
+        assert_eq!(
+            outcome.errors[0].fix,
+            Some(format!("Start the watane app, then run: {rerun}"))
+        );
+        assert_eq!(outcome.next, Some(rerun));
+        let target = home.join("fresh");
+        let rerun = format!(
+            "watane-dev new --from 'k/p@0.1.0' --json --dir {} --home {}",
+            target.display(),
+            home.display()
+        );
+        let outcome = run(Cli {
+            json: true,
+            dir: Some(target),
+            command: Command::New {
+                slug: None,
+                from: Some("k/p@0.1.0".into()),
+                home: Some(home),
+            },
+        });
+        assert_eq!(
+            outcome.errors[0].fix,
+            Some(format!("Start the watane app, then run: {rerun}"))
+        );
+        assert_eq!(outcome.next, Some(rerun));
+    }
+
+    #[test]
+    fn s93_ac2_new_next_keeps_the_dir_it_was_given() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().canonicalize().unwrap().join("made");
+        let outcome = run(Cli {
+            json: true,
+            dir: Some(dir.clone()),
+            command: Command::New {
+                slug: Some("made".into()),
+                from: None,
+                home: None,
+            },
+        });
+        assert!(outcome.ok, "{:?}", outcome.errors);
+        assert_eq!(
+            outcome.next,
+            Some(format!(
+                "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json --dir {}",
+                dir.display()
+            ))
+        );
+    }
+
+    #[test]
+    fn s93_longer_wait_doubles_the_wait_in_force() {
+        assert_eq!(longer_wait(Some(17)), 34);
+        assert_eq!(longer_wait(None), 1200);
+        assert_eq!(longer_wait(Some(u64::MAX)), u64::MAX);
+    }
+
+    #[test]
+    fn s93_ac3_search_rerun_parses_a_filter_value_that_starts_with_a_dash() {
+        for (publisher, interface) in [("-x", None), ("-x", Some("-v")), ("ok", Some("-v"))] {
+            let line = search_command(&["word".to_string()], Some(publisher), interface, "");
+            let expected_publisher = format!(
+                " --publisher{}{publisher}",
+                if publisher.starts_with('-') { "=" } else { " " }
+            );
+            assert!(line.contains(&expected_publisher), "{line}");
+            let argv = line.replace('\'', "");
+            let cli = Cli::try_parse_from(argv.split(' ').filter(|a| !a.is_empty()));
+            let cli = cli.unwrap_or_else(|e| panic!("{line}: {e}"));
+            match cli.command {
+                Command::Search {
+                    publisher: p,
+                    interface: i,
+                    text,
+                    ..
+                } => {
+                    assert_eq!(p.as_deref(), Some(publisher));
+                    assert_eq!(i.as_deref(), interface);
+                    assert_eq!(text, ["word"]);
+                }
+                _ => panic!("not search"),
+            }
+        }
+        assert_eq!(
+            search_command(&[], Some("-x"), None, ""),
+            "watane-dev search --json --publisher=-x"
+        );
+    }
 
     #[test]
     fn ac1_search_rerun_guards_dash_words_with_double_dash() {
@@ -1425,7 +1827,7 @@ mod tests {
         let link = root.path().join("alias");
         std::os::unix::fs::symlink(root.path(), &link).unwrap();
         assert_eq!(
-            app_home(Some(link.join("new/nested")), None).unwrap(),
+            app_home(Some(link.join("new/nested")), &|_| String::new()).unwrap(),
             root.path().canonicalize().unwrap().join("new/nested")
         );
         assert!(!root.path().join("new").exists());
@@ -1524,8 +1926,11 @@ mod tests {
             assert!(!checked.ok);
             assert_eq!(checked.errors[0].code, expected_code);
             assert_eq!(
-                checked.next.as_deref(),
-                Some("Fix the errors, then run: watane-dev check --json")
+                checked.next,
+                Some(format!(
+                    "Fix the errors, then run: watane-dev check --json --dir {}",
+                    dir.canonicalize().unwrap().display()
+                ))
             );
         }
     }
@@ -1790,20 +2195,12 @@ mod tests {
     fn s86_ac3_missing_home_fix_ends_in_the_rerun_with_a_placeholder() {
         let rerun = |home: &str| format!("watane-dev search --json x{home}");
         let missing = PathBuf::from("x/../h");
-        let e = app_home(Some(missing.clone()), Some(&rerun)).unwrap_err();
+        let e = app_home(Some(missing), &rerun).unwrap_err();
         assert_eq!(
             e[0].fix.as_deref(),
             Some(
                 "Pass --home the folder that the watane app uses (x does not exist), then run: watane-dev search --json x --home <folder>"
             )
-        );
-        // s86: publish keeps the older text.
-        let e = app_home(Some(missing), None).unwrap_err();
-        assert!(
-            e[0].fix
-                .as_deref()
-                .unwrap()
-                .ends_with(", then run this command again")
         );
     }
 
