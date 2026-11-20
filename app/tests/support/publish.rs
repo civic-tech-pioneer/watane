@@ -68,7 +68,24 @@ pub fn publish(app: &App, bytes: Vec<u8>) -> std::thread::JoinHandle<(u16, Value
     std::thread::spawn(move || http(port, "application/octet-stream", bytes))
 }
 pub fn consent(app: &App) {
-    assert!(app.wait("consent", TIMEOUT));
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    while !app.wait("consent", std::time::Duration::ZERO) {
+        let command = app.eval("main", "window.__stageC ?? null");
+        if let Some(error) = command.get("error") {
+            let text = error
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| error.as_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| error.to_string());
+            panic!("command failed before consent: {text}");
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "consent window timed out"
+        );
+        std::thread::yield_now();
+    }
     until(app, "consent", "document.body.dataset.ready === 'true'");
 }
 pub fn begin(app: &App, cmd: &str, args: Value) {
