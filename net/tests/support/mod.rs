@@ -253,6 +253,8 @@ pub struct Faults {
     pub entries: Option<Vec<Entry>>,
     pub fork: Option<Option<(Entry, Entry)>>,
     pub delay: Option<Duration>,
+    /// `store_blob` fails with this text.
+    pub store_blob_fails: Option<String>,
 }
 
 /// A holder in memory. It counts the calls it gets. Its chains and packages
@@ -492,6 +494,9 @@ impl Holdings for MemHoldings {
         Ingested::Stored(chain.len() as u64 - 1)
     }
     fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String> {
+        if let Some(cause) = self.faults.lock().unwrap().store_blob_fails.clone() {
+            return Err(cause);
+        }
         let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
         self.stored_blobs.lock().unwrap().push(*id);
         self.taken.lock().unwrap().insert(id.0, bytes);

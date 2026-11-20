@@ -300,9 +300,11 @@ async fn download(
     if ok.0 != size || !ok.1 {
         return Err(mismatch(node, &id));
     }
-    let stored = sync::holder(core, move |h| h.store_blob(&id, &path)).await?;
+    let store_path = path.clone();
+    let stored = sync::holder(core, move |h| h.store_blob(&id, &store_path)).await?;
     drop(temp);
-    // a holder that cannot keep it is its own problem; the next sync asks again
-    let _ = stored;
-    Ok(())
+    stored.map_err(|cause| NetError::Io {
+        path,
+        cause: format!("package {} was not stored: {cause}", hex8(&id)),
+    })
 }

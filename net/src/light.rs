@@ -180,6 +180,7 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
                     return Ok(());
                 }
                 Err(blobs::Failed::NoConnection(_)) => {}
+                Err(blobs::Failed::NotFetched(e @ NetError::Io { .. })) => return Err(e),
                 Err(blobs::Failed::NotFetched(e)) => {
                     if let NetError::BadObject { cause, .. } = &e {
                         core.refuse(&node, cause.clone());

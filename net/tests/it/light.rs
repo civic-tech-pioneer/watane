@@ -679,3 +679,61 @@ fn ac2_s87_success_resets_the_machine_package_problem() {
     assert_eq!(fail(), first);
     assert!(unreachable_causes(&events).is_empty());
 }
+
+/// S92: a holder that does not keep the package is this machine's failure.
+#[test]
+fn ac1_s92_holder_not_keeping_the_package_is_io_not_unreachable() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&full, &light, Role::Light);
+    let bytes = b"a package the holder drops";
+    let id = full.holdings.add_blob(bytes);
+    light.holdings.faults.lock().unwrap().store_blob_fails = Some("disk full".into());
+    let events = light.net.events();
+    let Err(NetError::Io { cause, .. }) = light.net.need_blob(&id, bytes.len() as u64) else {
+        panic!("expected Io");
+    };
+    assert!(cause.starts_with(&format!("package {} was not stored: ", hex(&id.0[..4]))));
+    assert!(cause.contains("disk full"), "{cause}");
+    let err = NetError::Io {
+        path: "x".into(),
+        cause: cause.clone(),
+    }
+    .to_string();
+    assert!(!err.contains(&full.key.short()) && !err.contains("unreachable"));
+    assert!(unreachable_causes(&events).is_empty());
+    assert!(light.holdings.stored_blobs.lock().unwrap().is_empty());
+
+    // AC2: the machine was not marked, and no temp file is left
+    light.holdings.faults.lock().unwrap().store_blob_fails = None;
+    light.net.need_blob(&id, bytes.len() as u64).unwrap();
+    assert_eq!(light.holdings.taken_blob(&id), Some(bytes.to_vec()));
+    let left: Vec<_> = std::fs::read_dir(light.dir.path().join("net"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("fetch-"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// S92: a local failure ends the tries; the second machine is never asked.
+#[test]
+fn ac3_s92_local_failure_ends_the_tries() {
+    let first = node(holding(&[], true), None);
+    let second = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&first, &second, Role::Full);
+    pair_into(&first, &light, Role::Light);
+    introduce(&second, &light);
+    let bytes = b"served by both";
+    let a = first.holdings.add_blob(bytes);
+    second.holdings.add_blob(bytes);
+    light.holdings.faults.lock().unwrap().store_blob_fails = Some("disk full".into());
+    let events = light.net.events();
+    assert!(matches!(
+        light.net.need_blob(&a, bytes.len() as u64),
+        Err(NetError::Io { .. })
+    ));
+    // no machine is named as unreachable, whichever was asked first
+    assert!(unreachable_causes(&events).is_empty());
+}

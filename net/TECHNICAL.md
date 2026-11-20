@@ -616,7 +616,8 @@ which is what a reference needs.
   machine being synced, verified by iroh-blobs as it streams; the verified
   size must be `size` (and at most `limits.blob`), else the package is a bad
   object; write to a temp file under `<home>/net/`; check BLAKE3 and size
-  again; `holdings.store_blob`; the temp file is removed in every case. The
+  again; `holdings.store_blob` (a holder that does not keep it gives `Io`,
+  `package <hex8> was not stored: <cause>`); the temp file is removed in every case. The
   fetch does not use the store, so it keeps no second copy.
 
 ### 5.9 A light machine
@@ -672,6 +673,9 @@ a full machine.
   iroh-blobs checks the file before sending and resets the stream, so the
   light machine sees "not served" (this event), or, when the reset reaches it
   as a cut stream, `BadObject` and `Refused`; which one is timing (S87).
+  A local failure (this machine's temp file, or the holder not keeping the
+  package) is `Io`, returned as it is: it names no machine, emits no event,
+  marks none, and ends the tries.
   `node` calls these before `dist` reads, so a `dist`
   fetch then finds the bytes in its own store.
 
