@@ -1583,35 +1583,26 @@ above. `cargo fmt --check` passes (stable warns about nightly-only settings).
 `cargo clippy --all-targets --features driver -- -D warnings` and
 `git diff --check` pass.
 
-#### S88 — remove confirmation investigation (blocked before reproduction)
+#### S88 — wait for hidden main's initial activation before Remove
 
-The cause is not established; no focus fix has been applied. The instrumented
-`j2::ac8_remove_defaults_to_keep_data_and_unknown_keys_fail` could not reach
-page readiness in this sandbox: `_LSModifyNotification` returned -50 and
-`com.apple.hiservices-xpcservice` reported an invalid connection, followed by
-the driver's 30-second startup timeout. This is not a failing focus trace.
-A changed `modsView` signature calls `cancelConfirm` before moving the shared
-panel, so that path alone does not explain an open panel losing focus; the
-remaining candidates need a trace from a logged-in Mac. In particular,
-`installed()` waits only for the section, whereas the install handler later
-sets `selected = added[0].local` and calls `filterLibrary()`. That could hide
-a different mod's section after `warn()` without hiding the panel itself;
-this is a code-reading hypothesis, not an observed cause.
+Cause (foreman's external macOS reproduction): in `Screen::Hidden`, main
+starts non-key. After consent closes, AppKit asynchronously makes it key;
+WebKit's initial page focus clears an element focused before that activation.
+The light trace showed `focusin:confirm-cancel` from `warn`, then window
+focus, then native `blur`/`focusout` to BODY with `panelHidden=false` and no
+JavaScript caller. Failed runs recorded approved/installed/focus at
+218/254/257, 216/253/257 and 226/252/256 ms. Prototype instrumentation masked
+the race (60/60 passes); the original test failed on run 6.
 
-Temporary diagnostics live only in that test: focus/blur/visibility events,
-`hidden` writes, focus calls and confirmation-node moves record their stacks,
-active element and ancestor visibility. On the original focus assertion's
-failure it prints `FOCUS TRACE`. Every original assertion remains, with no
-focus wait or retry. Production `app.js` instrumentation was removed. Remove
-the test diagnostics after collecting the failing trace, then add the
-cause-specific regression and fix. AC1's cause/evidence/fix and AC2's 50
-consecutive passes remain outstanding; zero successful native runs here.
+AC8 now waits for `document.hasFocus()` after `installed()` and before Remove,
+matching the activation a person's click would cause. All diagnostics are
+removed and every original assertion, including immediate Cancel focus after
+the panel opens, remains. AC3 needs no production regression: visible main
+is key from launch, and a person's click on a non-key window activates it
+before clicking. No app.js change, dependency or specification change.
 
-Validation: default `cargo test` has 111 passing unit tests and the existing
-pairing failure `Failed to create netmon monitor`; driver clippy with
-`-D warnings`, `cargo fmt --check` and `git diff --check` pass. No dependency
-or specification was changed.
-The requested `--include-ignored j2::` group reports 0 passed / 4 failed,
-each before page readiness with the same native service errors. The shell
-loop targeting 50 AC8 passes stopped on its first startup failure: 0/50.
-Logs: `/tmp/watane-s88-{default,j2,clippy,fmt,repeat-last}.log`.
+The foreman runs AC2's 50-run loop and the window tests outside the sandbox.
+Validation here: `cargo test --features driver --no-run`,
+`cargo clippy --all-targets --features driver -- -D warnings`,
+`cargo fmt --check` and `git diff --check` pass. No post-fix window tests
+were run in the sandbox; the 50-run count is pending the foreman.

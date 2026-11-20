@@ -144,48 +144,12 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
-    assert!(app.wait("main", TIMEOUT));
-    // Temporary S88 diagnostics: preserve the failing focus state and its cause
-    // for the external macOS run; remove after the cause has been reproduced.
-    app.eval("main", r#"
-      window.__removeFocusTrace = [];
-      const snapshot = (event, target, stack) => {
-        const cancel = document.querySelector('#confirm-cancel');
-        const ancestors = [];
-        for (let node = cancel; node; node = node.parentElement)
-          ancestors.push({id:node.id || node.tagName, hidden:node.hidden, display:getComputedStyle(node).display});
-        window.__removeFocusTrace.push({event, target:target?.id || target?.tagName,
-          active:document.activeElement?.id || document.activeElement?.tagName,
-          hasFocus:document.hasFocus(), visibility:document.visibilityState,
-          panelHidden:document.querySelector('#confirm-panel').hidden, ancestors, stack});
-      };
-      for (const event of ['focusin', 'focusout', 'blur', 'focus', 'visibilitychange'])
-        window.addEventListener(event, e => snapshot(event, e.target, new Error().stack), true);
-      const hidden = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
-      Object.defineProperty(HTMLElement.prototype, 'hidden', {...hidden, set(value) {
-        const stack = new Error().stack;
-        if (this.id === 'confirm-panel' || this.matches('section.mod-details, #mods, #library'))
-          snapshot('hidden-before:' + value, this, stack);
-        hidden.set.call(this, value);
-        if (this.id === 'confirm-panel' || this.matches('section.mod-details, #mods, #library'))
-          snapshot('hidden-after:' + value, this, stack);
-      }});
-      for (const name of ['focus', 'append', 'after', 'replaceChildren']) {
-        const original = HTMLElement.prototype[name];
-        HTMLElement.prototype[name] = function(...args) {
-          const relevant = this.id === 'confirm-cancel' || this.id === 'mod-details'
-            || args.some(n => n?.id === 'confirm-panel');
-          if (relevant) snapshot(name + '-before', this, new Error().stack);
-          const result = original.apply(this, args);
-          if (relevant) snapshot(name + '-after', this, new Error().stack);
-          return result;
-        };
-      }
-      null
-    "#);
     begin_install(&app, &both());
     approve(&app);
     installed(&app, "recommendations");
+    // Hidden main activates asynchronously after consent closes; WebKit's
+    // initial focus clears Cancel if Remove is clicked before that activation.
+    until(&app, "main", "document.hasFocus()");
     app.eval(
         "main",
         "document.querySelector('[data-local=recommendations] button.remove').click(); null",
@@ -213,14 +177,10 @@ fn ac8_remove_defaults_to_keep_data_and_unknown_keys_fail() {
         app.eval("main", "document.querySelector('#keep-data').checked"),
         true
     );
-    let active = app.eval("main", "document.activeElement.id");
-    if active != "confirm-cancel" {
-        eprintln!(
-            "FOCUS TRACE: {}",
-            app.eval("main", "window.__removeFocusTrace")
-        );
-    }
-    assert_eq!(active, "confirm-cancel");
+    assert_eq!(
+        app.eval("main", "document.activeElement.id"),
+        "confirm-cancel"
+    );
     app.eval("main", "document.querySelector('#keep-data').click(); document.querySelector('#confirm-continue').click(); null");
     until(
         &app,
