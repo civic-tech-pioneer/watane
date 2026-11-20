@@ -402,6 +402,7 @@ mod tests {
             DistError::StaleBases {
                 release: release.clone(),
                 bases: 1,
+                slug_held: false,
             },
         ];
         for error in no_source {
