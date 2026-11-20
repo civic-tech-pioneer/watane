@@ -645,6 +645,10 @@ mod tests {
         fs::create_dir(tmp.path().join("ui/file")).unwrap();
         let error = open_pack_file(tmp.path(), "ui/file").unwrap_err();
         assert_eq!(path_reason(error, "ui/file"), crate::refusal::DIRECTORY);
+        // A real FIFO opened by pack still names a special file.
+        fifo(tmp.path());
+        let error = open_pack_file(tmp.path(), "ui/pipe").unwrap_err();
+        assert_eq!(path_reason(error, "ui/pipe"), crate::refusal::SPECIAL);
     }
     #[cfg(unix)]
     #[test]
@@ -659,5 +663,18 @@ mod tests {
             panic!("a FIFO is not a file")
         };
         assert_eq!(pipe.kind(), std::io::ErrorKind::InvalidInput);
+    }
+    // An entry gone between getdents and its stat cannot be staged; pin the mapping itself.
+    #[cfg(unix)]
+    #[test]
+    fn ac2_s91_listing_entry_gone_is_changed() {
+        let gone = listing(Path::new("/m"), "ui", std::io::ErrorKind::NotFound.into());
+        assert_eq!(path_reason(gone, "ui"), crate::refusal::CHANGED);
+        let denied = listing(
+            Path::new("/m"),
+            "ui",
+            std::io::ErrorKind::PermissionDenied.into(),
+        );
+        assert!(matches!(denied, PackageError::Io { .. }), "{denied:?}");
     }
 }
