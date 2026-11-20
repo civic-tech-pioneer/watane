@@ -476,7 +476,7 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   succeeds (adversary: 20 failures could push the only `refused` line out of 20 problems);
   machines::ac6_s33 and j8 AC5 accept either line, each with the machine's short key and its exact
   cause; opt-level 1 stays.
-- [ ] **S94 install's tests fit the budget (test cost).** after S89 (shares install/tests)
+- [ ] **S94 install's tests fit the budget (test cost).** next (S89 delivered)
   install's default integration run took 858 s on main `501c123` (Suite time; budget 120 s).
   Story: a maker runs `cargo test -p watane-install` and it is done in under 2 minutes, proving
   the same rules. Outcomes: (1) the default run under 120 s on a quiet Mac and in the cloud;
@@ -486,17 +486,20 @@ human"), so they cannot be handed to a cloud foreman as they stand.
   (the receipt and journal checks, refusing foreign files, signature and checksum checks) loses
   coverage; the validator's mutants show it. Touches: install/tests/, install/TECHNICAL (test
   section). Cloud, with the macOS sh run by the PO after.
-- [ ] **S89 Installing tells the truth at every step (leftover sweep: install).** in flight (cloud; routine `trig_01BiHhgpCP7z8t1JR3CE9ExU`)
-  Story: Alice installs, interrupts, checks and uninstalls watane, and every line she reads is true
-  and in her own terms. Outcomes: (1) the `### install` leftovers from S50b-fix, S50b-fix2, S50c
-  and S55 are fixed or written into install/TECHNICAL as a decided limit: a Ctrl-C past the commit
-  or at the toolchain question says what is installed; `--status | head -1` exits quietly; paths
-  print as `~`; "install it later" names the URL the offer used; no empty folders after an
-  interrupted fresh install; rustup's text is set apart; (2) release.yml's actions run on Node 24
-  natively (no forced-runtime warning); (3) `clean_mac::ac1_ac2_fresh_home_real_release` skips with
-  its reason, not fails, where there is no `target/release`. Re-check each line against main first (S49's lesson); drop one already fixed, and say so. 'Decide, do not sketch' items stay out. Touches: install/ (script,
-  packer, tests, TECHNICAL), .github/workflows/release.yml. Cloud; the PO reruns the macOS sh
-  tests and `vm_mac.sh` on the Mac after the merge.
+- [x] **S89 Installing tells the truth at every step (leftover sweep: install).** Delivered
+  2026-11-20 (main `1a4ea99`, PO fix `d5c0d15`; routine `trig_01BiHhgpCP7z8t1JR3CE9ExU`, cloud,
+  ~3.5 h). Runs: S89-1 2, S89-2 2, fix1 to fix4 1 each; validator rounds 1 (S89-2: 2). user-sim
+  ACCEPTED in round 4; adversary HELD after 4 BREACHED rounds, each a failure text that a nearby fix
+  made untrue (exit-5 texts are better decided once from disk state, 3.8/3.9). Alice gets a true
+  line at every step: told watane is installed after a late Ctrl-C or one at the toolchain
+  question; `--status | head -1` quiet; `~` paths; install-it-later names the offer's URL; no
+  empty folders after an interrupted fresh install; rustup's text set apart; release.yml actions on
+  node24 (pinned by SHA); clean_mac's real-release test skips with its reason. Decisions: the
+  interrupt hint's "committed" is decided as undo decides it; `say` hides printf's error only on
+  PIPE; remove_created rmdirs only this run's folders, never through a link (limit: a same-user
+  parent swap can remove an empty folder in the home); a leading `-` in WATANE_RUSTUP_URL is still
+  a curl option (limit). On the Mac: install 193 passed; the `/dev/full` test is Linux-only (PO
+  `cfg_attr` ignore). vm_mac.sh not rerun (messages only; the real-release run passed on v0.1.0).
 - [ ] **S90 The manager says what happened (leftover sweep: app).** in flight (local; foreman `a0945c7d`, sessionId `a0945c7d-3224-4c39-97c2-e7665d0eca4f`)
   Story: Alice manages her mods and every message names what was done or denied. Outcomes from
   `### app`: a disabled provider shows the host's message; a busy state during a hanging follow or
@@ -1093,7 +1096,7 @@ that subsystem's next slice a test-cost slice.
 | dev | 37 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | dist | 29 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | host | 12 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
-| install | **858 s, over budget** | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
+| install | **1059 s, over budget** | not measured | main `1a4ea99` (S89), integration binary, load ~10 to 17 |
 | log | 34 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | net | 32 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
 | node | 27 s | not measured | main `501c123`, integration binary only, load ~30 to 40 (S90 building) |
@@ -1277,6 +1280,13 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### install
 
+- From S89: the hint's bare `watane-dev doctor` when it is off PATH; `^C` glued to the hint;
+  a shell "Terminated" on TERM; uninstall leaves the empty `~/.local` and `~/Applications` it
+  made, and says "uninstalled" even when entries were skipped; `--status` lists receipt paths
+  unchecked; the post-undo "still works" can be untrue when files were deleted by hand
+  (INST-F-18); a Ctrl-C during the rustup download prints no install-it-later line; offer B names
+  sh.rustup.rs; a rustup failure (exit 6) names no step; the refusal shows the resolved home; a
+  Ctrl-C at the uninstall question prints nothing; rustup's stderr can interleave the frame.
 - From S50b-fix's user-sim: no hint after a Ctrl-C past the commit; `--status` does not clean up
   leftovers; the offer shows `WATANE_RUSTUP_URL` but "install it later" prints sh.rustup.rs; ^D at a
   question needs a newline; empty folders remain after an interrupted fresh install; a Ctrl-C in the
@@ -1709,6 +1719,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, S89) four adversary rounds from failure texts that each made a nearby line false; the cloud runs as root with dash, so two install tests always fail there and macOS sh is unseen; `/dev/full` is Linux-only.
 - (2026-11-20, PO) main check at `5899450`: three Linux-only or load-only failures. log `s91_2_ac2_socket_key_is_not_plain` failed on every macOS run (a socket open is EOPNOTSUPP there, ENXIO on Linux; PO fix `b0c4357`, a cloud slice cannot see it); node `causes::ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed` got `Ok` once under load (a good package, likely the anchor answering before its net turned off: a test race, not a verification gap; 3/3 alone); app `manage::ac2_s47` once (2/2 alone). S91's `mkfifoat` was Linux-only too (PO fix `5899450`). Cloud slices touching OS calls need a Mac run before merge.
 - (2026-11-20, S91) the cloud container lacked clippy, nightly rustfmt, cargo-deny and cargo-hakari (installed by hand) and has no IPv6, so host's server tests need a local shim there; the app cannot build there (GTK); one IPv6 test's changed expectation surfaced only on the Mac.
 - (2026-11-20, PO) main check at `c224dd3` (S92) under load ~30 (S90 building): `j2::ac7` failed again (S90 reworks it) and net `regress_s75::ac1_ac2_light_reaches_the_full_machine_with_the_anchor_closed` once (*core*); the latter passed 5/5 alone at load 33. app's integration run took 206 s against 70 s earlier: Suite time figures need a quiet Mac.
@@ -2145,3 +2156,4 @@ The human may veto each one.
 - S88: the remove confirmation's focus check no longer flakes (a WebKit blur after a consent closes, in hidden test windows only).
 - S92: when Alice's install fails on a light machine she is told the real cause and whose machine it is.
 - S91: a maker or mod that hits a race or an odd file in pkg, log or host gets watane's own named cause.
+- S89: Alice gets a true line from install.sh at every step, interrupted or not.
