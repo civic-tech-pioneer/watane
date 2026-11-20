@@ -1660,6 +1660,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-20, PO) main's check after S88: `j2::ac7_idle_polling…` saw fewer than 2 polls in 5 s once in the full suite (load ~20 with S90 building); 3/3 alone. S90 owns the poll code. deny: RUSTSEC-2026-0587 (wasmtime-wasi 48.0.9, Windows-only), fixed by 48.0.10 on main.
 - (2026-11-20, S88) Sol's sandbox cannot start the GUI app, so the foreman ran every window test and trace itself; Sol's heavy instrumentation hid the race (60/60 with it); three fixes were wrong before traces showed the cause; a 50-run full driver suite takes about an hour.
 - (2026-11-20, S55) the Mac slept overnight and cut off a validator mid-run (long steps now under `caffeinate -i`); a widened diagnostic wait plus a build under load looked like a hang to the PO; local tauri-cli 2.12.5 (CI pins 2.12.4) rewrites app/Cargo.toml's tauri features on `cargo tauri build`; the auto-mode classifier refused a `push -f` of a branch not yet on the remote.
 - (2026-11-19, S87) iroh-blobs copies blobs up to 16 KiB into its store instead of referencing the file: a test of a changed referenced file needs a bigger blob. No full run had covered the driver window tests since the test-speed merges.
