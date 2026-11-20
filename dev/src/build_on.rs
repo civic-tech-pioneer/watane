@@ -278,14 +278,21 @@ pub fn add_release(
 }
 
 /// The slug of the mod that depends on a release without source: the given one, or
-/// `my-<release slug>` (cut to 40 bytes, no trailing `-`) when none or the release's own.
+/// `my-<release slug>` (cut to 40 bytes, no trailing `-`; its last character swapped to `a`, or `b`, if that equals the
+/// release's slug) when none or the release's own.
 fn dependent_slug(given: Option<&str>, release: &str) -> String {
     match given {
         Some(slug) if slug != release => slug.to_string(),
         _ => {
             let mut slug = format!("my-{release}");
             slug.truncate(40);
-            slug.trim_end_matches('-').to_string()
+            let mut slug = slug.trim_end_matches('-').to_string();
+            if slug == release {
+                let last = if slug.ends_with('a') { 'b' } else { 'a' };
+                slug.pop();
+                slug.push(last);
+            }
+            slug
         }
     }
 }
@@ -457,6 +464,13 @@ mod tests {
         assert_eq!(release.len(), 40);
         assert_ne!(super::dependent_slug(None, &release), release);
         assert_ne!(super::dependent_slug(Some(&release), &release), release);
+    }
+
+    #[test]
+    fn regress_s93_dependent_slug_is_still_a_valid_slug() {
+        let release = format!("{}m", "my-".repeat(13));
+        let slug = super::dependent_slug(None, &release);
+        assert!(slug.parse::<Slug>().is_ok(), "{slug}");
     }
 
     use super::*;

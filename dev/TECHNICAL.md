@@ -1568,8 +1568,9 @@ Record each one in `release_providers` (sorted keys). Return the list.
 2. Resolve the home and check the app status as `install` (9.6 step 1).
 3. `Client::fetch({"link"})`. `!package.has_source()`: `usage.no_source`,
    and nothing is written. The fix's new mod is the given slug, or
-   `my-<release slug>` (cut to 40 bytes, no trailing `-`) when none was
-   given or it equals the release's: it cannot share the release's slug
+   `my-<release slug>` (cut to 40 bytes, no trailing `-`; when that still
+   equals the release's slug, its last character becomes `a`, or `b` if it
+   is already `a`) when none was given or it equals the release's: it cannot share the release's slug
    (`mod.self_dependency`); its folder is the destination `new --from` used:
    `--dir`, else `./<given slug>` when a slug was given, else `./my-<release slug>`.
 4. With no `<slug>`, the slug is the release's, and the folder check of
