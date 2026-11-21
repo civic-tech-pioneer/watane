@@ -170,9 +170,18 @@ watane.on(read);
             break;
         }
     }
-    // Step 11 (host 8.4): the first message of a connection carries its id.
-    line.clear();
-    events.read_line(&mut line).unwrap();
+    // Step 11 (host 8.4): the first message of a connection carries its id. The body is
+    // chunked: skip the chunk-size line before the first `data:` line.
+    loop {
+        line.clear();
+        assert!(
+            events.read_line(&mut line).unwrap() > 0,
+            "event stream ended"
+        );
+        if line.starts_with("data:") {
+            break;
+        }
+    }
     assert!(
         line.starts_with("data: {\"type\":\"connection\",\"id\":\""),
         "{line}"
