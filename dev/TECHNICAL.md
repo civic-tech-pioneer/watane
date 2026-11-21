@@ -2655,17 +2655,26 @@ Each has a proposed answer, which this specification uses.
     program `scripted-responses` that host and app tests spawn (no library use
     of `watane-dev` across subsystems, spec §2); a preview offers `fake-claude`
     only. A scripted OpenAI stream for a preview waits for a host setting
-    outside `test-net`.
-16. **The fake's hook failure line** (step 11): the line that `claude`
-    writes when a hook callback fails is not in any watane document. 18.2
-    names the line `fake-claude` writes; a probe of stage B against the real
-    `claude` confirms or corrects it.
+    outside `test-net`. spec F-MAKE-4 still names "a scripted OpenAI stream"
+    among what the maker tools offer a preview; until spec/ drops it or the
+    host gains that setting, dev meets only its fake `claude` part.
+16. **How the host trusts the fake** (step 11): `https-stream` connects to
+    `api.openai.com` and to the judge's origin over TLS, and a preview must
+    run `fake-claude` in place of `claude`. Decided in host 19.9: the host's
+    feature `test-net` (`Host::set_test_net`, never in a release) maps the
+    two names to the addresses of `scripted-responses` and trusts its
+    `ca_pem`; `Host::set_fake_claude` (`--fake-claude`) names the preview's
+    program. dev holds no seam in the host's production path (14).
 17. **The judge's wire shape** (step 11): the request and the verdict body
     of the judge belong to the checked provider (agentic-harness TECHNICAL
     10), which no watane document specifies. Proposal: the fake answers the
     verdict `{"verdict": "safe" | "unsafe" | "unsure", "reasons": [..]}` and
     offers `Raw` for any other shape (18.3); the provider's repository fixes
     its shape and, if it differs, scripts `Raw`.
+18. **The fake's hook failure line** (step 11): the line that `claude`
+    writes when a hook callback fails is not in any watane document. 18.2
+    names the line `fake-claude` writes; a probe of stage B against the real
+    `claude` confirms or corrects it.
 
 ## 18. The agent layer fakes (step 11)
 
@@ -2737,7 +2746,7 @@ control protocol, as `claude` does:
 | `result` | write the `result` line of a turn, `subtype` and `usage` as given |
 | `idle` | write the line by which `claude` reports itself idle (a turn is over then, not at the first `result`; agentic-harness TECHNICAL 4.5 step 6) |
 | `ask` | write a `can_use_tool` control request with `tool`, `input` and `tool_use_id` (default: a counter), then, with `await: true`, wait for the host's `control_response` and log it |
-| `check` | write a `hook_callback` (PreToolUse) control request, with `await: true` as above; `error: true` writes the line `{"type":"system","subtype":"hook_response","hook_event":"PreToolUse","outcome":"error","tool_use_id":<the check's>}` (the host passes it on unchanged, 4.5; question 16), `timeout: true` writes nothing more for it and lets the hook's time run out |
+| `check` | write a `hook_callback` (PreToolUse) control request, with `await: true` as above; `error: true` writes the line `{"type":"system","subtype":"hook_response","hook_event":"PreToolUse","outcome":"error","tool_use_id":<the check's>}` (the host passes it on unchanged, agentic-harness TECHNICAL 4.5; question 18), `timeout: true` writes nothing more for it and lets the hook's time run out |
 | `cancel` | write a `control_cancel_request` for the `ask` or `check` with that `tool_use_id` |
 | `raw` | write `line` as given, or `hex` as raw bytes, followed by a newline; for a line that is not UTF-8, a duplicate top-level key, or a line that names a watane item type (agentic-harness TECHNICAL 4.5 step 4; what the host does with such lines is an open question of host 18) |
 | `expect-interrupt` | wait for an `interrupt` control request and answer it |
@@ -2819,7 +2828,7 @@ pub enum Play {
 **The program `scripted-responses`** (the form that other subsystems use;
 no watane subsystem links the crate, spec §2). Arguments: `[--script
 <file>] [--log <dir>]`. It starts both origins, prints one line on standard
-output, `{"scripted":1,"responses":"127.0.0.1:<port>","judge":"127.0.0.1:<port>","judge_origin":"https://judge.test","ca_pem":"<PEM>"}`,
+output, `{"scripted":1,"responses_addr":"127.0.0.1:<port>","judge_addr":"127.0.0.1:<port>","judge_origin":"https://judge.test","ca_pem":"<PEM>"}`,
 and serves until it is killed (SIGTERM). `--script` is a JSON file
 `{"token": string?, "models": [string]?, "replies": [Reply]?, "judge_key": string?, "plays": [Play]?}`
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
