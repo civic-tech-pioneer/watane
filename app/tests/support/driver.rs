@@ -237,7 +237,10 @@ impl App {
     pub fn eval(&self, label: &str, js: &str) -> Value {
         let v = self.call(json!({"op":"eval","label":label,"js":js}));
         serde_json::from_str(v.as_str().unwrap()).unwrap_or_else(|e| {
-            panic!("native eval returned invalid JSON: {e}; {label}: {js}; {v}")
+            panic!(
+                "native eval returned invalid JSON: {e}; {label}: {js}; {v}; {}",
+                self.hang_report()
+            )
         })
     }
     pub fn wait(&self, label: &str, timeout: Duration) -> bool {
@@ -295,14 +298,25 @@ impl App {
         self.send(json!({"op":"close", "label":label}));
         self.wait_exit()
     }
+    // What the app was doing: its stderr and, on macOS, a 2 s stack sample.
+    fn hang_report(&self) -> String {
+        let sample = Command::new("sample")
+            .args([&self.child.id().to_string(), "2"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_else(|e| e.to_string());
+        format!("stderr: {}\nsample: {sample}", self.stderr())
+    }
     pub fn wait_exit(&mut self) -> std::process::ExitStatus {
         let deadline = std::time::Instant::now() + TIMEOUT;
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
                 return status;
             }
-            assert!(std::time::Instant::now() < deadline, "app did not quit");
-            std::thread::yield_now();
+            if std::time::Instant::now() >= deadline {
+                panic!("app did not quit; {}", self.hang_report());
+            }
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 }
