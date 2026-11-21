@@ -1114,7 +1114,7 @@ watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane
 agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
 names the same interface in its sketch and fakes it until this one merges.
 
-- [~] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Branch
+- [~] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Routine `trig_01PGTXRrSDbTaG2nkiMxLDd3`. Branch
   `slice/s95`. A design slice: apply TECHNICAL 15's checklist of agentic-harness (read it at
   `https://github.com/civic-tech-pioneer/agentic-harness/blob/main/design/TECHNICAL.md`, section 15,
   and the sections each row cites) to watane's documents: `spec/VISION.md` (the agent layer's place
