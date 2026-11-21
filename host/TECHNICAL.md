@@ -2398,6 +2398,25 @@ undo, and none changes a WIT signature):
   its streams depend on none; a page or a host stream depends on none until
   A2. Cost to undo: a field of the stream.
 
+Raised by S96's adversary (fifth pass; open, for the product owner; neither
+blocks A1):
+
+- **Q47** (open) `remove` waits for the removed mod's call lock with no
+  deadline while it holds the removal lock that every install takes (4.4), so
+  a mod kept busy by its page, an agent or its timers delays the removal and
+  every install on the host, each wait bounded by the call deadline but the
+  lock not fair. Options: (a) `remove` waits with the call deadline and fails
+  `busy`; (b) a removal takes priority over new callers of the mod; (c) keep.
+  Recommended: (a). Cost to undo: one wait.
+- **Q48** (open) A crash, or a failed redb write, between the catalog save of
+  `remove` and its timer rewrite leaves rows that carry the removed identity
+  (its own timers and other mods' timers with it as origin client); nothing
+  sweeps them at start, and a later install with the same identity inherits
+  them. Options: (a) at `Host::open`, rewrite or delete every row whose owner
+  or origin client is not installed; (b) keep the install generation in the
+  row (it lives in memory today, so it needs a persisted install id);
+  (c) keep. Recommended: (a). Cost to undo: one pass at start.
+
 ## 19. The agent layer (step 11)
 
 W38 (spec §7): a layer of mods runs on the host. The kernel `mods:agent` and
