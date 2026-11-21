@@ -1,9 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 //! Stage A1 requests and timers (TECHNICAL 19.6, 7; FUNCTIONAL S53 to S56).
 
-use super::streams::{
-    Env, call_as, fixture, install, lines, local, relay, settle, test_stream, wait,
-};
+use super::streams::{Env, call_as, fixture, lines, local, relay, settle, test_stream, wait};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -185,7 +183,8 @@ fn ac7_s54_after_with_a_live_id_replaces_it() {
     let env = Env::relay();
     after(&env, "t", 5000);
     after(&env, "t", 50);
-    wait("the firing", Duration::from_secs(5), || {
+    // Well before the first due time: the replacement fired, not the timer it replaced.
+    wait("the firing", Duration::from_secs(2), || {
         fired(&env) == ["t"]
     });
     settle();
@@ -267,6 +266,28 @@ fn insert_row(home: &Path, key: &str, value: &str) {
 
 #[test]
 fn ac7_a_mod_without_timer_sink_gets_its_due_row_deleted() {
+    // The scenario runs in a child process so that the host's log line on stderr can be read.
+    if std::env::var_os("WATANE_TIMER_SINK_CHILD").is_some() {
+        no_timer_sink_scenario();
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "requests::ac7_a_mod_without_timer_sink_gets_its_due_row_deleted",
+            "--nocapture",
+        ])
+        .env("WATANE_TIMER_SINK_CHILD", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("watane: timer x of latch dropped: no timer-sink"),
+        "{stderr}"
+    );
+}
+fn no_timer_sink_scenario() {
     let env = Env::relay();
     // `latch` has no `timer-sink`: a row for it is dropped at its due time (19.6).
     let key = format!("{}/x", id_of("local/latch"));
@@ -405,5 +426,4 @@ fn ac10_remove_rewrites_the_timers_that_carry_the_removed_mod() {
     host.remove(&local("relay"), true).unwrap();
     drop(host);
     assert_eq!(timer_rows(dir.path()), BTreeMap::new());
-    let _ = install;
 }
