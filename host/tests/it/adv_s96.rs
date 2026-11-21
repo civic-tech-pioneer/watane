@@ -579,3 +579,34 @@ fn ac3_update_while_a_firing_waits_keeps_the_timer() {
         "a timer whose firing waited across an update of its mod"
     );
 }
+
+/// 19.2 (Ends), 19.6 (At apply): the consumer's side too. An `Open` whose consumer was updated
+/// while the chain was in flight is applied and ended `gone`.
+#[test]
+fn ac2_stream_opened_by_a_chain_in_flight_ends_at_an_update_of_its_consumer() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo-front");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    let before = env.host.get(&local("advo-front")).unwrap().package;
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    assert_ne!(env.host.get(&local("advo-front")).unwrap().package, before);
+    let opened = first.finish();
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "a stream opened by the consumer's old version is live after its update: push gave {pushed}"
+    );
+}
