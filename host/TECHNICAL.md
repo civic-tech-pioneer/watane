@@ -85,11 +85,12 @@ target `wasm32-wasip2`.
 | `src/harness.rs` | `Harness` for contract tests (section 2.6) |
 | `src/bin/watane.rs` | the program (section 12.2) |
 | `wit/host.wit` | the `watane:host` package (section 6.4; step 11: 19.1) |
-| planned `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
+| `src/agent/mod.rs` | the host functions of `streams` and `timers` at the call (19.2, 19.6), the effects of a chain and their application after its commit |
+| `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
 | planned `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`) | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
 | planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
 | planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
-| planned `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
+| `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
 | planned `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `tests/*.rs`, `tests/fixtures/` | section 13 |
 
@@ -1117,7 +1118,7 @@ One redb database at `state/state.redb`.
 |---|---|---|
 | `s/<id>`, one per mod | `&str` state key | `&[u8]` value |
 | `sizes` | `&str` `<id>` | `u64` stored bytes (keys + values) |
-| `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | JSON `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
+| `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | `&str`: JSON text `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1669,7 +1670,7 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 | `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `open-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `open-page-then-fail(local: string)`, which calls `open-page` and then traps, `close-open-close(local: string)`, which queues those three page effects in order, `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
 | `latch` (step 11, A1) | import state; export `api { trip: func(key: string) -> bool; }`: `true` and puts the key when it is absent, else `false`. Its write commits when its call succeeds, even if the caller then traps (6.6, Q3), so it remembers across a rolled-back call what `relay` cannot |
-| `relay` (step 11, A1) | `deps.json` `{"mods:latch": null}`; import state, caller, `streams`, `timers`, `mods:latch/api`; export `api { open: func() -> result<string, string>; push: func(s: string, text: string) -> result<_, string>; close: func(s: string); cancel: func(s: string); hand-off: func(s: string) -> result<_, string>; resume: func(s: string) -> result<_, string>; after: func(id: string, ms: u64) -> result<_, string>; cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); forward: func(up: string, down: string, write: bool); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` (each `result` error is the WIT error case's name, e.g. `"not-yours"`) and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`. `items(s, batch)`: when `forward` named `s` as an `up`, it pushes each body to that `down` and puts nothing else (with `write`, it also puts `last/<s>` = the last seq: one write per batch, for V8), and answers `defer` when a push fails `full`; else it puts each body at `got/<s>/<seq as 20 digits>` and the key `who/<s>` = `caller.identity()` (S56; a forwarded batch writes no key, so the load test sees no state bytes per item). Then it answers by `mode` (state key, default `taken`): `taken`, `defer`, `trap` (traps), `trap-once` (calls `latch.trip("<s>/<first seq>")` and traps when it returns `true`, else answers `taken`). `received` returns the values of `got/` in key order. `stream-sink.ended` and `stream-producer.ended` add the line `<s> <outcome case>` (e.g. `"<s> consumer-failed"`) to `ended`; `ready(d)` adds `<d> ready` and calls `resume` for each `up` forwarded to `d`, and `stream-producer.ended(d, ..)` resumes them too (the forwarding rule of 19.2); `fired` adds the id to `fired`. `who` returns `caller.identity()` |
+| `relay` (step 11, A1) | `deps.json` `{"mods:latch": null}`; import state, caller, `streams`, `timers`, `mods:latch/api`; export `api { open: func() -> result<string, string>; push: func(s: string, text: string) -> result<_, string>; close: func(s: string); cancel: func(s: string); hand-off: func(s: string) -> result<_, string>; resume: func(s: string) -> result<_, string>; after: func(id: string, ms: u64) -> result<_, string>; cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); forward: func(up: string, down: string, write: bool); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` (each `result` error is the WIT error case's name, e.g. `"not-yours"`) and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`. `close(s)` closes with `closed`, or with `gone` while `mode` is `close-gone` (the test of the host-only outcome, 19.2). It keeps an `index` key of the `got/` keys, since `state` cannot list. `items(s, batch)`: when `forward` named `s` as an `up`, it pushes each body to that `down` and puts nothing else (with `write`, it also puts `last/<s>` = the last seq: one write per batch, for V8), and answers `defer` when a push fails `full`; else it puts each body at `got/<s>/<seq as 20 digits>` and the key `who/<s>` = `caller.identity()` (S56; a forwarded batch writes no key, so the load test sees no state bytes written per item). Then it answers by `mode` (state key, default `taken`): `taken`, `defer`, `trap` (traps), `trap-once` (calls `latch.trip("<s>/<first seq>")` and traps when it returns `true`, else answers `taken`). `received` returns the values of `got/` in key order. `stream-sink.ended` and `stream-producer.ended` add the line `<s> <outcome case>` (e.g. `"<s> consumer-failed"`) to `ended`; `ready(d)` adds `<d> ready` and calls `resume` for each `up` forwarded to `d`, and `stream-producer.ended(d, ..)` resumes them too (the forwarding rule of 19.2); `fired` adds the id to `fired`. `who` returns `caller.identity()` |
 | `relay-front` (step 11, A1) | import `mods:relay/api`; export `api { after-then-fail: func(id: string, ms: u64); push-then-fail: func(s: string, text: string); who: func() -> string; }`; the first two call that function of `relay` (`after`, `push`), which succeeds, and then trap: the nested request and push that 19.6 drops; `who` returns `relay`'s `who` (S56) |
 
 The mutual fixtures copy only provider interfaces and outlets into
@@ -1943,7 +1944,9 @@ in the host's own tests, through a mod consumer (`relay`) to a page
 connection. Item delay, source to page: at most 50 ms. `cancel` to `ended`:
 at most 250 ms. Writer busy share (the share of wall time the host's state
 writer spends in commits, fsync included, over the run): at most 10%. State
-bytes read and written per item: none.
+bytes written per item: none (the forwarding `relay` reads its two routing keys
+per batch, about 100 bytes, which `Host::test_stats` also counts and the load
+test records apart).
 
 **V8 record.** V8 (the probe of agentic-harness TECHNICAL 16) runs the A1
 prototype through three layers (host stream, a mod consumer, a page consumer)
@@ -1955,10 +1958,30 @@ twice: `relay` forwarding with no write, then with one state write per batch
 each: p50 and p95 item delay source to page, items out of order or missing
 (must be 0), commits, and the mean time per commit (`commit_time / commits`
 of `Host::test_stats`). agentic-harness keeps its own copy of the record (its
-TECHNICAL 16); its slice copies these numbers. Not measured yet.
+TECHNICAL 16); its slice copies these numbers.
 
-**Budget record (stage A).** The p95 numbers of the stage A budgets above,
-from the same run, with the date and the machine. Empty until A1 runs.
+Run of 2026-11-21 (`cargo test --release --test it -- --ignored ac13`; 60 s per
+run, 8 streams × 100 items/s of 1 KiB, 48 000 items each; 4 cores,
+`Linux 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC x86_64`, a virtual machine, real
+fsync on its disk):
+
+| Run | p50 delay | p95 delay | out of order or missing | commits | mean per commit |
+|---|---|---|---|---|---|
+| `relay` forwarding, no write | 1.72 ms | 3.25 ms | 0 | 0 | none |
+| one state write per batch | 3.39 ms | 6.36 ms | 0 | 47 483 | 0.31 ms |
+
+With one write per batch the writer was busy 24.5% of the wall time (one
+fsync per commit, N4): over the 10% of the stage A budget, which only the run
+with no write must meet. The human decides whether 19.6 "Durable first" changes.
+The first runs of the test showed a 45 ms p95: Nagle's delay on the server's
+sockets (small SSE writes). The server now sets `TCP_NODELAY` (`src/server.rs`).
+
+**Budget record (stage A).** The numbers of the stage A budgets above, from the
+run of 2026-11-21 on the machine of the V8 record (4 cores, a virtual machine),
+the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
+`cancel` to `stream-end` 0.5 ms (budget 250 ms; one measurement, not a
+percentile); writer busy share 0.0% (budget 10%); state bytes written per item
+0, read per item 103 (the routing keys, see above). All within the budgets.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -2529,7 +2552,7 @@ A grant revoked or a mod disabled stops the next host import of a running chain
 (Q24) and ends the streams that depended on it (19.2, Ends).
 
 **Harness** (2.6). The new imports are fakes: `streams.open` returns `s1`,
-`s2`, ... in call order, every other function returns ok, `identity` returns
+`s2`, ... in call order (one count for the host), every other function returns ok, `identity` returns
 `local/<slug>` of the caller or `page`. Each request (19.6) of a succeeded
 call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
 in call order; a failed call records none. A `Fakes` entry under
@@ -2546,7 +2569,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Consumer of a mod stream | the caller of the call in which `open` ran, only when that call came through a call link of the caller (a nested call, 6.6), was a top-level `Host::call` with `Caller::Mod`, or came from the mod's own page: a mod, or a page connection when the caller is `page` and the call carried a connection id (8.2). Any other caller (an agent, the host, a page call without a live connection) and a call that came by no call link (an event delivery, 9.2, or a collect answer, 9.4, where the caller is the emitter or collector; an item call, whose caller is the producer): `not-yours` (agentic-harness TECHNICAL 3: "only during a call through a call link from a mod or its own page"). A mod consumer must export `stream-sink`; else `open` fails `not-yours` |
 | Acting side | `push` and `close` act for the mod whose instance calls them (the producer). `cancel`, `resume` and `hand-off` act for the consumer: a mod consumer when its own instance calls them; a page consumer when its mod's instance calls them in a chain whose caller is `page` and whose page connection (8.2) is that connection. `close` and `cancel` return nothing: a wrong side, an unknown or an ended id does nothing, as `timers.cancel` with an unknown id (19.6) |
 | Page consumer | one `/events` connection, named by the connection id that `watane.js` sends with `/call` (8.2, 8.4, 8.5) |
-| `push`, `close` | producer only; `cancel` consumer only; `hand-off` the consumer of a host stream, once, to the caller of the current call, which must be a mod (`mod:<local>`) that exports `stream-sink`: a caller `host`, `page` or `agent:<handle-name>`, or a mod without `stream-sink`, is `not-yours`, and the stream stays with its consumer; items queued and not yet taken go with it, numbering goes on |
+| `push`, `close` | producer only; `cancel` consumer only; `hand-off` the consumer of a host stream (a mod stream cannot be handed off: `not-yours`), once, to the caller of the current call, which must be a mod (`mod:<local>`) that exports `stream-sink`: a caller `host`, `page` or `agent:<handle-name>`, or a mod without `stream-sink`, is `not-yours`, and the stream stays with its consumer; items queued and not yet taken go with it, numbering goes on |
 | Wrong caller, unknown or ended id | `not-yours`, `unknown-stream` |
 | Id | 128 random bits, never reused |
 | Sequence | each item numbered from 1 per stream |
@@ -3016,7 +3039,7 @@ timer's authority; and `remove` rewrites each timer that carries the removed
 mod to the timer's own mod, so a later mod with the same identity, such as a
 local mod with the same slug, inherits none either; 19, Terms; 4.4). `after(id,
 delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
-is ignored). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
+is ignored). When `remove` finds a timer whose owner is not installed, so that its identity is not known, it sets that timer's origin client to the empty text, which no mod has (the timer then fires with its own mod as origin client). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
 timers that the chain has queued) are made at the call. The write follows the
 chain rule above: the `after` and `cancel` that reach the top-level invoke are
 written to the `timers` table in the write transaction of that invoke's
@@ -3201,7 +3224,7 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
     open: commits, the wall time spent in them (redb commit, fsync included),
     and the state bytes read and written by calls (keys and values through
     `state`, host tables excluded). The load test of A1 takes the writer
-    busy share and the state bytes per item from two readings.
+    busy share and the state bytes written per item from two readings.
 
 ```rust
 #[cfg(feature = "test-streams")]

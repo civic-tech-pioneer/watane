@@ -25,14 +25,14 @@ mod tools;
 pub use runtime::limits::Limits;
 pub use tools::{FunctionInfo, Handle, Token, TokenId, TokenInfo, ToolsetName};
 
+#[cfg(feature = "test-streams")]
+pub use agent::streams::{Delivery, DeliveryAnswer, StreamError, TestClock};
 pub use catalog::{
     Bind, Change, GrantState, InstalledMod, LinkKind, LinkView, MissingProvider, Plan, PlanEntry,
     Source,
 };
 pub use error::{CallCode, CallError, HostError, Limit, VerifyCheck};
 pub use harness::{EventRecord, Fakes, Harness, ManageRecord, Outcome, RequestRecord};
-#[cfg(feature = "test-streams")]
-pub use agent::streams::{Delivery, DeliveryAnswer, StreamError, TestClock};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
 pub use server::Served;
@@ -602,7 +602,7 @@ impl Host {
         let id = self.hub.test_open(consumer, origin)?;
         Ok(TestStream {
             id,
-            host: self.weak.clone(),
+            host: std::sync::Weak::<Host>::clone(&self.weak),
         })
     }
     pub fn set_test_clock(&self, clock: TestClock) {

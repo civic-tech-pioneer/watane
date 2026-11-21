@@ -799,3 +799,24 @@ fn ac4_s43_a_manager_install_is_checked_again_before_the_commit() {
         fs::read(fixture("counter").join("ui/app.js")).unwrap()
     );
 }
+
+#[test]
+fn ac9_s96_a_listed_mod_can_hold_the_claude_grants() {
+    let info = json!({
+        "local":"a","identity":"local/a","slug":"a","name":"A","summary":"s","version":"0.1.0",
+        "publisher":null,"release":null,"origin":null,"enabled":true,"has-page":false,
+        "has-logic":true,
+        "grants":[
+            {"grant":"claude-code","granted":true},
+            {"grant":"claude-code-shell","granted":false}
+        ],
+        "links":[],"binds":[],"error":null
+    });
+    let mut fakes = Fakes::new();
+    fakes.insert(
+        "watane:host/manage".into(),
+        [("mods".to_owned(), json!([info]))].into(),
+    );
+    let h = Harness::open(&fixture("manager"), fakes).unwrap();
+    assert_eq!(h.call("api.mods", json!({})).unwrap().value, json!([info]));
+}

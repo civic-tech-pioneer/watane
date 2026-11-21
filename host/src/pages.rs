@@ -136,7 +136,13 @@ async fn call_response(
         return api::error(400, "bad_request", "connection must be 32 hex characters");
     }
     match host
-        .call_connection(Caller::Page, local, call.function, call.args, call.connection)
+        .call_connection(
+            Caller::Page,
+            local,
+            call.function,
+            call.args,
+            call.connection,
+        )
         .await
     {
         Ok(value) => Json(json!({"value":value})).into_response(),

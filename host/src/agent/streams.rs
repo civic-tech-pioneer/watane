@@ -8,9 +8,8 @@
 )]
 
 use super::{Effect, ModRef};
-use crate::LocalName;
 use crate::runtime::call::{Args, Start, Who, run_start};
-use crate::{Caller, Host};
+use crate::{Caller, Host, LocalName};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
@@ -54,9 +53,14 @@ impl StreamError {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Consumer {
     Mod(ModRef),
-    Page { conn: String, local: LocalName },
+    Page {
+        conn: String,
+        local: LocalName,
+    },
     /// Test only: takes a batch only when the test asks (19.9).
-    Held { origin: String },
+    Held {
+        origin: String,
+    },
 }
 impl Consumer {
     /// The key of the 32-streams limit; none for a held consumer.
@@ -163,7 +167,11 @@ enum Notify {
 #[derive(Debug)]
 enum Task {
     Items(String),
-    Notify { sid: String, origin: String, what: Notify },
+    Notify {
+        sid: String,
+        origin: String,
+        what: Notify,
+    },
 }
 
 /// How an `items` call came back (19.9).
@@ -380,16 +388,16 @@ impl Hub {
         let Some(s) = inner.streams.get_mut(id) else {
             return Ok(());
         };
-        let refused = if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES
-        {
-            Some(Refused::Stream)
-        } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
-            Some(Refused::Origin(len))
-        } else if host_now + host_pending + len > HOST_BUDGET {
-            Some(Refused::Host(len))
-        } else {
-            None
-        };
+        let refused =
+            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
+                Some(Refused::Stream)
+            } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
+                Some(Refused::Origin(len))
+            } else if host_now + host_pending + len > HOST_BUDGET {
+                Some(Refused::Host(len))
+            } else {
+                None
+            };
         let Some(refused) = refused else {
             return Ok(());
         };
@@ -640,7 +648,12 @@ impl Hub {
             (n, items, s.producer.clone(), s.origin.clone())
         };
         let (n, items, producer, origin) = prepared;
-        let hop = items.iter().map(|i| i.hop).max().unwrap_or(0).saturating_add(1);
+        let hop = items
+            .iter()
+            .map(|i| i.hop)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
         let who = match &producer {
             Producer::Host => Who::Host,
             Producer::Mod(p) => Who::Caller(Caller::Mod(p.local.clone())),
@@ -753,11 +766,7 @@ impl Hub {
         self.lock().clock = Clock(Some(Arc::clone(&clock.0)));
         self.cv.notify_all();
     }
-    pub fn test_open(
-        &self,
-        consumer: Consumer,
-        origin: String,
-    ) -> Result<String, StreamError> {
+    pub fn test_open(&self, consumer: Consumer, origin: String) -> Result<String, StreamError> {
         let mut inner = self.lock();
         if let Some(key) = consumer.key()
             && inner.open.get(&key).copied().unwrap_or(0) >= MAX_OPEN
@@ -838,7 +847,14 @@ fn producer_outcome(outcome: Value) -> Value {
 }
 
 impl Inner {
-    fn create(&mut self, id: String, consumer: Consumer, producer: Producer, origin: String, test: bool) {
+    fn create(
+        &mut self,
+        id: String,
+        consumer: Consumer,
+        producer: Producer,
+        origin: String,
+        test: bool,
+    ) {
         if let Some(key) = consumer.key() {
             *self.open.entry(key).or_default() += 1;
         }
@@ -1014,11 +1030,14 @@ impl Inner {
             s.full_since = None;
             self.waiting.remove(&id);
             if let Producer::Mod(p) = producer {
-                self.tasks.entry(p.local).or_default().push_back(Task::Notify {
-                    sid: id,
-                    origin,
-                    what: Notify::Ready,
-                });
+                self.tasks
+                    .entry(p.local)
+                    .or_default()
+                    .push_back(Task::Notify {
+                        sid: id,
+                        origin,
+                        what: Notify::Ready,
+                    });
             }
         }
     }
@@ -1028,10 +1047,13 @@ impl Inner {
             .streams
             .iter()
             .filter_map(|(id, s)| {
-                if s.deferred.is_some_and(|d| now.saturating_duration_since(d) >= BACKSTOP) {
+                if s.deferred
+                    .is_some_and(|d| now.saturating_duration_since(d) >= BACKSTOP)
+                {
                     Some((id.clone(), "consumer-failed"))
                 } else if s.deferred.is_none()
-                    && s.full_since.is_some_and(|f| now.saturating_duration_since(f) >= LAG)
+                    && s.full_since
+                        .is_some_and(|f| now.saturating_duration_since(f) >= LAG)
                 {
                     Some((id.clone(), "lagging"))
                 } else {
@@ -1054,11 +1076,14 @@ impl Inner {
             let (producer, origin) = (s.producer.clone(), s.origin.clone());
             match producer {
                 Producer::Mod(p) => {
-                    self.tasks.entry(p.local).or_default().push_back(Task::Notify {
-                        sid: id.to_owned(),
-                        origin,
-                        what: Notify::ProducerEnded(outcome.clone()),
-                    });
+                    self.tasks
+                        .entry(p.local)
+                        .or_default()
+                        .push_back(Task::Notify {
+                            sid: id.to_owned(),
+                            origin,
+                            what: Notify::ProducerEnded(outcome.clone()),
+                        });
                 }
                 Producer::Host => {
                     self.ended_host.insert(id.to_owned(), outcome.clone());
@@ -1091,11 +1116,14 @@ impl Inner {
         }
         match s.consumer {
             Consumer::Mod(m) => {
-                self.tasks.entry(m.local).or_default().push_back(Task::Notify {
-                    sid: id.to_owned(),
-                    origin: s.origin,
-                    what: Notify::SinkEnded(outcome),
-                });
+                self.tasks
+                    .entry(m.local)
+                    .or_default()
+                    .push_back(Task::Notify {
+                        sid: id.to_owned(),
+                        origin: s.origin,
+                        what: Notify::SinkEnded(outcome),
+                    });
             }
             Consumer::Page { conn, .. } => {
                 if let Some(c) = self.conns.get_mut(&conn) {

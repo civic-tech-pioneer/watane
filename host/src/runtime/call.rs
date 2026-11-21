@@ -89,7 +89,13 @@ pub(crate) struct Start {
 }
 impl Start {
     /// A call of the host's own: an item call, a notification or a firing.
-    pub fn internal(who: Who, local: LocalName, function: String, args: Args, origin: String) -> Self {
+    pub fn internal(
+        who: Who,
+        local: LocalName,
+        function: String,
+        args: Args,
+        origin: String,
+    ) -> Self {
         Self {
             who,
             local,
@@ -151,10 +157,22 @@ pub(crate) fn run(
     publish: bool,
     subscription: bool,
 ) -> Result<Outcome, CallError> {
-    run_connection(host, caller, local, function, args, publish, subscription, None)
+    run_connection(
+        host,
+        caller,
+        local,
+        function,
+        args,
+        publish,
+        subscription,
+        None,
+    )
 }
 
-#[expect(clippy::too_many_arguments, reason = "one entry point for every top-level call")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one entry point for every top-level call"
+)]
 pub(crate) fn run_connection(
     host: &Host,
     caller: &Caller,
@@ -236,9 +254,8 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     });
     let connection = connection
         .filter(|c| matches!(who, Who::Caller(Caller::Page)) && host.hub.conn_live(c, &local));
-    let link = !subscription
-        && !internal
-        && matches!(who, Who::Caller(Caller::Mod(_) | Caller::Page));
+    let link =
+        !subscription && !internal && matches!(who, Who::Caller(Caller::Mod(_) | Caller::Page));
     let chain = Arc::new(Chain {
         host: strong,
         snapshot: Arc::clone(&snapshot),
@@ -268,7 +285,14 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         link,
         origin,
     };
-    let result = invocation.invoke(&who, &function, args, host.limits.fuel, subscription, internal);
+    let result = invocation.invoke(
+        &who,
+        &function,
+        args,
+        host.limits.fuel,
+        subscription,
+        internal,
+    );
     let effects = std::mem::take(
         &mut *chain
             .effects

@@ -7,6 +7,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::Request;
 use axum::response::Response;
+use axum::serve::ListenerExt;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -135,11 +136,17 @@ impl Host {
             let router = router.clone();
             let mut rx = rx.clone();
             tasks.push(tokio::spawn(async move {
-                axum::serve(listener, router)
-                    .with_graceful_shutdown(async move {
-                        let _ = rx.changed().await;
-                    })
-                    .await
+                // No Nagle delay: a page's stream items are small writes (8.4, 15).
+                axum::serve(
+                    listener.tap_io(|stream| {
+                        let _ = stream.set_nodelay(true);
+                    }),
+                    router,
+                )
+                .with_graceful_shutdown(async move {
+                    let _ = rx.changed().await;
+                })
+                .await
             }));
         }
         self.port.store(port, Ordering::Release);

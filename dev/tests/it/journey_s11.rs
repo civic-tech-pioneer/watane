@@ -170,6 +170,13 @@ watane.on(read);
             break;
         }
     }
+    // Step 11 (host 8.4): the first message of a connection carries its id.
+    line.clear();
+    events.read_line(&mut line).unwrap();
+    assert!(
+        line.starts_with("data: {\"type\":\"connection\",\"id\":\""),
+        "{line}"
+    );
     assert_eq!(
         call(reading_authority, "books.add", json!({"title":"Dune"})),
         json!({"value":1})

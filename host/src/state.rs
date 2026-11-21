@@ -30,10 +30,19 @@ pub(crate) struct Stats {
 /// One timer write of a chain's commit (19.6).
 #[derive(Clone, Debug)]
 pub(crate) enum TimerOp {
-    After { key: String, due: u64, origin: String },
-    Cancel { key: String },
+    After {
+        key: String,
+        due: u64,
+        origin: String,
+    },
+    Cancel {
+        key: String,
+    },
     /// The row of a firing: deleted when it still has this due time.
-    DeleteIfDue { key: String, due: u64 },
+    DeleteIfDue {
+        key: String,
+        due: u64,
+    },
 }
 /// The first 32 hex chars of `blake3(identity)`: the id of a mod in the tables.
 pub(crate) fn mod_id(identity: &str) -> String {
@@ -44,7 +53,10 @@ pub(crate) fn timer_key(identity: &str, id: &str) -> String {
 }
 fn parse_row(text: &str) -> Option<(u64, String)> {
     let v: serde_json::Value = serde_json::from_str(text).ok()?;
-    Some((v.get("due")?.as_u64()?, v.get("origin")?.as_str()?.to_owned()))
+    Some((
+        v.get("due")?.as_u64()?,
+        v.get("origin")?.as_str()?.to_owned(),
+    ))
 }
 #[derive(Debug)]
 pub(crate) struct State {
@@ -95,7 +107,10 @@ impl State {
             Err(e) => return Err(CallError::internal(e)),
         };
         let mut ids = BTreeSet::new();
-        for row in table.range(prefix.as_str()..).map_err(CallError::internal)? {
+        for row in table
+            .range(prefix.as_str()..)
+            .map_err(CallError::internal)?
+        {
             let (key, _) = row.map_err(CallError::internal)?;
             let Some(id) = key.value().strip_prefix(prefix.as_str()) else {
                 break;
@@ -164,10 +179,6 @@ impl State {
         };
         let own = format!("{}/", mod_id(identity));
         let txn = db.begin_write().map_err(CallError::internal)?;
-        #[expect(
-            clippy::semicolon_outside_block,
-            reason = "the block ends the table borrow before txn.commit()"
-        )]
         {
             let mut table = txn.open_table(TIMERS).map_err(CallError::internal)?;
             let mut delete = vec![];
@@ -325,7 +336,9 @@ impl Transaction {
             ));
         }
         self.written = total;
-        self.stats.bytes_written.fetch_add(bytes as u64, Ordering::Relaxed);
+        self.stats
+            .bytes_written
+            .fetch_add(bytes as u64, Ordering::Relaxed);
         self.overlay.insert(key, Some(value));
         Ok(())
     }
