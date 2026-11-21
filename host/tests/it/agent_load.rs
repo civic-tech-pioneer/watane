@@ -3,7 +3,7 @@
 //! of 100 items/s of 1 KiB through `relay` to a page, and the check that no release build
 //! holds `test-streams`.
 
-use super::streams::{Page, lines, local, serve_relay};
+use super::streams::{Page, local, serve_relay};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -133,7 +133,6 @@ async fn run(write: bool, seconds: u64) -> Run {
             / items as f64,
         cancel: cancelled,
     };
-    let _ = lines(&host, "api.ended");
     w.served.shutdown().await;
     run
 }
@@ -197,8 +196,11 @@ fn ac12_a_release_build_holds_no_test_streams() {
             "--offline",
             "-e",
             "features",
-            "-p",
+            // Inverted over the workspace: a normal dependency of `app` or `dev` that enables
+            // the feature shows too, which `-p watane-host` alone does not resolve.
+            "-i",
             "watane-host",
+            "--workspace",
             "--edges",
             "normal",
         ])

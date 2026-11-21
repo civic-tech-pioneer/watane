@@ -3174,8 +3174,9 @@ tests (last item).
   and the root (`ca_pem`). Another crate that tests with it enables the
   feature in its `[dev-dependencies]` only, and host's own A4 tests run with
   it (A4's brief names how); the release builds of `watane` and the app
-  never hold it (checked in A4: `cargo tree -e features -p watane-host
-  --edges normal` names no `test-net`).
+  never hold it (checked in A4: `cargo tree -e features -i watane-host
+  --workspace --edges normal` names no `test-net`; `-p watane-host` alone
+  does not resolve the features that `app` or `dev` turn on).
 
 ```rust
 impl Host {
@@ -3194,7 +3195,7 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
   exist, a consumer that takes nothing, a clock they control, and the
   writer's numbers for the budgets. The feature gives them; no mod, page or
   tool reaches it, and the release builds never hold it (checked as for
-  `test-net`: `cargo tree -e features -p watane-host --edges normal` names no
+  `test-net`: `cargo tree -e features -i watane-host --workspace --edges normal` names no
   `test-streams`). Host's own tests enable it, and `test-net` from A4, by a
   dev-dependency of the crate on itself:
   `watane-host = { path = ".", features = ["test-streams"] }`.
