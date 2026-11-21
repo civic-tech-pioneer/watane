@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shell</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 0; }
+  nav, #toolbar, footer { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #ccc; }
+  footer { border: 0; border-top: 1px solid #ccc; position: fixed; bottom: 0; left: 0; right: 0; }
+  main { padding: 16px; }
+  .empty { color: #777; }
+</style>
+</head>
+<body>
+<nav id="menu" aria-label="Menu"></nav>
+<div id="toolbar" role="toolbar" aria-label="Toolbar"></div>
+<main><p>Items in the menu and toolbar come from other mods.</p><p id="error" role="alert"></p></main>
+<footer id="status" role="status"></footer>
+<script src="/watane.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

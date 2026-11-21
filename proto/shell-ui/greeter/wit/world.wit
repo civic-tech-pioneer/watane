@@ -1,0 +1,14 @@
+package mods:greeter@0.1.0;
+
+interface api {
+  /// How many greetings so far.
+  count: func() -> u32;
+}
+
+world greeter {
+  import watane:host/state@0.1.0;
+  import mods:shell/registry@0.1.0;
+  export mods:shell/announce@0.1.0;
+  export mods:shell/commands@0.1.0;
+  export api;
+}

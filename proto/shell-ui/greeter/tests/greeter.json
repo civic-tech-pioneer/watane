@@ -1,0 +1,14 @@
+{
+  "fakes": {"mods:shell/registry": {"add": null, "notify": null}},
+  "steps": [
+    {"deliver": "announce.announce"},
+    {"call": "api.count", "returns": 0},
+    {"deliver": "commands.invoke", "args": {"id": "greeter.hello"}},
+    {"deliver": "commands.invoke", "args": {"id": "greeter.hello"}},
+    {"call": "api.count", "returns": 2},
+    {"deliver": "commands.invoke", "args": {"id": "someone-else.item"}},
+    {"call": "api.count", "returns": 2},
+    {"deliver": "commands.invoke", "args": {"id": "greeter.reset"}},
+    {"call": "api.count", "returns": 0}
+  ]
+}

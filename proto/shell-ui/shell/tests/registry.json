@@ -1,0 +1,12 @@
+{
+  "steps": [
+    {"call": "registry.list", "returns": []},
+    {"call": "ui.start", "emits": [{"event": "announce.announce", "args": {}}]},
+    {"call": "registry.add", "args": {"item": {"id": "a.hi", "label": "Hi", "place": "toolbar"}}},
+    {"call": "registry.add", "args": {"item": {"id": "a.hi", "label": "Hello", "place": "menu"}}},
+    {"call": "registry.list", "returns": [{"id": "a.hi", "label": "Hello", "place": "menu"}]},
+    {"call": "ui.click", "args": {"id": "a.hi"}, "emits": [{"event": "commands.invoke", "args": {"id": "a.hi"}}]},
+    {"call": "ui.start"},
+    {"call": "registry.list", "returns": []}
+  ]
+}

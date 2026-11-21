@@ -1,0 +1,2 @@
+name = "Greeter"
+summary = "Prototype: adds a menu item and a toolbar button to the shell, and greets when clicked."

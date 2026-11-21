@@ -1,0 +1,38 @@
+package mods:shell@0.1.0;
+
+/// What contributors call. Items are kept per contributing mod.
+interface registry {
+  enum place { menu, toolbar }
+  record item { id: string, label: string, place: place }
+  /// Adds or replaces an item of the calling mod.
+  add: func(item: item);
+  /// Every item, in the order they were added.
+  %list: func() -> list<item>;
+  /// A contributor puts one line of text in the shell's status bar.
+  notify: func(text: string);
+  /// The last status line, as "<mod>: <text>".
+  status: func() -> option<string>;
+}
+
+/// What the shell's own page calls.
+interface ui {
+  /// Clears the registry and asks every contributor to add its items.
+  start: func();
+  /// Tells every contributor that the item with this id was clicked.
+  click: func(id: string);
+}
+
+/// Event: the shell (re)builds its registry. Contributors call registry.add.
+interface announce { announce: func(); }
+
+/// Event: an item was clicked. Every contributor gets it and filters by id.
+interface commands { invoke: func(id: string); }
+
+world shell {
+  import watane:host/state@0.1.0;
+  import watane:host/caller@0.1.0;
+  import announce;
+  import commands;
+  export registry;
+  export ui;
+}
