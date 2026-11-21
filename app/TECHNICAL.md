@@ -120,8 +120,14 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    `words::port_in_use(P)` in `status.error` and the main text, and prints
    that same line to stderr once. No server means no `run.json`. Other
    serve failures retain `cause_chain` text.
-7. On `RunEvent::ExitRequested`: `broker.deny_all()`. On `RunEvent::Exit`:
-   `block_on(served.shutdown())`. Closing the main window exits the app;
+7. On `RunEvent::ExitRequested`: `broker.deny_all()`; then, while a server
+   runs, `prevent_exit()`, take `served`, run `served.shutdown()` on the async
+   runtime and, when it returns, exit with the requested code (0 when none).
+   The main thread never waits for the shutdown: wry answers a `tauri://`
+   request on a tokio worker that waits for the main thread, so a main thread
+   blocked on the shutdown deadlocks once every worker holds such a request
+   and no worker is left to fire the shutdown's own time bounds (S98: the
+   3-core macOS runner). Closing the main window exits the app;
    from stage I, closing the last window other than `consent` does
    (APP-F-64).
 
