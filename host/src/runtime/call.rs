@@ -851,6 +851,10 @@ impl Invocation {
             })
             .collect::<Result<Vec<_>, CallError>>()?;
         let manages = ctx.manages;
+        // The catalog lock is held from the origin check to the commit of the rows, and `remove`
+        // changes the catalog under it: either the check sees the origin gone, or the rewrite of
+        // `remove` runs after the commit (19.6, Timers).
+        let mut catalog = None;
         let timers = if self.depth == 0 && chain.fakes.is_none() {
             let log = chain
                 .log
@@ -864,12 +868,26 @@ impl Invocation {
                     due: *due,
                 })
                 .collect();
-            ops.extend(crate::agent::timer_ops(&log));
+            if log.iter().any(|e| matches!(e, Effect::TimerAfter { .. })) {
+                catalog = Some(
+                    host.catalog
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it"),
+                );
+            }
+            ops.extend(crate::agent::timer_ops(&log, |origin| {
+                catalog.as_ref().is_none_or(|c| {
+                    c.mods
+                        .iter()
+                        .any(|m| m.identity == origin && m.enabled && m.error.is_none())
+                })
+            }));
             ops
         } else {
             Vec::new()
         };
         let changed = ctx.state.commit(&timers)?;
+        drop(catalog);
         let mut effects = chain
             .effects
             .lock()
