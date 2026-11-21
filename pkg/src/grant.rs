@@ -19,7 +19,7 @@ impl fmt::Display for Provider {
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", try_from = "RawGrant")]
+#[serde(tag = "kind", rename_all = "kebab-case", try_from = "RawGrant")]
 pub enum Grant {
     Storage,
     Http {
@@ -34,9 +34,11 @@ pub enum Grant {
         provider: Provider,
     },
     Manage,
+    ClaudeCode,
+    ClaudeCodeShell,
 }
 #[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 enum RawGrant {
     Storage,
     Http {
@@ -51,6 +53,8 @@ enum RawGrant {
         provider: Provider,
     },
     Manage,
+    ClaudeCode,
+    ClaudeCodeShell,
 }
 impl TryFrom<RawGrant> for Grant {
     type Error = &'static str;
@@ -58,6 +62,8 @@ impl TryFrom<RawGrant> for Grant {
         let grant = match raw {
             RawGrant::Storage => Self::Storage,
             RawGrant::Manage => Self::Manage,
+            RawGrant::ClaudeCode => Self::ClaudeCode,
+            RawGrant::ClaudeCodeShell => Self::ClaudeCodeShell,
             RawGrant::Http { host } => Self::Http { host },
             RawGrant::Call {
                 interface,
@@ -94,6 +100,8 @@ impl fmt::Display for Grant {
         match self {
             Self::Storage => f.write_str("storage"),
             Self::Manage => f.write_str("manage"),
+            Self::ClaudeCode => f.write_str("claude-code"),
+            Self::ClaudeCodeShell => f.write_str("claude-code-shell"),
             Self::Http { host } => write!(f, "http {host}"),
             Self::Call {
                 interface,
