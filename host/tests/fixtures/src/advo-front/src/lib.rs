@@ -42,6 +42,15 @@ impl exports::mods::advo_front::api::Guest for Guest {
         let _ = mods::relay::api::resume(&s);
         sleep(ms);
     }
+    fn hand_off_then_cancel(s: String) {
+        // The stream is `relay`'s; it goes to this mod, which then cancels it in the same chain.
+        let _ = mods::relay::api::hand_off(&s);
+        watane::host::streams::cancel(&s);
+    }
+    fn hand_off_then_resume(s: String) {
+        let _ = mods::relay::api::hand_off(&s);
+        let _ = watane::host::streams::resume(&s);
+    }
     fn mode(m: String) {
         watane::host::state::put("mode", m.as_bytes());
     }

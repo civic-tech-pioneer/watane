@@ -1076,3 +1076,48 @@ fn ac6_an_unchanged_reinstall_clears_an_error_and_the_timer_fires() {
         page(&env, "advo", "api.fired", Value::Null) == json!(["t"])
     });
 }
+
+/// 19.6 (At apply): inside one chain, a hand-off and then the new consumer's `cancel` or
+/// `resume`: the count that the call records equals the hub's count after the hand-off applies.
+#[test]
+fn ac3_a_hand_off_then_a_cancel_in_one_chain_ends_the_stream_cancelled() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    page(
+        &env,
+        "advo-front",
+        "api.hand-off-then-cancel",
+        json!({"s": s.id()}),
+    );
+    wait("the end", Duration::from_secs(5), || s.ended().is_some());
+    assert_eq!(s.ended(), Some(json!("cancelled")));
+}
+
+#[test]
+fn ac3_a_hand_off_then_a_resume_in_one_chain_resumes_the_stream() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    call_as(
+        &env.host,
+        Caller::Page,
+        "relay",
+        "api.mode",
+        json!({"m": "defer"}),
+    )
+    .unwrap();
+    s.push(b"a").unwrap();
+    wait("deferred", Duration::from_secs(5), || s.paused());
+    page(
+        &env,
+        "advo-front",
+        "api.hand-off-then-resume",
+        json!({"s": s.id()}),
+    );
+    wait("resumed", Duration::from_secs(5), || !s.paused());
+}
