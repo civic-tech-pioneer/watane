@@ -1104,6 +1104,48 @@ Specified by the human in 53ec11d (W35, W36). W35 is sketched: the authority spl
   app/tests/it/j5.rs; S72 (cloud) owns node/ and net/; S73 (cloud) owns the docs above.
   Delivered (merged as a2bf077): Alice's main mod (one she picks, or one that proposes itself with `main = true`) opens at start in place of the manager; Mods… and Settings… in the app menu open the manager (Library, Find, Updates, details with connections and a warning before disable or remove) or Settings (identity, site, backup, agents, machines). Decisions: the app reads `Mod::main()` with `Mod::read(<home>/mods/<local>)` (read only, false on error), host's `InstalledMod` unchanged; the fixture desk is page-only; the driver op `menu` takes `item`, not `id` (collides with the request id, TECHNICAL 10); pkg: `main = true` with a symlinked ui/ gives only the path violation; j2 ac7 goes through the APP-F-67 warning; Settings shows own machines as "Unavailable" until S75. Verified on the Mac: pkg green with ignored; the app driver suite green with ignored (front tests not run), j2 and manager on a rerun after S54's build swapped `watane-app`. For a later slice (user-sim): the library does not mark the main mod; the consent for a mod that proposes main does not say it becomes the start window; a connection link does not move focus to the target's details; the disable warning says "These mods use it" when only an Extended-by link remains.
 
+### Step 11: The agent layer (agentic-harness stages A to D), before step 6
+
+The human chose (2026-11-21, "the bridge") to build the agent layer next, driven by the collection's
+product owner (watane-mods `/po`, `factory/config.toml` here; watane keeps its own foreman, agents,
+check.sh and CI). The design lives in `watane-mods/agentic-harness/design/` (VISION, FUNCTIONAL,
+TECHNICAL; N1 to N11 and R1 are the human's answers there). Its TECHNICAL 15 is the checklist of
+watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane part and its
+agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
+names the same interface in its sketch and fakes it until this one merges.
+
+- [~] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Branch
+  `slice/s95`. A design slice: apply TECHNICAL 15's checklist of agentic-harness (read it at
+  `https://github.com/civic-tech-pioneer/agentic-harness/blob/main/design/TECHNICAL.md`, section 15,
+  and the sections each row cites) to watane's documents: `spec/VISION.md` (the agent layer's place
+  in the order of work, before step 6), `spec/FUNCTIONAL.md` (F-AGENT-2 and W6: a token also comes
+  from a toolset consent; F-AGENT-5 to F-AGENT-9 and J11), `spec/TECHNICAL.md` (W2, W5, a new W row
+  for the agent layer's boundary), `host/TECHNICAL.md` (H1 to H5 and H7 with stream-sink `taken |
+  defer`, `streams.resume`, `stream-producer.ended`, the lag clock and the byte budgets; page
+  connection ids and their queues; timers per mod kept across restarts; `caller.identity()`;
+  `claude-types` with `not-owner`/`not-direct`; tool annotations `@parallel`, `@idempotent`;
+  `consent-pending`; account kind `judge`), `pkg/TECHNICAL.md` (4.5 import and export rows, 5.1 and
+  7.2 two grant kinds), `app/TECHNICAL.md` (new sections: Sign in with ChatGPT and the account file;
+  consent words and storage; the `claude` binary setting; the judge key on a manager page),
+  `dev/TECHNICAL.md` (the fake `claude` and the scripted Responses server with its judge), each
+  subsystem's build-plan rows for the agent layer, and the licence files (MIT OR Apache-2.0, N8).
+  Left out, still waiting on the human in agentic-harness's PLAN: `caller.boot()`, `outcome` on
+  `answered`, and the 4.5 host-item rules (`ask-resolved` values, checks closed with `expired`,
+  `wrapped` lines); the slice names them as open in host/TECHNICAL's question list. Outcome: a
+  watane foreman can build stage A (H1, H5, H7) from watane's own documents alone; every checklist
+  row is applied or named as left out, with the row it came from. Touches: spec/, host, pkg, app,
+  dev TECHNICAL (and FUNCTIONAL where a requirement lands), LICENSE files. Docs only. Cloud.
+- [ ] **S96 Streams, durable requests and timers in the host (stage A: H1, H5, H7, the V8 probe).**
+  After S95. Builds what S95 writes for H1 (streams: table, FIFO per consumer, numbered batches,
+  `taken | defer`, ends, byte budgets, page connections), H5 (effects after a durable commit) and H7
+  (timers per mod, kept across restarts), and measures V8 (agentic-harness 16, "Probes named here")
+  against stage A's budgets (agentic-harness 17: 8 host streams x 100 items/s of 1 KiB, item delay
+  <= 50 ms, `cancel` to `ended` <= 250 ms, writer busy share <= 10%). Outcome: agentic-harness cases
+  7, 20, 21 and 36 and 51 (host part) pass as host tests; the V8 record is written. Interface: the
+  `watane:host@0.1.0` streams and timers of agentic-harness TECHNICAL 2.1, as S95 writes them in
+  host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
+  against the same names. Touches: host, pkg (the 4.5 rows), dev (fakes), not app. Cloud.
+
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
