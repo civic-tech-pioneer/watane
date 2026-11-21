@@ -1156,7 +1156,12 @@ names the same interface in its sketch and fakes it until this one merges.
   `generation()` (in place of `caller.boot()`, Q34); `answered` carries `outcome` (Q35); the host
   closes a check with `ask-resolved {by: expired}` at its `expires-at`, and the 4.5 host-item rules
   of agentic-harness TECHNICAL 4.5 and 9.8 apply (Q36). Write each as decided in host, pkg and the
-  stage A2/A3 rows. Docs only. Cloud.
+  stage A2/A3 rows. Also from agentic-harness S32: host 19.2 says whether a provider stream that ends
+  while its consumer holds a deferred batch delivers the held items before `ended` (R7); and host
+  8.5's step-11 `watane.js` lets a page learn that its `/events` connection was replaced (today it
+  keeps the `connection` message to itself). Docs only. Cloud.
+  For a dev leftover: `watane-dev serve` overwrites a mod's tracked `wit/deps/watane-host/host.wit`
+  on every run (agentic-harness S32).
 
   For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
   `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
