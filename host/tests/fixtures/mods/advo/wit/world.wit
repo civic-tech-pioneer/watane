@@ -1,0 +1,10 @@
+package mods:advo@0.1.0;
+interface api { open: func() -> result<string, string>; done: func() -> bool; }
+world advo {
+  import watane:host/state@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/timers@0.1.0;
+  export api;
+  export watane:host/stream-producer@0.1.0;
+  export watane:host/timer-sink@0.1.0;
+}
