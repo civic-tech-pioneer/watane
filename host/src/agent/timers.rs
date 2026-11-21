@@ -169,6 +169,25 @@ fn has_sink(catalog: &crate::catalog::Catalog, local: &crate::LocalName) -> bool
         .is_some_and(|c| c.host_exports().iter().any(|e| e == TIMER_SINK))
 }
 
+/// The delete of a row whose mod has no `timer-sink`, decided in the write transaction: none
+/// once the install read at the firing is no longer current or has the export (19.6).
+fn no_sink_delete(
+    catalog: &crate::catalog::Catalog,
+    local: &crate::LocalName,
+    generation: Option<u64>,
+    key: &str,
+    due: u64,
+) -> Vec<TimerOp> {
+    if catalog.install_of(local) == generation && !has_sink(catalog, local) {
+        vec![TimerOp::DeleteIfDue {
+            key: key.to_owned(),
+            due,
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
 /// A due timer fires as a top-level call of `timer-sink.fired` with caller `host` (19.6).
 fn fire(host: &Arc<Host>, key: &str, due: u64) {
     let Ok(Some((row_due, origin))) = host.state.timer_row(key) else {
@@ -216,14 +235,7 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
                 .catalog
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it");
-            if catalog.install_of(&local) == generation && !has_sink(&catalog, &local) {
-                vec![TimerOp::DeleteIfDue {
-                    key: key.to_owned(),
-                    due,
-                }]
-            } else {
-                Vec::new()
-            }
+            no_sink_delete(&catalog, &local, generation, key, due)
         });
         eprintln!("watane: timer {id} of {local} dropped: no timer-sink");
         return;
@@ -285,5 +297,23 @@ mod tests {
             entries,
             vec![(far, "m/x".to_owned()), (far, "m/y".to_owned())]
         );
+    }
+    /// AC4 (S96-fix4), 19.6: the no-`timer-sink` delete happens only while the install that the
+    /// firing read is current; an install in between keeps the row.
+    #[test]
+    fn ac4_no_sink_delete_only_for_the_install_it_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let local = crate::LocalName::parse("a").unwrap();
+        let mut catalog = host.catalog.lock().unwrap();
+        catalog.bump_install(&local);
+        let read = catalog.install_of(&local);
+        let ops = super::no_sink_delete(&catalog, &local, read, "m/x", 7);
+        assert!(
+            matches!(ops.as_slice(), [super::TimerOp::DeleteIfDue { key, due: 7 }] if key == "m/x"),
+            "{ops:?}"
+        );
+        catalog.bump_install(&local);
+        assert!(super::no_sink_delete(&catalog, &local, read, "m/x", 7).is_empty());
     }
 }
