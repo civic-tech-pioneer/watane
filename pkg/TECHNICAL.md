@@ -263,7 +263,10 @@ the stream's consumer, a consent, the caller's identity). `https-stream`
 gives only the `Http` grants of the mod's own `[http] hosts`, so it reaches
 only the hosts that `mod.toml` names; the host checks every request's URL
 against them (host 19.4). The `identity` function of `caller` is a function
-of an interface already allowed, so it changes no row. A host-only export is
+of an interface already allowed, so it changes no row. The source's row
+names `caller.boot` among the imports too (agentic-harness TECHNICAL 15,
+"`pkg/TECHNICAL.md` 4.5"); it is left out until the human answers host 18,
+Q34, and as a function of `caller` it would change no row either. A host-only export is
 an export that a mod makes for the host and that is not one of its own
 `mods:` interfaces: it is not in `World::exports` (a mod offers it to no
 one) but in `World::host_exports` (sorted, no duplicates), and
