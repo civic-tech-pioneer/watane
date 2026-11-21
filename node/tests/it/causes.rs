@@ -4,7 +4,7 @@
 
 use crate::support;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
@@ -134,7 +134,7 @@ impl WaitStderr for Child {
 }
 
 /// Alice's anchor, her server run by `watane-node run`, and a light laptop that knows a
-/// release whose package (of `size` bytes) the server has stored.
+/// release whose package the server has stored, as the file `copy`.
 struct Stored {
     dirs: Vec<tempfile::TempDir>,
     anchor: Node,
@@ -142,7 +142,7 @@ struct Stored {
     server: Prog,
     server_key: watane_net::NodeKey,
     published: watane_dist::Published,
-    size: u64,
+    copy: PathBuf,
 }
 
 fn stored() -> Stored {
@@ -174,16 +174,17 @@ fn stored() -> Stored {
     assert!(wait_for(15, || {
         light.net().need(&alice).is_ok() && head(&light, &alice).is_some()
     }));
-    let size = std::fs::metadata(
-        anchor
-            .dist()
-            .package_file(&published.info.release.package)
-            .unwrap(),
-    )
-    .unwrap()
-    .len();
-    // the server stores the package
-    assert!(wait_for(20, || has_file_of(dirs[1].path(), size)));
+    // the server stores the package: its cache file, not a temporary of the same size that the
+    // fetch and the cache write pass through on the way
+    let name = anchor
+        .dist()
+        .package_file(&published.info.release.package)
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_owned();
+    let copy = dirs[1].path().join("dist/packages").join(name);
+    assert!(wait_for(20, || copy.is_file()));
     Stored {
         dirs,
         anchor,
@@ -191,7 +192,7 @@ fn stored() -> Stored {
         server,
         server_key,
         published,
-        size,
+        copy,
     }
 }
 
@@ -222,16 +223,16 @@ fn ac1_a_removed_light_machine_is_told_the_server_refused() {
 #[test]
 fn ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed() {
     let Stored {
-        dirs,
+        dirs: _dirs,
         anchor,
         light,
         server: _server,
         server_key,
         published,
-        size,
+        copy,
     } = stored();
     // the server's stored package no longer matches its hash
-    corrupt_file_of(dirs[1].path(), size);
+    std::fs::write(&copy, vec![0x5au8; std::fs::read(&copy).unwrap().len()]).unwrap();
 
     // only the server answers
     anchor.net().set_options(Default::default()).unwrap();
@@ -249,29 +250,6 @@ fn chain(error: &dyn std::error::Error) -> String {
         at = e.source();
     }
     chain
-}
-
-/// Overwrites every file of `size` bytes under `dir` with other bytes of that size.
-fn corrupt_file_of(dir: &Path, size: u64) {
-    for e in std::fs::read_dir(dir).unwrap().flatten() {
-        let m = e.metadata().unwrap();
-        if m.is_dir() {
-            corrupt_file_of(&e.path(), size);
-        } else if m.len() == size {
-            std::fs::write(e.path(), vec![0x5au8; size as usize]).unwrap();
-        }
-    }
-}
-
-fn has_file_of(dir: &Path, size: u64) -> bool {
-    let Ok(read) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    read.flatten().any(|e| match e.metadata() {
-        Ok(m) if m.is_dir() => has_file_of(&e.path(), size),
-        Ok(m) => m.len() == size,
-        Err(_) => false,
-    })
 }
 
 #[test]
