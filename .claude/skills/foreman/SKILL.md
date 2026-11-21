@@ -14,11 +14,18 @@ the product owner owns it.
 
 When `CLAUDE_CODE_REMOTE` is `true`, you run in an Anthropic cloud container: Linux, no Codex,
 and no way to message the product owner. Everything below holds, with these changes:
-- Implementer: run the `implementer` agent (Sonnet) in the background with the task id and its
-  worktree, instead of `impl.sh`. For a `RETURN`, send the list to that same agent with
-  `SendMessage` (it keeps its context). Count its runs per task yourself for the report.
-  After each implementer run, run `factory/check.sh <task> <commit before its first run>` in
-  its worktree yourself, and treat the result as section 2, step 2 says.
+- Implementer: Codex Cloud, through the relay on the Mac (`factory/scripts/codex-relay.sh` in
+  the factory collection), so the work and its test runs cost neither the Mac nor Anthropic. Per
+  task, in its worktree: commit the brief, then `git commit --allow-empty -m "IMPL <task>"` (on a
+  `RETURN`: `-m` the list as the body; each request is a fresh Codex task, so the list is all it
+  learns of the last round), and push the branch. Then, with Bash `run_in_background`:
+  `timeout 600 sh -c 'until git fetch -q origin <branch> && git log -1 --format=%s FETCH_HEAD | grep -qE "^IMPL(START|DONE|FAIL) <task>"; do sleep 30; done'`.
+  It timed out (the relay is not running) or found `IMPLFAIL`: use the `implementer` agent
+  (Sonnet) for this task instead, as before, and say so in the report. Found
+  `IMPLSTART`: wait the same way, without `timeout`, for `IMPLDONE` or `IMPLFAIL`. On `IMPLDONE`,
+  `git pull` the branch; the commit's body is the implementer's report. Count runs per task
+  yourself. After each run, run `factory/check.sh <task> <commit before its first run>`
+  in its worktree, and treat the result as section 2, step 2.
 - Per-task worktrees: `cp -R`, not `cp -c -R`.
 - Not run here: `front` tests and `ac6_build_with_network_denied` (macOS only). Put them in the
   report as `not run (cloud)`; the product owner runs them after the merge.

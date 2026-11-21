@@ -17,6 +17,8 @@ main_check = "factory/check-main.sh"
 worktree_prep = "mkdir -p target/debug && cp -c -R \"$P\"/target/debug/build target/debug/build && rm -rf target/debug/build/watane-* target/debug/build/workspace-hack && cp -c -R \"$P\"/dev/allowlist/vendor dev/allowlist/vendor"
 
 cloud_env = "env_01KZVAm2cjSpN4wbfAFeQNPD"
+# Codex Cloud environment for codex-relay.sh (legacy API, openai/codex#50182; setup script and internet on)
+codex_env = "6b018908bd688191b3544f866f2e82c7"
 foreman_model = "claude-opus-5-5"
 
 # app/ needs the Mac (window tests); so do sandbox-exec outcomes, which a sketch names itself.
