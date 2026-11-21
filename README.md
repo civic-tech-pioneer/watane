@@ -2,6 +2,8 @@
 
 An empty host that people fill with their own mods.
 
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
 ## Install (macOS, Apple silicon)
 
 On macOS 14 or later:
