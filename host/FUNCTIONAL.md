@@ -121,9 +121,9 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-70** The host shall give an agent's handle only the tools of its toolsets, with the annotations `@parallel` and `@idempotent` of the tool mod, return one stream for a live job of the same handle and key, and refuse the management functions in a toolset unless the participant named them. Traces: F-AGENT-1, F-AGENT-4.
 - **HOST-F-71** In a preview, the host shall never run the participant's `claude` and shall refuse both accounts: a Claude Code start shall run only the fake program the preview was given, else end `no-binary`. Traces: W5, AGT-F-31.
 - **HOST-F-72** When the app reports that an account changed (a sign-out, a judge key removed), the host shall end every live stream that used that account `gone`. Traces: F-AGENT-9.
-- **HOST-F-73** The host shall run an event delivery and a collect answer with the subscriber as origin client, never the emitter or the collector, and shall check at apply and at each timer firing that the origin client is still installed and enabled with the identity it carried. Traces: F-RUN-6, F-AGENT-7.
-- **HOST-F-74** The host shall keep the participant's credentials (the watane home's account and data files, Claude's and other tools' login files) out of reach of `claude`'s file tools and sandbox, and shall refuse an `allow` answer to a file tool whose path is outside the launch's workspaces. Traces: F-AGENT-5, F-AGENT-7.
-- **HOST-F-75** A toolset consent shall cover only the functions its words named; a function the toolset gains later shall reach no agent until the participant consents again. Traces: F-AGENT-1, F-AGENT-4, F-AGENT-7.
+- **HOST-F-73** The host shall run an event delivery and a collect answer with the subscriber as origin client, never the emitter or the collector, and shall check at apply and at each timer firing that the origin client is still installed and enabled with the identity it carried; removing a mod shall leave no timer carrying it, so a later install with the same identity gains no authority from one. Traces: F-RUN-6, F-AGENT-7.
+- **HOST-F-74** The host shall keep the participant's credentials (the watane home's account and data files, Claude's and other tools' login files) out of reach of `claude`'s file tools and sandbox, shall refuse a file-tool `allow` rule that is bare or not relative, and shall refuse an `allow` answer to a file tool whose path or pattern reaches outside the launch's workspaces. Traces: F-AGENT-5, F-AGENT-7.
+- **HOST-F-75** A toolset consent shall cover only the functions its words named; a function the toolset gains later, a function of a mod that has since gained `Manage`, and a function of a different mod installed under a removed mod's local name shall reach no agent until the participant consents again. Traces: F-AGENT-1, F-AGENT-4, F-AGENT-7.
 
 ## 3. Acceptance scenarios
 
@@ -451,3 +451,28 @@ holds no grant beyond storage.
   `{"kind":"toolset","toolset":"t","functions":["tool_api_a"]}`. A new
   `open(["t"])` asks with `functions` `["tool_api_a","tool_api_b"]`; after
   `Granted` both are listed.
+- **S66 Origin gone, same identity** (HOST-F-73). Given a local mod `notes`
+  (slug `notes`, identity `local/notes`) holding a workspace consent for
+  folder `F`, and a local mod `z`, called by `notes`, that sets `timers.after("t",
+  60000)` whose firing starts `claude-code` in `F`. When `notes` is removed,
+  then the `timers` row of `z`'s `t` holds `"origin":"local/z"`
+  (not `"local/notes"`). When another folder with slug `notes` is installed
+  as a local mod (identity `local/notes`, local name `notes`) and given a
+  consent for `F`, and `t` fires, then the fake app's `ConsentRequest` names
+  `origin` `z`, and with `Refused` the start ends `consent-refused("workspace:F")`.
+- **S67 Bare file-tool allow** (HOST-F-74). A launch with `allow` `Read`,
+  `Write`, `Edit`, `Glob`, `Grep` or `NotebookEdit` (no parentheses) fails
+  `bad-launch {field: "allow"}`; `Read(**)` passes. When `fake-claude` sends a
+  `can_use_tool` for `Glob` with no `path` and `pattern` `../../.ssh/*`, or
+  `pattern` `/etc/*`, then `answer` `allow(none)` fails `not-allowed-here` and
+  the recorded stdin holds no `control_response` for it; `pattern` `src/*.rs`
+  is answered.
+- **S68 Toolset name reused** (HOST-F-75). Given `notes` with a granted
+  consent for toolset `t` = `["tool:api"]` storing `["tool_api_a"]`. When
+  `tool` is removed and another mod (another slug, local name `tool`, export
+  `api` with `a`) is installed, then `installed.json` holds
+  `{"kind":"toolset","toolset":"t","functions":[]}`, a handle of `t` lists no
+  tool in `describe`, `call(.., "tool_api_a", ..)` fails `unknown-tool`, and a
+  new `open(["t"])` asks with `functions` `["tool_api_a"]`. Likewise, with the
+  first `tool` installed, when the participant grants it `Manage` (no update), the stored list
+  becomes `[]` and `tool_api_a` is `unknown-tool` until a new consent.
