@@ -1001,7 +1001,7 @@ fmt --check` green.
 | 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
 | 10 (W36) | `main` in `meta.rs` (4.2), `Mod::main` | `mod_toml_main` passes (A28, A29) | app stage I |
 | 11 (step 10) | `Grant::Manage` (5.1), `World::manage` and the 4.5 row in `world.rs`, the grant `[4]` and the limit 82 in `release.rs` (7.2) | `grant_manage` passes (A30, A31); every earlier golden byte unchanged | host stage 11, dev stage 13, app stage J |
-| 12 (step 11) | `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` (5.1), the rows of the agent layer and the three host-only exports in `world.rs` (4.5), `https-stream` in rule `http` and `World::http`, the grants `[5]` and `[6]` and the limit 84 in `release.rs` (7.2) | `grant_claude_code`, `agent_layer_world`, `release_agent_grants` pass (A32 to A34); every earlier golden byte unchanged | host stages A1 to A5 (host 19); app stage L |
+| 12 (step 11) | `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` (5.1), the rows of the agent layer and the three host-only exports (`World::host_exports`) in `world.rs` (4.5) and their logic part in `folder.rs` (4.6), `https-stream` in rule `http` and `World::http`, the grants `[5]` and `[6]` and the limit 84 in `release.rs` (7.2) | `grant_claude_code`, `agent_layer_world`, `release_agent_grants` pass (A32 to A35); every earlier golden byte unchanged | host stages A1 to A5 (host 19); app stage L |
 
 Stage 12 splits for the host's stages (agentic-harness TECHNICAL 17): stage A
 (host A1: `streams`, `timers`, the three exports) needs only the rows of
@@ -1035,6 +1035,13 @@ Public types are `Send + Sync`, errors also `'static`. Callers use section
   `requires()`. `Grant` is that of 5.1.
 - `Release::of(&Package)`, `check(&Package)`: `package.unpack(tmp)?`, then
   `Release::new(&m, &package)` or `release.check(&m, &package)`.
+- (step 11, host 17) `World` flags for the agent layer's imports: the two
+  starts are seen as `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` in
+  `Mod::grants()`, `https-stream` as `World::http` and the `Http` grants,
+  and the three exports as `World::host_exports`; the imports with no grant
+  need no flag, since the host links them for any mod that imports them
+  (host 19.1). The
+  `[tools]` table: none (question 21).
 
 ## 14. Needs from other subsystems
 
@@ -1098,3 +1105,14 @@ Each answer below is the one that this specification uses.
     keeps its bytes, and the body format stays `1`. The other way, a body
     that leaves `Manage` out, would make F-INST-7's "no new grant" check
     blind to it. Decided; the cost to undo is a new body format.
+
+21. **Tool annotations** (step 11; host 17, 19.5). `@parallel` and
+    `@idempotent` mark a tool function for the agent layer; host 19.5 reads
+    them from a doc-comment line of the WIT function, or from a `mod.toml`
+    `[tools]` table. Answer: doc comments only. The host already reads the
+    doc comments of a mod's WIT itself (host 10.1), annotations give no
+    grant (host 19.5), and a second source would need a schema, a check
+    against the world's functions and a rule for a conflict. `mod.toml`
+    gains no `[tools]` table, so 4.2 refuses one as an unknown table, and
+    pkg adds no API; host 19.5 drops its `[tools]` alternative. Cost to
+    undo: a new optional table in 4.2 and an accessor on `Mod`.
