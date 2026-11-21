@@ -1,5 +1,5 @@
 package mods:advo@0.1.0;
-interface api { open: func() -> result<string, string>; done: func() -> bool; }
+interface api { open: func() -> result<string, string>; done: func() -> bool; after: func(id: string, ms: u64); cancel-slowly: func(id: string); fired: func() -> list<string>; }
 world advo {
   import watane:host/state@0.1.0;
   import watane:host/streams@0.1.0;

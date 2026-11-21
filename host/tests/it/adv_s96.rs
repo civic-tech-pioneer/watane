@@ -32,7 +32,10 @@ fn timer_rows(home: &Path) -> BTreeMap<String, Value> {
         .unwrap()
         .map(|r| {
             let (k, v) = r.unwrap();
-            (k.value().to_owned(), serde_json::from_str(v.value()).unwrap())
+            (
+                k.value().to_owned(),
+                serde_json::from_str(v.value()).unwrap(),
+            )
         })
         .collect()
 }
@@ -67,4 +70,79 @@ fn adv_s96_timer_set_in_ended_after_remove_carries_the_removed_origin() {
         row["origin"], "local/relay",
         "a timer written after the removal carries the removed mod as origin client: {row}"
     );
+}
+
+/// 19, Terms: "at each firing of a timer, the host checks that the origin client is installed and
+/// enabled", else the timer fires with its own mod as origin client. The host checks before it
+/// waits for the mod's lock: when the origin client is removed while the mod is busy, the firing
+/// still runs with the removed mod as origin client, and a timer it sets carries it.
+#[test]
+fn adv_s96_timer_firing_checks_its_origin_before_the_wait() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    call_as(
+        &env.host,
+        Caller::Mod(local("relay")),
+        "advo",
+        "api.after",
+        json!({"id":"probe","ms":150}),
+    )
+    .unwrap();
+    // `advo` is busy while its timer comes due.
+    let host = std::sync::Arc::clone(&env.host);
+    let busy = std::thread::spawn(move || {
+        call_as(
+            &host,
+            Caller::Page,
+            "advo",
+            "api.cancel-slowly",
+            json!({"id":"none"}),
+        )
+        .unwrap()
+    });
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(
+        !busy.is_finished(),
+        "advo must still be busy at the removal"
+    );
+    env.host.remove(&local("relay"), true).unwrap();
+    busy.join().unwrap();
+    wait("the firing", Duration::from_secs(10), || {
+        call_as(&env.host, Caller::Page, "advo", "api.fired", Value::Null).unwrap()
+            == json!(["probe"])
+    });
+    let Env { dir, host } = env;
+    drop(host);
+    let rows = timer_rows(dir.path());
+    let row = &rows[&format!("{}/leak2", id_of("local/advo"))];
+    assert_ne!(
+        row["origin"], "local/relay",
+        "the firing ran with the removed mod as origin client: {row}"
+    );
+}
+
+/// 19.6: "A firing for an id cancelled or replaced meanwhile is ignored." The host reads the row
+/// before it waits for the mod's lock, so a cancel committed during that wait does not stop it.
+#[test]
+fn adv_s96_timer_cancelled_while_the_firing_waits_still_fires() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    call_as(
+        &env.host,
+        Caller::Page,
+        "advo",
+        "api.after",
+        json!({"id":"x","ms":100}),
+    )
+    .unwrap();
+    // This call holds advo's lock past the due time and cancels `x`; its commit comes first.
+    call_as(
+        &env.host,
+        Caller::Page,
+        "advo",
+        "api.cancel-slowly",
+        json!({"id":"x"}),
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(1000));
+    let fired = call_as(&env.host, Caller::Page, "advo", "api.fired", Value::Null).unwrap();
+    assert_eq!(fired, json!([]), "a cancelled timer fired");
 }
