@@ -1978,14 +1978,15 @@ Step 11 (19): from `pkg`, `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`
 (text `claude-code`, `claude-code-shell`; JSON `{"kind":"claude-code"}`,
 `{"kind":"claude-code-shell"}`; ordered after `Manage`; release CBOR `[5]`
 and `[6]`; release grant limit 84) and `World` flags for the new imports and
-the three exports (pkg 4.5, 5.1, 7.2), and the `mod.toml` `[tools]` table
-of 19.5 (`parallel`, `idempotent` per function), unless pkg leaves the
-annotations to WIT doc comments only. From `app`: `Confirm::consent` and
+the three exports, among them `World::host_exports` (pkg 4.5, 5.1, 7.2, 8).
+The annotations of 19.5 come from WIT doc comments only (pkg question 21):
+pkg adds no `[tools]` table. From `app`: `Confirm::consent` and
 `Confirm::accounts` with an `AccountSource` (19.4, 19.7; app 19), which owns
 the consent words, the consent view, Sign in with ChatGPT, the account files
 `<home>/app/accounts/openai.json` and
 `<home>/app/accounts/judge/<provider mod id>.json`, and the `claude` binary
-setting. From `dev` (18): `fake-claude` and `ScriptedResponses` for tests.
+setting. From `dev` (18): the programs `fake-claude` and `scripted-responses` for tests
+(no watane crate links `watane-dev`, spec §2).
 
 From `app`: an implementation of `Confirm` (from step 10 with `manage`
 and `reduced`, app 17), and routes for `dist` under `/api/`. From `dist`: nothing directly.
@@ -2730,8 +2731,8 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
 - **Key.** A live job with the same (handle, key) returns the same stream.
   Keys are memory only.
 - **Annotations `@parallel` and `@idempotent`** come from the tool mod: a
-  doc-comment line of the WIT function (`@parallel`, `@idempotent`), or its
-  `mod.toml` `[tools]` table; default false each. They decide order and
+  doc-comment line of the WIT function (`@parallel`, `@idempotent`); no
+  `mod.toml` table (pkg question 21); default false each. They decide order and
   retries (agentic-harness TECHNICAL 9.5, 9.3), never permissions: a tool
   without them is as callable as one with them. `describe` carries them
   (`tool.parallel`, `tool.idempotent`); MCP `tools/list` (10.3) is unchanged,
