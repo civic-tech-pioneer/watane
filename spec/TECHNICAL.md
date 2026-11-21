@@ -94,6 +94,10 @@ imports and exports. There is no second list.
 | import an interface of its own package | none: these are the events and collects that the mod sends |
 | import `watane:host/caller` | none: always present |
 | import `watane:host/manage` (step 10) | the management of mods (W35) |
+| import `watane:host/claude-code` (step 11) | `ClaudeCode`: start Claude Code to read and change files in folders the participant chose (W38) |
+| import `watane:host/claude-code-shell` (step 11) | `ClaudeCodeShell`: also run programs and use the web, inside Claude's sandbox (W38) |
+| import `watane:host/https-stream` (step 11) | none: it reaches only the hosts of the mod's `Http` grants (W38) |
+| import `streams`, `claude-types`, `claude-session`, `agent-tools`, `timers`; export `stream-sink`, `stream-producer`, `timer-sink` (step 11) | none (W38) |
 
 **Events and collects.** A function of an interface that a mod imports from
 its own package is an **event** when it has no result, and a **collect**
@@ -141,9 +145,20 @@ interface state {             // private storage of this mod
 }
 interface caller {            // "page", "agent:<handle>" or "mod:<local name>"
   who: func() -> string;
+  identity: func() -> ...;    // step 11: the caller as the kernel keys sessions by it (host 19.1)
 }
 interface manage { ... }      // step 10 (W35): reads, reductions, requests; host 6.4, 6.10
+// step 11 (W38): streams, claude-types, claude-code, claude-code-shell, claude-session,
+// https-stream, agent-tools, timers; exports stream-sink, stream-producer, timer-sink
 ```
+
+**Agent layer (step 11).** The interfaces `streams`, `claude-types`,
+`claude-code`, `claude-code-shell`, `claude-session`, `https-stream`,
+`agent-tools` and `timers`, all `watane:host/<name>@0.1.0`, join the
+imports above, with the host-only exports `stream-sink`, `stream-producer`
+and `timer-sink`. Their WIT, the streams, the launch of `claude`, the
+accounts, the tools, the requests, the consents and the errors are in
+`host/TECHNICAL.md` 19.
 
 - A mod is a reactor: each call runs in a new instance and ends.
 - The writes of a call commit only when the call succeeds. In a nested
@@ -211,6 +226,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
 | Manager (step 10) | Mods and the participant from a managing mod | the `Manage` grant checked at each function and before each effect; reads, three reductions (disable, withdraw a grant, close a page) and opening a page only; every install, update, enable, grant and removal is a request that the app decides in the consent view, which names the manager, one open at a time; effects only when the manager's call succeeds; no signature, no consent answer, no identity (W35; host 6.10, app 17) |
 | Install (step 7) | The participant's machine from a tampered download | TLS to GitHub; the SHA-256 of the archive from the `SHA256SUMS` of the same release, checked before any file is written; the version checked against a pattern before it reaches a URL; removals only of paths that watane installs, whatever the receipt says; no root; the toolchain only after a typed yes; a release built with a read-only token and no cache (`install/TECHNICAL.md` 3.2, 5, 7, 8.5, 10) |
+| Agent layer (step 11) | The participant, their folders and accounts, and other mods, from agents and from the mods that run them | the properties of agentic-harness 14 that watane files hold: a mod cannot widen `claude` past its launch (one argument per value, fixed flags, the host owns stdin, `initialize` and `init` checked); a failing check cannot let a tool run (`onFailure: block` confirmed); a check answers `none` or `deny`, never `allow`; writes cannot plant code that runs later (protected paths); no mod sees a credential (tokens and keys stay with the app and the host; MCP tokens on fd 3; handle names, not handles); a plan token goes only to OpenAI's agent endpoints and a judge key only to its judge (account binding, no redirects, `POST`, the origin of the provider's `[http]`); a mod in the middle gains no authority (consents per origin client; the providers' `sessions` refuse any caller but the kernel); a session is private (one consumer, owner checks by `caller.identity`); a repeated call changes nothing (keys, numbered items); an ask shows the call that will run (the host builds each `ask`, `check` and `ask-resolved` item itself) (W38, W39; host 19, app 19) |
 | Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
@@ -226,7 +242,18 @@ Not protected in the first version:
   replace the archive and its checksums together, and the piped script is not
   covered by a checksum (`install/TECHNICAL.md` 5, 10);
 - a compromised own machine, within its trust: it can withhold, and lie
-  about completeness, until the participant removes it (`PEERS.md` 12).
+  about completeness, until the participant removes it (`PEERS.md` 12);
+- the agent layer (step 11), beyond its boundary (agentic-harness 14): the
+  judge account reaches any `POST` path of the origin the participant
+  entered; `claude` itself within its limits, and a prompt injection within
+  what the profile allows; an allowed package-runner word (`test`,
+  `install`, `add`, `ci`, `sync`, ...) runs the project's own scripts, and an
+  allowed command's own options (`git -c`, GNU `sed`'s `e`) or a first word
+  that the allow list misses can run others, inside the shell grant's
+  sandbox only, whose loopback reach is still to be probed (V27), and only for
+  a profile the participant made or adopted with that allow rule; whether a
+  subagent prompt that starts with `/` runs a skill (not probed, V26); the
+  plan usage of the participant's own Claude or ChatGPT account.
 
 ## 7. Decisions of this fresh start
 
@@ -235,17 +262,17 @@ Each one closes a gap of the old specification. Veto any of them.
 | # | Decision |
 |---|---|
 | W1 | Six subsystems (eight from step 8: `net`, `node`). `host` is one subsystem; its inner modules need no cross-subsystem contract. |
-| W2 | The WIT world is the contract. `mod.toml` holds only what WIT cannot say. Grants come from the world. |
+| W2 | The WIT world is the contract. `mod.toml` holds only what WIT cannot say. Grants come from the world. Consents (workspace, account, toolset) are stored with the grants (host 4.4; W38). |
 | W3 | An installed mod has one model: a verified folder in the home. A mod has at most one logic part. |
 | W4 | A local mod installs unsigned and is marked local. |
-| W5 | A preview has no identity and no data of the participant. It grants each mod what the mod declares, with no question. |
-| W6 | The home host gives a toolset token only in the app. A preview prints its token where it starts. |
+| W5 | A preview has no identity and no data of the participant. It grants each mod what the mod declares, with no question, except that it refuses the two Claude Code grants and the accounts: dev's fakes stand in (W38; dev 18). |
+| W6 | The home host gives a toolset token only in the app, or from a toolset consent of the participant (an agent's handle, W38). A preview prints its token where it starts. |
 | W7 | All mods run in the host process, in the Wasmtime sandbox. One process for each mod is a later hardening. |
 | W8 | Pages are served only on the origins of the host, also inside the app. |
 | W9 | An ungranted import is a stub that fails at the call, not a failure to load the mod. |
 | W10 | Distribution is static files first. Direct transfer between own machines comes in step 8; between friends and strangers later (`PEERS.md` 10). |
 | W11 | The first version has no trust policy. Safety is signatures, hashes, fork detection, isolation and consent. |
-| W12 | An agent has a toolset and a token, and the confirmation floor holds. Finer tool controls come later. |
+| W12 | An agent has a toolset and a token, and the confirmation floor holds. Finer tool controls come later; the agent layer's boundary is W39. |
 | W13 | Only `dist` signs with the participant key, and only after a confirmation in the app. A publish needs the running app. `net` signs only with its own node key, and only the forms of `net/TECHNICAL.md` 4.3. |
 | W14 | `deps.json` pins the publisher of each provider. |
 | W15 | The statement kinds are `profile`, `release` and `withdraw`. Step 4 adds the kinds of an index: `list` (a mod), `include` (another index) and `unlist` (dist 4.1). |
@@ -270,6 +297,8 @@ Each one closes a gap of the old specification. Veto any of them.
 | W34 | **Collect** (step 9): an own-package import whose function returns `list<T>` asks every granted subscriber and returns their answers concatenated, in local-name order; a function with no result stays an event; any other result is refused. It reuses the subscription link and the `Subscribe` grant: no new grant kind, no new file, no new host interface. A collect link is a cycle edge from collector to subscriber; event links stay no edges. A failing subscriber is skipped, not fatal, except when it spends the chain's shared fuel or time; the collector does not learn who answered. Answers carry no source: a collector that must address one answerer later says so in the answer type (for example a command id), and reaches it with an event. |
 | W35 | **Management interface** (step 10): the host offers the management of mods through `watane:host/manage`; importing it is the grant `Manage`, the fifth kind, shown in the plan like any other. What a manager may do follows the direction of authority. It reads (the installed mods, their grants, links and origins) and reduces (disable, withdraw a grant, close a page) directly, because a hostile manager can then only make things do less. It asks for each addition (install, update, give a grant, pick a provider) and for a removal that deletes data; the request goes to the consent view, which decides it as if the participant had started it (F-AGENT-4). It never signs, answers a consent or reaches the identity. The app's own manager is a native view on the same functions. Designed in S73: the WIT and the effects in host 6.4 and 6.10, the grant in pkg 4.5 and 5.1, the consent words and requests in app 17. |
 | W36 | **Main mod**: at start the app opens the main mod, else its manager (F-APP-1, F-APP-7). The choice is the participant's and lives in the app's part of the home; the host knows nothing of it. A mod proposes itself with `main = true` in `mod.toml` (pkg 4.2), and only a mod with a page may; the app takes the proposal at install when no main mod is set. A shell is a mod like any other: there is no application level above mods. |
+| W38 | **The agent layer** (step 11; agentic-harness TECHNICAL, N3 accepted 2026-11-20): mods run agent sessions on the participant's own Claude or ChatGPT plan. It is a layer of mods on the host: the kernel `mods:agent` and the two providers `mods:claude-code` (unchecked, and checked by a judge) live in their own repositories. watane gives them the host interfaces of host 19 (streams, the launch of `claude`, HTTPS streams with accounts, agent tools, requests and timers, consents, errors), the two grants `ClaudeCode` and `ClaudeCodeShell` of pkg 5.1, the app's accounts and consents of app 19, and dev's fakes of dev 18 (the binary `fake-claude`, the test server `ScriptedResponses` with its judge origin). Consents (workspace, account `openai`, toolset) are kept by the host with the grants, per origin client, and withdrawn like grants. The host reaches tokens, keys and the `claude` path only through the in-process trait `AccountSource` that the app implements; with no app, or no entry, it fails `no-app` or `no-account`. watane holds no key and runs no service. |
+| W39 | **The agent layer's boundary** (agentic-harness 14): a mod cannot widen `claude` past its launch, a failing check cannot let a tool run, no mod sees a credential, a token and a judge key go only to the endpoints they are bound to, a mod in the middle gains no authority (consent per origin client), a session is private to its owner, and the confirmation floor (F-AGENT-4) holds: no agent installs, grants or signs. The security row and its "Not protected" lines are in section 6. The host and app files that hold each property are named in agentic-harness 14; a slice that changes one gets the adversary step. |
 
 ## 8. Build order
 
@@ -285,6 +314,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
 | 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
 | 10 Own manager | `pkg` (the `Manage` grant, stage 11); `host` (`watane:host/manage`, its requests to the confirmation, manage fakes in `Harness`; stage 11); `dev` (the manage fake and `manages` in contract tests; stage 13); `app` (the words of the grant and of each request, the windows a reduction closes; stage J, after stage I) | J10 passes |
+| 11 Agent layer | `pkg` (two grants); `host` (interfaces of host 19, stages A1 to A5); `dev` (`fake-claude`, `ScriptedResponses`; dev 18); `app` (accounts, consents, the `claude` setting, the judge key; stage L) | the watane parts of stages A to E of agentic-harness 17 pass; J11 passes (on the real `claude` with the consent steps at stage C) |
 
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
@@ -355,6 +385,18 @@ read its link; a manager may open or focus a page (`open-page`), never
 while a consent is open; the consent view offers "Deny and stop asks
 from <mod>", which withdraws `Manage`; and every party that may call a
 manager uses its grant, like every grant (S82 builds Q30 to Q32).
+
+Step 11 is designed (W38, W39; S95): the interfaces, streams, the launch of
+`claude`, the accounts, the tools, the consents and the errors in
+`host/TECHNICAL.md` 19 (host stages A1 to A5); the grants in
+`pkg/TECHNICAL.md` 4.5, 5.1 and 7.2; the fakes in `dev/TECHNICAL.md` 18; Sign
+in with ChatGPT, the consent words, the `claude` setting and the judge key in
+`app/TECHNICAL.md` 19 (app stage L). Left open until the human answers (host
+18): `caller.boot()` (B1), the `outcome` of `ask-resolved {by: answered}` and the
+host-item rules of agentic-harness 4.5. The kernel and the providers are
+specified and built in agentic-harness. J11 lives in `app/tests/`. It comes
+before the factory (step 6) in the order of work, and numbers 11 only
+because steps 7 to 10 were named first.
 
 The main mod (W36) and the manager of the app are not a step: they are
 app stage I (`app/TECHNICAL.md` 5.3, 5.4), with the `main` key in

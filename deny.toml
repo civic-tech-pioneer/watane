@@ -20,7 +20,7 @@ allow = [
 confidence-threshold = 0.9
 
 [licenses.private]
-ignore = true  # our own crates carry no licence field
+ignore = true  # our own crates are unpublished; they carry MIT OR Apache-2.0 and need no check
 
 [bans]
 multiple-versions = "allow"  # tauri and iroh pull several versions; hakari keeps the build single

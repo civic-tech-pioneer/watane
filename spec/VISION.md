@@ -63,8 +63,15 @@ later step needs waits until that step is next.
 3. **Publish.** A maker publishes a mod package.
 4. **Find.** A person finds the packages of others.
 5. **Build on.** A maker builds on an existing package.
+- **Agent layer (step 11).** Mods run agent sessions on the participant's
+  own Claude or ChatGPT plan, each with the participant's consent for the
+  folders, the plan and the toolsets it uses. watane holds no key and runs
+  no service for it. The agent layer is a layer of mods on the host, and the
+  factory builds on it. It comes before step 6, because the factory needs it
+  (agentic-harness VISION; N3).
 6. **Factory (later).** A set of mods that steers coding agents and changes
-   itself. It runs in the same host and is not part of the substrate.
+   itself. It runs in the same host and is not part of the substrate. It
+   runs its agents through step 11.
 
 After the first version:
 
@@ -103,7 +110,7 @@ with no server that a participant must trust:
   isolation and consent.
 - Direct transfer between devices, without a static host: between own
   machines in step 8, between friends and strangers after it.
-- The factory (step 6), and the statements of V7.
+- The factory (step 6), which waits for the agent layer (step 11), and the statements of V7.
 - Private channels, and live sessions of several people.
 
 ## Non-goals

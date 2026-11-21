@@ -22,6 +22,12 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | coding agent | An agent of the maker's choice, outside watane, that writes the code of mods. |
 | preview | A host that runs a mod for its maker, with no identity and no data of the participant. |
 | toolset | A named list of calls of installed mods that the participant gives to an agent. |
+| agent session | A conversation between a mod and an agent, with its turns and its stored transcript. It lives until the mod that started it deletes it. (step 11) |
+| kernel | The mod `mods:agent`: it keeps the profiles, the sessions and their transcripts, the permissions and the delegation of agents. (step 11) |
+| provider | The mod that holds the Claude Code grant and starts the participant's `claude` program for the kernel: unchecked, or checked by a judge. (step 11) |
+| judge | A service that the participant chose, which reads an agent step and says whether it is safe. (step 11) |
+| workspace | A folder in which agents may read and change files: one that the participant picked for a client mod, or the scratch folder of one session. (step 11) |
+| origin client | The mod, or its page, at the start of a chain of calls that ends in an agent. A consent names it. (step 11) |
 | participant | A person with an identity in watane. |
 | identity | A key pair that signs the statements of the participant. |
 | channel | The public, ordered, append-only record of the signed statements of one participant. |
@@ -52,7 +58,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-RUN-4** The host isolates each page from the host and from other pages. A page calls only the logic part of its own mod.
 - **F-RUN-5** A mod calls an interface of another mod only if it declared the call and the participant granted it.
 - **F-RUN-6** The host delivers an event only to the mods that the participant granted the subscription. The sender does not choose or see its subscribers.
-- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, subscriptions to the events and collects of a named provider, and (step 10) the management of mods.
+- **F-RUN-7** The grant kinds are: private storage, network access to named hosts, calls to a named interface of a named provider, subscriptions to the events and collects of a named provider, (step 10) the management of mods, and (step 11) starting Claude Code, with or without programs and the web.
 - **F-RUN-8** Each mod has private state. A failed call changes no state.
 - **F-RUN-9** A mod can collect: the host asks each mod that the participant granted the subscription and gives the asking mod all their answers in one list. The asking mod does not choose or see who answered. An answer that fails is left out and does not fail the collect, unless it uses up the time or the fuel of the whole call. (step 9)
 
@@ -82,12 +88,17 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-APP-9** The manager shows, for each mod, the mods it calls, the mods it receives events from or answers, and the mods that use it. Before the participant disables or removes a mod that other mods use, the manager names them.
 - **F-APP-6** The participant can save the identity to a backup file and restore it. After a restore, watane signs nothing until the participant has given the link to the own channel, or has stated that the identity never published. (step 3) From step 8, a full own machine may also give the newest own statement; the participant still confirms it.
 
-### 2.5 Agents (steps 1 and 2)
+### 2.5 Agents (steps 1, 2 and 11)
 
 - **F-AGENT-1** The participant defines toolsets. An agent reaches only the calls of its toolset.
-- **F-AGENT-2** An agent uses a toolset only with a token. The host gives a token only when the participant asks for one, and the participant can end it.
+- **F-AGENT-2** An agent uses a toolset only with a token. The host gives a token only when the participant asks for one, or when the participant consents to a toolset for a client mod (an agent's handle; step 11, agentic-harness 6 and 8), and the participant can end it.
 - **F-AGENT-3** Each tool has a name that identifies its mod, so no mod can hide or replace a tool of another mod.
 - **F-AGENT-4** **The confirmation floor.** No agent, tool or command installs a mod, approves a grant, or signs a statement without the confirmation of the participant in the app.
+- **F-AGENT-5** With the participant's consent, a mod can run agent sessions on the participant's own Claude or ChatGPT subscription. watane holds no key and runs no service for it. (agent layer)
+- **F-AGENT-6** An agent session is private to the client that started it. The client may publish what it chooses.
+- **F-AGENT-7** The participant decides, for each client mod, the folders, the plan and the toolsets its agents may use, sees them, and withdraws each one.
+- **F-AGENT-8** The participant defines the profiles of agents. A client can only narrow a profile.
+- **F-AGENT-9** The participant can pick a provider that checks each agent step with a judge of their choice. A check that cannot be done denies.
 
 ### 2.6 Publish (step 3)
 
@@ -243,6 +254,21 @@ it. Alice approves, and Desk sees Book club installed. Desk asks to remove
 Notes with its data, and the consent view asks Alice. Alice withdraws
 Desk's grant to manage; Desk still runs, and its next request fails. "Mods…" in the app menu opens the
 manager of the app at any time.
+
+### J11: Run agents from a mod
+
+Alice installs Notes and the agent kernel. The plan of Notes says it uses
+agents; the plan of the Claude Code provider says it starts Claude Code with
+her account, unchecked. In the kernel's page she makes a profile "Tidy":
+Sonnet, file tools, no shell, her own instructions, and lets Notes use it.
+She asks Notes to tidy her notes folder. The app asks whether Notes may have
+agents work in that folder with "Tidy" through the provider; she agrees. The
+agent's text streams into Notes as it works. The agent asks to delete a file;
+Notes shows the ask; Alice denies it, and the agent goes on without it.
+She quits watane mid-turn and starts it again. Notes shows the session as
+not running, with everything up to the last finished message. She sends
+"continue", and the agent resumes where Claude left off. In the manager she
+withdraws the folder consent, and Notes' next session there asks again.
 
 ## 4. Later
 
