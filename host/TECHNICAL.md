@@ -508,7 +508,7 @@ so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. `consents` (step 11, serde default `[]`, so an older file reads unchanged
 and `watane_installed` stays 1) lists the consents the mod holds as an
 origin client (19.7): `{"kind":"workspace","folder":"<canonical path>"}`,
-`{"kind":"account","account":"openai"}`, `{"kind":"toolset","toolset":"<name>"}`.
+`{"kind":"account","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
 They follow the record's life like grants: kept across an update, deleted by
 `remove`. Slug, version, name, summary and origin are
 read from `mods/<local>/` at open; they are not repeated here. Each write: serialize, write
@@ -612,8 +612,11 @@ Install checks the generation again before committing (Q24).
   `not_declared`; they set `granted`. The app calls them in process after
   the participant acted, so the host asks nothing.
 - Step 11 (19): `disable`, `remove`, an update and a `revoke` of `ClaudeCode`
-  or `ClaudeCodeShell` end the streams, handles and timers that depended on
-  the mod or the grant (`gone`; 19.2, 19.5). `withdraw_consent(local,
+  or `ClaudeCodeShell` end the streams and close the handles that depended on
+  the mod or the grant, also those whose origin client it is (`gone`; 19,
+  Terms; 19.2, 19.5). A disabled mod's own timers wait and a removed mod's are
+  deleted (19.6); another mod's timer that carries it as origin client fires
+  with its own mod as origin client. `withdraw_consent(local,
   consent)` removes one consent, like `revoke` for a grant, and ends its
   dependent streams and closes its dependent handles (19.7). A consent is
   given only through `Confirm::consent`; the app never writes it.
@@ -1350,7 +1353,8 @@ returns its result:
 4. Subscribers: the enabled mods with a subscription link to (emitter,
    outlet interface) and the `Subscribe` grant, in local-name order.
 5. For each: a new chain (fresh fuel and deadline, depth 0, hop =
-   `event.hop + 1`), caller `mod:<emitter>`, invoke the subscriber's
+   `event.hop + 1`), caller `mod:<emitter>` (step 11: origin client the
+   subscriber, never the emitter; 19, Terms), invoke the subscriber's
    subscription export, the same function name, the same values. On
    success, append its committed events to the queue. Only the emitter's
    pages get each event message; the subscriber's pages do not get the
@@ -1710,10 +1714,10 @@ run on the preview install path.
 | A failing check cannot let a tool run | `onFailure: block` confirmed in `initialize` (19.3). Files: `init.rs`, `control.rs` | A2: cases 10, 14 |
 | "Safe" cannot widen the mode | a check is answered `none` or `deny`, never `allow` (19.3). File: `control.rs` | A2: case 15 |
 | Writes cannot plant code that runs later | the protected paths of the host's `--settings=` (19.3). File: `run.rs` | A2: case 18 |
-| No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, app account files | A3, A4 |
+| No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows, no `allow` answer outside the workspaces). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63; A3, A4 |
 | A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
-| A mod in the middle gains no authority | consent per origin client, carried with the chain (19.7); the grants checked again at apply (19.6). Files: `src/agent/consent.rs`, `src/runtime/call.rs` | A3 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named (19.5). Files: `src/agent/consent.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
@@ -1879,9 +1883,9 @@ is added.
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/it/manage.rs`); J10 with `dev` and `app` |
 | 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/it/program/api.rs` passes; every earlier test passes unchanged (the default body) |
 | A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6, the chain rule of requests and stream effects, 6.6 step 4) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixtures `relay`, `relay-front`; `Outcome.requests` | stage 5; `pkg` A1 (`watane:host` rows for the new interfaces and exports) | `RawMod` and a crate-private test source for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); S48 to S56 of FUNCTIONAL; the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
-| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only) |
-| A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C |
-| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D |
+| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); S63, S64 (`say` part) |
+| A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C; S61, S62, S65 |
+| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D; S64 (header part) |
 | A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_origin`, `account_changed(&Account::Judge { .. })` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
 
 Step 10 is done when J10 passes with `dev` and `app` (app 17).
@@ -2228,9 +2232,20 @@ the host as producer (`claude-code.start`, `https-stream.start`,
 The *origin client* is the mod whose authority a chain carries: for a page
 call, the mod of the page; for an agent call, the mod that owns the handle
 (19.5); for an item call, a job call or a timer call, the origin client of the
-call that opened the stream, job or timer; for an event delivery, the emitter.
-The host carries it with the chain. A *request* is a function with an outside
-effect (19.6).
+call that opened the stream, job or timer; for an event delivery (9.2), and
+for a collect answer (9.4) and every call nested in it, the subscriber
+itself, never the emitter or the collector: the participant, not the
+emitter, chooses the subscribers (F-RUN-6), so authority does not travel
+along a subscription (S61). The host carries it with the chain, by the
+mod's identity (pkg 4.1), not its local name. A *request* is a function with
+an outside effect (19.6).
+
+**The origin client must still be there.** At apply (19.6), and at each
+firing of a timer, the host checks that the origin client is installed and
+enabled with the identity it carried. Else a request ends its stream `gone`,
+and a timer fires with its own mod as origin client. Disabling or removing a
+mod ends every stream and closes every handle whose origin client it is
+(`gone`), whoever the producer and consumer are (S62).
 
 ### 19.1 Interfaces
 
@@ -2503,6 +2518,31 @@ names its reason.
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
 
+**Protected reads** (S63). A file in the participant's home folder is as
+readable to `claude` as to the participant, and the mod that consumes the
+stream reads whatever the agent prints; so the workspace refusals below do
+not keep a credential from a mod on their own. Three rules do:
+
+- The host's `--settings=` also denies `Read`, `Glob`, `Grep`, `Edit`,
+  `Write` and `NotebookEdit` (so, under the shell grant, the sandbox's reads
+  and writes too) on: the watane home's `app/`, `dist/`, `log/`, `net/`,
+  `state/`, `installed.json` and `toolsets.json`; `~/.claude/**`,
+  `~/.claude.json`, `~/.codex/**`, `~/.ssh/**`, `~/.aws/**`, `~/.gnupg/**`,
+  `~/.netrc`, `~/.git-credentials`, `~/.config/gh/**`, `~/.docker/**`,
+  `~/.kube/**` and `~/Library/Keychains/**`, each as an absolute `//` rule
+  after canonicalization. No launch can remove them.
+- An `allow` rule on `Read`, `Glob`, `Grep`, `Edit`, `Write` or
+  `NotebookEdit` with an argument (deny rules only narrow) is refused `bad-launch {field: "allow"}`
+  unless the argument is a relative pattern: it does not start with `/`, `~`
+  or `//`, and has no `..` segment.
+- An `answer` `allow` to an `ask` whose tool is one of those six and whose
+  path input (`file_path`, `path`, `notebook_path`; absent means the
+  working folder) is not inside one of the launch's workspaces or its run
+  folder, after the
+  host resolves it as `claude` would (relative to the workspace, symlinks
+  resolved), is refused `not-allowed-here`; nothing is written to stdin, and
+  the ask is denied at its `expires-at`.
+
 **The run.**
 
 - Fixed arguments: `-p --input-format=stream-json --output-format=stream-json
@@ -2563,7 +2603,7 @@ names its reason.
 
 | Operation | Written | Rule |
 |---|---|---|
-| `say` | a `user` message with the content | refused `slash-command` when the first text block starts with `/` after white space |
+| `say` | a `user` message with the content | refused `slash-command` when the first text block starts with `/` after white space; white space here is every character that JavaScript's `trim` removes (so also U+FEFF) and every character of the Unicode categories Z, Cc and Cf (so also U+200B), not Rust's `char::is_whitespace` alone (S64) |
 | `compact` | a `user` message `/compact` | – |
 | `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused `not-allowed-here`; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
 | `answer` to a check | `{}` for `none`; `{hookSpecificOutput: {hookEventName: PreToolUse, permissionDecision: deny, permissionDecisionReason}}` for `deny` | `allow` refused `not-allowed-here` |
@@ -2612,8 +2652,10 @@ checks of the table above are made at the call.
 - **Refused at the call, before a byte leaves** (the `start-error`): a URL that
   is not `https`, or whose host is not exactly one of the mod's granted `Http`
   hosts (6.8): `destination`; the headers `Authorization`, `Cookie`, `Host`,
-  `Proxy-*`, `OpenAI-Organization`, `OpenAI-Project`, `ChatGPT-Account-Id`:
-  `forbidden-header`; a body over 1 MiB: `too-large`; with `account:
+  `Proxy-*`, `OpenAI-Organization`, `OpenAI-Project`, `ChatGPT-Account-Id`,
+  their names compared without case (`host`, `AUTHORIZATION`, `proxy-authorization`),
+  and any name that is not an HTTP token (a leading `:` pseudo-header, white
+  space, a control character): `forbidden-header` (S64); a body over 1 MiB: `too-large`; with `account:
   "openai"`, anything but `POST https://api.openai.com/v1/responses` or `GET
   https://api.openai.com/v1/models`: `destination`. At apply the host checks
   again that the mod is enabled and the hosts still granted, else the stream
@@ -2739,10 +2781,18 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   since `claude` orders its own calls.
 - **Manager functions** are refused in a handle's toolsets by default
   (F-AGENT-4): a handle leaves out the functions of a mod that holds
-  `Manage` (a manager, 6.10) unless the participant named them in the
-  toolset consent (19.7, `ConsentRequest.functions`).
+  `Manage` (a manager, 6.10) unless they are in the functions stored with
+  the toolset consent (19.7, `Consent::Toolset.functions`).
 - A handle's tools are the union of its toolsets, read from the current
-  catalog at each call (10.1).
+  catalog at each call (10.1), and only those whose names are in the
+  functions stored with the origin client's consent for that toolset: the
+  participant consented to the functions the words named, not to a name.
+  A function the toolset gains later (an entry `<local>:<interface>` after an
+  update adds a function, a `set_toolset` that adds an entry, a tool mod that
+  gains `Manage`) is left out of `describe`, is `unknown-tool` at `call` and
+  is not listed on `/mcp/agent`, until a later `open` of that toolset asks
+  the consent again with the whole current list; `Granted` then replaces the
+  stored list (S65).
 
 ### 19.6 Requests and timers (H5, H7)
 
@@ -2782,15 +2832,18 @@ and `hand-off` are not requests, but they follow the same chain rule below
   that. V8 (15, A1) measures the cost and records it; whether to change this
   is the human's then.
 - **At apply** the host checks again that the mod is enabled and holds the
-  grant or consent the request needs (the rule of 6.10); a request that fails
-  this ends its stream `gone`.
+  grant or consent the request needs (the rule of 6.10), and that the origin
+  client is installed and enabled with the identity the chain carried (19,
+  Terms); a request that fails this ends its stream `gone`.
 - **A call commits whole.** The host-state writes of one invoke commit
   together or not at all (7); a deferred or failed call leaves no write
   behind. So a failed `append` in a mod leaves no chunk written.
 
 **Timers.** Per mod: ids of at most 128 bytes (else `bad-id`), at most 256
 live (`too-many`), delays up to 30 days (else `bad-delay`), kept in host
-state (7: `timers/<mod>/<id>` → due time and origin client). `after(id,
+state (7: `timers/<mod>/<id>` → due time and the origin client's identity,
+never its local name, so a later mod given the same local name inherits no
+timer's authority; 19, Terms). `after(id,
 delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
 is ignored). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
 timers that the chain has queued) are made at the call. The write follows the
@@ -2818,7 +2871,7 @@ app, kept by the host with the grants.
 |---|---|---|
 | Workspace | a launch names a folder new for the origin client | (origin client, folder) |
 | Account | an `https-stream` with `account: "openai"` new for the origin client (`judge` asks none: entering its key is the consent) | (origin client, account) |
-| Toolset | `agent-tools.open` with a toolset new for the origin client | (origin client, toolset) |
+| Toolset | `agent-tools.open` with a toolset new for the origin client, or whose current functions are not all in the stored list (19.5) | (origin client, toolset), with the functions named |
 
 - **Storage.** In `installed.json` on the record of the origin client (3.3,
   `consents`), shown and withdrawn like grants (4.4). The words, the consent
@@ -2854,8 +2907,10 @@ app, kept by the host with the grants.
 ```rust
 // Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","folder":"…"} etc.
 // Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<folder>",
-// "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent).
-pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String } }
+// "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
+// `functions` is not part of the key). Toolset.functions: the `<local>_<interface>_<function>` names
+// of the ConsentRequest that was Granted, sorted; a handle reaches no other (19.5).
+pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String, functions: Vec<String> } }
 pub struct ConsentRequest {            // Debug, Clone, PartialEq
     pub origin: LocalName,             // the origin client: {origin client}
     pub via: LocalName,                // the mod whose request waits (a provider, the kernel): {provider}
