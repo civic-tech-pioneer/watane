@@ -155,9 +155,8 @@ fn page(env: &Env, target: &str, function: &str, args: Value) -> Value {
 /// A call that runs on its own thread, for a chain that stays in flight.
 fn in_flight(env: &Env, target: &'static str, function: &'static str, args: Value) -> JoinHandle {
     let host = std::sync::Arc::clone(&env.host);
-    let thread = std::thread::spawn(move || {
-        call_as(&host, Caller::Page, target, function, args).unwrap()
-    });
+    let thread =
+        std::thread::spawn(move || call_as(&host, Caller::Page, target, function, args).unwrap());
     std::thread::sleep(Duration::from_millis(400));
     JoinHandle(thread)
 }
@@ -210,10 +209,20 @@ fn ac4_two_chains_in_flight_cannot_pass_the_stream_limit() {
 #[test]
 fn ac4_two_chains_in_flight_cannot_pass_the_timer_limit() {
     let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
-    page(&env, "advo", "api.after-many", json!({"n":255,"ms":3_600_000}));
+    page(
+        &env,
+        "advo",
+        "api.after-many",
+        json!({"n":255,"ms":3_600_000}),
+    );
     let args = json!({"id":"a","ms":3_600_000,"sleep":1000});
     let first = in_flight(&env, "advo-front", "api.try-after-then-sleep", args);
-    let second = page(&env, "advo", "api.try-after", json!({"id":"b","ms":3_600_000}));
+    let second = page(
+        &env,
+        "advo",
+        "api.try-after",
+        json!({"id":"b","ms":3_600_000}),
+    );
     assert!(second.as_str().unwrap().contains("too-many"), "{second}");
     assert_eq!(first.finish(), json!("ok"));
 }
@@ -270,7 +279,10 @@ fn ac5_a_revoked_call_grant_ends_the_streams_opened_through_it() {
         .grant;
     env.host.revoke(&local("advo-front"), &call).unwrap();
     let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
-    assert!(pushed.as_str().unwrap().contains("unknown-stream"), "{pushed}");
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "{pushed}"
+    );
     let line = format!("{s} gone");
     wait("both ended lines", Duration::from_secs(10), || {
         page(&env, "advo", "api.ended", Value::Null) == json!([line])

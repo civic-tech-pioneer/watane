@@ -95,7 +95,8 @@ impl Timers {
                         .entry(owner.clone())
                         .or_default()
                         .push_back((due, key.clone()));
-                    if queue.running.insert(owner.clone()) && !self.spawn_worker(weak, owner.clone())
+                    if queue.running.insert(owner.clone())
+                        && !self.spawn_worker(weak, owner.clone())
                     {
                         queue.running.remove(&owner);
                         queue.due.remove(&owner);
@@ -115,7 +116,7 @@ impl Timers {
     }
     /// One worker per mod with due timers: it fires them one at a time, in due order.
     fn spawn_worker(self: &Arc<Self>, weak: &Weak<Host>, owner: String) -> bool {
-        let (timers, weak) = (Arc::clone(self), weak.clone());
+        let (timers, weak) = (Arc::clone(self), Weak::clone(weak));
         let spawned = std::thread::Builder::new()
             .name("watane-timer".into())
             .stack_size(16 << 20)
