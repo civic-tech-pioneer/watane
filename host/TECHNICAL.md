@@ -2261,7 +2261,7 @@ Raised by S95's adversary step (none blocks A1):
   grant in A2; the `ClaudeCode` grant does not wait.
 - **Q40** Privacy of scratch and run folders between sessions (19.3,
   Folders; source row: agentic-harness TECHNICAL 4.6, "scratch folders per
-  session", and 4.4, the run folder). Every session's scratch workspace is
+  session", and the run folder of the same section). Every session's scratch workspace is
   under `<home>/scratch/` and every run folder under `<home>/runs/`. A deny
   rule cannot carve out the session's own folder, because in Claude Code a deny wins over
   an allow. So a `Glob` with a `path`, or a `ls` under the shell grant, can
