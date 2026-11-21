@@ -14,8 +14,12 @@ use support::journey::{approve, begin_install, copy_dir, fixture, installed};
 const TIMEOUT: Duration = Duration::from_secs(30);
 fn until(app: &App, label: &str, js: &str) {
     let deadline = Instant::now() + TIMEOUT;
-    while app.eval(label, js) != json!(true) {
-        assert!(Instant::now() < deadline, "DOM condition timed out: {js}");
+    while !app.is_true(label, js) {
+        assert!(
+            Instant::now() < deadline,
+            "DOM condition timed out: {label}: {js}; last result: {}",
+            app.eval_raw(label, js)
+        );
         std::thread::yield_now();
     }
 }

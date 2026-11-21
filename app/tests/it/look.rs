@@ -768,13 +768,22 @@ mod windows {
                 _ => unreachable!(),
             }
         }
-        app.eval("main", &format!("window.__rendered=false; import('./app.js').then(page=>{{page.modsView({badges}); window.__rendered=true;}}); null"));
-        check(
-            &app,
-            "window.__rendered && Array.from(document.querySelectorAll('.tile'),n=>n.dataset.tile).join('|') === 'desk|reading-list|recommendations'",
+        // The page refreshes itself and re-renders real data over literal data, so each
+        // literal-data check renders and evaluates in one JavaScript turn.
+        app.eval("main", "window.__page = null; import('./app.js').then(page => { window.__page = page; }); null");
+        check(&app, "window.__page !== null");
+        let literal = |badges: &serde_json::Value, condition: &str| {
+            check(
+                &app,
+                &format!("(window.__page.modsView({badges}), {condition})"),
+            );
+        };
+        literal(
+            &badges,
+            "Array.from(document.querySelectorAll('.tile'),n=>n.dataset.tile).join('|') === 'desk|reading-list|recommendations'",
         );
-        check(
-            &app,
+        literal(
+            &badges,
             "Array.from(document.querySelectorAll('.tile')).every(tile => tile.querySelectorAll('.badge').length === 1) && document.querySelector('[data-tile=desk] .badge').textContent === 'Problem' && document.querySelector('[data-tile=desk] .main-mark').textContent === 'Opens at start' && document.querySelector('[data-tile=reading-list] .badge').textContent === 'Problem' && document.querySelector('[data-tile=recommendations] .badge')?.textContent === 'Off'",
         );
         for mod_view in badges.as_array_mut().unwrap() {
@@ -782,25 +791,29 @@ mod windows {
                 mod_view["enabled"] = json!(true);
             }
         }
-        app.eval("main", &format!("window.__rendered=false; import('./app.js').then(page=>{{page.modsView({badges}); window.__rendered=true;}}); null"));
-        check(
-            &app,
-            "window.__rendered && document.querySelector('[data-tile=recommendations] .badge').textContent === 'Update'",
+        literal(
+            &badges,
+            "document.querySelector('[data-tile=recommendations] .badge').textContent === 'Update'",
         );
         // AC2 (S84-fix3): the offer button keeps its label width at the band's right; it wraps under the text only when narrow.
-        click(&app, "[data-tile=recommendations]");
         let band = "(() => { const n = document.querySelector('[data-local=recommendations] .notice'), r = n.getBoundingClientRect(), s = n.querySelector('span').getBoundingClientRect(), b = n.querySelector('.offer').getBoundingClientRect(); return n.querySelector('span').textContent === 'Version 2.0.0 asks to connect to example.org.' && n.querySelector('.offer').textContent === 'Install 2.0.0…' && b.width > 0 && Math.abs(r.right - 14 - b.right) < 1 && WRAP; })()";
-        check(
-            &app,
-            &band.replace(
-                "WRAP",
-                "b.width < r.width / 2 && b.top < s.bottom && s.top < b.bottom",
+        let open = "document.querySelector('[data-tile=recommendations]').click()";
+        literal(
+            &badges,
+            &format!(
+                "({open}, {})",
+                band.replace(
+                    "WRAP",
+                    "b.width < r.width / 2 && b.top < s.bottom && s.top < b.bottom",
+                )
             ),
         );
-        app.eval("main", "document.querySelector('[data-local=recommendations] .notice').style.width = '180px'; null");
-        check(
-            &app,
-            &band.replace("WRAP", "b.top >= s.bottom && b.width < r.width - 28"),
+        literal(
+            &badges,
+            &format!(
+                "({open}, document.querySelector('[data-local=recommendations] .notice').style.width = '180px', {})",
+                band.replace("WRAP", "b.top >= s.bottom && b.width < r.width - 28")
+            ),
         );
         app.eval(
             "main",

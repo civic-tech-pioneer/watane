@@ -21,13 +21,13 @@ const MOD: &str = "mod-hostile";
 fn until(app: &App, label: &str, js: &str) {
     let deadline = Instant::now() + TIMEOUT;
     loop {
-        let value = app.eval(label, js);
-        if value == json!(true) {
+        if app.is_true(label, js) {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "condition timed out: {js}: {value}"
+            "condition timed out: {label}: {js}; last result: {}",
+            app.eval_raw(label, js)
         );
         std::thread::yield_now();
     }
