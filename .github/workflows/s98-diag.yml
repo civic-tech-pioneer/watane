@@ -1,0 +1,36 @@
+# Temporary (S98): repeat app's window tests on macos-26 to catch the quit hang. Removed before merge.
+name: s98-diag
+on:
+  push:
+    branches: [slice/s98]
+permissions:
+  contents: read
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: s98-diag
+      - run: cargo test -p watane-app --features driver --test it --no-run
+      - name: Repeat
+        shell: bash
+        run: |
+          fails=0
+          for i in 1 2 3 4; do
+            echo "::group::round $i"
+            cargo test -p watane-app --features driver --test it -- --skip ac1_busy_port 2>&1 | tee round$i.log || fails=$((fails+1))
+            echo "::endgroup::"
+            grep -E "FAILED|panicked" round$i.log || true
+          done
+          echo "rounds failed: $fails"
+          exit $fails
