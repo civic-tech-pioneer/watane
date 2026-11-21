@@ -1906,7 +1906,6 @@ Warnings (they never change `ok`):
 | dev holds no GitHub token (step 6) | git and gh run as the maker's own programs with the maker's login; dev reads only gh's login and exit status (10.4). |
 | Only consented source is pushed (step 6) | the mod commit holds exactly the package's paths, except a built `logic.wasm` (10.4.1 step 6); the person saw whether the package holds source (9.7). Nothing is force-pushed. |
 | A repository never replaces verified source (step 6) | `new --from` uses a clone only when it packs to the verified package's id, removes every file the package does not hold, and writes dev's guides over the publisher's (10.4.2). The URL passes pkg's rule (https only) and follows `--`. |
-
 | The agent layer fakes hold no secret and reach no outside server (step 11) | `fake-claude` is a program that reads a script and writes lines; it opens no socket. `ScriptedResponses` binds `127.0.0.1` only, with a certificate from a test authority made for the run and never trusted by the operating system (18.3); its tokens and keys are literals of the test. Neither is built by `--no-default-features`, so a release holds neither (18.1). |
 
 Not protected (as `spec/TECHNICAL.md` section 6): another program of the
@@ -2169,7 +2168,14 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 **Programs** (step 6): the maker's `git` (2.28 or newer, for `init -b`) and
 `gh`, on `PATH` (10.4). They are not siblings; tests use real git and `fake-gh`.
 
-**host** (step 11; host 19): the in-process trait `AccountSource` (host 19.4) answers `claude_binary()` with the path of `fake-claude` in a preview and in tests; a test setting of the host that points `https-stream` at a local address with a root certificate that dev gives (`ScriptedResponses::ca_pem`), so that requests for `api.openai.com` and for the judge origin reach the fake (host 19.4; question 16); the behaviour of a preview toward the real grants and accounts (host 19, previews: refused, with the fakes offered). **pkg**: the grants `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1), so that `check` shows a mod that imports the new interfaces. **app**: nothing; the fakes need no app.
+**host** (step 11; host 19):
+- `AccountSource::claude_binary()` (host 19.4) answers the path of `fake-claude` in tests; in a preview, the path that `serve` gives as host 19.4 names (18.4).
+- A test-only route of the host (host 19.4): it maps `api.openai.com` and the judge origin to the local addresses of `ScriptedResponses` (`responses_addr`, `judge_addr`) and trusts one more root certificate, `ScriptedResponses::ca_pem()`; it is absent from the host's production path (question 16).
+- A preview refuses the two Claude Code grants and the accounts, and the fakes are offered instead (host 19; W5).
+
+**pkg** (step 11): the grants `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1), so that `check` shows a mod that imports the new interfaces.
+
+**app** (step 11): nothing; the fakes need no app.
 
 **Crates** (step 11): `claude-codes` with its types feature, for the stream-json types of `fake-claude` (agentic-harness TECHNICAL 13); for `ScriptedResponses`, a TLS server library and a test certificate generator, both only under the feature `fake-claude`, named by the stage D brief.
 
@@ -2291,6 +2297,16 @@ rules belong to 15.1.
 | DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns`, `ac3_owner_forks_and_existing_fork_fallback` | in-process, scripted runner: gh answers with another fork; a derived mod without upstream |
 | DEV-S-52 | `contract::ac_collect_fake_and_answer` | integration: the `menu` and `item` folders of the scenario, on the real `Harness` |
 | DEV-S-53 | `contract::ac_manage_fake_and_records` (integration, on host's prebuilt `manager` fixture and the real `Harness`); `contract::tests::manages_mismatch_report` (unit, `run_steps` with a closure) | integration and unit: the literal steps of the scenario |
+| DEV-S-54 | `fake_claude::ac2_initialize_and_init`, `fake_claude::ac3_steps_write_lines`, `fake_claude::ac8_log_records_everything` | child process; planned: dev stage 14 |
+| DEV-S-55 | `fake_claude::ac5_refuses_forbidden_flags` | child process; planned: dev stage 14 |
+| DEV-S-56 | `fake_claude::ac6_unexpected_stdin_line` | child process; planned: dev stage 14 |
+| DEV-S-57 | `fake_claude::ac4_checks_error_timeout`, `fake_claude::ac7_exits_crash_hang` | child process; planned: dev stage 14 |
+| DEV-S-58 | `scripted::ac1_sse_and_usage`, `scripted::ac4_records_requests` | https client; planned: dev stage 15 |
+| DEV-S-59 | `scripted::ac1_sse_and_usage`, `scripted::ac2_errors_redirect_reset_stall` | https client; planned: dev stage 15 |
+| DEV-S-60 | `scripted::ac3_models_and_token` | https client; planned: dev stage 15 |
+| DEV-S-61 | `scripted::ac5_trust_only_ca` | https client; planned: dev stage 15 |
+| DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
+| DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2498,7 +2514,7 @@ lines and bytes written in the test.
 | `scripted::ac4_records_requests` | each request is recorded whole, in arrival order, with its headers and body bytes | https client; literal request |
 | `scripted::ac5_trust_only_ca` | a client that trusts `ca_pem()` connects; a client with the system roots refuses the certificate; the server listens on `127.0.0.1` only | https client; error class |
 | `scripted::ac6_judge_plays` | `Safe`, `Unsafe`, `Unsure` give the verdict body of 18.3; `Down` resets after the request; `Slow` waits `ms`; `Unreadable` gives status 200 and a body that is not JSON; `Redirect` gives 307; `Raw` gives the bytes | https client; literal bodies |
-| `scripted::ac7_judge_counts_every_request` | `count()` equals the requests received for each play, including a wrong key (401), `Down` and `Redirect`; a request that never connects does not count; the redirect target's own count stays 0 when a client does not follow | https client; literal numbers |
+| `scripted::ac7_judge_counts_every_request` | `count()` equals the requests received for each play, including a wrong key (401), `Down` and `Redirect`; a request that never connects does not count; the redirect target, the Responses origin, records nothing when a client does not follow | https client; literal numbers |
 | `scripted::ac8_judge_key` | a wrong or missing key is 401 and counted; a right key reaches the play; the request the server saw holds the key only as `Authorization` | https client |
 
 The tests that need the host (the account binding, the judge call, a
@@ -2688,7 +2704,7 @@ control protocol, as `claude` does:
 | `ask` | write a `can_use_tool` control request with `tool`, `input` and `tool_use_id` (default: a counter), then, with `await: true`, wait for the host's `control_response` and log it |
 | `check` | write a `hook_callback` (PreToolUse) control request, with `await: true` as above; `error: true` answers the callback's wait with a failure of the hook, `timeout: true` writes nothing more for it and lets the hook's time run out |
 | `cancel` | write a `control_cancel_request` for the `ask` or `check` with that `tool_use_id` |
-| `raw` | write `line` as given, or `hex` as raw bytes, followed by a newline; for a line that is not UTF-8, a duplicate top-level key, or a line that names a watane item type (agentic-harness TECHNICAL 4.5 step 4) |
+| `raw` | write `line` as given, or `hex` as raw bytes, followed by a newline; for a line that is not UTF-8, a duplicate top-level key, or a line that names a watane item type (agentic-harness TECHNICAL 4.5 step 4; what the host does with such lines is an open question of host 18) |
 | `expect-interrupt` | wait for an `interrupt` control request and answer it |
 | `sleep` | wait `ms` |
 | `exit` | exit with `code` (default 0) after flushing |
@@ -2778,9 +2794,9 @@ counts every request it receives, whether it answers, resets or redirects:
 proves that a refused request sent nothing (`count()` stays 0: not-owner,
 a wrong method, another origin, a redirect target). `Down` reads a request
 and resets; `Slow` waits `ms` before its `then`; `Unreadable` answers
-status 200 with a body that is not JSON; `Redirect` answers 307, and the
-fake's redirect target counts its own hits too, so a test shows that the
-host followed none. A verdict is the body
+status 200 with a body that is not JSON; `Redirect` answers 307; a test points it at the other origin of the same
+server (or at the judge's own), whose `requests()` or `count()` show that
+the host followed none. A verdict is the body
 `{"verdict": "safe" | "unsafe" | "unsure", "reasons": [...]}` (question 17).
 It checks `expect_key` as the Responses origin checks its token, answers a
 wrong or missing key 401, and records the request, so a test sees that the
