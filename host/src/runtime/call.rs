@@ -38,6 +38,8 @@ pub(crate) struct Chain {
     deferred: AtomicBool,
     /// The top-level call is the firing of this timer row (19.6).
     timer: Option<(String, u64)>,
+    /// The top-level call failed because its own mod is disabled, removed or updated.
+    unavailable: AtomicBool,
 }
 #[derive(Clone)]
 pub(crate) struct Invocation {
@@ -50,6 +52,9 @@ pub(crate) struct Invocation {
     pub(crate) link: bool,
     /// The origin client of the call (19, Terms): an identity.
     pub(crate) origin: String,
+    /// The install generation of the origin client (19, Terms): an identity alone does not tell
+    /// two installs apart. `None` only for a firing, which takes the current one at its call.
+    pub(crate) origin_gen: Option<u64>,
     /// The consumer's `Call` link interface that this call came through, if it came through one
     /// (19.2, Ends: the grant a mod stream depends on).
     pub(crate) via: Option<InterfaceName>,
@@ -85,6 +90,9 @@ pub(crate) struct Start {
     /// A host-only export (`stream-sink`, `stream-producer`, `timer-sink`).
     pub internal: bool,
     pub origin: Option<String>,
+    /// The install generation that the origin client had when the chain's first effect named it
+    /// (a stream's): `None` takes the generation of the snapshot.
+    pub origin_gen: Option<u64>,
     pub connection: Option<String>,
     pub hop: u8,
     pub defers: bool,
@@ -108,6 +116,7 @@ impl Start {
             subscription: false,
             internal: true,
             origin: Some(origin),
+            origin_gen: None,
             connection: None,
             hop: 0,
             defers: false,
@@ -118,6 +127,8 @@ impl Start {
 pub(crate) struct Done {
     pub result: Result<Value, CallError>,
     pub deferred: bool,
+    /// The call's own mod was disabled, removed or updated (a firing keeps its row, 19.6).
+    pub unavailable: bool,
     pub outcome: Option<Outcome>,
 }
 const DEFERRED: &str = "the consumer deferred the batch";
@@ -198,6 +209,7 @@ pub(crate) fn run_connection(
             subscription,
             internal: false,
             origin: None,
+            origin_gen: None,
             connection,
             hop: 0,
             defers: false,
@@ -253,6 +265,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     let failed = |error: CallError| Done {
         result: Err(error),
         deferred: false,
+        unavailable: false,
         outcome: None,
     };
     let deadline = match deadline(host) {
@@ -277,6 +290,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         subscription,
         internal,
         origin,
+        origin_gen,
         connection,
         hop,
         defers,
@@ -285,6 +299,17 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     let origin = origin.unwrap_or_else(|| match &who {
         Who::Caller(Caller::Mod(m)) if !subscription => identity_of(&snapshot, m),
         _ => identity_of(&snapshot, &local),
+    });
+    // A firing takes the generation of its row's origin at its call, after the lock.
+    let origin_gen = origin_gen.or_else(|| {
+        if timer.is_some() {
+            return None;
+        }
+        snapshot
+            .mods
+            .iter()
+            .find(|m| m.identity == origin)
+            .and_then(|m| snapshot.install_of(&m.local))
     });
     let connection = connection
         .filter(|c| matches!(who, Who::Caller(Caller::Page)) && host.hub.conn_live(c, &local));
@@ -309,6 +334,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         defers,
         deferred: AtomicBool::new(false),
         timer,
+        unavailable: AtomicBool::new(false),
     });
     register(host, &chain);
     let invocation = Invocation {
@@ -319,6 +345,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         hop,
         link,
         origin,
+        origin_gen,
         via: None,
     };
     let result = invocation.invoke(
@@ -372,10 +399,12 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
             }),
             result: Ok(value),
             deferred: false,
+            unavailable: false,
         },
         Err(error) => Done {
             result: Err(error),
             deferred,
+            unavailable: chain.unavailable.load(Ordering::Acquire),
             outcome: None,
         },
     }
@@ -529,6 +558,7 @@ impl Invocation {
             hop: self.hop,
             link: true,
             origin: self.origin.clone(),
+            origin_gen: self.origin_gen,
             via: Some(interface.clone()),
         };
         nested.invoke(
@@ -594,6 +624,7 @@ impl Invocation {
                     hop: self.hop,
                     link: false,
                     origin: m.identity.clone(),
+                    origin_gen: self.chain.snapshot.install_of(&m.local),
                     via: None,
                 };
                 self.chain.failed_fuel.store(fuel, Ordering::Release);
@@ -672,17 +703,28 @@ impl Invocation {
         if self.depth > host.limits.depth {
             return Err(CallError::limit(Limit::Depth, "nested call depth exceeded"));
         }
+        let unavailable = |error: CallError| {
+            if self.depth == 0 {
+                chain.unavailable.store(true, Ordering::Release);
+            }
+            error
+        };
         let m = chain
             .snapshot
             .mods
             .iter()
             .find(|m| m.local == self.local)
-            .ok_or_else(|| CallError::new(CallCode::NoMod, format!("no mod {}", self.local)))?;
+            .ok_or_else(|| {
+                unavailable(CallError::new(
+                    CallCode::NoMod,
+                    format!("no mod {}", self.local),
+                ))
+            })?;
         if !m.enabled {
-            return Err(CallError::new(
+            return Err(unavailable(CallError::new(
                 CallCode::Disabled,
                 format!("mod {} is disabled", self.local),
-            ));
+            )));
         }
         if let Some(error) = &m.error {
             return Err(CallError::internal(error));
@@ -709,7 +751,7 @@ impl Invocation {
                 .or_default(),
         );
         let _guard = lock_until(&lock, chain.deadline)?;
-        let origin;
+        let (origin, origin_gen);
         {
             let current = host
                 .catalog
@@ -723,34 +765,45 @@ impl Invocation {
                         && current.identity == m.identity
                         && current.package == m.package
                 })
-                .ok_or_else(|| CallError::new(CallCode::NoMod, "mod was removed or updated"))?;
+                .ok_or_else(|| {
+                    unavailable(CallError::new(
+                        CallCode::NoMod,
+                        "mod was removed or updated",
+                    ))
+                })?;
             if !active.enabled {
-                return Err(CallError::new(CallCode::Disabled, "mod is disabled"));
+                return Err(unavailable(CallError::new(
+                    CallCode::Disabled,
+                    "mod is disabled",
+                )));
             }
             // The origin client must still be there when the call starts, after the lock
             // (19, Terms): else the call carries the called mod's own identity. A firing also
             // reads its row again: one cancelled or replaced meanwhile is ignored (19.6).
-            let mut wanted = self.origin.clone();
+            let (mut wanted, mut wanted_gen) = (self.origin.clone(), self.origin_gen);
             if self.depth == 0
                 && let Some((key, due)) = &chain.timer
             {
                 match host.state.timer_row(key) {
-                    Ok(Some((row_due, origin))) if row_due == *due => wanted = origin,
+                    Ok(Some((row_due, origin))) if row_due == *due => {
+                        (wanted, wanted_gen) = (origin, None);
+                    }
                     _ => {
                         chain.deferred.store(true, Ordering::Release);
                         return Err(CallError::internal(IGNORED));
                     }
                 }
             }
-            origin = if current
-                .mods
-                .iter()
-                .any(|o| o.identity == wanted && o.enabled && o.error.is_none())
-            {
-                wanted
-            } else {
-                active.identity.clone()
-            };
+            // The identity and the install generation (a reinstall is another install).
+            let still = current.mods.iter().find(|o| {
+                o.identity == wanted
+                    && o.enabled
+                    && o.error.is_none()
+                    && wanted_gen.is_none_or(|g| current.install_of(&o.local) == Some(g))
+            });
+            let who = still.unwrap_or(active);
+            origin = who.identity.clone();
+            origin_gen = current.install_of(&who.local);
             if let Who::Caller(Caller::Mod(other)) = caller {
                 // Selection can precede a wait for this mod's lock. Check
                 // authority again before invoking the selected export.
@@ -798,6 +851,7 @@ impl Invocation {
             chain.deadline,
             Self {
                 origin,
+                origin_gen,
                 ..self.clone()
             },
         )?;
@@ -851,11 +905,22 @@ impl Invocation {
             })
             .collect::<Result<Vec<_>, CallError>>()?;
         let manages = ctx.manages;
-        // The catalog lock is held from the origin check to the commit of the rows, and `remove`
-        // changes the catalog under it: either the check sees the origin gone, or the rewrite of
-        // `remove` runs after the commit (19.6, Timers).
-        let mut catalog = None;
-        let timers = if self.depth == 0 && chain.fakes.is_none() {
+        // The rows are built inside the write transaction (`State::commit`): the catalog is
+        // read for a moment there, and `remove` changes it before its own write transaction
+        // (19.6, Timers).
+        let has_timers = self.depth == 0
+            && chain.fakes.is_none()
+            && (chain.timer.is_some()
+                || chain
+                    .log
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .iter()
+                    .any(|e| matches!(e, Effect::TimerAfter { .. } | Effect::TimerCancel { .. })));
+        let timers = || {
+            if !has_timers {
+                return Vec::new();
+            }
             let log = chain
                 .log
                 .lock()
@@ -868,26 +933,21 @@ impl Invocation {
                     due: *due,
                 })
                 .collect();
-            if log.iter().any(|e| matches!(e, Effect::TimerAfter { .. })) {
-                catalog = Some(
-                    host.catalog
-                        .lock()
-                        .expect("lock poisoned: another thread panicked while holding it"),
-                );
-            }
-            ops.extend(crate::agent::timer_ops(&log, |origin| {
-                catalog.as_ref().is_none_or(|c| {
-                    c.mods
-                        .iter()
-                        .any(|m| m.identity == origin && m.enabled && m.error.is_none())
+            let catalog = host
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            ops.extend(crate::agent::timer_ops(&log, |origin, generation| {
+                catalog.mods.iter().any(|m| {
+                    m.identity == origin
+                        && m.enabled
+                        && m.error.is_none()
+                        && generation.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
                 })
             }));
             ops
-        } else {
-            Vec::new()
         };
-        let changed = ctx.state.commit(&timers)?;
-        drop(catalog);
+        let changed = ctx.state.commit(&timers, has_timers)?;
         let mut effects = chain
             .effects
             .lock()
@@ -1154,6 +1214,7 @@ fn process(delivery: &Delivery) {
                 defers: false,
                 deferred: AtomicBool::new(false),
                 timer: None,
+                unavailable: AtomicBool::new(false),
             });
             register(host, &subscriber);
             let invocation = Invocation {
@@ -1164,6 +1225,7 @@ fn process(delivery: &Delivery) {
                 hop: delivery.hop + 1,
                 link: false,
                 origin: m.identity.clone(),
+                origin_gen: current.install_of(&m.local),
                 via: None,
             };
             let result = invocation.invoke(
