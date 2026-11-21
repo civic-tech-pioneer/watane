@@ -2213,6 +2213,72 @@ Raised by S95 itself (not one of the three above):
   never sent. Cost to undo: (b) is one line in 6.6 step 4 and 19.6, and a
   weaker 14 row; (c) rewrites 6.6 and 7. Does not block A1, which builds (a).
 
+Raised by S95's adversary step (none blocks A1):
+
+- **Q38** The key of a workspace or account consent names no provider and no
+  grant (19.7; source row: agentic-harness TECHNICAL 8, "Kept for (origin
+  client, folder)" and "(origin client, account)"). The words say "through
+  {provider}", but the consent is kept without it. So a consent Alice gave
+  for Notes through the checked provider, which has no shell, is reused
+  without a question by the unchecked provider, by any mod with
+  `ClaudeCodeShell` that Notes calls, or by a tool mod that Notes' agents
+  call, as long as its chain carries Notes as origin client. Options:
+  (a) as built, (origin client, folder) and (origin client, account): one
+  question per folder, whatever runs there. (b) Add `via`, the identity of
+  the mod whose request waits: (origin client, via, folder) and (origin
+  client, via, account); a new provider asks again. (c) Add the grant kind
+  only, `ClaudeCode` or `ClaudeCodeShell` (a shell consent covers a no-shell
+  start, not the reverse); a checked and an unchecked provider still share a
+  consent. Recommended: (b). The words already name the provider, and it
+  also stops a mod in the middle that holds its own grant. It costs one more
+  question each time the kernel's profile changes provider. Cost to undo:
+  (b) to (a) drops a field of `Consent` and of the `what` text
+  (`workspace:<via>:<folder>`), and every consent already given stays valid,
+  since it is a subset of (a); (a) to (b) later would void every consent given
+  under (a). The source row changes in agentic-harness too. Blocks A3; A2
+  starts only in scratch workspaces and needs no answer.
+- **Q39** The Claude login and loopback under the shell grant (19.3, The
+  run; source row: agentic-harness TECHNICAL 4.4, the environment, and 4.2,
+  the shell grant). `CLAUDE_CODE_OAUTH_TOKEN` is in `claude`'s environment
+  when the participant set it. If a sandboxed `Bash` child inherits it, an
+  allowed word (`cat /proc/self/environ`, `printenv`) prints it to the
+  consuming mod. `WebFetch` runs in `claude`'s own process, not in the Bash
+  sandbox, so the rule "loopback denied" may not hold for it: it may reach
+  watane's server on `127.0.0.1`, or a name that resolves to loopback. Neither can be
+  shown on paper. Probe **V28**, named for the first A2 slice: (1) does a
+  `Bash` child under the sandbox of 19.3 see `CLAUDE_CODE_OAUTH_TOKEN`, and
+  can it read `/proc/<claude pid>/environ`; (2) does `WebFetch` reach
+  `http://127.0.0.1:<port>/`, `http://[::1]:<port>/` and a name that
+  resolves to `127.0.0.1`. Options: (a) as written, plus a deny of `Read`
+  on `//proc/**` in `--settings=`, if V28 (1) shows only `/proc` reads. (b) Never
+  pass `CLAUDE_CODE_OAUTH_TOKEN` to a start under the shell grant; `claude`
+  then uses its own stored login, which the protected reads of 19.3 deny to
+  its tools. (c) Drop `WebFetch` from the shell grant (or deny it on
+  `localhost`, `127.0.0.1` and `[::1]` in `--settings=`) until V28 (2) shows that
+  it honours the sandbox's network rules. Recommended: (b) and (c) until V28
+  is recorded, then reopen. Cost to undo: (b) is one line of the
+  environment rule; (c) is one row of the grants table. Blocks the shell
+  grant in A2; the `ClaudeCode` grant does not wait.
+- **Q40** Privacy of scratch and run folders between sessions (19.3,
+  Folders; source row: agentic-harness TECHNICAL 4.6, "scratch folders per
+  session", and 4.4, the run folder). Every session's scratch workspace is
+  under `<home>/scratch/` and every run folder under `<home>/runs/`. A deny
+  rule cannot carve out the session's own folder, because in Claude Code a deny wins over
+  an allow. So a `Glob` with a `path`, or a `ls` under the shell grant, can
+  list and read another client's scratch work. The "allow outside the
+  workspaces" refusal of 19.3 (Protected reads) covers only asks: not a
+  read that `claude` makes without asking, nor the sandbox. Options: (a) a
+  per-session parent outside the shared tree (for example
+  `<home>/scratch/<random>/<random>/`, with the parent made 0711 so it cannot be
+  listed). That hides the names, not the files. (b) Deny the whole of
+  `scratch/` and `runs/` and run each session with its scratch folder
+  outside the watane home (an OS temporary folder, created 0700 for that
+  session); the run folder too. (c) Accept it, and add it to Not protected
+  (spec §6). Recommended: (b), which keeps a deny rule simple. It is decided
+  with the first A2 slice's scratch design (19.3, Folders). Cost to undo:
+  the paths of 3.1 and 19.3, and the open-time cleanup of 3.1 step 3. Blocks
+  A2's scratch slice.
+
 ## 19. The agent layer (step 11)
 
 W38 (spec §7): a layer of mods runs on the host. The kernel `mods:agent` and
@@ -2222,7 +2288,8 @@ grants, app 19 the accounts and consents, dev 18 the fakes. Rules are ported
 from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
 TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
 2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
-not decided and wait on the human: section 18, Q34 to Q36. Text that depends
+not decided and wait on the human: section 18, Q34 to Q36; S95's adversary
+step adds Q38 to Q40 (A2 and A3). Text that depends
 on one says so. Q37 names where the request rule of 19.6 parts from the
 source's, because the host commits each invoke on its own (Q3).
 
@@ -2389,7 +2456,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Consumer of a host stream | the mod whose request opened it |
 | Consumer of a mod stream | the caller of the call in which `open` ran: a mod, or a page connection when the caller is `page` and the call carried a connection id (8.2). Any other caller (an agent, the host, a page call without a live connection): `not-yours` |
 | Page consumer | one `/events` connection, named by the connection id that `watane.js` sends with `/call` (8.2, 8.4, 8.5) |
-| `push`, `close` | producer only; `cancel` consumer only; `hand-off` the consumer of a host stream, once, to the caller of the current call; items queued and not yet taken go with it, numbering goes on |
+| `push`, `close` | producer only; `cancel` consumer only; `hand-off` the consumer of a host stream, once, to the caller of the current call, which must be a mod (`mod:<local>`): a caller `host`, `page` or `agent:<handle-name>` is `not-yours`, and the stream stays with its consumer; items queued and not yet taken go with it, numbering goes on |
 | Wrong caller, unknown or ended id | `not-yours`, `unknown-stream` |
 | Id | 128 random bits, never reused |
 | Sequence | each item numbered from 1 per stream |
@@ -2561,7 +2628,8 @@ not keep a credential from a mod on their own. Three rules do:
 - Environment: only `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TMPDIR`,
   `SHELL`, a fixed `PATH`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
   `CLAUDE_CODE_OAUTH_TOKEN` when the participant set it. The host never reads
-  that token.
+  that token. Whether a sandboxed `Bash` child can read it, and
+  whether `WebFetch` reaches loopback, is section 18, Q39 (probe V28).
 - MCP: `{"mcpServers":{"watane":{"type":"http","url":…,"headers":{"Authorization":"Bearer <token>"}}}}`
   written to a pipe that the child inherits as fd 3 (19.5 for the token).
 
@@ -2635,7 +2703,8 @@ checks of the table above are made at the call.
   it. Not yet specified (agentic-harness TECHNICAL 4.6): which call creates a
   scratch workspace, how a picked folder becomes a workspace id, and how a mod
   holds one across a resume. The first slice of stage A2 adds this here, to the
-  launch table and to 15 before any other A2 slice starts.
+  launch table and to 15 before any other A2 slice starts. Whether one
+  session can read another's scratch or run folder is section 18, Q40.
 - Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
   folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
   `~/.aws`, `~/Library/Keychains`, the run and scratch trees; compared without
@@ -2874,7 +2943,8 @@ app, kept by the host with the grants.
 | Toolset | `agent-tools.open` with a toolset new for the origin client, or whose current functions are not all in the stored list (19.5) | (origin client, toolset), with the functions named |
 
 - **Storage.** In `installed.json` on the record of the origin client (3.3,
-  `consents`), shown and withdrawn like grants (4.4). The words, the consent
+  `consents`), shown and withdrawn like grants (4.4). Whether the key also names
+  the provider (`via`) or the grant kind is section 18, Q38. The words, the consent
   view and the choice belong to the app (app 19.2).
 - **Asking.** When a request needs a consent not held, the host calls
   `Confirm::consent` (12.1), the one method for the three consents, when it

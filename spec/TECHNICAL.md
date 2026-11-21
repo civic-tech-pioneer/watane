@@ -256,7 +256,12 @@ Not protected in the first version:
   duplicate key nested in an ask's `input` is read last-wins, so the ask
   shows the call that will run only while the host serializes the item
   itself rather than passing `claude`'s bytes (host 19.3); the plan usage of
-  the participant's own Claude or ChatGPT account.
+  the participant's own Claude or ChatGPT account. Open until the human
+  answers (host 18): a workspace or account consent kept without its provider
+  is reused by another provider or a mod in the middle with its own grant
+  (Q38); under the shell grant, a `Bash` child reading
+  `CLAUDE_CODE_OAUTH_TOKEN`, and `WebFetch` reaching loopback (Q39, probe
+  V28); one session reading another's scratch or run folder (Q40).
 
 ## 7. Decisions of this fresh start
 
