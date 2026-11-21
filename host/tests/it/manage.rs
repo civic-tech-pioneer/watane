@@ -361,6 +361,7 @@ fn ac4_s82_harness_fakes_and_records_open_page() {
                 function: "open-page".into(),
                 args: json!({"local":"uninstalled"})
             }],
+            requests: vec![],
         }
     );
 }
@@ -599,6 +600,7 @@ fn ac8_s47_harness_fakes_and_records() {
                 function: "disable".into(),
                 args: json!({"local":"x"}),
             }],
+            requests: vec![],
         }
     );
     let out = h

@@ -10,6 +10,18 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use watane_pkg::Mod;
+
+/// The imports of step 11 (19.1) that a mod may hold, besides `streams` and `timers`.
+pub(super) const AGENT_IMPORTS: [&str; 8] = [
+    "watane:host/streams@0.1.0",
+    "watane:host/timers@0.1.0",
+    "watane:host/claude-types@0.1.0",
+    "watane:host/claude-code@0.1.0",
+    "watane:host/claude-code-shell@0.1.0",
+    "watane:host/claude-session@0.1.0",
+    "watane:host/https-stream@0.1.0",
+    "watane:host/agent-tools@0.1.0",
+];
 impl WasiView for Ctx {
     fn ctx(&mut self) -> WasiCtxView<'_> {
         WasiCtxView {
@@ -54,7 +66,14 @@ pub(super) fn linker(
         .func_wrap("who", |ctx: wasmtime::StoreContextMut<'_, Ctx>, (): ()| {
             Ok((ctx.data().caller.clone(),))
         })?;
+    linker
+        .instance("watane:host/caller@0.1.0")?
+        .func_wrap(
+            "identity",
+            |ctx: wasmtime::StoreContextMut<'_, Ctx>, (): ()| Ok((ctx.data().identity.clone(),)),
+        )?;
     let ty = component.component_type();
+    link_agent(&mut linker, engine, component)?;
     if m.world().manage
         && let Some(import) = ty.get_import(engine, crate::manage::MANAGE)
     {
@@ -215,10 +234,70 @@ pub(super) fn linker(
     }
     Ok(linker)
 }
+/// `streams` and `timers` (19.2, 19.6) and the stubs of the interfaces that A2 to A4 build.
+fn link_agent(
+    linker: &mut Linker<Ctx>,
+    engine: &Engine,
+    component: &Component,
+) -> wasmtime::Result<()> {
+    let ty = component.component_type();
+    for name in AGENT_IMPORTS {
+        let Some(import) = ty.get_import(engine, name) else {
+            continue;
+        };
+        let ComponentItem::ComponentInstance(instance) = import.ty else {
+            return Err(HostError::Internal(format!("{name} is not an interface")).into());
+        };
+        let short = name
+            .trim_start_matches("watane:host/")
+            .trim_end_matches("@0.1.0")
+            .to_owned();
+        let mut interface = linker.instance(name)?;
+        for (function, item) in instance.exports(engine) {
+            if !matches!(item.ty, ComponentItem::ComponentFunc(_)) {
+                continue;
+            }
+            let (short, function_name) = (short.clone(), function.to_owned());
+            interface.func_new(function, move |ctx, ty, values, results| {
+                let invocation = ctx.data().invocation.clone();
+                let value = match short.as_str() {
+                    "streams" | "timers" => {
+                        let who = ctx.data().who.clone();
+                        crate::agent::call(&invocation, &who, &short, &function_name, values)?
+                    }
+                    other => {
+                        // Not built yet (A2 to A4): a clear error at the call.
+                        match other {
+                            "claude-code" => invocation.granted(&watane_pkg::Grant::ClaudeCode, other)?,
+                            "claude-code-shell" => {
+                                invocation.granted(&watane_pkg::Grant::ClaudeCodeShell, other)?;
+                            }
+                            _ => {}
+                        }
+                        return Err(CallError::internal(format!(
+                            "watane:host/{other}.{function_name} is not available in this host yet"
+                        ))
+                        .into());
+                    }
+                };
+                for (ty, result) in ty.results().zip(results) {
+                    *result = super::json::decode(&ty, &value, "$").map_err(|error| {
+                        CallError::new(
+                            crate::CallCode::Trap,
+                            format!("watane:host/{short}.{function_name}: {error}"),
+                        )
+                    })?;
+                }
+                Ok(())
+            })?;
+        }
+    }
+    Ok(())
+}
 pub(super) fn store(
     engine: &Engine,
     state: crate::state::Transaction,
-    caller: String,
+    (who, identity): (super::call::Who, String),
     limits: &Limits,
     deadline: Instant,
     invocation: super::call::Invocation,
@@ -235,7 +314,9 @@ pub(super) fn store(
         table: wasmtime::component::ResourceTable::new(),
         limiter: Limiter::new(limits.memory),
         state,
-        caller,
+        caller: who.who(),
+        who,
+        identity,
         stderr,
         deadline,
         outbox: Vec::new(),

@@ -115,6 +115,7 @@ async fn call_response(
         #[serde(rename = "fn")]
         function: String,
         args: Value,
+        connection: Option<String>,
     }
     let body: serde_json::Map<String, Value> = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
@@ -127,8 +128,15 @@ async fn call_response(
     if !matches!(call.args, Value::Object(_) | Value::Array(_) | Value::Null) {
         return api::error(400, "bad_request", "args must be an object, array or null");
     }
+    if call
+        .connection
+        .as_ref()
+        .is_some_and(|c| c.len() != 32 || !c.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return api::error(400, "bad_request", "connection must be 32 hex characters");
+    }
     match host
-        .call_async(Caller::Page, local, call.function, call.args)
+        .call_connection(Caller::Page, local, call.function, call.args, call.connection)
         .await
     {
         Ok(value) => Json(json!({"value":value})).into_response(),
@@ -175,8 +183,13 @@ pub(crate) fn events(
         {
             api::error(403, "forbidden", "Origin must match the mod origin")
         } else {
-            host.bus
-                .response(local, shutdown, std::time::Duration::from_secs(15))
+            let connection = host.hub.open_conn(&local);
+            host.bus.response_with_connection(
+                local,
+                shutdown,
+                std::time::Duration::from_secs(15),
+                connection,
+            )
         }
     };
     secure(response)

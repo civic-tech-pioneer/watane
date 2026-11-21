@@ -2,6 +2,7 @@
 (() => {
   const handlers = new Set();
   let source = null;
+  let connection = null;
   class WataneError extends Error {
     constructor(code, message, limit) {
       super(message);
@@ -11,6 +12,7 @@
     }
   }
   const dispatch = (message) => {
+    if (message.type === 'connection') { connection = message.id; return; }
     if (message.type === 'reload') { location.reload(); return; }
     for (const handler of handlers) {
       try { handler(message); } catch (error) { console.error(error); }
@@ -22,7 +24,7 @@
       const response = await fetch('/call', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ fn, args: args ?? null }),
+        body: JSON.stringify(connection ? { fn, args: args ?? null, connection } : { fn, args: args ?? null }),
       });
       const body = await response.json().catch(() => null);
       if (response.ok && body && 'value' in body) return body.value;

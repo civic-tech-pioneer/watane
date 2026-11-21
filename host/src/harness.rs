@@ -18,6 +18,15 @@ pub struct Outcome {
     pub events: Vec<EventRecord>,
     /// Step 10: the reductions and requests of `watane:host/manage` (6.10).
     pub manages: Vec<ManageRecord>,
+    /// Step 11: the requests of a succeeded call (19.1, 19.6).
+    pub requests: Vec<RequestRecord>,
+}
+
+/// A request of 19.6, e.g. `timers.after {"id":"t","delay-ms":5}`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequestRecord {
+    pub function: String,
+    pub args: Value,
 }
 
 #[derive(Debug, Clone, PartialEq)]

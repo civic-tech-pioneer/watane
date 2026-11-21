@@ -12,10 +12,16 @@ impl Stream {
     async fn open(client: &Client, origin: &str) -> Self {
         let response = client.get(format!("{origin}/events")).send().await.unwrap();
         assert_eq!(response.status(), 200);
-        Self {
+        let mut stream = Self {
             response,
             buffered: vec![],
-        }
+        };
+        // Step 11 (8.4): the first message of a connection carries its id.
+        let first = stream.message().await;
+        assert_eq!(first["type"], "connection");
+        let id = first["id"].as_str().unwrap();
+        assert!(id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()));
+        stream
     }
     async fn frame(&mut self) -> String {
         loop {
