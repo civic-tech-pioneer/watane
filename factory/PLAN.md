@@ -1124,7 +1124,12 @@ names the same interface in its sketch and fakes it until this one merges.
   crate. User-sim ACCEPTED after fixes it wrote; adversary BREACHED 5 then 4 (S61 to S68), each closed
   in the documents as a rule plus a FUNCTIONAL scenario the building slice turns red first. Six open
   security questions for the human in host 18 (Q38 to Q43), none blocking A1; Q37 open.
-- [ ] **S96 Streams, durable requests and timers in the host (stage A: H1, H5, H7, the V8 probe).**
+- [ ] **S96 Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
+  pkg 12; the watane half).** One story in two repositories, handed out together: this is the host
+  half, agentic-harness S32 the kernel-and-console half (its PLAN); Alice runs `watane-dev serve`
+  with the agent kernel installed and watches numbered items of a real kernel stream arrive in its
+  page, live and after a reload. The slice is done when that story passes with S32's kernel, not
+  only when host tests pass. Earlier sketch:
   After S95 (PR #7). Builds host stage A1 and pkg stage 12 as S95 wrote them (host 19), and what S95 writes for H1 (streams: table, FIFO per consumer, numbered batches,
   `taken | defer`, ends, byte budgets, page connections), H5 (effects after a durable commit) and H7
   (timers per mod, kept across restarts), and measures V8 (agentic-harness 16, "Probes named here")
