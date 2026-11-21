@@ -1,0 +1,28 @@
+# watane's settings for the collection's product owner, /po (watane-mods/factory/README.md, "Config").
+# A bridge: watane keeps its own foreman, agents, check.sh, CI and ruleset (factory/README.md here);
+# /po only reads this file to hand out and accept watane slices. Run one product owner at a time:
+# while /po drives watane, do not also run watane's own /product-owner (both write PLAN.md).
+# Scripts read the `key = "value"` lines with sed: keep each on one line.
+
+repo = "civic-tech-pioneer/watane"
+
+# watane's own task gate is factory/check.sh <task> <base>; its foreman runs it, not /po.
+gate = "factory/check.sh $TASK $BASE"
+
+# After each merge, on the Mac: what CI cannot run (the timing tests; factory/README.md "Timing tests").
+main_check = "factory/check-main.sh"
+
+# A new local worktree, run from inside it: APFS clones of main's compiled dependencies and of the
+# git-ignored crate allowlist (product-owner skill, section 3). $P is the main checkout.
+worktree_prep = "mkdir -p target/debug && cp -c -R \"$P\"/target/debug/build target/debug/build && rm -rf target/debug/build/watane-* target/debug/build/workspace-hack && cp -c -R \"$P\"/dev/allowlist/vendor dev/allowlist/vendor"
+
+cloud_env = "env_01KZVAm2cjSpN4wbfAFeQNPD"
+foreman_model = "claude-opus-5-5"
+
+# app/ needs the Mac (window tests); so do sandbox-exec outcomes, which a sketch names itself.
+local_only = "app/"
+
+spec = ["spec/VISION.md", "spec/FUNCTIONAL.md", "spec/TECHNICAL.md"]
+
+# watane's foreman holds the boundary file table (foreman skill, section 3).
+boundaries = "spec/TECHNICAL.md section 6"
