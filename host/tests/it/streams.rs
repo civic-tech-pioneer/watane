@@ -496,6 +496,18 @@ async fn ac5_s52_a_page_is_a_consumer_through_its_connection_id() {
         .await
         .unwrap();
     assert_eq!(response.status(), 400);
+    // A `connection` that is not 32 hex characters is refused (8.2).
+    for bad in [json!("0".repeat(31)), json!("g".repeat(32)), json!(1)] {
+        let response = w
+            .client
+            .post(format!("{}/call", w.origin))
+            .header("Origin", &w.origin)
+            .json(&json!({"fn":"api.who","args":null,"connection":bad}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400, "{bad}");
+    }
     // A closed connection ends its streams `gone`.
     let opened = w.call("api.open", json!(null), Some(&page.id)).await;
     let s2 = opened["value"]["ok"].as_str().unwrap().to_owned();
