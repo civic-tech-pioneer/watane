@@ -1140,17 +1140,15 @@ names the same interface in its sketch and fakes it until this one merges.
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
   against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
 
-- [~] **S98 The macOS CI job is green again (guard).** Cloud (routine `trig_01FuwkKwLpw5dh9JGrGdvM6P`), continuing from `slice/s98`: a local foreman started it and was stopped (the human needs the laptop; its 8 commits are on the branch). Verified on GitHub's macOS runner. `main`'s required `test
-  (macos-26)` fails on the runner since 2026-11-21 07:01 with plan-only commits (passes on rerun,
-  passes in `factory/check-main.sh` on the Mac): `gui_shell::ac2_background_screen_is_visible_without_focus`
-  (driver.rs:304) and `look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`
-  (driver.rs:240). Find why they fail on the hosted macos-26 runner and fix it at that level
-  (a wait on the real condition, not a longer sleep); never weaken a check or skip it on CI
-  without a reason that names what the runner cannot do. Outcome: 5 CI runs of `test (macos-26)`
-  in a row green on `slice/s98` (workflow_dispatch). Also: the Windows job panics in
-  `app/build.rs:59` (not required; name the cause in the report, fix only if small).
-  Touches: app/tests (support/driver.rs, gui_shell.rs, look), app/build.rs only if small.
-
+- [x] **S98 The macOS CI job is green again (guard).** Delivered 2026-11-21 through PR #8, merged 14:29 UTC
+  (local foreman, then cloud routine `trig_01FuwkKwLpw5dh9JGrGdvM6P`, branch `slice/s98`). 5 workflow_dispatch runs in a
+  row green on lint, ubuntu and macos-26 (runs 33, 35-38). Causes: a quit deadlock (main thread blocked on
+  `served.shutdown()` while tokio workers waited on the main thread for `tauri://` assets; shutdown now runs on the
+  runtime with `prevent_exit`, app TECHNICAL 3.7); polling helpers treat a failed eval as "not yet"; the look test
+  renders its data in the same JS turn as the check; `#approve` enabled and clicked in one turn; node's bad-copy
+  test corrupts exactly `dist/packages/<id>`, not a same-size temporary. Windows: the build.rs panic was the
+  missing `app/icons/icon.ico` (added); Windows now stops in `watane-log` (`std::os::unix` file modes, 13 errors,
+  Verification boundary: its own slice if ever wanted). No user-sim (CI state) or adversary (no boundary). 4.5 h.
 - [ ] **S97 The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
   The human decided (2026-11-21): restart detection is a new interface `host-info` with
   `generation()` (in place of `caller.boot()`, Q34); `answered` carries `outcome` (Q35); the host
@@ -1842,6 +1840,7 @@ The human may veto each one.
 
 ## Friction
 
+- (2026-11-21, S98) no `gh` or raw job logs in the cloud (logs read through a subagent with GitHub MCP); CI's concurrency group runs one at a time, so 5 green runs took ~2 h; no IPv6 in the container, so check.sh reports 8 app tests failed there.
 - (2026-11-21, S94) strace dies on a traced group's STOP/KILL (process counts need retries); RUSTC_BOOTSTRAP for --report-time rebuilt the workspace; no shellcheck in the cloud; a cloud slice's timing margins (2 s on 4 cores) failed on a loaded Mac, and a test expected `/private/var` where macOS shows `/var`: the fourth macOS-only miss from the cloud, now caught by CI's macOS job before merge.
 - (2026-11-20, S93) twelve tasks in one sweep (ten fixes from user-sim and adversary rounds): cut sweeps smaller; clippy missing in the cloud toolchain; an implementer's helper claimed no filesystem call but canonicalized (validator caught it); 18 real-`watane` dev tests cannot run in the cloud (no IPv6 loopback).
 - (2026-11-20, S90) parallel task worktrees pass alone and conflict when merged (app/NOTES.md, TECHNICAL edits): each runner should append to NOTES under its own heading; mutants on the whole suite stop at the baseline when a window test fails under load (fell back to `--lib`); Sol's sandbox never sees GUI regressions, only check.sh's slow j2 run does.
@@ -2286,3 +2285,4 @@ The human may veto each one.
 - S90: Alice's manager says what was done or denied, in her words, and hidden windows still refresh.
 - S93: a maker's agent gets a real cause and a runnable next at every dev failure we knew of.
 - S94: a maker's `cargo test -p watane-install` ends in about 2 minutes on the Mac, guards intact.
+- S98: a merge to main no longer needs a macOS rerun; the app quits cleanly under load.
