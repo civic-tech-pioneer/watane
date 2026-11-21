@@ -339,13 +339,10 @@ fn ac5_install_and_each_statement_show_fields_and_withhold() {
         "document.querySelector('input[type=checkbox]').checked=false; null",
     );
     // This tests fields and withholding; real focus and the gate belong to ac4.
+    // Enable and click in one JS turn: the page's focus gate cannot disable it in between.
     app.eval(
         "consent",
-        "document.querySelector('#approve').disabled = false; null",
-    );
-    app.eval(
-        "consent",
-        "document.querySelector('#approve').click(); null",
+        "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null",
     );
     assert_eq!(
         ask.wait(TIMEOUT),
