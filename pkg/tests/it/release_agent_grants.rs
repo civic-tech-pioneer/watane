@@ -56,5 +56,9 @@ fn ac3_limit_is_84_grants() {
     let r = Release::decode(&list(84)).unwrap();
     assert_eq!(r.grants.len(), 84);
     let e = Release::decode(&list(85)).unwrap_err();
-    assert!(e.to_string().contains("grants"), "{e}");
+    assert!(
+        e.to_string()
+            .contains("grants: expected an array of at most 84"),
+        "{e}"
+    );
 }

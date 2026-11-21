@@ -97,7 +97,7 @@ fn ac4_semantic_refusals() {
     assert!(
         matches!(refusal(&list(71,vec![local]),"reading-list"),ReleaseError::LocalProvider{slug} if slug.as_str()=="reading-list")
     );
-    refusal(&list(71, vec![vec![0x81, 0]; 82]), "grants");
+    refusal(&list(71, vec![vec![0x81, 0]; 85]), "at most 84");
     refusal(&list(71, vec![vec![0x81, 0], vec![0x81, 0]]), "grants");
     for interface in ["wasi:other/api@0.1.0", "mods:hello/api@0.1.0"] {
         let mut grant = vec![0x83, 2];
