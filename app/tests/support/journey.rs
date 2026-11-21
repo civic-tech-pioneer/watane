@@ -8,10 +8,14 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub fn until(app: &App, label: &str, js: &str) {
     let end = Instant::now() + TIMEOUT;
     loop {
-        if app.eval(label, js) == true {
+        if app.is_true(label, js) {
             return;
         }
-        assert!(Instant::now() < end, "DOM timed out: {label}: {js}");
+        assert!(
+            Instant::now() < end,
+            "DOM timed out: {label}: {js}; last result: {}",
+            app.eval_raw(label, js)
+        );
         std::thread::yield_now();
     }
 }
