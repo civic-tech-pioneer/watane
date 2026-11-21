@@ -2651,13 +2651,14 @@ Each has a proposed answer, which this specification uses.
 15. **No scripted OpenAI stream in a release preview** (step 11): the host's
     test routes (`test-net`) are never in a release (host 19.9), and a preview
     refuses accounts (W5), so a preview cannot reach `scripted-responses`.
-    Resolved with the foreman: `ScriptedResponses` serves tests, as the
-    program `scripted-responses` that host and app tests spawn (no library use
-    of `watane-dev` across subsystems, spec §2); a preview offers `fake-claude`
-    only. A scripted OpenAI stream for a preview waits for a host setting
-    outside `test-net`. spec F-MAKE-4 still names "a scripted OpenAI stream"
-    among what the maker tools offer a preview; until spec/ drops it or the
-    host gains that setting, dev meets only its fake `claude` part.
+    Decided (foreman, S95): `ScriptedResponses` serves tests as the program
+    `scripted-responses` that host and app tests spawn (no library use of
+    `watane-dev` across subsystems, spec §2). Open for stage D: spec
+    F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, which
+    needs a host preview setting outside `test-net` (host 19.9) and `serve`
+    starting `scripted-responses`; options: (a) that setting, recommended;
+    (b) drop the promise from F-MAKE-4 (the human's, since it narrows an
+    accepted requirement). Until stage D a preview offers `fake-claude` only.
 16. **How the host trusts the fake** (step 11): `https-stream` connects to
     `api.openai.com` and to the judge's origin over TLS, and a preview must
     run `fake-claude` in place of `claude`. Decided in host 19.9: the host's
