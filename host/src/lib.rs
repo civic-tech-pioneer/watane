@@ -4,6 +4,7 @@
 pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 
+mod agent;
 mod api;
 mod bus;
 mod catalog;
@@ -29,7 +30,9 @@ pub use catalog::{
     Source,
 };
 pub use error::{CallCode, CallError, HostError, Limit, VerifyCheck};
-pub use harness::{EventRecord, Fakes, Harness, ManageRecord, Outcome};
+pub use harness::{EventRecord, Fakes, Harness, ManageRecord, Outcome, RequestRecord};
+#[cfg(feature = "test-streams")]
+pub use agent::streams::{Delivery, DeliveryAnswer, StreamError, TestClock};
 pub use home::{LocalName, RunInfo, default_home};
 use serde::{Deserialize, Serialize};
 pub use server::Served;
@@ -85,6 +88,12 @@ pub struct Host {
     requests: Mutex<manage::Requests>,
     /// Harness only: the fake requests answered so far (6.10).
     manage_serial: std::sync::atomic::AtomicUsize,
+    /// Harness only: the fake streams opened so far (19.1).
+    fake_serial: std::sync::atomic::AtomicUsize,
+    /// Streams and page connections (19.2).
+    hub: Arc<agent::streams::Hub>,
+    /// Timers (19.6).
+    timers: Arc<agent::timers::Timers>,
 }
 
 impl Host {
@@ -100,6 +109,9 @@ impl Host {
             fakes: Mutex::new(None),
             requests: Mutex::new(manage::Requests::default()),
             manage_serial: std::sync::atomic::AtomicUsize::new(0),
+            fake_serial: std::sync::atomic::AtomicUsize::new(0),
+            hub: agent::streams::Hub::new(),
+            timers: agent::timers::Timers::new(),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
             state,
@@ -124,6 +136,8 @@ impl Host {
                     engine.increment_epoch();
                 }
             })?;
+        host.hub.start(&host)?;
+        host.timers.start(&host)?;
         Ok(host)
     }
 
@@ -156,13 +170,28 @@ impl Host {
         function: String,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, CallError> {
+        self.call_connection(caller, local, function, args, None)
+            .await
+    }
+    /// `call_async` of a page call that names its `/events` connection (8.2).
+    pub(crate) async fn call_connection(
+        self: &Arc<Self>,
+        caller: Caller,
+        local: LocalName,
+        function: String,
+        args: serde_json::Value,
+        connection: Option<String>,
+    ) -> Result<serde_json::Value, CallError> {
         let host = Arc::clone(self);
         let (tx, rx) = tokio::sync::oneshot::channel();
         std::thread::Builder::new()
             .name("watane-call".into())
             .stack_size(16 << 20)
             .spawn(move || {
-                let result = host.call(&caller, &local, &function, args);
+                let result = runtime::call::run_connection(
+                    &host, &caller, &local, &function, args, true, false, connection,
+                )
+                .map(|outcome| outcome.value);
                 drop(host);
                 let _ = tx.send(result);
             })
@@ -306,11 +335,19 @@ impl Host {
             .filter(|e| matches!(e.change, Change::Update { .. }))
             .map(|e| e.local.clone())
             .collect();
+        let updated: Vec<String> = updates
+            .iter()
+            .filter_map(|l| self.get(l).map(|m| m.identity))
+            .collect();
         let installed = self
             .catalog
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .commit(self.home(), plan, withhold, self.is_preview())?;
+        for identity in updated {
+            // An update of either side ends its streams (19.2, Ends).
+            self.hub.end_mod(&identity);
+        }
         for local in updates {
             self.bus.send(&local, bus::RELOAD);
         }
@@ -367,13 +404,19 @@ impl Host {
         })?;
         self.bus.send(local, bus::RELOAD);
         self.catalog_written();
+        // A disabled mod's timers waited (19.6).
+        self.timers.reload(self);
         Ok(())
     }
     pub fn disable(&self, local: &LocalName) -> Result<(), HostError> {
+        let identity = self.get(local).map(|m| m.identity);
         self.change_mod(local, |m| {
             m.enabled = false;
             Ok(())
         })?;
+        if let Some(identity) = identity {
+            self.hub.end_mod(&identity);
+        }
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
         Ok(())
@@ -446,6 +489,19 @@ impl Host {
         if delete_data {
             self.state.delete(&identity)?;
         }
+        self.hub.end_mod(&identity);
+        // Its timers go, and no other timer keeps it as origin client (4.4, 19.6).
+        let owners = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .mods
+            .iter()
+            .map(|m| (state::mod_id(&m.identity), m.identity.clone()))
+            .collect();
+        self.state
+            .timers_removed(&identity, &owners)
+            .map_err(|e| HostError::Internal(e.message))?;
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
         Ok(())
@@ -482,5 +538,120 @@ impl Caller {
             Self::Agent(handle) => format!("agent:{handle}"),
             Self::Mod(local) => format!("mod:{local}"),
         }
+    }
+}
+
+/// The consumer of a test stream (TECHNICAL 19.9).
+#[cfg(feature = "test-streams")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum TestConsumer {
+    Mod(LocalName),
+    Held { origin: String },
+}
+/// The writer's counters since open (TECHNICAL 19.9).
+#[cfg(feature = "test-streams")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TestStats {
+    pub commits: u64,
+    pub commit_time: std::time::Duration,
+    pub state_bytes_read: u64,
+    pub state_bytes_written: u64,
+}
+/// A host stream opened by `Host::test_stream` (TECHNICAL 19.9).
+#[cfg(feature = "test-streams")]
+#[derive(Debug)]
+pub struct TestStream {
+    id: String,
+    host: std::sync::Weak<Host>,
+}
+#[cfg(feature = "test-streams")]
+impl Host {
+    pub fn test_stream(&self, consumer: TestConsumer) -> Result<TestStream, StreamError> {
+        let (consumer, origin) = match consumer {
+            TestConsumer::Mod(local) => {
+                let catalog = self
+                    .catalog
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it");
+                let m = catalog
+                    .mods
+                    .iter()
+                    .find(|m| m.local == local && m.enabled && m.error.is_none())
+                    .ok_or(StreamError::NotYours)?;
+                if !catalog.components.get(&local).is_some_and(|c| {
+                    c.host_exports()
+                        .iter()
+                        .any(|e| e == agent::streams::STREAM_SINK)
+                }) {
+                    return Err(StreamError::NotYours);
+                }
+                let m = agent::ModRef {
+                    local,
+                    identity: m.identity.clone(),
+                };
+                let origin = m.identity.clone();
+                (agent::streams::Consumer::Mod(m), origin)
+            }
+            TestConsumer::Held { origin } => (
+                agent::streams::Consumer::Held {
+                    origin: origin.clone(),
+                },
+                origin,
+            ),
+        };
+        let id = self.hub.test_open(consumer, origin)?;
+        Ok(TestStream {
+            id,
+            host: self.weak.clone(),
+        })
+    }
+    pub fn set_test_clock(&self, clock: TestClock) {
+        self.hub.set_clock(&clock);
+    }
+    pub fn test_stats(&self) -> TestStats {
+        use std::sync::atomic::Ordering::Relaxed;
+        let s = &self.state.stats;
+        TestStats {
+            commits: s.commits.load(Relaxed),
+            commit_time: std::time::Duration::from_nanos(s.commit_nanos.load(Relaxed)),
+            state_bytes_read: s.bytes_read.load(Relaxed),
+            state_bytes_written: s.bytes_written.load(Relaxed),
+        }
+    }
+}
+#[cfg(feature = "test-streams")]
+impl TestStream {
+    fn hub(&self) -> Option<Arc<Host>> {
+        self.host.upgrade()
+    }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn push(&self, body: &[u8]) -> Result<(), StreamError> {
+        let host = self.hub().ok_or(StreamError::UnknownStream)?;
+        host.hub.test_push(&self.id, body)
+    }
+    pub fn paused(&self) -> bool {
+        self.hub().is_some_and(|h| h.hub.test_paused(&self.id))
+    }
+    pub fn close(&self, outcome: &str) {
+        let value = serde_json::from_str(outcome)
+            .unwrap_or_else(|_| serde_json::Value::String(outcome.to_owned()));
+        if let Some(host) = self.hub() {
+            host.hub.test_close(&self.id, value);
+        }
+    }
+    pub fn ended(&self) -> Option<serde_json::Value> {
+        self.hub().and_then(|h| h.hub.test_ended(&self.id))
+    }
+    pub fn take(&self) -> Vec<(u64, Vec<u8>)> {
+        self.hub()
+            .map(|h| h.hub.test_take(&self.id))
+            .unwrap_or_default()
+    }
+    pub fn deliveries(&self) -> Vec<Delivery> {
+        self.hub()
+            .map(|h| h.hub.test_deliveries(&self.id))
+            .unwrap_or_default()
     }
 }

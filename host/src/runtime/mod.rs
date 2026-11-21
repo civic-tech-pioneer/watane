@@ -2,7 +2,7 @@
 //! own import check (TECHNICAL 5.3), which runs even when pkg already checked.
 
 pub(crate) mod call;
-mod json;
+pub(crate) mod json;
 pub(crate) mod limits;
 mod linker;
 use crate::{CallCode, CallError, HostError};
@@ -20,6 +20,8 @@ pub(crate) struct Ctx {
     limiter: limits::Limiter,
     state: crate::state::Transaction,
     caller: String,
+    who: call::Who,
+    identity: String,
     stderr: wasmtime_wasi::p2::pipe::MemoryOutputPipe,
     deadline: Instant,
     outbox: Vec<crate::bus::Emission>,
@@ -33,10 +35,13 @@ struct Function {
     ty: ComponentFunc,
     docs: Option<String>,
     subscription: bool,
+    /// A host-only export (19.1): never a function of `/call` or a tool.
+    host_only: bool,
 }
 pub(crate) struct Compiled {
     pre: InstancePre<Ctx>,
     functions: BTreeMap<String, Function>,
+    host_exports: Vec<String>,
 }
 impl std::fmt::Debug for Compiled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -83,6 +88,11 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
             });
         let allowed = base
             || name == "watane:host/caller@0.1.0"
+            || (linker::AGENT_IMPORTS.contains(&&*name)
+                && (name != "watane:host/claude-code@0.1.0"
+                    || m.grants().contains(&watane_pkg::Grant::ClaudeCode))
+                && (name != "watane:host/claude-code-shell@0.1.0"
+                    || m.grants().contains(&watane_pkg::Grant::ClaudeCodeShell)))
             || (name == "watane:host/state@0.1.0" && m.world().storage)
             || (name == crate::manage::MANAGE && m.world().manage)
             || m.world()
@@ -100,6 +110,7 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
             .exports
             .iter()
             .chain(&m.world().subscriptions)
+            .chain(&m.world().host_exports)
             .any(|n| n.to_string() == name)
         {
             return Err(invalid(format!("undeclared component export {name}")));
@@ -163,6 +174,7 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
                     },
                     Function {
                         subscription: m.world().subscriptions.contains(interface),
+                        host_only: false,
                         interface: interface.to_string(),
                         name: name.into(),
                         ty,
@@ -175,24 +187,70 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
             }
         }
     }
+    for interface in &m.world().host_exports {
+        let Some(item) = ty.get_export(engine, &interface.to_string()) else {
+            return Err(invalid(format!("missing export {interface}")));
+        };
+        let ComponentItem::ComponentInstance(instance) = item.ty else {
+            return Err(invalid(format!("export {interface} is not an interface")));
+        };
+        for (name, item) in instance.exports(engine) {
+            if let ComponentItem::ComponentFunc(ty) = item.ty {
+                functions.insert(
+                    format!("{interface}.{name}"),
+                    Function {
+                        subscription: false,
+                        host_only: true,
+                        interface: interface.to_string(),
+                        name: name.into(),
+                        ty,
+                        docs: None,
+                    },
+                );
+            }
+        }
+    }
+    let host_exports = m
+        .world()
+        .host_exports
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     let pre = linker::linker(engine, &component, m)
         .and_then(|l| l.instantiate_pre(&component))
         .map_err(|e| invalid(format!("{e:#}")))?;
-    Ok(Some(Arc::new(Compiled { pre, functions })))
+    Ok(Some(Arc::new(Compiled {
+        pre,
+        functions,
+        host_exports,
+    })))
 }
 impl Compiled {
+    pub(crate) fn host_exports(&self) -> &[String] {
+        &self.host_exports
+    }
+    /// A function of a host-only export, by `<interface>.<function>` (19.1).
+    fn find_host(&self, name: &str) -> Result<&Function, CallError> {
+        self.functions
+            .get(name)
+            .filter(|f| f.host_only)
+            .ok_or_else(|| {
+                CallError::new(CallCode::NoFunction, format!("no host export {name}"))
+            })
+    }
     fn find(&self, name: &str, subscription: bool) -> Result<&Function, CallError> {
         if !subscription {
             return self
                 .functions
                 .get(name)
-                .filter(|f| !f.subscription)
+                .filter(|f| !f.subscription && !f.host_only)
                 .ok_or_else(|| {
                     CallError::new(CallCode::NoFunction, format!("no callable function {name}"))
                 });
         }
         let mut matches = self.functions.values().filter(|f| {
-            f.subscription == subscription
+            !f.host_only
+                && f.subscription == subscription
                 && (format!("{}.{}", f.interface, f.name) == name
                     || format!(
                         "{}.{}",
@@ -223,7 +281,7 @@ impl Compiled {
     pub(crate) fn functions(&self) -> Vec<crate::FunctionInfo> {
         self.functions
             .values()
-            .filter(|f| !f.subscription)
+            .filter(|f| !f.subscription && !f.host_only)
             .map(|f| crate::FunctionInfo {
                 interface: f.interface.parse().expect("pkg checked interface"),
                 name: f.name.clone(),

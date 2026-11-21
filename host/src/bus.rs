@@ -2,6 +2,7 @@
 //! turns lag into one `changed` message and ends streams on shutdown.
 
 use crate::LocalName;
+use crate::agent::streams::{ConnGuard, ConnPoll};
 use axum::response::sse::{Event, KeepAlive};
 use axum::response::{IntoResponse, Response, Sse};
 use serde_json::{Value, json};
@@ -45,16 +46,39 @@ impl PageBus {
     pub fn send(&self, local: &LocalName, message: impl Into<Arc<str>>) {
         let _ = self.publication().send((local.clone(), message.into()));
     }
+    #[cfg(test)]
     pub fn response(
         &self,
         local: LocalName,
         shutdown: watch::Receiver<bool>,
         interval: Duration,
     ) -> Response {
+        self.page_response(local, shutdown, interval, None)
+    }
+    /// A response that also carries a page connection: its id first, then its stream items (8.4).
+    pub fn response_with_connection(
+        &self,
+        local: LocalName,
+        shutdown: watch::Receiver<bool>,
+        interval: Duration,
+        connection: ConnGuard,
+    ) -> Response {
+        self.page_response(local, shutdown, interval, Some(connection))
+    }
+    fn page_response(
+        &self,
+        local: LocalName,
+        shutdown: watch::Receiver<bool>,
+        interval: Duration,
+        connection: Option<ConnGuard>,
+    ) -> Response {
         let stream = PageStream {
             receiver: BroadcastStream::new(self.publication().subscribe()),
             shutdown: WatchStream::new(shutdown),
             local,
+            connection,
+            announced: false,
+            turn: false,
         };
         Sse::new(stream)
             .keep_alive(KeepAlive::new().interval(interval).text("ping"))
@@ -72,6 +96,43 @@ struct PageStream {
     receiver: BroadcastStream<Message>,
     shutdown: WatchStream<bool>,
     local: LocalName,
+    /// Step 11: the connection of this response and its lossless queue (9.3).
+    connection: Option<ConnGuard>,
+    announced: bool,
+    turn: bool,
+}
+enum Got {
+    Message(Event),
+    End,
+    Nothing,
+}
+impl PageStream {
+    fn bus(&mut self, cx: &mut Context<'_>) -> Got {
+        loop {
+            match Pin::new(&mut self.receiver).poll_next(cx) {
+                Poll::Ready(Some(Ok((local, message)))) if local == self.local => {
+                    if message.is_empty() {
+                        return Got::End;
+                    }
+                    return Got::Message(Event::default().data(message.as_ref()));
+                }
+                Poll::Ready(Some(Ok(_))) => continue,
+                Poll::Ready(Some(Err(_))) => return Got::Message(Event::default().data(CHANGED)),
+                Poll::Ready(None) => return Got::End,
+                Poll::Pending => return Got::Nothing,
+            }
+        }
+    }
+    fn queue(&mut self, cx: &mut Context<'_>) -> Got {
+        let Some(connection) = &self.connection else {
+            return Got::Nothing;
+        };
+        match connection.poll(cx.waker()) {
+            ConnPoll::Message(message) => Got::Message(Event::default().data(message)),
+            ConnPoll::Pending => Got::Nothing,
+            ConnPoll::Closed => Got::End,
+        }
+    }
 }
 impl Stream for PageStream {
     type Item = Result<Event, Infallible>;
@@ -83,22 +144,25 @@ impl Stream for PageStream {
                 Poll::Pending => break,
             }
         }
-        loop {
-            match Pin::new(&mut self.receiver).poll_next(cx) {
-                Poll::Ready(Some(Ok((local, message)))) if local == self.local => {
-                    if message.is_empty() {
-                        return Poll::Ready(None);
-                    }
-                    return Poll::Ready(Some(Ok(Event::default().data(message.as_ref()))));
-                }
-                Poll::Ready(Some(Ok(_))) => continue,
-                Poll::Ready(Some(Err(_))) => {
-                    return Poll::Ready(Some(Ok(Event::default().data(CHANGED))));
-                }
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Pending => return Poll::Pending,
+        if !self.announced
+            && let Some(connection) = &self.connection
+        {
+            let message = format!(r#"{{"type":"connection","id":"{}"}}"#, connection.id());
+            self.announced = true;
+            return Poll::Ready(Some(Ok(Event::default().data(message))));
+        }
+        // Alternate, so that neither the bus nor the queue starves the other.
+        self.turn = !self.turn;
+        let order = if self.turn { [true, false] } else { [false, true] };
+        for bus in order {
+            let got = if bus { self.bus(cx) } else { self.queue(cx) };
+            match got {
+                Got::Message(event) => return Poll::Ready(Some(Ok(event))),
+                Got::End => return Poll::Ready(None),
+                Got::Nothing => {}
             }
         }
+        Poll::Pending
     }
 }
 

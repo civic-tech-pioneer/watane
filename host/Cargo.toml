@@ -32,8 +32,14 @@ blake3 = "1.8"
 wit-parser = "=0.254.2"
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
+[features]
+# Step 11 (TECHNICAL 19.9): a source of host streams, a held consumer, a clock and the writer's
+# numbers for host's own A1 tests. Never in a release build.
+test-streams = []
+
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+watane-host = { path = ".", features = ["test-streams"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 tempfile = "3"
 
 [lints]
