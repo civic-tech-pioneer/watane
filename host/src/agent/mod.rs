@@ -36,6 +36,10 @@ pub(crate) enum Effect {
         origin: String,
         /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
         via: Option<watane_pkg::InterfaceName>,
+        /// The packages of the producer and of a mod consumer that ran at the call: at apply a
+        /// side that was updated or reinstalled since ends the stream `gone` (19.2, Ends).
+        producer_pkg: Option<watane_pkg::PackageId>,
+        consumer_pkg: Option<watane_pkg::PackageId>,
     },
     Push {
         id: String,
@@ -100,7 +104,11 @@ pub(crate) fn records(log: &[Effect]) -> Vec<RequestRecord> {
 }
 
 /// The timer writes of a top-level commit, in call order (19.6, 7).
-pub(crate) fn timer_ops(log: &[Effect]) -> Vec<crate::state::TimerOp> {
+/// An origin client that is no longer installed and enabled becomes the timer's own mod (19, Terms).
+pub(crate) fn timer_ops(
+    log: &[Effect],
+    installed: impl Fn(&str) -> bool,
+) -> Vec<crate::state::TimerOp> {
     log.iter()
         .filter_map(|e| match e {
             Effect::TimerAfter {
@@ -112,7 +120,11 @@ pub(crate) fn timer_ops(log: &[Effect]) -> Vec<crate::state::TimerOp> {
             } => Some(crate::state::TimerOp::After {
                 key: crate::state::timer_key(&owner.identity, id),
                 due: *due,
-                origin: origin.clone(),
+                origin: if installed(origin) {
+                    origin.clone()
+                } else {
+                    owner.identity.clone()
+                },
             }),
             Effect::TimerCancel { owner, id } => Some(crate::state::TimerOp::Cancel {
                 key: crate::state::timer_key(&owner.identity, id),
@@ -144,6 +156,15 @@ impl Invocation {
             local: self.local.clone(),
             identity: self.identity.clone(),
         }
+    }
+    /// The package of a mod as this chain's snapshot has it: the version that runs.
+    fn package_of(&self, local: &LocalName) -> Option<watane_pkg::PackageId> {
+        self.chain
+            .snapshot
+            .mods
+            .iter()
+            .find(|m| &m.local == local)
+            .map(|m| m.package.clone())
     }
     fn mod_ref(&self, local: &LocalName) -> Option<ModRef> {
         self.chain
@@ -391,12 +412,18 @@ pub(crate) fn call(
                 }
             }
             let id = streams::random_id();
+            let consumer_ref = consumer.clone();
             log.push(Effect::Open {
                 id: id.clone(),
                 consumer,
                 producer: me,
                 origin: inv.origin.clone(),
                 via: inv.via.clone(),
+                producer_pkg: inv.package_of(&inv.local),
+                consumer_pkg: match &consumer_ref {
+                    Consumer::Mod(m) => inv.package_of(&m.local),
+                    _ => None,
+                },
             });
             Ok(json!({"ok": id}))
         }
@@ -571,6 +598,8 @@ fn fake(
                 producer: me,
                 origin: inv.origin.clone(),
                 via: None,
+                producer_pkg: None,
+                consumer_pkg: None,
             });
             result = json!({"ok": id});
         }
@@ -604,20 +633,30 @@ fn fake(
         .unwrap_or(result))
 }
 
+/// Whether the consumer still holds the enabled mod, the `Call` link `via` to this provider and
+/// the grant of it (19.2, Ends; Q46).
+fn via_holds(
+    catalog: &crate::catalog::Catalog,
+    consumer: &ModRef,
+    producer: &LocalName,
+    via: &watane_pkg::InterfaceName,
+) -> bool {
+    catalog.mods.iter().any(|m| {
+        m.local == consumer.local
+            && m.identity == consumer.identity
+            && m.enabled
+            && m.links.iter().any(|l| {
+                matches!(l.kind, crate::LinkKind::Call)
+                    && l.interface == *via
+                    && l.provider.as_ref() == Some(producer)
+            }) && m.grants.iter().any(|g| {
+            g.granted
+                && matches!(&g.grant, watane_pkg::Grant::Call { interface, .. } if interface == via)
+        })
+    })
+}
+
 impl Host {
-    fn mod_installed(&self, identity: &str, local: Option<&LocalName>) -> bool {
-        self.catalog
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .mods
-            .iter()
-            .any(|m| {
-                m.identity == identity
-                    && m.enabled
-                    && m.error.is_none()
-                    && local.is_none_or(|l| &m.local == l)
-            })
-    }
     /// Ends the mod streams whose consumer lost the `Call` grant, the link or the provider that
     /// `open` ran through (19.2, Ends). Called after every catalog write.
     pub(crate) fn end_lost_streams(&self) {
@@ -632,20 +671,7 @@ impl Host {
                 .expect("lock poisoned: another thread panicked while holding it");
             vias.into_iter()
                 .filter(|(_, consumer, producer, via)| {
-                    !catalog.mods.iter().any(|m| {
-                        m.local == consumer.local
-                            && m.identity == consumer.identity
-                            && m.enabled
-                            && m.links.iter().any(|l| {
-                                matches!(l.kind, crate::LinkKind::Call)
-                                    && l.interface == *via
-                                    && l.provider.as_ref() == Some(producer)
-                            })
-                            && m.grants.iter().any(|g| {
-                                g.granted
-                                    && matches!(&g.grant, watane_pkg::Grant::Call { interface, .. } if interface == via)
-                            })
-                    })
+                    !via_holds(&catalog, consumer, producer, via)
                 })
                 .map(|(id, ..)| id)
                 .collect()
@@ -662,11 +688,39 @@ impl Host {
                 Effect::TimerCancel { .. } => {}
                 Effect::Open {
                     ref producer,
+                    ref consumer,
                     ref origin,
+                    ref via,
+                    ref producer_pkg,
+                    ref consumer_pkg,
                     ..
                 } => {
-                    let valid = self.mod_installed(&producer.identity, Some(&producer.local))
-                        && self.mod_installed(origin, None);
+                    // The checks of the call are made again where the effect lands, under the
+                    // catalog lock that a catalog change takes too (19.6, At apply).
+                    let catalog = self
+                        .catalog
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it");
+                    let live = |local: Option<&LocalName>, identity: &str, pkg: &Option<_>| {
+                        catalog.mods.iter().any(|m| {
+                            m.identity == identity
+                                && m.enabled
+                                && m.error.is_none()
+                                && local.is_none_or(|l| &m.local == l)
+                                && pkg.as_ref().is_none_or(|p| p == &m.package)
+                        })
+                    };
+                    let valid = live(Some(&producer.local), &producer.identity, producer_pkg)
+                        && live(None, origin, &None)
+                        && match consumer {
+                            Consumer::Mod(c) => {
+                                live(Some(&c.local), &c.identity, consumer_pkg)
+                                    && via.as_ref().is_none_or(|via| {
+                                        via_holds(&catalog, c, &producer.local, via)
+                                    })
+                            }
+                            _ => true,
+                        };
                     self.hub.apply(self, effect, valid);
                 }
                 other => self.hub.apply(self, other, true),

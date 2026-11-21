@@ -3037,7 +3037,14 @@ and `hand-off` are not requests, but they follow the same chain rule below
   grant or consent the request needs (the rule of 6.10), and that the origin
   client is installed and enabled with the identity that the request
   recorded at its call (19, Terms); a request that fails this ends its
-  stream `gone`.
+  stream `gone`. Every check that a catalog change can falsify is made again
+  where the effect lands, under the catalog lock that the change takes: an
+  `Open` also records the packages of its producer and of a mod consumer at
+  its call, and at apply a side updated, removed or reinstalled since, or a
+  consumer that lost the `Call` grant, link or provider of `via` (Q46),
+  ends the stream `gone` at once, both sides told. A side that was disabled
+  and enabled again while the `open` was in flight did not lose the stream:
+  it did not exist at the disable.
 - **A call commits whole.** The host-state writes of one invoke commit
   together or not at all (7); a deferred or failed call leaves no write
   behind. So a failed `append` in a mod leaves no chunk written.
@@ -3063,7 +3070,14 @@ after the mod's call lock is taken: a firing for an id cancelled or replaced
 meanwhile (other due time) is ignored, and the origin client comes from that
 row. Firings run on one worker per mod with due timers, in due order, and a
 firing in progress is never armed again (`enable` reloads the rows; one firing
-per row due). Timers survive a restart; a kill after the
+per row due), and a row that a reload skipped for that reason is armed when the
+firing ends. A firing that finds its mod disabled or updated while it waited
+keeps its row, and `enable`, an update or the next load arms it; it is no
+failure. The origin client of the rows a chain writes is checked again at the
+depth-0 commit, under the catalog lock, held to the end of the write
+transaction of the rows; `remove` changes the catalog under that lock, so
+either the commit sees the origin gone and writes the timer's own mod, or
+`remove`'s rewrite runs after the commit and rewrites the row. Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
 armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export

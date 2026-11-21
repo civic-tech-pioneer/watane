@@ -431,6 +431,7 @@ impl Hub {
                 producer,
                 origin,
                 via,
+                ..
             } => {
                 inner.create(
                     id.clone(),
