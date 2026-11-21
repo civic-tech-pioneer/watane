@@ -172,11 +172,11 @@ impl Stream for PageStream {
             let got = if bus { self.bus(cx) } else { self.queue(cx) };
             match got {
                 Got::Message(event) => return Poll::Ready(Some(Ok(event))),
-                Got::End if bus && self.connection.is_some() => {
+                Got::End => {
+                    // A bus close writes out the queue's ends first; a closed queue ends at once.
                     self.closing = true;
                     return self.poll_next(cx);
                 }
-                Got::End => return Poll::Ready(None),
                 Got::Nothing => {}
             }
         }
@@ -219,6 +219,34 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(20), body.next())
             .await
             .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn ac5_a_bus_close_writes_the_queued_stream_ends_before_the_stream_ends() {
+        use crate::agent::streams::{Consumer, Hub};
+        let bus = PageBus::new(4);
+        let local = LocalName::parse("relay").unwrap();
+        let hub = Hub::new();
+        let conn = hub.open_conn(&local);
+        let consumer = Consumer::Page {
+            conn: conn.id().to_owned(),
+            local: local.clone(),
+        };
+        let sid = hub.test_open(consumer, "k".to_owned()).unwrap();
+        let (_stop, rx) = watch::channel(false);
+        let mut body = bus
+            .response_with_connection(local.clone(), rx, Duration::from_secs(15), conn)
+            .into_body()
+            .into_data_stream();
+        body.next().await.unwrap().unwrap();
+        // Disable: the streams end `gone`, then the bus says close; the bus is polled first.
+        hub.end_mod("k");
+        bus.send(&local, CLOSE);
+        let end = format!(
+            "data: {{\"type\":\"stream-end\",\"stream\":\"{sid}\",\"outcome\":\"gone\"}}\n\n"
+        );
+        assert_eq!(body.next().await.unwrap().unwrap().as_ref(), end.as_bytes());
+        assert!(body.next().await.is_none());
     }
 
     #[tokio::test]
