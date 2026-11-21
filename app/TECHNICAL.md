@@ -2111,7 +2111,7 @@ Step 11, from **host** (`../host/TECHNICAL.md` 12.1, 19.4, 19.7), all there:
 | `Account { OpenAi, Judge { provider } }` (`provider`: the identity, `<publisher>/<slug>`) and `Host::account_changed(&self, &Account)`, called for a sign-out, a judge key removed or replaced, and an uninstall; the host ends the live streams that used the account, outcome `gone` (host 19.4) | 19.1 Sign out, 19.4 Removing, Uninstalling |
 | `Confirm::consent(&self, ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>>`, one method for the three consents, default `Refused`; the host may drop the future (host 12.1, 19.7) | 19.2 |
 | `ConsentRequest { origin, via, consent, profile: Option<String>, functions }` and `ConsentAnswer { Granted, Refused }` (host 19.7) | 19.2 |
-| `Consent { Workspace { folder }, Account { account }, Toolset { toolset } }` with its `what` text `workspace:<folder>`, `account:openai`, `toolset:<name>` (Display and `parse`), which is `ConsentLine.key`; `InstalledMod.consents` | 19.2 |
+| `Consent { Workspace { folder }, Account { account }, Toolset { toolset, functions } }` with its `what` text `workspace:<folder>`, `account:openai`, `toolset:<name>` (Display and `parse`), which is `ConsentLine.key`; `InstalledMod.consents` | 19.2 |
 | `Host::withdraw_consent(&self, &LocalName, &Consent) -> Result<(), HostError>` | 19.2 Shown and withdrawn |
 | `watane_host::judge_origin(text: &str) -> Result<String, HostError>` (host 19.4) | 19.4 Origin parse |
 | The re-export of `watane_pkg::Grant` with `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1); the consents kept with the grants, listed and withdrawn like grants (host 19.7) | 19.2 |
@@ -2544,7 +2544,7 @@ page's mod, or the mod of the handle), named as an asker is (17.4), never from
 a mod's arguments. The app fills it from host's `ConsentRequest` (host 19.7):
 `origin` is `<origin>`; `via` is `<provider>`; `Consent::Workspace { folder }`
 gives `<folder>`; `profile` gives `<profile>`; `functions` gives `<functions>`;
-`Consent::Account { account }` is `openai`; `Consent::Toolset { toolset }`
+`Consent::Account { account }` is `openai`; `Consent::Toolset { toolset, .. }`
 is the toolset `name`. The words, `words::agent_consent`, exactly:
 
 | `what` | Title | Question |

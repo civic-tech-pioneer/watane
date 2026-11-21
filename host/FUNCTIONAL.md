@@ -121,6 +121,9 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-70** The host shall give an agent's handle only the tools of its toolsets, with the annotations `@parallel` and `@idempotent` of the tool mod, return one stream for a live job of the same handle and key, and refuse the management functions in a toolset unless the participant named them. Traces: F-AGENT-1, F-AGENT-4.
 - **HOST-F-71** In a preview, the host shall never run the participant's `claude` and shall refuse both accounts: a Claude Code start shall run only the fake program the preview was given, else end `no-binary`. Traces: W5, AGT-F-31.
 - **HOST-F-72** When the app reports that an account changed (a sign-out, a judge key removed), the host shall end every live stream that used that account `gone`. Traces: F-AGENT-9.
+- **HOST-F-73** The host shall run an event delivery and a collect answer with the subscriber as origin client, never the emitter or the collector, and shall check at apply and at each timer firing that the origin client is still installed and enabled with the identity it carried. Traces: F-RUN-6, F-AGENT-7.
+- **HOST-F-74** The host shall keep the participant's credentials (the watane home's account and data files, Claude's and other tools' login files) out of reach of `claude`'s file tools and sandbox, and shall refuse an `allow` answer to a file tool whose path is outside the launch's workspaces. Traces: F-AGENT-5, F-AGENT-7.
+- **HOST-F-75** A toolset consent shall cover only the functions its words named; a function the toolset gains later shall reach no agent until the participant consents again. Traces: F-AGENT-1, F-AGENT-4, F-AGENT-7.
 
 ## 3. Acceptance scenarios
 
@@ -408,3 +411,43 @@ holds no grant beyond storage.
   `parallel: true` for a tool whose WIT doc comment holds `@parallel`; a
   handle of a toolset that names a `manage` function lists it only when the
   consent named it.
+- **S61 Subscriber is its own origin** (HOST-F-73). Given `notes` holding a
+  workspace consent for folder `F` and the account consent `openai`, and a
+  mod `z` with `claude-code` granted, `Http` `api.openai.com` granted, and a
+  granted subscription to an event of `notes` whose export calls
+  `claude-code.start` with workspace `F` and `https-stream.start` with
+  `account: "openai"`. When `notes` emits the event, then the fake app's
+  `ConsentRequest`s name `origin` `z` (not `notes`), `fake-claude` is not
+  started before `Granted`, and with `Refused` both streams end
+  `consent-refused("workspace:F")` and `consent-refused("account:openai")`.
+  The same holds when `notes` collects from `z` (9.4).
+- **S62 Origin gone** (HOST-F-73). Given `z`, called by `notes`, that sets
+  `timers.after("t", 50)` and opens a `claude-code` start in `notes`'s
+  consented folder `F`. When the participant disables `notes`, then the
+  start's stream ends `gone` and `fake-claude` is not running; when `t`
+  fires, its start for `F` asks a consent with `origin` `z`. When `notes` is
+  removed and a local mod is installed under the local name `notes` and given
+  a consent for `F`, then `z`'s fired timer still asks with `origin` `z`.
+- **S63 Protected reads** (HOST-F-74). A launch with `allow`
+  `Read(//<home>/app/accounts/openai.json)`, `Read(~/.claude/**)` or
+  `Read(../x)` fails `bad-launch {field: "allow"}`; `Read(src/**)` passes.
+  The `--settings=` file that `fake-claude` records holds the deny rules
+  `Read(//<home>/app/**)` and `Read(//<HOME>/.claude/**)`. When
+  `fake-claude` sends a `can_use_tool` for `Read` with `file_path`
+  `<home>/app/accounts/openai.json`, or `Grep` with `path` `<HOME>/.ssh`,
+  then `answer` `allow(none)` fails `not-allowed-here` and the recorded stdin
+  holds no `control_response` for it; the same ask with `file_path`
+  `<workspace>/a.txt` is answered.
+- **S64 Lookalike bytes** (HOST-F-67, 69). `say` of `"\u{FEFF}/skill"`,
+  `"\u{200B}/skill"` and `"\u{00A0}/skill"` each fail `slash-command`, and
+  the recorded stdin holds no `user` line for them. An `https-stream.start`
+  with the header `host`, `authorization`, `PROXY-AUTHORIZATION` or `:authority`
+  fails `forbidden-header`, and the scripted server counts no request.
+- **S65 Toolset grows** (HOST-F-75). Given `notes` with a granted consent
+  for toolset `t` = `["tool:api"]` while `api` has `a`, and a handle of `t`.
+  When `tool` is updated so `api` also has `b`, then `describe` lists only
+  `tool_api_a`, `call(.., "tool_api_b", ..)` fails `unknown-tool`, and
+  `/mcp/agent` `tools/list` lists only `tool_api_a`; `installed.json` holds
+  `{"kind":"toolset","toolset":"t","functions":["tool_api_a"]}`. A new
+  `open(["t"])` asks with `functions` `["tool_api_a","tool_api_b"]`; after
+  `Granted` both are listed.
