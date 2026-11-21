@@ -3039,10 +3039,20 @@ and `hand-off` are not requests, but they follow the same chain rule below
   recorded at its call (19, Terms); a request that fails this ends its
   stream `gone`. Every check that a catalog change can falsify is made again
   where the effect lands, under the catalog lock that the change takes: an
-  `Open` also records the packages of its producer and of a mod consumer at
-  its call, and at apply a side updated, removed or reinstalled since, or a
-  consumer that lost the `Call` grant, link or provider of `via` (Q46),
-  ends the stream `gone` at once, both sides told.
+  `Open` and a `HandOff` record the install generation of the mods they name
+  at their call: a number in the running catalog only (not in
+  `installed.json`; a restart ends every stream anyway) that every install,
+  update and removal of a local name replaces by a number never used before.
+  At apply a side updated, removed or reinstalled since (another
+  generation), or not enabled, or a consumer that lost the `Call` grant, link
+  or provider of `via` (Q46), ends the stream `gone` at once, both sides told;
+  a `HandOff` whose target fails this ends its stream `gone`. The other
+  effects of 19.2 Commit need no check: `push`, `close`, `cancel` and
+  `resume` name a stream by its random id and act only if the hub still holds
+  that stream with the producer or consumer the call named, and every change
+  that falsifies their call (disable, update, removal, a lost grant, an
+  `Open` or `HandOff` that failed above) ends the stream in the hub first, so
+  they find nothing.
 - **A call commits whole.** The host-state writes of one invoke commit
   together or not at all (7); a deferred or failed call leaves no write
   behind. So a failed `append` in a mod leaves no chunk written.

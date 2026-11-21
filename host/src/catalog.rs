@@ -142,6 +142,11 @@ pub enum LinkKind {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Catalog {
     generation: u64,
+    /// The install generation of each local name, in memory only: every install, update and
+    /// removal gives the name a new number, never used before. An effect that records it at its
+    /// call and finds another at apply ran against an install that is gone (19.6, At apply).
+    installs: BTreeMap<LocalName, u64>,
+    install_counter: u64,
     pub components: BTreeMap<LocalName, std::sync::Arc<crate::runtime::Compiled>>,
     pub mods: Vec<InstalledMod>,
 }
@@ -222,6 +227,15 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
 }
 
 impl Catalog {
+    /// The install generation of a local name (19.6, At apply).
+    pub fn install_of(&self, local: &LocalName) -> Option<u64> {
+        self.installs.get(local).copied()
+    }
+    /// Gives a local name a new install generation: install, update or removal.
+    pub fn bump_install(&mut self, local: &LocalName) {
+        self.install_counter += 1;
+        self.installs.insert(local.clone(), self.install_counter);
+    }
     pub fn open(home: &Path, engine: &wasmtime::Engine) -> Result<Self, HostError> {
         let disk = match fs::read(home.join("installed.json")) {
             Ok(bytes) => serde_json::from_slice::<DiskCatalog>(&bytes)?,
@@ -346,6 +360,8 @@ impl Catalog {
         // Keep the committed provider-first order.
         Ok(Self {
             generation: disk.generation,
+            installs: BTreeMap::new(),
+            install_counter: 0,
             components,
             mods,
         })
@@ -733,6 +749,7 @@ impl Catalog {
         }
         for Prepared(_, installed, unchanged, component) in &prepared {
             if !unchanged {
+                self.bump_install(&installed.local);
                 self.components.remove(&installed.local);
                 if let Some(component) = component {
                     self.components
