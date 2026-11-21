@@ -1163,6 +1163,17 @@ names the same interface in its sketch and fakes it until this one merges.
 
   For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
   `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
+- [ ] **S99 Stage B, end to end: Alice has a first conversation with Claude on dev's fake `claude`
+  (host H2, `host-info.generation`, dev's fake `claude`, pkg; the watane half).** After S96 and S97.
+  One story in two repositories, handed out together: agentic-harness S35 is the kernel, provider
+  and console half (its PLAN). Alice runs `watane-dev serve` with the agent kernel and the unchecked
+  provider installed, starts a session in a scratch workspace (agentic-harness 4.6), types a
+  message and watches the fake `claude`'s answer stream into the console, live and after a reload.
+  Builds H2 (`claude-code.start`, `claude-session.say`, unchecked path, `Grant::ClaudeCode`,
+  `allowUnsandboxedCommands: false`), `host-info.generation` as S97 writes it, and dev's fake
+  `claude` (scripted stream-json, 16 of agentic-harness). Interface: the `watane:host@0.1.0` H2 and
+  `host-info` additions of agentic-harness TECHNICAL 2.1 as host 19 states them. Done when the story
+  passes with S35's kernel. Touches: host, dev, pkg. Boundary: W39 (adversary). Cloud.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
