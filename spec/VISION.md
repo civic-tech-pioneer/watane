@@ -110,7 +110,8 @@ with no server that a participant must trust:
   isolation and consent.
 - Direct transfer between devices, without a static host: between own
   machines in step 8, between friends and strangers after it.
-- The factory (step 6), which waits for the agent layer (step 11), and the statements of V7.
+- The factory (step 6), which waits for the agent layer (step 11), and the
+  statements of V7.
 - Private channels, and live sessions of several people.
 
 ## Non-goals
