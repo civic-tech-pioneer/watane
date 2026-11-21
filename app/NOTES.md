@@ -1757,3 +1757,33 @@ and stopped at the unchanged pairing test's `Failed to create netmon
 monitor` sandbox error. The GUI/slow test prohibition was respected; the
 unchanged Mac hidden-poll assertion and the updated live J2 journey remain
 pending external validation.
+
+### S98 — keep the event loop running during shutdown
+
+The exit callback now denies pending consents on `ExitRequested`, prevents
+exit while `Served::shutdown` runs on Tauri's async runtime, and requests
+exit again with the original code (0 for a last-window close) after shutdown
+returns. Repeated exit requests are prevented while shutdown is in flight.
+The main thread no longer blocks in `RunEvent::Exit`, so it can answer
+wry's `tauri://` asset responders even with only one Tokio worker. Neither
+`AppState`, the host's shutdown bounds, nor the driver protocol changed;
+no dependency was added.
+
+The two new `gui_shell` tests each repeat five start/fetch/exit cycles with
+`TOKIO_WORKER_THREADS=1` and 200 uncached asset requests. AC1/AC3 checks
+quit's exit code 0 within the existing driver timeout and that an existing
+`run.json` is removed; AC2 checks exit code 0 when the last window closes.
+No existing test changed. The tests were committed before the fix at
+`090f08f` and compile against the old callback (`cargo test --features
+driver --test it --no-run`). The task forbids window tests in this sandbox:
+no red or green GUI result is claimed. External validation must run the
+S98 tests on that pre-fix revision to establish red, then run them and the
+unchanged whole driver binary on the fixed revision.
+
+Sandbox validation: default `cargo test` passed 118 unit tests and failed
+the unchanged pairing test
+`consent::machines_pairing_tests::ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing`
+with `Failed to create netmon monitor`, before reaching integration tests.
+The separate default `cargo test --test it` passed all 53 tests.
+`cargo clippy --all-targets --features driver -- -D warnings`,
+`cargo fmt --check`, and `cargo +nightly fmt --check` pass.
