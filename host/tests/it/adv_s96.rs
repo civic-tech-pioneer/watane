@@ -546,3 +546,36 @@ fn adv_s96_timer_set_by_a_call_running_across_the_remove_carries_the_removed_ori
         "a timer committed after the removal carries the removed mod as origin client: {row}"
     );
 }
+
+/// 19.6: an updated mod keeps its timers. A firing that waits for the mod's lock while the mod is
+/// updated finds `no-mod` after the lock; it keeps its row, and the update arms it again: the
+/// timer fires once, in the new version.
+#[test]
+fn ac3_update_while_a_firing_waits_keeps_the_timer() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    page(&env, "advo", "api.after", json!({"id":"x","ms":250}));
+    // advo is busy past the due time; the firing waits for its lock.
+    let busy = in_flight(&env, "advo", "api.cancel-slowly", json!({"id":"none"}));
+    let before = env.host.get(&local("advo")).unwrap().package;
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    assert_ne!(env.host.get(&local("advo")).unwrap().package, before);
+    assert!(
+        !busy.0.is_finished(),
+        "the update must land during the wait"
+    );
+    busy.finish();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(
+        page(&env, "advo", "api.fired", Value::Null),
+        json!(["x"]),
+        "a timer whose firing waited across an update of its mod"
+    );
+}
