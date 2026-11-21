@@ -959,3 +959,49 @@ fn ac5_a_timer_of_a_mod_in_error_waits_until_the_error_clears() {
         page(&env, "advo", "api.fired", Value::Null) == json!(["t"])
     });
 }
+
+// ---- fourth pass (S96-fix3) ---------------------------------------------------------------
+
+/// 19, Terms: "`remove` rewrites the timers that carry the removed mod to their own mod, and a
+/// later install with the same identity finds no timer that carries it." 19.6 (Timers) orders
+/// the rewrite after `remove`'s catalog change. Between the two, `remove` drops the catalog lock
+/// and deletes `mods/<local>`: an install of the same local name lands in that gap (the name is
+/// free in the catalog), renames the half-deleted folder to `.old` and puts its own in place;
+/// `remove_dir_all` then fails on the new folder and `remove` returns before its rewrite (and
+/// before it ends the removed mod's streams). The new install inherits the removed one's timers.
+#[test]
+fn adv_s96_install_in_the_remove_gap_inherits_the_removed_origin() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    call_as(
+        &env.host,
+        Caller::Mod(local("relay")),
+        "advo",
+        "api.after",
+        json!({"id":"probe","ms":3_600_000}),
+    )
+    .unwrap();
+    // A big folder makes `remove_dir_all` slow enough for the install to land in the gap.
+    let junk = env.dir.path().join("mods/relay/junk");
+    for d in 0..40 {
+        let sub = junk.join(d.to_string());
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in 0..1000 {
+            std::fs::write(sub.join(f.to_string()), b"x").unwrap();
+        }
+    }
+    let host = std::sync::Arc::clone(&env.host);
+    let removing = std::thread::spawn(move || host.remove(&local("relay"), true));
+    wait("the catalog change", Duration::from_secs(10), || {
+        env.host.get(&local("relay")).is_none()
+    });
+    super::streams::install(&env.host, &["relay"]);
+    let removed = removing.join().unwrap();
+    let Env { dir, host } = env;
+    drop(host);
+    let rows = timer_rows(dir.path());
+    let row = &rows[&format!("{}/probe", id_of("local/advo"))];
+    assert_ne!(
+        row["origin"], "local/relay",
+        "remove returned {removed:?}; the new install of local/relay inherits a timer of the removed one: {row}"
+    );
+}
