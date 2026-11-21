@@ -50,6 +50,9 @@ impl exports::mods::advo::api::Guest for Guest {
             Err(e) => format!("{e:?}"),
         }
     }
+    fn close(s: String) {
+        streams::close(&s, &streams::Outcome::Closed);
+    }
     fn ended() -> Vec<String> {
         state::get("ended")
             .map(|v| String::from_utf8(v).unwrap().lines().map(str::to_owned).collect())
