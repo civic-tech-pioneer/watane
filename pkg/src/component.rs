@@ -96,6 +96,7 @@ impl Mod {
             .exports
             .iter()
             .chain(&self.world().subscriptions)
+            .chain(&self.world().host_exports)
             .map(ToString::to_string)
             .collect();
         for name in expected.difference(&actual) {

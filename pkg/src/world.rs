@@ -17,6 +17,7 @@ pub struct World {
     pub collects: Vec<InterfaceName>,
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
+    pub host_exports: Vec<InterfaceName>,
     pub storage: bool,
     pub manage: bool,
     pub http: bool,
@@ -358,6 +359,7 @@ pub(crate) fn read(
         collects: vec![],
         calls: vec![],
         subscriptions: vec![],
+        host_exports: vec![],
         storage: false,
         manage: false,
         http: false,
@@ -423,6 +425,17 @@ pub(crate) fn read(
                 }
                 continue;
             }
+            if !import
+                && matches!(
+                    text.as_str(),
+                    "watane:host/stream-sink@0.1.0"
+                        | "watane:host/stream-producer@0.1.0"
+                        | "watane:host/timer-sink@0.1.0"
+                )
+            {
+                world.host_exports.push(interface);
+                continue;
+            }
             let v = interface.version();
             let accepted = import
                 && match ns {
@@ -435,7 +448,18 @@ pub(crate) fn read(
                             world.manage = true;
                             true
                         }
-                        "watane:host/caller@0.1.0" => true,
+                        "watane:host/https-stream@0.1.0" => {
+                            world.http = true;
+                            true
+                        }
+                        "watane:host/caller@0.1.0"
+                        | "watane:host/claude-code@0.1.0"
+                        | "watane:host/claude-code-shell@0.1.0"
+                        | "watane:host/streams@0.1.0"
+                        | "watane:host/claude-types@0.1.0"
+                        | "watane:host/claude-session@0.1.0"
+                        | "watane:host/agent-tools@0.1.0"
+                        | "watane:host/timers@0.1.0" => true,
                         _ => false,
                     },
                     "wasi" if v.major == 0 && v.minor == 2 => match pkg {
@@ -468,6 +492,7 @@ pub(crate) fn read(
         &mut world.collects,
         &mut world.calls,
         &mut world.subscriptions,
+        &mut world.host_exports,
     ] {
         list.sort();
         list.dedup();

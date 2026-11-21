@@ -95,6 +95,8 @@ pub(crate) fn grant_json(grant: &Grant) -> Value {
     match grant {
         Grant::Storage => json!("storage"),
         Grant::Manage => json!("manage"),
+        Grant::ClaudeCode => json!("claude-code"),
+        Grant::ClaudeCodeShell => json!("claude-code-shell"),
         Grant::Http { host } => json!({"http": host.as_str()}),
         Grant::Call {
             interface,
@@ -126,6 +128,8 @@ fn grant_from(value: &Value) -> Result<Grant, String> {
     match value {
         Value::String(s) if s == "storage" => Ok(Grant::Storage),
         Value::String(s) if s == "manage" => Ok(Grant::Manage),
+        Value::String(s) if s == "claude-code" => Ok(Grant::ClaudeCode),
+        Value::String(s) if s == "claude-code-shell" => Ok(Grant::ClaudeCodeShell),
         Value::Object(map) if map.len() == 1 => {
             let (case, payload) = map
                 .iter()

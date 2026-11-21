@@ -437,7 +437,9 @@ impl Mod {
                     format!("{file} holds this mod's own package mods:{}", c.slug),
                 );
             }
-            logic = !c.world.exports.is_empty() || !c.world.subscriptions.is_empty();
+            logic = !c.world.exports.is_empty()
+                || !c.world.subscriptions.is_empty()
+                || !c.world.host_exports.is_empty();
             if logic && !source && !built && !wasm_link {
                 add(
                     &mut violations,
@@ -469,7 +471,7 @@ impl Mod {
                     &mut violations,
                     Rule::Http,
                     "mod.toml",
-                    "import wasi:http/outgoing-handler and list http.hosts together",
+                    "import wasi:http/outgoing-handler or watane:host/https-stream and list http.hosts together",
                 );
             }
             if let Some(deps) = &deps {
@@ -658,6 +660,20 @@ impl Mod {
         }
         if w.manage {
             grants.push(Grant::Manage);
+        }
+        if self
+            .contract
+            .imports
+            .contains("watane:host/claude-code@0.1.0")
+        {
+            grants.push(Grant::ClaudeCode);
+        }
+        if self
+            .contract
+            .imports
+            .contains("watane:host/claude-code-shell@0.1.0")
+        {
+            grants.push(Grant::ClaudeCodeShell);
         }
         grants.sort();
         grants.dedup();
