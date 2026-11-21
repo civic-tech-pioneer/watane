@@ -1270,9 +1270,9 @@ mod tests {
     }
 
     /// 19.6 (At apply): a stream handed from A to X and back to A is A's again, but a `cancel`
-    /// that A's call recorded before the hand-offs is stale and does nothing.
+    /// (or `resume`) that A's call recorded before the hand-offs is stale and does nothing.
     #[test]
-    fn ac3_a_stale_cancel_does_nothing_after_a_hand_off_and_back() {
+    fn ac3_a_stale_cancel_or_resume_does_nothing_after_a_hand_off_and_back() {
         let dir = tempfile::tempdir().unwrap();
         let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
         let (a, x) = (modref("a"), modref("x"));
@@ -1308,6 +1308,18 @@ mod tests {
             host.hub.info(&id).is_some(),
             "a stale cancel ended the stream"
         );
+        // The same for `resume`: a stale one leaves the stream deferred.
+        let deferred = || host.hub.lock().streams[&id].deferred.is_some();
+        host.hub.lock().streams.get_mut(&id).unwrap().deferred = Some(Instant::now());
+        let resume = |handoffs| Effect::Resume {
+            id: id.clone(),
+            by: Consumer::Mod(a.clone()),
+            handoffs,
+        };
+        host.hub.apply(&host, resume(0), true);
+        assert!(deferred(), "a stale resume resumed the stream");
+        host.hub.apply(&host, resume(2), true);
+        assert!(!deferred(), "a current resume did nothing");
         host.hub.apply(&host, cancel(2), true);
         assert!(host.hub.info(&id).is_none(), "a current cancel did nothing");
     }
