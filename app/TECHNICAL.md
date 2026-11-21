@@ -1936,7 +1936,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/it/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/it/manage.rs`, `tests/it/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
 | K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the drag-drop handler's `dropping` scripts (5.3.2); the driver ops `menu_items` and `theme`; `tests/it/look.rs`, `tests/it/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, the installed note, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
-| L Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the seven commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::agent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
+| L Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the seven commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::consent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/it/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -2059,7 +2059,7 @@ still needs the participant in the consent view.
 | The answers to the confirmations of `host` (install, new grant) and `dist` (signature), in process | `host`, `dist` | section 9.2 |
 | The grant words | the consent view; `dev` may print the same words | section 4 |
 | The driver protocol | the journey tests J2 to J4 | section 10 |
-| `AccountSource` (`openai_token`, `judge`, `claude_binary`), in process (step 11) | `host` | 19.1, 19.3, 19.4 |
+| `AccountSource` (`openai_token`, `judge`, `claude_binary`), handed over by `Confirm::accounts`; `Confirm::consent` (the three agent consents), in process (step 11) | `host` | 19.1 to 19.4 |
 | The agent consents and the grants to start Claude Code, in words (step 11) | the consent view; `dev` may print the grant words | 4, 19.2 |
 
 ### Needs
@@ -2102,23 +2102,19 @@ From **host** (`../host/TECHNICAL.md` sections 2, 3, 8, 10 to 12):
   `watane_pkg::{Grant, Provider}`; a body limit that an `extra_api` route
   sets for itself (`/api/publish` takes 64 MiB, host's guard is 64 KiB).
 
-Step 11, from **host** (`../host/TECHNICAL.md` 19): the trait `AccountSource`
-(19.4) that the app implements and gives to `Host::open`, with
-`openai_token()`, `judge(provider: &str)` (key and origin) and
-`claude_binary()`, each failing `no-app` (the host's own, with no app) or
-`no-account`; the consents kept with the grants, listed and withdrawn like
-grants (19.7); the re-export of `watane_pkg::Grant` with `ClaudeCode` and
-`ClaudeCodeShell` (pkg 5.1).
+Step 11, from **host** (`../host/TECHNICAL.md` 12.1, 19.4, 19.7), all there:
 
-Step 11, **asked of host** and not in host 19 yet (for the host task to take
-up; until then the app's tests drive test doubles, 19.7):
-
-| Need | Why | App text that waits on it |
-|---|---|---|
-| An `AccountSource` error for a token that could not be renewed now (proposed `unavailable`), distinct from `no-account` | a network failure of a refresh must not read as "not signed in" | 19.1 Refresh |
-| A call by which the app tells the host that an account changed (`openai`, or `judge` with the provider), after which the host ends the live streams that used it | removing a judge key ends that provider's live judge streams (agentic-harness 5); signing out ends the streams that used the plan (APP-F-81) | 19.1 Sign out, 19.4 Removing, Uninstalling |
-| A `Confirm` method for the three agent consents (proposed `Confirm::agent`), a future the app answers and the host may drop | the consent view asks for the host; no call waits (agentic-harness 8) | 19.2 |
-| The host's judge-origin parse as a public function | `words::judge_origin` calls it rather than repeat the rule | 19.4 Origin parse |
+| Host gives | The app uses it in |
+|---|---|
+| `Confirm::accounts(&self) -> Option<Arc<dyn AccountSource>>` (default `None`), on the `Confirm` the app gives to `Host::open`; the trait `AccountSource` (`openai_token`, `judge(provider)` giving `JudgeAccount { key, origin }`, `claude_binary`) | 19.1, 19.3, 19.4 |
+| `AccountError { NoAccount, Unavailable(String) }`: `NoAccount` is no sign-in, no key, no program (the host's `no-account`); `Unavailable` is an entry that cannot be used now, such as a token whose refresh failed on the network (the stream ends `failed("account unavailable: <m>")`), never read as "not signed in" (host 19.4) | 19.1 Refresh |
+| `Account { OpenAi, Judge { provider } }` (`provider`: the identity, `<publisher>/<slug>`) and `Host::account_changed(&self, &Account)`, called for a sign-out, a judge key removed or replaced, and an uninstall; the host ends the live streams that used the account, outcome `gone` (host 19.4) | 19.1 Sign out, 19.4 Removing, Uninstalling |
+| `Confirm::consent(&self, ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>>`, one method for the three consents, default `Refused`; the host may drop the future (host 12.1, 19.7) | 19.2 |
+| `ConsentRequest { origin, via, consent, profile: Option<String>, functions }` and `ConsentAnswer { Granted, Refused }` (host 19.7) | 19.2 |
+| `Consent { Workspace { folder }, Account { account }, Toolset { toolset } }` with its `what` text `workspace:<folder>`, `account:openai`, `toolset:<name>` (Display and `parse`), which is `ConsentLine.key`; `InstalledMod.consents` | 19.2 |
+| `Host::withdraw_consent(&self, &LocalName, &Consent) -> Result<(), HostError>` | 19.2 Shown and withdrawn |
+| `watane_host::judge_origin(text: &str) -> Result<String, HostError>` (host 19.4) | 19.4 Origin parse |
+| The re-export of `watane_pkg::Grant` with `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1); the consents kept with the grants, listed and withdrawn like grants (host 19.7) | 19.2 |
 
 From **dist** (`../dist/TECHNICAL.md` sections 3, 9): `Dist::open(home,
 Arc<dyn Confirm>, Options)`, `identity`, `fingerprint`, `own`,
@@ -2518,34 +2514,38 @@ new file as above before it returns the token, and keeps the old refresh
 token when the answer holds none. So two calls never refresh twice and never
 use a refresh token twice. A refresh the issuer refuses (`invalid_grant`)
 deletes the file, and the account reads `Signed out: OpenAI no longer accepts
-this sign-in. Sign in again.`; the call returns `no-account`. A network error
+this sign-in. Sign in again.`; the call returns `AccountError::NoAccount`. A network error
 keeps the file and fails that call only, with the error `unavailable` (never
-`no-account`, which means no sign-in; section 15, asked of host).
+`no-account`, which means no sign-in): the call returns host's `AccountError::Unavailable(<cause>)`, and the host ends that stream `failed("account unavailable: <m>")` (host 19.4).
 
 **Sign out** (`chatgpt_sign_out`): the app deletes the file, then tells the host
-that the account `openai` changed (asked of host, section 15), and the host
-ends every live stream that used it. The refresh token is not revoked at OpenAI (no endpoint
+that the account changed with `Host::account_changed(&Account::OpenAi)` (host
+19.4), and the host ends every live stream that used it. The refresh token is not revoked at OpenAI (no endpoint
 is called). A sign-in over a signed-in account replaces the file after the
 check of step 5.
 
 **`AccountSource`.** `openai_token()` as above (`no-app` is the host's own
-answer when no `AccountSource` was given; `no-account` when there is no file
-or no sign-in). The app hands out a token only to the host in process. No
+answer when `Confirm::accounts` gives none; `AccountError::NoAccount`, which the host
+turns into `no-account`, when there is no file or no sign-in). The app hands out a token only to the host in process. No
 command returns it, no `Status` field holds it, and `status.chatgpt` is
 `{signedIn, plan, error}` (strings only, no token).
 
 ### 19.2 Consent words and where consents live
 
 The three consents of agentic-harness 8 are asked by the host and kept by the
-host, with the grants of the origin client (host 19.7, `installed.json`,
-host 3.3). The app owns their words and the consent view, nothing else: it
+host, with the grants of the origin client (host 19.7, `Consent`,
+`installed.json`, host 3.3). The app owns their words and the consent view, nothing else: it
 stores no consent.
 
 New `Request::Agent { what: AgentWhat, origin: Asker }` (6.2), where
 `AgentWhat` is `Workspace { folder, profile, provider }`, `Account` (always
 `openai`) or `Toolset { name, functions }`; `origin` is the origin client (the
 page's mod, or the mod of the handle), named as an asker is (17.4), never from
-a mod's arguments. The words, `words::agent_consent`, exactly:
+a mod's arguments. The app fills it from host's `ConsentRequest` (host 19.7):
+`origin` is `<origin>`; `via` is `<provider>`; `Consent::Workspace { folder }`
+gives `<folder>`; `profile` gives `<profile>`; `functions` gives `<functions>`;
+`Consent::Account { account }` is `openai`; `Consent::Toolset { toolset }`
+is the toolset `name`. The words, `words::agent_consent`, exactly:
 
 | `what` | Title | Question |
 |---|---|---|
@@ -2553,7 +2553,10 @@ a mod's arguments. The words, `words::agent_consent`, exactly:
 | `Account` | `Your ChatGPT plan` | `Let <origin> use your ChatGPT plan?` |
 | `Toolset` | `Tools for agents` | `Let <origin>'s agents call: <functions>?` |
 
-`<origin>` is `<name> (local)` for a local mod and `<name> by <party>` for a
+`<provider>` is the mod named by `via`, written as a provider is (section 4).
+`<profile>` is `ConsentRequest.profile`, the launch's `profile` (host 19.3);
+when it is absent (`None`) the words are `Let <origin> have agents work in
+<folder> (through <provider>)?`, with no profile and no comma. `<origin>` is `<name> (local)` for a local mod and `<name> by <party>` for a
 published one (section 4). `<folder>` is the folder as the host resolved it.
 `<functions>` is the toolset's calls by their MCP tool names (the names of
 `tools_list`, 7), separated by `, `, in the order of the toolset, at most 12
@@ -2564,28 +2567,29 @@ with no `withheld` and no choice, or `Deny` (`WrongAnswer` otherwise), as
 `Manage` does (17.4); it has no stop button, because the asker is not a
 manager.
 
-**No call waits.** The host asks through `Confirm::agent` (asked of host,
-section 15; the consents themselves are host 19.7) and the
+**No call waits.** The host asks through `Confirm::consent` (host 12.1,
+19.7; one method for the three consents) and the
 call that needed it has already returned (host 7: a request is applied after
 its call commits). The app therefore only answers the future the host holds:
-`HostConfirm::agent` posts the request to the broker and awaits the answer on
+`HostConfirm::consent` posts the request to the broker and awaits the answer on
 the app runtime, as `manage` does (17.3), and drops it when the host drops the
 future (the consent was withdrawn, or the stream ended). The consent view is
 the same one-at-a-time queue (APP-F-17); a request with no answer in 600 s,
-a closed view or a quit is `Deny` (APP-F-18). A `Deny` keeps nothing, so the
-same ask comes again next time (the requester sees `consent-refused {what}`).
+a closed view or a quit is `Deny` (APP-F-18). A `Deny` is `ConsentAnswer::Refused` and keeps nothing, an `Approve` is
+`ConsentAnswer::Granted`, so the same ask after a `Deny` comes again next time (the requester sees `consent-refused {what}`).
 While a request waits, the host has told its requester `consent-pending
 {what}` once (host 19.7); the app does not tell it.
 
 **Shown and withdrawn.** `ModView` gains `consents: [ConsentLine]`, where
 `ConsentLine { key, kind, text }`; `kind` is `workspace`, `account` or
 `toolset`, `text` is the question above for the mod itself (`Let <mod> ...`
-with the mod's own name as the host lists it), and `key` is the host's text
-for that consent (host 19.7). The details of 5.3.4 show them in a group
+with the mod's own name as the host lists it), and `key` is the `what` text of host's `Consent`
+(`workspace:<folder>`, `account:openai`, `toolset:<name>`, host 19.7). The details of 5.3.4 show them in a group
 `Agents` after the grants, each with the same switch as a grant, without the
 give-back: a withdrawn consent is not given back, because a consent exists only
 as an answer; the row disappears and the next ask goes to the consent view.
-`consent_withdraw({local, key})` calls the host's withdrawal (host 19.7), which
+`consent_withdraw({local, key})` parses `key` with `Consent::parse` and calls
+`Host::withdraw_consent(&LocalName, &Consent)` (host 19.7), which
 ends the streams and closes the handles that depend on it
 (agentic-harness 8). The consent view of 6 keeps no copy.
 
@@ -2631,7 +2635,7 @@ Settings gets a group `Claude Code` (5.3) with the path of the program, or
   `status.claude` is `{path, version}` or `null`; the line reads `Claude Code
   <version>` beside the path.
 - **What the host gets.** `AccountSource::claude_binary()` returns the stored
-  path, or `no-account` when none is stored (the host's `no-binary` outcome,
+  path, or `AccountError::NoAccount` when none is stored (the host's `no-binary` outcome,
   agentic-harness 12, follows). The app does not recheck the version at each
   call; the host's `initialize` answer decides at each run (agentic-harness
   4.4) and a mismatch is its `version {found, need}`. A stored path whose file
@@ -2663,12 +2667,13 @@ N10).
   parsed origin whose host is not in it shows `This provider cannot reach <host>;
   the key would never be used.` and keeps `Save key` disabled.
 - **Origin parse.** One parse, the one host 19.4 uses for the same check:
-  scheme `https`, no userinfo, no path (a path, query or fragment is refused),
-  host lower-cased without a trailing dot, the port with 443 as the default and
+  scheme `https`, no userinfo, no path other than a lone trailing `/` (any other path, a query or a
+  fragment is refused), host lower-cased without a trailing dot, the port with 443 as the default and
   left out of the text; the stored origin is that text (agentic-harness 5).
-  `words::judge_origin` is the one app function that applies it, for the
-  page's line and for `judge_set`; it calls the host's parse once host exports
-  it (asked of host, section 15). The host parses the stored origin again at
+  The app applies no rule of its own: for the
+  page's line and for `judge_set` it calls `watane_host::judge_origin(text)`
+  (host 19.4), and what it shows and stores is its result (`words::judge_origin`
+  only maps the error to `Not an https origin.`). The host parses the stored origin again at
   each binding check (host 19.4), so the app's parse decides only what is
   shown and stored, never where a key goes.
 - **Storing.** `judge_set({local, key, origin})` stores
@@ -2690,8 +2695,8 @@ N10).
   `Replace key` and `Remove key`; it never shows or returns the key: no command
   returns it, and `ModView.judge` holds only `kept` and `origin`.
 - **Removing.** `judge_remove({local})` deletes the file, then tells the host
-  that the account `judge` of that provider changed (asked of host, section
-  15); the host ends
+  that the account changed with `Host::account_changed(&Account::Judge {
+  provider })` (host 19.4); the host ends
   the provider's live judge streams. The deletion and the notice happen in that
   order, and the notice is sent also when no file existed.
 - **Uninstalling.** `mod_remove` of a mod that has a key file deletes it before
@@ -2701,9 +2706,8 @@ N10).
   `<home>/app/accounts/judge/` whose identity no installed mod has
   (startup step 6.3).
 - **`AccountSource::judge(provider)`** returns the stored `{key, origin}` for
-  that exact identity, or `no-account`; it never matches by prefix or
-  case-folding. A file whose `origin` field does not parse again by the rule
-  above, or a mode wider than 0600, is `no-account`.
+  that exact identity, or `AccountError::NoAccount`; it never matches by prefix or
+  case-folding. A file whose `origin` field does not parse again by `watane_host::judge_origin`, or a mode wider than 0600, is `AccountError::NoAccount`.
 
 ### 19.5 Commands
 
@@ -2744,7 +2748,7 @@ judge origin for the judge key (dev 18), for S65.
 | `accounts::tests` (L) | the three file writes are atomic (a killed `.tmp` leaves the old file) and 0600/0700; an unknown `version`, bad JSON or a wide mode is not used; `judge` matches the identity exactly (`local/x` is not `x`; case and prefix differ); the file name of an identity | the files read with `std::fs` |
 | `chatgpt::tests` (L) | the authorization URL holds the S256 challenge of the verifier, `state`, `nonce` and only the scopes of `SCOPES`; the listener refuses another path, a wrong `state` and a second request; a tampered ID token, a wrong `iss`, `aud` or `nonce`, an expired one and an `alg` other than RS256 each fail the check and write nothing; a refresh holds the lock: two concurrent calls make one refresh request | the issuer stand-in's request log, the file |
 | `claude_bin::tests` (L) | the version parse and comparison (`2.1.295` ok, `2.1.9` too old, `2.2.0` ok, `10.0.0` ok, a suffix ignored); a timeout kills the process group; each failure's words | literal strings |
-| `words::tests` (L, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; `judge_origin` accepts and refuses (path, userinfo, `http`, trailing dot, upper case, port 443) | literal strings |
+| `words::tests` (L, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; the map of `watane_host::judge_origin`'s result to the page line: accepted (a lone trailing `/`, upper case, port 443) and refused (another path, a query, a fragment, userinfo, `http`, trailing dot) origins | literal strings |
 | `consent::tests` (L) | `Agent` takes `Approve` with no withheld and no choice, or `Deny`; `stop` is `WrongAnswer` | the answers submitted |
 | `tests/it/gui_shell.rs` (L, step 11) | through the driver's `ask`: an `agent` request of each `what` shows its title and question, hostile folder, origin and function names as text, and no stop button; an install with `agents_via` shows `Uses Claude Code through <provider>.` | `eval` of the consent DOM text |
 | `tests/it/agent.rs` (L) | S54 to S68 | below |
@@ -2761,10 +2765,10 @@ Scenarios of `tests/it/agent.rs`:
   issuer answering `invalid_grant`, the file is deleted, the status reads the
   signed-out line and the call is `no-account`.
 - **S57 Sign out** (APP-F-81). After S54, `chatgpt_sign_out` deletes the file;
-  `openai_token()` is `no-account`; the host was told once (a host test double of
-  `AccountSource`'s notice, section 15).
+  `openai_token()` is `no-account`; the host was told once with `Account::OpenAi` (a host test double of
+  `Host::account_changed`, host 19.4).
 - **S58 A consent for an agent** (APP-F-82). The words of 19.2 for a workspace,
-  the account and a toolset, through the host's `Confirm::agent` double with
+  the account and a toolset, through the host's `Confirm::consent` double with
   the call returning before the view is answered; deny, a closed view and a
   quit answer `Deny` and keep nothing; the same ask shows the view again.
 - **S60 Consents in the details** (APP-F-83, APP-F-84). After S58 approved, the
@@ -2781,8 +2785,8 @@ Scenarios of `tests/it/agent.rs`:
   stored choice does not change.
 - **S63 Judge key** (APP-F-86). The checked provider fixture's details show the
   `Judge key` section with empty fields; the parsed origin line shows under
-  the key before saving; a typed `https://Judge.example:443/` is refused for its
-  path and `https://Judge.example:443` shows `https://judge.example`;
+  the key before saving; a typed `https://Judge.example:443/` and `https://Judge.example:443` each show
+  `https://judge.example`, and `https://judge.example/v1` is refused for its path;
   after `Save key` the file exists, 0600, and `judge(<id>)` returns it.
 - **S64 Never prefilled** (APP-F-86). A provider whose state and `Http`
   grants name `https://judge.example` still shows an empty origin field; the
@@ -2807,7 +2811,7 @@ Stage L is listed in section 12; its row is repeated here for reference:
 
 | Stage | Builds | Needs | Fake until then | Done when |
 |---|---|---|---|---|
-| L Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::agent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
+| L Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::consent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
 
 ### 19.8 Security properties
 
