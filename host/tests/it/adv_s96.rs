@@ -471,3 +471,51 @@ fn adv_s96_disable_while_a_firing_waits_loses_the_timer() {
     );
 }
 
+/// 19.2 (Ends): an update of either side ends its streams. `install` ends the streams that
+/// exist at the update; the `Open` of a chain in flight is applied at its commit, which checks
+/// only that the producer's identity and local name are installed and enabled, both still true
+/// after an update. A stream opened by the old version outlives the update of its producer.
+#[test]
+fn adv_s96_stream_opened_by_a_chain_in_flight_outlives_an_update() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    let before = env.host.get(&local("advo")).unwrap().package;
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    assert_ne!(
+        env.host.get(&local("advo")).unwrap().package,
+        before,
+        "not an update"
+    );
+    let opened = first.finish();
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "a stream opened by the producer's old version is live after its update: push gave {pushed}"
+    );
+}
+fn copy_dir(from: &Path, to: &Path) {
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
