@@ -358,13 +358,23 @@ impl Catalog {
             mods.push(installed);
         }
         // Keep the committed provider-first order.
-        Ok(Self {
+        let mut catalog = Self {
             generation: disk.generation,
             installs: BTreeMap::new(),
             install_counter: 0,
             components,
             mods,
-        })
+        };
+        // A mod found on disk is an install too: without a number its calls would skip the check.
+        for local in catalog
+            .mods
+            .iter()
+            .map(|m| m.local.clone())
+            .collect::<Vec<_>>()
+        {
+            catalog.bump_install(&local);
+        }
+        Ok(catalog)
     }
 
     pub fn plan(

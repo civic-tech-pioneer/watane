@@ -657,3 +657,31 @@ fn ac2_an_open_in_flight_ends_gone_when_the_producer_is_removed_and_reinstalled(
         "{pushed}"
     );
 }
+
+/// 19.6 (At apply): a mod the host found on disk at its start has an install generation too, so
+/// its remove and reinstall while an `open` is in flight ends the stream `gone`.
+#[test]
+fn ac2_an_open_in_flight_ends_gone_when_a_producer_loaded_at_start_is_reinstalled() {
+    let Env { dir, host } = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    drop(host);
+    let host = watane_host::Host::open(
+        dir.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let env = Env { dir, host };
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    env.host.remove(&local("advo"), true).unwrap();
+    super::streams::install(&env.host, &["advo"]);
+    let s = first.finish()["ok"].as_str().unwrap().to_owned();
+    let line = format!("{s} gone");
+    wait("the consumer's end", Duration::from_secs(10), || {
+        page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
+    });
+}
