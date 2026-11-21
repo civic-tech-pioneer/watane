@@ -65,6 +65,17 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-26** When the participant asks for a token for a toolset and an agent handle, the app shall get one from the host and show it once, with the MCP address of the toolset. Traces: F-AGENT-2, W6.
 - **APP-F-27** The app shall list the active tokens without their secret, and end a token when the participant asks. Traces: F-AGENT-2.
 
+### Agent layer (step 11)
+
+- **APP-F-80** The participant shall be able to sign in with their ChatGPT account in Settings. The app shall open the participant's browser at OpenAI, accept the answer only on a loopback address that it listens on for that one attempt, and keep the result on this device. Settings shall say `Signed in with ChatGPT` with the plan, or `Not signed in`. Traces: F-AGENT-5, J11.
+- **APP-F-81** The participant shall be able to sign out in Settings. After that no mod shall be able to use the account, and the sessions that use it shall end. A sign-in that cannot be renewed shall show as signed out, with the cause. Traces: F-AGENT-5, F-AGENT-7.
+- **APP-F-82** When a mod first asks to start agents in a folder, to use the participant's ChatGPT plan, or to let agents call a toolset, the consent view shall ask, naming the mod that began the call, in the words `Let <mod> have agents work in <folder> (<profile>, through <provider>)?`, `Let <mod> use your ChatGPT plan?` and `Let <mod>'s agents call: <functions>?`. The consent view shall never make the mod wait for the answer in a call; a denial shall change nothing and shall be asked again next time. Traces: F-AGENT-7, F-APP-4, J11.
+- **APP-F-83** The details of a mod shall list the consents it holds, each in the words of its question, and the participant shall be able to withdraw each one. A withdrawal shall end what depends on it. Traces: F-AGENT-7, F-INST-5, J11.
+- **APP-F-84** The grants to start Claude Code shall read in words in the consent view and in the details of a mod, `Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.` and `Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.` The plan of every mod whose calls reach either grant shall say `Uses Claude Code through <provider>.` Traces: F-AGENT-5, F-INST-1, J11.
+- **APP-F-85** The participant shall be able to choose the `claude` program in Settings. The app shall refuse a program older than the minimum version, with the version found and the version needed, and keep none until a good one is chosen. Traces: F-AGENT-5.
+- **APP-F-86** On the page that the manager shows for a checked provider, the participant shall be able to enter a key and the origin of the provider's judge, see that a key is kept and for which origin (never the key), and remove it. The origin shall show next to the key before it is saved and shall never be filled in from the provider. Removing the key, or removing the provider, shall delete it. Traces: F-AGENT-9, AGT-F-53.
+- **APP-F-87** No mod shall be able to read a sign-in, a key or the `claude` path: they stay in the app and reach the host in process only. Traces: F-AGENT-5, F-AGENT-9, F-RUN-4.
+
 ## Step 3: Publish
 
 - **APP-F-28** At the first start, the app shall create the identity of the participant, with no network contact. Traces: F-APP-2, J3.
@@ -393,3 +404,37 @@ disables `desk`, then the panel `Disable Desk?` says `Until you enable it,
 the manager opens at start.`; when they remove `reading-list` with
 `Delete its data` chosen, the confirming button reads `Remove and delete
 data`.
+
+**S54 Sign in with ChatGPT** (APP-F-80, APP-F-81). Given the app with a
+stand-in for OpenAI's sign-in, when the participant chooses `Sign in with
+ChatGPT` in Settings, then the browser stand-in is opened at the stand-in
+issuer, the participant's answer arrives on the loopback address, and
+Settings reads `Signed in with ChatGPT` with the plan. When they choose
+`Sign out`, Settings reads `Not signed in` and `<home>/app/accounts/openai.json`
+is gone.
+
+**S58 A consent for an agent** (APP-F-82). Given a mod that asks to start
+agents in a new folder, when it asks, the consent view reads `Let <mod>
+have agents work in <folder> (<profile>, through <provider>)?` and the
+mod's call has already returned; when the participant denies, nothing is
+kept and the next ask shows the view again.
+
+**S60 Consents in the details** (APP-F-83, APP-F-84). Given S58 approved,
+when the participant opens the details of the mod, then the consent shows
+in the words of its question, and so does the grant to start Claude Code
+in its short words; when they withdraw the consent, it is gone from the
+details and the mod's next ask shows the consent view again.
+
+**S61 Choose `claude`** (APP-F-85). Given a stand-in `claude` that reports
+a version below the minimum, when the participant chooses it in Settings,
+then Settings says `Claude Code <found> is too old; watane needs <need>
+or later.` and keeps no program; a stand-in at the minimum is kept and
+shown by its path.
+
+**S63 The judge key** (APP-F-86, APP-F-87). Given a checked provider
+installed, when the participant opens its details, enters a key and the
+origin `https://judge.example`, then the origin shows next to the key
+before saving; after saving, the page says `A key is kept for
+https://judge.example` and never shows the key; a fresh start of the app
+shows the same; `Remove the key` removes it, and removing the provider
+removes it too.
