@@ -1326,4 +1326,58 @@ mod tests {
             .unwrap();
         assert_eq!(received, serde_json::json!([]));
     }
+
+    /// 19.6 (Timers): `Done.unavailable` says the call's own mod was disabled while it waited,
+    /// not a nested call's: a firing keeps its row for the first only.
+    #[test]
+    fn unavailable_is_the_own_mods_not_a_nested_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods");
+        let names = ["latch", "relay", "advo", "advo-front"];
+        host.install_folders(&names.map(|n| fixtures.join(n)), 0)
+            .unwrap();
+        // Each case: the mod whose lock is held while the call waits, then disabled.
+        for (waits, own) in [("relay", false), ("advo-front", true)] {
+            let lock = Arc::new(Mutex::new(()));
+            host.call_locks
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .insert(format!("local/{waits}"), Arc::clone(&lock));
+            let guard = lock
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            let caller = Arc::clone(&host);
+            let thread = std::thread::Builder::new()
+                .stack_size(16 << 20)
+                .spawn(move || {
+                    let mut start = Start::internal(
+                        Who::Caller(Caller::Page),
+                        LocalName::parse("advo-front").unwrap(),
+                        "api.cancel-then-sleep".into(),
+                        Args::Json(serde_json::json!({"s": "x", "ms": 0})),
+                        "local/advo-front".into(),
+                    );
+                    start.internal = false;
+                    run_start(&caller, start)
+                })
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Arc::strong_count(&lock) < 3 {
+                assert!(
+                    Instant::now() < deadline,
+                    "the call did not wait for {waits}"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let local = LocalName::parse(waits).unwrap();
+            host.disable(&local).unwrap();
+            drop(guard);
+            let done = thread.join().unwrap();
+            let code = done.result.as_ref().map_err(|e| e.code).err();
+            assert_eq!(code, Some(CallCode::Disabled), "{waits}");
+            assert_eq!(done.unavailable, own, "{waits}");
+            host.enable(&local).unwrap();
+        }
+    }
 }

@@ -207,12 +207,13 @@ impl State {
         txn.commit().map_err(CallError::internal)?;
         Ok(())
     }
+    /// Holds no lock across `begin_write`: a depth-0 commit takes the catalog lock inside its
+    /// write transaction, and a call start reads a timer row under the catalog lock (19.6).
     pub fn delete(&self, identity: &str) -> Result<(), HostError> {
-        let db = self
-            .db
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        let Some(db) = db.as_ref() else {
+        let Some(db) = self
+            .database(false)
+            .map_err(|e| HostError::Internal(e.message))?
+        else {
             return Ok(());
         };
         let id = blake3::hash(identity.as_bytes()).to_hex()[..32].to_string();

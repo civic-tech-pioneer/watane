@@ -3097,8 +3097,8 @@ catalog change and sees the origin gone, and writes the timer's own mod. The
 mod is disabled, removed or updated; a nested call of the firing that fails
 `disabled` or `no-mod` for another mod is a failure like any other (the row
 is deleted). A mod in the `error` state gets no firing; its timers wait, and
-the reload after every catalog commit and removal arms them when the error
-clears. Timers survive a restart; a kill after the
+the reload after every catalog commit arms them when the error
+clears (a removal clears no other mod's error). Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
 armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export

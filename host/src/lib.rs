@@ -510,8 +510,6 @@ impl Host {
         self.state
             .timers_removed(&identity, &owners)
             .map_err(|e| HostError::Internal(e.message))?;
-        // Relinking can clear another mod's error: its timers wait no more (19.6).
-        self.timers.reload(self);
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
         Ok(())
