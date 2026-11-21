@@ -2596,7 +2596,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
 | In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source |
 | Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
-| Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46); none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
+| Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46), or at apply for an `open` of a chain still in flight (19.6, At apply); a side disabled and enabled again while that `open` was in flight keeps the stream, which did not exist at the disable; none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
 | Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
 | Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
 | Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
@@ -3042,9 +3042,7 @@ and `hand-off` are not requests, but they follow the same chain rule below
   `Open` also records the packages of its producer and of a mod consumer at
   its call, and at apply a side updated, removed or reinstalled since, or a
   consumer that lost the `Call` grant, link or provider of `via` (Q46),
-  ends the stream `gone` at once, both sides told. A side that was disabled
-  and enabled again while the `open` was in flight did not lose the stream:
-  it did not exist at the disable.
+  ends the stream `gone` at once, both sides told.
 - **A call commits whole.** The host-state writes of one invoke commit
   together or not at all (7); a deferred or failed call leaves no write
   behind. So a failed `append` in a mod leaves no chunk written.
