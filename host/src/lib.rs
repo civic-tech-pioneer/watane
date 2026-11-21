@@ -486,6 +486,7 @@ impl Host {
         let mut next = catalog.clone();
         next.mods.retain(|m| &m.local != local);
         next.components.remove(local);
+        next.bump_install(local);
         for m in &mut next.mods {
             m.binds.retain(|b| b.to != identity);
         }

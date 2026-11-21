@@ -36,10 +36,10 @@ pub(crate) enum Effect {
         origin: String,
         /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
         via: Option<watane_pkg::InterfaceName>,
-        /// The packages of the producer and of a mod consumer that ran at the call: at apply a
-        /// side that was updated or reinstalled since ends the stream `gone` (19.2, Ends).
-        producer_pkg: Option<watane_pkg::PackageId>,
-        consumer_pkg: Option<watane_pkg::PackageId>,
+        /// The install generations of the producer and of a mod consumer at the call: at apply
+        /// a side updated, removed or reinstalled since ends the stream `gone` (19.2, Ends).
+        producer_gen: Option<u64>,
+        consumer_gen: Option<u64>,
     },
     Push {
         id: String,
@@ -59,6 +59,8 @@ pub(crate) enum Effect {
     HandOff {
         id: String,
         to: ModRef,
+        /// The install generation of `to` at the call (19.6, At apply).
+        to_gen: Option<u64>,
     },
     Resume {
         id: String,
@@ -157,14 +159,9 @@ impl Invocation {
             identity: self.identity.clone(),
         }
     }
-    /// The package of a mod as this chain's snapshot has it: the version that runs.
-    fn package_of(&self, local: &LocalName) -> Option<watane_pkg::PackageId> {
-        self.chain
-            .snapshot
-            .mods
-            .iter()
-            .find(|m| &m.local == local)
-            .map(|m| m.package.clone())
+    /// The install generation of a mod as this chain's snapshot has it: the install that runs.
+    fn package_of(&self, local: &LocalName) -> Option<u64> {
+        self.chain.snapshot.install_of(local)
     }
     fn mod_ref(&self, local: &LocalName) -> Option<ModRef> {
         self.chain
@@ -419,8 +416,8 @@ pub(crate) fn call(
                 producer: me,
                 origin: inv.origin.clone(),
                 via: inv.via.clone(),
-                producer_pkg: inv.package_of(&inv.local),
-                consumer_pkg: match &consumer_ref {
+                producer_gen: inv.package_of(&inv.local),
+                consumer_gen: match &consumer_ref {
                     Consumer::Mod(m) => inv.package_of(&m.local),
                     _ => None,
                 },
@@ -507,7 +504,8 @@ pub(crate) fn call(
             ) else {
                 return Ok(err(StreamError::NotYours));
             };
-            log.push(Effect::HandOff { id, to });
+            let to_gen = inv.package_of(&to.local);
+            log.push(Effect::HandOff { id, to, to_gen });
             Ok(ok())
         }
         ("timers", "after") => {
@@ -598,8 +596,8 @@ fn fake(
                 producer: me,
                 origin: inv.origin.clone(),
                 via: None,
-                producer_pkg: None,
-                consumer_pkg: None,
+                producer_gen: None,
+                consumer_gen: None,
             });
             result = json!({"ok": id});
         }
@@ -691,8 +689,8 @@ impl Host {
                     ref consumer,
                     ref origin,
                     ref via,
-                    ref producer_pkg,
-                    ref consumer_pkg,
+                    producer_gen,
+                    consumer_gen,
                     ..
                 } => {
                     // The checks of the call are made again where the effect lands, under the
@@ -701,26 +699,41 @@ impl Host {
                         .catalog
                         .lock()
                         .expect("lock poisoned: another thread panicked while holding it");
-                    let live = |local: Option<&LocalName>, identity: &str, pkg: &Option<_>| {
+                    let live = |local: Option<&LocalName>, identity: &str, pkg: Option<u64>| {
                         catalog.mods.iter().any(|m| {
                             m.identity == identity
                                 && m.enabled
                                 && m.error.is_none()
                                 && local.is_none_or(|l| &m.local == l)
-                                && pkg.as_ref().is_none_or(|p| p == &m.package)
+                                && pkg.is_none_or(|g| catalog.install_of(&m.local) == Some(g))
                         })
                     };
-                    let valid = live(Some(&producer.local), &producer.identity, producer_pkg)
-                        && live(None, origin, &None)
+                    let valid = live(Some(&producer.local), &producer.identity, producer_gen)
+                        && live(None, origin, None)
                         && match consumer {
                             Consumer::Mod(c) => {
-                                live(Some(&c.local), &c.identity, consumer_pkg)
+                                live(Some(&c.local), &c.identity, consumer_gen)
                                     && via.as_ref().is_none_or(|via| {
                                         via_holds(&catalog, c, &producer.local, via)
                                     })
                             }
                             _ => true,
                         };
+                    self.hub.apply(self, effect, valid);
+                }
+                Effect::HandOff { ref to, to_gen, .. } => {
+                    // The new consumer must still be the install that was called (19.6, At apply).
+                    let catalog = self
+                        .catalog
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it");
+                    let valid = catalog.mods.iter().any(|m| {
+                        m.local == to.local
+                            && m.identity == to.identity
+                            && m.enabled
+                            && m.error.is_none()
+                            && to_gen.is_none_or(|g| catalog.install_of(&m.local) == Some(g))
+                    });
                     self.hub.apply(self, effect, valid);
                 }
                 other => self.hub.apply(self, other, true),

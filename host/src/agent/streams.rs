@@ -467,7 +467,10 @@ impl Hub {
                 }
             }
             Effect::Cancel { id } => inner.end(&id, json!("cancelled"), false),
-            Effect::HandOff { id, to } => {
+            Effect::HandOff { id, .. } if !valid => {
+                inner.end(&id, json!("gone"), false);
+            }
+            Effect::HandOff { id, to, .. } => {
                 if let Some(s) = inner.streams.get_mut(&id) {
                     let old = s.consumer.key();
                     s.consumer = Consumer::Mod(to.clone());
