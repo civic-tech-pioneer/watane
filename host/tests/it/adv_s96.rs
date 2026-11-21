@@ -610,3 +610,50 @@ fn ac2_stream_opened_by_a_chain_in_flight_ends_at_an_update_of_its_consumer() {
         "a stream opened by the consumer's old version is live after its update: push gave {pushed}"
     );
 }
+
+/// 19.6 (At apply): a `HandOff` applies only if its target is still installed, enabled and the
+/// install that was called. The target is disabled while the chain is in flight.
+#[test]
+fn ac1_a_hand_off_to_a_target_disabled_in_flight_ends_the_stream_gone() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.hand-off-then-sleep",
+        json!({"s": s.id(), "ms": 1000}),
+    );
+    env.host.disable(&local("advo-front")).unwrap();
+    assert_eq!(first.finish(), json!("ok"));
+    wait("the end", Duration::from_secs(5), || s.ended().is_some());
+    assert_eq!(s.ended(), Some(json!("gone")));
+    assert!(s.push(b"x").is_err());
+}
+
+/// 19.6 (At apply): a producer removed and installed again, the same package, while an `open`
+/// is in flight is another install: the stream ends `gone` (the install generation).
+#[test]
+fn ac2_an_open_in_flight_ends_gone_when_the_producer_is_removed_and_reinstalled() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    env.host.remove(&local("advo"), true).unwrap();
+    super::streams::install(&env.host, &["advo"]);
+    let s = first.finish()["ok"].as_str().unwrap().to_owned();
+    let line = format!("{s} gone");
+    wait("the consumer's end", Duration::from_secs(10), || {
+        page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
+    });
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "{pushed}"
+    );
+}
