@@ -170,10 +170,13 @@ pub fn grant_line_bound(
             GrantKind::Manage,
             "Manage your mods: see every mod and its grants, turn mods off, withdraw grants, and ask you to add, turn on or remove mods".into(),
         ),
-        Grant::ClaudeCode => (GrantKind::ClaudeCode, "Start Claude Code".into()),
+        Grant::ClaudeCode => (
+            GrantKind::ClaudeCode,
+            "Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.".into(),
+        ),
         Grant::ClaudeCodeShell => (
             GrantKind::ClaudeCodeShell,
-            "Start Claude Code with a shell and the web".into(),
+            "Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.".into(),
         ),
         Grant::Http { host } => (GrantKind::Http, format!("Connect to {host}")),
         Grant::Call {

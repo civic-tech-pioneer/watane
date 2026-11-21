@@ -118,8 +118,11 @@ fn ac2_wrong_direction_and_unknown_are_refused() {
 
 #[test]
 fn ac2_host_exports_alone_are_a_logic_part() {
-    let items = "export watane:host/stream-sink@0.1.0; export watane:host/timer-sink@0.1.0;";
-    let dir = build(items, "", false, false);
+    let imports = "import watane:host/state@0.1.0; import watane:host/streams@0.1.0;";
+    let items = format!(
+        "{imports} export watane:host/stream-sink@0.1.0; export watane:host/timer-sink@0.1.0;"
+    );
+    let dir = build(&items, "", false, false);
     let m = Mod::read(dir.path()).unwrap();
     assert_eq!(
         m.world().host_exports,
@@ -133,7 +136,7 @@ fn ac2_host_exports_alone_are_a_logic_part() {
     fs::remove_dir_all(dir.path().join("logic")).unwrap();
     assert!(rules(dir.path()).iter().all(|r| *r == Rule::Parts));
     assert!(!rules(dir.path()).is_empty());
-    let none = build("", "", false, false);
+    let none = build(imports, "", false, false);
     assert!(rules(none.path()).iter().all(|r| *r == Rule::Parts));
     assert!(!rules(none.path()).is_empty());
 }
