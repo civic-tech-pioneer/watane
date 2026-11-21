@@ -146,3 +146,178 @@ fn adv_s96_timer_cancelled_while_the_firing_waits_still_fires() {
     let fired = call_as(&env.host, Caller::Page, "advo", "api.fired", Value::Null).unwrap();
     assert_eq!(fired, json!([]), "a cancelled timer fired");
 }
+
+// ---- the fix tests of S96-fix1 ---------------------------------------------------------
+
+fn page(env: &Env, target: &str, function: &str, args: Value) -> Value {
+    call_as(&env.host, Caller::Page, target, function, args).unwrap()
+}
+/// A call that runs on its own thread, for a chain that stays in flight.
+fn in_flight(env: &Env, target: &'static str, function: &'static str, args: Value) -> JoinHandle {
+    let host = std::sync::Arc::clone(&env.host);
+    let thread = std::thread::spawn(move || {
+        call_as(&host, Caller::Page, target, function, args).unwrap()
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    JoinHandle(thread)
+}
+struct JoinHandle(std::thread::JoinHandle<Value>);
+impl JoinHandle {
+    fn finish(self) -> Value {
+        self.0.join().unwrap()
+    }
+}
+fn open_for_relay(env: &Env) -> String {
+    let s = call_as(
+        &env.host,
+        Caller::Mod(local("relay")),
+        "advo",
+        "api.open",
+        Value::Null,
+    )
+    .unwrap();
+    s["ok"].as_str().unwrap().to_owned()
+}
+
+/// 19.6: a firing in progress is never armed again, so `enable` during a waiting firing does
+/// not fire the timer twice.
+#[test]
+fn ac3_enable_during_a_waiting_firing_fires_once() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    page(&env, "advo", "api.after", json!({"id":"x","ms":100}));
+    let busy = in_flight(&env, "advo", "api.cancel-slowly", json!({"id":"none"}));
+    // The firing is due and waits for advo's lock.
+    env.host.enable(&local("advo")).unwrap();
+    busy.finish();
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(page(&env, "advo", "api.fired", Value::Null), json!(["x"]));
+}
+
+/// 19.2 (Commit, Byte budgets): the per-stream limit counts what every chain in flight has
+/// queued: two chains with 2.5 MiB each into one stream of 4 MiB.
+#[test]
+fn ac4_two_chains_in_flight_cannot_pass_the_stream_limit() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = open_for_relay(&env);
+    let args = json!({"s": s, "bytes": 5 << 19, "ms": 1000});
+    let first = in_flight(&env, "advo-front", "api.push-then-sleep", args);
+    let second = page(&env, "advo", "api.push", json!({"s": s, "bytes": 5 << 19}));
+    assert!(second.as_str().unwrap().contains("\"full\""), "{second}");
+    assert_eq!(first.finish(), json!("ok"));
+}
+
+/// 19.6 (`too-many`): 256 live timers, counted across the chains in flight.
+#[test]
+fn ac4_two_chains_in_flight_cannot_pass_the_timer_limit() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    page(&env, "advo", "api.after-many", json!({"n":255,"ms":3_600_000}));
+    let args = json!({"id":"a","ms":3_600_000,"sleep":1000});
+    let first = in_flight(&env, "advo-front", "api.try-after-then-sleep", args);
+    let second = page(&env, "advo", "api.try-after", json!({"id":"b","ms":3_600_000}));
+    assert!(second.as_str().unwrap().contains("too-many"), "{second}");
+    assert_eq!(first.finish(), json!("ok"));
+}
+
+/// 19.2 (hand-off "once"): two chains in flight hand off one stream; one gets `not-yours`.
+#[test]
+fn ac4_two_chains_in_flight_hand_off_a_stream_once() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.hand-off-then-sleep",
+        json!({"s": s.id(), "ms": 1000}),
+    );
+    let second = call_as(
+        &env.host,
+        Caller::Mod(local("advo-front")),
+        "relay",
+        "api.hand-off",
+        json!({"s": s.id()}),
+    )
+    .unwrap();
+    assert_eq!(second, json!({"err":"not-yours"}));
+    assert_eq!(first.finish(), json!("ok"));
+}
+
+/// 19.2 (Ends): a mod stream depends on the consumer's `Call` grant of the link that `open` ran
+/// through. Revoked, the stream ends `gone` for both sides at once.
+#[test]
+fn ac5_a_revoked_call_grant_ends_the_streams_opened_through_it() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let opened = page(&env, "advo-front", "api.open", Value::Null);
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    assert_eq!(
+        page(&env, "advo", "api.push", json!({"s": s, "bytes": 1})),
+        json!("ok")
+    );
+    let call = env
+        .host
+        .get(&local("advo-front"))
+        .unwrap()
+        .grants
+        .into_iter()
+        .find(|g| {
+            matches!(&g.grant, watane_pkg::Grant::Call { interface, .. }
+                if interface.to_string().starts_with("mods:advo/"))
+                && g.granted
+        })
+        .unwrap()
+        .grant;
+    env.host.revoke(&local("advo-front"), &call).unwrap();
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(pushed.as_str().unwrap().contains("unknown-stream"), "{pushed}");
+    let line = format!("{s} gone");
+    wait("both ended lines", Duration::from_secs(10), || {
+        page(&env, "advo", "api.ended", Value::Null) == json!([line])
+            && page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
+    });
+}
+
+/// 19.6: 256 due timers of one mod fire on one worker, each once.
+#[test]
+fn ac6_due_timers_of_one_mod_do_not_pile_up_threads() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    page(&env, "advo", "api.after-many", json!({"n":256,"ms":100}));
+    let busy = in_flight(&env, "advo", "api.cancel-slowly", json!({"id":"none"}));
+    let mut most = 0;
+    let start = std::time::Instant::now();
+    let fired = loop {
+        most = most.max(timer_threads());
+        let fired: Vec<String> =
+            serde_json::from_value(page(&env, "advo", "api.fired", Value::Null)).unwrap();
+        if fired.len() >= 256 {
+            break fired;
+        }
+        assert!(start.elapsed() < Duration::from_secs(60), "{}", fired.len());
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    busy.finish();
+    let mut sorted = fired.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(sorted.len(), 256, "a timer fired twice or not at all");
+    assert_eq!(fired.len(), 256);
+    // The threads of the firings of this process: Linux only.
+    if cfg!(target_os = "linux") {
+        assert!(most < 64, "{most} timer threads at once");
+    }
+}
+/// Threads of this process named for a timer firing (`/proc/self/task`; other tests of the
+/// binary run their own hosts, so only these are counted).
+fn timer_threads() -> usize {
+    std::fs::read_dir("/proc/self/task")
+        .map(|dir| {
+            dir.filter_map(Result::ok)
+                .filter(|t| {
+                    std::fs::read_to_string(t.path().join("comm"))
+                        .is_ok_and(|n| n.trim() == "watane-timer")
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}

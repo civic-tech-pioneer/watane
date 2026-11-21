@@ -5,11 +5,12 @@
 pub(crate) mod streams;
 pub(crate) mod timers;
 
-use crate::runtime::call::{Invocation, Who};
+use crate::runtime::call::{Chain, Invocation, Who};
 use crate::runtime::json;
 use crate::{CallCode, CallError, Caller, Host, LocalName, RequestRecord};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use streams::{Consumer, MAX_OPEN, Producer, STREAM_SINK, StreamError};
 use wasmtime::component::Val;
@@ -227,11 +228,48 @@ impl Invocation {
             Consumer::Held { .. } => false,
         }
     }
+    /// The gate of 19.2 (Commit): held from the checks of a call to the push of its effect, so
+    /// that two chains in flight cannot both pass a limit.
+    fn gate(&self) -> Gate<'_> {
+        let chains = self
+            .chain
+            .host
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let peers = chains
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .filter(|c| !Arc::ptr_eq(c, &self.chain))
+            .collect();
+        Gate {
+            peers,
+            _chains: chains,
+        }
+    }
     fn log(&self) -> std::sync::MutexGuard<'_, Vec<Effect>> {
         self.chain
             .log
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
+    }
+}
+
+/// The other chains in flight, with the lock that keeps them from changing (19.2, Commit).
+struct Gate<'a> {
+    peers: Vec<Arc<Chain>>,
+    _chains: std::sync::MutexGuard<'a, Vec<std::sync::Weak<Chain>>>,
+}
+impl Gate<'_> {
+    /// Every effect that another chain has queued.
+    fn each(&self, mut visit: impl FnMut(&Effect)) {
+        for chain in &self.peers {
+            let log = chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            log.iter().for_each(&mut visit);
+        }
     }
 }
 
@@ -253,6 +291,7 @@ pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), Stre
         };
     }
     let me = inv.me();
+    let gate = inv.gate();
     let mut log = inv.log();
     if body.len() > streams::MAX_ITEM {
         return Err(StreamError::TooLarge);
@@ -262,7 +301,7 @@ pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), Stre
         return Err(StreamError::NotYours);
     }
     let (mut count, mut bytes, mut origin_pending, mut host_pending) = (0, 0, 0, 0);
-    for e in log.iter() {
+    let mut queued = |e: &Effect| {
         if let Effect::Push {
             id: i,
             body,
@@ -279,7 +318,9 @@ pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), Stre
             }
             host_pending += body.len();
         }
-    }
+    };
+    gate.each(&mut queued);
+    log.iter().for_each(&mut queued);
     inv.chain.host.hub.check_push(
         id,
         body.len(),
@@ -330,12 +371,18 @@ pub(crate) fn call(
             {
                 return Ok(err(StreamError::NotYours));
             }
+            let gate = inv.gate();
             let mut log = inv.log();
             if let Some(key) = consumer.key() {
-                let opened = log
-                    .iter()
-                    .filter(|e| matches!(e, Effect::Open { consumer: c, .. } if c.key().as_deref() == Some(key.as_str())))
-                    .count();
+                let mut opened = 0;
+                let mut queued = |e: &Effect| {
+                    if matches!(e, Effect::Open { consumer: c, .. } if c.key().as_deref() == Some(key.as_str()))
+                    {
+                        opened += 1;
+                    }
+                };
+                gate.each(&mut queued);
+                log.iter().for_each(&mut queued);
                 if inv.chain.host.hub.open_count(&key) + opened >= MAX_OPEN {
                     return Ok(err(StreamError::Full));
                 }
@@ -406,10 +453,17 @@ pub(crate) fn call(
         }
         ("streams", "hand-off") => {
             let id = name(0)?;
+            let gate = inv.gate();
             let mut log = inv.log();
             let Some(view) = inv.view(&log, &id) else {
                 return Ok(err(StreamError::UnknownStream));
             };
+            // Once: another chain in flight may have queued the hand-off already.
+            let mut taken = false;
+            gate.each(|e| taken |= matches!(e, Effect::HandOff { id: i, .. } if *i == id));
+            if taken {
+                return Ok(err(StreamError::NotYours));
+            }
             let target = match who {
                 Who::Caller(Caller::Mod(l)) => {
                     inv.mod_ref(l).filter(|m| inv.exports_sink(&m.local))
@@ -439,8 +493,17 @@ pub(crate) fn call(
             if delay > MAX_DELAY_MS {
                 return Ok(json!({"err": "bad-delay"}));
             }
+            let gate = inv.gate();
             let mut log = inv.log();
             let mut live: BTreeSet<String> = inv.chain.host.state.timer_ids(&me.identity)?;
+            // Other chains' timers count; their cancels do not, as they may roll back.
+            gate.each(|e| {
+                if let Effect::TimerAfter { owner, id, .. } = e
+                    && *owner == me
+                {
+                    live.insert(id.clone());
+                }
+            });
             for e in log.iter() {
                 match e {
                     Effect::TimerAfter { owner, id, .. } if *owner == me => {
