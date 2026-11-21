@@ -1115,7 +1115,7 @@ agentic-harness part. A stage's watane slice goes first; the agentic-harness sli
 names the same interface in its sketch and fakes it until this one merges.
 
 - [x] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Delivered
-  2026-11-21 through PR #7 (routine `trig_01PGTXRrSDbTaG2nkiMxLDd3`, branch `slice/s95`). A watane
+  2026-11-21 through PR #7, merged 08:54 UTC (routine `trig_01PGTXRrSDbTaG2nkiMxLDd3`, branch `slice/s95`). A watane
   foreman can build stage A (host A1: H1 streams, H5 durable requests, H7 timers, page connections;
   pkg stage 12) from watane's own documents; every TECHNICAL 15 row is applied or named as left out
   (`caller.boot` Q34, `outcome` on `answered` Q35, the 4.5 host-item rules Q36). The agent layer is
@@ -1124,7 +1124,7 @@ names the same interface in its sketch and fakes it until this one merges.
   crate. User-sim ACCEPTED after fixes it wrote; adversary BREACHED 5 then 4 (S61 to S68), each closed
   in the documents as a rule plus a FUNCTIONAL scenario the building slice turns red first. Six open
   security questions for the human in host 18 (Q38 to Q43), none blocking A1; Q37 open.
-- [ ] **S96 Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
+- [~] **S96 Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
   pkg 12; the watane half).** One story in two repositories, handed out together: this is the host
   half, agentic-harness S32 the kernel-and-console half (its PLAN); Alice runs `watane-dev serve`
   with the agent kernel installed and watches numbered items of a real kernel stream arrive in its
@@ -1139,6 +1139,17 @@ names the same interface in its sketch and fakes it until this one merges.
   `watane:host@0.1.0` streams and timers of agentic-harness TECHNICAL 2.1, as S95 writes them in
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
   against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
+
+- [~] **S98 The macOS CI job is green again (guard).** Local (app). `main`'s required `test
+  (macos-26)` fails on the runner since 2026-11-21 07:01 with plan-only commits (passes on rerun,
+  passes in `factory/check-main.sh` on the Mac): `gui_shell::ac2_background_screen_is_visible_without_focus`
+  (driver.rs:304) and `look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`
+  (driver.rs:240). Find why they fail on the hosted macos-26 runner and fix it at that level
+  (a wait on the real condition, not a longer sleep); never weaken a check or skip it on CI
+  without a reason that names what the runner cannot do. Outcome: 5 CI runs of `test (macos-26)`
+  in a row green on `slice/s98` (workflow_dispatch). Also: the Windows job panics in
+  `app/build.rs:59` (not required; name the cause in the report, fix only if small).
+  Touches: app/tests (support/driver.rs, gui_shell.rs, look), app/build.rs only if small.
 
 - [ ] **S97 The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
   The human decided (2026-11-21): restart detection is a new interface `host-info` with
