@@ -1,6 +1,7 @@
 //! host's integration tests as one test binary: each file of this folder is a module,
 //! so a change links one binary instead of one per file (factory/README.md, test kinds).
 
+mod adv_s96;
 mod agent_load;
 mod binds;
 mod collect;
