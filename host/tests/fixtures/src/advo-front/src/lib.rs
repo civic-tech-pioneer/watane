@@ -34,6 +34,9 @@ impl exports::mods::advo_front::api::Guest for Guest {
         sleep(ms);
         answer
     }
+    fn mode(m: String) {
+        watane::host::state::put("mode", m.as_bytes());
+    }
     fn ended() -> Vec<String> {
         watane::host::state::get("ended")
             .map(|v| String::from_utf8(v).unwrap().lines().map(str::to_owned).collect())
@@ -42,11 +45,21 @@ impl exports::mods::advo_front::api::Guest for Guest {
 }
 impl exports::watane::host::stream_sink::Guest for Guest {
     fn items(_s: String, _items: Vec<Item>) -> SinkOutcome {
-        SinkOutcome::Taken
+        match watane::host::state::get("mode").as_deref() {
+            Some(b"slow") => {
+                sleep(1500);
+                SinkOutcome::Taken
+            }
+            _ => SinkOutcome::Taken,
+        }
     }
     fn ended(s: String, outcome: Outcome) {
         let mut all = <Guest as exports::mods::advo_front::api::Guest>::ended();
-        all.push(format!("{s} {}", if matches!(outcome, Outcome::Gone) { "gone" } else { "other" }));
+        all.push(format!("{s} {}", match outcome {
+            Outcome::Gone => "gone",
+            Outcome::Closed => "closed",
+            _ => "other",
+        }));
         watane::host::state::put("ended", all.join("\n").as_bytes());
     }
 }

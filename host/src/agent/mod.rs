@@ -674,3 +674,95 @@ impl Host {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Limits, Mode};
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    fn call(host: &Arc<Host>, target: &str, function: &str, args: Value) -> Value {
+        let host = Arc::clone(host);
+        let target = LocalName::parse(target).unwrap();
+        let function = function.to_owned();
+        std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(move || host.call(&Caller::Page, &target, &function, args).unwrap())
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+    fn ended(host: &Arc<Host>, target: &str) -> Value {
+        call(host, target, "api.ended", Value::Null)
+    }
+    /// A host with `advo-front` as the consumer of a stream of `advo`, opened through its link.
+    fn with_stream() -> (tempfile::TempDir, Arc<Host>, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let folders: Vec<_> = ["latch", "relay", "advo", "advo-front"]
+            .iter()
+            .map(|n| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/mods")
+                    .join(n)
+            })
+            .collect();
+        host.install_folders(&folders, 0).unwrap();
+        let s = call(&host, "advo-front", "api.open", Value::Null)["ok"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        (dir, host, s)
+    }
+    fn push(host: &Arc<Host>, s: &str) -> String {
+        call(host, "advo", "api.push", json!({"s": s, "bytes": 1}))
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+    /// Rewrites the provider of `advo-front`'s link to `mods:advo/api` and runs the check.
+    fn rebind(host: &Arc<Host>, provider: Option<&str>) {
+        for m in &mut host
+            .catalog
+            .lock()
+            .unwrap()
+            .mods
+            .iter_mut()
+            .filter(|m| m.local.as_ref() == "advo-front")
+        {
+            for l in &mut m.links {
+                if l.interface.to_string().starts_with("mods:advo/") {
+                    l.provider = provider.map(|p| LocalName::parse(p).unwrap());
+                }
+            }
+        }
+        host.end_lost_streams();
+    }
+    fn both_gone(host: &Arc<Host>, s: &str) {
+        let start = Instant::now();
+        let line = json!([format!("{s} gone")]);
+        while ended(host, "advo") != line || ended(host, "advo-front") != line {
+            assert!(start.elapsed() < Duration::from_secs(10), "no gone on both");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn ac5_a_link_that_is_unbound_ends_the_stream_gone() {
+        let (_dir, host, s) = with_stream();
+        host.end_lost_streams();
+        assert_eq!(push(&host, &s), "ok");
+        rebind(&host, None);
+        assert!(push(&host, &s).contains("unknown-stream"));
+        both_gone(&host, &s);
+    }
+
+    #[test]
+    fn ac5_a_link_moved_to_another_provider_ends_the_stream_gone() {
+        let (_dir, host, s) = with_stream();
+        rebind(&host, Some("relay"));
+        assert!(push(&host, &s).contains("unknown-stream"));
+        both_gone(&host, &s);
+    }
+}

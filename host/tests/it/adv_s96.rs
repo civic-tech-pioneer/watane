@@ -375,3 +375,36 @@ fn timer_threads() -> usize {
         })
         .unwrap_or(0)
 }
+
+/// 19.2 (Ends): a stream that is closing already (closed by the producer, items still queued)
+/// keeps its outcome when the consumer's grant is revoked: it ends `closed`, not `gone`.
+#[test]
+fn ac5_a_closing_stream_keeps_its_outcome_when_the_grant_is_revoked() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    page(&env, "advo-front", "api.mode", json!({"m": "slow"}));
+    let s = page(&env, "advo-front", "api.open", Value::Null)["ok"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    // The consumer's `items` call is running; the item stays queued until it returns.
+    std::thread::sleep(Duration::from_millis(400));
+    page(&env, "advo", "api.close", json!({"s": s}));
+    let grant = env
+        .host
+        .get(&local("advo-front"))
+        .unwrap()
+        .grants
+        .into_iter()
+        .find(|g| {
+            matches!(&g.grant, watane_pkg::Grant::Call { interface, .. }
+                if interface.to_string().starts_with("mods:advo/"))
+        })
+        .unwrap()
+        .grant;
+    env.host.revoke(&local("advo-front"), &grant).unwrap();
+    let line = format!("{s} closed");
+    wait("the consumer's end", Duration::from_secs(10), || {
+        page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
+    });
+}
