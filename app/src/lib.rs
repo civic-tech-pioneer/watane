@@ -18,6 +18,7 @@ pub mod views;
 mod words;
 use consent::{AskId, Broker};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Manager;
 #[derive(Debug, thiserror::Error)]
@@ -435,23 +436,38 @@ pub fn run(config: Config) -> Result<(), AppError> {
             Ok(())
         })
         .build(tauri::generate_context!())?;
-    app.run(|h, event| {
+    let shutting_down = Arc::new(AtomicBool::new(false));
+    app.run(move |h, event| {
         if matches!(
             event,
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
         ) {
             h.state::<AppState>().broker.deny_all();
         }
-        if matches!(event, tauri::RunEvent::Exit)
-            && let Some(core) = h.state::<AppState>().core.get()
-        {
-            let served = core
-                .served
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it")
-                .take();
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+            // A second request must not cut off the shutdown already in flight.
+            if shutting_down.load(Ordering::Relaxed) {
+                api.prevent_exit();
+                return;
+            }
+            let served = h.state::<AppState>().core.get().and_then(|core| {
+                core.served
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .take()
+            });
             if let Some(served) = served {
-                tauri::async_runtime::block_on(served.shutdown());
+                api.prevent_exit();
+                shutting_down.store(true, Ordering::Relaxed);
+                let shutting_down = Arc::clone(&shutting_down);
+                let h = h.clone();
+                // Keep the main loop answering wry's asset responders while
+                // shutdown and its timers run on the async runtime (TECHNICAL 3).
+                tauri::async_runtime::spawn(async move {
+                    served.shutdown().await;
+                    shutting_down.store(false, Ordering::Relaxed);
+                    h.exit(code.unwrap_or(0));
+                });
             }
         }
     });
