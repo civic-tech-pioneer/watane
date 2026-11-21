@@ -261,7 +261,10 @@ Not protected in the first version:
   is reused by another provider or a mod in the middle with its own grant
   (Q38); under the shell grant, a `Bash` child reading
   `CLAUDE_CODE_OAUTH_TOKEN`, and `WebFetch` reaching loopback (Q39, probe
-  V28); one session reading another's scratch or run folder (Q40).
+  V28); one session reading another's scratch or run folder (Q40); a
+  symlink planted in a workspace past the deny rules (Q41); login files the
+  closed deny list misses under the shell grant (Q42); `say` content
+  shape and lookalikes of `/` (Q43).
 
 ## 7. Decisions of this fresh start
 

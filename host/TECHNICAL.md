@@ -2289,6 +2289,35 @@ Raised by S95's adversary step (none blocks A1):
   with the first A2 slice's scratch design (19.3, Folders). Cost to undo:
   the paths of 3.1 and 19.3, and the open-time cleanup of 3.1 step 3. Blocks
   A2's scratch slice.
+- **Q41** Symlinks and the protected paths (19.3, Protected reads; source
+  row: agentic-harness TECHNICAL 4.3). A cloned repository, or `ln -s` under
+  the shell grant, can plant `F/k -> ~/.ssh/id_rsa` inside a workspace;
+  `claude`'s `Read` of `F/k` is inside the workspace and asks nothing.
+  Whether `claude` matches deny rules against the resolved target, or the
+  path as given, is not probed; nor is the case where the home is reached
+  through a symlink (macOS `/tmp`, `/var`). Options: (a) probe V29 in the
+  first A2 slice and write each deny rule in both spellings if `claude`
+  matches the path as given; (b) accept it under Not protected (spec §6).
+  Recommended: (a). Cost to undo: deny lines only. Blocks A2.
+- **Q42** Login files the closed deny list misses (19.3, Protected reads;
+  HOST-F-74). Under the shell grant, a sandboxed runner word can read
+  `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell
+  history and browser profiles: a deny cannot carve the workspaces out of
+  `~`, because a deny wins over an allow (as Q40). Options: (a) deny the
+  whole home and keep workspaces and scratch outside it (refuses picked
+  folders under `~`, which most are); (b) keep the closed list and add the
+  rest to Not protected for the shell grant, with HOST-F-74 narrowed to the
+  listed files; (c) a longer closed list. Recommended: (b) with (c), since
+  the shell grant's words already say "Not checked by watane". Cost to undo:
+  the list and one FUNCTIONAL line. Blocks the shell grant in A2.
+- **Q43** `say` content shape and normalisation (19.3, the `/` rule;
+  source row: agentic-harness TECHNICAL 4.5). `say` takes a string, so "the
+  first text block" is the whole string; if the host ever passes content
+  blocks, a leading empty block before `/skill` escapes the rule. Whether
+  `claude` applies NFKC before its `/` check is not probed. Options: (a)
+  the rule applies to the first non-empty text block after the trim of
+  19.3, and probe V30 checks NFKC lookalikes; (b) keep `say` a plain
+  string forever. Recommended: (a). Blocks A2.
 
 ## 19. The agent layer (step 11)
 
@@ -2300,7 +2329,7 @@ from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
 TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
 2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
 not decided and wait on the human: section 18, Q34 to Q36; S95's adversary
-step adds Q38 to Q40 (A2 and A3). Text that depends
+step adds Q38 to Q43 (A2 and A3). Text that depends
 on one says so. Q37 names where the request rule of 19.6 parts from the
 source's, because the host commits each invoke on its own (Q3).
 
@@ -2602,7 +2631,7 @@ names its reason.
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
 
-**Protected reads** (S63). A file in the participant's home folder is as
+**Protected reads** (S63; open: Q41 symlinks, Q42 login files outside the list). A file in the participant's home folder is as
 readable to `claude` as to the participant, and the mod that consumes the
 stream reads whatever the agent prints; so the workspace refusals below do
 not keep a credential from a mod on their own. Three rules do:
