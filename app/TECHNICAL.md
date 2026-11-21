@@ -3,7 +3,7 @@
 How the app does what `FUNCTIONAL.md` says. Steps 2 to 4 are built.
 Step 5 (stage E) is designed (S32) and not built. Step 8 (stage G, own
 machines) is designed (S59) in sections 3, 6.2, 7, 8 and 9.8. Step 11
-(stage K, the agent layer: Sign in with ChatGPT, agent consents, the `claude`
+(stage L, the agent layer: Sign in with ChatGPT, agent consents, the `claude`
 program, the judge key) is designed (S95) in section 19.
 
 ## 1. Crate and layout
@@ -109,6 +109,8 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
       the consent window and, if a request remains, open a new one.
    3. Fill the parties cache (section 9.2). Build the menu and open the
       first window (5.4; stage I). Before stage I: open the main window.
+      Stage L: before the first window, delete each judge key file of no
+      installed mod (19.4).
    4. Start the refresh loop (stage C, section 9.5). Stage G: start the
       machines thread (9.8).
    5. With feature `driver`: start the driver.
@@ -161,8 +163,8 @@ section 9, step 2). `words::grant_line` renders each `Grant` of `pkg`:
 | subscription to `{interface}` of `{provider}` | `subscribe` | `Receive the {interface} events of {provider}`; from step 9 `Receive the {interface} events of {provider} and answer its requests`, because one subscription also answers its collects (W34) |
 
 Step 11 adds two rows after the manage row of 17.2, the grants to start
-Claude Code. Their words are in 19.2 and are fixed text: they name no
-interface, host or provider.
+Claude Code (agentic-harness 8; 19.2). Their words are fixed text: they name
+no interface, host or provider.
 
 | Grant | `kind` | `text` |
 |---|---|---|
@@ -1000,7 +1002,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `toolset_save` | main | `name`, `entries: [string]` | `null` | B |
 | `toolset_remove` | main | `name` | `null` | B |
 | `tokens_list` | main | — | `[{id, toolset, handle}]` | B |
-| `chatgpt_sign_in`, `chatgpt_sign_out`, `claude_binary_pick`, `claude_binary_clear`, `judge_set`, `judge_remove`, `consent_withdraw` | main | 19.5 | 19.5 | K (step 11) |
+| `chatgpt_sign_in`, `chatgpt_sign_out`, `claude_binary_pick`, `claude_binary_clear`, `judge_set`, `judge_remove`, `consent_withdraw` | main | 19.5 | 19.5 | L (step 11) |
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
 | `install_link` | main | `link` | `{installed: [local], followed: [label]}` | C |
@@ -1861,7 +1863,7 @@ real approval gate. No production security check changes.
 | `tests/it/look.rs` dark (K) | S50: the main window under a dark appearance: `getComputedStyle(document.body).backgroundColor` is `rgb(17, 17, 19)` and a tile's is `rgb(25, 25, 28)`; light gives `rgb(246, 246, 244)` and `rgb(255, 255, 255)` | the driver op `theme` (section 10), no system change; if the platform gives no dark appearance the test fails, not skips, and `NOTES.md` records it |
 | `tests/it/manager.rs` (K, W37) | S51: `watane-dev install` of `desk` (`main = true`) into a running app with no main, approved in the consent view (which shows the start-window line), writes `<home>/app/main` = `desk\n`, and a restart opens `mod-desk` only; an update of `desk` after the start switch is turned off leaves the file absent; S39 (W37): the app submenu's items and separators in the order of 5.4, and the `Edit` and `Window` submenus | `<home>/app/main` with `std::fs`; the consent DOM text; the driver's `windows`; the driver op `menu_items` |
 | Changed window tests (K) | selectors only, same facts: `[data-local=X] details` → `[data-local=X]` (the panel section) in `manager.rs`, `build_on.rs`, `manage.rs`, and `.open = true` → a click on `[data-tile=X]`; `#dependency-dialog`/`-cancel`/`-continue` and `#remove-dialog` → `#confirm-panel`, `#confirm-cancel`, `#confirm-continue` in `j2.rs` and `manager.rs` (`.open` → `!hidden`; j2's removal now checks the radios and that `#confirm-cancel` has the focus, where it checked two buttons and `#keep-data` focused: Keep is still the default, now as the checked radio); `'Disabled'` in `j2.rs` → the `Off` badge; S40's `Uses: reading-list` → the `uses` row holding the chip `[data-target=reading-list]` named `Reading list`; `build_on.rs`'s `Made from …` → the `Made from` value of `Technical details`; `tests/support`'s `#refresh-find` → `#refresh-channels` | as before |
-| `tests/it/agent.rs` and the unit tests of `accounts`, `chatgpt`, `claude_bin`, `words`, `consent` (K, step 11) | S54 to S68 | 19.6 |
+| `tests/it/agent.rs` and the unit tests of `accounts`, `chatgpt`, `claude_bin`, `words`, `consent` (L, step 11) | S54 to S68 | 19.6 |
 
 For `two_machines`, set all three variables: `WATANE_VM_BOB` is a trusted
 shell command whose stdin/stdout carry Bob's driver JSON lines;
@@ -1934,7 +1936,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/it/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/it/manage.rs`, `tests/it/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
 | K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the drag-drop handler's `dropping` scripts (5.3.2); the driver ops `menu_items` and `theme`; `tests/it/look.rs`, `tests/it/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, the installed note, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
-| K Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the seven commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::agent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands. This is a second letter K: the `K Look (W37)` row above is the manager's look, and 19.7 says which is meant |
+| L Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the seven commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::agent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/it/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -2100,17 +2102,23 @@ From **host** (`../host/TECHNICAL.md` sections 2, 3, 8, 10 to 12):
   `watane_pkg::{Grant, Provider}`; a body limit that an `extra_api` route
   sets for itself (`/api/publish` takes 64 MiB, host's guard is 64 KiB).
 
-Step 11, from **host** (`../host/TECHNICAL.md` 19, **asked of host**): the
-trait `AccountSource` (19.4) that the app implements and gives to `Host::open`,
-with its errors `no-app` (the host's own, with no app), `no-account` and
-`unavailable` (a token that could not be renewed now); a notice that an account
-changed, with its kind and, for `judge`, the provider, after which the host ends
-the live streams that used it (19.1 sign out, 19.4 judge removal); `Confirm::agent`
-(host 19.7), the future that the app answers for the three agent consents;
-the host's list of a mod's consents and its withdrawal of one (19.2); the
-function that parses and compares a judge origin (19.4), which `words::judge_origin`
-calls and does not copy; the re-export of `watane_pkg::Grant` with `ClaudeCode` and `ClaudeCodeShell`
-(pkg 5.1).
+Step 11, from **host** (`../host/TECHNICAL.md` 19): the trait `AccountSource`
+(19.4) that the app implements and gives to `Host::open`, with
+`openai_token()`, `judge(provider: &str)` (key and origin) and
+`claude_binary()`, each failing `no-app` (the host's own, with no app) or
+`no-account`; the consents kept with the grants, listed and withdrawn like
+grants (19.7); the re-export of `watane_pkg::Grant` with `ClaudeCode` and
+`ClaudeCodeShell` (pkg 5.1).
+
+Step 11, **asked of host** and not in host 19 yet (for the host task to take
+up; until then the app's tests drive test doubles, 19.7):
+
+| Need | Why | App text that waits on it |
+|---|---|---|
+| An `AccountSource` error for a token that could not be renewed now (proposed `unavailable`), distinct from `no-account` | a network failure of a refresh must not read as "not signed in" | 19.1 Refresh |
+| A call by which the app tells the host that an account changed (`openai`, or `judge` with the provider), after which the host ends the live streams that used it | removing a judge key ends that provider's live judge streams (agentic-harness 5); signing out ends the streams that used the plan (APP-F-81) | 19.1 Sign out, 19.4 Removing, Uninstalling |
+| A `Confirm` method for the three agent consents (proposed `Confirm::agent`), a future the app answers and the host may drop | the consent view asks for the host; no call waits (agentic-harness 8) | 19.2 |
+| The host's judge-origin parse as a public function | `words::judge_origin` calls it rather than repeat the rule | 19.4 Origin parse |
 
 From **dist** (`../dist/TECHNICAL.md` sections 3, 9): `Dist::open(home,
 Arc<dyn Confirm>, Options)`, `identity`, `fingerprint`, `own`,
@@ -2185,10 +2193,16 @@ Each answer is the one this spec uses.
     client id, issuer and plan scope are the human's to register with OpenAI;
     until then `CLIENT_ID`, the issuer and `SCOPES` are constants that the
     tests replace with a stand-in issuer. Nothing else waits on it.
-13. **The letter of stage K.** The interface of S95 names the agent layer's app
-    stage K, which section 12 already used for Look (W37). Answer: the new row
-    is `K Agent layer (step 11)` and 19.7 says which is meant; a later pass may
-    rename it `L`.
+13. **Which mod is a checked provider** (19.4). agentic-harness 5 and 10
+    say the judge key is entered on the manager page of "that checked
+    provider", but give no mark by which the app can tell a checked provider
+    from an unchecked one: both are `mods:claude-code` and hold a Claude Code
+    grant. Answer until a mark exists (for example a manifest field or a
+    provided interface, a pkg change): a mod that holds `Grant::ClaudeCode` or
+    `Grant::ClaudeCodeShell` and at least one `Http` grant gets the section.
+    A wrong guess shows the section on an unchecked provider, where a key
+    entered by the participant is used only if that mod asks for the `judge`
+    account (host 19.4); it widens nothing the participant did not enter.
 
 ## 17. Step 10: a mod as manager (stage J)
 
@@ -2416,7 +2430,7 @@ Stage J is listed in section 12; its row is repeated here for reference:
 
 ## 19. The agent layer (step 11)
 
-Designed in S95 (W37, W38 of spec/TECHNICAL.md; host 19; agentic-harness
+Designed in S95 (W38, W39 of spec/TECHNICAL.md; host 19; agentic-harness
 TECHNICAL 4.4, 5, 8, 10, 12, 14, 15, 17). The agent layer is a set of mods
 on the host (the kernel `mods:agent` and the providers `mods:claude-code`
 live in their own repositories). The app's part is what only the
@@ -2435,7 +2449,7 @@ New files: `src/accounts.rs` (the account files, 0600 and atomic writes, the
 judge section of the details). `words.rs` holds the words of this section;
 `ui/words.js` repeats none of them (the page shows what the commands return).
 
-Libraries added by stage K (section 2 holds the others): `reqwest` `0.12`
+Libraries added by stage L (section 2 holds the others): `reqwest` `0.12`
 (`rustls-tls`, `json`; the dev dependency of the same name stays) for the token
 endpoint and the JWKS; `jsonwebtoken` `9` to check the ID token (RS256 with
 the key of the JWKS; no other algorithm); `sha2` `0.10` and `base64` `0.22` for
@@ -2509,8 +2523,8 @@ keeps the file and fails that call only, with the error `unavailable` (never
 `no-account`, which means no sign-in; section 15, asked of host).
 
 **Sign out** (`chatgpt_sign_out`): the app deletes the file, then tells the host
-that the account `openai` changed (host 19.4), and the host ends every live
-stream that used it. The refresh token is not revoked at OpenAI (no endpoint
+that the account `openai` changed (asked of host, section 15), and the host
+ends every live stream that used it. The refresh token is not revoked at OpenAI (no endpoint
 is called). A sign-in over a signed-in account replaces the file after the
 check of step 5.
 
@@ -2550,7 +2564,8 @@ with no `withheld` and no choice, or `Deny` (`WrongAnswer` otherwise), as
 `Manage` does (17.4); it has no stop button, because the asker is not a
 manager.
 
-**No call waits.** The host asks through `Confirm::agent` (host 19.7) and the
+**No call waits.** The host asks through `Confirm::agent` (asked of host,
+section 15; the consents themselves are host 19.7) and the
 call that needed it has already returned (host 7: a request is applied after
 its call commits). The app therefore only answers the future the host holds:
 `HostConfirm::agent` posts the request to the broker and awaits the answer on
@@ -2581,13 +2596,7 @@ plan's links (host 4.5, 4.6). When it is not empty, the install block of 6.3
 adds one line per provider, after the `uses` lines: `Uses Claude Code through
 <provider>.` The line holds for every requester.
 
-**Grant words** (section 4). Two rows, in this order after `manage`:
-
-| Grant | `kind` | `text` |
-|---|---|---|
-| claude-code (step 11) | `claude-code` | `Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.` |
-| claude-code-shell (step 11) | `claude-code-shell` | `Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.` |
-
+**Grant words.** The two rows of section 4, in this order after `manage`.
 `GrantKind` gains `ClaudeCode` and `ClaudeCodeShell`; `GrantLine.key` is
 `claude-code` and `claude-code-shell` (pkg 5.1). `short` is `text` itself for
 both (no interface name or provider in them). The details switch withdraws and
@@ -2636,9 +2645,10 @@ The key of a checked provider's judge is entered on the page that the manager
 shows for that provider, never in the provider's own page (agentic-harness 5;
 N10).
 
-- **Which mods.** A mod has the section when it holds `Grant::ClaudeCode` and at
-  least one `Http` grant (a checked provider needs a judge host in its `[http]`,
-  agentic-harness 10). `ModView.judge` is `null` for every other mod, and
+- **Which mods.** A mod has the section when it holds `Grant::ClaudeCode` or
+  `Grant::ClaudeCodeShell` and at least one `Http` grant (a checked provider
+  needs a judge host in its `[http]`, agentic-harness 10; the rule is the
+  answer of Q13 in section 16, as agentic-harness gives none). `ModView.judge` is `null` for every other mod, and
   otherwise `{kept: bool, origin: string | null, hosts: [string]}`: whether a
   key is kept, its origin when it is, and the provider's own `Http` hosts. The
   section sits in the details of 5.3.4, after `Agents`, headed `Judge key`.
@@ -2655,10 +2665,12 @@ N10).
 - **Origin parse.** One parse, the one host 19.4 uses for the same check:
   scheme `https`, no userinfo, no path (a path, query or fragment is refused),
   host lower-cased without a trailing dot, the port with 443 as the default and
-  left out of the text; the stored origin is that text. The parse lives in
-  one function (`words::judge_origin`) used by the page's command and by the
-  host's binding check through the shared function that host 19.4 names; the
-  app never checks an origin twice with two parsers.
+  left out of the text; the stored origin is that text (agentic-harness 5).
+  `words::judge_origin` is the one app function that applies it, for the
+  page's line and for `judge_set`; it calls the host's parse once host exports
+  it (asked of host, section 15). The host parses the stored origin again at
+  each binding check (host 19.4), so the app's parse decides only what is
+  shown and stored, never where a key goes.
 - **Storing.** `judge_set({local, key, origin})` stores
   `<home>/app/accounts/judge/<provider mod id>.json`, 0600 (the folder 0700),
   atomic as in 19.1:
@@ -2678,7 +2690,8 @@ N10).
   `Replace key` and `Remove key`; it never shows or returns the key: no command
   returns it, and `ModView.judge` holds only `kept` and `origin`.
 - **Removing.** `judge_remove({local})` deletes the file, then tells the host
-  that the account `judge` of that provider changed (host 19.4); the host ends
+  that the account `judge` of that provider changed (asked of host, section
+  15); the host ends
   the provider's live judge streams. The deletion and the notice happen in that
   order, and the notice is sent also when no file existed.
 - **Uninstalling.** `mod_remove` of a mod that has a key file deletes it before
@@ -2694,7 +2707,7 @@ N10).
 
 ### 19.5 Commands
 
-Added to section 7, window `main`, stage K. Each records no secret in the driver
+Added to section 7, window `main`, stage L. Each records no secret in the driver
 log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 
 | Command | Arguments | Result |
@@ -2710,7 +2723,7 @@ log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 `Status` gains `chatgpt: {signedIn, plan, error}` and `claude: {path, version} |
 null`. `CmdError.code` gains no value: a failed check is `bad_input`, an
 unreachable OpenAI is `unavailable`, an I/O error is `io`. `build.rs` and
-`capabilities/main.json` list the seven commands in stage K (section 14).
+`capabilities/main.json` list the seven commands in stage L (section 14).
 
 ### 19.6 Tests
 
@@ -2728,13 +2741,13 @@ judge origin for the judge key (dev 18), for S65.
 
 | Test | Checks | Oracle |
 |---|---|---|
-| `accounts::tests` (K) | the three file writes are atomic (a killed `.tmp` leaves the old file) and 0600/0700; an unknown `version`, bad JSON or a wide mode is not used; `judge` matches the identity exactly (`local/x` is not `x`; case and prefix differ); the file name of an identity | the files read with `std::fs` |
-| `chatgpt::tests` (K) | the authorization URL holds the S256 challenge of the verifier, `state`, `nonce` and only the scopes of `SCOPES`; the listener refuses another path, a wrong `state` and a second request; a tampered ID token, a wrong `iss`, `aud` or `nonce`, an expired one and an `alg` other than RS256 each fail the check and write nothing; a refresh holds the lock: two concurrent calls make one refresh request | the issuer stand-in's request log, the file |
-| `claude_bin::tests` (K) | the version parse and comparison (`2.1.295` ok, `2.1.9` too old, `2.2.0` ok, `10.0.0` ok, a suffix ignored); a timeout kills the process group; each failure's words | literal strings |
-| `words::tests` (K, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; `judge_origin` accepts and refuses (path, userinfo, `http`, trailing dot, upper case, port 443) | literal strings |
-| `consent::tests` (K) | `Agent` takes `Approve` with no withheld and no choice, or `Deny`; `stop` is `WrongAnswer` | the answers submitted |
-| `tests/it/gui_shell.rs` (K, step 11) | through the driver's `ask`: an `agent` request of each `what` shows its title and question, hostile folder, origin and function names as text, and no stop button; an install with `agents_via` shows `Uses Claude Code through <provider>.` | `eval` of the consent DOM text |
-| `tests/it/agent.rs` (K) | S54 to S68 | below |
+| `accounts::tests` (L) | the three file writes are atomic (a killed `.tmp` leaves the old file) and 0600/0700; an unknown `version`, bad JSON or a wide mode is not used; `judge` matches the identity exactly (`local/x` is not `x`; case and prefix differ); the file name of an identity | the files read with `std::fs` |
+| `chatgpt::tests` (L) | the authorization URL holds the S256 challenge of the verifier, `state`, `nonce` and only the scopes of `SCOPES`; the listener refuses another path, a wrong `state` and a second request; a tampered ID token, a wrong `iss`, `aud` or `nonce`, an expired one and an `alg` other than RS256 each fail the check and write nothing; a refresh holds the lock: two concurrent calls make one refresh request | the issuer stand-in's request log, the file |
+| `claude_bin::tests` (L) | the version parse and comparison (`2.1.295` ok, `2.1.9` too old, `2.2.0` ok, `10.0.0` ok, a suffix ignored); a timeout kills the process group; each failure's words | literal strings |
+| `words::tests` (L, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; `judge_origin` accepts and refuses (path, userinfo, `http`, trailing dot, upper case, port 443) | literal strings |
+| `consent::tests` (L) | `Agent` takes `Approve` with no withheld and no choice, or `Deny`; `stop` is `WrongAnswer` | the answers submitted |
+| `tests/it/gui_shell.rs` (L, step 11) | through the driver's `ask`: an `agent` request of each `what` shows its title and question, hostile folder, origin and function names as text, and no stop button; an install with `agents_via` shows `Uses Claude Code through <provider>.` | `eval` of the consent DOM text |
+| `tests/it/agent.rs` (L) | S54 to S68 | below |
 
 Scenarios of `tests/it/agent.rs`:
 
@@ -2754,13 +2767,9 @@ Scenarios of `tests/it/agent.rs`:
   the account and a toolset, through the host's `Confirm::agent` double with
   the call returning before the view is answered; deny, a closed view and a
   quit answer `Deny` and keep nothing; the same ask shows the view again.
-
-- **S68 Wrong sign-in** (APP-F-80). The issuer stand-in answers with a wrong
-  `state`, then with an ID token for another `aud`, then another `nonce`: each
-  attempt fails with its words and no file is written.
 - **S60 Consents in the details** (APP-F-83, APP-F-84). After S58 approved, the
   details of the mod show the consent line and its switch, and the grant rows
-  of 19.2 for a mod holding both grants; `consent_withdraw` removes the line,
+  of section 4 for a mod holding both grants; `consent_withdraw` removes the line,
   the host's list agrees, and the next ask shows the view; the plan of a
   consumer of a Claude Code provider shows `Uses Claude Code through
   <provider>.`.
@@ -2788,18 +2797,17 @@ Scenarios of `tests/it/agent.rs`:
   S65: no command of 19.5 is reachable, no `ModView`, `Status` or event holds a
   token, key or `claude` path, and the account folder is not served at any
   mod origin or `/api/` route.
+- **S68 Wrong sign-in** (APP-F-80). The issuer stand-in answers with a wrong
+  `state`, then with an ID token for another `aud`, then another `nonce`: each
+  attempt fails with its words and no file is written.
 
 ### 19.7 Build plan
 
-Stage K is listed in section 12; its row is repeated here for reference:
+Stage L is listed in section 12; its row is repeated here for reference:
 
 | Stage | Builds | Needs | Fake until then | Done when |
 |---|---|---|---|---|
-| K Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::agent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
-
-Stage K here is the agent layer of step 11. The row `K Look (W37)` of section 12
-is the manager's look and shares the letter by history; the stages that read
-`stage K` in sections 4 to 11 mean Look, unless they say step 11.
+| L Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::agent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
 
 ### 19.8 Security properties
 
