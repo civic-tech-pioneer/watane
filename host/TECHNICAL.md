@@ -2423,7 +2423,11 @@ an outside effect (19.6).
 **The origin client must still be there.** At apply (19.6), and at each
 firing of a timer, the host checks that the origin client is installed and
 enabled with the identity it carried. Else a request ends its stream `gone`,
-and a timer fires with its own mod as origin client. The host checks when a call starts, after the mod's call lock is taken, not before the wait: a call of the host's own (an `ended` or `ready`, an item call, a firing) whose origin client is gone runs with the called mod's own identity as origin client. An identity alone does
+and a timer fires with its own mod as origin client. The host checks when a
+call starts, after the mod's call lock is taken, not before the wait: a call of
+the host's own (an `ended` or `ready`, an item call, a firing) whose origin
+client is gone runs with the called mod's own identity as origin client. An
+identity alone does
 not tell two installs apart (a local mod's is `local/<slug>`), so `remove`
 rewrites the timers that carry the removed mod to their own mod (4.4), and a
 later install with the same identity finds no timer that carries it. Each
@@ -3047,15 +3051,19 @@ mod to the timer's own mod, so a later mod with the same identity, such as a
 local mod with the same slug, inherits none either; 19, Terms; 4.4). `after(id,
 delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
 is ignored). When `remove` finds a timer whose owner is not installed, so that its identity is not known, it sets that timer's origin client to the empty text, which no mod has (the timer then fires with its own mod as origin client). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
-timers that the chain has queued) are made at the call. The write follows the
+timers that every chain in flight has queued, 19.2 Commit) are made at the call. The write follows the
 chain rule above: the `after` and `cancel` that reach the top-level invoke are
 written to the `timers` table in the write transaction of that invoke's
 commit (7), together with its state writes; a rolled-back call's timers are
 never written. A due timer fires as a
 top-level call of the mod's `timer-sink.fired(id)` with caller `host`, fresh
 budget, and the stored origin client; one due during downtime fires soon after
-the host starts (within the first second). A firing reads its row again after the mod's call lock is taken: a firing for an id cancelled or
-replaced meanwhile (other due time) is ignored, and the origin client comes from that row. Firings run on one worker per mod with due timers, in due order, and a firing in progress is never armed again (`enable` reloads the rows; one firing per row due). Timers survive a restart; a kill after the
+the host starts (within the first second). A firing reads its row again
+after the mod's call lock is taken: a firing for an id cancelled or replaced
+meanwhile (other due time) is ignored, and the origin client comes from that
+row. Firings run on one worker per mod with due timers, in due order, and a
+firing in progress is never armed again (`enable` reloads the rows; one firing
+per row due). Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
 armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export
