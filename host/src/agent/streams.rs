@@ -116,6 +116,9 @@ struct Stream {
     closing: Option<Value>,
     producer_told: bool,
     handed_off: bool,
+    /// How many times the stream changed consumer: a `cancel` or `resume` recorded at another
+    /// count is stale, even if the consumer is the same again (19.6, At apply).
+    handoffs: u32,
     test: bool,
     /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
     via: Option<InterfaceName>,
@@ -145,6 +148,7 @@ impl Stream {
             closing: None,
             producer_told: false,
             handed_off: false,
+            handoffs: 0,
             test,
             via,
         }
@@ -158,6 +162,7 @@ pub(crate) struct Info {
     pub producer: Producer,
     pub origin: String,
     pub handed_off: bool,
+    pub handoffs: u32,
 }
 
 #[derive(Debug)]
@@ -372,6 +377,7 @@ impl Hub {
             producer: s.producer.clone(),
             origin: s.origin.clone(),
             handed_off: s.handed_off,
+            handoffs: s.handoffs,
         })
     }
     pub fn open_count(&self, key: &str) -> usize {
@@ -471,8 +477,12 @@ impl Hub {
                     inner.end(&id, outcome, true);
                 }
             }
-            Effect::Cancel { id, by } => {
-                if inner.streams.get(&id).is_some_and(|s| s.consumer == by) {
+            Effect::Cancel { id, by, handoffs } => {
+                if inner
+                    .streams
+                    .get(&id)
+                    .is_some_and(|s| s.consumer == by && s.handoffs == handoffs)
+                {
                     inner.end(&id, json!("cancelled"), false);
                 }
             }
@@ -484,6 +494,7 @@ impl Hub {
                     let old = s.consumer.key();
                     s.consumer = Consumer::Mod(to.clone());
                     s.handed_off = true;
+                    s.handoffs += 1;
                     if let Some(old) = old {
                         inner.dec_open(&old);
                     }
@@ -491,9 +502,10 @@ impl Hub {
                     inner.schedule(&id);
                 }
             }
-            Effect::Resume { id, by } => {
+            Effect::Resume { id, by, handoffs } => {
                 if let Some(s) = inner.streams.get_mut(&id)
                     && s.consumer == by
+                    && s.handoffs == handoffs
                     && s.deferred.take().is_some()
                 {
                     inner.schedule(&id);
@@ -1242,5 +1254,61 @@ impl Drop for ConnGuard {
 impl std::fmt::Debug for ConnGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ConnGuard").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Limits, Mode};
+
+    fn modref(name: &str) -> ModRef {
+        ModRef {
+            local: LocalName::parse(name).unwrap(),
+            identity: format!("local/{name}"),
+        }
+    }
+
+    /// 19.6 (At apply): a stream handed from A to X and back to A is A's again, but a `cancel`
+    /// that A's call recorded before the hand-offs is stale and does nothing.
+    #[test]
+    fn ac3_a_stale_cancel_does_nothing_after_a_hand_off_and_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let (a, x) = (modref("a"), modref("x"));
+        let id = host
+            .hub
+            .test_open(Consumer::Mod(a.clone()), "local/a".into())
+            .unwrap();
+        let handoffs = host.hub.info(&id).unwrap().handoffs;
+        assert_eq!(handoffs, 0);
+        for to in [&x, &a] {
+            host.hub.apply(
+                &host,
+                Effect::HandOff {
+                    id: id.clone(),
+                    to: to.clone(),
+                    to_gen: None,
+                },
+                true,
+            );
+        }
+        let info = host.hub.info(&id).unwrap();
+        assert_eq!(
+            (info.consumer.clone(), info.handoffs),
+            (Consumer::Mod(a.clone()), 2)
+        );
+        let cancel = |handoffs| Effect::Cancel {
+            id: id.clone(),
+            by: Consumer::Mod(a.clone()),
+            handoffs,
+        };
+        host.hub.apply(&host, cancel(0), true);
+        assert!(
+            host.hub.info(&id).is_some(),
+            "a stale cancel ended the stream"
+        );
+        host.hub.apply(&host, cancel(2), true);
+        assert!(host.hub.info(&id).is_none(), "a current cancel did nothing");
     }
 }

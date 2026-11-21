@@ -83,6 +83,9 @@ pub struct Host {
     /// The chains in flight, and the gate of 19.2 (Commit): a call checks the limits and queues
     /// its effect, and a chain takes its log to apply it, under this lock.
     chains: Mutex<Vec<std::sync::Weak<runtime::call::Chain>>>,
+    /// Held by `remove` from its start to its end: an install of a local name waits for the
+    /// removal of that name to finish (4.4).
+    removes: Mutex<()>,
     bus: bus::PageBus,
     tools: Mutex<tools::Tools>,
     weak: std::sync::Weak<Host>,
@@ -120,6 +123,7 @@ impl Host {
             state,
             call_locks: Mutex::new(std::collections::BTreeMap::new()),
             chains: Mutex::new(Vec::new()),
+            removes: Mutex::new(()),
             engine,
             limits,
             home,
@@ -333,6 +337,10 @@ impl Host {
         withhold: &[(LocalName, watane_pkg::Grant)],
         port: u16,
     ) -> Result<Vec<InstalledMod>, HostError> {
+        let _removes = self
+            .removes
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         let updates: Vec<_> = plan
             .entries()
             .iter()
@@ -456,6 +464,11 @@ impl Host {
         self.set_grant(local, grant, false)
     }
     pub fn remove(&self, local: &LocalName, delete_data: bool) -> Result<(), HostError> {
+        // An install waits for the whole removal (4.4).
+        let _removes = self
+            .removes
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
         // Lock the mod before the catalog; a running call may read the catalog.
         let identity = self
             .get(local)
@@ -493,12 +506,10 @@ impl Host {
         next.save(self.home())?;
         *catalog = next;
         drop(catalog);
-        std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))?;
-        if delete_data {
-            self.state.delete(&identity)?;
-        }
+        // What protects authority runs first and does not depend on the folder: the streams
+        // end, the timers that carry the removed mod are rewritten (4.4, 19.6). A failure is
+        // reported at the end; the folder goes last.
         self.hub.end_mod(&identity);
-        // Its timers go, and no other timer keeps it as origin client (4.4, 19.6).
         let owners = self
             .catalog
             .lock()
@@ -507,12 +518,20 @@ impl Host {
             .iter()
             .map(|m| (state::mod_id(&m.identity), m.identity.clone()))
             .collect();
-        self.state
+        let rewritten = self
+            .state
             .timers_removed(&identity, &owners)
-            .map_err(|e| HostError::Internal(e.message))?;
+            .map_err(|e| HostError::Internal(e.message));
+        let data = if delete_data {
+            self.state.delete(&identity)
+        } else {
+            Ok(())
+        };
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
-        Ok(())
+        let folder = std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))
+            .map_err(HostError::from);
+        folder.and(data).and(rewritten)
     }
 }
 

@@ -56,8 +56,10 @@ pub(crate) enum Effect {
     },
     Cancel {
         id: String,
-        /// The consumer the call acted for: applied only while it still is the stream's.
+        /// The consumer the call acted for: applied only while it still is the stream's, and
+        /// the stream has changed consumer as often as it had at the call.
         by: Consumer,
+        handoffs: u32,
     },
     HandOff {
         id: String,
@@ -68,6 +70,7 @@ pub(crate) enum Effect {
     Resume {
         id: String,
         by: Consumer,
+        handoffs: u32,
     },
     TimerAfter {
         owner: ModRef,
@@ -155,6 +158,7 @@ struct View {
     producer: Producer,
     origin: String,
     handed_off: bool,
+    handoffs: u32,
     in_chain: bool,
 }
 
@@ -216,6 +220,7 @@ impl Invocation {
                 producer: Producer::Mod(producer.clone()),
                 origin: origin.clone(),
                 handed_off: false,
+                handoffs: 0,
                 in_chain: true,
             }),
             _ => None,
@@ -227,6 +232,7 @@ impl Invocation {
                 producer: info.producer,
                 origin: info.origin,
                 handed_off: info.handed_off,
+                handoffs: info.handoffs,
                 in_chain: false,
             });
         }
@@ -239,6 +245,7 @@ impl Invocation {
                 Effect::HandOff { id: i, to, .. } if i == id => {
                     view.consumer = Consumer::Mod(to.clone());
                     view.handed_off = true;
+                    view.handoffs += 1;
                 }
                 _ => {}
             }
@@ -473,6 +480,7 @@ pub(crate) fn call(
                 log.push(Effect::Cancel {
                     id,
                     by: view.consumer,
+                    handoffs: view.handoffs,
                 });
             }
             Ok(Value::Null)
@@ -489,6 +497,7 @@ pub(crate) fn call(
             log.push(Effect::Resume {
                 id,
                 by: view.consumer,
+                handoffs: view.handoffs,
             });
             Ok(ok())
         }

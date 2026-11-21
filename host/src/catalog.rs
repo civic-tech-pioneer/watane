@@ -481,14 +481,16 @@ impl Catalog {
             };
             worlds.insert(local.clone(), m.world().clone());
             names.insert(local.clone());
-            let unchanged = old.is_some_and(|m| m.package == package);
+            let same = old.is_some_and(|m| m.package == package);
+            // A mod in the error state is installed again whole: its component loads now.
+            let unchanged = same && old.is_some_and(|m| m.error.is_none());
             let mut installed = view(&m, local, package);
             installed.identity = identity.clone();
             installed.publisher = publisher;
             installed.release = release;
             let change = match old {
                 None => Change::New,
-                Some(_) if unchanged => Change::Unchanged,
+                Some(_) if same => Change::Unchanged,
                 Some(old) => Change::Update {
                     from_version: old.version.clone(),
                 },

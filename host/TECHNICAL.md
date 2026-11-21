@@ -633,6 +633,12 @@ Install checks the generation again before committing (Q24).
   a local name) from the `functions` of every stored toolset consent (19.5,
   19.7), in the same write, so that a later mod under that local name, or a
   mod that became a manager, reaches no agent until a new consent (S65).
+  `remove` runs in this order: the catalog change, then everything that
+  protects authority (the streams end, the timers are rewritten, the state is
+  deleted), then the folder; a failure of a later step is reported and undoes
+  none of the earlier. An install waits for a `remove` in progress (one lock
+  held for the whole removal), so no install sees the name free while a row or
+  a stream still carries the removed install.
   `withdraw_consent(local,
   consent)` removes one consent, like `revoke` for a grant, and ends its
   dependent streams and closes its dependent handles (19.7). A consent is
@@ -3053,8 +3059,9 @@ and `hand-off` are not requests, but they follow the same chain rule below
   effects of 19.2 Commit need no catalog check: `push` and `close` carry the
   producer, `cancel` and `resume` the consumer that the call acted for, and
   the hub acts only if it still holds that stream with that producer or
-  consumer (a hand-off in between makes a stale `cancel` or `resume` do
-  nothing), and every change
+  consumer (a hand-off in between, even one that gives the stream back, makes
+  a stale `cancel` or `resume` do nothing: the stream counts its hand-offs and
+  the effect records the count at its call), and every change
   that falsifies their call (disable, update, removal, a lost grant, an
   `Open` or `HandOff` that failed above) ends the stream in the hub first, so
   they find nothing.
@@ -3105,7 +3112,10 @@ armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export
 `timer-sink` gets no firing: at its due time the row is deleted and the host
 logs `watane: timer <id> of <local> dropped: no timer-sink`. Removal of the mod deletes its
-timers. Streams and jobs are memory only (19.2): after a restart their
+timers (the no-`timer-sink` delete checks, in its own write transaction,
+that the install it read is still current and still lacks the export; an
+unchanged reinstall of a mod in the error state loads its component like an
+update). Streams and jobs are memory only (19.2): after a restart their
 requests are gone, and the mod that wants them again starts them from a
 fired timer or a call.
 

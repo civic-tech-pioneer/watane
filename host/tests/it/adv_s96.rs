@@ -560,7 +560,8 @@ fn ac3_update_while_a_firing_waits_keeps_the_timer() {
     let text = std::fs::read_to_string(&toml).unwrap();
     std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
     page(&env, "advo", "api.after", json!({"id":"x","ms":250}));
-    // advo is busy past the due time; the firing waits for its lock.
+    // advo is busy past the due time (long, for a loaded machine); the firing waits for its lock.
+    page(&env, "advo", "api.set-slow", json!({"ms": 4000}));
     let busy = in_flight(&env, "advo", "api.cancel-slowly", json!({"id":"none"}));
     let before = env.host.get(&local("advo")).unwrap().package;
     env.host
@@ -745,15 +746,17 @@ fn adv_s96_open_in_flight_outlives_an_update_after_a_restart() {
 fn adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin() {
     let env = Env::new(&["latch", "relay", "advo"]);
     let s = open_for_relay(&env);
-    // The producer closes; its `ended` runs with `relay` as origin client and spins 300 ms.
+    // `ended` spins long, so that a loaded machine still lands the reinstall inside it.
+    page(&env, "advo", "api.set-spin", json!({"ms": 4000}));
+    // The producer closes; its `ended` runs with `relay` as origin client and spins.
     page(&env, "advo", "api.close", json!({"s": s}));
     let start = std::time::Instant::now();
     std::thread::sleep(Duration::from_millis(50));
     env.host.remove(&local("relay"), true).unwrap();
     super::streams::install(&env.host, &["relay"]);
-    // advo's `ended` takes advo's lock (not relay's) and spins 300 ms before `after`.
+    // advo's `ended` takes advo's lock (not relay's) and spins before `after`.
     assert!(
-        start.elapsed() < Duration::from_millis(280),
+        start.elapsed() < Duration::from_millis(3500),
         "the reinstall must land while advo's ended runs: {:?}",
         start.elapsed()
     );
@@ -1004,4 +1007,72 @@ fn adv_s96_install_in_the_remove_gap_inherits_the_removed_origin() {
         row["origin"], "local/relay",
         "remove returned {removed:?}; the new install of local/relay inherits a timer of the removed one: {row}"
     );
+}
+
+// ---- S96-fix4 -----------------------------------------------------------------------------
+
+/// 4.4: what protects authority runs before the folder goes, and does not depend on it: with a
+/// folder that cannot be deleted, `remove` reports the failure and the timers that carried the
+/// removed mod are rewritten and its streams ended. (The folder is replaced by a file: deleting
+/// it as a folder fails. Linux only: other systems may delete a file there.)
+#[test]
+#[cfg(target_os = "linux")]
+fn ac1_a_folder_that_cannot_be_deleted_leaves_no_authority_behind() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    let s = open_for_relay(&env);
+    call_as(
+        &env.host,
+        Caller::Mod(local("relay")),
+        "advo",
+        "api.after",
+        json!({"id":"probe","ms":3_600_000}),
+    )
+    .unwrap();
+    let folder = env.dir.path().join("mods/relay");
+    std::fs::remove_dir_all(&folder).unwrap();
+    std::fs::write(&folder, b"not a folder").unwrap();
+    assert!(env.host.remove(&local("relay"), true).is_err());
+    wait("advo's ended", Duration::from_secs(10), || {
+        page(&env, "advo", "api.done", Value::Null) == json!(true)
+    });
+    assert_eq!(
+        page(&env, "advo", "api.ended", Value::Null),
+        json!([format!("{s} gone")])
+    );
+    let Env { dir, host } = env;
+    drop(host);
+    let rows = timer_rows(dir.path());
+    let row = &rows[&format!("{}/probe", id_of("local/advo"))];
+    assert_ne!(row["origin"], "local/relay", "{row}");
+}
+
+/// 19.6 (Timers): a mod in the error state is installed again with the same package (an
+/// unchanged reinstall): its component loads, its timer waited and now fires; the row is not
+/// deleted as "no timer-sink".
+#[test]
+fn ac6_an_unchanged_reinstall_clears_an_error_and_the_timer_fires() {
+    let Env { dir, host } = Env::new(&["latch", "relay", "advo"]);
+    let first = Env {
+        dir: tempfile::tempdir().unwrap(),
+        host: std::sync::Arc::clone(&host),
+    };
+    page(&first, "advo", "api.after", json!({"id":"t","ms":300}));
+    drop(first);
+    drop(host);
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(dir.path().join("mods/advo/logic.wasm"), b"not wasm").unwrap();
+    let host = watane_host::Host::open(
+        dir.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let env = Env { dir, host };
+    assert!(env.host.get(&local("advo")).unwrap().error.is_some());
+    std::thread::sleep(Duration::from_millis(1200));
+    super::streams::install(&env.host, &["advo"]);
+    assert!(env.host.get(&local("advo")).unwrap().error.is_none());
+    wait("the timer", Duration::from_secs(10), || {
+        page(&env, "advo", "api.fired", Value::Null) == json!(["t"])
+    });
 }

@@ -26,7 +26,7 @@ impl exports::mods::advo::api::Guest for Guest {
         timers::after(&id, ms).unwrap();
     }
     fn cancel_slowly(id: String) {
-        let x = spin(800);
+        let x = spin(state::get("slow").map_or(800, |v| u64::from_le_bytes(v.try_into().unwrap())));
         timers::cancel(&id);
         state::put("spun", &x.to_le_bytes());
     }
@@ -50,6 +50,12 @@ impl exports::mods::advo::api::Guest for Guest {
             Err(e) => format!("{e:?}"),
         }
     }
+    fn set_slow(ms: u64) {
+        state::put("slow", &ms.to_le_bytes());
+    }
+    fn set_spin(ms: u64) {
+        state::put("spin", &ms.to_le_bytes());
+    }
     fn close(s: String) {
         streams::close(&s, &streams::Outcome::Closed);
     }
@@ -66,7 +72,8 @@ impl exports::watane::host::stream_producer::Guest for Guest {
         all.push(format!("{s} {}", if matches!(o, streams::Outcome::Gone) { "gone" } else { "other" }));
         state::put("ended", all.join("\n").as_bytes());
         // Let the host finish the removal that ended the stream first.
-        let x = spin(300);
+        let ms = state::get("spin").map_or(300, |v| u64::from_le_bytes(v.try_into().unwrap()));
+        let x = spin(ms);
         let _ = timers::after("leak", 3_600_000);
         state::put("done", &x.to_le_bytes());
     }
