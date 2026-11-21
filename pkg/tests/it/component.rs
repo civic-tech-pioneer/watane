@@ -18,7 +18,8 @@ interface extra { f: func(); }
 ";
 const HOST: &str = "package watane:host@0.1.0;
 interface state { get: func(key: string) -> option<list<u8>>; }
-interface caller { who: func() -> string; }";
+interface caller { who: func() -> string; }
+interface stream-sink { push: func(item: u32); }";
 
 fn put(dir: &Path, file: &str, bytes: impl AsRef<[u8]>) {
     let path = dir.join(file);
@@ -258,6 +259,23 @@ fn subscriptions_are_expected_exports() {
     let v = violations(&m);
     assert_eq!(v.len(), 1, "{v:?}");
     assert!(v[0].message.contains("mods:other/events@0.1.0"), "{v:?}");
+}
+
+#[test]
+fn host_exports_are_expected_exports() {
+    let items = "export watane:host/stream-sink@0.1.0;";
+    let dir = folder(items);
+    put(dir.path(), "logic.wasm", component(items, &[]));
+    let m = Mod::read(dir.path()).unwrap();
+    m.check_component().unwrap();
+    put(dir.path(), "logic.wasm", component("export api;", &[]));
+    let v = violations(&m);
+    assert_eq!(v.len(), 2, "{v:?}");
+    assert!(
+        v.iter().any(|v| v.message
+            == "logic.wasm does not export `watane:host/stream-sink@0.1.0`, which wit/world.wit declares"),
+        "{v:?}"
+    );
 }
 
 #[test]

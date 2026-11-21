@@ -161,7 +161,9 @@ pub enum GrantKind {
     Call,
     Subscribe,
     Manage,
+    #[serde(rename = "claude-code")]
     ClaudeCode,
+    #[serde(rename = "claude-code-shell")]
     ClaudeCodeShell,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
