@@ -616,7 +616,16 @@ Install checks the generation again before committing (Q24).
   the mod or the grant, also those whose origin client it is (`gone`; 19,
   Terms; 19.2, 19.5). A disabled mod's own timers wait and a removed mod's are
   deleted (19.6); another mod's timer that carries it as origin client fires
-  with its own mod as origin client. `withdraw_consent(local,
+  with its own mod as origin client. `remove` also rewrites, in the same
+  write, the origin of every other mod's timer that carries the removed mod's
+  identity to that timer's own mod: a local mod's identity is `local/<slug>`,
+  so a later local mod with the same slug has the same identity and must not
+  find the removed mod's authority waiting in a timer (S62). `remove`, and a
+  `grant` of `Manage`, drop the names `<local>_…` of that mod (3.2: no `_` in
+  a local name) from the `functions` of every stored toolset consent (19.5,
+  19.7), in the same write, so that a later mod under that local name, or a
+  mod that became a manager, reaches no agent until a new consent (S65).
+  `withdraw_consent(local,
   consent)` removes one consent, like `revoke` for a grant, and ends its
   dependent streams and closes its dependent handles (19.7). A consent is
   given only through `Confirm::consent`; the app never writes it.
@@ -1392,7 +1401,9 @@ C's invoke, from the `func_new` of the outlet:
    order: the set of 9.2 step 4.
 2. For each subscriber S: Invoke(S, its subscription export of O, the same
    function, the same values, ctx with depth + 1, caller `mod:<C>`, fuel =
-   C's store's fuel left), as a nested call (6.6).
+   C's store's fuel left), as a nested call (6.6). Step 11: S and every call
+   nested in it run with S as origin client, never C's (19, Terms); C's
+   origin client is back when the collect returns.
    - On success: set C's store fuel to the fuel that S left, and append
      S's list to the answer. S's writes commit and its events join the
      chain effects, as for a nested call.
@@ -1714,10 +1725,10 @@ run on the preview install path.
 | A failing check cannot let a tool run | `onFailure: block` confirmed in `initialize` (19.3). Files: `init.rs`, `control.rs` | A2: cases 10, 14 |
 | "Safe" cannot widen the mode | a check is answered `none` or `deny`, never `allow` (19.3). File: `control.rs` | A2: case 15 |
 | Writes cannot plant code that runs later | the protected paths of the host's `--settings=` (19.3). File: `run.rs` | A2: case 18 |
-| No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows, no `allow` answer outside the workspaces). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63; A3, A4 |
+| No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows and no bare one, no `allow` answer outside the workspaces by path or pattern). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63, S67; A3: S68; A4 |
 | A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
-| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named (19.5). Files: `src/agent/consent.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4). Files: `src/agent/consent.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
@@ -1883,8 +1894,8 @@ is added.
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/it/manage.rs`); J10 with `dev` and `app` |
 | 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/it/program/api.rs` passes; every earlier test passes unchanged (the default body) |
 | A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6, the chain rule of requests and stream effects, 6.6 step 4) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixtures `relay`, `relay-front`; `Outcome.requests` | stage 5; `pkg` A1 (`watane:host` rows for the new interfaces and exports) | `RawMod` and a crate-private test source for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); S48 to S56 of FUNCTIONAL; the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
-| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); S63, S64 (`say` part) |
-| A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C; S61, S62, S65 |
+| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); S63, S64 (`say` part), S67 |
+| A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C; S61, S62, S65, S66, S68 |
 | A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D; S64 (header part) |
 | A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_origin`, `account_changed(&Account::Judge { .. })` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
 
@@ -2310,7 +2321,13 @@ an outside effect (19.6).
 **The origin client must still be there.** At apply (19.6), and at each
 firing of a timer, the host checks that the origin client is installed and
 enabled with the identity it carried. Else a request ends its stream `gone`,
-and a timer fires with its own mod as origin client. Disabling or removing a
+and a timer fires with its own mod as origin client. An identity alone does
+not tell two installs apart (a local mod's is `local/<slug>`), so `remove`
+rewrites the timers that carry the removed mod to their own mod (4.4), and a
+later install with the same identity finds no timer that carries it. Each
+request records the origin client of the call that made it, at that call:
+inside a collect (9.4) that is the subscriber, and the collector's own later
+requests keep the collector's origin client. Disabling or removing a
 mod ends every stream and closes every handle whose origin client it is
 (`gone`), whoever the producer and consumer are (S62).
 
@@ -2599,13 +2616,17 @@ not keep a credential from a mod on their own. Three rules do:
   `~/.kube/**` and `~/Library/Keychains/**`, each as an absolute `//` rule
   after canonicalization. No launch can remove them.
 - An `allow` rule on `Read`, `Glob`, `Grep`, `Edit`, `Write` or
-  `NotebookEdit` with an argument (deny rules only narrow) is refused `bad-launch {field: "allow"}`
-  unless the argument is a relative pattern: it does not start with `/`, `~`
-  or `//`, and has no `..` segment.
+  `NotebookEdit` (deny rules only narrow) is refused `bad-launch {field: "allow"}`
+  unless it has an argument and the argument is a relative pattern: it does
+  not start with `/`, `~` or `//`, and has no `..` segment. A bare name
+  (`Read`, `Write`) is refused: it matches every path, so `claude` would read
+  or write outside the workspaces without an ask, and the third rule would
+  never see it; `Read(**)` is the way to allow the whole workspace.
 - An `answer` `allow` to an `ask` whose tool is one of those six and whose
   path input (`file_path`, `path`, `notebook_path`; absent means the
   working folder) is not inside one of the launch's workspaces or its run
-  folder, after the
+  folder, or whose pattern input (`Glob`'s `pattern`, `Grep`'s `glob`)
+  starts with `/` or `~` or has a `..` segment, after the
   host resolves it as `claude` would (relative to the workspace, symlinks
   resolved), is refused `not-allowed-here`; nothing is written to stdin, and
   the ask is denied at its `expires-at`.
@@ -2857,11 +2878,14 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   functions stored with the origin client's consent for that toolset: the
   participant consented to the functions the words named, not to a name.
   A function the toolset gains later (an entry `<local>:<interface>` after an
-  update adds a function, a `set_toolset` that adds an entry, a tool mod that
-  gains `Manage`) is left out of `describe`, is `unknown-tool` at `call` and
+  update adds a function, a `set_toolset` that adds an entry) is left out of `describe`, is `unknown-tool` at `call` and
   is not listed on `/mcp/agent`, until a later `open` of that toolset asks
   the consent again with the whole current list; `Granted` then replaces the
-  stored list (S65).
+  stored list (S65). A name alone does not show that its mod changed: a mod
+  that gains `Manage` keeps its function names, and a different mod installed
+  under a removed mod's local name has the same names. So `remove` and a
+  `grant` of `Manage` drop that mod's names from every stored list (4.4), and
+  its functions are asked again like gained ones.
 
 ### 19.6 Requests and timers (H5, H7)
 
@@ -2902,8 +2926,9 @@ and `hand-off` are not requests, but they follow the same chain rule below
   is the human's then.
 - **At apply** the host checks again that the mod is enabled and holds the
   grant or consent the request needs (the rule of 6.10), and that the origin
-  client is installed and enabled with the identity the chain carried (19,
-  Terms); a request that fails this ends its stream `gone`.
+  client is installed and enabled with the identity that the request
+  recorded at its call (19, Terms); a request that fails this ends its
+  stream `gone`.
 - **A call commits whole.** The host-state writes of one invoke commit
   together or not at all (7); a deferred or failed call leaves no write
   behind. So a failed `append` in a mod leaves no chunk written.
@@ -2912,7 +2937,9 @@ and `hand-off` are not requests, but they follow the same chain rule below
 live (`too-many`), delays up to 30 days (else `bad-delay`), kept in host
 state (7: `timers/<mod>/<id>` → due time and the origin client's identity,
 never its local name, so a later mod given the same local name inherits no
-timer's authority; 19, Terms). `after(id,
+timer's authority; and `remove` rewrites each timer that carries the removed
+mod to the timer's own mod, so a later mod with the same identity, such as a
+local mod with the same slug, inherits none either; 19, Terms; 4.4). `after(id,
 delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
 is ignored). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
 timers that the chain has queued) are made at the call. The write follows the
@@ -2979,7 +3006,8 @@ app, kept by the host with the grants.
 // Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<folder>",
 // "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
 // `functions` is not part of the key). Toolset.functions: the `<local>_<interface>_<function>` names
-// of the ConsentRequest that was Granted, sorted; a handle reaches no other (19.5).
+// of the ConsentRequest that was Granted, sorted, less those that `remove` or a `grant` of `Manage`
+// dropped since (4.4); a handle reaches no other (19.5).
 pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String, functions: Vec<String> } }
 pub struct ConsentRequest {            // Debug, Clone, PartialEq
     pub origin: LocalName,             // the origin client: {origin client}
@@ -2993,6 +3021,8 @@ pub enum ConsentAnswer { Granted, Refused }
 //   fn consent(&self, request: ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> { .. }
 // Host gains:
 //   pub fn withdraw_consent(&self, local: &LocalName, consent: &Consent) -> Result<(), HostError>;
+//   (matches the stored consent by its `what` key, never by `==`: `Consent::parse("toolset:t")`
+//   has no functions, and it withdraws the stored toolset consent `t` whatever its functions)
 // InstalledMod gains: #[serde(default)] pub consents: Vec<Consent>;
 ```
 
