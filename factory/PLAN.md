@@ -1114,37 +1114,33 @@ watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane
 agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
 names the same interface in its sketch and fakes it until this one merges.
 
-- [~] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Routine `trig_01PGTXRrSDbTaG2nkiMxLDd3`. Branch
-  `slice/s95`. A design slice: apply TECHNICAL 15's checklist of agentic-harness (read it at
-  `https://github.com/civic-tech-pioneer/agentic-harness/blob/main/design/TECHNICAL.md`, section 15,
-  and the sections each row cites) to watane's documents: `spec/VISION.md` (the agent layer's place
-  in the order of work, before step 6), `spec/FUNCTIONAL.md` (F-AGENT-2 and W6: a token also comes
-  from a toolset consent; F-AGENT-5 to F-AGENT-9 and J11), `spec/TECHNICAL.md` (W2, W5, a new W row
-  for the agent layer's boundary), `host/TECHNICAL.md` (H1 to H5 and H7 with stream-sink `taken |
-  defer`, `streams.resume`, `stream-producer.ended`, the lag clock and the byte budgets; page
-  connection ids and their queues; timers per mod kept across restarts; `caller.identity()`;
-  `claude-types` with `not-owner`/`not-direct`; tool annotations `@parallel`, `@idempotent`;
-  `consent-pending`; account kind `judge`), `pkg/TECHNICAL.md` (4.5 import and export rows, 5.1 and
-  7.2 two grant kinds), `app/TECHNICAL.md` (new sections: Sign in with ChatGPT and the account file;
-  consent words and storage; the `claude` binary setting; the judge key on a manager page),
-  `dev/TECHNICAL.md` (the fake `claude` and the scripted Responses server with its judge), each
-  subsystem's build-plan rows for the agent layer, and the licence files (MIT OR Apache-2.0, N8).
-  Left out, still waiting on the human in agentic-harness's PLAN: `caller.boot()`, `outcome` on
-  `answered`, and the 4.5 host-item rules (`ask-resolved` values, checks closed with `expired`,
-  `wrapped` lines); the slice names them as open in host/TECHNICAL's question list. Outcome: a
-  watane foreman can build stage A (H1, H5, H7) from watane's own documents alone; every checklist
-  row is applied or named as left out, with the row it came from. Touches: spec/, host, pkg, app,
-  dev TECHNICAL (and FUNCTIONAL where a requirement lands), LICENSE files. Docs only. Cloud.
+- [x] **S95 The agent layer in watane's contracts (agentic-harness TECHNICAL 15, N3).** Delivered
+  2026-11-21 through PR #7 (routine `trig_01PGTXRrSDbTaG2nkiMxLDd3`, branch `slice/s95`). A watane
+  foreman can build stage A (host A1: H1 streams, H5 durable requests, H7 timers, page connections;
+  pkg stage 12) from watane's own documents; every TECHNICAL 15 row is applied or named as left out
+  (`caller.boot` Q34, `outcome` on `answered` Q35, the 4.5 host-item rules Q36). The agent layer is
+  W38, its boundary W39, app stage L; host 19, app 19, dev 18; host stages A1 to A5; grants
+  `Grant::ClaudeCode`, `Grant::ClaudeCodeShell` (CBOR [5], [6]); licence MIT OR Apache-2.0 in every
+  crate. User-sim ACCEPTED after fixes it wrote; adversary BREACHED 5 then 4 (S61 to S68), each closed
+  in the documents as a rule plus a FUNCTIONAL scenario the building slice turns red first. Six open
+  security questions for the human in host 18 (Q38 to Q43), none blocking A1; Q37 open.
 - [ ] **S96 Streams, durable requests and timers in the host (stage A: H1, H5, H7, the V8 probe).**
-  After S95. Builds what S95 writes for H1 (streams: table, FIFO per consumer, numbered batches,
+  After S95 (PR #7). Builds host stage A1 and pkg stage 12 as S95 wrote them (host 19), and what S95 writes for H1 (streams: table, FIFO per consumer, numbered batches,
   `taken | defer`, ends, byte budgets, page connections), H5 (effects after a durable commit) and H7
   (timers per mod, kept across restarts), and measures V8 (agentic-harness 16, "Probes named here")
   against stage A's budgets (agentic-harness 17: 8 host streams x 100 items/s of 1 KiB, item delay
   <= 50 ms, `cancel` to `ended` <= 250 ms, writer busy share <= 10%). Outcome: agentic-harness cases
-  7, 20, 21 and 36 and 51 (host part) pass as host tests; the V8 record is written. Interface: the
+  7, 20, 21, 36, 51 and 58 (host part) pass as host tests; the V8 record is written. Interface: the
   `watane:host@0.1.0` streams and timers of agentic-harness TECHNICAL 2.1, as S95 writes them in
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
-  against the same names. Touches: host, pkg (the 4.5 rows), dev (fakes), not app. Cloud.
+  against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
+
+- [ ] **S97 The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
+  The human decided (2026-11-21): restart detection is a new interface `host-info` with
+  `generation()` (in place of `caller.boot()`, Q34); `answered` carries `outcome` (Q35); the host
+  closes a check with `ask-resolved {by: expired}` at its `expires-at`, and the 4.5 host-item rules
+  of agentic-harness TECHNICAL 4.5 and 9.8 apply (Q36). Write each as decided in host, pkg and the
+  stage A2/A3 rows. Docs only. Cloud.
 
   For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
   `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
@@ -1507,6 +1503,15 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- (2026-11-21, from S95; none blocks stage A's A1) Six security questions in host/TECHNICAL 18, each
+  with its options there: Q38 the consent key names no provider (`via`), blocks A3; Q39 the Claude
+  login token and loopback under the shell grant (probe V28; agentic-harness S1's V27 found a
+  loopback proxy breach), blocks the shell grant in A2; Q40 sessions read each other's scratch and
+  run folders, blocks A2's scratch work; Q41 symlinks past the deny rules (V29), blocks A2; Q42 login
+  files the closed deny list misses under the shell grant; Q43 the content shape of `say` and a
+  lookalike `/` (V30), blocks A2. Also Q37: requests ride the call chain, but writes commit per
+  invoke (host Q3).
 
 - (2026-11-20, from S93; not blocking) The build boundary: wit-bindgen, run by rustc during a
   mod build, opens an absolute `generate!`/include path the mod names (e.g. a macOS autofs
