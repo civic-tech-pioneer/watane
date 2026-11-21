@@ -1124,7 +1124,7 @@ names the same interface in its sketch and fakes it until this one merges.
   crate. User-sim ACCEPTED after fixes it wrote; adversary BREACHED 5 then 4 (S61 to S68), each closed
   in the documents as a rule plus a FUNCTIONAL scenario the building slice turns red first. Six open
   security questions for the human in host 18 (Q38 to Q43), none blocking A1; Q37 open.
-- [~] **S96 Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
+- [~] **S96 (routine `trig_01G5BG7xm1TfA3JsHSBHzs8J`) Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
   pkg 12; the watane half).** One story in two repositories, handed out together: this is the host
   half, agentic-harness S32 the kernel-and-console half (its PLAN); Alice runs `watane-dev serve`
   with the agent kernel installed and watches numbered items of a real kernel stream arrive in its
@@ -1140,7 +1140,7 @@ names the same interface in its sketch and fakes it until this one merges.
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
   against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
 
-- [~] **S98 The macOS CI job is green again (guard).** Local (app). `main`'s required `test
+- [~] **S98 The macOS CI job is green again (guard).** Local (app); foreman `e22e166e` (sessionId `e22e166e-235d-4257-9712-4ab10a773441`), worktree `.claude/worktrees/s98`. `main`'s required `test
   (macos-26)` fails on the runner since 2026-11-21 07:01 with plan-only commits (passes on rerun,
   passes in `factory/check-main.sh` on the Mac): `gui_shell::ac2_background_screen_is_visible_without_focus`
   (driver.rs:304) and `look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`
