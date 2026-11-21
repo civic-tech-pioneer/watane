@@ -519,3 +519,30 @@ fn copy_dir(from: &Path, to: &Path) {
         }
     }
 }
+
+/// 19, Terms: "`remove` rewrites the timers that carry the removed mod to their own mod, and a
+/// later install with the same identity finds no timer that carries it." The origin client is
+/// checked once, when a call starts. A host call of `advo` (its `stream-producer.ended`, origin
+/// client `relay`) that is already running when `relay` is removed sets a timer after the
+/// removal's rewrite; its commit writes the row with the removed mod as origin client, and a
+/// later `local/relay` (same identity) would fire with it.
+#[test]
+fn adv_s96_timer_set_by_a_call_running_across_the_remove_carries_the_removed_origin() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    let s = open_for_relay(&env);
+    // The producer closes; its `ended` runs with `relay` as origin client and spins 300 ms.
+    page(&env, "advo", "api.close", json!({"s": s}));
+    std::thread::sleep(Duration::from_millis(100));
+    env.host.remove(&local("relay"), true).unwrap();
+    wait("advo's ended", Duration::from_secs(10), || {
+        page(&env, "advo", "api.done", Value::Null) == json!(true)
+    });
+    let Env { dir, host } = env;
+    drop(host);
+    let rows = timer_rows(dir.path());
+    let row = &rows[&format!("{}/leak", id_of("local/advo"))];
+    assert_ne!(
+        row["origin"], "local/relay",
+        "a timer committed after the removal carries the removed mod as origin client: {row}"
+    );
+}
