@@ -51,16 +51,21 @@ impl Timers {
         self.cv.notify_all();
     }
     /// Arms every row of the `timers` table (at start, and when a mod is enabled again), except
-    /// the firings in progress.
+    /// the firings in progress. It keeps what is armed already: an `arm` between the read of the
+    /// rows and this lock is not lost, and a stale entry fires nothing (its row is read again).
     pub fn reload(&self, host: &Host) {
         match host.state.timer_rows() {
             Ok(rows) => {
                 let mut queue = self.lock();
-                queue.heap.clear();
+                let armed: HashSet<(u64, String)> = queue
+                    .heap
+                    .iter()
+                    .map(|Reverse(entry)| entry.clone())
+                    .collect();
                 for (key, due, _) in rows {
                     if queue.flight.contains(&(key.clone(), due)) {
                         queue.skipped.insert((key, due));
-                    } else {
+                    } else if !armed.contains(&(due, key.clone())) {
                         queue.heap.push(Reverse((due, key)));
                     }
                 }
@@ -228,5 +233,36 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
             error.code, error.message
         );
         let _ = delete();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Host, Limits, Mode};
+
+    /// A timer armed after `reload` read the rows (its row committed after that read) stays
+    /// armed: `reload` keeps what is armed already, and arms a row once (19.6).
+    #[test]
+    fn reload_keeps_a_timer_armed_after_its_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let far = super::unix_ms() + 3_600_000;
+        host.state
+            .timer_write(&[super::TimerOp::After {
+                key: "m/y".into(),
+                due: far,
+                origin: "m".into(),
+            }])
+            .unwrap();
+        host.timers.arm("m/x".into(), far);
+        host.timers.reload(&host);
+        host.timers.reload(&host);
+        let queue = host.timers.lock();
+        let mut entries: Vec<_> = queue.heap.iter().map(|e| e.0.clone()).collect();
+        entries.sort();
+        assert_eq!(
+            entries,
+            vec![(far, "m/x".to_owned()), (far, "m/y".to_owned())]
+        );
     }
 }
