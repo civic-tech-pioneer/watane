@@ -229,8 +229,16 @@ rule `wit`. Type items are allowed and ignored.
 | World item | Interface | Meaning | Grant |
 |---|---|---|---|
 | import | `watane:host/state@0.1.0` | private storage | `Storage` |
-| import | `watane:host/caller@0.1.0` | the caller | none |
+| import | `watane:host/caller@0.1.0` | the caller (`identity`, step 11, host 19) | none |
 | import | `watane:host/manage@0.1.0` (step 10) | the management of mods (W35; host 6.10); `World::manage` | `Manage` |
+| import | `watane:host/streams@0.1.0` (step 11) | open, push, close, cancel, hand off and resume a stream (host 19.2) | none |
+| import | `watane:host/claude-types@0.1.0` (step 11) | the types shared by the Claude Code interfaces (host 19.3, 19.8) | none |
+| import | `watane:host/claude-code@0.1.0` (step 11) | start Claude Code, unchecked (host 19.3) | `ClaudeCode` |
+| import | `watane:host/claude-code-shell@0.1.0` (step 11) | start Claude Code with shell and web, unchecked (host 19.3) | `ClaudeCodeShell` |
+| import | `watane:host/claude-session@0.1.0` (step 11) | say, answer, interrupt and compact on the stream a mod consumes (host 19.3) | none |
+| import | `watane:host/https-stream@0.1.0` (step 11) | an HTTPS request as a stream (host 19.4); needs `[http] hosts` (rule `http`) | one `Http { host }` for each host of `[http] hosts`, as `wasi:http/outgoing-handler` |
+| import | `watane:host/agent-tools@0.1.0` (step 11) | open, describe, call and close toolsets (host 19.5) | none |
+| import | `watane:host/timers@0.1.0` (step 11) | per-mod timers (host 19.6) | none |
 | import | other `watane:*` | — | rule `import` |
 | import | `wasi:{cli,clocks,filesystem,io,random,sockets}/*@0.2.x` | base WASI, linked to nothing | none |
 | import | `wasi:http/outgoing-handler@0.2.x` | network | one `Http { host }` for each host of `[http] hosts` |
@@ -240,8 +248,27 @@ rule `wit`. Type items are allowed and ignored.
 | import | `mods:<other slug>/*` | a call (`World::calls`) | `Call { interface, provider }` |
 | import | any other namespace | — | rule `import` |
 | export | `mods:<own slug>/*` | an offered interface (`World::exports`) | none |
+| export | `watane:host/stream-sink@0.1.0`, `watane:host/stream-producer@0.1.0`, `watane:host/timer-sink@0.1.0` (step 11) | the host calls the mod with the items, the producer signals and the fired timers of host 19.2 and 19.6; host-only: no other mod calls them | none |
 | export | `mods:<other slug>/*` | a subscription (`World::subscriptions`) | `Subscribe { interface, provider }` |
 | export | any other | — | rule `export` |
+
+**The agent layer** (step 11; agentic-harness TECHNICAL 2.1, 4.2). The
+rows marked step 11 list every import and export of the Interface list of
+host 19.1, one row each, and no other `watane:host` interface. Only two give
+a grant, one for each way to start Claude Code (5.1): the two grants do not
+imply each other, so a mod that imports both holds both. `claude-types`,
+`claude-session`, `streams`, `agent-tools`, `timers` and the three exports
+give none: what they allow is decided by the host at run time (host 19:
+the stream's consumer, a consent, the caller's identity). `https-stream`
+gives only the `Http` grants of the mod's own `[http] hosts`, so it reaches
+only the hosts that `mod.toml` names; the host checks every request's URL
+against them (host 19.4). The `identity` function of `caller` is a function
+of an interface already allowed, so it changes no row. A host-only export is
+an export that a mod makes for the host and that is not one of its own
+`mods:` interfaces: it is not in `World::exports` (a mod offers it to no
+one), and `check_component` (4.9) compares it as any export. An export of
+any other `watane:host` interface is rule `export`. Importing an interface
+of this step does not need any other import.
 
 **Outlet functions** (step 9, W34). Each function of an outlet has no
 result (an event) or a result `list<T>` for any `T` (a collect). Any other
@@ -291,7 +318,7 @@ parse, the cross checks that need it are skipped. Tests check `rule` and
 | `import` | `wit/world.wit` | an import that 4.5 refuses |
 | `export` | `wit/world.wit` | an export that 4.5 refuses |
 | `provider` | `deps.json` | a call or subscription whose package has no member; a member that no call or subscription uses; a member for the mod's own package; the provider package has not exactly one world; a called interface that the provider's world does not export; a subscribed interface that the provider's world does not import |
-| `http` | `mod.toml` | `wasi:http/outgoing-handler` imported with no `[http] hosts`, or hosts listed without that import |
+| `http` | `mod.toml` | `wasi:http/outgoing-handler` or (step 11) `watane:host/https-stream` imported with no `[http] hosts`, or hosts listed with neither import |
 | `parts` | `.` (the mod folder) | a rule of 4.6 |
 | `component` | `logic.wasm` | a rule of 4.9 (only in `check_component`) |
 
@@ -385,32 +412,38 @@ Needed only when the mod has a logic part; otherwise it returns `Ok`.
 pub struct Provider { pub slug: Slug, pub publisher: Option<PublisherKey> }   // None = local
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", try_from = "RawGrant")]
+#[serde(tag = "kind", rename_all = "kebab-case", try_from = "RawGrant")]
 pub enum Grant {
     Storage,
     Http { host: HttpHost },
     Call { interface: InterfaceName, provider: Provider },
     Subscribe { interface: InterfaceName, provider: Provider },
     Manage,                                       // step 10 (W35): import watane:host/manage
+    ClaudeCode,                                   // step 11 (W38): import watane:host/claude-code
+    ClaudeCodeShell,                              // step 11 (W38): import watane:host/claude-code-shell
 }
 ```
 
 - Invariant of `Call` and `Subscribe`: `interface.namespace() == "mods"`
   and `interface.package() == provider.slug`. `Deserialize` checks it
   (through a private `RawGrant`).
-- Order: `Storage`, `Http`, `Call`, `Subscribe`, `Manage`; then host or
-  interface text; then publisher, with local first. `Manage` is last, so
-  every grant list that a release of an earlier step carries keeps its
-  order and its bytes.
+- Order: `Storage`, `Http`, `Call`, `Subscribe`, `Manage`, `ClaudeCode`,
+  `ClaudeCodeShell`; then host or interface text; then publisher, with local
+  first. The new variants are last, in that order, so every grant list that
+  a release of an earlier step carries keeps its order and its bytes.
 - JSON form, one per kind:
   `{"kind":"storage"}`,
   `{"kind":"http","host":"api.openlibrary.org"}`,
   `{"kind":"call","interface":"mods:reading-list/books@0.1.0","provider":{"slug":"reading-list","publisher":null}}`,
   `{"kind":"subscribe","interface":"mods:reading-list/events@0.1.0","provider":{"slug":"reading-list","publisher":"yryo…yryo"}}`,
-  `{"kind":"manage"}` (step 10).
+  `{"kind":"manage"}` (step 10),
+  `{"kind":"claude-code"}` and `{"kind":"claude-code-shell"}` (step 11; the
+  serde attribute is `rename_all = "kebab-case"`, which gives the older kinds
+  the same text as `lowercase` did and these two their hyphen).
 - Text form (`Display`, for logs and errors, not consent words):
   `storage`, `http <host>`, `call <interface> from <provider>`,
-  `subscribe <interface> from <provider>`, `manage` (step 10).
+  `subscribe <interface> from <provider>`, `manage` (step 10), `claude-code` and
+  `claude-code-shell` (step 11).
 - (step 4) `Grant::same_authority(&self, other) -> bool`: equal after
   removing the `@<version>` of the interface. `host` uses it for F-INST-7.
 
@@ -622,6 +655,8 @@ grant   = [0] / [1, host: tstr]
         / [2, interface: tstr, publisher: bstr .size 32 / null]
         / [3, interface: tstr, publisher: bstr .size 32 / null]
         / [4]                                    ; step 10: Manage
+        / [5]                                    ; step 11: ClaudeCode
+        / [6]                                    ; step 11: ClaudeCodeShell
 ```
 
 `Release::decode(bytes)` refuses: more than `MAX_RELEASE_BYTES`; anything
@@ -630,8 +665,9 @@ section 3 or 4.2; `offers`, `events` or `grants` not strictly ascending; an
 offer or event whose package is not `mods:<slug>@<version>` of the
 release; a grant whose interface is not `mods:` of another slug; a `null`
 publisher in a grant (`ReleaseError::LocalProvider`); more than 32 offers,
-32 events or 82 grants (1 storage, 16 hosts, 32 calls, 32
-subscriptions and, from step 10, 1 manage); bytes that differ from `encode` of the result
+32 events or 84 grants (1 storage, 16 hosts, 32 calls, 32
+subscriptions and, from step 10, 1 manage, and from step 11, 1 each of
+`ClaudeCode` and `ClaudeCodeShell`); bytes that differ from `encode` of the result
 (`ReleaseError::NotCanonical`, which also covers trailing bytes,
 indefinite lengths and long heads).
 
@@ -672,6 +708,14 @@ K/reading-list]` with K = 32 × `0x01`:
 
 Step 10: the grants `[storage, manage]` encode as `82 8100 8104`
 (`828100 8104` without spaces: an array of 2, `[0]`, `[4]`).
+
+Step 11: the grants `[storage, claude-code, claude-code-shell]` encode as
+`83 8100 8105 8106` (an array of 3, `[0]`, `[5]`, `[6]`), and `[manage,
+claude-code]` as `82 8104 8105`. A release body without these two grants
+keeps its bytes, and the body format stays `1`: every golden byte above is
+unchanged. A home built before step 11 refuses a release that holds `[5]`
+or `[6]` as a bad release body, as it does for `[4]` before step 10 (question
+20); its installer cannot run the mod either.
 
 Origin `K/reading-list@0.1.0`:
 `835820` + 32 × `01` + `6c72656164696e672d6c69737465302e312e30`.
@@ -732,7 +776,7 @@ pub struct World {                                // each list sorted, no duplic
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
     pub storage: bool,
-    pub http: bool,
+    pub http: bool,                               // imports wasi:http/outgoing-handler or (step 11) watane:host/https-stream
     pub manage: bool,                             // step 10: imports watane:host/manage (4.5)
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -876,6 +920,8 @@ world recommendations {
 | No secret leaves through a package | only the paths of 6.1; hidden directory descendants checked for links before omission; symbolic links refused; every mod and pack content read and every `add_provider` read and write uses the shared all-components no-follow walk and same-handle checks of 6.4 on Unix; WIT resolves checked bytes without reopening; private state lives in the home, never in a mod folder. |
 | One meaning, one byte string | canonical package bytes (6.3) and canonical release CBOR (7.2) with decode-then-re-encode; so one id and one signature per meaning. |
 | A package matches its release | `Release::check` re-derives the body from the unpacked mod and compares every field. |
+| The two Claude Code grants are never implied (W38) | only an import of `watane:host/claude-code` gives `ClaudeCode` and only an import of `claude-code-shell` gives `ClaudeCodeShell` (4.5); no other import, no `mod.toml` key and no provider gives either, so the plan, the manager and F-INST-7's "no new grant" check see each one as a grant of its own. A release that left them out would make that check blind, so they are in the body (7.2). |
+| An interface of the agent layer is never a stand-in for network access | `https-stream` gives only the `Http` grants of `[http] hosts` (4.5), and `watane:host/stream-sink`, `stream-producer` and `timer-sink` are the only `watane:host` exports; any other is rule `export`, so a mod cannot export an interface that the host would call as something else. |
 | `pkg` runs nothing | it only parses; it starts no process and loads no Wasm into a runtime. |
 
 Residual: a fault in `wit-parser` or `wasmparser` (stack overflow is not
@@ -894,6 +940,9 @@ expected value.
 | `compatible` | the table of 5.2 | the table |
 | `mod_toml`, `deps_json` | schema, limits, unknown keys (A8), canonical write | literal texts |
 | `grant_manage` (step 10) | A30: the world of A30 gives `World::manage` true and grants `[storage, manage]`; `{"kind":"manage"}` and the text `manage` both ways; `Manage` sorts after a `Subscribe`; `same_authority(Manage, Manage)`; A31: the release of a mod with `[storage, manage]` encodes its grants as `828100 8104` and decodes back; a release whose grants hold `[4]` before a `[3, ...]` is refused as not ascending | the table of 4.5; literal JSON, text and hex written by hand |
+| `grant_claude_code` (step 11) | A32: a world that imports `watane:host/state@0.1.0`, `claude-code@0.1.0` and `claude-session@0.1.0` gives grants exactly `[storage, claude-code]`; one that imports `claude-code-shell@0.1.0` and `claude-types@0.1.0` gives `[storage, claude-code-shell]`; one with both gives both; `{"kind":"claude-code"}`, `{"kind":"claude-code-shell"}` and the texts `claude-code`, `claude-code-shell` both ways; `ClaudeCode` sorts after `Manage` and before `ClaudeCodeShell`; `same_authority` of each with itself, and not with the other | the table of 4.5; literal JSON and text written by hand |
+| `agent_layer_world` (step 11) | A33: one world importing `streams`, `claude-types`, `claude-session`, `agent-tools`, `timers` and `caller` and exporting `stream-sink`, `stream-producer` and `timer-sink` has grants exactly `[storage]` and no `Call`; a world importing `https-stream` with `[http] hosts = ["api.openai.com"]` has grants `[storage, http api.openai.com]`; the same with no hosts is refused with rule `http`; hosts listed and no `https-stream` or `outgoing-handler` import is refused with rule `http`; an export of `watane:host/state@0.1.0` or of `watane:host/timers@0.1.0` is refused with rule `export`; an import of `watane:host/unknown@0.1.0` is refused with rule `import` | the table of 4.5; literal worlds |
+| `release_agent_grants` (step 11) | A34: the grants `[storage, claude-code, claude-code-shell]` encode as `83 8100 8105 8106` and decode back; `[manage, claude-code]` as `82 8104 8105`; a body with `[6]` before `[5]` or with `[5]` twice is refused as not ascending; 84 grants are accepted and 85 refused; `release_golden` and the hex of 7.3 are unchanged | hand-written hex |
 | `mod_toml_main` (W36) | A28, A29: `main = true` with a page gives `Mod::main()` true; absent gives false; `main = "yes"` and `main = true` without `ui/index.html` give the exact messages of 4.2 | literal texts |
 | `mod_toml_repository` (step 6) | accepted: `https://github.com/alice/reading-list`, `https://git.example.org:8443/a/b-c.d_e~f%20`, `https://h`, a 256-byte URL; refused, with the exact message of 4.2: `http://github.com/a/b`, `https://user@github.com/a/b`, `https://user:pw@h/x`, `https://`, `https:///a`, a 257-byte URL, `https://h/a b`, `https://h/a?b=c`, `https://h/#x`, a non-string value; `Mod::repository()` gives the text back; a package of a mod with `repository` unpacks and reads it back | literal texts |
 | `grants` | A1, A2, A3; ordering of 5.1; JSON forms of 5.1 | the table of 4.5 and the literals of 5.1 |
@@ -948,6 +997,13 @@ fmt --check` green.
 | 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
 | 10 (W36) | `main` in `meta.rs` (4.2), `Mod::main` | `mod_toml_main` passes (A28, A29) | app stage I |
 | 11 (step 10) | `Grant::Manage` (5.1), `World::manage` and the 4.5 row in `world.rs`, the grant `[4]` and the limit 82 in `release.rs` (7.2) | `grant_manage` passes (A30, A31); every earlier golden byte unchanged | host stage 11, dev stage 13, app stage J |
+| 12 (step 11) | `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` (5.1), the rows of the agent layer and the three host-only exports in `world.rs` (4.5), `https-stream` in rule `http` and `World::http`, the grants `[5]` and `[6]` and the limit 84 in `release.rs` (7.2) | `grant_claude_code`, `agent_layer_world`, `release_agent_grants` pass (A32 to A34); every earlier golden byte unchanged | host stages A1 to A5 (host 19); app stage L |
+
+Stage 12 splits for the host's stages (agentic-harness TECHNICAL 17): stage A
+(host A1: `streams`, `timers`, the three exports) needs only the rows of
+4.5, which carry no grant, so it can land first; the two grants and their
+release encoding are needed by stage B (host A2). Build the whole stage at
+once when A1 starts, as it is small and its tests are listed together.
 
 `Grant::same_authority` (step 4) is one function; build it with stage 3 or
 when step 4 starts.
@@ -958,10 +1014,11 @@ when step 4 starts.
 |---|---|
 | `Slug`, `Version`, `InterfaceName`, `HttpHost`, `PublisherKey`, `PackageId`, `ReleaseRef`, `NameError`, `compatible` | all |
 | `Mod` (read, check_component, accessors), `World`, `Violation`, `Rule`, `ModError` | host, dev |
-| `Grant`, `Provider`, `Requirement` (one shape and one JSON form everywhere) | host, app (through host), dev |
+| `Grant`, `Provider`, `Requirement` (one shape and one JSON form everywhere; step 11: `ClaudeCode`, `ClaudeCodeShell`) | host, app (through host), dev |
 | `Deps`, `add_provider` | dev |
 | `pack`, `Package`, `PackageError`, `MAX_PACKAGE_BYTES` | host, dev, dist |
 | `Release`, `RELEASE_KIND`, `MAX_RELEASE_BYTES`, `ReleaseError` | dist, host |
+| the classification rows of 4.5 for the interfaces of host 19.1 (step 11), through `World` and `Mod::grants` | host (links the interfaces that a world imports and exports), dev (`check`, templates) |
 
 Public types are `Send + Sync`, errors also `'static`. Callers use section
 8 as it is (D-A3); no request of host §17, dist §10 or dev §14 adds an item:
