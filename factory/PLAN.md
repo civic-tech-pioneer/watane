@@ -1146,6 +1146,9 @@ names the same interface in its sketch and fakes it until this one merges.
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
   against the same names. Touches: host, pkg (the 4.5 rows), dev (fakes), not app. Cloud.
 
+  For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
+  `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
+
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
