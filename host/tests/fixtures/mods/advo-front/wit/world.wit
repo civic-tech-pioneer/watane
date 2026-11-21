@@ -1,0 +1,10 @@
+package mods:advo-front@0.1.0;
+interface api { open: func() -> result<string, string>; push-then-sleep: func(s: string, bytes: u32, ms: u64) -> string; try-after-then-sleep: func(id: string, ms: u64, sleep: u64) -> string; hand-off-then-sleep: func(s: string, ms: u64) -> string; ended: func() -> list<string>; }
+world advo-front {
+  import watane:host/state@0.1.0;
+  import watane:host/streams@0.1.0;
+  import mods:advo/api@0.1.0;
+  import mods:relay/api@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+}

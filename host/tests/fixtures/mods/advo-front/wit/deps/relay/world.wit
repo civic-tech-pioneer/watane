@@ -1,0 +1,3 @@
+package mods:relay@0.1.0;
+interface api { open: func() -> result<string, string>; push: func(s: string, text: string) -> result<_, string>; close: func(s: string); cancel: func(s: string); hand-off: func(s: string) -> result<_, string>; resume: func(s: string) -> result<_, string>; after: func(id: string, ms: u64) -> result<_, string>; cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); forward: func(up: string, down: string, write: bool); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }
+world relay { import watane:host/state@0.1.0; export api; }

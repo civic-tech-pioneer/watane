@@ -277,6 +277,14 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         deferred: AtomicBool::new(false),
         timer,
     });
+    {
+        let mut chains = host
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        chains.retain(|c| c.strong_count() > 0);
+        chains.push(Arc::downgrade(&chain));
+    }
     let invocation = Invocation {
         chain: Arc::clone(&chain),
         identity: identity_of(&snapshot, &local),
@@ -300,12 +308,25 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it"),
     );
-    let log = std::mem::take(
-        &mut *chain
-            .log
+    // The chain's queued effects leave the reservation of 19.2 (Commit) as they apply.
+    let log = {
+        let _gate = host
+            .chains
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it"),
-    );
+            .expect("lock poisoned: another thread panicked while holding it");
+        let log = std::mem::take(
+            &mut *chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
+        );
+        if chain.fakes.is_none() && result.is_ok() {
+            host.apply_effects(log);
+            Vec::new()
+        } else {
+            log
+        }
+    };
     let deferred = chain.deferred.load(Ordering::Acquire);
     let events = effects
         .events
@@ -326,9 +347,6 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         }
         manages.iter().map(|e| e.record.clone()).collect()
     } else {
-        if result.is_ok() {
-            host.apply_effects(log);
-        }
         host.apply_manage(manages);
         Vec::new()
     };

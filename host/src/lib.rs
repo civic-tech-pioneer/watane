@@ -80,6 +80,9 @@ pub struct Host {
     limits: Limits,
     state: state::State,
     call_locks: Mutex<std::collections::BTreeMap<String, Arc<Mutex<()>>>>,
+    /// The chains in flight, and the gate of 19.2 (Commit): a call checks the limits and queues
+    /// its effect, and a chain takes its log to apply it, under this lock.
+    chains: Mutex<Vec<std::sync::Weak<runtime::call::Chain>>>,
     bus: bus::PageBus,
     tools: Mutex<tools::Tools>,
     weak: std::sync::Weak<Host>,
@@ -116,6 +119,7 @@ impl Host {
             bus: bus::PageBus::new(1024),
             state,
             call_locks: Mutex::new(std::collections::BTreeMap::new()),
+            chains: Mutex::new(Vec::new()),
             engine,
             limits,
             home,
