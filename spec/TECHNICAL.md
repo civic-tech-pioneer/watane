@@ -145,7 +145,7 @@ interface state {             // private storage of this mod
 }
 interface caller {            // "page", "agent:<handle>" or "mod:<local name>"
   who: func() -> string;
-  identity: func() -> ...;    // step 11: the caller as the kernel keys sessions by it (host 19.1)
+  identity: func() -> string;  // step 11: <publisher>/<slug>, local/<slug>, page or agent:<handle-name> (host 19.1)
 }
 interface manage { ... }      // step 10 (W35): reads, reductions, requests; host 6.4, 6.10
 // step 11 (W38): streams, claude-types, claude-code, claude-code-shell, claude-session,
@@ -226,7 +226,7 @@ the local API at all. An error is `{"error": {"code", "message"}}`.
 | Confirmation floor | The participant from agents and tools | each install, grant, signature and pick of a provider needs a confirmation in the app (F-AGENT-4) |
 | Manager (step 10) | Mods and the participant from a managing mod | the `Manage` grant checked at each function and before each effect; reads, three reductions (disable, withdraw a grant, close a page) and opening a page only; every install, update, enable, grant and removal is a request that the app decides in the consent view, which names the manager, one open at a time; effects only when the manager's call succeeds; no signature, no consent answer, no identity (W35; host 6.10, app 17) |
 | Install (step 7) | The participant's machine from a tampered download | TLS to GitHub; the SHA-256 of the archive from the `SHA256SUMS` of the same release, checked before any file is written; the version checked against a pattern before it reaches a URL; removals only of paths that watane installs, whatever the receipt says; no root; the toolchain only after a typed yes; a release built with a read-only token and no cache (`install/TECHNICAL.md` 3.2, 5, 7, 8.5, 10) |
-| Agent layer (step 11) | The participant, their folders and accounts, and other mods, from agents and from the mods that run them | the properties of agentic-harness 14 that watane files hold: a mod cannot widen `claude` past its launch (one argument per value, fixed flags, the host owns stdin, `initialize` and `init` checked); a failing check cannot let a tool run (`onFailure: block` confirmed); a check answers `none` or `deny`, never `allow`; writes cannot plant code that runs later (protected paths); no mod sees a credential (tokens and keys stay with the app and the host; MCP tokens on fd 3; handle names, not handles); a plan token goes only to OpenAI's agent endpoints and a judge key only to its judge (account binding, no redirects, `POST`, the origin of the provider's `[http]`); a mod in the middle gains no authority (consents per origin client; the providers' `sessions` refuse any caller but the kernel); a session is private (one consumer, owner checks by `caller.identity`); a repeated call changes nothing (keys, numbered items); an ask shows the call that will run (the host builds each `ask`, `check` and `ask-resolved` item itself) (W38, W39; host 19, app 19) |
+| Agent layer (step 11) | The participant, their folders and accounts, and other mods, from agents and from the mods that run them | the properties of agentic-harness 14 that watane files hold: a mod cannot widen `claude` past its launch (one argument per value, fixed flags, the host owns stdin, `initialize` and `init` checked); a mod cannot run a denied skill by name (a message that starts with `/` is refused, `slash-command`); a failing check cannot let a tool run (`onFailure: block` confirmed); a check answers `none` or `deny`, never `allow`; writes cannot plant code that runs later (protected paths); no mod sees a credential (tokens and keys stay with the app and the host; MCP tokens on fd 3; handle names, not handles); a plan token goes only to OpenAI's agent endpoints and a judge key only to its judge (account binding, no redirects, `POST`, the origin of the provider's `[http]`); a mod in the middle gains no authority (consents per origin client; the providers' `sessions` refuse any caller but the kernel); a session is private (one consumer, owner checks by `caller.identity`); a repeated call changes nothing (keys, numbered items); an ask shows the call that will run (the host builds each `ask`, `check` and `ask-resolved` item itself) (W38, W39; host 19, app 19) |
 | Node (step 8) | The participant from other machines | the caller's node key from the QUIC handshake; class from the device list only; limits in bytes before work; pull only; pairing confirmed in the app (`net/TECHNICAL.md` 6) |
 
 Not protected in the first version:
@@ -247,13 +247,16 @@ Not protected in the first version:
   judge account reaches any `POST` path of the origin the participant
   entered; `claude` itself within its limits, and a prompt injection within
   what the profile allows; an allowed package-runner word (`test`,
-  `install`, `add`, `ci`, `sync`, ...) runs the project's own scripts, and an
+  `install`, `add`, `ci`, `uv pip`, `sync`, ...) runs the project's own scripts, and an
   allowed command's own options (`git -c`, GNU `sed`'s `e`) or a first word
   that the allow list misses can run others, inside the shell grant's
   sandbox only, whose loopback reach is still to be probed (V27), and only for
   a profile the participant made or adopted with that allow rule; whether a
-  subagent prompt that starts with `/` runs a skill (not probed, V26); the
-  plan usage of the participant's own Claude or ChatGPT account.
+  subagent prompt that starts with `/` runs a skill (not probed, V26); a
+  duplicate key nested in an ask's `input` is read last-wins, so the ask
+  shows the call that will run only while the host serializes the item
+  itself rather than passing `claude`'s bytes (host 19.3); the plan usage of
+  the participant's own Claude or ChatGPT account.
 
 ## 7. Decisions of this fresh start
 

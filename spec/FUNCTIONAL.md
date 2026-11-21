@@ -22,6 +22,8 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | coding agent | An agent of the maker's choice, outside watane, that writes the code of mods. |
 | preview | A host that runs a mod for its maker, with no identity and no data of the participant. |
 | toolset | A named list of calls of installed mods that the participant gives to an agent. |
+| client | The mod, or its page, that starts an agent session and reads it. It is the session's owner. (step 11) |
+| profile | A named, complete setting of an agent: instructions, model, tools, permissions, skills, subagents, limits and output format. The participant makes it. (step 11) |
 | agent session | A conversation between a mod and an agent, with its turns and its stored transcript. It lives until the mod that started it deletes it. (step 11) |
 | kernel | The mod `mods:agent`: it keeps the profiles, the sessions and their transcripts, the permissions and the delegation of agents. (step 11) |
 | provider | The mod that holds the Claude Code grant and starts the participant's `claude` program for the kernel: unchecked, or checked by a judge. (step 11) |
@@ -46,7 +48,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-MAKE-1** The maker tools create a complete mod from a template: a page, a logic part, its interface and its tests.
 - **F-MAKE-2** The maker tools check a mod against the watane constraints, build it and run its tests.
 - **F-MAKE-3** The tests include contract tests, which use a fake for each interface that the mod imports.
-- **F-MAKE-4** The maker tools run a mod in a preview. The preview runs the mod in the same host as an installed mod, with exactly the grants that the mod declares.
+- **F-MAKE-4** The maker tools run a mod in a preview. The preview runs the mod in the same host as an installed mod, with exactly the grants that the mod declares, except the Claude Code grants and the participant's accounts: the maker tools offer a fake `claude` and a scripted OpenAI stream instead (step 11).
 - **F-MAKE-5** Each command of the maker tools gives a result that a coding agent can read and act on.
 - **F-MAKE-6** The maker tools hold no key and need no account.
 
