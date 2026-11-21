@@ -118,6 +118,7 @@ pub(crate) struct Done {
     pub outcome: Option<Outcome>,
 }
 const DEFERRED: &str = "the consumer deferred the batch";
+const IGNORED: &str = "the timer was cancelled or replaced while its firing waited";
 
 pub(super) fn lock_until<T>(
     lock: &Mutex<T>,
@@ -679,6 +680,7 @@ impl Invocation {
                 .or_default(),
         );
         let _guard = lock_until(&lock, chain.deadline)?;
+        let origin;
         {
             let current = host
                 .catalog
@@ -696,6 +698,28 @@ impl Invocation {
             if !active.enabled {
                 return Err(CallError::new(CallCode::Disabled, "mod is disabled"));
             }
+            // The origin client must still be there when the call starts, after the lock
+            // (19, Terms): else the call carries the called mod's own identity. A firing also
+            // reads its row again: one cancelled or replaced meanwhile is ignored (19.6).
+            let mut wanted = self.origin.clone();
+            if self.depth == 0
+                && let Some((key, due)) = &chain.timer
+            {
+                match host.state.timer_row(key) {
+                    Ok(Some((row_due, origin))) if row_due == *due => wanted = origin,
+                    _ => {
+                        chain.deferred.store(true, Ordering::Release);
+                        return Err(CallError::internal(IGNORED));
+                    }
+                }
+            }
+            origin = if current.mods.iter().any(|o| {
+                o.identity == wanted && o.enabled && o.error.is_none()
+            }) {
+                wanted
+            } else {
+                active.identity.clone()
+            };
             if let Who::Caller(Caller::Mod(other)) = caller {
                 // Selection can precede a wait for this mod's lock. Check
                 // authority again before invoking the selected export.
@@ -741,7 +765,10 @@ impl Invocation {
             (caller.clone(), identity),
             &host.limits,
             chain.deadline,
-            self.clone(),
+            Self {
+                origin,
+                ..self.clone()
+            },
         )?;
         store.set_fuel(fuel).map_err(CallError::internal)?;
         let stderr = store.data().stderr.clone();
