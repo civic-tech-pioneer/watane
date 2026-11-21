@@ -39,6 +39,8 @@ redb = "4.5"
 blake3 = "1.8"
 base64 = "0.22"
 getrandom = "0.3"
+# step 11 (19): A2 adds the tokio feature `process` and a process-group crate; A4 adds
+# `sse-stream` and an HTTPS client with no redirects (reqwest, rustls), chosen then.
 
 [dev-dependencies]
 tempfile = "3"                               # test homes; Harness uses getrandom
@@ -78,7 +80,13 @@ target `wasm32-wasip2`.
 | `src/confirm.rs` | `Confirm`, `InstallRequest`, `Answer` (section 12) |
 | `src/harness.rs` | `Harness` for contract tests (section 2.6) |
 | `src/bin/watane.rs` | the program (section 12.2) |
-| `wit/host.wit` | the `watane:host` package (section 6.4) |
+| `wit/host.wit` | the `watane:host` package (section 6.4; step 11: 19.1) |
+| planned `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
+| planned `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`) | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
+| planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
+| planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
+| planned `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
+| planned `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `tests/*.rs`, `tests/fixtures/` | section 13 |
 
 ## 2. Public API
@@ -121,6 +129,9 @@ impl Host {
     pub fn remove(&self, local: &LocalName, delete_data: bool) -> Result<(), HostError>;
     pub fn grant(&self, local: &LocalName, grant: &Grant) -> Result<(), HostError>;   // only a declared grant
     pub fn revoke(&self, local: &LocalName, grant: &Grant) -> Result<(), HostError>;
+    // step 11 (19.4, 19.7)
+    pub fn withdraw_consent(&self, local: &LocalName, consent: &Consent) -> Result<(), HostError>;
+    pub fn judge_key_removed(&self, provider: &str);
 
     // runtime (section 6)
     /// The callable functions: `world().exports` only, never a subscription export (6.6 step 2).
@@ -252,7 +263,8 @@ pub struct Handle(String);      // [a-z][a-z0-9-]{0,30}
 // both: parse(&str) -> Result<Self, HostError>, Display, Ord, Serialize, Deserialize (validated)
 
 pub enum Caller { Page, Agent(Handle), Mod(LocalName) }
-// `watane:host/caller.who` returns "page", "agent:<handle>", "mod:<local>"
+// `watane:host/caller.who` returns "page", "agent:<handle>", "mod:<local>" (and "host" for the
+// host's own calls, step 11: 19.1); `caller.identity` returns the identity text (19.1)
 ```
 
 ### 2.4 Catalog types
@@ -357,12 +369,16 @@ impl Harness {
     pub fn deliver(&self, function: &str, args: Value) -> Result<Outcome, CallError>;
 }
 #[derive(Debug, Clone, PartialEq)]
-pub struct Outcome { pub value: Value, pub events: Vec<EventRecord>, pub manages: Vec<ManageRecord> /* step 10 */ }
+pub struct Outcome { pub value: Value, pub events: Vec<EventRecord>, pub manages: Vec<ManageRecord> /* step 10 */,
+                     pub requests: Vec<RequestRecord> /* step 11 (19.1) */ }
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventRecord { pub interface: InterfaceName, pub function: String, pub args: Value /* object by name */ }
 /// Step 10: a reduction or request of `watane:host/manage` (6.10), e.g. "disable", {"local":"weather"}.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ManageRecord { pub function: String, pub args: Value /* object by name */ }
+/// Step 11: a request of 19.6 (e.g. "timers.after", {"id":"t","delay-ms":5}); same shape as `ManageRecord`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequestRecord { pub function: String, pub args: Value /* object by name */ }
 ```
 
 `Harness` is `Send`; `call` can run on any thread. Each `open` creates a
@@ -463,6 +479,7 @@ An update keeps the local name of the installed mod.
       "release": null,
       "enabled": true,
       "grants": [{"grant": <Grant>, "granted": true}],
+      "consents": [{"kind": "workspace", "folder": "/Users/a/code"}],
       "links": [{"kind": "call", "interface": "mods:shelf/items@0.1.0",
                  "provider": "shelf", "provider_interface": "mods:shelf/items@0.1.0"}],
       "binds": [{"consumer": "local/recs", "provider": {"slug": "shelf", "publisher": "<key>"},
@@ -478,7 +495,12 @@ file reads unchanged and `watane_installed` stays 1) lists the mod's binds
 in the JSON form of `Bind` (2.4), the same in `/api/plan` and `/api/mods`. Recovery checks that its publisher and slug
 form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
-still use `pack(dir, false)`. Slug, version, name, summary and origin are
+still use `pack(dir, false)`. `consents` (step 11, serde default `[]`, so an older file reads unchanged
+and `watane_installed` stays 1) lists the consents the mod holds as an
+origin client (19.7): `{"kind":"workspace","folder":"<canonical path>"}`,
+`{"kind":"account","account":"openai"}`, `{"kind":"toolset","toolset":"<name>"}`.
+They follow the record's life like grants: kept across an update, deleted by
+`remove`. Slug, version, name, summary and origin are
 read from `mods/<local>/` at open; they are not repeated here. Each write: serialize, write
 `installed.json.tmp`, `sync_all`, rename over `installed.json`, sync the
 directory. `generation` increases by one on each write.
@@ -579,6 +601,12 @@ Install checks the generation again before committing (Q24).
 - `grant` and `revoke`: only for a grant in `mod.grants()`, else
   `not_declared`; they set `granted`. The app calls them in process after
   the participant acted, so the host asks nothing.
+- Step 11 (19): `disable`, `remove`, an update and a `revoke` of `ClaudeCode`
+  or `ClaudeCodeShell` end the streams, handles and timers that depended on
+  the mod or the grant (`gone`; 19.2, 19.5). `withdraw_consent(local,
+  consent)` removes one consent, like `revoke` for a grant, and ends its
+  dependent streams and closes its dependent handles (19.7). A consent is
+  given only through `Confirm::consent`; the app never writes it.
 - Step 10: a manager's `disable` and `withdraw` (6.10) call `disable` and
   `revoke` here, so the same rules hold; it reaches `enable`, `grant` and
   `remove` only through a request that the app decides.
@@ -664,10 +692,15 @@ component against `mod.world()`. Allowed imports:
   `watane:host/manage@0.1.0` only if `world().manage` (step 10);
 - an interface in `world().events` whose functions each return nothing
   (an event) or a `list` (a collect, step 9; pkg 4.5);
-- an interface in `world().calls`.
+- an interface in `world().calls`;
+- step 11 (19.1): `watane:host/streams`, `claude-types`, `claude-session`,
+  `agent-tools`, `timers`, `https-stream`, always; `claude-code` only if
+  `world()` holds `Grant::ClaudeCode`, `claude-code-shell` only if it holds
+  `Grant::ClaudeCodeShell`; `watane:host/caller` includes `identity`.
 
-Allowed exports: the interfaces in `world().exports` (its calls) and
-`world().subscriptions`. Anything else is `invalid_mod` with the name. A
+Allowed exports: the interfaces in `world().exports` (its calls),
+`world().subscriptions`, and the host-only `watane:host/stream-sink`,
+`stream-producer` and `timer-sink` (19.1). Anything else is `invalid_mod` with the name. A
 world-level function (not in an interface) is never a call.
 
 ## 6. Runtime
@@ -722,9 +755,13 @@ interface state {
   delete: func(key: string);
 }
 
-/// Who made the current call: "page", "agent:<handle>" or "mod:<local name>".
+/// Who made the current call: "page", "agent:<handle>" or "mod:<local name>"
+/// ("host" for the host's own calls, step 11).
 interface caller {
   who: func() -> string;
+  /// Step 11 (19.1): the caller's identity: "<publisher>/<slug>", "local/<slug>",
+  /// "page", "agent:<handle-name>" or "host". A pure read, no grant.
+  identity: func() -> string;
 }
 
 /// Step 10: the management of mods (W35). Importing it is the grant
@@ -734,7 +771,7 @@ interface caller {
 interface manage {
   /// A grant as pkg names it. `provider` is "<publisher key>/<slug>" or "local/<slug>".
   record provided { %interface: string, provider: string }
-  variant grant { storage, http(string), call(provided), subscribe(provided), manage }
+  variant grant { storage, http(string), call(provided), subscribe(provided), manage, claude-code, claude-code-shell }
   record grant-state { grant: grant, granted: bool }
   enum link-kind { call, subscribe }
   /// `provider` is the local name of the linked mod; none while unbound.
@@ -770,6 +807,12 @@ interface manage {
 }
 ```
 
+Step 11 adds the interfaces `streams`, `claude-types`, `claude-code`,
+`claude-code-shell`, `claude-session`, `https-stream`, `agent-tools`,
+`timers` and the host-only exports `stream-sink`, `stream-producer` and
+`timer-sink` to this package, written in 19.1; the `grant` variant above
+gains `claude-code` and `claude-code-shell`, as pkg's `Grant` does.
+
 `delete` is a proposal to spec §4 (section 18, Q4). `manage` (step 10,
 S73) is 6.10. It joins the package at `0.1.0`: an interface added to a
 package that mods already copy changes no import of an existing mod,
@@ -785,7 +828,8 @@ The linker of a mod is built once per registry and kept as an
 | base WASI | `wasmtime_wasi::p2::add_to_linker_sync`, with the empty context of 6.5 |
 | `wasi:http/*` | `wasmtime_wasi_http::p2::add_only_http_to_linker_sync`, hooks of 6.8 |
 | `watane:host/state` | the state transaction; each function first checks the `Storage` grant, else `not_granted` ("<local> has no grant for watane:host/state") |
-| `watane:host/caller` | the caller string of the store |
+| `watane:host/caller` | the caller string and, step 11, the identity of the caller (19.1) |
+| step 11 interfaces (19.1) | `streams`, `claude-session`, `agent-tools`, `timers`: `func_new` of 19.2, 19.3, 19.5, 19.6, no grant check; `claude-code`, `claude-code-shell`: each function first checks its grant, else `not_granted` (the stub of W9); `https-stream`: 19.4; in a `Harness`, the fakes of 19.1 |
 | `watane:host/manage` (step 10) | `func_new` for each function of 6.10; each first checks the `Manage` grant, else `not_granted`; in a `Harness`, the fakes of 6.10 |
 | outlet | `func_new`: an event function appends the event to the store's outbox (section 9); a collect function runs the collect (9.4) |
 | in a `Harness`, a collect | `func_new`: the fake, or the empty list (2.6) |
@@ -821,12 +865,14 @@ Top-level `call(caller, local, "<interface>.<function>", args)`:
    enabled (`disabled`) and have a logic part (`no_function`).
 2. Find the function: `<interface>` is the short name
    (`InterfaceName::interface()`) of an interface in `world().exports`; a
-   subscription export or a function with a resource type is `no_function`.
+   subscription export, a host-only export (`stream-sink`, `stream-producer`,
+   `timer-sink`, 19.1) or a function with a resource type is `no_function`.
 3. Convert `args` (section 6.9); a mismatch is `bad_request` with the path.
 4. Create the chain context: deadline = now + `time`, fuel = `fuel`,
    depth 0, hop 0, empty effects.
 5. Invoke (below). Convert the result to JSON.
-6. Deliver the committed events (section 9), then send the `changed`
+6. Apply the chain's requests (19.6) and manage effects (6.10) in order,
+   deliver the committed events (section 9), then send the `changed`
    messages. Return the result of step 5. The crate-private harness variant
    returns the result and outbox as `Outcome`, without page bus publication.
 
@@ -1039,6 +1085,7 @@ One redb database at `state/state.redb`.
 |---|---|---|
 | `s/<id>`, one per mod | `&str` state key | `&[u8]` value |
 | `sizes` | `&str` `<id>` | `u64` stored bytes (keys + values) |
+| `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | JSON `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1057,6 +1104,12 @@ A transaction lives for one invoke of one mod:
   one value changed.
 - Delete data: delete table `s/<id>` and remove `sizes[<id>]` in one write
   transaction.
+
+Step 11: a `timers.after` or `timers.cancel` writes the `timers` table in the
+same write transaction as the state of its invoke, so a call's writes and
+timers commit whole or not at all (19.6). Every commit keeps redb's default
+durability (full: one fsync per write); a request is applied only after its
+chain's commits (N4, 19.6).
 
 A put of the stored value is no change, so a page that re-reads on
 `changed` cannot loop through a read function that writes the same value.
@@ -1119,7 +1172,7 @@ package of up to 64 MiB). A mod origin never reaches them.
 | `Origin` is exactly `http://<local>.localhost:<port>` | 403 `forbidden` |
 | `Content-Type` is `application/json` (parameters allowed) | 415 `bad_request` |
 | body at most 1 MiB | 413 `bad_request` |
-| body is `{"fn": "<interface>.<function>", "args": <object, array or null>}`, no other field | 400 `bad_request` |
+| body is `{"fn": "<interface>.<function>", "args": <object, array or null>}` and, step 11, optionally `"connection": "<32 hex chars>"`; no other field | 400 `bad_request` |
 
 A missing `Origin` gets the message "the Origin header is missing; it must
 be http://<local>.localhost:<port>". A wrong, malformed, empty or repeated
@@ -1127,6 +1180,13 @@ be http://<local>.localhost:<port>". A wrong, malformed, empty or repeated
 
 A body-size refusal closes the HTTP/1 connection, so an unread body
 cannot affect a later request on that connection.
+
+`connection` is the id of one `/events` connection of this same mod origin
+(8.4). The host keeps it as the chain's page connection, never as a caller
+field: it makes that connection the consumer of a stream that a mod opens in
+the chain (19.2). An id that names no live connection of this origin is
+ignored (a stream open then fails `not-yours`), so a reconnect never fails an
+ordinary call.
 
 The call runs as `Caller::Page` on a 16 MiB thread. Success: 200
 `{"value": <json>}`. Failure: the status of section 2.2 and
@@ -1179,9 +1239,17 @@ page runs as a top-level view, never in a frame.
   `{"type":"event","from":"<emitter local>","interface":"<full outlet name>","function":"<name>","args":{...}}`
   with `args` by parameter name in the encoding of 6.9. A page gets only
   events emitted by its own mod, never events received from another mod.
+- Step 11: the first message of each connection is
+  `{"type":"connection","id":"<128 random bits as 32 hex chars>"}`, the id
+  that `watane.js` sends with `/call` (8.2). A stream whose consumer is the
+  connection delivers `{"type":"stream","stream":"<id>","items":[{"seq":<n>,"body":"<text>"}]}`
+  (the item bytes as a string, invalid UTF-8 as U+FFFD) and, at its end,
+  `{"type":"stream-end","stream":"<id>","outcome":<outcome in the encoding of 6.9>}`.
+  These come through the connection's own lossless queue (9.3), never the bus.
 - A receiver that lags on the bus (section 9.3) gets one
   `{"type":"changed"}` in place of the lost messages.
-- The stream ends when the mod is disabled or removed, or the server stops.
+- The stream ends when the mod is disabled or removed, or the server stops;
+  its streams then end `gone` (19.2).
 
 ### 8.5 `watane.js`
 
@@ -1193,6 +1261,7 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
 (() => {
   const handlers = new Set();
   let source = null;
+  let connection = null;
   class WataneError extends Error {
     constructor(code, message, limit) {
       super(message);
@@ -1202,6 +1271,7 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
     }
   }
   const dispatch = (message) => {
+    if (message.type === 'connection') { connection = message.id; return; }
     if (message.type === 'reload') { location.reload(); return; }
     for (const handler of handlers) {
       try { handler(message); } catch (error) { console.error(error); }
@@ -1213,7 +1283,7 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
       const response = await fetch('/call', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ fn, args: args ?? null }),
+        body: JSON.stringify(connection ? { fn, args: args ?? null, connection } : { fn, args: args ?? null }),
       });
       const body = await response.json().catch(() => null);
       if (response.ok && body && 'value' in body) return body.value;
@@ -1234,7 +1304,8 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
 ```
 
 The stream opens at the first `watane.on`. A page that never calls
-`watane.on` gets no `reload`.
+`watane.on` gets no `reload` and no connection id. The id is that of the
+latest `connection` message; a call made before the first one carries none.
 
 ## 9. Events
 
@@ -1284,6 +1355,13 @@ events.
 One `tokio::sync::broadcast` channel per host, capacity 1024, of
 `(LocalName, Arc<str>)` messages. Each `/events` stream subscribes and
 filters by its local name.
+
+Step 11: stream items for a page do not use the bus, which loses messages
+for a lagging receiver. Each `/events` connection has its own lossless
+queue (19.2), written to the same response in order with the bus messages;
+a batch counts as taken when its write completes. The queue holds at most
+16 MiB of items; past it the connection's streams end `lagging` and the
+connection ends. A closed connection ends its streams `gone`.
 
 ### 9.4 Collect (step 9)
 
@@ -1335,7 +1413,8 @@ registry: entries that name no installed, enabled mod or function give no
 tool; tools are deduplicated by name and sorted by name.
 
 Tool name: `<local>_<interface>_<function>`, with the short interface name.
-A name longer than 64 bytes gives no tool. Description: the WIT doc comment
+A name longer than 64 bytes gives no tool. Step 11: a tool mod may mark a
+function `@parallel` or `@idempotent` (19.5); the tool list carries both. Description: the WIT doc comment
 of the function (`Resolve::push_dir` on `mods/<local>/wit/`, then
 `Function::docs.contents`; both exist in wit-parser 0.254), else its
 signature `<function>: func(<p>: <type>, ...) -> <type>`. Input schema:
@@ -1349,7 +1428,9 @@ base64url without padding, with the prefix `wt_` (46 chars). The host
 keeps only `blake3(token)` in memory, mapped to (toolset, handle).
 `TokenId` is the hex of the first 8 bytes of that hash. A token lives until
 `end_token` or until the host stops; tokens are never written to disk. In a
-participant home, only the app issues tokens, in its process (W6). In a
+participant home, only the app issues toolset tokens, in its process (W6);
+the host also issues a token for each handle that `agent-tools.open` opens,
+after the toolset consents (19.5, 19.7; W6 as changed in spec §7). In a
 preview, the program `watane` issues one token for `preview` with handle
 `preview` at start.
 
@@ -1363,7 +1444,7 @@ only (no SSE stream, no `Mcp-Session-Id`).
 | `Origin` header absent | 403 |
 | method `POST` | 405, `Allow: POST` (also for `GET` and `DELETE`) |
 | `Authorization: Bearer <token>` names a live token | 401, `WWW-Authenticate: Bearer` |
-| the token's toolset equals `<toolset>` | 403 |
+| the token's toolset equals `<toolset>` (a handle token, 19.5, is accepted only on `/mcp/agent` and lists the union of the handle's toolsets) | 403 |
 | `Content-Type: application/json`, body at most 1 MiB | 415 / 413 |
 | body is one JSON-RPC 2.0 object (no batch) | 200 with error `-32600` |
 
@@ -1425,6 +1506,10 @@ pub trait Confirm: Send + Sync + 'static {
     /// (`App`, `LocalApi`, `Mod`) and every home. Must not block. Default: nothing. (W37: the app
     /// makes a `main = true` mod main however it was installed, app 5.4.)
     fn installed(&self, report: &Installed) {}
+    /// Step 11 (19.4, 19.7): `accounts` hands over the in-process account source, `consent` asks
+    /// the participant. Defaults: no accounts, `Refused`.
+    fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
+    fn consent(&self, request: ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> { .. }
 }
 /// Debug, Clone, PartialEq. `new`: the local names of the plan entries that were `New`, in install
 /// order; `updated`: those that were `Update`. `Unchanged` entries are in neither.
@@ -1542,6 +1627,7 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key, burns a fixed loop of about 19.5M fuel and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 | `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `open-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `open-page-then-fail(local: string)`, which calls `open-page` and then traps, `close-open-close(local: string)`, which queues those three page effects in order, `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
+| `relay` (step 11, A1) | import state, caller, `streams`, `timers`; export `api { open: func() -> string; push: func(s: string, text: string); close: func(s: string); cancel: func(s: string); hand-off: func(s: string); resume: func(s: string); after: func(id: string, ms: u64); cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`; `items` stores each body in state key `got/<s>/<seq>` and answers by `mode` (`taken`, `defer`, `trap`); `ended`, `ready` and `fired` store a line |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1566,6 +1652,9 @@ run on the preview install path.
 | `tests/it/binds.rs` | S33 to S35: signed picks, persistence, bind-only updates, removal, validation, preview matching and local API rejection | literal binds, links, JSON, caller and confirmation count |
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
 | `tests/it/manage.rs` (stage 11) | S40 to S47 with `manager`, `counter`, `shelf`, `recs` in a participant home whose `Confirm` fake records `reduced`, `manage` and `install` calls and answers `manage` from a script; the harness rows of 6.10; `manager` refused at plan when the world lacks `manage` but the component imports it (5.3) | literal `mod-info` JSON; `installed.json` parsed as plain JSON; the fake's recorded calls; request ids matched by the regex `^[0-9a-f]{32}$`; page-bus messages read from `/events` of a served manager |
+| `tests/it/streams.rs` (A1) | agentic-harness cases 7, 36 and 51 (host parts) and 58, with `relay` and a crate-private test source for host streams (no H2 to H4): 19.2 and FUNCTIONAL S48 to S52 | literal item numbers and bodies read from the consumer's state; `ended` lines; counted deliveries |
+| `tests/it/requests.rs` (A1) | agentic-harness cases 20 and 21 with `relay`; the rows of 19.6 (limits, replacement, rollback); FUNCTIONAL S53 to S55 | literal `fired` lines; `timers` table read from `state/state.redb` after `drop(host)`; a restart on the same home |
+| `tests/it/agent_load.rs` (A1, `#[ignore = "slow: stage A budgets and V8"]`) | the load row of stage A (15) | p95 item delay, `cancel` to `ended`, writer busy share, state bytes per item |
 | `tests/it/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
 ## 14. Security properties
@@ -1596,10 +1685,30 @@ run on the preview install path.
 | A network grant is narrow | HTTPS only, exact host list (6.8) | S27 |
 | A preview never holds participant data | mode fixed in `home.json`; one host per home (3.1) | S2, S3 |
 | No path escapes `ui/` | path rules and canonical prefix (8.3) | pages |
+| A mod cannot widen `claude` past its launch (step 11) | the grammar and one argument per value; `--restricted`; fixed flags; closed subagent keys; the host owns stdin; the `initialize` and `init` checks (19.3). Files: `src/agent/claude/launch.rs`, `init.rs`, `control.rs`, `run.rs` | A2: agentic-harness cases 12 to 17 |
+| A mod cannot run a denied skill by name | `slash-command` (19.3). File: `src/agent/claude/control.rs` | A2: case 11 |
+| A failing check cannot let a tool run | `onFailure: block` confirmed in `initialize` (19.3). Files: `init.rs`, `control.rs` | A2: cases 10, 14 |
+| "Safe" cannot widen the mode | a check is answered `none` or `deny`, never `allow` (19.3). File: `control.rs` | A2: case 15 |
+| Writes cannot plant code that runs later | the protected paths of the host's `--settings=` (19.3). File: `run.rs` | A2: case 18 |
+| No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, app account files | A3, A4 |
+| A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
+| A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain (19.7); the grants checked again at apply (19.6). Files: `src/agent/consent.rs`, `src/runtime/call.rs` | A3 |
+| A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
+| A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
+| An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
+| A rolled-back call has no outside effect | requests apply only after the chain's durable commit; deferred and failed calls drop theirs (19.6). File: `src/runtime/call.rs` | A1: case 21 |
 
 Not protected (spec §6): another program of the same user, which can read
 the home and call `/call` or `/events` with a forged `Origin`; a
-compromised OS; a fault in Wasmtime.
+compromised OS; a fault in Wasmtime. Step 11 (agentic-harness TECHNICAL
+14): `claude` itself within its limits; a prompt injection within what a
+launch allows; an allowed command word that the list of 19.3 misses, or a
+package-runner word that runs the project's own scripts, inside the shell
+grant's sandbox only (whether that sandbox blocks loopback is not yet
+probed); the judge account reaches any `POST` path of the origin the
+participant entered; plan usage; a launch is as safe as the grant, and the
+grants are the participant's (W38, W39).
 
 ## 15. Build plan
 
@@ -1749,8 +1858,54 @@ is added.
 | 10 Collect (step 9) | 9.4; the outlet row of 6.4; collect edges in 4.2 step 8; the 5.3 rule; collect fakes in `Harness` (2.6); fixtures `menu`, `item-*` | stage 5; `pkg` stage 9 (`World::collects`) | none; the stage waits for pkg | S36 to S39 pass (`tests/it/collect.rs`); J9 with `dev` and `app` |
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/it/manage.rs`); J10 with `dev` and `app` |
 | 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/it/program/api.rs` passes; every earlier test passes unchanged (the default body) |
+| A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixture `relay`; `Outcome.requests` | stage 5; `pkg` A1 (`watane:host` rows for the new interfaces and exports) | `RawMod` and a crate-private test source for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
+| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude` | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only) |
+| A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C |
+| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`; `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D |
+| A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_key_removed` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
 
 Step 10 is done when J10 passes with `dev` and `app` (app 17).
+
+Step 11 (W38): A1 to A5 map to stages A to E of agentic-harness TECHNICAL
+17 (A1 is its stage A; A2 its B; A3 its C; A4 its D; A5 its E). Each is done
+only when its tests pass; the agentic-harness slice that uses a stage names
+the same interface and fakes it until the watane stage merges.
+
+**A1 (S96), sized.** One slice builds: the WIT of 19.1 for `streams`,
+`timers`, the three host-only exports and `caller.identity`; the table, FIFO
+delivery, batches, `taken`/`defer`, `resume`, the lag clock, the deferral
+backstop, the byte budgets and the ends of 19.2; page connection ids and their
+lossless queues (8.2, 8.4, 8.5, 9.3); request effects after a durable commit
+and timers (19.6, 7); the fixture `relay`; `Outcome.requests`. No `claude`,
+HTTPS, handle or consent code. Its tests: agentic-harness case 7 (a failed
+batch is redelivered once, same numbers, duplicates dropped), 20 (a timer due
+during downtime fires after start; a firing for a cancelled id is ignored), 21
+(kill after the commit of a request and before its effect: the effect happens
+once after restart; the effect tested is a timer, the only request that
+outlives a restart, 19.6), 36 (host part: `defer` gives the same batch after
+`resume` and nothing before; two defers never end the stream `consumer-failed`;
+a deferred call's pushes and writes are gone; a deferred host stream stops
+reading its source), 51 (host part: a page that stops reading ends `lagging`
+after 10 s; a page that takes a few items and stops: the same; a consumer that
+never resumes ends `consumer-failed` after 5 minutes, with a clock the test
+controls), 58 (host part: producers past an origin client's 128 MiB or the
+host's 512 MiB get `full`; a page connection past 16 MiB ends and its streams
+end `lagging`).
+
+**Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
+fakes, recorded with the date and the machine below; a stage is done only
+within them). Load: 8 host streams × 100 items/s of 1 KiB from a test source
+in the host's own tests, through a mod consumer (`relay`) to a page
+connection. Item delay, source to page: at most 50 ms. `cancel` to `ended`:
+at most 250 ms. Writer busy share (the share of wall time the host's state
+writer spends in commits, fsync included, over the run): at most 10%. State
+bytes read and written per item: none.
+
+**V8 record.** V8 (the probe of agentic-harness TECHNICAL 16) runs the A1
+prototype through three layers (host stream, a mod consumer, a page consumer)
+and measures order, delay and the cost of one fsync per commit (N4, 19.6). The
+numbers, the date and the machine go here; whether to change 19.6 "Durable
+first" is the human's. Not measured yet.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -1767,6 +1922,10 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` (W37) | `Confirm::installed`, `Installed` (12.1): one call after each install that wrote the catalog, any requester |
 | `dev` (step 10) | the manage fakes of 6.10 under the `Fakes` key `watane:host/manage`; `Outcome.manages`, `ManageRecord` (2.6); `HOST_WIT` with `manage` |
 | `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
+| `pkg` (step 11) | the `watane:host` interfaces of 19.1 as imports and exports, for pkg's import check (pkg 4.5): imports `streams`, `claude-types`, `claude-code`, `claude-code-shell`, `claude-session`, `https-stream`, `agent-tools`, `timers`, `caller.identity`; exports `stream-sink`, `stream-producer`, `timer-sink`; the grants `ClaudeCode`, `ClaudeCodeShell` (the WIT `grant` variant of 6.4) |
+| `app` (step 11) | `Confirm::{accounts, consent}`, `AccountSource`, `JudgeAccount`, `AccountError`, `Consent`, `ConsentRequest`, `ConsentAnswer`; `Host::{withdraw_consent, judge_key_removed}`; `InstalledMod.consents`; the page-reserved `<home>/app/accounts/` is the app's (3.1) |
+| `dev` (step 11) | `Outcome.requests`, `RequestRecord`, the harness fakes of 19.1; `HOST_WIT` with the new interfaces; `watane.js` with the connection id; the `claude` argument and stdin rules of 19.3 for `fake-claude`; the account binding of 19.4 for `ScriptedResponses` |
+| the agent layer mods (W38) | the interfaces of 19.1 to 19.8; `caller.identity()` values; the grants `claude-code`, `claude-code-shell` |
 
 ## 17. Needs from other subsystems
 
@@ -1794,6 +1953,17 @@ From `log` (stage 8, its section 2): `Entry` (built only by `Entry::decode`
 or `Log::append`) with `author()`, `kind()`, `body()`; `PublicKey::as_bytes()`,
 whose `Display` is pkg's `PublisherKey` text; `Log::{open, append, identity}`
 in tests (13.2).
+
+Step 11 (19): from `pkg`, `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`
+(text `claude-code`, `claude-code-shell`; JSON `{"kind":"claude-code"}`,
+`{"kind":"claude-code-shell"}`; ordered after `Manage`; release CBOR `[5]`
+and `[6]`; release grant limit 84) and `World` flags for the new imports and
+the three exports (pkg 4.5, 5.1, 7.2). From `app`: `Confirm::consent` and
+`Confirm::accounts` with an `AccountSource` (19.4, 19.7; app 19), which owns
+the consent words, the consent view, Sign in with ChatGPT, the account files
+`<home>/app/accounts/openai.json` and
+`<home>/app/accounts/judge/<provider mod id>.json`, and the `claude` binary
+setting. From `dev` (18): `fake-claude` and `ScriptedResponses` for tests.
 
 From `app`: an implementation of `Confirm` (from step 10 with `manage`
 and `reduced`, app 17), and routes for `dist` under `/api/`. From `dist`: nothing directly.
@@ -1952,3 +2122,653 @@ or whether one is shown.
   manager's own page. Recommended: (a) for now, with the toolset view
   naming a manager's functions as such. Cost to undo: (b) is one check at
   each function in 6.10, but breaks a manager that an agent drives.
+
+Open for the human (S95, agentic-harness `factory/PLAN.md`, "Waiting on the
+human"). Each is left out of 19 on purpose; no document decides it, and text
+that depends on it points here. Stage A1 needs none; A2 needs all three.
+
+- **Q34** `caller.boot()` (source row: "`caller.boot()`, a new watane host
+  import", S17). The kernel cannot tell a restart from its own state, so it
+  needs the host's start number. (a) `caller.boot() -> u64`: raised once each
+  time the host starts, kept in host state, the same for every call until the
+  next start; a pure read, no grant, not a request. (b) A host export
+  `started()` called once per start into each mod. Recommended: (a); no new
+  call into mods at start. Cost to undo: one line of 19.1, one row of 15, and
+  the kernel's restart rule. Blocks only A2.
+- **Q35** `outcome` on `ask-resolved {by: answered}` (source row: "`answered`
+  carries `outcome`", S18). Without it the kernel cannot record what a checked
+  provider decided (`allow`, `deny` or `none`). (a) The item carries
+  `"outcome":"allow"|"deny"|"none"`, the answer the host sent to `claude`
+  (`none` only for a check). (b) No field; the kernel learns the outcome
+  another way at stage E. Recommended: (a). Cost to undo: one field. Blocks
+  only A2.
+- **Q36** The host-item rules of 19.3 step 4 and 5 (source row: "4.5 host
+  items", S8, S22). Undecided: the item `ask-resolved` and its `by` values
+  (`answered`, `expired` for an ask the host denied at its `expires-at`,
+  `cancelled` for a `control_cancel_request`); whether the host also closes a
+  check with `ask-resolved {by: expired}` at its `expires-at` and writes
+  nothing to stdin for it; and what goes on the stream in place of a `claude`
+  line typed like a watane item (`ask`, `check`, `ask-resolved`, `initialized`,
+  `wrapped`, `consent-pending`, `verdict`, `checking`): option 1, the item
+  `{"type":"wrapped","line":"<the line as a JSON string>"}`, also for a line
+  that is not UTF-8, not one JSON object, or has a duplicate top-level key; 2,
+  leave it to A2's slice; 3, a source marker on host items (a wire change in
+  both repositories). Recommended: option 1 with the `ask-resolved` and
+  `expired` rules as the source writes them. Cost to undo: a few lines here
+  and one adapter field in the kernel. Blocks only A2.
+
+## 19. The agent layer (step 11)
+
+W38 (spec §7): a layer of mods runs on the host. The kernel `mods:agent` and
+the two providers `mods:claude-code` live in the repository agentic-harness,
+not here. The host gives them the interfaces below; pkg 5.1 gives the two
+grants, app 19 the accounts and consents, dev 18 the fakes. Rules are ported
+from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
+TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
+2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
+not decided and wait on the human: section 18, Q34 to Q36. Text that depends
+on one says so.
+
+**Terms.** *Producer* and *consumer* of a stream (19.2). A *host stream* has
+the host as producer (`claude-code.start`, `https-stream.start`,
+`agent-tools.call`); a *mod stream* is opened by a mod with `streams.open`.
+The *origin client* is the mod whose authority a chain carries: for a page
+call, the mod of the page; for an agent call, the mod that owns the handle
+(19.5); for an item call, a job call or a timer call, the origin client of the
+call that opened the stream, job or timer; for an event delivery, the emitter.
+The host carries it with the chain. A *request* is a function with an outside
+effect (19.6).
+
+### 19.1 Interfaces
+
+All are `watane:host/<name>@0.1.0` in `wit/host.wit`, added to the package of
+6.4 (the package version stays `0.1.0`, as for `manage`).
+
+```wit
+interface streams {                                  // no grant
+  type stream-id = string;                           // 128 random bits as 32 hex chars
+  record item { seq: u64, body: list<u8> }
+  enum sink-outcome { taken, defer }
+  record version-need { found: string, need: string }
+  /// How a stream ended. A producer's `close` may pass only `closed`, `replaced` or `failed`.
+  variant outcome {
+    closed, cancelled, lagging, replaced, consumer-failed, idle-timeout,
+    gone,                       // disable, removal or update of either side, lost grant or consent, closed page connection, app quit
+    mismatch(string),           // claude disagreed with the launch: the field (19.3)
+    no-binary, version(version-need),
+    consent-refused(string),    // what (19.7)
+    no-app, no-account,         // 19.4
+    failed(string),
+  }
+  enum stream-error { not-yours, unknown-stream, full, too-large }
+  open: func() -> result<stream-id, stream-error>;
+  push: func(s: stream-id, item: list<u8>) -> result<_, stream-error>;
+  close: func(s: stream-id, outcome: outcome);
+  cancel: func(s: stream-id);
+  hand-off: func(s: stream-id) -> result<_, stream-error>;
+  /// Consumer only: lets a deferred stream go on (19.2).
+  resume: func(s: stream-id) -> result<_, stream-error>;
+}
+
+interface claude-types {                             // types only, no grant
+  record bad-launch { field: string, reason: string }
+  variant decision { allow(option<string>), deny(string), none }
+  /// `none` only for a check (19.3). `allow(some(json))`: a changed input.
+  variant start-error {
+    bad-launch(bad-launch), destination, forbidden-header(string), too-large, full,
+    not-owner, not-direct,   // the providers' (agentic-harness TECHNICAL 2.2, 10)
+  }
+  variant session-error {
+    not-yours, unknown-stream, slash-command, unknown-ask, not-allowed-here,
+    not-owner, not-direct,
+  }
+}
+interface claude-code {                              // grant: ClaudeCode
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(launch: string) -> result<stream-id, start-error>;
+}
+interface claude-code-shell {                        // grant: ClaudeCodeShell
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(launch: string) -> result<stream-id, start-error>;
+}
+interface claude-session {                           // no grant; the caller is the stream's consumer
+  use claude-types.{decision, session-error};  use streams.{stream-id};
+  say: func(s: stream-id, content: string) -> result<_, session-error>;
+  answer: func(s: stream-id, ask: string, d: decision) -> result<_, session-error>;
+  interrupt: func(s: stream-id) -> result<_, session-error>;
+  compact: func(s: stream-id) -> result<_, session-error>;
+}
+interface https-stream {                             // no grant; reaches only the hosts of the mod's Http grants
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(request: string) -> result<stream-id, start-error>;
+}
+interface agent-tools {                              // no grant; a toolset needs consent (19.7)
+  record tool { name: string, description: string, input-schema: string, parallel: bool, idempotent: bool }
+  variant tools-error { not-granted, unknown-handle, unknown-tool, consent-pending(string), consent-refused(string) }
+  open: func(toolsets: list<string>) -> result<string, tools-error>;
+  describe: func(handle: string) -> result<list<tool>, tools-error>;
+  call: func(handle: string, key: string, tool: string, args: string) -> result<streams.stream-id, tools-error>;
+  close: func(handle: string);
+}
+interface timers {                                   // no grant
+  enum timer-error { too-many, bad-id, bad-delay }
+  after: func(id: string, delay-ms: u64) -> result<_, timer-error>;
+  cancel: func(id: string);
+}
+
+// host-only exports: a mod exports them to receive; no page, tool or mod can call them
+interface stream-sink {
+  use streams.{item, sink-outcome, outcome};
+  items: func(s: string, items: list<item>) -> sink-outcome;
+  ended: func(s: string, outcome: outcome);
+}
+interface stream-producer {
+  use streams.{outcome};
+  ready: func(s: string);
+  ended: func(s: string, outcome: outcome);
+}
+interface timer-sink { fired: func(id: string); }
+
+// the existing interface caller (6.4) gains:
+//   identity: func() -> string;
+```
+
+`caller.identity()` is a pure read, no grant. It returns the identity of the
+caller of the current call, compared exactly by mods:
+
+| Caller | Value |
+|---|---|
+| a mod | its identity (pkg 4.1): `<publisher key>/<slug>`, or `local/<slug>` for a local mod |
+| a page | `page` |
+| an agent | `agent:<handle-name>` (19.5) |
+| the host (an item call of a host stream, a fired timer) | `host` |
+
+`who()` is unchanged for mods, pages and agents and returns `host` for the
+host. A rename of a local name changes `who()` and never `identity()`. `Caller`
+(2.3) gets no variant: the host's own calls use a crate-private caller.
+`caller.boot()` is not added: Q34.
+
+Linking (rows of 6.4):
+
+| Import | Linked to |
+|---|---|
+| `streams`, `claude-session`, `agent-tools`, `timers` | the functions of 19.2, 19.3, 19.5, 19.6 at every call; no grant to check |
+| `claude-types` | types only |
+| `claude-code`, `claude-code-shell` | each function first checks `Grant::ClaudeCode` / `Grant::ClaudeCodeShell` granted in the current catalog, else the call traps `not_granted` ("<local> has no grant for watane:host/claude-code"): the stub of W9 |
+| `https-stream` | 19.4; the hosts are those of the mod's granted `Http` grants (6.8) |
+| exports `stream-sink`, `stream-producer`, `timer-sink` | allowed export names (5.3); never a call: `no_function` on `/call` and in tools (6.6 step 2); only the host invokes them, as top-level calls with caller `host` (or the producer, 19.2) |
+
+A grant revoked or a mod disabled stops the next host import of a running chain
+(Q24) and ends the streams that depended on it (19.2, Ends).
+
+**Harness** (2.6). The new imports are fakes: `streams.open` returns `s1`,
+`s2`, ... in call order, every other function returns ok, `identity` returns
+`local/<slug>` of the caller or `page`. Each request (19.6) of a succeeded
+call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
+in call order; a failed call records none. A `Fakes` entry under
+`watane:host/<interface>` overrides a result.
+
+### 19.2 Streams (H1)
+
+A stream carries numbered items from a producer to one consumer, in order.
+(agentic-harness TECHNICAL 3.)
+
+| Rule | Value |
+|---|---|
+| Consumer of a host stream | the mod whose request opened it |
+| Consumer of a mod stream | the caller of the call in which `open` ran: a mod, or a page connection when the caller is `page` and the call carried a connection id (8.2). Any other caller (an agent, the host, a page call without a live connection): `not-yours` |
+| Page consumer | one `/events` connection, named by the connection id that `watane.js` sends with `/call` (8.2, 8.4, 8.5) |
+| `push`, `close` | producer only; `cancel` consumer only; `hand-off` the consumer of a host stream, once, to the caller of the current call; items queued and not yet taken go with it, numbering goes on |
+| Wrong caller, unknown or ended id | `not-yours`, `unknown-stream` |
+| Id | 128 random bits, never reused |
+| Sequence | each item numbered from 1 per stream |
+| Batch | every waiting item, up to 256 items or 1 MiB but always at least one item, one `stream-sink.items` call |
+| Delivery | one call to a consumer mod at a time, in FIFO order of its queued batches; each `items` or `ended` call is a top-level call with fresh fuel and deadline (as 9.2 step 5) |
+| Failed batch | delivered once more with the same numbers; a second failure ends the stream `consumer-failed` |
+| Deferred batch | an `items` call that returns `defer` is rolled back like a failed call (its pushes, writes and requests are dropped) but is not a failure: it does not count towards `consumer-failed`. The host keeps that batch and every later item, delivers nothing more on that stream, and a host stream stops reading its source, until the consumer calls `resume` |
+| Resume | consumer only; the host then delivers the kept batch again, with the same numbers. `resume` of a stream that is not deferred does nothing. It takes effect when its call succeeds; one made in the call that returns `defer` is dropped with it |
+| Commit | items pushed in a call are queued when that invoke succeeds (as events, 9.1); a failed call's pushes are dropped. `close` and `cancel` take effect then too, after the pushes of the same call. `streams.open` is a request (19.6); a stream opened in a call can be pushed to and closed in the same chain |
+| Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
+| Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
+| In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs when it is below half; host streams stop reading their source |
+| Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
+| Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent, closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
+| Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
+| Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
+| Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
+| Restart | streams are memory only; old ids are `unknown-stream` |
+| Byte budgets | queued items (in flight and kept by a deferral) count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does. A page connection past its 16 MiB ends; its streams end `lagging` |
+| Limits | 32 open streams per consumer (`streams.open` and a host start past it fail `full`); 4 MiB per item (`too-large`); 4 `claude` processes per origin client, 8 in all (a start past it ends `failed("too many claude processes")`) |
+
+A deferral is how a consumer says "not now" without losing order: the
+consumer's call returns `defer`, the host holds the batch, the consumer calls
+`resume` later. The page of a lagging stream reattaches from its last index
+and recovers by replay (a rule of the kernel, agentic-harness TECHNICAL 9.4).
+
+### 19.3 Claude Code (H2)
+
+`claude-code.start` and `claude-code-shell.start` run the program `claude`
+under the rules below. They are requests: they return a stream id at once; the
+outcomes (consent refused, no binary, version too old, a mismatch) arrive as
+`ended` (19.6). (agentic-harness TECHNICAL 4.)
+
+**The launch document.** JSON with `"version": 1`, parsed into a Rust type
+that refuses unknown fields. A value outside its grammar is `bad-launch
+{field, reason}` at the call. Each value goes out as one `--flag=value`
+argument.
+
+| Field | Grammar or rule | Goes to `claude` as |
+|---|---|---|
+| `workspace` | a workspace id the origin client holds (19.7) | cwd |
+| `extra-workspaces` | workspace ids, the same rule | `--add-dir=` each |
+| `model` | `[A-Za-z0-9.\-\[\]]{1,64}` | `--model=` |
+| `fallback-models` | the same, at most 4 | `--fallback-model=` |
+| `effort` | `low`, `medium`, `high`, `xhigh`, `max` | `--effort=` |
+| `system-prompt` | `{replace \| append: text}`, at most 64 KiB | `--system-prompt=` / `--append-system-prompt=` |
+| `tools` | names from the grant's allowlist (below); an absent `tools` and `[]` both mean no built-in tools | `--tools=` |
+| `allow`, `deny` | `Name` or `Name(arg)`, `arg` without parentheses, no control character anywhere; Name from the allowlist or `mcp__watane__<tool>`; no comma, space or leading `-` outside the parentheses; an allow `Bash(…)` follows the grammar below | `--allowedTools=`, `--disallowedTools=` each |
+| `mode` | `manual`, `accept-edits`, `plan`, `dont-ask` | `--permission-mode=` |
+| `ask` | bool | `--permission-prompts=host --permission-prompt-tool=stdio`, or `--permission-prompts=none` |
+| `pre-tool-check` | `{timeout-s: 5..120}` | the host's PreToolUse callback in `initialize` |
+| `agent-handle` | a handle the origin client holds (19.5) | `--mcp-config=/dev/fd/3` |
+| `subagents` | each exactly `{name [a-z0-9-]{1,64}, description, prompt, tools ⊆ tools, model}`; any other key is refused by name; 64 KiB in all (N9, the human, 2026-11-20: subagents stay `--agents=` flags) | `--agents=` |
+| `subagent-depth` | 0..3, default 1; 0 also removes `Task` | env `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` |
+| `skills` | `{name [a-z0-9-]{1,64}, files}`; paths under the skill folder, no `..`, 1 MiB in all; a `SKILL.md` that starts with `---` has strict frontmatter, below | the run folder's plugin, `--plugin-dir=` |
+| `sandbox` | the typed record of the grants below; required with the shell grant | the host's `--settings=` |
+| `json-schema` | at most 64 KiB, valid JSON Schema | `--json-schema=` |
+| `max-turns` | 1..1000 | `--max-turns=` |
+| `max-budget-usd` | positive | `--max-budget-usd=` |
+| `session` | `{new: uuid}`, `{resume: uuid, at?: uuid, drops-turn?: uuid}`, `{fork: uuid, at?: uuid}` | `--session-id=`, `--resume=`, `--fork-session`, `--resume-session-at=`, `--resume-drops-turn=` |
+| `persist` | bool | `--no-session-persistence` when false |
+| `partial` | bool | `--include-partial-messages` |
+
+The allow grammar for `Bash` (deny rules are not held to it). An allow
+`Bash(<arg>)` is refused unless all of these hold:
+
+- Bare `Bash`, with no parentheses, is refused: it allows any command; so is
+  an empty `<arg>` (`Bash()`, `Bash(:*)`).
+- `<arg>` has no non-ASCII character and none of `` ` ``, `$`, `{`, `}`, `;`,
+  `|`, `&`, `<`, `>`, `'`, `"`, `\`: the shell would read more than a word.
+- A colon appears only as one trailing `:*`.
+- The first word (split on whitespace, after that `:*` is removed) is no path
+  (no `/`), has no `~`, and is made only of `A-Za-z0-9._+-`.
+- The first word, lowercased, is not an interpreter or runner: no name
+  starting `python`, `pypy`, `node`, `perl`, `ruby`, `php` or `lua`
+  (versioned names such as `python3.12`, `nodejs`, `perl5.36.0`, `luajit`),
+  and none of these, because each runs, wraps or schedules another command:
+  `.`, `ash`, `at`, `awk`, `bash`, `batch`, `builtin`, `bun`, `bunx`,
+  `busybox`, `byobu`, `capsh`, `chroot`, `chrt`, `command`, `coproc`,
+  `corepack`, `crontab`, `csh`, `dash`, `deno`, `doas`, `dtach`, `elixir`,
+  `enable`, `env`, `eval`, `exec`, `expect`, `fakeroot`, `fc`, `fish`,
+  `flock`, `gawk`, `gdb`, `ionice`, `irb`, `julia`, `ksh`, `lldb`, `ltrace`,
+  `lua`, `mawk`, `mksh`, `nawk`, `nice`, `node`, `nohup`, `npx`, `nsenter`,
+  `numactl`, `osascript`, `parallel`, `perl`, `php`, `pipx`, `pkexec`,
+  `pnpx`, `prlimit`, `pwsh`, `r`, `rbash`, `rscript`, `ruby`, `run0`,
+  `runuser`, `screen`, `script`, `sem`, `setpriv`, `setsid`, `sg`, `sh`,
+  `source`, `ssh`, `stdbuf`, `strace`, `su`, `sudo`, `systemd-run`,
+  `taskset`, `tclsh`, `tcsh`, `time`, `timeout`, `tmux`, `toybox`, `trap`,
+  `ts-node`, `tsx`, `unshare`, `uvx`, `valgrind`, `watch`, `xargs`,
+  `yarnpkg`, `zellij`, `zsh`. This list is the rule; the kernel's own copy
+  must equal it. No list of this kind is complete, so a word not on it is
+  not thereby safe: the shell grant's sandbox is the limit (section 14, Not
+  protected). `find` is allowed only with no `*` and no `-exec`, `-execdir`,
+  `-ok` or `-okdir`.
+- A package runner (table) needs a second word from its row and no option
+  word (starting `-`) after it, and the rule has no `*` or `:*` anywhere
+  (fail-closed: an option or a forwarder can name a program to run).
+
+| Runner | Second words allowed |
+|---|---|
+| `npm` | `install`, `i`, `ci`, `test`, `ls`, `list`, `audit`, `outdated` |
+| `pnpm` | `install`, `add`, `test`, `list`, `ls`, `audit`, `outdated` |
+| `yarn` | `install`, `add`, `test`, `list`, `audit`, `outdated` (not `ls`: yarn runs a script named `ls`) |
+| `uv` | `pip`, `sync`, `lock`, `add`, `remove`, `tree`, `venv` |
+| `devbox` | `install`, `add` |
+
+The `skills` frontmatter rule, for each file of a skill named `SKILL.md` in
+any case and any folder. Frontmatter starts with `---` and a newline at byte 0
+(leading white space or a byte order mark before `---` is refused). It ends
+at a line `---`. Its keys are `name` and `description`, each once; an indented
+line continues the key above it and may not contain `:`; any other line is
+refused. Every character is printable ASCII (space to `~`). Each refusal
+names its reason.
+
+**Grants and tools** (N1, the human, 2026-11-20: two grants):
+
+| Grant | Built-in tools | Required |
+|---|---|---|
+| `Grant::ClaudeCode` (`claude-code`) | `Read`, `Write`, `Edit`, `Glob`, `Grep`, `NotebookEdit`, `Skill`, `Task`, `TodoWrite` | a workspace |
+| `Grant::ClaudeCodeShell` (`claude-code-shell`) | the above and `Bash`, `WebFetch`, `WebSearch` | a workspace; `sandbox.enabled: true`; writes only in the workspaces; loopback denied; none of `excludedCommands`, `allowUnsandboxedCommands`, `allowUnixSockets`, `allowLocalBinding`; a network allowlist of plain domain names |
+
+**Protected paths.** The host's `--settings=` denies `Edit`, `Write` and
+`NotebookEdit` on Claude Code's own protected list and on `.git/**`,
+`.claude/**`, `.agents/**`, `.codex/**`, `**/.aws/**`, `**/CLAUDE.md`,
+`**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
+`package.json`, `Makefile` and `.husky/**`. No launch can remove them.
+
+**The run.**
+
+- Fixed arguments: `-p --input-format=stream-json --output-format=stream-json
+  --verbose --restricted --strict-mcp-config --system-prompt-snapshot=off` and
+  the host's `--settings=`. Never `--safe-mode`, `--bare`, `--plugin-url`,
+  `--worktree`, `--bg`, `--cloud`, `--remote-control`, `--chrome`, `--ide`,
+  `--file`, `--betas`, `auto` or a bypass mode (N2, the human, 2026-11-20:
+  `auto` stays out).
+- Binary: the path from `AccountSource::claude_binary` (19.4), the one the
+  participant picked, at or above the minimum version: the first that answers
+  `initialize` with `hook_on_failure_supported` and has the protected-path
+  symlink fixes (2.1.295 or later). None: the stream ends `no-binary`; too old:
+  `version {found, need}`; no app: `no-app`.
+- Process: its own process group; the pid is recorded in `<home>/runs/pids`.
+  The consent of 19.7 is held first: the host starts the process only then.
+- Environment: only `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TMPDIR`,
+  `SHELL`, a fixed `PATH`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
+  `CLAUDE_CODE_OAUTH_TOKEN` when the participant set it. The host never reads
+  that token.
+- MCP: `{"mcpServers":{"watane":{"type":"http","url":…,"headers":{"Authorization":"Bearer <token>"}}}}`
+  written to a pipe that the child inherits as fd 3 (19.5 for the token).
+
+**The control protocol.**
+
+1. The host writes `initialize`. With `pre-tool-check` it holds
+   `hooks.PreToolUse = [{matcher: "*", hookCallbackIds: [<id>], timeout:
+   <timeout-s>, onFailure: "block"}]`.
+2. With a callback, the answer must hold `hook_on_failure_supported: true` and
+   not `hooks_applied: false`; otherwise the host kills the group and ends the
+   stream `mismatch`. Once this step has passed, the host pushes the item
+   `{"type":"initialized"}` on the stream. The process starts only after the
+   workspace consent is held, so `initialized` never comes before it; the
+   checked provider relies on that.
+3. The `system/init` line must match the launch in tools, MCP servers, agents,
+   permission mode (`manual` reads `default`) and plugins (exactly
+   `watane-run` and Claude Code's `cc-plugin-*`). Skills are not compared. A
+   difference: kill, `mismatch {field}`.
+4. Then each stdout line becomes an item:
+
+| Line | Item |
+|---|---|
+| `control_request` `can_use_tool` | `{"type":"ask","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
+| `control_request` `hook_callback` (PreToolUse) | `{"type":"check","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
+| a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through; what goes on the stream instead is Q36 |
+| any other line | the line unchanged |
+
+   `expires-at` is on the host's clock: for an ask, the push time plus 10
+   minutes; for a check, the push time plus the hook's `timeout-s`. A
+   `control_request` whose `tool_use_id` is missing, not a string, or empty is
+   not passed as an ask or check: the host answers it deny at once and pushes
+   nothing for it. The host's `id` of an `ask` or `check` is unique on its
+   stream and never reused. The host builds each `ask` and `check` item from
+   its own parsed value and serializes it itself; it never copies bytes of a
+   `claude` line into an item, so no `claude` line can pass as a host item. The
+   items that close an ask or check (`ask-resolved`, its values and its
+   `outcome`) are Q35 and Q36.
+5. Writes to stdin are only these:
+
+| Operation | Written | Rule |
+|---|---|---|
+| `say` | a `user` message with the content | refused `slash-command` when the first text block starts with `/` after white space |
+| `compact` | a `user` message `/compact` | – |
+| `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
+| `answer` to a check | `{}` for `none`; `{hookSpecificOutput: {hookEventName: PreToolUse, permissionDecision: deny, permissionDecisionReason}}` for `deny` | `allow` refused `not-allowed-here` |
+| `interrupt` | `control_request` `interrupt` | – |
+
+   An ask the host has not had answered at its `expires-at` is denied (written
+   as the deny above). A second answer, or an answer to an ask or check that
+   is closed, is `unknown-ask`. What the host pushes when an ask or check
+   closes is Q35 and Q36. Nothing else is ever written: no
+   `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`,
+   `updatedPermissions` or second `initialize`.
+6. A turn is over when `claude` reports itself idle, not at the first
+   `result`.
+
+**The session functions.** `claude-session.say`, `answer`, `interrupt` and
+`compact` act on host stream `s` of a `claude-code` start; the caller must be
+the stream's consumer, else `not-yours` (`unknown-stream` for an unknown or
+ended id). Each is a request (19.6): applied after the call chain commits, so
+a call that is rolled back, deferred or failed, writes nothing to stdin. The
+checks of the table above are made at the call.
+
+**Folders.**
+
+- Run folder `<home>/runs/<random>/`: the plugin folder `watane-run`. Deleted
+  when the stream ends; all of `runs/` is deleted at open, after the recorded
+  process groups are killed (3.1 step 3 gains this).
+- Scratch workspace `<home>/scratch/<random>/`, named by the host, owned by a
+  session; a mod sees its id. It asks no consent: no participant folder is in
+  it. Not yet specified (agentic-harness TECHNICAL 4.6): which call creates a
+  scratch workspace, how a picked folder becomes a workspace id, and how a mod
+  holds one across a resume. The first slice of stage A2 adds this here, to the
+  launch table and to 15 before any other A2 slice starts.
+- Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
+  folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
+  `~/.aws`, `~/Library/Keychains`, the run and scratch trees; compared without
+  case on a case-insensitive file system.
+
+### 19.4 HTTPS streams and accounts (H3)
+
+`https-stream.start(request)`; a request (19.6). The request is JSON: `url`,
+`method`, `headers`, `body`, `account?`, `idle-s?` (default 90, at most 300).
+(agentic-harness TECHNICAL 5.)
+
+- **Items.** First `{status, headers}`; then one item per server-sent event,
+  or per 64 KiB chunk of a body that is not SSE.
+- **Refused at the call, before a byte leaves** (the `start-error`): a URL that
+  is not `https`, or whose host is not exactly one of the mod's granted `Http`
+  hosts (6.8): `destination`; the headers `Authorization`, `Cookie`, `Host`,
+  `Proxy-*`, `OpenAI-Organization`, `OpenAI-Project`, `ChatGPT-Account-Id`:
+  `forbidden-header`; a body over 1 MiB: `too-large`; with `account:
+  "openai"`, anything but `POST https://api.openai.com/v1/responses` or `GET
+  https://api.openai.com/v1/models`: `destination`. At apply the host checks
+  again that the mod is enabled and the hosts still granted, else the stream
+  ends `gone`.
+- No redirects. No retries: a mod decides retries.
+- **Idle.** No bytes for `idle-s` ends the stream `idle-timeout`.
+- **Account `openai`.** The app runs Sign in with ChatGPT and keeps the tokens
+  (app 19.1). The host asks `AccountSource::openai_token` for a fresh access
+  token per request and adds `Authorization: Bearer <token>`. Without an app:
+  the stream ends `no-app`; without tokens: `no-account`. The consent of
+  19.7 is held first.
+- **Account `judge`** (N10, the human, 2026-11-20). The host keeps the judge's
+  key as an account `judge`, as it keeps the OpenAI tokens. The participant
+  enters the key and the judge's origin (`https://host[:port]`) in the app, on
+  the manager page of that checked provider (app 19.4).
+  - Identity: the provider is named by its `caller.identity()`
+    (`<publisher>/<slug>`), compared exactly. The unchecked provider, another
+    publisher's mod or a preview gets `no-account`.
+  - Value: `account` is exactly `openai` or `judge`; any other value is
+    refused `destination`.
+  - Binding: the key is looked up by the caller's identity (`AccountSource::judge`),
+    so a caller with no key of its own gets `no-account`. A request with
+    `account: "judge"` is refused before a byte leaves (`destination`) unless
+    the caller is the provider the key was entered for, the method is `POST`,
+    and the URL's origin is exactly the account's origin and is in the
+    provider's `[http]`. The origin is compared after one parse, used for both
+    the check and the connection: scheme `https`, no userinfo, host
+    lower-cased without a trailing dot, the port with 443 as default; the same
+    parse decides `[http]`. The host adds `Authorization: Bearer <key>`; no
+    redirects. Without an entered key: `no-account`.
+  - Lifetime: removing the key (the app calls `Host::judge_key_removed`)
+    ends the provider's live judge streams, outcome `gone`. Uninstalling the
+    provider deletes its file; a later mod with the same identity starts with
+    no key.
+  - Scope: the account is bound to the judge's origin (N10), not to one path.
+  - Entering the key is the participant's consent for that provider: no
+    per-origin-client consent for this account (19.7).
+
+The host reaches tokens, keys and the `claude` path only through this
+in-process trait, which the app implements and hands over through
+`Confirm::accounts` (12.1). No mod sees a credential.
+
+```rust
+pub trait AccountSource: Send + Sync + 'static {
+    /// A fresh access token for the account `openai`, refreshed when needed (app 19.1).
+    fn openai_token(&self) -> Pin<Box<dyn Future<Output = Result<String, AccountError>> + Send>>;
+    /// The key and origin entered for the provider with this identity (`<publisher>/<slug>`).
+    fn judge(&self, provider: &str) -> Result<JudgeAccount, AccountError>;
+    /// The path of the `claude` program the participant picked (app 19.3).
+    fn claude_binary(&self) -> Result<PathBuf, AccountError>;
+}
+pub struct JudgeAccount { pub key: String, pub origin: String }   // Debug prints no key
+pub enum AccountError { NoAccount, Failed(String) }               // Debug, Clone, PartialEq
+// Confirm (12.1) gains, default `None` (a home with no app, a preview, or an app with no accounts):
+//   fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
+// Host gains:
+//   pub fn judge_key_removed(&self, provider: &str);   // ends that provider's live judge streams
+```
+
+Without an app (`accounts()` is `None`) each use fails `no-app`; an entry that
+is absent is `AccountError::NoAccount`, which the host turns into `no-account`.
+A preview has no accounts (19.7).
+
+### 19.5 Agent tools (H4)
+
+(agentic-harness TECHNICAL 6.) The functions of `agent-tools` are requests
+(19.6). The toolsets are those of 10.1.
+
+- **Handle.** 128 random bits (32 hex chars), owned by (origin client, opening
+  mod); it lives until `close`, the end of either mod, or a withdrawn consent
+  (19.7). `open(toolsets)` returns the handle at once; each toolset new for the
+  origin client waits for its consent (19.7); while one waits, `describe` and
+  `call` fail `consent-pending(what)`, and after a refusal `consent-refused(what)`
+  and the handle is closed. `describe` returns the tools of the toolsets as 10.1
+  resolves them, with their annotations (below). `call` and `describe` on an
+  unknown or foreign handle fail `unknown-handle`; a tool not in the handle's
+  toolsets `unknown-tool`.
+- **Token.** One MCP token per handle, 32 bytes, memory only (10.2), written to
+  `claude`'s fd 3 (19.3). It names the handle's toolsets together and is
+  presented on `/mcp/agent` (10.3). A tool's mod sees the caller
+  `agent:<handle-name>`: `h` and 30 lowercase hex chars (a `Handle`, 2.3), a
+  second random value, never the handle itself.
+- **Job.** `call(handle, key, tool, args)` returns a stream at once; the tool
+  runs later as its own top-level call with its own budget and the caller of
+  the previous bullet; its result is the stream's one item `{ok: <json>} |
+  {err: {code, message}}`.
+- **Key.** A live job with the same (handle, key) returns the same stream.
+  Keys are memory only.
+- **Annotations `@parallel` and `@idempotent`** come from the tool mod: a
+  doc-comment line of the WIT function (`@parallel`, `@idempotent`), or its
+  `mod.toml` `[tools]` table; default false each. They decide order and
+  retries (agentic-harness TECHNICAL 9.5, 9.3), never permissions: a tool
+  without them is as callable as one with them. `describe` and the MCP
+  `tools/list` carry them (`tool.parallel`, `tool.idempotent`).
+- **Manager functions** are refused in a handle's toolsets by default
+  (F-AGENT-4): `open` leaves out the functions of `watane:host/manage`
+  unless the participant named them in the toolset consent (19.7).
+- A handle's tools are the union of its toolsets, read from the current
+  catalog at each call (10.1).
+
+### 19.6 Requests and timers (H5, H7)
+
+(agentic-harness TECHNICAL 7.)
+
+**Requests.** Each of these has an outside effect: `claude-code.start`,
+`claude-code-shell.start`, `https-stream.start`, `agent-tools.open`,
+`agent-tools.call`, `streams.open`, `timers.after`, `timers.cancel`, and
+`claude-session.say`, `answer`, `interrupt`, `compact`. Each returns at once;
+its checks that need nothing outside are made at the call; its outcomes
+(consent refused, no binary, version too old, a refused value) arrive as the
+stream's first item or as `ended`. `streams.resume`, `push`, `close`, `cancel`
+and `hand-off` are not requests: they take effect on commit (19.2).
+
+- **When applied.** A request joins the chain's effects when its invoke
+  succeeds, as events (9.1) and manage effects (6.10) do, and the host applies
+  it after the top-level invoke has returned and every write of the chain has
+  committed, in order with the manage effects, before the events are delivered
+  (6.6 step 6). A failed invoke drops its requests. So a call that is rolled
+  back, deferred or failed, sends nothing to `claude`, opens no stream and
+  leaves no timer; its `timers.after` and `timers.cancel` are made again on
+  redelivery. The writes of a succeeded nested call stay if its consumer fails
+  later (Q3), and so do its requests.
+- **Durable first.** The host applies a request only after the commit of its
+  chain is durable, whatever the durability of other calls (N4, the human,
+  2026-11-20: every commit keeps the host's full durability, one fsync per
+  write; a per-batch option is not built). redb's default commit (7) is
+  that. V8 (15, A1) measures the cost and records it; whether to change this
+  is the human's then.
+- **At apply** the host checks again that the mod is enabled and holds the
+  grant or consent the request needs (the rule of 6.10); a request that fails
+  this ends its stream `gone`.
+- **A call commits whole.** The host-state writes of one invoke commit
+  together or not at all (7); a deferred or failed call leaves no write
+  behind. So a failed `append` in a mod leaves no chunk written.
+
+**Timers.** Per mod: ids of at most 128 bytes (else `bad-id`), at most 256
+live (`too-many`), delays up to 30 days (else `bad-delay`), kept in host
+state (7: `timers/<mod>/<id>` → due time and origin client). `after(id,
+delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
+is ignored). The write is part of the call's commit. A due timer fires as a
+top-level call of the mod's `timer-sink.fired(id)` with caller `host`, fresh
+budget, and the stored origin client; one due during downtime fires soon after
+the host starts (within the first second). A firing for an id cancelled or
+replaced meanwhile is ignored. Timers survive a restart; a kill after the
+commit of `after` and before the host arms it loses nothing: the timer is
+armed from state at start, and its firing happens once. A mod that is
+disabled gets no firing; its timers wait. Removal of the mod deletes its
+timers. Streams and jobs are memory only (19.2): after a restart their
+requests are gone, and the mod that wants them again starts them from a
+fired timer or a call.
+
+### 19.7 Consents
+
+(agentic-harness TECHNICAL 8.) A consent is the participant's answer in the
+app, kept by the host with the grants.
+
+| Consent | Asked when | Kept for |
+|---|---|---|
+| Workspace | a launch names a folder new for the origin client | (origin client, folder) |
+| Account | an `https-stream` with `account: "openai"` new for the origin client (`judge` asks none: entering its key is the consent) | (origin client, account) |
+| Toolset | `agent-tools.open` with a toolset new for the origin client | (origin client, toolset) |
+
+- **Storage.** In `installed.json` on the record of the origin client (3.3,
+  `consents`), shown and withdrawn like grants (4.4). The words, the consent
+  view and the choice belong to the app (app 19.2).
+- **Asking.** When a request needs a consent not held, the host calls
+  `Confirm::consent` (12.1) when it applies the request. `Granted` is stored
+  and the request goes on; `Refused`, or no answer in 600 s, ends the request
+  `consent-refused(what)`. A preview and a home with no app refuse at once.
+- **Origin client.** As in the terms above: carried by the host with the
+  chain, never read from a request field.
+- **While a consent waits,** a request's requester gets the item
+  `{"type":"consent-pending","what":"<what>"}` once on the request's stream
+  (`agent-tools` as 19.5 says); `what` is `workspace:<folder>`,
+  `account:openai` or `toolset:<name>`, the same in `consent-refused(what)`.
+- **Withdrawal** ends the dependent streams (outcome `gone`) and closes the
+  dependent handles (19.5), at once, also inside a running chain (Q24).
+- **Previews** refuse both grants and both accounts: a preview holds
+  `ClaudeCode` and `ClaudeCodeShell` ungranted whatever the mod declares, and
+  every `account` use fails `no-account` (W5).
+
+```rust
+// Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","folder":"…"} etc.
+pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String } }
+pub struct ConsentRequest {            // Debug, Clone, PartialEq
+    pub origin: LocalName,             // the origin client
+    pub via: LocalName,                // the mod whose request waits (a provider, the kernel)
+    pub consent: Consent,
+    pub functions: Vec<String>,        // Toolset only: the `<local>_<interface>_<function>` names it opens
+}
+pub enum ConsentAnswer { Granted, Refused }
+// Confirm (12.1) gains, default `Refused`:
+//   fn consent(&self, request: ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> { .. }
+// Host gains:
+//   pub fn withdraw_consent(&self, local: &LocalName, consent: &Consent) -> Result<(), HostError>;
+// InstalledMod gains: #[serde(default)] pub consents: Vec<Consent>;
+```
+
+### 19.8 Errors
+
+The codes the host returns in this layer (agentic-harness TECHNICAL 12).
+Every error carries a message that names the cause.
+
+| Code | Where | Meaning |
+|---|---|---|
+| `not-yours`, `unknown-stream`, `full`, `too-large` | `streams`, starts | 19.2 |
+| `consumer-failed`, `idle-timeout`, `replaced`, `lagging`, `gone` | stream outcomes | 19.2, 19.4 |
+| `bad-launch {field, reason}` | `claude-code`, `claude-code-shell` | a value outside its grammar (19.3) |
+| `no-binary`, `version {found, need}`, `mismatch {field}` | stream outcome | 19.3 |
+| `slash-command`, `unknown-ask`, `not-allowed-here` | `claude-session` | 19.3 |
+| `consent-refused {what}`, item `consent-pending {what}` | any request | 19.7 |
+| `destination`, `forbidden-header`, `too-large`, `no-app`, `no-account` | `https-stream` | 19.4 (`no-app`, `no-account` as stream outcomes) |
+| `not-granted`, `unknown-handle`, `unknown-tool` | `agent-tools` | 19.5 |
+| `too-many`, `bad-id`, `bad-delay` | `timers` | 19.6 |
+| `not-owner`, `not-direct` | the providers' answers, carried by `start-error` and `session-error` of `claude-types` | the host never returns them itself; `not-owner`: the caller is not the kernel; `not-direct`: the stream is not handed to the caller (agentic-harness TECHNICAL 2.2, 10) |

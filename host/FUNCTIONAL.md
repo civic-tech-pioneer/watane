@@ -19,6 +19,10 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 | app | The in-process party that answers a confirmation. A host has no app, or one app. |
 | manager | (step 10) A mod with the grant to manage mods. |
 | request | (step 10) An addition that a manager asks for: the app decides it, and the host acts only on the answer. |
+| stream | (step 11) Numbered items from one producer to one consumer, in order, with backpressure. |
+| origin client | (step 11) The mod whose authority a chain carries: the mod of the page, or the owner of the agent's handle. Consents are kept per origin client. |
+| consent | (step 11) A participant's answer, kept with the grants: a workspace, the account `openai`, a toolset. |
+| host request | (step 11) A call whose outside effect the host applies only after the call's chain has committed durably. |
 
 ## 2. Requirements
 
@@ -98,6 +102,24 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-54** If a call of a manager fails, then the host shall disable, withdraw and ask nothing for it. Traces: F-RUN-8.
 - **HOST-F-55** In a preview, or in a home with no app, the host shall refuse each request of a manager at once. The reductions still work. Traces: F-AGENT-4, F-MAKE-4.
 - **HOST-F-56** In a contract test, the host shall fake the functions of management and record each reduction and request of the mod under test, in order. Traces: F-MAKE-3.
+
+### 2.8 Step 11: The agent layer
+
+- **HOST-F-57** The host shall number the items of each stream from 1 and deliver them to the one consumer in order, in batches of at most 256 items or 1 MiB, at least one item. Traces: F-AGENT-5, J11.
+- **HOST-F-58** If a batch fails, then the host shall deliver it once more with the same numbers, and shall end the stream `consumer-failed` when the second delivery fails too. Traces: F-AGENT-5.
+- **HOST-F-59** When a consumer answers `defer` to a batch, the host shall drop that call's writes, keep the batch, deliver nothing more on the stream until the consumer calls `resume`, and then deliver the same batch with the same numbers; a deferral shall not count as a failure, and a stream deferred for 5 minutes without `resume` shall end `consumer-failed`. Traces: F-AGENT-5.
+- **HOST-F-60** If a stream is full (256 items or 4 MiB in flight), then a `push` shall fail `full`, and a stream that stays full for 10 s without its consumer deferring it shall end `lagging`, both sides told. Traces: F-AGENT-5.
+- **HOST-F-61** The host shall refuse a `push` that would pass 128 MiB of queued items for an origin client or 512 MiB for the host with `full`, and shall end the streams of a page connection that holds more than 16 MiB `lagging`. Traces: F-AGENT-5.
+- **HOST-F-62** A page shall be the consumer of a stream only through the connection id that `watane.js` sends with `/call`, naming one of its own `/events` connections; the host shall keep one lossless queue for each connection and end its streams `gone` when it closes. Traces: F-AGENT-5, W8.
+- **HOST-F-63** The host shall apply the requests of a call chain (a stream open, a timer, a start, a session function) only after the chain has committed durably, and a call that fails or defers shall send nothing to `claude`, open no stream and leave no timer. Traces: F-AGENT-6.
+- **HOST-F-64** The host shall keep timers for each mod in its state: ids of at most 128 bytes, at most 256 live, delays up to 30 days; a timer shall survive a restart, one due during downtime shall fire soon after start, and `after` with a live id shall replace it. Traces: F-AGENT-6.
+- **HOST-F-65** The host shall tell a mod the identity of its caller (`<publisher>/<slug>`, `local/<slug>`, `page`, `agent:<handle-name>`, or `host`), taken from the transport and never from a request field. Traces: F-AGENT-7.
+- **HOST-F-66** The host shall start `claude` only for a mod that holds the grant `claude-code` or `claude-code-shell`, with a launch document that parses to the closed grammar, with arguments it fixes, and with a workspace consent held; a value outside the grammar shall be refused `bad-launch` naming the field. Traces: F-AGENT-8.
+- **HOST-F-67** The host shall refuse a `say` that begins with `/`, an `answer` of `allow` to a check, and a changed input for any tool but `AskUserQuestion` and `ExitPlanMode`, and shall write nothing else to `claude`'s stdin. Traces: F-AGENT-8.
+- **HOST-F-68** The host shall keep the consents of workspace, account `openai` and toolset per origin client with the grants, shall tell the requester `consent-pending {what}` once while one waits, and shall end the dependent streams and close the dependent handles when one is withdrawn. Traces: F-AGENT-9, F-INST-5.
+- **HOST-F-69** The host shall send a mod's HTTPS stream only to a host that the mod's `Http` grants name, never with a credential header of the mod, and without redirects; the account `openai` shall go only to the two OpenAI endpoints, and the account `judge` only to the provider it was entered for, with `POST`, to its entered origin. Traces: F-AGENT-9, W9.
+- **HOST-F-70** The host shall give an agent's handle only the tools of its toolsets, with the annotations `@parallel` and `@idempotent` of the tool mod, return one stream for a live job of the same handle and key, and refuse the management functions in a toolset unless the participant named them. Traces: F-AGENT-1, F-AGENT-4.
+- **HOST-F-71** In a preview, the host shall refuse the grants `claude-code` and `claude-code-shell` and both accounts. Traces: W5.
 
 ## 3. Acceptance scenarios
 
@@ -306,3 +328,74 @@ app is a fake that records what it is asked.
   `api.mods` returns `[]`; with the fake `{"watane:host/manage": {"mods":
   [...]}}` it returns that list. A served `manager`'s `/events` gets
   `{"type":"catalog"}` after the app disables `counter`.
+
+### 3.6 Step 11
+
+The fixture `relay` (TECHNICAL 13.1) is the consumer and producer, with a
+crate-private test source for host streams. Unless a scenario says otherwise it
+holds no grant beyond storage.
+
+- **S48 Failed batch** (HOST-F-57, 58). Given a mod stream from `relay` A to
+  `relay` B whose `items` traps once. When A pushes `"a"` and `"b"`, then B's
+  `items` runs twice, both times with seq `[1,2]`; `received` lists `["a","b"]`
+  once. When `items` traps both times, B's `ended` line is `consumer-failed`.
+- **S49 Defer** (HOST-F-59). Given B in mode `defer`. When A pushes `"a"`, B
+  is called once and `received` is `[]`; A pushes `"b"` and B is not called.
+  When B calls `resume` and sets mode `taken`, `received` is `["a","b"]` with
+  seq `[1,2]`, and the stream is not ended. A stream left deferred for 5
+  minutes (the test clock) ends `consumer-failed`.
+- **S50 Full and lag** (HOST-F-60). Given a consumer that never takes a batch
+  and does not defer, a producer that pushes 257 items of 1 byte gets `full` at
+  the 257th; 10 s after that push both sides get `ended` with `lagging`; with
+  the consumer in mode `defer`, no `lagging` comes, whatever the time.
+- **S51 Budgets** (HOST-F-61). Given an origin client whose 32 streams hold
+  4 MiB each (128 MiB queued), a `push` of 1 byte to any of them gets `full`. A page connection that stops reading past 16 MiB ends,
+  and each of its streams ends `lagging`.
+- **S52 Page connection** (HOST-F-62). Given `relay` served with a page. When
+  `/events` opens, then its first message is `{"type":"connection","id":"<32 hex>"}`;
+  a `/call` of `api.open` with that id, then `api.push(s, "x")`, gives the page
+  `{"type":"stream","stream":"<s>","items":[{"seq":1,"body":"x"}]}`; a `/call`
+  with no id gets `not-yours` from `open`; when the connection closes, `relay`'s
+  `ended` line for the stream is `gone`.
+- **S53 Rollback** (HOST-F-63). When `api.after-then-fail("t", 10)` runs, then
+  it fails with `trap`, the `timers` table has no `t`, and `fired` stays `[]`
+  after 100 ms. In a harness, the same call records no request; `api.after`
+  records `timers.after {"id":"t","delay-ms":10}`.
+- **S54 Timers** (HOST-F-64). When `api.after("t", 50)` runs, `fired` is `["t"]`
+  after 100 ms, once. `api.after("t", 5000)` then `api.after("t", 50)` fires
+  once, at 50 ms. `api.after("t", 5000)` then `api.cancel-timer("t")` fires
+  never. After `after("t", 5000)`, closing the host, waiting past the due time
+  and opening it again, `fired` is `["t"]` soon after open.
+- **S55 Timer limits** (HOST-F-64). The 257th live id fails `too-many`; an id
+  of 129 bytes fails `bad-id`; a delay of 2 592 000 001 ms fails `bad-delay`
+  and 2 592 000 000 ms succeeds.
+- **S56 Identity** (HOST-F-65). `api.who` of `relay`, called by a page, reports
+  the identity `page`; called through a call link by `recs` published by K,
+  `<K>/recs`; by a local `recs`, `local/recs`; by an agent of handle `h1`,
+  `agent:h1`; in an item call, `host`. A `/call` body with a field `caller` is
+  400 (S12 unchanged).
+- **S57 Launch** (HOST-F-66, 67). Given a mod with `claude-code` granted and a
+  launch with `"mode":"auto"`, `start` fails `bad-launch {field: "mode"}`; the
+  same launch with an `allow` of `Bash(python3:*)` fails `bad-launch {field:
+  "allow"}`; without the grant the call fails `not_granted`. With `fake-claude`
+  (dev 18), `say` of `"/compact"` fails `slash-command`; an `answer` `allow` to
+  a check fails `not-allowed-here`; `fake-claude`'s recorded stdin holds no
+  other line than the ones written for each accepted call.
+- **S58 Consent** (HOST-F-68). Given a launch with a workspace new for the
+  origin client and a fake app that holds the answer, the stream's first item is
+  `{"type":"consent-pending","what":"workspace:<folder>"}`, once, and
+  `fake-claude` is not started; after `Granted`, `initialized` follows and
+  `installed.json` holds `{"kind":"workspace","folder":"<folder>"}` for the
+  origin client; after `withdraw_consent`, the stream ends `gone`.
+- **S59 Accounts** (HOST-F-69, 71). A request with `account: "judge"` from
+  another mod, by `GET`, to another origin, to an origin not in `[http]`, with
+  `:443` or upper case in a form that differs after one parse, or with an
+  `account` of `"other"`, fails `destination`, and the scripted judge server
+  (dev 18) counts no request; with the key removed it ends `no-account`; a
+  redirect is not followed. In a preview, `claude-code` is ungranted and
+  `account: "openai"` ends `no-account`.
+- **S60 Tools** (HOST-F-70). Two `agent-tools.call` of one handle with key
+  `k1` while the job lives return one stream id; `describe` lists
+  `parallel: true` for a tool whose WIT doc comment holds `@parallel`; a
+  handle of a toolset that names a `manage` function lists it only when the
+  consent named it.
