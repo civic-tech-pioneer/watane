@@ -266,7 +266,10 @@ against them (host 19.4). The `identity` function of `caller` is a function
 of an interface already allowed, so it changes no row. A host-only export is
 an export that a mod makes for the host and that is not one of its own
 `mods:` interfaces: it is not in `World::exports` (a mod offers it to no
-one), and `check_component` (4.9) compares it as any export. An export of
+one) but in `World::host_exports` (sorted, no duplicates), and
+`check_component` (4.9) compares it as any export. A host-only export counts
+toward a logic part (4.6): a consumer of streams or timers, such as the
+kernel `mods:agent`, is a mod with a logic part whose only exports are these. An export of
 any other `watane:host` interface is rule `export`. Importing an interface
 of this step does not need any other import.
 
@@ -286,8 +289,8 @@ grant: the table of spec §3 is applied as written.
 
 ### 4.6 Parts
 
-- The mod has a logic part if and only if `World::exports` or
-  `World::subscriptions` is not empty. Then the folder holds `logic.wasm`
+- The mod has a logic part if and only if `World::exports`,
+  `World::subscriptions` or (step 11) `World::host_exports` is not empty. Then the folder holds `logic.wasm`
   or `logic/Cargo.toml`.
 - With no logic part, the world imports nothing, and neither `logic.wasm`
   nor `logic/Cargo.toml` exists.
@@ -775,6 +778,7 @@ pub struct World {                                // each list sorted, no duplic
     pub collects: Vec<InterfaceName>,             // step 9: the outlets of `events` with a collect (4.5)
     pub calls: Vec<InterfaceName>,
     pub subscriptions: Vec<InterfaceName>,
+    pub host_exports: Vec<InterfaceName>,         // step 11: stream-sink, stream-producer, timer-sink (4.5)
     pub storage: bool,
     pub http: bool,                               // imports wasi:http/outgoing-handler or (step 11) watane:host/https-stream
     pub manage: bool,                             // step 10: imports watane:host/manage (4.5)
@@ -941,7 +945,7 @@ expected value.
 | `mod_toml`, `deps_json` | schema, limits, unknown keys (A8), canonical write | literal texts |
 | `grant_manage` (step 10) | A30: the world of A30 gives `World::manage` true and grants `[storage, manage]`; `{"kind":"manage"}` and the text `manage` both ways; `Manage` sorts after a `Subscribe`; `same_authority(Manage, Manage)`; A31: the release of a mod with `[storage, manage]` encodes its grants as `828100 8104` and decodes back; a release whose grants hold `[4]` before a `[3, ...]` is refused as not ascending | the table of 4.5; literal JSON, text and hex written by hand |
 | `grant_claude_code` (step 11) | A32 (each world also with a page and an export of its own, so it has a logic part, 4.6): a world that imports `watane:host/state@0.1.0`, `claude-code@0.1.0` and `claude-session@0.1.0` gives grants exactly `[storage, claude-code]`; one that imports `state`, `claude-code-shell@0.1.0` and `claude-types@0.1.0` gives `[storage, claude-code-shell]`; one that imports `state` and both gives both; `{"kind":"claude-code"}`, `{"kind":"claude-code-shell"}` and the texts `claude-code`, `claude-code-shell` both ways; `ClaudeCode` sorts after `Manage` and before `ClaudeCodeShell`; `same_authority` of each with itself, and not with the other | the table of 4.5; literal JSON and text written by hand |
-| `agent_layer_world` (step 11) | A33 (each world with a page and an export of its own, as A32): one world importing `state`, `streams`, `claude-types`, `claude-session`, `agent-tools`, `timers` and `caller` and exporting `stream-sink`, `stream-producer` and `timer-sink` has grants exactly `[storage]` and no `Call`; a world importing `state` and `https-stream` with `[http] hosts = ["api.openai.com"]` has grants `[storage, http api.openai.com]`; the same with no hosts is refused with rule `http`; hosts listed and no `https-stream` or `outgoing-handler` import is refused with rule `http`; an export of `watane:host/state@0.1.0` or of `watane:host/timers@0.1.0` is refused with rule `export`; an import of `watane:host/unknown@0.1.0` is refused with rule `import` | the table of 4.5; literal worlds |
+| `agent_layer_world` (step 11) | A33 (each world with a page and an export of its own, as A32, except where noted): one world importing `state`, `streams`, `claude-types`, `claude-session`, `agent-tools`, `timers` and `caller` and exporting `stream-sink`, `stream-producer` and `timer-sink` has grants exactly `[storage]` and no `Call`; a world importing `state` and `https-stream` with `[http] hosts = ["api.openai.com"]` has grants `[storage, http api.openai.com]`; the same with no hosts is refused with rule `http`; hosts listed and no `https-stream` or `outgoing-handler` import is refused with rule `http`; an export of `watane:host/state@0.1.0` or of `watane:host/timers@0.1.0` is refused with rule `export`; an import of `watane:host/unknown@0.1.0` is refused with rule `import`; a world with no page and no export of its own whose only exports are `stream-sink` and `timer-sink` has `World::host_exports` of those two, a logic part and no `parts` violation, and the same world with no export at all and no page is refused with rule `parts` | the table of 4.5; literal worlds |
 | `release_agent_grants` (step 11) | A34: the grants `[storage, claude-code, claude-code-shell]` encode as `83 8100 8105 8106` and decode back; `[manage, claude-code]` as `82 8104 8105`; a body with `[6]` before `[5]` or with `[5]` twice is refused as not ascending; 84 grants are accepted and 85 refused; `release_golden` and the hex of 7.3 are unchanged | hand-written hex |
 | `mod_toml_main` (W36) | A28, A29: `main = true` with a page gives `Mod::main()` true; absent gives false; `main = "yes"` and `main = true` without `ui/index.html` give the exact messages of 4.2 | literal texts |
 | `mod_toml_repository` (step 6) | accepted: `https://github.com/alice/reading-list`, `https://git.example.org:8443/a/b-c.d_e~f%20`, `https://h`, a 256-byte URL; refused, with the exact message of 4.2: `http://github.com/a/b`, `https://user@github.com/a/b`, `https://user:pw@h/x`, `https://`, `https:///a`, a 257-byte URL, `https://h/a b`, `https://h/a?b=c`, `https://h/#x`, a non-string value; `Mod::repository()` gives the text back; a package of a mod with `repository` unpacks and reads it back | literal texts |
