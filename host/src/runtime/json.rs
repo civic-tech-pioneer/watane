@@ -283,7 +283,7 @@ pub(super) fn decode(ty: &Type, value: &Value, path: &str) -> Result<Val, CallEr
         }
     })
 }
-pub(super) fn encode(value: &Val) -> Result<Value, CallError> {
+pub(crate) fn encode(value: &Val) -> Result<Value, CallError> {
     Ok(match value {
         Val::Bool(v) => json!(v),
         Val::U8(v) => json!(v),

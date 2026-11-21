@@ -503,6 +503,7 @@ mod tests {
                         value: Value::Null,
                         events: vec![],
                         manages: vec![],
+                        requests: vec![],
                     })
                 } else {
                     assert!(matches!(target, Target::Call(name) if name == "api.received"));
@@ -511,6 +512,7 @@ mod tests {
                         value: json!(["Emma"]),
                         events: vec![],
                         manages: vec![],
+                        requests: vec![],
                     })
                 }
             },
@@ -543,6 +545,7 @@ mod tests {
                             args,
                         }],
                         manages: vec![],
+                        requests: vec![],
                     })
                 },
             );
@@ -576,6 +579,7 @@ mod tests {
                     value: file.fakes["mods:reading-list/books"]["all"].clone(),
                     events: vec![],
                     manages: vec![],
+                    requests: vec![],
                 })
             },
         );
@@ -679,6 +683,7 @@ mod tests {
                     },
                     events: vec![],
                     manages: vec![],
+                    requests: vec![],
                 })
             },
         );
@@ -721,6 +726,7 @@ mod tests {
                             value: json!(1),
                             events: vec![],
                             manages: vec![],
+                            requests: vec![],
                         })
                     } else {
                         Err(CallError {
@@ -783,6 +789,7 @@ mod tests {
                             })
                             .collect(),
                         manages: vec![],
+                        requests: vec![],
                     })
                 });
             assert_eq!(passed, u32::from(passes), "{failures:?}");
@@ -864,6 +871,7 @@ mod tests {
                             args: json!({"count":1}),
                         }],
                         manages: vec![],
+                        requests: vec![],
                     })
                 });
             assert_eq!(passed, u32::from(passes));
@@ -904,6 +912,7 @@ mod tests {
                     value: json!({"ok":null}),
                     events: vec![],
                     manages: vec![made("disable", json!({"local":"weather"}))],
+                    requests: vec![],
                 })
             });
             assert_eq!(passed, u32::from(passes), "{failures:?}");

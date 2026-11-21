@@ -2,6 +2,7 @@
 //! a top-level call and its chain, then delivers the events it emitted.
 
 use super::{json, limits};
+use crate::agent::Effect;
 use crate::{CallCode, CallError, Caller, EventRecord, Host, Limit, LinkKind, LocalName, Outcome};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -15,10 +16,10 @@ struct Effects {
     events: Vec<(LocalName, EventRecord, u8)>,
     manages: Vec<crate::manage::Effect>,
 }
-struct Chain {
-    host: Arc<Host>,
-    snapshot: Arc<crate::catalog::Catalog>,
-    fakes: Option<crate::Fakes>,
+pub(crate) struct Chain {
+    pub(crate) host: Arc<Host>,
+    pub(crate) snapshot: Arc<crate::catalog::Catalog>,
+    pub(crate) fakes: Option<crate::Fakes>,
     deadline: Instant,
     effects: Mutex<Effects>,
     publish: bool,
@@ -27,14 +28,90 @@ struct Chain {
     // Lowest fuel left by an invoke that failed in the current answer of a
     // collect; the collect resets it before each answer (9.4).
     failed_fuel: AtomicU64,
+    /// The requests and stream effects of the chain in call order (19.6). An invoke that fails
+    /// cuts the log back to where it was when the invoke began.
+    pub(crate) log: Mutex<Vec<Effect>>,
+    /// The live `/events` connection that a page call named (8.2).
+    pub(crate) connection: Option<String>,
+    /// The top-level call is an `items` call: a `defer` answer rolls it back (19.2).
+    defers: bool,
+    deferred: AtomicBool,
+    /// The top-level call is the firing of this timer row (19.6).
+    timer: Option<(String, u64)>,
 }
 #[derive(Clone)]
-pub(super) struct Invocation {
-    chain: Arc<Chain>,
-    local: LocalName,
-    depth: u32,
-    hop: u8,
+pub(crate) struct Invocation {
+    pub(crate) chain: Arc<Chain>,
+    pub(crate) local: LocalName,
+    pub(crate) identity: String,
+    pub(crate) depth: u32,
+    pub(crate) hop: u8,
+    /// The call came through a call link, a top-level `Host::call` of a mod, or a page (19.2).
+    pub(crate) link: bool,
+    /// The origin client of the call (19, Terms): an identity.
+    pub(crate) origin: String,
 }
+
+/// The caller of a call: a `Caller`, or the host itself (19.1).
+#[derive(Clone, Debug)]
+pub(crate) enum Who {
+    Caller(Caller),
+    Host,
+}
+impl Who {
+    pub(crate) fn who(&self) -> String {
+        match self {
+            Self::Caller(c) => c.who(),
+            Self::Host => "host".into(),
+        }
+    }
+}
+/// The arguments of a call: JSON, or WIT values that the host built (items, 19.2).
+pub(crate) enum Args {
+    Json(Value),
+    Vals(Vec<wasmtime::component::Val>),
+}
+/// A top-level call.
+pub(crate) struct Start {
+    pub who: Who,
+    pub local: LocalName,
+    pub function: String,
+    pub args: Args,
+    pub publish: bool,
+    pub subscription: bool,
+    /// A host-only export (`stream-sink`, `stream-producer`, `timer-sink`).
+    pub internal: bool,
+    pub origin: Option<String>,
+    pub connection: Option<String>,
+    pub hop: u8,
+    pub defers: bool,
+    pub timer: Option<(String, u64)>,
+}
+impl Start {
+    /// A call of the host's own: an item call, a notification or a firing.
+    pub fn internal(who: Who, local: LocalName, function: String, args: Args, origin: String) -> Self {
+        Self {
+            who,
+            local,
+            function,
+            args,
+            publish: true,
+            subscription: false,
+            internal: true,
+            origin: Some(origin),
+            connection: None,
+            hop: 0,
+            defers: false,
+            timer: None,
+        }
+    }
+}
+pub(crate) struct Done {
+    pub result: Result<Value, CallError>,
+    pub deferred: bool,
+    pub outcome: Option<Outcome>,
+}
+const DEFERRED: &str = "the consumer deferred the batch";
 
 pub(super) fn lock_until<T>(
     lock: &Mutex<T>,
@@ -74,19 +151,97 @@ pub(crate) fn run(
     publish: bool,
     subscription: bool,
 ) -> Result<Outcome, CallError> {
-    let deadline = deadline(host)?;
+    run_connection(host, caller, local, function, args, publish, subscription, None)
+}
+
+#[expect(clippy::too_many_arguments, reason = "one entry point for every top-level call")]
+pub(crate) fn run_connection(
+    host: &Host,
+    caller: &Caller,
+    local: &LocalName,
+    function: &str,
+    args: Value,
+    publish: bool,
+    subscription: bool,
+    connection: Option<String>,
+) -> Result<Outcome, CallError> {
+    let done = run_start(
+        host,
+        Start {
+            who: Who::Caller(caller.clone()),
+            local: local.clone(),
+            function: function.to_owned(),
+            args: Args::Json(args),
+            publish,
+            subscription,
+            internal: false,
+            origin: None,
+            connection,
+            hop: 0,
+            defers: false,
+            timer: None,
+        },
+    );
+    done.result.map(|value| {
+        let mut outcome = done.outcome.expect("a succeeded call has an outcome");
+        outcome.value = value;
+        outcome
+    })
+}
+
+fn identity_of(snapshot: &crate::catalog::Catalog, local: &LocalName) -> String {
+    snapshot
+        .mods
+        .iter()
+        .find(|m| &m.local == local)
+        .map_or_else(|| format!("local/{local}"), |m| m.identity.clone())
+}
+
+pub(crate) fn run_start(host: &Host, start: Start) -> Done {
+    let failed = |error: CallError| Done {
+        result: Err(error),
+        deferred: false,
+        outcome: None,
+    };
+    let deadline = match deadline(host) {
+        Ok(d) => d,
+        Err(e) => return failed(e),
+    };
     let snapshot = Arc::new(
         host.catalog
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .clone(),
     );
+    let Some(strong) = host.weak.upgrade() else {
+        return failed(CallError::internal("host closed"));
+    };
+    let Start {
+        who,
+        local,
+        function,
+        args,
+        publish,
+        subscription,
+        internal,
+        origin,
+        connection,
+        hop,
+        defers,
+        timer,
+    } = start;
+    let origin = origin.unwrap_or_else(|| match &who {
+        Who::Caller(Caller::Mod(m)) if !subscription => identity_of(&snapshot, m),
+        _ => identity_of(&snapshot, &local),
+    });
+    let connection = connection
+        .filter(|c| matches!(who, Who::Caller(Caller::Page)) && host.hub.conn_live(c, &local));
+    let link = !subscription
+        && !internal
+        && matches!(who, Who::Caller(Caller::Mod(_) | Caller::Page));
     let chain = Arc::new(Chain {
-        host: host
-            .weak
-            .upgrade()
-            .ok_or_else(|| CallError::internal("host closed"))?,
-        snapshot,
+        host: strong,
+        snapshot: Arc::clone(&snapshot),
         fakes: host
             .fakes
             .lock()
@@ -98,47 +253,80 @@ pub(crate) fn run(
         ready: AtomicBool::new(false),
         job: Arc::new(Job::new()),
         failed_fuel: AtomicU64::new(0),
+        log: Mutex::new(Vec::new()),
+        connection,
+        defers,
+        deferred: AtomicBool::new(false),
+        timer,
     });
     let invocation = Invocation {
         chain: Arc::clone(&chain),
-        local: local.clone(),
+        identity: identity_of(&snapshot, &local),
+        local,
         depth: 0,
-        hop: 0,
+        hop,
+        link,
+        origin,
     };
-    let result = invocation.invoke(caller, function, args, host.limits.fuel, subscription);
+    let result = invocation.invoke(&who, &function, args, host.limits.fuel, subscription, internal);
     let effects = std::mem::take(
         &mut *chain
             .effects
             .lock()
             .expect("lock poisoned: another thread panicked while holding it"),
     );
+    let log = std::mem::take(
+        &mut *chain
+            .log
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it"),
+    );
+    let deferred = chain.deferred.load(Ordering::Acquire);
     let events = effects
         .events
         .iter()
         .map(|(_, event, _)| event.clone())
         .collect();
     let manages = effects.manages;
+    let mut requests = Vec::new();
     let records = if chain.fakes.is_some() {
         if result.is_ok() {
-            let requests = manages
+            let manage_requests = manages
                 .iter()
                 .filter(|e| matches!(e.action, crate::manage::Action::Fake { request: true }))
                 .count();
-            host.manage_serial.fetch_add(requests, Ordering::AcqRel);
+            host.manage_serial
+                .fetch_add(manage_requests, Ordering::AcqRel);
+            requests = crate::agent::records(&log);
         }
         manages.iter().map(|e| e.record.clone()).collect()
     } else {
+        if result.is_ok() {
+            host.apply_effects(log);
+        }
         host.apply_manage(manages);
         Vec::new()
     };
     if publish {
         host.events.finish(host, &chain);
     }
-    result.map(|(value, _)| Outcome {
-        value,
-        events,
-        manages: records,
-    })
+    match result {
+        Ok((value, _)) => Done {
+            outcome: Some(Outcome {
+                value: Value::Null,
+                events,
+                manages: records,
+                requests,
+            }),
+            result: Ok(value),
+            deferred: false,
+        },
+        Err(error) => Done {
+            result: Err(error),
+            deferred,
+            outcome: None,
+        },
+    }
 }
 
 impl Invocation {
@@ -160,6 +348,25 @@ impl Invocation {
             Err(CallError::new(
                 CallCode::NotGranted,
                 format!("{} has no grant for watane:host/state", self.local),
+            ))
+        }
+    }
+    /// The mod of this invocation holds the grant, else `not_granted` (the stub of W9).
+    pub(super) fn granted(&self, grant: &Grant, interface: &str) -> Result<(), CallError> {
+        let catalog = self
+            .chain
+            .host
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        if catalog.mods.iter().any(|m| {
+            m.local == self.local && m.grants.iter().any(|g| g.granted && &g.grant == grant)
+        }) {
+            Ok(())
+        } else {
+            Err(CallError::new(
+                CallCode::NotGranted,
+                format!("{} has no grant for watane:host/{interface}", self.local),
             ))
         }
     }
@@ -265,14 +472,18 @@ impl Invocation {
         let nested = Self {
             chain: Arc::clone(&self.chain),
             local: provider.clone(),
+            identity: target.map(|m| m.identity.clone()).unwrap_or_default(),
             depth: self.depth.saturating_add(1),
             hop: self.hop,
+            link: true,
+            origin: self.origin.clone(),
         };
         nested.invoke(
-            &Caller::Mod(self.local.clone()),
+            &Who::Caller(Caller::Mod(self.local.clone())),
             &format!("{}.{function}", linked_interface.interface()),
-            args,
+            Args::Json(args),
             fuel,
+            false,
             false,
         )
     }
@@ -325,16 +536,20 @@ impl Invocation {
                 let nested = Self {
                     chain: Arc::clone(&self.chain),
                     local: m.local.clone(),
+                    identity: m.identity.clone(),
                     depth: self.depth.saturating_add(1),
                     hop: self.hop,
+                    link: false,
+                    origin: m.identity.clone(),
                 };
                 self.chain.failed_fuel.store(fuel, Ordering::Release);
                 match nested.invoke(
-                    &Caller::Mod(self.local.clone()),
+                    &Who::Caller(Caller::Mod(self.local.clone())),
                     &format!("{}.{function}", link.interface),
-                    args.clone(),
+                    Args::Json(args.clone()),
                     fuel,
                     true,
+                    false,
                 ) {
                     Ok((Value::Array(list), left)) => {
                         fuel = left;
@@ -363,13 +578,40 @@ impl Invocation {
         Ok((Value::Array(answers), fuel))
     }
 
-    fn invoke(
+    /// Runs one invoke; a failure cuts the chain's log back to where it began (19.6).
+    pub(crate) fn invoke(
         &self,
-        caller: &Caller,
+        caller: &Who,
         name: &str,
-        args: Value,
+        args: Args,
         fuel: u64,
         subscription: bool,
+        internal: bool,
+    ) -> Result<(Value, u64), CallError> {
+        let mark = self
+            .chain
+            .log
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .len();
+        let result = self.invoke_inner(caller, name, args, fuel, subscription, internal);
+        if result.is_err() {
+            self.chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .truncate(mark);
+        }
+        result
+    }
+    fn invoke_inner(
+        &self,
+        caller: &Who,
+        name: &str,
+        args: Args,
+        fuel: u64,
+        subscription: bool,
+        internal: bool,
     ) -> Result<(Value, u64), CallError> {
         let chain = &self.chain;
         let host = &chain.host;
@@ -396,8 +638,15 @@ impl Invocation {
             .components
             .get(&self.local)
             .ok_or_else(|| CallError::new(CallCode::NoFunction, "mod has no logic part"))?;
-        let function = compiled.find(name, subscription)?;
-        let params = json::arguments(&function.ty, args)?;
+        let function = if internal {
+            compiled.find_host(name)?
+        } else {
+            compiled.find(name, subscription)?
+        };
+        let params = match args {
+            Args::Json(args) => json::arguments(&function.ty, args)?,
+            Args::Vals(values) => values,
+        };
         let lock = Arc::clone(
             host.call_locks
                 .lock()
@@ -423,7 +672,7 @@ impl Invocation {
             if !active.enabled {
                 return Err(CallError::new(CallCode::Disabled, "mod is disabled"));
             }
-            if let Caller::Mod(other) = caller {
+            if let Who::Caller(Caller::Mod(other)) = caller {
                 // Selection can precede a wait for this mod's lock. Check
                 // authority again before invoking the selected export.
                 let authorized = if subscription && (chain.publish || self.depth > 0) {
@@ -456,10 +705,16 @@ impl Invocation {
         }
 
         let transaction = host.state.transaction(&m.identity, &host.limits)?;
+        let identity = match caller {
+            Who::Caller(Caller::Page) => "page".to_owned(),
+            Who::Caller(Caller::Agent(handle)) => format!("agent:{handle}"),
+            Who::Caller(Caller::Mod(l)) => identity_of(&chain.snapshot, l),
+            Who::Host => "host".to_owned(),
+        };
         let mut store = super::linker::store(
             &host.engine,
             transaction,
-            caller.who(),
+            (caller.clone(), identity),
             &host.limits,
             chain.deadline,
             self.clone(),
@@ -495,6 +750,11 @@ impl Invocation {
                 .fetch_min(store.get_fuel().unwrap_or(0), Ordering::AcqRel);
         }
         let value = result.map_err(|e| limits::classify(e, &stderr))?;
+        if self.depth == 0 && chain.defers && value == Value::String("defer".into()) {
+            // A deferred call is rolled back like a failed one, but it is no failure (19.2).
+            chain.deferred.store(true, Ordering::Release);
+            return Err(CallError::internal(DEFERRED));
+        }
         let fuel = store.get_fuel().map_err(CallError::internal)?;
         let ctx = store.into_data();
         let events = ctx
@@ -509,7 +769,25 @@ impl Invocation {
             })
             .collect::<Result<Vec<_>, CallError>>()?;
         let manages = ctx.manages;
-        let changed = ctx.state.commit()?;
+        let timers = if self.depth == 0 && chain.fakes.is_none() {
+            let log = chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            let mut ops: Vec<_> = chain
+                .timer
+                .iter()
+                .map(|(key, due)| crate::state::TimerOp::DeleteIfDue {
+                    key: key.clone(),
+                    due: *due,
+                })
+                .collect();
+            ops.extend(crate::agent::timer_ops(&log));
+            ops
+        } else {
+            Vec::new()
+        };
+        let changed = ctx.state.commit(&timers)?;
         let mut effects = chain
             .effects
             .lock()
@@ -771,20 +1049,38 @@ fn process(delivery: &Delivery) {
                 ready: AtomicBool::new(false),
                 job: Arc::clone(job),
                 failed_fuel: AtomicU64::new(0),
+                log: Mutex::new(Vec::new()),
+                connection: None,
+                defers: false,
+                deferred: AtomicBool::new(false),
+                timer: None,
             });
             let invocation = Invocation {
                 chain: Arc::clone(&subscriber),
                 local: m.local.clone(),
+                identity: m.identity.clone(),
                 depth: 0,
                 hop: delivery.hop + 1,
+                link: false,
+                origin: m.identity.clone(),
             };
             let result = invocation.invoke(
-                &Caller::Mod(emitter.clone()),
+                &Who::Caller(Caller::Mod(emitter.clone())),
                 &format!("{}.{}", link.interface, event.function),
-                event.args.clone(),
+                Args::Json(event.args.clone()),
                 host.limits.fuel,
                 true,
+                false,
             );
+            if result.is_ok() {
+                let log = std::mem::take(
+                    &mut *subscriber
+                        .log
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it"),
+                );
+                host.apply_effects(log);
+            }
             // The effects of a delivery apply after its invoke (6.10).
             let manages = std::mem::take(
                 &mut subscriber

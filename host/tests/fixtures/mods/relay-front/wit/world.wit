@@ -1,0 +1,3 @@
+package mods:relay-front@0.1.0;
+interface api { after-then-fail: func(id: string, ms: u64); push-then-fail: func(s: string, text: string); who: func() -> string; }
+world relay-front { import watane:host/caller@0.1.0; import mods:relay/api@0.1.0; export api; }
