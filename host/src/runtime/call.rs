@@ -50,6 +50,9 @@ pub(crate) struct Invocation {
     pub(crate) link: bool,
     /// The origin client of the call (19, Terms): an identity.
     pub(crate) origin: String,
+    /// The consumer's `Call` link interface that this call came through, if it came through one
+    /// (19.2, Ends: the grant a mod stream depends on).
+    pub(crate) via: Option<InterfaceName>,
 }
 
 /// The caller of a call: a `Caller`, or the host itself (19.1).
@@ -216,6 +219,36 @@ fn identity_of(snapshot: &crate::catalog::Catalog, local: &LocalName) -> String 
         .map_or_else(|| format!("local/{local}"), |m| m.identity.clone())
 }
 
+/// Puts a chain in flight: its queued effects count for the limits of every call (19.2, Commit).
+fn register(host: &Host, chain: &Arc<Chain>) {
+    let mut chains = host
+        .chains
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it");
+    chains.retain(|c| c.strong_count() > 0);
+    chains.push(Arc::downgrade(chain));
+}
+/// Takes the chain's queued effects, under the gate of 19.2 (Commit), and applies them when the
+/// chain succeeded; else they are given back (a harness) or dropped. Either way the chain's
+/// reservation ends.
+fn take_and_apply(host: &Host, chain: &Chain, apply: bool) -> Vec<Effect> {
+    let _gate = host
+        .chains
+        .lock()
+        .expect("lock poisoned: another thread panicked while holding it");
+    let log = std::mem::take(
+        &mut *chain
+            .log
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it"),
+    );
+    if apply {
+        host.apply_effects(log);
+        return Vec::new();
+    }
+    log
+}
+
 pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     let failed = |error: CallError| Done {
         result: Err(error),
@@ -277,14 +310,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         deferred: AtomicBool::new(false),
         timer,
     });
-    {
-        let mut chains = host
-            .chains
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        chains.retain(|c| c.strong_count() > 0);
-        chains.push(Arc::downgrade(&chain));
-    }
+    register(host, &chain);
     let invocation = Invocation {
         chain: Arc::clone(&chain),
         identity: identity_of(&snapshot, &local),
@@ -293,6 +319,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         hop,
         link,
         origin,
+        via: None,
     };
     let result = invocation.invoke(
         &who,
@@ -308,25 +335,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it"),
     );
-    // The chain's queued effects leave the reservation of 19.2 (Commit) as they apply.
-    let log = {
-        let _gate = host
-            .chains
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        let log = std::mem::take(
-            &mut *chain
-                .log
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it"),
-        );
-        if chain.fakes.is_none() && result.is_ok() {
-            host.apply_effects(log);
-            Vec::new()
-        } else {
-            log
-        }
-    };
+    let log = take_and_apply(host, &chain, chain.fakes.is_none() && result.is_ok());
     let deferred = chain.deferred.load(Ordering::Acquire);
     let events = effects
         .events
@@ -520,6 +529,7 @@ impl Invocation {
             hop: self.hop,
             link: true,
             origin: self.origin.clone(),
+            via: Some(interface.clone()),
         };
         nested.invoke(
             &Who::Caller(Caller::Mod(self.local.clone())),
@@ -584,6 +594,7 @@ impl Invocation {
                     hop: self.hop,
                     link: false,
                     origin: m.identity.clone(),
+                    via: None,
                 };
                 self.chain.failed_fuel.store(fuel, Ordering::Release);
                 match nested.invoke(
@@ -731,9 +742,11 @@ impl Invocation {
                     }
                 }
             }
-            origin = if current.mods.iter().any(|o| {
-                o.identity == wanted && o.enabled && o.error.is_none()
-            }) {
+            origin = if current
+                .mods
+                .iter()
+                .any(|o| o.identity == wanted && o.enabled && o.error.is_none())
+            {
                 wanted
             } else {
                 active.identity.clone()
@@ -1124,6 +1137,7 @@ fn process(delivery: &Delivery) {
                 deferred: AtomicBool::new(false),
                 timer: None,
             });
+            register(host, &subscriber);
             let invocation = Invocation {
                 chain: Arc::clone(&subscriber),
                 local: m.local.clone(),
@@ -1132,6 +1146,7 @@ fn process(delivery: &Delivery) {
                 hop: delivery.hop + 1,
                 link: false,
                 origin: m.identity.clone(),
+                via: None,
             };
             let result = invocation.invoke(
                 &Who::Caller(Caller::Mod(emitter.clone())),
@@ -1141,15 +1156,7 @@ fn process(delivery: &Delivery) {
                 true,
                 false,
             );
-            if result.is_ok() {
-                let log = std::mem::take(
-                    &mut *subscriber
-                        .log
-                        .lock()
-                        .expect("lock poisoned: another thread panicked while holding it"),
-                );
-                host.apply_effects(log);
-            }
+            take_and_apply(host, &subscriber, result.is_ok());
             // The effects of a delivery apply after its invoke (6.10).
             let manages = std::mem::take(
                 &mut subscriber

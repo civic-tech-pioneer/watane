@@ -16,6 +16,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::task::Waker;
 use std::time::{Duration, Instant};
 use wasmtime::component::Val;
+use watane_pkg::InterfaceName;
 
 pub(crate) const MAX_ITEMS: usize = 256;
 pub(crate) const MAX_BYTES: usize = 4 << 20;
@@ -114,9 +115,17 @@ struct Stream {
     producer_told: bool,
     handed_off: bool,
     test: bool,
+    /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
+    via: Option<InterfaceName>,
 }
 impl Stream {
-    fn new(consumer: Consumer, producer: Producer, origin: String, test: bool) -> Self {
+    fn new(
+        consumer: Consumer,
+        producer: Producer,
+        origin: String,
+        test: bool,
+        via: Option<InterfaceName>,
+    ) -> Self {
         Self {
             consumer,
             producer,
@@ -134,6 +143,7 @@ impl Stream {
             producer_told: false,
             handed_off: false,
             test,
+            via,
         }
     }
 }
@@ -420,8 +430,14 @@ impl Hub {
                 consumer,
                 producer,
                 origin,
+                via,
             } => {
-                inner.create(id.clone(), consumer, Producer::Mod(producer), origin, false);
+                inner.create(
+                    id.clone(),
+                    consumer,
+                    (Producer::Mod(producer), origin, via),
+                    false,
+                );
                 if !valid {
                     inner.end(&id, json!("gone"), false);
                 }
@@ -475,6 +491,32 @@ impl Hub {
         self.cv.notify_all();
     }
 
+    /// The mod streams that depend on a grant: (id, consumer, producer's local name, the
+    /// consumer's link interface) (19.2, Ends).
+    pub fn vias(&self) -> Vec<(String, ModRef, LocalName, InterfaceName)> {
+        self.lock()
+            .streams
+            .iter()
+            .filter_map(|(id, s)| match (&s.consumer, &s.producer, &s.via) {
+                (Consumer::Mod(c), Producer::Mod(p), Some(via)) if s.closing.is_none() => {
+                    Some((id.clone(), c.clone(), p.local.clone(), via.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+    /// Ends these streams `gone` for both sides, at once.
+    pub fn end_gone(&self, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut inner = self.lock();
+        for id in ids {
+            inner.end(id, json!("gone"), false);
+        }
+        drop(inner);
+        self.cv.notify_all();
+    }
     /// Disable, removal or update of a mod: every stream it is a side or the origin client of
     /// ends `gone` (19.2, Ends).
     pub fn end_mod(&self, identity: &str) {
@@ -774,7 +816,7 @@ impl Hub {
             return Err(StreamError::Full);
         }
         let id = random_id();
-        inner.create(id.clone(), consumer, Producer::Host, origin, true);
+        inner.create(id.clone(), consumer, (Producer::Host, origin, None), true);
         Ok(id)
     }
     /// A push by the host as producer, applied at once.
@@ -851,8 +893,7 @@ impl Inner {
         &mut self,
         id: String,
         consumer: Consumer,
-        producer: Producer,
-        origin: String,
+        (producer, origin, via): (Producer, String, Option<InterfaceName>),
         test: bool,
     ) {
         if let Some(key) = consumer.key() {
@@ -863,15 +904,17 @@ impl Inner {
                 Some(c) => c.streams.push(id.clone()),
                 None => {
                     // The connection closed already: the stream is created and ends `gone`.
-                    self.streams
-                        .insert(id.clone(), Stream::new(consumer, producer, origin, test));
+                    self.streams.insert(
+                        id.clone(),
+                        Stream::new(consumer, producer, origin, test, via),
+                    );
                     self.end(&id, json!("gone"), false);
                     return;
                 }
             }
         }
         self.streams
-            .insert(id, Stream::new(consumer, producer, origin, test));
+            .insert(id, Stream::new(consumer, producer, origin, test, via));
     }
     fn dec_open(&mut self, key: &str) {
         if let Some(n) = self.open.get_mut(key) {
