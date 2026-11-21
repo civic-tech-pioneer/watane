@@ -769,3 +769,40 @@ fn adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin() {
         "a timer committed after the removal carries the removed mod as origin client, and the new install inherits it: {row}"
     );
 }
+
+/// 19.6 (At apply): "`push`, `close`, `cancel` and `resume` ... act only if the hub still holds
+/// that stream with the producer or consumer the call named." `Cancel` (and `Resume`) carry no
+/// consumer: the hub ends the stream whoever holds it at apply. `relay`, the consumer, cancels
+/// in a chain that stays in flight; meanwhile `relay` hands the stream off to `advo-front`, and
+/// that commits first. At apply the stale cancel of the old consumer ends the new consumer's
+/// stream.
+#[test]
+fn adv_s96_cancel_in_flight_ends_the_stream_after_its_hand_off() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.cancel-then-sleep",
+        json!({"s": s.id(), "ms": 1000}),
+    );
+    let handed = call_as(
+        &env.host,
+        Caller::Mod(local("advo-front")),
+        "relay",
+        "api.hand-off",
+        json!({"s": s.id()}),
+    )
+    .unwrap();
+    assert_eq!(handed, json!({"ok": null}), "the hand-off must land first");
+    first.finish();
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        s.ended(),
+        None,
+        "the old consumer's cancel, applied after the hand-off, ended the new consumer's stream"
+    );
+}
