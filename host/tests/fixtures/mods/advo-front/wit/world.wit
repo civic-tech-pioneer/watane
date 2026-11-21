@@ -1,5 +1,5 @@
 package mods:advo-front@0.1.0;
-interface api { open: func() -> result<string, string>; open-then-sleep: func(ms: u64) -> result<string, string>; push-then-sleep: func(s: string, bytes: u32, ms: u64) -> string; try-after-then-sleep: func(id: string, ms: u64, sleep: u64) -> string; hand-off-then-sleep: func(s: string, ms: u64) -> string; ended: func() -> list<string>; }
+interface api { open: func() -> result<string, string>; open-then-sleep: func(ms: u64) -> result<string, string>; push-then-sleep: func(s: string, bytes: u32, ms: u64) -> string; try-after-then-sleep: func(id: string, ms: u64, sleep: u64) -> string; hand-off-then-sleep: func(s: string, ms: u64) -> string; ended: func() -> list<string>; mode: func(m: string); }
 world advo-front {
   import watane:host/state@0.1.0;
   import watane:host/streams@0.1.0;
