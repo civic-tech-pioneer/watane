@@ -1793,3 +1793,10 @@ Validator, round 1: the foreman changed the tests at `519ef4a` to keep
 requests all finished before `quit` and were green on the old exit). With
 that change AC1 was red at `090f08f` ("app did not quit") and green after
 the fix on this Mac; AC2 is green on both, as a guard.
+
+S98-2: two window-test races ended by waiting on the real condition. The main page
+refreshes itself (`app/ui/app.js`, 2 s visible, 10 s hidden, unthrottled since S90), so
+`look::windows::ac3_ac4_ac6_ac8_*` now renders each literal `ModView` set and evaluates its
+condition in one JavaScript turn (`(window.__page.modsView(B), CONDITION)`). `until`
+(journey, gui_shell, gui_isolation) uses `App::is_true`, which treats a failed eval (`""`,
+page between documents) as "not yet"; the timeout message adds the last raw result.

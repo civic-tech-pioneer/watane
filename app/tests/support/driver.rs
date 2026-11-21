@@ -41,6 +41,9 @@ impl AskHandle {
         self.wait(Duration::ZERO).is_none()
     }
 }
+pub fn reads_true(raw: &Value) -> bool {
+    serde_json::from_str::<Value>(raw.as_str().unwrap_or("")).is_ok_and(|v| v == true)
+}
 fn result(v: Value) -> Value {
     assert!(v.get("err").is_none(), "driver error: {v}");
     v["ok"].clone()
@@ -234,8 +237,16 @@ impl App {
             .wait(TIMEOUT + Duration::from_secs(5))
             .expect("driver response timed out")
     }
+    /// The raw eval result: "" when WebKit failed the eval (for example between documents).
+    pub fn eval_raw(&self, label: &str, js: &str) -> Value {
+        self.call(json!({"op":"eval","label":label,"js":js}))
+    }
+    /// True only when the eval returned JSON `true`; a failed eval is "not yet", never a panic.
+    pub fn is_true(&self, label: &str, js: &str) -> bool {
+        reads_true(&self.eval_raw(label, js))
+    }
     pub fn eval(&self, label: &str, js: &str) -> Value {
-        let v = self.call(json!({"op":"eval","label":label,"js":js}));
+        let v = self.eval_raw(label, js);
         serde_json::from_str(v.as_str().unwrap()).unwrap_or_else(|e| {
             panic!(
                 "native eval returned invalid JSON: {e}; {label}: {js}; {v}; {}",
@@ -329,9 +340,25 @@ impl Drop for App {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, TIMEOUT};
+    use super::{App, TIMEOUT, reads_true};
     use serde_json::json;
     use std::path::Path;
+
+    #[test]
+    fn ac3_s98_is_true_parses_an_eval_result_without_panicking() {
+        assert!(reads_true(&json!("true")));
+        for raw in [
+            json!(""),
+            json!("false"),
+            json!("null"),
+            json!("1"),
+            json!("\"true\""),
+            json!("{"),
+            json!(null),
+        ] {
+            assert!(!reads_true(&raw), "{raw}");
+        }
+    }
 
     #[test]
     fn ac1_over_routes_replies_and_quits_without_a_local_home() {
