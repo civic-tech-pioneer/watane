@@ -1140,7 +1140,7 @@ names the same interface in its sketch and fakes it until this one merges.
   host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
   against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
 
-- [~] **S98 The macOS CI job is green again (guard).** Local (app); foreman `56c8266f` (sessionId `56c8266f-ded3-430c-8d97-2a310da57524`; the first, e22e166e, died in a crash), worktree `.claude/worktrees/s98`. `main`'s required `test
+- [~] **S98 The macOS CI job is green again (guard).** Cloud (routine `trig_01FuwkKwLpw5dh9JGrGdvM6P`), continuing from `slice/s98`: a local foreman started it and was stopped (the human needs the laptop; its 8 commits are on the branch). Verified on GitHub's macOS runner. `main`'s required `test
   (macos-26)` fails on the runner since 2026-11-21 07:01 with plan-only commits (passes on rerun,
   passes in `factory/check-main.sh` on the Mac): `gui_shell::ac2_background_screen_is_visible_without_focus`
   (driver.rs:304) and `look::windows::ac3_ac4_ac6_ac8_library_details_confirm_install_and_badges`
