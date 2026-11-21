@@ -42,6 +42,9 @@ getrandom = "0.3"
 # step 11 (19): A2 adds the tokio feature `process` and a process-group crate; A4 adds
 # `sse-stream` and an HTTPS client with no redirects (reqwest, rustls), chosen then.
 
+[features]
+test-net = []                                # step 11 (19.9): test routes for https-stream; tests only
+
 [dev-dependencies]
 tempfile = "3"                               # test homes; Harness uses getrandom
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
@@ -129,9 +132,12 @@ impl Host {
     pub fn remove(&self, local: &LocalName, delete_data: bool) -> Result<(), HostError>;
     pub fn grant(&self, local: &LocalName, grant: &Grant) -> Result<(), HostError>;   // only a declared grant
     pub fn revoke(&self, local: &LocalName, grant: &Grant) -> Result<(), HostError>;
-    // step 11 (19.4, 19.7)
+    // step 11 (19.4, 19.7, 19.9)
     pub fn withdraw_consent(&self, local: &LocalName, consent: &Consent) -> Result<(), HostError>;
-    pub fn judge_key_removed(&self, provider: &str);
+    pub fn account_changed(&self, account: &Account);
+    pub fn set_fake_claude(&self, program: &Path) -> Result<(), HostError>;   // a preview only
+    #[cfg(feature = "test-net")]
+    pub fn set_test_net(&self, net: TestNet);
 
     // runtime (section 6)
     /// The callable functions: `world().exports` only, never a subscription export (6.6 step 2).
@@ -162,6 +168,7 @@ impl Served {
 }
 
 pub fn default_home() -> Result<PathBuf, HostError>;       // section 3.1
+pub fn judge_origin(text: &str) -> Result<String, HostError>; // step 11 (19.4)
 pub struct RunInfo { pub watane: u32, pub pid: u32, pub port: u16, pub mode: String }  // Serialize, Deserialize
 impl RunInfo { pub fn read(home: &Path) -> Result<Option<RunInfo>, HostError>; }
 
@@ -422,6 +429,8 @@ in `Outcome.value`.
   mods/<local>/    one unpacked package each, in pkg's layout
   state/state.redb the private state of every mod (section 7)
   staging/         plan scratch; emptied at open
+  runs/            step 11 (A2): one folder per `claude` run and `runs/pids`; emptied at open (19.3)
+  scratch/         step 11 (A2): scratch workspaces of sessions (19.3)
   log/ dist/ app/  reserved for `log` (opened only by `dist`), `dist` and `app`
   net/             reserved for `net` (step 8, ../net/TECHNICAL.md 4.5)
 ```
@@ -441,7 +450,8 @@ another name. A preview home has none of them (W5).
 3. Empty `staging/`. Restore `mods/<local>.old` if it matches the committed
    package and `mods/<local>` does not. Delete each `mods/<x>` that
    `installed.json` does not name, and each remaining `mods/*.new` and
-   `mods/*.old`.
+   `mods/*.old`. Step 11 (A2): kill the process groups recorded in
+   `runs/pids`, then delete `runs/` (19.3).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
@@ -886,7 +896,10 @@ nested calls:
 3. New store; `set_fuel(ctx.fuel)`; deadline callback; instantiate from the
    `InstancePre`; call; `post_return`.
 4. On success: read the fuel left; commit the state transaction; append
-   the outbox to the chain effects; mark the mod changed if a value
+   the outbox to the chain effects (step 11: its requests and stream
+   effects go instead to the outbox of the calling invoke, and reach the
+   chain effects only from a succeeded top-level invoke, whose commit also
+   writes the chain's timers, 19.6); mark the mod changed if a value
    changed; unlock; return the values and the fuel left.
 5. On failure: drop the transaction and the outbox; unlock; return the
    classified error (6.7).
@@ -1105,9 +1118,11 @@ A transaction lives for one invoke of one mod:
 - Delete data: delete table `s/<id>` and remove `sizes[<id>]` in one write
   transaction.
 
-Step 11: a `timers.after` or `timers.cancel` writes the `timers` table in the
-same write transaction as the state of its invoke, so a call's writes and
-timers commit whole or not at all (19.6). Every commit keeps redb's default
+Step 11: the `timers.after` and `timers.cancel` of a chain that reach its
+top-level invoke (19.6, the chain rule) are written to the `timers` table in
+the write transaction of that invoke's commit, also when its own overlay is
+empty; so a top-level call's writes and the chain's timers commit whole or
+not at all, and a rolled-back call's timers are never written. Every commit keeps redb's default
 durability (full: one fsync per write); a request is applied only after its
 chain's commits (N4, 19.6).
 
@@ -1414,7 +1429,9 @@ tool; tools are deduplicated by name and sorted by name.
 
 Tool name: `<local>_<interface>_<function>`, with the short interface name.
 A name longer than 64 bytes gives no tool. Step 11: a tool mod may mark a
-function `@parallel` or `@idempotent` (19.5); the tool list carries both. Description: the WIT doc comment
+function `@parallel` or `@idempotent` (19.5); `agent-tools.describe` carries
+both. The name `agent` is reserved as `preview` is (`bad_name`): `/mcp/agent`
+is the route of handle tokens (19.5). Description: the WIT doc comment
 of the function (`Resolve::push_dir` on `mods/<local>/wit/`, then
 `Function::docs.contents`; both exist in wit-parser 0.254), else its
 signature `<function>: func(<p>: <type>, ...) -> <type>`. Input schema:
@@ -1506,8 +1523,9 @@ pub trait Confirm: Send + Sync + 'static {
     /// (`App`, `LocalApi`, `Mod`) and every home. Must not block. Default: nothing. (W37: the app
     /// makes a `main = true` mod main however it was installed, app 5.4.)
     fn installed(&self, report: &Installed) {}
-    /// Step 11 (19.4, 19.7): `accounts` hands over the in-process account source, `consent` asks
-    /// the participant. Defaults: no accounts, `Refused`.
+    /// Step 11 (19.4, 19.7): `accounts` hands over the in-process account source; `consent` asks
+    /// the participant one of the three agent consents; the host may drop the future (the request
+    /// ended first). Defaults: no accounts, `Refused`.
     fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
     fn consent(&self, request: ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> { .. }
 }
@@ -1566,7 +1584,7 @@ nothing for a plan that needs no confirmation.
 
 ```text
 watane [--home <dir>] [--port <n>]
-watane --preview <dir> [--port <n>] [--install <folder>]...
+watane --preview <dir> [--port <n>] [--install <folder>]... [--fake-claude <path>]
 watane --version
 ```
 
@@ -1576,7 +1594,8 @@ watane --version
   `DEFAULT_PORT` (47341).
 - `--preview`: a preview home; default port 0. Each `--install` folder
   joins one plan, installed before the ready line. Then the host issues the
-  preview token.
+  preview token. Step 11: `--fake-claude` calls `Host::set_fake_claude`
+  before the ready line (19.9); it is a `usage` error without `--preview`.
 - `--version` prints `watane <crate version>` and exits 0. A bad argument
   prints an error line with code `usage` and exits 2.
 
@@ -1627,7 +1646,8 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `item-bad`, `item-spin` (step 9) | as `item-a`; `ask` of `item-bad` puts a state key, burns a fixed loop of about 19.5M fuel and then traps; `ask` of `item-spin` spins |
 | `item-back` (step 9) | as `item-a`, and imports `mods:menu/api` |
 | `manager` (step 10) | `mod.toml` `name = "Desk"`; import caller and `watane:host/manage`; export `api` with one function per function of 6.10, each passing its arguments through and returning the result as it is (`mods`, `disable`, `withdraw`, `close-page`, `open-page`, `request-install`, `request-update`, `request-enable`, `request-grant`, `request-remove`, `request`), plus `open-page-then-fail(local: string)`, which calls `open-page` and then traps, `close-open-close(local: string)`, which queues those three page effects in order, `disable-then-fail(local: string)`, which calls `disable` and then traps, and `disable-then-read(local: string) -> bool`, which calls `disable` and returns the `enabled` of that mod from `mods` |
-| `relay` (step 11, A1) | import state, caller, `streams`, `timers`; export `api { open: func() -> string; push: func(s: string, text: string); close: func(s: string); cancel: func(s: string); hand-off: func(s: string); resume: func(s: string); after: func(id: string, ms: u64); cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`; `items` stores each body in state key `got/<s>/<seq>` and answers by `mode` (`taken`, `defer`, `trap`); `ended`, `ready` and `fired` store a line |
+| `relay` (step 11, A1) | import state, caller, `streams`, `timers`; export `api { open: func() -> string; push: func(s: string, text: string); close: func(s: string); cancel: func(s: string); hand-off: func(s: string); resume: func(s: string); after: func(id: string, ms: u64); cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`; `items` stores each body in state key `got/<s>/<seq>` and answers by `mode` (`taken`, `defer`, `trap`); `ended`, `ready` and `fired` store a line; `who` returns `caller.identity()` |
+| `relay-front` (step 11, A1) | import `mods:relay/api`; export `api { after-then-fail: func(id: string, ms: u64); push-then-fail: func(s: string, text: string); who: func() -> string; }`; the first two call that function of `relay` (`after`, `push`), which succeeds, and then trap: the nested request and push that 19.6 drops; `who` returns `relay`'s `who` (S56) |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1653,7 +1673,7 @@ run on the preview install path.
 | `tests/net.rs` | S27: `https://example.com/` and `http://example.org/` fail without a socket; `https://example.org/` succeeds (`#[ignore]`, needs network) | literal error code |
 | `tests/it/manage.rs` (stage 11) | S40 to S47 with `manager`, `counter`, `shelf`, `recs` in a participant home whose `Confirm` fake records `reduced`, `manage` and `install` calls and answers `manage` from a script; the harness rows of 6.10; `manager` refused at plan when the world lacks `manage` but the component imports it (5.3) | literal `mod-info` JSON; `installed.json` parsed as plain JSON; the fake's recorded calls; request ids matched by the regex `^[0-9a-f]{32}$`; page-bus messages read from `/events` of a served manager |
 | `tests/it/streams.rs` (A1) | agentic-harness cases 7, 36 and 51 (host parts) and 58, with `relay` and a crate-private test source for host streams (no H2 to H4): 19.2 and FUNCTIONAL S48 to S52 | literal item numbers and bodies read from the consumer's state; `ended` lines; counted deliveries |
-| `tests/it/requests.rs` (A1) | agentic-harness cases 20 and 21 with `relay`; the rows of 19.6 (limits, replacement, rollback); FUNCTIONAL S53 to S55 | literal `fired` lines; `timers` table read from `state/state.redb` after `drop(host)`; a restart on the same home |
+| `tests/it/requests.rs` (A1) | agentic-harness cases 20 and 21 with `relay`; the rows of 19.6 (limits, replacement, rollback); with `relay-front` for the nested rollback; FUNCTIONAL S53 to S56 | literal `fired` lines; `timers` table read from `state/state.redb` after `drop(host)`; a restart on the same home |
 | `tests/it/agent_load.rs` (A1, `#[ignore = "slow: stage A budgets and V8"]`) | the load row of stage A (15) | p95 item delay, `cancel` to `ended`, writer busy share, state bytes per item |
 | `tests/it/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
@@ -1697,7 +1717,7 @@ run on the preview install path.
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
-| A rolled-back call has no outside effect | requests apply only after the chain's durable commit; deferred and failed calls drop theirs (19.6). File: `src/runtime/call.rs` | A1: case 21 |
+| A rolled-back call has no outside effect | requests and stream effects ride up the chain and apply only after its durable commit; a deferred or failed call drops its own and those of the calls nested in it (19.6). File: `src/runtime/call.rs` | A1: cases 21, 36; S53 |
 
 Not protected (spec §6): another program of the same user, which can read
 the home and call `/call` or `/events` with a forged `Origin`; a
@@ -1858,11 +1878,11 @@ is added.
 | 10 Collect (step 9) | 9.4; the outlet row of 6.4; collect edges in 4.2 step 8; the 5.3 rule; collect fakes in `Harness` (2.6); fixtures `menu`, `item-*` | stage 5; `pkg` stage 9 (`World::collects`) | none; the stage waits for pkg | S36 to S39 pass (`tests/it/collect.rs`); J9 with `dev` and `app` |
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/it/manage.rs`); J10 with `dev` and `app` |
 | 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/it/program/api.rs` passes; every earlier test passes unchanged (the default body) |
-| A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixture `relay`; `Outcome.requests` | stage 5; `pkg` A1 (`watane:host` rows for the new interfaces and exports) | `RawMod` and a crate-private test source for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
-| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude` | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only) |
+| A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6, the chain rule of requests and stream effects, 6.6 step 4) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixtures `relay`, `relay-front`; `Outcome.requests` | stage 5; `pkg` A1 (`watane:host` rows for the new interfaces and exports) | `RawMod` and a crate-private test source for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); S48 to S56 of FUNCTIONAL; the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
+| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` A2 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only) |
 | A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C |
-| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`; `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D |
-| A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_key_removed` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
+| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D |
+| A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_origin`, `account_changed(&Account::Judge { .. })` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
 
 Step 10 is done when J10 passes with `dev` and `app` (app 17).
 
@@ -1923,8 +1943,8 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `dev` (step 10) | the manage fakes of 6.10 under the `Fakes` key `watane:host/manage`; `Outcome.manages`, `ManageRecord` (2.6); `HOST_WIT` with `manage` |
 | `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
 | `pkg` (step 11) | the `watane:host` interfaces of 19.1 as imports and exports, for pkg's import check (pkg 4.5): imports `streams`, `claude-types`, `claude-code`, `claude-code-shell`, `claude-session`, `https-stream`, `agent-tools`, `timers`, `caller.identity`; exports `stream-sink`, `stream-producer`, `timer-sink`; the grants `ClaudeCode`, `ClaudeCodeShell` (the WIT `grant` variant of 6.4) |
-| `app` (step 11) | `Confirm::{accounts, consent}`, `AccountSource`, `JudgeAccount`, `AccountError`, `Consent`, `ConsentRequest`, `ConsentAnswer`; `Host::{withdraw_consent, judge_key_removed}`; `InstalledMod.consents`; the page-reserved `<home>/app/accounts/` is the app's (3.1) |
-| `dev` (step 11) | `Outcome.requests`, `RequestRecord`, the harness fakes of 19.1; `HOST_WIT` with the new interfaces; `watane.js` with the connection id; the `claude` argument and stdin rules of 19.3 for `fake-claude`; the account binding of 19.4 for `ScriptedResponses` |
+| `app` (step 11) | `Confirm::{accounts, consent}` (one consent method for the three consents), `AccountSource`, `JudgeAccount`, `AccountError::{NoAccount, Unavailable}`, `Account::{OpenAi, Judge}`, `Consent` (with its `what` text as the key), `ConsentRequest` (`origin`, `via`, `consent`, `profile`, `functions`), `ConsentAnswer`; `Host::{withdraw_consent, account_changed}`; `judge_origin`; `InstalledMod.consents`; the reserved `<home>/app/accounts/` is the app's (3.1) |
+| `dev` (step 11) | `Outcome.requests`, `RequestRecord`, the harness fakes of 19.1; `HOST_WIT` with the new interfaces; `watane.js` with the connection id; the `claude` argument and stdin rules of 19.3 for `fake-claude`; the account binding of 19.4 for `ScriptedResponses`; `Host::set_fake_claude` and `watane --preview .. --fake-claude <path>`; the feature `test-net` with `Host::set_test_net(TestNet { routes, root_pem })` (19.9) |
 | the agent layer mods (W38) | the interfaces of 19.1 to 19.8; `caller.identity()` values; the grants `claude-code`, `claude-code-shell` |
 
 ## 17. Needs from other subsystems
@@ -1958,7 +1978,9 @@ Step 11 (19): from `pkg`, `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`
 (text `claude-code`, `claude-code-shell`; JSON `{"kind":"claude-code"}`,
 `{"kind":"claude-code-shell"}`; ordered after `Manage`; release CBOR `[5]`
 and `[6]`; release grant limit 84) and `World` flags for the new imports and
-the three exports (pkg 4.5, 5.1, 7.2). From `app`: `Confirm::consent` and
+the three exports (pkg 4.5, 5.1, 7.2), and the `mod.toml` `[tools]` table
+of 19.5 (`parallel`, `idempotent` per function), unless pkg leaves the
+annotations to WIT doc comments only. From `app`: `Confirm::consent` and
 `Confirm::accounts` with an `AccountSource` (19.4, 19.7; app 19), which owns
 the consent words, the consent view, Sign in with ChatGPT, the account files
 `<home>/app/accounts/openai.json` and
@@ -2157,6 +2179,35 @@ that depends on it points here. Stage A1 needs none; A2 needs all three.
   `expired` rules as the source writes them. Cost to undo: a few lines here
   and one adapter field in the kernel. Blocks only A2.
 
+Raised by S95 itself (not one of the three above):
+
+- **Q37** Requests ride with the chain, writes do not (19.6; source:
+  agentic-harness TECHNICAL 7, "applied only after the whole call chain
+  commits", and its "A call commits whole", which assume that a chain commits
+  as one). The host commits each invoke on its own success (Q3), so a nested
+  call P that succeeds keeps its writes when its caller C later fails or
+  defers, but (19.6, built) loses its requests and stream effects. A mod whose
+  state records that it made a request (an `answer` sent, a session started)
+  can then hold a record of an effect that never happened, and on redelivery
+  must not trust it. (a) Built: requests and stream effects ride up the chain
+  and are dropped with any rolled-back call above them; writes stay per invoke
+  (Q3). A mod reached through a call link makes each request again on
+  redelivery, or keeps its record of a request in the caller's chain. Keeps the
+  boundary: a rolled-back call's `claude-session` request never reaches
+  `claude`. (b) Requests per invoke like events (9.1): P's requests stay with
+  P's writes. Consistent per mod, but a deferred `items` call whose nested
+  provider call succeeded sends that provider's `say` or `answer` to
+  `claude`, and the redelivery sends it again. (c) Chain commit for writes too
+  (the source's model): one transaction held to the end of the chain, which
+  Q3 refused for its locks and deadlocks. Recommended: (a), because it keeps
+  the boundary of 19.3 and 14; its cost falls on the agent layer: a mod
+  reached through a call link (the kernel under a client's `say`, a provider
+  under the kernel) counts a request as made only when its effect shows (an
+  item, an `ended`, a fired timer), never from its own state, or a client
+  that fails after the kernel's `say` succeeded leaves an input recorded and
+  never sent. Cost to undo: (b) is one line in 6.6 step 4 and 19.6, and a
+  weaker 14 row; (c) rewrites 6.6 and 7. Does not block A1, which builds (a).
+
 ## 19. The agent layer (step 11)
 
 W38 (spec §7): a layer of mods runs on the host. The kernel `mods:agent` and
@@ -2167,7 +2218,8 @@ from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
 TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
 2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
 not decided and wait on the human: section 18, Q34 to Q36. Text that depends
-on one says so.
+on one says so. Q37 names where the request rule of 19.6 parts from the
+source's, because the host commits each invoke on its own (Q3).
 
 **Terms.** *Producer* and *consumer* of a stream (19.2). A *host stream* has
 the host as producer (`claude-code.start`, `https-stream.start`,
@@ -2190,7 +2242,9 @@ interface streams {                                  // no grant
   record item { seq: u64, body: list<u8> }
   enum sink-outcome { taken, defer }
   record version-need { found: string, need: string }
-  /// How a stream ended. A producer's `close` may pass only `closed`, `replaced` or `failed`.
+  /// How a stream ended. A producer's `close` may pass only `closed`, `replaced`, `lagging`
+  /// (the kernel's full owner stream, agentic-harness TECHNICAL 9.4) or `failed`; any other
+  /// case ends the stream `failed("<case> is the host's outcome")`.
   variant outcome {
     closed, cancelled, lagging, replaced, consumer-failed, idle-timeout,
     gone,                       // disable, removal or update of either side, lost grant or consent, closed page connection, app quit
@@ -2243,11 +2297,12 @@ interface https-stream {                             // no grant; reaches only t
   start: func(request: string) -> result<stream-id, start-error>;
 }
 interface agent-tools {                              // no grant; a toolset needs consent (19.7)
+  use streams.{stream-id};
   record tool { name: string, description: string, input-schema: string, parallel: bool, idempotent: bool }
   variant tools-error { not-granted, unknown-handle, unknown-tool, consent-pending(string), consent-refused(string) }
   open: func(toolsets: list<string>) -> result<string, tools-error>;
   describe: func(handle: string) -> result<list<tool>, tools-error>;
-  call: func(handle: string, key: string, tool: string, args: string) -> result<streams.stream-id, tools-error>;
+  call: func(handle: string, key: string, tool: string, args: string) -> result<stream-id, tools-error>;
   close: func(handle: string);
 }
 interface timers {                                   // no grant
@@ -2326,8 +2381,8 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Delivery | one call to a consumer mod at a time, in FIFO order of its queued batches; each `items` or `ended` call is a top-level call with fresh fuel and deadline (as 9.2 step 5) |
 | Failed batch | delivered once more with the same numbers; a second failure ends the stream `consumer-failed` |
 | Deferred batch | an `items` call that returns `defer` is rolled back like a failed call (its pushes, writes and requests are dropped) but is not a failure: it does not count towards `consumer-failed`. The host keeps that batch and every later item, delivers nothing more on that stream, and a host stream stops reading its source, until the consumer calls `resume` |
-| Resume | consumer only; the host then delivers the kept batch again, with the same numbers. `resume` of a stream that is not deferred does nothing. It takes effect when its call succeeds; one made in the call that returns `defer` is dropped with it |
-| Commit | items pushed in a call are queued when that invoke succeeds (as events, 9.1); a failed call's pushes are dropped. `close` and `cancel` take effect then too, after the pushes of the same call. `streams.open` is a request (19.6); a stream opened in a call can be pushed to and closed in the same chain |
+| Resume | consumer only; the host then delivers the kept batch again, with the same numbers. `resume` of a stream that is not deferred does nothing. It takes effect with its chain (Commit); one made in the call that returns `defer` is dropped with it |
+| Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what the chain has queued. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain |
 | Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
 | Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
 | In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs when it is below half; host streams stop reading their source |
@@ -2381,6 +2436,7 @@ argument.
 | `session` | `{new: uuid}`, `{resume: uuid, at?: uuid, drops-turn?: uuid}`, `{fork: uuid, at?: uuid}` | `--session-id=`, `--resume=`, `--fork-session`, `--resume-session-at=`, `--resume-drops-turn=` |
 | `persist` | bool | `--no-session-persistence` when false |
 | `partial` | bool | `--include-partial-messages` |
+| `profile` | optional, `[A-Za-z0-9._-]{1,64}`: the name of the kernel's profile that built the launch (agentic-harness TECHNICAL 9.2) | nothing: only the words of the workspace consent (19.7, `ConsentRequest.profile`); it grants and checks nothing |
 
 The allow grammar for `Bash` (deny rules are not held to it). An allow
 `Bash(<arg>)` is refused unless all of these hold:
@@ -2508,7 +2564,7 @@ names its reason.
 |---|---|---|
 | `say` | a `user` message with the content | refused `slash-command` when the first text block starts with `/` after white space |
 | `compact` | a `user` message `/compact` | – |
-| `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
+| `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused `not-allowed-here`; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
 | `answer` to a check | `{}` for `none`; `{hookSpecificOutput: {hookEventName: PreToolUse, permissionDecision: deny, permissionDecisionReason}}` for `deny` | `allow` refused `not-allowed-here` |
 | `interrupt` | `control_request` `interrupt` | – |
 
@@ -2532,7 +2588,7 @@ checks of the table above are made at the call.
 
 - Run folder `<home>/runs/<random>/`: the plugin folder `watane-run`. Deleted
   when the stream ends; all of `runs/` is deleted at open, after the recorded
-  process groups are killed (3.1 step 3 gains this).
+  process groups are killed (3.1 step 3).
 - Scratch workspace `<home>/scratch/<random>/`, named by the host, owned by a
   session; a mod sees its id. It asks no consent: no participant folder is in
   it. Not yet specified (agentic-harness TECHNICAL 4.6): which call creates a
@@ -2587,17 +2643,34 @@ checks of the table above are made at the call.
     lower-cased without a trailing dot, the port with 443 as default; the same
     parse decides `[http]`. The host adds `Authorization: Bearer <key>`; no
     redirects. Without an entered key: `no-account`.
-  - Lifetime: removing the key (the app calls `Host::judge_key_removed`)
-    ends the provider's live judge streams, outcome `gone`. Uninstalling the
-    provider deletes its file; a later mod with the same identity starts with
-    no key.
+  - When: `AccountSource::judge` is an in-process read, so the binding is
+    checked at the call (`destination` is the `start-error`); with no key the
+    call returns the stream, which ends `no-account`. At apply the host reads
+    the account again and checks the binding again; a key that was removed
+    or now names another origin ends the stream `gone`, before a byte leaves.
+  - The parse: `judge_origin(text)` (below) parses an entered origin, and the
+    host applies the same rule to the stored origin at each check. It accepts
+    `https://host[:port]` and a lone trailing `/`; it refuses any other
+    path, a query, a fragment, userinfo and any scheme but `https`
+    (`bad_request`). Its text has the host lower-cased without a trailing dot
+    and the port only when it is not 443. The app calls it for what it shows
+    and stores (app 19.4); the host's check at each request decides where a
+    key goes.
+  - Lifetime: removing the key (the app calls
+    `Host::account_changed(&Account::Judge { provider })`) ends the
+    provider's live judge streams, outcome `gone`. Uninstalling the provider
+    deletes its file, with the same call; a later mod with the same identity
+    starts with no key. Signing out of ChatGPT (`Account::OpenAi`) ends every
+    live stream with `account: "openai"` the same way.
   - Scope: the account is bound to the judge's origin (N10), not to one path.
   - Entering the key is the participant's consent for that provider: no
     per-origin-client consent for this account (19.7).
 
 The host reaches tokens, keys and the `claude` path only through this
 in-process trait, which the app implements and hands over through
-`Confirm::accounts` (12.1). No mod sees a credential.
+`Confirm::accounts` (12.1), on the `Confirm` it gives to `Host::open`
+(`Mode::Home { app }`); `Host::open` takes nothing new. No mod sees a
+credential.
 
 ```rust
 pub trait AccountSource: Send + Sync + 'static {
@@ -2609,21 +2682,31 @@ pub trait AccountSource: Send + Sync + 'static {
     fn claude_binary(&self) -> Result<PathBuf, AccountError>;
 }
 pub struct JudgeAccount { pub key: String, pub origin: String }   // Debug prints no key
-pub enum AccountError { NoAccount, Failed(String) }               // Debug, Clone, PartialEq
+/// NoAccount: no sign-in, no key, no program chosen. Unavailable: the entry is there but cannot
+/// be used now (a token refresh failed on the network); never read as "not signed in".
+pub enum AccountError { NoAccount, Unavailable(String) }          // Debug, Clone, PartialEq
+/// An account whose entry changed (app 19.1 sign-out, 19.4 key removed or replaced, uninstall).
+pub enum Account { OpenAi, Judge { provider: String } }           // Debug, Clone, PartialEq, Eq; provider: its identity
+/// The judge-origin parse (above): the origin text, e.g. "https://judge.example" or "https://j.example:8443".
+pub fn judge_origin(text: &str) -> Result<String, HostError>;
 // Confirm (12.1) gains, default `None` (a home with no app, a preview, or an app with no accounts):
 //   fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
 // Host gains:
-//   pub fn judge_key_removed(&self, provider: &str);   // ends that provider's live judge streams
+//   pub fn account_changed(&self, account: &Account);   // ends the live streams that used it, outcome `gone`
 ```
 
 Without an app (`accounts()` is `None`) each use fails `no-app`; an entry that
-is absent is `AccountError::NoAccount`, which the host turns into `no-account`.
-A preview has no accounts (19.7).
+is absent is `AccountError::NoAccount`, which the host turns into `no-account`;
+`Unavailable(m)` ends the stream `failed("account unavailable: <m>")`, so a mod
+may retry. `claude_binary` failing `NoAccount` ends a start `no-binary`.
+A preview has no accounts (19.7); its `claude` program is 19.9.
 
 ### 19.5 Agent tools (H4)
 
-(agentic-harness TECHNICAL 6.) The functions of `agent-tools` are requests
-(19.6). The toolsets are those of 10.1.
+(agentic-harness TECHNICAL 6.) `agent-tools.open` and `call` are requests
+(19.6); `describe` is a read and `close` acts at once (it only takes away).
+The toolsets are those of 10.1; `open` with no toolset, or one that
+`toolsets.json` does not hold, fails `not-granted` at the call.
 
 - **Handle.** 128 random bits (32 hex chars), owned by (origin client, opening
   mod); it lives until `close`, the end of either mod, or a withdrawn consent
@@ -2633,7 +2716,8 @@ A preview has no accounts (19.7).
   and the handle is closed. `describe` returns the tools of the toolsets as 10.1
   resolves them, with their annotations (below). `call` and `describe` on an
   unknown or foreign handle fail `unknown-handle`; a tool not in the handle's
-  toolsets `unknown-tool`.
+  toolsets `unknown-tool`. A handle whose `open` has not been applied yet (the
+  same chain) is `unknown-handle`.
 - **Token.** One MCP token per handle, 32 bytes, memory only (10.2), written to
   `claude`'s fd 3 (19.3). It names the handle's toolsets together and is
   presented on `/mcp/agent` (10.3). A tool's mod sees the caller
@@ -2649,11 +2733,13 @@ A preview has no accounts (19.7).
   doc-comment line of the WIT function (`@parallel`, `@idempotent`), or its
   `mod.toml` `[tools]` table; default false each. They decide order and
   retries (agentic-harness TECHNICAL 9.5, 9.3), never permissions: a tool
-  without them is as callable as one with them. `describe` and the MCP
-  `tools/list` carry them (`tool.parallel`, `tool.idempotent`).
+  without them is as callable as one with them. `describe` carries them
+  (`tool.parallel`, `tool.idempotent`); MCP `tools/list` (10.3) is unchanged,
+  since `claude` orders its own calls.
 - **Manager functions** are refused in a handle's toolsets by default
-  (F-AGENT-4): `open` leaves out the functions of `watane:host/manage`
-  unless the participant named them in the toolset consent (19.7).
+  (F-AGENT-4): a handle leaves out the functions of a mod that holds
+  `Manage` (a manager, 6.10) unless the participant named them in the
+  toolset consent (19.7, `ConsentRequest.functions`).
 - A handle's tools are the union of its toolsets, read from the current
   catalog at each call (10.1).
 
@@ -2668,17 +2754,26 @@ A preview has no accounts (19.7).
 its checks that need nothing outside are made at the call; its outcomes
 (consent refused, no binary, version too old, a refused value) arrive as the
 stream's first item or as `ended`. `streams.resume`, `push`, `close`, `cancel`
-and `hand-off` are not requests: they take effect on commit (19.2).
+and `hand-off` are not requests, but they follow the same chain rule below
+(19.2, Commit).
 
-- **When applied.** A request joins the chain's effects when its invoke
-  succeeds, as events (9.1) and manage effects (6.10) do, and the host applies
-  it after the top-level invoke has returned and every write of the chain has
-  committed, in order with the manage effects, before the events are delivered
-  (6.6 step 6). A failed invoke drops its requests. So a call that is rolled
-  back, deferred or failed, sends nothing to `claude`, opens no stream and
-  leaves no timer; its `timers.after` and `timers.cancel` are made again on
-  redelivery. The writes of a succeeded nested call stay if its consumer fails
-  later (Q3), and so do its requests.
+- **When applied: with the whole chain.** A request (and a stream effect of
+  19.2) goes to the outbox of its invoke. When the invoke succeeds, the outbox
+  passes to the invoke that called it, not to the chain: a nested call's
+  requests ride with its caller's. When an invoke fails or is rolled back
+  (a trap, a limit, an `items` call that returns `defer`), it drops its own
+  requests and every request its nested calls passed up to it. Only the
+  requests that reach the top-level invoke, and only when that invoke
+  succeeds, join the chain effects. The host applies them after the top-level
+  invoke has returned and every write of the chain has committed, in order
+  with the manage effects, before the events are delivered (6.6 step 6). So a
+  request applies only when no call between it and the top of its chain was
+  rolled back: a rolled-back call, deferred or failed, and every call nested in
+  it, sends nothing to `claude`, opens no stream and leaves no timer, and its
+  `timers.after` and `timers.cancel` are made again on redelivery. This rule
+  differs from that of writes (Q3: a succeeded nested call keeps its writes
+  when its caller fails), of events (9.1) and of manage effects (6.10), which
+  a nested call keeps: section 18, Q37.
 - **Durable first.** The host applies a request only after the commit of its
   chain is durable, whatever the durability of other calls (N4, the human,
   2026-11-20: every commit keeps the host's full durability, one fsync per
@@ -2696,7 +2791,12 @@ and `hand-off` are not requests: they take effect on commit (19.2).
 live (`too-many`), delays up to 30 days (else `bad-delay`), kept in host
 state (7: `timers/<mod>/<id>` → due time and origin client). `after(id,
 delay-ms)` with a live id replaces it; `cancel(id)` removes it (an unknown id
-is ignored). The write is part of the call's commit. A due timer fires as a
+is ignored). The checks (`bad-id`, `bad-delay`, `too-many` counted with the
+timers that the chain has queued) are made at the call. The write follows the
+chain rule above: the `after` and `cancel` that reach the top-level invoke are
+written to the `timers` table in the write transaction of that invoke's
+commit (7), together with its state writes; a rolled-back call's timers are
+never written. A due timer fires as a
 top-level call of the mod's `timer-sink.fired(id)` with caller `host`, fresh
 budget, and the stored origin client; one due during downtime fires soon after
 the host starts (within the first second). A firing for an id cancelled or
@@ -2723,9 +2823,17 @@ app, kept by the host with the grants.
   `consents`), shown and withdrawn like grants (4.4). The words, the consent
   view and the choice belong to the app (app 19.2).
 - **Asking.** When a request needs a consent not held, the host calls
-  `Confirm::consent` (12.1) when it applies the request. `Granted` is stored
-  and the request goes on; `Refused`, or no answer in 600 s, ends the request
-  `consent-refused(what)`. A preview and a home with no app refuse at once.
+  `Confirm::consent` (12.1), the one method for the three consents, when it
+  applies the request. `Granted` is stored and the request goes on; `Refused`,
+  or no answer in 600 s, ends the request `consent-refused(what)`. The host
+  drops the future when the request's stream ends or its handle closes first
+  (a withdrawal, a cancel, the mod's end); the app reads a dropped future as
+  a withdrawn question. A preview and a home with no app refuse at once.
+  `ConsentRequest` carries what the app's words need (agentic-harness
+  TECHNICAL 8; app 19.2): `origin` is {origin client}, `via` is {provider}
+  (the mod whose request waits), the consent's `folder` is {folder},
+  `profile` is the launch's `profile` (19.3) or none, and `functions` are
+  {functions}.
 - **Origin client.** As in the terms above: carried by the host with the
   chain, never read from a request field.
 - **While a consent waits,** a request's requester gets the item
@@ -2734,18 +2842,25 @@ app, kept by the host with the grants.
   `account:openai` or `toolset:<name>`, the same in `consent-refused(what)`.
 - **Withdrawal** ends the dependent streams (outcome `gone`) and closes the
   dependent handles (19.5), at once, also inside a running chain (Q24).
-- **Previews** refuse both grants and both accounts: a preview holds
-  `ClaudeCode` and `ClaudeCodeShell` ungranted whatever the mod declares, and
-  every `account` use fails `no-account` (W5).
+- **Previews** refuse both grants and both accounts, and dev's fakes stand in
+  (W5; agentic-harness FUNCTIONAL AGT-F-31): a preview never runs the
+  participant's `claude`. It links `claude-code` and `claude-code-shell` as it
+  grants any declared grant, but a start there runs only the program given by
+  `Host::set_fake_claude` (19.9; dev's `fake-claude`), else ends `no-binary`;
+  every `account` use ends `no-account`; every consent is refused (Asking), so
+  a preview's `fake-claude` runs only in a scratch workspace (19.3).
 
 ```rust
 // Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","folder":"…"} etc.
+// Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<folder>",
+// "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent).
 pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String } }
 pub struct ConsentRequest {            // Debug, Clone, PartialEq
-    pub origin: LocalName,             // the origin client
-    pub via: LocalName,                // the mod whose request waits (a provider, the kernel)
-    pub consent: Consent,
-    pub functions: Vec<String>,        // Toolset only: the `<local>_<interface>_<function>` names it opens
+    pub origin: LocalName,             // the origin client: {origin client}
+    pub via: LocalName,                // the mod whose request waits (a provider, the kernel): {provider}
+    pub consent: Consent,              // Workspace: {folder}, canonical
+    pub profile: Option<String>,       // Workspace only: the launch's `profile` (19.3): {profile}
+    pub functions: Vec<String>,        // Toolset only: the `<local>_<interface>_<function>` names it opens: {functions}
 }
 pub enum ConsentAnswer { Granted, Refused }
 // Confirm (12.1) gains, default `Refused`:
@@ -2772,3 +2887,47 @@ Every error carries a message that names the cause.
 | `not-granted`, `unknown-handle`, `unknown-tool` | `agent-tools` | 19.5 |
 | `too-many`, `bad-id`, `bad-delay` | `timers` | 19.6 |
 | `not-owner`, `not-direct` | the providers' answers, carried by `start-error` and `session-error` of `claude-types` | the host never returns them itself; `not-owner`: the caller is not the kernel; `not-direct`: the stream is not handed to the caller (agentic-harness TECHNICAL 2.2, 10) |
+
+`bad-delay` is the host's own: agentic-harness TECHNICAL 12 names no code for
+a delay past 30 days (7 sets the limit), so the host refuses it at the call
+rather than clamp it.
+
+### 19.9 Fakes for tests and previews
+
+dev's fakes (dev 18; dev 17, question 16) stand in for `claude`, OpenAI and a
+judge. Two settings of the host let them in; neither exists in a participant
+home's production path.
+
+- **The preview's `claude`.** `Host::set_fake_claude(program)` names the
+  program that a preview runs for every `claude-code` and
+  `claude-code-shell` start, under all the rules of 19.3 (arguments, stdin,
+  `initialize`, `init`). Outside a preview it fails `bad_request` and
+  changes nothing. With none set, a preview's start ends `no-binary`. The
+  program `watane` takes it as `--fake-claude <path>` after `--preview`
+  (12.2); `watane-dev serve` passes the `fake-claude` it linked into
+  `<P>/claude/` (dev 18.4). Tests in a participant home give the path through
+  their fake `AccountSource::claude_binary` instead.
+- **Test routes** (feature `test-net`, off by default; host 1). With the
+  feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
+  request whose host equals a route's name to the route's local address,
+  with TLS for that name, and trust `root_pem` besides the webpki roots.
+  Every check of 19.4 runs on the URL as the mod wrote it, unchanged: the
+  `Http` grants, the `openai` endpoints, the judge binding and its parse.
+  `ScriptedResponses` gives the addresses (`responses_addr`, `judge_addr`)
+  and the root (`ca_pem`). Another crate that tests with it enables the
+  feature in its `[dev-dependencies]` only, and host's own A4 tests run with
+  it (A4's brief names how); the release builds of `watane` and the app
+  never hold it (checked in A4: `cargo tree -e features -p watane-host
+  --edges normal` names no `test-net`).
+
+```rust
+impl Host {
+    /// A preview only (else `bad_request`): the program run in place of `claude` (dev's `fake-claude`).
+    pub fn set_fake_claude(&self, program: &Path) -> Result<(), HostError>;
+    #[cfg(feature = "test-net")]
+    pub fn set_test_net(&self, net: TestNet);
+}
+#[cfg(feature = "test-net")]
+/// Debug, Clone. `routes`: ("api.openai.com", 127.0.0.1:port) and the judge host; `root_pem`: one PEM certificate.
+pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String }
+```

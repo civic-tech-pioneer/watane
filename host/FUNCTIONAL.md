@@ -111,7 +111,7 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-60** If a stream is full (256 items or 4 MiB in flight), then a `push` shall fail `full`, and a stream that stays full for 10 s without its consumer deferring it shall end `lagging`, both sides told. Traces: F-AGENT-5.
 - **HOST-F-61** The host shall refuse a `push` that would pass 128 MiB of queued items for an origin client or 512 MiB for the host with `full`, and shall end the streams of a page connection that holds more than 16 MiB `lagging`. Traces: F-AGENT-5.
 - **HOST-F-62** A page shall be the consumer of a stream only through the connection id that `watane.js` sends with `/call`, naming one of its own `/events` connections; the host shall keep one lossless queue for each connection and end its streams `gone` when it closes. Traces: F-AGENT-5, W8.
-- **HOST-F-63** The host shall apply the requests of a call chain (a stream open, a timer, a start, a session function) only after the chain has committed durably, and a call that fails or defers shall send nothing to `claude`, open no stream and leave no timer. Traces: F-AGENT-6.
+- **HOST-F-63** The host shall apply the requests of a call chain (a stream open, a timer, a start, a session function) and its stream pushes only after the chain's top-level call has succeeded and committed durably, and a call that fails or defers, together with every call nested in it, shall send nothing to `claude`, push nothing, open no stream and leave no timer. Traces: F-AGENT-6.
 - **HOST-F-64** The host shall keep timers for each mod in its state: ids of at most 128 bytes, at most 256 live, delays up to 30 days; a timer shall survive a restart, one due during downtime shall fire soon after start, and `after` with a live id shall replace it. Traces: F-AGENT-6.
 - **HOST-F-65** The host shall tell a mod the identity of its caller (`<publisher>/<slug>`, `local/<slug>`, `page`, `agent:<handle-name>`, or `host`), taken from the transport and never from a request field. Traces: F-AGENT-7.
 - **HOST-F-66** The host shall start `claude` only for a mod that holds the grant `claude-code` or `claude-code-shell`, with a launch document that parses to the closed grammar, with arguments it fixes, and with a workspace consent held; a value outside the grammar shall be refused `bad-launch` naming the field. Traces: F-AGENT-8.
@@ -119,7 +119,8 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 - **HOST-F-68** The host shall keep the consents of workspace, account `openai` and toolset per origin client with the grants, shall tell the requester `consent-pending {what}` once while one waits, and shall end the dependent streams and close the dependent handles when one is withdrawn. Traces: F-AGENT-9, F-INST-5.
 - **HOST-F-69** The host shall send a mod's HTTPS stream only to a host that the mod's `Http` grants name, never with a credential header of the mod, and without redirects; the account `openai` shall go only to the two OpenAI endpoints, and the account `judge` only to the provider it was entered for, with `POST`, to its entered origin. Traces: F-AGENT-9, W9.
 - **HOST-F-70** The host shall give an agent's handle only the tools of its toolsets, with the annotations `@parallel` and `@idempotent` of the tool mod, return one stream for a live job of the same handle and key, and refuse the management functions in a toolset unless the participant named them. Traces: F-AGENT-1, F-AGENT-4.
-- **HOST-F-71** In a preview, the host shall refuse the grants `claude-code` and `claude-code-shell` and both accounts. Traces: W5.
+- **HOST-F-71** In a preview, the host shall never run the participant's `claude` and shall refuse both accounts: a Claude Code start shall run only the fake program the preview was given, else end `no-binary`. Traces: W5, AGT-F-31.
+- **HOST-F-72** When the app reports that an account changed (a sign-out, a judge key removed), the host shall end every live stream that used that account `gone`. Traces: F-AGENT-9.
 
 ## 3. Acceptance scenarios
 
@@ -359,7 +360,10 @@ holds no grant beyond storage.
   `ended` line for the stream is `gone`.
 - **S53 Rollback** (HOST-F-63). When `api.after-then-fail("t", 10)` runs, then
   it fails with `trap`, the `timers` table has no `t`, and `fired` stays `[]`
-  after 100 ms. In a harness, the same call records no request; `api.after`
+  after 100 ms. When `relay-front`'s `after-then-fail("t", 10)` runs (its
+  nested `relay.after` succeeds, then `relay-front` traps), the same holds;
+  when its `push-then-fail(s, "x")` runs on a stream of `relay`, the consumer
+  gets no item. In a harness, the same call records no request; `api.after`
   records `timers.after {"id":"t","delay-ms":10}`.
 - **S54 Timers** (HOST-F-64). When `api.after("t", 50)` runs, `fired` is `["t"]`
   after 100 ms, once. `api.after("t", 5000)` then `api.after("t", 50)` fires
@@ -370,8 +374,8 @@ holds no grant beyond storage.
   of 129 bytes fails `bad-id`; a delay of 2 592 000 001 ms fails `bad-delay`
   and 2 592 000 000 ms succeeds.
 - **S56 Identity** (HOST-F-65). `api.who` of `relay`, called by a page, reports
-  the identity `page`; called through a call link by `recs` published by K,
-  `<K>/recs`; by a local `recs`, `local/recs`; by an agent of handle `h1`,
+  the identity `page`; through `relay-front`'s `who`, published by K,
+  `<K>/relay-front`; by a local `relay-front`, `local/relay-front`; by an agent of handle `h1`,
   `agent:h1`; in an item call, `host`. A `/call` body with a field `caller` is
   400 (S12 unchanged).
 - **S57 Launch** (HOST-F-66, 67). Given a mod with `claude-code` granted and a
@@ -381,19 +385,24 @@ holds no grant beyond storage.
   (dev 18), `say` of `"/compact"` fails `slash-command`; an `answer` `allow` to
   a check fails `not-allowed-here`; `fake-claude`'s recorded stdin holds no
   other line than the ones written for each accepted call.
-- **S58 Consent** (HOST-F-68). Given a launch with a workspace new for the
-  origin client and a fake app that holds the answer, the stream's first item is
+- **S58 Consent** (HOST-F-68). Given a launch with `"profile":"coder"` and a
+  workspace new for the origin client, and a fake app that holds the answer,
+  the fake app's `ConsentRequest` names the origin client, `via` the provider,
+  the folder and `profile` `"coder"`; the stream's first item is
   `{"type":"consent-pending","what":"workspace:<folder>"}`, once, and
   `fake-claude` is not started; after `Granted`, `initialized` follows and
   `installed.json` holds `{"kind":"workspace","folder":"<folder>"}` for the
   origin client; after `withdraw_consent`, the stream ends `gone`.
-- **S59 Accounts** (HOST-F-69, 71). A request with `account: "judge"` from
-  another mod, by `GET`, to another origin, to an origin not in `[http]`, with
-  `:443` or upper case in a form that differs after one parse, or with an
-  `account` of `"other"`, fails `destination`, and the scripted judge server
-  (dev 18) counts no request; with the key removed it ends `no-account`; a
-  redirect is not followed. In a preview, `claude-code` is ungranted and
-  `account: "openai"` ends `no-account`.
+- **S59 Accounts** (HOST-F-69, 71, 72). A request with `account: "judge"` from
+  another mod, by `GET`, to another origin, to an origin not in `[http]`, or
+  with an `account` of `"other"`, fails `destination`, and the scripted judge
+  server (dev 18) counts no request; a URL `https://JUDGE.example:443/v` for
+  the entered origin `https://judge.example` is sent; with no key it ends
+  `no-account`; a redirect is not followed; `account_changed(Judge)` ends a
+  live judge stream `gone`. `judge_origin("https://Judge.Example:443/")` is
+  `"https://judge.example"`, and with `/v1` or `?q` it fails `bad_request`. In
+  a preview with `--fake-claude`, a `claude-code` start runs that program; with
+  none it ends `no-binary`; `account: "openai"` ends `no-account`.
 - **S60 Tools** (HOST-F-70). Two `agent-tools.call` of one handle with key
   `k1` while the job lives return one stream id; `describe` lists
   `parallel: true` for a tool whose WIT doc comment holds `@parallel`; a
