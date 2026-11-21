@@ -2384,6 +2384,13 @@ undo, and none changes a WIT signature):
   rolled-back call, which only a nested call's committed write gives, Q3).
   Deliveries and timer firings run on host workers started by `Host::open`
   (19.2, Driver). Cost to undo: test code only.
+- **Q46** (decided by the foreman in S96-fix1, for the product owner to
+  confirm) Which grant a mod stream depends on (19.2, Ends: "lost grant").
+  The consumer's `Call` grant of the link through which `open` ran: when it is
+  revoked, withdrawn or unbound, or its provider changes, the stream ends
+  `gone` for both sides. A top-level `Host::call` of a mod has no link, so
+  its streams depend on none; a page or a host stream depends on none until
+  A2. Cost to undo: a field of the stream.
 
 ## 19. The agent layer (step 11)
 
@@ -2416,7 +2423,7 @@ an outside effect (19.6).
 **The origin client must still be there.** At apply (19.6), and at each
 firing of a timer, the host checks that the origin client is installed and
 enabled with the identity it carried. Else a request ends its stream `gone`,
-and a timer fires with its own mod as origin client. An identity alone does
+and a timer fires with its own mod as origin client. The host checks when a call starts, after the mod's call lock is taken, not before the wait: a call of the host's own (an `ended` or `ready`, an item call, a firing) whose origin client is gone runs with the called mod's own identity as origin client. An identity alone does
 not tell two installs apart (a local mod's is `local/<slug>`), so `remove`
 rewrites the timers that carry the removed mod to their own mod (4.4), and a
 later install with the same identity finds no timer that carries it. Each
@@ -2580,12 +2587,12 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Failed batch | delivered once more with the same numbers; a second failure ends the stream `consumer-failed` |
 | Deferred batch | an `items` call that returns `defer` is rolled back like a failed call (its pushes, writes and requests are dropped) but is not a failure: it does not count towards `consumer-failed`. The host keeps that batch and every later item, delivers nothing more on that stream, and a host stream stops reading its source, until the consumer calls `resume` |
 | Resume | consumer only; the host then delivers the kept batch again, with the same numbers. `resume` of a stream that is not deferred does nothing. It takes effect with its chain (Commit); one made in the call that returns `defer` is dropped with it |
-| Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what the chain has queued. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain |
+| Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what every chain in flight has queued, not only the current chain: a call checks and queues its effect under one lock of the host, and a chain releases its reservation when it applies or rolls back. So the in-flight limit, the budgets, the 32 open streams, the 256 live timers (their cancels count only in the chain that made them) and the single hand-off hold across chains running at once. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain |
 | Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
 | Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
 | In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source |
 | Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
-| Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent, closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
+| Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46); none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
 | Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
 | Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
 | Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
@@ -3047,8 +3054,8 @@ commit (7), together with its state writes; a rolled-back call's timers are
 never written. A due timer fires as a
 top-level call of the mod's `timer-sink.fired(id)` with caller `host`, fresh
 budget, and the stored origin client; one due during downtime fires soon after
-the host starts (within the first second). A firing for an id cancelled or
-replaced meanwhile is ignored. Timers survive a restart; a kill after the
+the host starts (within the first second). A firing reads its row again after the mod's call lock is taken: a firing for an id cancelled or
+replaced meanwhile (other due time) is ignored, and the origin client comes from that row. Firings run on one worker per mod with due timers, in due order, and a firing in progress is never armed again (`enable` reloads the rows; one firing per row due). Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
 armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export

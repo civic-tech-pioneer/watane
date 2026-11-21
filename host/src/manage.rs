@@ -593,6 +593,8 @@ impl Host {
     /// a manager that lost `Manage` loses its pending request, and every
     /// manager's pages are told to re-read.
     pub(crate) fn catalog_written(&self) {
+        // A mod stream depends on the consumer's `Call` grant of its link (19.2, Ends).
+        self.end_lost_streams();
         let managers: Vec<LocalName> = self
             .catalog
             .lock()

@@ -34,6 +34,8 @@ pub(crate) enum Effect {
         consumer: Consumer,
         producer: ModRef,
         origin: String,
+        /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
+        via: Option<watane_pkg::InterfaceName>,
     },
     Push {
         id: String,
@@ -184,6 +186,7 @@ impl Invocation {
                 consumer,
                 producer,
                 origin,
+                ..
             } if i == id => Some(View {
                 consumer: consumer.clone(),
                 producer: Producer::Mod(producer.clone()),
@@ -393,6 +396,7 @@ pub(crate) fn call(
                 consumer,
                 producer: me,
                 origin: inv.origin.clone(),
+                via: inv.via.clone(),
             });
             Ok(json!({"ok": id}))
         }
@@ -566,6 +570,7 @@ fn fake(
                 },
                 producer: me,
                 origin: inv.origin.clone(),
+                via: None,
             });
             result = json!({"ok": id});
         }
@@ -612,6 +617,40 @@ impl Host {
                     && m.error.is_none()
                     && local.is_none_or(|l| &m.local == l)
             })
+    }
+    /// Ends the mod streams whose consumer lost the `Call` grant, the link or the provider that
+    /// `open` ran through (19.2, Ends). Called after every catalog write.
+    pub(crate) fn end_lost_streams(&self) {
+        let vias = self.hub.vias();
+        if vias.is_empty() {
+            return;
+        }
+        let lost: Vec<String> = {
+            let catalog = self
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            vias.into_iter()
+                .filter(|(_, consumer, producer, via)| {
+                    !catalog.mods.iter().any(|m| {
+                        m.local == consumer.local
+                            && m.identity == consumer.identity
+                            && m.enabled
+                            && m.links.iter().any(|l| {
+                                matches!(l.kind, crate::LinkKind::Call)
+                                    && l.interface == *via
+                                    && l.provider.as_ref() == Some(producer)
+                            })
+                            && m.grants.iter().any(|g| {
+                                g.granted
+                                    && matches!(&g.grant, watane_pkg::Grant::Call { interface, .. } if interface == via)
+                            })
+                    })
+                })
+                .map(|(id, ..)| id)
+                .collect()
+        };
+        self.hub.end_gone(&lost);
     }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
