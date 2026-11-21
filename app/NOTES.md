@@ -1800,3 +1800,4 @@ refreshes itself (`app/ui/app.js`, 2 s visible, 10 s hidden, unthrottled since S
 condition in one JavaScript turn (`(window.__page.modsView(B), CONDITION)`). `until`
 (journey, gui_shell, gui_isolation) uses `App::is_true`, which treats a failed eval (`""`,
 page between documents) as "not yet"; the timeout message adds the last raw result.
+S98-fix1: `gui_shell::ac5_install_and_each_*` enabled `#approve` and clicked it in two evals; the consent focus gate could disable it between them (1 in 12 runs). Now one eval, one JS turn, as `journey::approve`.
