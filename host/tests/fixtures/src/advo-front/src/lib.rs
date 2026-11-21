@@ -38,6 +38,10 @@ impl exports::mods::advo_front::api::Guest for Guest {
         mods::relay::api::cancel(&s);
         sleep(ms);
     }
+    fn resume_then_sleep(s: String, ms: u64) {
+        let _ = mods::relay::api::resume(&s);
+        sleep(ms);
+    }
     fn mode(m: String) {
         watane::host::state::put("mode", m.as_bytes());
     }

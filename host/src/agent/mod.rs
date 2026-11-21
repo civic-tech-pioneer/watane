@@ -34,6 +34,7 @@ pub(crate) enum Effect {
         consumer: Consumer,
         producer: ModRef,
         origin: String,
+        origin_gen: Option<u64>,
         /// The consumer's `Call` link interface that `open` ran through (19.2, Ends).
         via: Option<watane_pkg::InterfaceName>,
         /// The install generations of the producer and of a mod consumer at the call: at apply
@@ -55,6 +56,8 @@ pub(crate) enum Effect {
     },
     Cancel {
         id: String,
+        /// The consumer the call acted for: applied only while it still is the stream's.
+        by: Consumer,
     },
     HandOff {
         id: String,
@@ -64,6 +67,7 @@ pub(crate) enum Effect {
     },
     Resume {
         id: String,
+        by: Consumer,
     },
     TimerAfter {
         owner: ModRef,
@@ -71,6 +75,7 @@ pub(crate) enum Effect {
         due: u64,
         delay_ms: u64,
         origin: String,
+        origin_gen: Option<u64>,
     },
     TimerCancel {
         owner: ModRef,
@@ -109,7 +114,7 @@ pub(crate) fn records(log: &[Effect]) -> Vec<RequestRecord> {
 /// An origin client that is no longer installed and enabled becomes the timer's own mod (19, Terms).
 pub(crate) fn timer_ops(
     log: &[Effect],
-    installed: impl Fn(&str) -> bool,
+    installed: impl Fn(&str, Option<u64>) -> bool,
 ) -> Vec<crate::state::TimerOp> {
     log.iter()
         .filter_map(|e| match e {
@@ -118,11 +123,12 @@ pub(crate) fn timer_ops(
                 id,
                 due,
                 origin,
+                origin_gen,
                 ..
             } => Some(crate::state::TimerOp::After {
                 key: crate::state::timer_key(&owner.identity, id),
                 due: *due,
-                origin: if installed(origin) {
+                origin: if installed(origin, *origin_gen) {
                     origin.clone()
                 } else {
                     owner.identity.clone()
@@ -415,6 +421,7 @@ pub(crate) fn call(
                 consumer,
                 producer: me,
                 origin: inv.origin.clone(),
+                origin_gen: inv.origin_gen,
                 via: inv.via.clone(),
                 producer_gen: inv.package_of(&inv.local),
                 consumer_gen: match &consumer_ref {
@@ -463,7 +470,10 @@ pub(crate) fn call(
             if let Some(view) = inv.view(&log, &id)
                 && inv.acts_for(&view.consumer)
             {
-                log.push(Effect::Cancel { id });
+                log.push(Effect::Cancel {
+                    id,
+                    by: view.consumer,
+                });
             }
             Ok(Value::Null)
         }
@@ -476,7 +486,10 @@ pub(crate) fn call(
             if !inv.acts_for(&view.consumer) {
                 return Ok(err(StreamError::NotYours));
             }
-            log.push(Effect::Resume { id });
+            log.push(Effect::Resume {
+                id,
+                by: view.consumer,
+            });
             Ok(ok())
         }
         ("streams", "hand-off") => {
@@ -553,6 +566,7 @@ pub(crate) fn call(
                 due: unix_ms().saturating_add(delay),
                 delay_ms: delay,
                 origin: inv.origin.clone(),
+                origin_gen: inv.origin_gen,
             });
             Ok(ok())
         }
@@ -595,6 +609,7 @@ fn fake(
                 },
                 producer: me,
                 origin: inv.origin.clone(),
+                origin_gen: None,
                 via: None,
                 producer_gen: None,
                 consumer_gen: None,
@@ -609,6 +624,7 @@ fn fake(
                     due: 0,
                     delay_ms: *delay,
                     origin: inv.origin.clone(),
+                    origin_gen: None,
                 });
             }
         }
@@ -688,6 +704,7 @@ impl Host {
                     ref producer,
                     ref consumer,
                     ref origin,
+                    origin_gen,
                     ref via,
                     producer_gen,
                     consumer_gen,
@@ -705,11 +722,11 @@ impl Host {
                                 && m.enabled
                                 && m.error.is_none()
                                 && local.is_none_or(|l| &m.local == l)
-                                && pkg.is_none_or(|g| catalog.install_of(&m.local) == Some(g))
+                                && pkg.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
                         })
                     };
                     let valid = live(Some(&producer.local), &producer.identity, producer_gen)
-                        && live(None, origin, None)
+                        && live(None, origin, origin_gen)
                         && match consumer {
                             Consumer::Mod(c) => {
                                 live(Some(&c.local), &c.identity, consumer_gen)
@@ -732,7 +749,7 @@ impl Host {
                             && m.identity == to.identity
                             && m.enabled
                             && m.error.is_none()
-                            && to_gen.is_none_or(|g| catalog.install_of(&m.local) == Some(g))
+                            && to_gen.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
                     });
                     self.hub.apply(self, effect, valid);
                 }

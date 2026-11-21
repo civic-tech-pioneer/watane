@@ -352,10 +352,9 @@ impl Host {
             // An update of either side ends its streams (19.2, Ends).
             self.hub.end_mod(&identity);
         }
-        if !updates.is_empty() {
-            // A firing that found its mod updated kept its row; arm it again (19.6).
-            self.timers.reload(self);
-        }
+        // A firing that found its mod updated kept its row, and a mod whose error cleared gets
+        // its timers back: arm every row again (19.6).
+        self.timers.reload(self);
         for local in updates {
             self.bus.send(&local, bus::RELOAD);
         }
@@ -511,6 +510,8 @@ impl Host {
         self.state
             .timers_removed(&identity, &owners)
             .map_err(|e| HostError::Internal(e.message))?;
+        // Relinking can clear another mod's error: its timers wait no more (19.6).
+        self.timers.reload(self);
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
         Ok(())

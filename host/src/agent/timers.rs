@@ -223,9 +223,10 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
         return;
     }
     if let Err(error) = done.result {
-        // A mod disabled or updated while the firing waited keeps its row: its timers wait, and
-        // `enable` or the next load arms them (19.6).
-        if matches!(error.code, CallCode::Disabled | CallCode::NoMod) {
+        // A mod disabled, removed or updated while the firing waited keeps its row: its timers
+        // wait, and `enable`, an update or the next load arms them (19.6). A nested call that
+        // failed for another mod is a failure like any other.
+        if done.unavailable && matches!(error.code, CallCode::Disabled | CallCode::NoMod) {
             return;
         }
         eprintln!(

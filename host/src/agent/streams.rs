@@ -102,6 +102,8 @@ struct Stream {
     consumer: Consumer,
     producer: Producer,
     origin: String,
+    /// The install generation of the origin client when the stream opened (19, Terms).
+    origin_gen: Option<u64>,
     next_seq: u64,
     queue: VecDeque<Item>,
     bytes: usize,
@@ -122,7 +124,7 @@ impl Stream {
     fn new(
         consumer: Consumer,
         producer: Producer,
-        origin: String,
+        (origin, origin_gen): (String, Option<u64>),
         test: bool,
         via: Option<InterfaceName>,
     ) -> Self {
@@ -130,6 +132,7 @@ impl Stream {
             consumer,
             producer,
             origin,
+            origin_gen,
             next_seq: 1,
             queue: VecDeque::new(),
             bytes: 0,
@@ -180,6 +183,7 @@ enum Task {
     Notify {
         sid: String,
         origin: String,
+        origin_gen: Option<u64>,
         what: Notify,
     },
 }
@@ -430,13 +434,14 @@ impl Hub {
                 consumer,
                 producer,
                 origin,
+                origin_gen,
                 via,
                 ..
             } => {
                 inner.create(
                     id.clone(),
                     consumer,
-                    (Producer::Mod(producer), origin, via),
+                    (Producer::Mod(producer), (origin, origin_gen), via),
                     false,
                 );
                 if !valid {
@@ -466,7 +471,11 @@ impl Hub {
                     inner.end(&id, outcome, true);
                 }
             }
-            Effect::Cancel { id } => inner.end(&id, json!("cancelled"), false),
+            Effect::Cancel { id, by } => {
+                if inner.streams.get(&id).is_some_and(|s| s.consumer == by) {
+                    inner.end(&id, json!("cancelled"), false);
+                }
+            }
             Effect::HandOff { id, .. } if !valid => {
                 inner.end(&id, json!("gone"), false);
             }
@@ -482,8 +491,9 @@ impl Hub {
                     inner.schedule(&id);
                 }
             }
-            Effect::Resume { id } => {
+            Effect::Resume { id, by } => {
                 if let Some(s) = inner.streams.get_mut(&id)
+                    && s.consumer == by
                     && s.deferred.take().is_some()
                 {
                     inner.schedule(&id);
@@ -633,7 +643,12 @@ impl Hub {
     fn exec(self: &Arc<Self>, host: &Arc<Host>, local: &LocalName, task: Task) {
         match task {
             Task::Items(sid) => self.exec_items(host, local, &sid),
-            Task::Notify { sid, origin, what } => {
+            Task::Notify {
+                sid,
+                origin,
+                origin_gen,
+                what,
+            } => {
                 let (function, args) = match what {
                     Notify::SinkEnded(outcome) => (
                         format!("{STREAM_SINK}.ended"),
@@ -645,10 +660,10 @@ impl Hub {
                     ),
                     Notify::Ready => (format!("{STREAM_PRODUCER}.ready"), json!({"s": sid})),
                 };
-                let done = run_start(
-                    host,
-                    Start::internal(Who::Host, local.clone(), function, Args::Json(args), origin),
-                );
+                let mut start =
+                    Start::internal(Who::Host, local.clone(), function, Args::Json(args), origin);
+                start.origin_gen = origin_gen;
+                let done = run_start(host, start);
                 if let Err(error) = done.result {
                     eprintln!(
                         "watane: stream {sid} notification to {local} failed: {:?}: {}",
@@ -691,9 +706,14 @@ impl Hub {
                 .min(s.queue.len());
             s.state = State::Running;
             let items: Vec<Item> = s.queue.iter().take(n).cloned().collect();
-            (n, items, s.producer.clone(), s.origin.clone())
+            (
+                n,
+                items,
+                s.producer.clone(),
+                (s.origin.clone(), s.origin_gen),
+            )
         };
-        let (n, items, producer, origin) = prepared;
+        let (n, items, producer, (origin, origin_gen)) = prepared;
         let hop = items
             .iter()
             .map(|i| i.hop)
@@ -727,6 +747,7 @@ impl Hub {
             origin,
         );
         start.hop = hop;
+        start.origin_gen = origin_gen;
         start.defers = true;
         let done = run_start(host, start);
         let taken = matches!(&done.result, Ok(Value::String(v)) if v == "taken");
@@ -820,7 +841,12 @@ impl Hub {
             return Err(StreamError::Full);
         }
         let id = random_id();
-        inner.create(id.clone(), consumer, (Producer::Host, origin, None), true);
+        inner.create(
+            id.clone(),
+            consumer,
+            (Producer::Host, (origin, None), None),
+            true,
+        );
         Ok(id)
     }
     /// A push by the host as producer, applied at once.
@@ -897,7 +923,7 @@ impl Inner {
         &mut self,
         id: String,
         consumer: Consumer,
-        (producer, origin, via): (Producer, String, Option<InterfaceName>),
+        (producer, origin, via): (Producer, (String, Option<u64>), Option<InterfaceName>),
         test: bool,
     ) {
         if let Some(key) = consumer.key() {
@@ -1071,7 +1097,8 @@ impl Inner {
             if !room {
                 continue;
             }
-            let (origin, producer) = (s.origin.clone(), s.producer.clone());
+            let (origin, origin_gen, producer) =
+                (s.origin.clone(), s.origin_gen, s.producer.clone());
             let s = self.streams.get_mut(&id).expect("checked above");
             s.needs_ready = None;
             s.full_since = None;
@@ -1083,6 +1110,7 @@ impl Inner {
                     .push_back(Task::Notify {
                         sid: id,
                         origin,
+                        origin_gen,
                         what: Notify::Ready,
                     });
             }
@@ -1120,7 +1148,8 @@ impl Inner {
         };
         if !s.producer_told {
             s.producer_told = true;
-            let (producer, origin) = (s.producer.clone(), s.origin.clone());
+            let (producer, origin, origin_gen) =
+                (s.producer.clone(), s.origin.clone(), s.origin_gen);
             match producer {
                 Producer::Mod(p) => {
                     self.tasks
@@ -1129,6 +1158,7 @@ impl Inner {
                         .push_back(Task::Notify {
                             sid: id.to_owned(),
                             origin,
+                            origin_gen,
                             what: Notify::ProducerEnded(outcome.clone()),
                         });
                 }
@@ -1169,6 +1199,7 @@ impl Inner {
                     .push_back(Task::Notify {
                         sid: id.to_owned(),
                         origin: s.origin,
+                        origin_gen: s.origin_gen,
                         what: Notify::SinkEnded(outcome),
                     });
             }

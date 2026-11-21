@@ -2422,7 +2422,7 @@ an outside effect (19.6).
 
 **The origin client must still be there.** At apply (19.6), and at each
 firing of a timer, the host checks that the origin client is installed and
-enabled with the identity it carried. Else a request ends its stream `gone`,
+enabled with the identity it carried and the install generation it had (19.6, At apply). Else a request ends its stream `gone`,
 and a timer fires with its own mod as origin client. The host checks when a
 call starts, after the mod's call lock is taken, not before the wait: a call of
 the host's own (an `ended` or `ready`, an item call, a firing) whose origin
@@ -3035,21 +3035,25 @@ and `hand-off` are not requests, but they follow the same chain rule below
   is the human's then.
 - **At apply** the host checks again that the mod is enabled and holds the
   grant or consent the request needs (the rule of 6.10), and that the origin
-  client is installed and enabled with the identity that the request
-  recorded at its call (19, Terms); a request that fails this ends its
+  client is installed and enabled with the identity and the install
+  generation that the request recorded at its call (19, Terms); a request that fails this ends its
   stream `gone`. Every check that a catalog change can falsify is made again
   where the effect lands, under the catalog lock that the change takes: an
-  `Open` and a `HandOff` record the install generation of the mods they name
-  at their call: a number in the running catalog only (not in
-  `installed.json`; a restart ends every stream anyway) that every install,
-  update and removal of a local name replaces by a number never used before.
+  `Open` and a `HandOff` record the install generation of the mods they name,
+  and of the origin client, at their call: a number in the running catalog
+  only (not in `installed.json`; a restart ends every stream anyway), given
+  to every installed local name when the catalog loads and replaced, by a
+  number never used before, at every install, update and removal. A
+  recorded generation that is missing fails the check.
   At apply a side updated, removed or reinstalled since (another
   generation), or not enabled, or a consumer that lost the `Call` grant, link
   or provider of `via` (Q46), ends the stream `gone` at once, both sides told;
   a `HandOff` whose target fails this ends its stream `gone`. The other
-  effects of 19.2 Commit need no check: `push`, `close`, `cancel` and
-  `resume` name a stream by its random id and act only if the hub still holds
-  that stream with the producer or consumer the call named, and every change
+  effects of 19.2 Commit need no catalog check: `push` and `close` carry the
+  producer, `cancel` and `resume` the consumer that the call acted for, and
+  the hub acts only if it still holds that stream with that producer or
+  consumer (a hand-off in between makes a stale `cancel` or `resume` do
+  nothing), and every change
   that falsifies their call (disable, update, removal, a lost grant, an
   `Open` or `HandOff` that failed above) ends the stream in the hub first, so
   they find nothing.
@@ -3082,10 +3086,19 @@ per row due), and a row that a reload skipped for that reason is armed when the
 firing ends. A firing that finds its mod disabled or updated while it waited
 keeps its row, and `enable`, an update or the next load arms it; it is no
 failure. The origin client of the rows a chain writes is checked again at the
-depth-0 commit, under the catalog lock, held to the end of the write
-transaction of the rows; `remove` changes the catalog under that lock, so
-either the commit sees the origin gone and writes the timer's own mod, or
-`remove`'s rewrite runs after the commit and rewrites the row. Timers survive a restart; a kill after the
+depth-0 commit, by identity and install generation, inside the write
+transaction of the rows (after `begin_write`, reading the catalog for a
+moment; the catalog lock is not held across the commit or its fsync).
+`remove` changes the catalog before it opens the write transaction of its
+rewrite, and redb runs one write transaction at a time, so either the commit
+runs first and `remove`'s rewrite rewrites its row, or it runs after the
+catalog change and sees the origin gone, and writes the timer's own mod. The
+`timers` table keeps the identity only. A firing keeps its row when its own
+mod is disabled, removed or updated; a nested call of the firing that fails
+`disabled` or `no-mod` for another mod is a failure like any other (the row
+is deleted). A mod in the `error` state gets no firing; its timers wait, and
+the reload after every catalog commit and removal arms them when the error
+clears. Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
 armed from state at start, and its firing happens once. A mod that is
 disabled gets no firing; its timers wait. A mod that does not export
