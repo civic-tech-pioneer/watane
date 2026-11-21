@@ -1787,3 +1787,9 @@ with `Failed to create netmon monitor`, before reaching integration tests.
 The separate default `cargo test --test it` passed all 53 tests.
 `cargo clippy --all-targets --features driver -- -D warnings`,
 `cargo fmt --check`, and `cargo +nightly fmt --check` pass.
+
+Validator, round 1: the foreman changed the tests at `519ef4a` to keep
+16 chained `style.css?s98=n` requests running until the exit (200 one-shot
+requests all finished before `quit` and were green on the old exit). With
+that change AC1 was red at `090f08f` ("app did not quit") and green after
+the fix on this Mac; AC2 is green on both, as a guard.
