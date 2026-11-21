@@ -335,26 +335,35 @@ app is a fake that records what it is asked.
 
 ### 3.6 Step 11
 
-The fixture `relay` (TECHNICAL 13.1) is the consumer and producer, with a
-crate-private test source for host streams. Unless a scenario says otherwise it
-holds no grant beyond storage.
+The fixture `relay` (TECHNICAL 13.1) is the consumer and producer, with the
+test streams of TECHNICAL 19.9 (feature `test-streams`) as the producer of
+host streams: a test source, a held consumer that takes nothing, a clock the
+test moves, and the list of `items` calls per stream. Unless a scenario says
+otherwise `relay` holds no grant beyond storage and its call of `latch`.
 
-- **S48 Failed batch** (HOST-F-57, 58). Given a mod stream from `relay` A to
-  `relay` B whose `items` traps once. When A pushes `"a"` and `"b"`, then B's
-  `items` runs twice, both times with seq `[1,2]`; `received` lists `["a","b"]`
-  once. When `items` traps both times, B's `ended` line is `consumer-failed`.
-- **S49 Defer** (HOST-F-59). Given B in mode `defer`. When A pushes `"a"`, B
-  is called once and `received` is `[]`; A pushes `"b"` and B is not called.
-  When B calls `resume` and sets mode `taken`, `received` is `["a","b"]` with
-  seq `[1,2]`, and the stream is not ended. A stream left deferred for 5
-  minutes (the test clock) ends `consumer-failed`.
-- **S50 Full and lag** (HOST-F-60). Given a consumer that never takes a batch
-  and does not defer, a producer that pushes 257 items of 1 byte gets `full` at
-  the 257th; 10 s after that push both sides get `ended` with `lagging`; with
-  the consumer in mode `defer`, no `lagging` comes, whatever the time.
-- **S51 Budgets** (HOST-F-61). Given an origin client whose 32 streams hold
-  4 MiB each (128 MiB queued), a `push` of 1 byte to any of them gets `full`. A page connection that stops reading past 16 MiB ends,
-  and each of its streams ends `lagging`.
+- **S48 Failed batch** (HOST-F-57, 58). Given a host stream from the test
+  source to `relay` in mode `trap-once`. When the source pushes `"a"` and
+  `"b"`, then the stream's deliveries are `[1,2]` failed, then `[1,2]` taken;
+  `received` lists `["a","b"]` once. In mode `trap`, the deliveries are
+  `[1,2]` failed twice and `relay`'s `ended` line is `<s> consumer-failed`.
+- **S49 Defer** (HOST-F-59). Given `relay` in mode `defer`. When the source
+  pushes `"a"`, the deliveries are `[1]` deferred, `received` is `[]` and the
+  source is `paused`; the source pushes `"b"` and no delivery follows. When
+  `relay`'s `mode("taken")` and `resume(s)` run, the next delivery is `[1,2]`
+  taken, `received` is `["a","b"]`, and the stream is not ended. Two defers
+  in a row do not end it. A stream left deferred for 5 minutes (the test
+  clock advanced) ends `consumer-failed`.
+- **S50 Full and lag** (HOST-F-60). Given a host stream to the held consumer
+  (it never takes a batch and does not defer), the source's 257th push of 1
+  byte gets `full`; when the test clock passes 10 s after that push, the
+  source's `ended()` is `lagging`. With `relay` in mode `defer` as consumer,
+  no `lagging` comes, whatever the clock (until the 5-minute backstop).
+- **S51 Budgets** (HOST-F-61). Given 33 held streams of one origin client
+  `o1`, the first 32 holding 4 MiB less 1 byte each, a push of 64 bytes to
+  the 33rd gets `full` (the origin client's 128 MiB, not the stream's 4 MiB);
+  given 4 origin clients each holding 128 MiB less 64 bytes, a push of 4 KiB
+  for a fifth origin client gets `full` (the host's 512 MiB). A page connection
+  that stops reading past 16 MiB ends, and each of its streams ends `lagging`.
 - **S52 Page connection** (HOST-F-62). Given `relay` served with a page. When
   `/events` opens, then its first message is `{"type":"connection","id":"<32 hex>"}`;
   a `/call` of `api.open` with that id, then `api.push(s, "x")`, gives the page
@@ -379,7 +388,8 @@ holds no grant beyond storage.
 - **S56 Identity** (HOST-F-65). `api.who` of `relay`, called by a page, reports
   the identity `page`; through `relay-front`'s `who`, published by K,
   `<K>/relay-front`; by a local `relay-front`, `local/relay-front`; by an agent of handle `h1`,
-  `agent:h1`; in an item call, `host`. A `/call` body with a field `caller` is
+  `agent:h1`; in an item call of a host stream, `host` (the state key `who/<s>` of
+  `relay`, read from `state/state.redb` after `drop(host)`). A `/call` body with a field `caller` is
   400 (S12 unchanged).
 - **S57 Launch** (HOST-F-66, 67). Given a mod with `claude-code` granted and a
   launch with `"mode":"auto"`, `start` fails `bad-launch {field: "mode"}`; the
