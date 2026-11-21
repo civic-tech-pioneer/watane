@@ -79,6 +79,7 @@ impl PageBus {
             connection,
             announced: false,
             turn: false,
+            closing: false,
         };
         Sse::new(stream)
             .keep_alive(KeepAlive::new().interval(interval).text("ping"))
@@ -100,6 +101,8 @@ struct PageStream {
     connection: Option<ConnGuard>,
     announced: bool,
     turn: bool,
+    /// The bus said close (disable, removal): the queue is written out first (8.4).
+    closing: bool,
 }
 enum Got {
     Message(Event),
@@ -151,6 +154,13 @@ impl Stream for PageStream {
             self.announced = true;
             return Poll::Ready(Some(Ok(Event::default().data(message))));
         }
+        if self.closing {
+            // The mod was disabled or removed: its streams ended `gone`; write their ends.
+            return match self.queue(cx) {
+                Got::Message(event) => Poll::Ready(Some(Ok(event))),
+                _ => Poll::Ready(None),
+            };
+        }
         // Alternate, so that neither the bus nor the queue starves the other.
         self.turn = !self.turn;
         let order = if self.turn {
@@ -162,6 +172,10 @@ impl Stream for PageStream {
             let got = if bus { self.bus(cx) } else { self.queue(cx) };
             match got {
                 Got::Message(event) => return Poll::Ready(Some(Ok(event))),
+                Got::End if bus && self.connection.is_some() => {
+                    self.closing = true;
+                    return self.poll_next(cx);
+                }
                 Got::End => return Poll::Ready(None),
                 Got::Nothing => {}
             }

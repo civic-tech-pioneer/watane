@@ -1004,3 +1004,35 @@ fn ac10_a_pushed_item_is_dropped_with_its_chain_when_the_front_mod_fails() {
     settle();
     assert_eq!(lines(&env.host, "api.received"), Vec::<String>::new());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac5_disabling_the_pages_mod_writes_stream_end_gone_before_the_connection_closes() {
+    let w = serve_relay().await;
+    let mut page = Page::open(&w.client, &w.origin).await;
+    let mut ids = vec![];
+    for _ in 0..2 {
+        let opened = w.call("api.open", json!(null), Some(&page.id)).await;
+        ids.push(opened["value"]["ok"].as_str().unwrap().to_owned());
+    }
+    let host = Arc::clone(w.host());
+    tokio::task::spawn_blocking(move || host.disable(&local("relay")).unwrap())
+        .await
+        .unwrap();
+    let mut ended = vec![];
+    for _ in 0..2 {
+        let m = page.next().await;
+        assert_eq!(m["type"], "stream-end", "{m}");
+        assert_eq!(m["outcome"], "gone");
+        ended.push(m["stream"].as_str().unwrap().to_owned());
+    }
+    ended.sort();
+    ids.sort();
+    assert_eq!(ended, ids);
+    // Then the connection ends.
+    let rest = tokio::time::timeout(Duration::from_secs(5), page.response.chunk())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(rest.is_none() || rest.unwrap().is_empty());
+    w.served.shutdown().await;
+}
