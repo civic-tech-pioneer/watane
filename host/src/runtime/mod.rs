@@ -88,7 +88,7 @@ pub(crate) fn compile(engine: &Engine, m: &Mod) -> Result<Option<Arc<Compiled>>,
             });
         let allowed = base
             || name == "watane:host/caller@0.1.0"
-            || (linker::AGENT_IMPORTS.contains(&&*name)
+            || (linker::AGENT_IMPORTS.contains(&name)
                 && (name != "watane:host/claude-code@0.1.0"
                     || m.grants().contains(&watane_pkg::Grant::ClaudeCode))
                 && (name != "watane:host/claude-code-shell@0.1.0"
@@ -234,9 +234,7 @@ impl Compiled {
         self.functions
             .get(name)
             .filter(|f| f.host_only)
-            .ok_or_else(|| {
-                CallError::new(CallCode::NoFunction, format!("no host export {name}"))
-            })
+            .ok_or_else(|| CallError::new(CallCode::NoFunction, format!("no host export {name}")))
     }
     fn find(&self, name: &str, subscription: bool) -> Result<&Function, CallError> {
         if !subscription {

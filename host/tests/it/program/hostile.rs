@@ -491,7 +491,10 @@ async fn ac7_events_refuse_foreign_origins_and_do_not_leak_changes() {
     assert_eq!(stream.headers()["content-type"], "text/event-stream");
     // Step 11 (8.4): the first message of a connection carries its id.
     let first = stream.chunk().await.unwrap().unwrap();
-    assert!(String::from_utf8_lossy(&first).starts_with("data: {\"type\":\"connection\",\"id\":\""), "{first:?}");
+    assert!(
+        String::from_utf8_lossy(&first).starts_with("data: {\"type\":\"connection\",\"id\":\""),
+        "{first:?}"
+    );
     counter_call(&preview, "api.add", 1);
     tokio::time::timeout(Duration::from_millis(500), stream.chunk())
         .await
@@ -590,7 +593,10 @@ impl PageStream {
         let first = tokio::time::timeout(Duration::from_secs(3), stream.frame())
             .await
             .unwrap();
-        assert!(first.starts_with("data: {\"type\":\"connection\",\"id\":\""), "{first:?}");
+        assert!(
+            first.starts_with("data: {\"type\":\"connection\",\"id\":\""),
+            "{first:?}"
+        );
         stream
     }
 
