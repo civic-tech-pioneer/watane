@@ -5,9 +5,11 @@
 mod support;
 
 mod add_provider;
+mod agent_layer_world;
 mod component;
 mod deps_json;
 mod folder;
+mod grant_claude_code;
 mod grant_manage;
 mod grants;
 mod mod_toml_main;
@@ -15,6 +17,7 @@ mod mod_toml_repository;
 mod names;
 mod outlet_functions;
 mod package;
+mod release_agent_grants;
 mod release_check;
 mod release_golden;
 mod release_refusals;

@@ -26,6 +26,7 @@ fn ac4_hello_page_only() {
             collects: vec![],
             calls: vec![],
             subscriptions: vec![],
+            host_exports: vec![],
             storage: false,
             manage: false,
             http: false
