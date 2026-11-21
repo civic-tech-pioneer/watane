@@ -806,3 +806,156 @@ fn adv_s96_cancel_in_flight_ends_the_stream_after_its_hand_off() {
         "the old consumer's cancel, applied after the hand-off, ended the new consumer's stream"
     );
 }
+
+// ---- S96-fix3 -----------------------------------------------------------------------------
+
+/// 19.6 (At apply): a mod loaded at start has an install generation: a hand-off in flight whose
+/// target is updated after a restart ends the stream `gone`.
+#[test]
+fn ac1_a_hand_off_in_flight_ends_gone_when_its_target_is_updated_after_a_restart() {
+    let Env { dir, host } = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    drop(host);
+    std::thread::sleep(Duration::from_millis(300));
+    let host = watane_host::Host::open(
+        dir.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let env = Env { dir, host };
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo-front");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.hand-off-then-sleep",
+        json!({"s": s.id(), "ms": 1000}),
+    );
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    first.finish();
+    wait("the end", Duration::from_secs(5), || s.ended().is_some());
+    assert_eq!(s.ended(), Some(json!("gone")));
+}
+
+/// 19, Terms: the origin client is an identity and an install. `relay` is the origin client of
+/// an `open` in flight; it is removed and installed again; at apply the stream ends `gone`.
+#[test]
+fn ac2_an_open_in_flight_ends_gone_when_its_origin_client_is_reinstalled() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let host = std::sync::Arc::clone(&env.host);
+    let first = std::thread::spawn(move || {
+        call_as(
+            &host,
+            Caller::Mod(local("relay")),
+            "advo-front",
+            "api.open-then-sleep",
+            json!({"ms": 1000}),
+        )
+        .unwrap()
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    env.host.remove(&local("relay"), true).unwrap();
+    super::streams::install(&env.host, &["relay"]);
+    let opened = first.join().unwrap();
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    let line = format!("{s} gone");
+    wait("the consumer's end", Duration::from_secs(10), || {
+        page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
+    });
+}
+
+/// 19.2 (Commit): a `resume` applies only for the consumer the call acted for. The old consumer's
+/// `resume`, in flight while the stream is handed off, does not resume the new consumer's stream.
+#[test]
+fn ac3_a_stale_resume_after_a_hand_off_does_not_resume_the_stream() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let s = env
+        .host
+        .test_stream(watane_host::TestConsumer::Mod(local("relay")))
+        .unwrap();
+    call_as(
+        &env.host,
+        Caller::Page,
+        "relay",
+        "api.mode",
+        json!({"m": "defer"}),
+    )
+    .unwrap();
+    s.push(b"a").unwrap();
+    wait("deferred", Duration::from_secs(5), || s.paused());
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.resume-then-sleep",
+        json!({"s": s.id(), "ms": 1000}),
+    );
+    let handed = call_as(
+        &env.host,
+        Caller::Mod(local("advo-front")),
+        "relay",
+        "api.hand-off",
+        json!({"s": s.id()}),
+    )
+    .unwrap();
+    assert_eq!(handed, json!({"ok": null}));
+    first.finish();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        s.paused(),
+        "the stale resume resumed the new consumer's stream"
+    );
+}
+
+/// 19.6 (Timers): a timer of a mod in the error state waits, and is armed again when the error
+/// clears. After a restart `advo`'s logic part does not load (an error); an update clears it.
+#[test]
+fn ac5_a_timer_of_a_mod_in_error_waits_until_the_error_clears() {
+    let Env { dir, host } = Env::new(&["latch", "relay", "advo"]);
+    page(
+        &Env {
+            dir: tempfile::tempdir().unwrap(),
+            host: std::sync::Arc::clone(&host),
+        },
+        "advo",
+        "api.after",
+        json!({"id":"t","ms":300}),
+    );
+    drop(host);
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(dir.path().join("mods/advo/logic.wasm"), b"not wasm").unwrap();
+    let host = watane_host::Host::open(
+        dir.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let env = Env { dir, host };
+    assert!(
+        env.host.get(&local("advo")).unwrap().error.is_some(),
+        "advo has no error"
+    );
+    std::thread::sleep(Duration::from_millis(1200));
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    assert!(env.host.get(&local("advo")).unwrap().error.is_none());
+    wait("the timer", Duration::from_secs(10), || {
+        page(&env, "advo", "api.fired", Value::Null) == json!(["t"])
+    });
+}

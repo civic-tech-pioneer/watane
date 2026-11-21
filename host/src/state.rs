@@ -346,13 +346,20 @@ impl Transaction {
         self.overlay.insert(key, None);
     }
     /// Commits the overlay and the chain's timer operations in one write transaction (7).
-    pub fn commit(self, timers: &[TimerOp]) -> Result<bool, CallError> {
-        if self.overlay.is_empty() && timers.is_empty() {
+    /// `timers` is called inside the transaction, after `begin_write`: redb runs one write
+    /// transaction at a time, so what it reads of the catalog is ordered against the rewrite
+    /// of `remove` (19.6, Timers). `has_timers` says whether it can return anything.
+    pub fn commit(
+        self,
+        timers: &dyn Fn() -> Vec<TimerOp>,
+        has_timers: bool,
+    ) -> Result<bool, CallError> {
+        if self.overlay.is_empty() && !has_timers {
             return Ok(false);
         }
         let mut changed = false;
         let txn = self.db.begin_write().map_err(CallError::internal)?;
-        apply_timer_ops(&txn, timers)?;
+        apply_timer_ops(&txn, &timers())?;
         if !self.overlay.is_empty() {
             let name = format!("s/{}", self.id);
             let mut table = txn
