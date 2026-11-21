@@ -2,3 +2,7 @@
 factory/runs/
 .DS_Store
 mutants.out*/
+.idea/
+.ratchet/
+reports/
+research_notes/
