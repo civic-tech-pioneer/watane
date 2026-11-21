@@ -1,0 +1,2 @@
+name = "advo"
+summary = "S96 adversary fixture: a producer that sets a timer when its stream ends."
