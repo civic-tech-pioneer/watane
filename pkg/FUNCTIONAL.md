@@ -84,6 +84,8 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
   Traces: F-APP-7, J10.
 - **PKG-F-28** (step 10) pkg shall give a mod whose world imports the management interface of the host the grant to manage mods, and carry that grant in the release body like any other.
   Traces: F-RUN-7, F-INST-9, J10.
+- **PKG-F-29** (step 11) pkg shall give a mod whose world imports an agent-layer interface of the host its own grant, or none, as the table of `TECHNICAL.md` 4.5 says: importing the unchecked Claude Code start gives the grant to start Claude Code, importing the one with shell and web gives the grant to start Claude Code with shell and web, and the other agent-layer interfaces give none. pkg shall allow a mod to export the three host-only interfaces for streams and timers and no other host interface, and shall carry the two Claude Code grants in the release body like any other grant.
+  Traces: F-RUN-7, F-INST-1, F-INST-9, F-AGENT-5, F-AGENT-7.
 
 ## Acceptance scenarios
 
@@ -123,3 +125,6 @@ Each scenario is one test. The expected values come from this file or from
 | A29 | a folder with `main = true` and no `ui/index.html`, or with `main = "yes"` | it is read | refused with rule `mod-toml` and the messages of `TECHNICAL.md` 4.2 | PKG-F-27 |
 | A30 | a world that imports `watane:host/state@0.1.0` and `watane:host/manage@0.1.0` (with a page and an export, so it has a logic part) | it is read | `World::manage` is true; grants exactly `[storage, manage]` | PKG-F-28 |
 | A31 | the mod of A30 | its release body is made and encoded | the grants array is the hex `828100 8104`; decode gives `[Storage, Manage]` back | PKG-F-28 |
+| A32 | a world that imports `watane:host/state@0.1.0`, `watane:host/claude-code@0.1.0` and `watane:host/claude-session@0.1.0`; one that imports `claude-code-shell` and `claude-types`; one with both starts | each is read | grants `[storage, claude-code]`, `[storage, claude-code-shell]`, and both; the JSON `{"kind":"claude-code"}` and `{"kind":"claude-code-shell"}` and the texts `claude-code`, `claude-code-shell` read back | PKG-F-19, PKG-F-29 |
+| A33 | a world that imports `streams`, `claude-types`, `claude-session`, `agent-tools`, `timers` and exports `stream-sink`, `stream-producer`, `timer-sink`; a world that imports `https-stream` with and without `[http] hosts`; a world that exports `watane:host/state@0.1.0` | each is read | the first: grants exactly `[storage]`; the second: `http` hosts as listed, and without hosts rule `http`; the third: rule `export` | PKG-F-8, PKG-F-29 |
+| A34 | the mod of A32 with both starts | its release body is made and encoded | the grants array is the hex `83 8100 8105 8106`; decode gives `[Storage, ClaudeCode, ClaudeCodeShell]` back; the golden hex of `TECHNICAL.md` 7.3 is unchanged | PKG-F-22, PKG-F-29 |

@@ -2,7 +2,8 @@
 
 How `watane-dev` does what `FUNCTIONAL.md` says. Sections 13 and 14 are
 the contract with the other subsystems, section 15 the test plan, section
-16 the build plan, section 17 the questions for `spec/`. The sibling names
+16 the build plan, section 17 the questions for `spec/`, section 18 the
+fakes of the agent layer (step 11). The sibling names
 used here follow the draft `TECHNICAL.md` files of `pkg`, `host` and `app`
 of 2026-11-10; section 14 lists every item.
 
@@ -36,6 +37,8 @@ dev/
   src/preview.rs        `serve`; find the program `watane`
   src/bin/fake-watane.rs  a fake host for tests (feature `fake-host`)
   src/bin/fake-gh.rs    step 6: a fake `gh` for tests (feature `fake-host`, 15.4)
+  src/bin/fake-claude.rs  step 11: a fake `claude` (feature `fake-claude`, 18.2)
+  src/scripted.rs       step 11: `ScriptedResponses`, the Responses server and its judge origin (feature `fake-claude`, 18.3)
 template/               the files of a new mod (section 4)
 allowlist/Cargo.toml    the allowlist: direct crates, exact versions
 allowlist/Cargo.lock    the allowlist: the full closure, with checksums
@@ -58,8 +61,9 @@ rust-version = "1.95"
 publish = false
 
 [features]
-default = ["fake-host"]
+default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
+fake-claude = []                        # step 11: the dependencies of 18.1
 
 [dependencies]
 watane-pkg = { path = "../pkg" }
@@ -88,7 +92,15 @@ required-features = ["fake-host"]
 name = "fake-gh"
 path = "src/bin/fake-gh.rs"
 required-features = ["fake-host"]
+
+[[bin]]                                 # step 11
+name = "fake-claude"
+path = "src/bin/fake-claude.rs"
+required-features = ["fake-claude"]
 ```
+
+Step 11 adds the feature `fake-claude` (18.1), on by default as `fake-host`
+is, and omitted by `--no-default-features`.
 
 Distribution builds use `cargo build --release --no-default-features` to omit
 the fake host. Default builds include it so integration tests need no feature flag.
@@ -1895,6 +1907,8 @@ Warnings (they never change `ok`):
 | Only consented source is pushed (step 6) | the mod commit holds exactly the package's paths, except a built `logic.wasm` (10.4.1 step 6); the person saw whether the package holds source (9.7). Nothing is force-pushed. |
 | A repository never replaces verified source (step 6) | `new --from` uses a clone only when it packs to the verified package's id, removes every file the package does not hold, and writes dev's guides over the publisher's (10.4.2). The URL passes pkg's rule (https only) and follows `--`. |
 
+| The agent layer fakes hold no secret and reach no outside server (step 11) | `fake-claude` is a program that reads a script and writes lines; it opens no socket. `ScriptedResponses` binds `127.0.0.1` only, with a certificate from a test authority made for the run and never trusted by the operating system (18.3); its tokens and keys are literals of the test. Neither is built by `--no-default-features`, so a release holds neither (18.1). |
+
 Not protected (as `spec/TECHNICAL.md` section 6): another program of the
 same user, which can change the cache, the vendor folder or the mod folder,
 or read the preview token in `ready.json`; the maker's own
@@ -2066,6 +2080,10 @@ pub fn serve(dir: &Path, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
 pub fn stop(dir: &Path, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
 ```
 
+Step 11 adds the module `scripted` (18.3): `ScriptedResponses`, `Reply`,
+`SseEvent`, `Judge`, `Play` and `Recorded`, behind the feature `fake-claude`.
+Their signatures are those of 18.3.
+
 ## 13. Provides to other subsystems
 
 - The program `watane-dev`: the commands, the envelope and the results of
@@ -2075,7 +2093,8 @@ pub fn stop(dir: &Path, env: &Env) -> Result<serde_json::Value, Vec<Problem>>;
   fixture mods (app `TECHNICAL.md` section 15).
 - The template and the contract test form (sections 4 and 8), for makers.
 - The file `.watane-dev.json` belongs to dev; no other subsystem reads it.
-- No library API: no sibling may depend on the crate `watane-dev`.
+- Step 11 (18): the program `fake-claude` and the Rust API `ScriptedResponses` of the module `scripted`. `host` tests, `app` tests and the repositories of the agent layer (kernel, providers) use them to run `claude`, an OpenAI endpoint and a judge without the real ones. They are the only library API: through `dev-dependencies` (feature `fake-claude`), and only by tests; no production code of a sibling may depend on the crate `watane-dev` (question 14).
+- Otherwise no library API: no sibling may depend on the crate `watane-dev`.
 
 ## 14. Needs from other subsystems
 
@@ -2149,6 +2168,10 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 
 **Programs** (step 6): the maker's `git` (2.28 or newer, for `init -b`) and
 `gh`, on `PATH` (10.4). They are not siblings; tests use real git and `fake-gh`.
+
+**host** (step 11; host 19): the in-process trait `AccountSource` (host 19.4) answers `claude_binary()` with the path of `fake-claude` in a preview and in tests; a test setting of the host that points `https-stream` at a local address with a root certificate that dev gives (`ScriptedResponses::ca_pem`), so that requests for `api.openai.com` and for the judge origin reach the fake (host 19.4; question 16); the behaviour of a preview toward the real grants and accounts (host 19, previews: refused, with the fakes offered). **pkg**: the grants `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1), so that `check` shows a mod that imports the new interfaces. **app**: nothing; the fakes need no app.
+
+**Crates** (step 11): `claude-codes` with its types feature, for the stream-json types of `fake-claude` (agentic-harness TECHNICAL 13); for `ScriptedResponses`, a TLS server library and a test certificate generator, both only under the feature `fake-claude`, named by the stage D brief.
 
 **log**, **dist**: nothing directly; through the home host only.
 
@@ -2452,6 +2475,36 @@ Carol's `publish --push` forks it as `remotes/carol/ratings`
 Carol's. The raw URL itself appears only as text (`raw`,
 `next`): the local server stands in for raw.githubusercontent.com.
 
+### 15.5 The agent layer fakes (step 11)
+
+The fakes are tested without the host, by their own clients: `fake-claude`
+as a child process that the test drives over pipes, `ScriptedResponses` by
+an https client in the test that trusts `ca_pem()`. Oracles are literal
+lines and bytes written in the test.
+
+| Test | Checks | Level / oracle |
+|---|---|---|
+| `fake_claude::ac1_version_and_script_beside_exe` | `--version` prints `2.1.295 (Claude Code)` by default and the script's version when set; the script is read from the folder of the executable, not from the environment | child process; literal text |
+| `fake_claude::ac2_initialize_and_init` | the answer to `initialize` holds `hook_on_failure_supported: true` and `hooks_applied: true` for a request with a hook; a script with the field `false` or absent gives that; `init` defaults to the launch's tools, servers, mode and plugins, and an `init` override changes only its field | child process; literal request and lines |
+| `fake_claude::ac3_steps_write_lines` | each `do` of 18.2 writes the line it names, in order: a `delta` in chunks, a `message`, `result`, `idle`, `ask` and `check` with and without `await`, `cancel`, `raw` with a `hex` that is not UTF-8 and with a duplicate top-level key | child process; literal lines |
+| `fake_claude::ac4_checks_error_timeout` | a `check` with `error: true` and with `timeout: true` writes the hook failure and nothing, as the script says | child process; literal lines |
+| `fake_claude::ac5_refuses_forbidden_flags` | each flag of the list of 18.2 exits 64 naming it; a missing fixed argument exits 64 | child process; literal exit status and text |
+| `fake_claude::ac6_unexpected_stdin_line` | a line `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`, a `control_response` with `updatedPermissions` or a second `initialize` exits 70 and is logged; a `user` line, an answer and an `interrupt` that a step awaits do not | child process; literal lines |
+| `fake_claude::ac7_exits_crash_hang` | `exit {code: 3}` exits 3 after flushing; `crash` ends by `SIGKILL`; `hang` writes nothing more until it is killed | child process |
+| `fake_claude::ac8_log_records_everything` | `fake-claude.log` holds the arguments, the environment variables and each stdin line, in order | file compared with literal lines |
+| `scripted::ac1_sse_and_usage` | an `Sse` reply with `Delta`, `ToolCalls(33)` and `Completed {input_tokens, output_tokens}` gives the lines of 18.3, one write each; `Failed {code: "usage_limit_reached"}` gives `response.failed`; `UsageLimit` gives status 429 with the body of a usage limit; `Cut` ends with no `response.completed` | https client; literal bytes |
+| `scripted::ac2_errors_redirect_reset_stall` | `Status 500`, `Status 429` with no usage body, `Redirect`, `Reset` and `Stall` act as written; the script is consumed in order and the last reply repeats | https client; literal statuses and timing |
+| `scripted::ac3_models_and_token` | `GET /v1/models` answers the slugs; another path or method is 404 and recorded; a wrong or missing token is 401 | https client; literal bodies |
+| `scripted::ac4_records_requests` | each request is recorded whole, in arrival order, with its headers and body bytes | https client; literal request |
+| `scripted::ac5_trust_only_ca` | a client that trusts `ca_pem()` connects; a client with the system roots refuses the certificate; the server listens on `127.0.0.1` only | https client; error class |
+| `scripted::ac6_judge_plays` | `Safe`, `Unsafe`, `Unsure` give the verdict body of 18.3; `Down` resets after the request; `Slow` waits `ms`; `Unreadable` gives status 200 and a body that is not JSON; `Redirect` gives 307; `Raw` gives the bytes | https client; literal bodies |
+| `scripted::ac7_judge_counts_every_request` | `count()` equals the requests received for each play, including a wrong key (401), `Down` and `Redirect`; a request that never connects does not count; the redirect target's own count stays 0 when a client does not follow | https client; literal numbers |
+| `scripted::ac8_judge_key` | a wrong or missing key is 401 and counted; a right key reaches the play; the request the server saw holds the key only as `Authorization` | https client |
+
+The tests that need the host (the account binding, the judge call, a
+preview that offers the fakes) are the host's and the app's (host 19, app
+19), and the stages of agentic-harness TECHNICAL 17 B, D and E.
+
 ## 16. Build plan
 
 - S4 (dev): the counter template includes `tests/counter.json`; `test` runs
@@ -2477,6 +2530,9 @@ Carol's. The raw URL itself appears only as text (`raw`,
 | 11 (step 6) | `share`: 10.4.2, the fork of `new --from`; `fork` in its result; the GitHub fork of 10.4.1 step 3 and `publish.fork_unavailable` | stage 10 | as stage 10 | S-47 to S-51 pass; J5 on a local remote (`ac2_j5_github`) |
 | 12 (step 9) | collect fakes and answers in contract tests (8.1); template `AGENTS.md` lines: an own-interface function with a `list` result is a collect, and how to fake it and answer one | host stage 10: collect fakes in `Harness` | none; the stage waits for host | S-52 passes; dev's part of J9 |
 | 13 (step 10) | the `watane:host/manage` fake key and the `manages` step field (8.1), with `manages` in the step failure report as `emits` is; the template `AGENTS.md` lines of section 9 for a manager; `check` copies the new `HOST_WIT` (4.1, 5.1) | host stage 11: manage fakes and `Outcome.manages` in `Harness` | none; the stage waits for host | S-53 passes; dev's part of J10 |
+| 14 (step 11, stage B) | the feature `fake-claude`; `src/bin/fake-claude.rs` (18.2): script, init, deltas, finished messages, asks, checks, failures, exits | host A2: `claude-code` start and the control protocol (host 19.3); pkg stage 12 (grants) | none; the stage waits for host | DEV-S-54 to DEV-S-57 pass; agentic-harness stage B uses it |
+| 15 (step 11, stage D) | `src/scripted.rs` (18.3): the Responses routes, usage limits, errors, tool calls, models; the test authority; the preview's runner of it (18.4, question 15) | host A4: `https-stream` and the account `openai` (host 19.4) | none; the stage waits for host | DEV-S-58 to DEV-S-61 pass; agentic-harness stage D uses it |
+| 16 (step 11, stage E) | the judge origin of `scripted.rs` (18.3) | host A5: the account `judge` (host 19.4); stage 15 | none; the stage waits for host | DEV-S-62 and DEV-S-63 pass; agentic-harness stage E uses it |
 
 ## 17. Questions for spec/
 
@@ -2532,3 +2588,225 @@ Each has a proposed answer, which this specification uses.
     the fork's `main`), with a new repository and joined history as the
     fallback (one fork per account, an upstream gone or not on GitHub).
     Tags are ReleaseRefs, because a fork shares its upstream's tags.
+14. **A library API for tests** (step 11): section 13 said no sibling may
+    depend on the crate. The kernel's and the providers' tests, and the
+    host's, need a Responses server in process. Proposal: `ScriptedResponses`
+    is the one exception, behind the feature `fake-claude`, used only as a
+    `dev-dependency` (cargo allows the cycle host - dev - host for dev
+    dependencies); the alternative is a small crate of its own, which this
+    step does not need. Cost to undo: moving one module.
+15. **A scripted OpenAI stream in a preview** (step 11, AGT-F-31): a preview
+    is a process (`watane --preview`) that outlives `watane-dev serve`, so a
+    server held by a Rust value cannot serve it. Proposal: stage 15 adds a
+    runner of `ScriptedResponses` for `serve` to start beside the preview,
+    as it starts `watane`; its name and arguments belong to that stage's
+    brief. Until then a preview offers `fake-claude` only and the host
+    answers an `openai` request in a preview with `no-account` (18.4).
+16. **How the host trusts the fake** (step 11): `https-stream` connects to
+    `api.openai.com` and to the judge's origin over TLS. Proposal: the host
+    has a test-only setting (host 19.4) that maps a host name to a local
+    address and adds one root certificate; dev supplies the address and the
+    root (`ScriptedResponses::ca_pem`). The setting is the host's: dev holds
+    no seam in the host's production path. The same holds for the path of
+    `fake-claude` in a preview: host 19.4 names how a preview's
+    `AccountSource` gets it.
+17. **The judge's wire shape** (step 11): the request and the verdict body
+    of the judge belong to the checked provider (agentic-harness TECHNICAL
+    10), which no watane document specifies. Proposal: the fake answers the
+    verdict `{"verdict": "safe" | "unsafe" | "unsure", "reasons": [..]}` and
+    offers `Raw` for any other shape (18.3); the provider's repository fixes
+    its shape and, if it differs, scripts `Raw`.
+
+## 18. The agent layer fakes (step 11)
+
+What a maker's preview and the tests of the agent layer use in place of the
+real `claude`, the real OpenAI endpoint and a real judge. The fakes follow
+the rules of host 19, which owns the real behaviour (agentic-harness
+TECHNICAL 4.4, 4.5, 5, 12, 15, 16); this section says only what each fake
+speaks and records.
+
+### 18.1 Build
+
+Both fakes are built by the feature `fake-claude`, on by default and omitted
+by `cargo build --release --no-default-features`, as `fake-host` is: a
+release of `watane-dev` holds neither. Neither opens a socket of the
+participant's world: `fake-claude` none at all, `ScriptedResponses` only
+`127.0.0.1` (DEV-F-5). `fake-claude` uses the `claude-codes` types
+for its lines (agentic-harness TECHNICAL 13), so that it and the host read
+one shape.
+
+### 18.2 `fake-claude`
+
+A program that the host starts where it would start `claude` (host 19.3).
+The host reaches it through `AccountSource::claude_binary()` (host 19.4),
+which a test or a preview points at this file.
+
+**Script.** The host starts `claude` with a fixed environment (host 19.3: no
+variable of the test passes), so the script is a file `fake-claude.json` in
+the same folder as the executable: a test copies or links the program into a
+folder of its own with its script. `fake-claude --version` prints
+`<version> (Claude Code)` where `version` is the script's, default
+`2.1.295`, the minimum that the host accepts. The script is
+`{"version": string?, "initialize": {...}?, "init": {...}?, "steps": [step]}`.
+
+**Arguments.** The program reads the arguments the host gives. If one is a
+flag that the host never passes (`--safe-mode`, `--bare`, `--plugin-url`,
+`--worktree`, `--bg`, `--cloud`, `--remote-control`, `--chrome`, `--ide`,
+`--file`, `--betas`, or a permission mode `auto` or a bypass mode), or if a
+fixed argument is missing (`-p`, `--input-format=stream-json`,
+`--output-format=stream-json`, `--verbose`, `--restricted`,
+`--strict-mcp-config`, `--system-prompt-snapshot=off`, a `--settings=`), it
+exits with status 64 and names the argument on standard error. It writes
+everything it receives to `fake-claude.log` beside the script: one JSON line
+for the arguments, for each variable of its environment, and for each line
+read from standard input, in order, so a test checks what the host wrote and
+that it wrote nothing else.
+
+**Protocol.** It speaks stream-json on standard input and output, and the
+control protocol, as `claude` does:
+
+1. It reads the host's `initialize` control request and answers it with the
+   script's `initialize` fields. The default answers
+   `hook_on_failure_supported: true` and, when the request holds a hook,
+   `hooks_applied: true`; the script may say `false`, or leave the field
+   out, so that a test shows `mismatch`.
+2. It writes the `system/init` line. By default it holds what the launch
+   arguments say (tools, MCP servers, agents, permission mode, plugins), so
+   the host accepts it; the script's `init` overrides any field (an extra
+   plugin, tool or server), so that a test shows `mismatch {field}`.
+3. It runs the steps in order.
+
+**Steps** (each an object with one key `do`):
+
+| `do` | Effect |
+|---|---|
+| `expect-user` | wait for a `user` message from the host; fail (exit 70, the log names the difference) if its text does not hold `contains`, or if the line is anything else |
+| `delta` | write `text` as stream events (`stream_event` lines), in pieces of `chunk` bytes (default all at once) |
+| `message` | write a finished `assistant` message with `text`, `tool_use` blocks, or both |
+| `result` | write the `result` line of a turn, `subtype` and `usage` as given |
+| `idle` | write the line by which `claude` reports itself idle (a turn is over then, not at the first `result`; agentic-harness TECHNICAL 4.5 step 6) |
+| `ask` | write a `can_use_tool` control request with `tool`, `input` and `tool_use_id` (default: a counter), then, with `await: true`, wait for the host's `control_response` and log it |
+| `check` | write a `hook_callback` (PreToolUse) control request, with `await: true` as above; `error: true` answers the callback's wait with a failure of the hook, `timeout: true` writes nothing more for it and lets the hook's time run out |
+| `cancel` | write a `control_cancel_request` for the `ask` or `check` with that `tool_use_id` |
+| `raw` | write `line` as given, or `hex` as raw bytes, followed by a newline; for a line that is not UTF-8, a duplicate top-level key, or a line that names a watane item type (agentic-harness TECHNICAL 4.5 step 4) |
+| `expect-interrupt` | wait for an `interrupt` control request and answer it |
+| `sleep` | wait `ms` |
+| `exit` | exit with `code` (default 0) after flushing |
+| `crash` | kill itself with `SIGKILL`, with nothing flushed |
+| `hang` | stop reading and writing, until the host kills it |
+
+When the host writes a line that no step awaits and that is not one of the
+writes of host 19.3 (a `user` message, a `control_response`, a hook answer,
+an `interrupt`), the fake exits 70 and logs the line, so a test proves that
+the host never writes `apply_flag_settings`, `mcp_set_servers`,
+`set_permission_mode`, `updatedPermissions` or a second `initialize`.
+It never contacts a model, reads no account file, and needs no sign-in.
+
+### 18.3 `ScriptedResponses` and its judge origin
+
+An https server for tests, in `src/scripted.rs`. It binds `127.0.0.1` on a
+free port for each origin it serves, with a certificate for the names the
+test gives (by default `api.openai.com` and one judge host) made by a test
+authority created for the run. The authority's certificate is `ca_pem()`;
+nothing installs it in the system (question 16).
+
+```rust
+pub struct ScriptedResponses { /* origins, scripts, recorded requests */ }
+impl ScriptedResponses {
+    pub fn start() -> std::io::Result<ScriptedResponses>;   // one Responses origin, one judge origin
+    pub fn responses_addr(&self) -> std::net::SocketAddr;
+    pub fn judge_addr(&self) -> std::net::SocketAddr;
+    pub fn ca_pem(&self) -> String;
+    pub fn expect_token(&self, token: &str);                // the bearer token a request must carry
+    pub fn script(&self, replies: Vec<Reply>);              // consumed in order; the last repeats
+    pub fn models(&self, slugs: &[&str]);                   // the answer of GET /v1/models
+    pub fn requests(&self) -> Vec<Recorded>;                // Responses origin, in arrival order
+    pub fn judge(&self) -> &Judge;
+}
+pub struct Recorded { pub method: String, pub path: String, pub headers: Vec<(String, String)>, pub body: Vec<u8> }
+pub enum Reply {
+    Sse(Vec<SseEvent>),                    // status 200, `text/event-stream`, each event as given
+    Status { code: u16, body: String },    // any status, e.g. 500, 503, 429 with a body
+    UsageLimit { resets_in_s: u64 },       // 429 with the body of a usage limit (`usage_limit_reached`)
+    Redirect(String),                      // 307 with `Location`
+    Reset,                                 // close the connection before the first byte
+    Stall,                                 // send nothing and keep the connection (an `idle-timeout`)
+    Raw { status: u16, headers: Vec<(String, String)>, body: Vec<u8> },
+}
+pub enum SseEvent {
+    Delta(String),                         // `response.output_text.delta`
+    ToolCalls(usize),                      // that many `function_call` items, parallel, with call ids
+    Completed { input_tokens: u64, output_tokens: u64 },   // `response.completed`, with usage
+    Failed { code: String },               // `response.failed`; `usage_limit_reached` is one code
+    Raw(String),                           // any line, for a malformed or unknown event
+    Cut,                                   // end the body with no `response.completed`
+}
+pub struct Judge { /* ... */ }
+impl Judge {
+    pub fn script(&self, plays: Vec<Play>);                // consumed in order; the last repeats
+    pub fn expect_key(&self, key: &str);                   // the bearer key a request must carry
+    pub fn count(&self) -> usize;                          // every request received, whatever the play
+    pub fn requests(&self) -> Vec<Recorded>;
+}
+pub enum Play {
+    Safe(Vec<String>), Unsafe(Vec<String>), Unsure(Vec<String>),   // reasons
+    Down,                       // read the request, then reset the connection
+    Slow { ms: u64, then: Box<Play> },
+    Unreadable,                 // status 200, a body that is not a verdict
+    Redirect(String),           // 307 with `Location`
+    Raw { status: u16, headers: Vec<(String, String)>, body: Vec<u8> },
+}
+```
+
+**Responses origin.** It answers `POST /v1/responses` with the next `Reply`
+(a text event stream for `Sse`) and `GET /v1/models` with the slugs of
+`models`; any other method or path is 404 and recorded. A request without
+`Authorization: Bearer <token>` equal to `expect_token` (when set) is
+answered 401. It records every request whole, so a test checks each body: a
+body that is not one JSON object, one that exceeds 1 MiB, an `input` whose
+prefix changes between requests (agentic-harness TECHNICAL 16, case 2),
+the headers the host added and those a mod may not set (host 19.4). An
+event is sent as `data: <json>` followed by a blank line, one write each,
+so a test can cut after any event (`Cut`) or stop mid-stream (`Stall`).
+`ToolCalls(n)` makes parallel calls for the loop's limits of 16 jobs and
+8 per session (agentic-harness TECHNICAL 16, case 39).
+
+**Judge origin.** A second origin, so that the host's account binding by
+origin (host 19.4) is tested against a different one than OpenAI's. It
+counts every request it receives, whether it answers, resets or redirects:
+`count()` equals the number of requests that reached the server, so a test
+proves that a refused request sent nothing (`count()` stays 0: not-owner,
+a wrong method, another origin, a redirect target). `Down` reads a request
+and resets; `Slow` waits `ms` before its `then`; `Unreadable` answers
+status 200 with a body that is not JSON; `Redirect` answers 307, and the
+fake's redirect target counts its own hits too, so a test shows that the
+host followed none. A verdict is the body
+`{"verdict": "safe" | "unsafe" | "unsure", "reasons": [...]}` (question 17).
+It checks `expect_key` as the Responses origin checks its token, answers a
+wrong or missing key 401, and records the request, so a test sees that the
+key was added by the host and that the request holds no key of its own.
+
+### 18.4 In a preview (AGT-F-31)
+
+A preview refuses the Claude Code grants and the ChatGPT plan (host 19: the
+preview's `AccountSource` has no real account), so a mod that uses them in a
+preview would stop at once. The maker tools offer the fakes instead:
+
+- `serve` links `fake-claude` (found as `watane` is, 9.1: beside the running
+  executable, else on `PATH`; if missing, the preview starts without it and
+  `doctor` says so) into `<P>/claude/`, beside the script
+  `<P>/claude/fake-claude.json` that the maker writes or, if it is absent, a
+  default that opens a session, streams one reply and goes idle, and tells
+  the preview host the path as host 19.4 names for a preview's
+  `claude_binary()` (question 16). The maker edits the script like a
+  contract test file.
+- The scripted OpenAI stream for a preview and the judge are
+  `ScriptedResponses` run by a runner that `serve` starts beside the preview
+  (question 15). Until the runner exists, a preview answers an `openai`
+  request with `no-account` and `serve` names the gap in a warning.
+- Contract tests (8) do not use them: a contract test fakes the host's
+  interfaces by key (8.1), and the agent layer's calls are tested with the
+  kernel's own tests.
+
+The fakes' replies are scripts, never the output of a model, so a preview
+shows how a mod handles a stream, not what an agent would say.
