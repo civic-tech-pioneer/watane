@@ -685,3 +685,53 @@ fn ac2_an_open_in_flight_ends_gone_when_a_producer_loaded_at_start_is_reinstalle
         page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
     });
 }
+
+// ---- third pass (S96-fix2) ---------------------------------------------------------------
+
+/// 19.6 (At apply): every install, update and removal gives a local name a new install
+/// generation, and an `Open` whose side has another generation at apply ends `gone`. The
+/// generations live in memory and start empty at `Host::open`: a mod loaded from
+/// `installed.json` has none, the `Open` records `None`, and `None` passes every check. After a
+/// restart, an update of the producer while an `open` is in flight leaves a live stream opened
+/// by the old version (the attack of the second pass, one restart later).
+#[test]
+fn adv_s96_open_in_flight_outlives_an_update_after_a_restart() {
+    let Env { dir, host } = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    drop(host);
+    std::thread::sleep(Duration::from_millis(300));
+    let host = watane_host::Host::open(
+        dir.path(),
+        watane_host::Mode::Preview,
+        watane_host::Limits::default(),
+    )
+    .unwrap();
+    let env = Env { dir, host };
+    let copy = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo");
+    copy_dir(&src, copy.path());
+    let toml = copy.path().join("mod.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(&toml, text.replace("summary = \"", "summary = \"v2: ")).unwrap();
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    let before = env.host.get(&local("advo")).unwrap().package;
+    env.host
+        .install_folders(&[copy.path().to_path_buf()], 0)
+        .unwrap();
+    assert_ne!(
+        env.host.get(&local("advo")).unwrap().package,
+        before,
+        "not an update"
+    );
+    let opened = first.finish();
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "after a restart, a stream opened by the producer's old version is live after its update: push gave {pushed}"
+    );
+}
