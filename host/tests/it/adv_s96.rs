@@ -448,3 +448,26 @@ fn adv_s96_stream_opened_by_a_chain_in_flight_outlives_the_revoke() {
     );
 }
 
+/// 19.6: "A mod that is disabled gets no firing; its timers wait." `disable` does not take the
+/// mod's call lock; a firing that waits for the lock while the mod is disabled finds it disabled
+/// after the lock, fails `disabled`, and `fire` deletes the row as for a failed firing. `enable`
+/// then reloads nothing: the timer never fires. (An update of the mod during the wait fails
+/// `no-mod` "removed or updated" and loses the timer the same way.)
+#[test]
+fn adv_s96_disable_while_a_firing_waits_loses_the_timer() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    page(&env, "advo", "api.after", json!({"id":"x","ms":250}));
+    // advo is busy past the due time; the firing waits for its lock.
+    let busy = in_flight(&env, "advo", "api.cancel-slowly", json!({"id":"none"}));
+    env.host.disable(&local("advo")).unwrap();
+    busy.finish();
+    std::thread::sleep(Duration::from_millis(500));
+    env.host.enable(&local("advo")).unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(
+        page(&env, "advo", "api.fired", Value::Null),
+        json!(["x"]),
+        "a timer due while its mod was disabled never fired after enable"
+    );
+}
+
