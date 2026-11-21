@@ -33,10 +33,35 @@ impl exports::mods::advo::api::Guest for Guest {
     fn fired() -> Vec<String> {
         fired_list()
     }
+    fn try_after(id: String, ms: u64) -> String {
+        match timers::after(&id, ms) {
+            Ok(()) => "ok".into(),
+            Err(e) => format!("{e:?}"),
+        }
+    }
+    fn after_many(n: u32, ms: u64) {
+        for i in 0..n {
+            timers::after(&format!("t{i}"), ms).unwrap();
+        }
+    }
+    fn push(s: String, bytes: u32) -> String {
+        match streams::push(&s, &vec![7u8; bytes as usize]) {
+            Ok(()) => "ok".into(),
+            Err(e) => format!("{e:?}"),
+        }
+    }
+    fn ended() -> Vec<String> {
+        state::get("ended")
+            .map(|v| String::from_utf8(v).unwrap().lines().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
 }
 impl exports::watane::host::stream_producer::Guest for Guest {
     fn ready(_s: String) {}
-    fn ended(_s: String, _o: streams::Outcome) {
+    fn ended(s: String, o: streams::Outcome) {
+        let mut all = <Guest as exports::mods::advo::api::Guest>::ended();
+        all.push(format!("{s} {}", if matches!(o, streams::Outcome::Gone) { "gone" } else { "other" }));
+        state::put("ended", all.join("\n").as_bytes());
         // Let the host finish the removal that ended the stream first.
         let x = spin(300);
         let _ = timers::after("leak", 3_600_000);

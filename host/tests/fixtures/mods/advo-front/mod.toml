@@ -1,0 +1,2 @@
+name = "advo-front"
+summary = "S96 adversary fixture: a front mod that calls advo or relay and then stays busy."
