@@ -735,3 +735,37 @@ fn adv_s96_open_in_flight_outlives_an_update_after_a_restart() {
         "after a restart, a stream opened by the producer's old version is live after its update: push gave {pushed}"
     );
 }
+
+/// 19, Terms: "a later install with the same identity finds no timer that carries it." The
+/// depth-0 commit checks the origin client again under the catalog lock, by identity alone. A
+/// host call of `advo` (its `ended`, origin client `relay`) that runs across `remove` and a new
+/// install of `relay` (same identity `local/relay`) finds the identity installed at its commit,
+/// and writes the row with the removed install as origin client: the new `relay` inherits it.
+#[test]
+fn adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin() {
+    let env = Env::new(&["latch", "relay", "advo"]);
+    let s = open_for_relay(&env);
+    // The producer closes; its `ended` runs with `relay` as origin client and spins 300 ms.
+    page(&env, "advo", "api.close", json!({"s": s}));
+    let start = std::time::Instant::now();
+    std::thread::sleep(Duration::from_millis(50));
+    env.host.remove(&local("relay"), true).unwrap();
+    super::streams::install(&env.host, &["relay"]);
+    // advo's `ended` takes advo's lock (not relay's) and spins 300 ms before `after`.
+    assert!(
+        start.elapsed() < Duration::from_millis(280),
+        "the reinstall must land while advo's ended runs: {:?}",
+        start.elapsed()
+    );
+    wait("advo's ended", Duration::from_secs(10), || {
+        page(&env, "advo", "api.done", Value::Null) == json!(true)
+    });
+    let Env { dir, host } = env;
+    drop(host);
+    let rows = timer_rows(dir.path());
+    let row = &rows[&format!("{}/leak", id_of("local/advo"))];
+    assert_ne!(
+        row["origin"], "local/relay",
+        "a timer committed after the removal carries the removed mod as origin client, and the new install inherits it: {row}"
+    );
+}
