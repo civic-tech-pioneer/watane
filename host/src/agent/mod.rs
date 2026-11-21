@@ -235,6 +235,73 @@ impl Invocation {
     }
 }
 
+/// `streams.push` (19.2): the checks of the call, then the effect.
+pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), StreamError> {
+    if let Some(fakes) = &inv.chain.fakes {
+        // A harness answers ok, or what a `Fakes` entry says (19.1).
+        let fake = fakes
+            .get("watane:host/streams")
+            .and_then(|f| f.get("push"))
+            .and_then(|v| v.get("err"))
+            .and_then(Value::as_str);
+        return match fake {
+            Some("not-yours") => Err(StreamError::NotYours),
+            Some("unknown-stream") => Err(StreamError::UnknownStream),
+            Some("full") => Err(StreamError::Full),
+            Some("too-large") => Err(StreamError::TooLarge),
+            _ => Ok(()),
+        };
+    }
+    let me = inv.me();
+    let mut log = inv.log();
+    if body.len() > streams::MAX_ITEM {
+        return Err(StreamError::TooLarge);
+    }
+    let view = inv.view(&log, id).ok_or(StreamError::UnknownStream)?;
+    if view.producer != Producer::Mod(me.clone()) {
+        return Err(StreamError::NotYours);
+    }
+    let (mut count, mut bytes, mut origin_pending, mut host_pending) = (0, 0, 0, 0);
+    for e in log.iter() {
+        if let Effect::Push {
+            id: i,
+            body,
+            origin,
+            ..
+        } = e
+        {
+            if i == id {
+                count += 1;
+                bytes += body.len();
+            }
+            if *origin == view.origin {
+                origin_pending += body.len();
+            }
+            host_pending += body.len();
+        }
+    }
+    inv.chain.host.hub.check_push(
+        id,
+        body.len(),
+        (count, bytes),
+        &view.origin,
+        origin_pending,
+        host_pending,
+    )?;
+    if view.in_chain && (count + 1 > streams::MAX_ITEMS || bytes + body.len() > streams::MAX_BYTES)
+    {
+        return Err(StreamError::Full);
+    }
+    log.push(Effect::Push {
+        id: id.to_owned(),
+        body,
+        hop: inv.hop,
+        by: me,
+        origin: view.origin,
+    });
+    Ok(())
+}
+
 /// A function of `streams` or `timers` called by the mod of `inv` (19.2, 19.6).
 pub(crate) fn call(
     inv: &Invocation,
@@ -245,7 +312,9 @@ pub(crate) fn call(
 ) -> Result<Value, CallError> {
     let name = |i: usize| match args.get(i) {
         Some(Val::String(s)) => Ok(s.clone()),
-        _ => Err(CallError::internal(format!("{interface}.{function}: bad argument"))),
+        _ => Err(CallError::internal(format!(
+            "{interface}.{function}: bad argument"
+        ))),
     };
     if let Some(fakes) = &inv.chain.fakes {
         return fake(inv, fakes, interface, function, args);
@@ -289,66 +358,27 @@ pub(crate) fn call(
                 .iter()
                 .map(|v| if let Val::U8(b) = v { *b } else { 0 })
                 .collect();
-            let mut log = inv.log();
-            if body.len() > streams::MAX_ITEM {
-                return Ok(err(StreamError::TooLarge));
-            }
-            let Some(view) = inv.view(&log, &id) else {
-                return Ok(err(StreamError::UnknownStream));
-            };
-            if view.producer != Producer::Mod(me.clone()) {
-                return Ok(err(StreamError::NotYours));
-            }
-            let (mut count, mut bytes, mut origin_pending, mut host_pending) = (0, 0, 0, 0);
-            for e in log.iter() {
-                if let Effect::Push {
-                    id: i,
-                    body,
-                    origin,
-                    ..
-                } = e
-                {
-                    if *i == id {
-                        count += 1;
-                        bytes += body.len();
-                    }
-                    if *origin == view.origin {
-                        origin_pending += body.len();
-                    }
-                    host_pending += body.len();
-                }
-            }
-            if let Err(e) = inv.chain.host.hub.check_push(
-                &id,
-                body.len(),
-                (count, bytes),
-                &view.origin,
-                origin_pending,
-                host_pending,
-            ) {
-                return Ok(err(e));
-            }
-            if view.in_chain && (count + 1 > streams::MAX_ITEMS || bytes + body.len() > streams::MAX_BYTES)
-            {
-                return Ok(err(StreamError::Full));
-            }
-            log.push(Effect::Push {
-                id,
-                body,
-                hop: inv.hop,
-                by: me,
-                origin: view.origin,
-            });
-            Ok(ok())
+            Ok(match push(inv, &id, body) {
+                Ok(()) => ok(),
+                Err(e) => err(e),
+            })
         }
         ("streams", "close") => {
             let id = name(0)?;
-            let outcome = args.get(1).map(json::encode).transpose()?.unwrap_or(Value::Null);
+            let outcome = args
+                .get(1)
+                .map(json::encode)
+                .transpose()?
+                .unwrap_or(Value::Null);
             let mut log = inv.log();
             if let Some(view) = inv.view(&log, &id)
                 && view.producer == Producer::Mod(me.clone())
             {
-                log.push(Effect::Close { id, outcome, by: me });
+                log.push(Effect::Close {
+                    id,
+                    outcome,
+                    by: me,
+                });
             }
             Ok(Value::Null)
         }
@@ -381,13 +411,13 @@ pub(crate) fn call(
                 return Ok(err(StreamError::UnknownStream));
             };
             let target = match who {
-                Who::Caller(Caller::Mod(l)) => inv.mod_ref(l).filter(|m| inv.exports_sink(&m.local)),
+                Who::Caller(Caller::Mod(l)) => {
+                    inv.mod_ref(l).filter(|m| inv.exports_sink(&m.local))
+                }
                 _ => None,
             };
             let (true, Some(to)) = (
-                inv.acts_for(&view.consumer)
-                    && view.producer == Producer::Host
-                    && !view.handed_off,
+                inv.acts_for(&view.consumer) && view.producer == Producer::Host && !view.handed_off,
                 target,
             ) else {
                 return Ok(err(StreamError::NotYours));
@@ -396,10 +426,13 @@ pub(crate) fn call(
             Ok(ok())
         }
         ("timers", "after") => {
-            let (id, delay) = (name(0)?, match args.get(1) {
-                Some(Val::U64(d)) => *d,
-                _ => return Err(CallError::internal("timers.after: bad argument")),
-            });
+            let (id, delay) = (
+                name(0)?,
+                match args.get(1) {
+                    Some(Val::U64(d)) => *d,
+                    _ => return Err(CallError::internal("timers.after: bad argument")),
+                },
+            );
             if id.len() > MAX_ID {
                 return Ok(json!({"err": "bad-id"}));
             }

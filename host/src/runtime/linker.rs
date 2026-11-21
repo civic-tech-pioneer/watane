@@ -66,12 +66,10 @@ pub(super) fn linker(
         .func_wrap("who", |ctx: wasmtime::StoreContextMut<'_, Ctx>, (): ()| {
             Ok((ctx.data().caller.clone(),))
         })?;
-    linker
-        .instance("watane:host/caller@0.1.0")?
-        .func_wrap(
-            "identity",
-            |ctx: wasmtime::StoreContextMut<'_, Ctx>, (): ()| Ok((ctx.data().identity.clone(),)),
-        )?;
+    linker.instance("watane:host/caller@0.1.0")?.func_wrap(
+        "identity",
+        |ctx: wasmtime::StoreContextMut<'_, Ctx>, (): ()| Ok((ctx.data().identity.clone(),)),
+    )?;
     let ty = component.component_type();
     link_agent(&mut linker, engine, component)?;
     if m.world().manage
@@ -234,6 +232,21 @@ pub(super) fn linker(
     }
     Ok(linker)
 }
+/// The WIT `stream-error` (19.1), for the typed `streams.push`.
+#[derive(Clone, Copy, wasmtime::component::ComponentType, wasmtime::component::Lower)]
+#[component(enum)]
+#[repr(u8)]
+enum PushError {
+    #[component(name = "not-yours")]
+    NotYours,
+    #[component(name = "unknown-stream")]
+    UnknownStream,
+    #[component(name = "full")]
+    Full,
+    #[component(name = "too-large")]
+    TooLarge,
+}
+
 /// `streams` and `timers` (19.2, 19.6) and the stubs of the interfaces that A2 to A4 build.
 fn link_agent(
     linker: &mut Linker<Ctx>,
@@ -253,8 +266,33 @@ fn link_agent(
             .trim_end_matches("@0.1.0")
             .to_owned();
         let mut interface = linker.instance(name)?;
+        if short == "streams" {
+            // A typed function: a `list<u8>` of 4 MiB lifted as `Val`s would use up the guest's
+            // hostcall fuel (a `Val` per byte).
+            interface.func_wrap(
+                "push",
+                |ctx: wasmtime::StoreContextMut<'_, Ctx>, (id, body): (String, Vec<u8>)| {
+                    let invocation = ctx.data().invocation.clone();
+                    Ok((match crate::agent::push(&invocation, &id, body) {
+                        Ok(()) => Ok(()),
+                        Err(crate::agent::streams::StreamError::NotYours) => {
+                            Err(PushError::NotYours)
+                        }
+                        Err(crate::agent::streams::StreamError::UnknownStream) => {
+                            Err(PushError::UnknownStream)
+                        }
+                        Err(crate::agent::streams::StreamError::Full) => Err(PushError::Full),
+                        Err(crate::agent::streams::StreamError::TooLarge) => {
+                            Err(PushError::TooLarge)
+                        }
+                    },))
+                },
+            )?;
+        }
         for (function, item) in instance.exports(engine) {
-            if !matches!(item.ty, ComponentItem::ComponentFunc(_)) {
+            if !matches!(item.ty, ComponentItem::ComponentFunc(_))
+                || (short == "streams" && function == "push")
+            {
                 continue;
             }
             let (short, function_name) = (short.clone(), function.to_owned());
@@ -268,7 +306,9 @@ fn link_agent(
                     other => {
                         // Not built yet (A2 to A4): a clear error at the call.
                         match other {
-                            "claude-code" => invocation.granted(&watane_pkg::Grant::ClaudeCode, other)?,
+                            "claude-code" => {
+                                invocation.granted(&watane_pkg::Grant::ClaudeCode, other)?
+                            }
                             "claude-code-shell" => {
                                 invocation.granted(&watane_pkg::Grant::ClaudeCodeShell, other)?;
                             }

@@ -153,7 +153,11 @@ impl Stream for PageStream {
         }
         // Alternate, so that neither the bus nor the queue starves the other.
         self.turn = !self.turn;
-        let order = if self.turn { [true, false] } else { [false, true] };
+        let order = if self.turn {
+            [true, false]
+        } else {
+            [false, true]
+        };
         for bus in order {
             let got = if bus { self.bus(cx) } else { self.queue(cx) };
             match got {
