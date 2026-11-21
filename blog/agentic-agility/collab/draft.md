@@ -24,11 +24,6 @@ When agents produce more than I can review carefully, my judgment becomes the li
 
 The dashboard request was short. A long specification could have hidden the same assumption about sharing, or slipped in the same ten-minute lifetime, and keeping it up to date would not have told me whether I had looked at either.
 
-| What I hand over | What I still need to judge |
-| --- | --- |
-| A detailed specification | Which choices in it have I actually settled? |
-| A short request | Which constraints must the agent find, and which choices are still open? |
-
 The size of the document says little about the size of the commitment. A long reference can hold many decisions already reviewed. A short instruction can launch a lot of work on an open question. The expensive mistake is letting that work pile up before anyone examines the question.
 
 ## A wrong assumption gathers dependents
@@ -39,27 +34,15 @@ An open question gets expensive when the agent commits to an answer without chec
 
 When someone finally checks the premise against the permission rules, all four need another look. Not all of them will be wrong; the invalidation logic may survive. But each was built on the premise, and the more work rests on it, the more there is to check.
 
-Delegation can widen the circle in two ways. A handoff can lose a decision: Cognition's [case against multi-agent setups](https://cognition.com/blog/dont-build-multi-agents) is that actions carry implicit decisions a sub-agent working from partial context may miss, and a study of more than 1,600 multi-agent traces lists misalignment between agents as one of its three main failure classes ([Cemri et al.](https://arxiv.org/abs/2503.13657)). Or the handoff passes the premise on faithfully, wrong as it was. This is no argument against delegation; on work that splits into independent parts, more agents can help ([Kim et al.](https://arxiv.org/abs/2512.08296)). The trouble is an unchecked premise that many parts share. Tests that only encode the sharing premise can pass. A test checking each viewer's permitted data on a cache hit can expose the mistake.
+Delegation can widen the circle in two ways. A handoff can lose a decision: Cognition's [case against multi-agent setups](https://cognition.com/blog/dont-build-multi-agents) is that actions carry implicit decisions a sub-agent working from partial context may miss, and a study of more than 1,600 multi-agent traces lists misalignment between agents as one of its three main failure classes ([Cemri et al.](https://arxiv.org/abs/2503.13657)). Or the handoff passes the premise on faithfully, wrong as it was. This is no argument against delegation; on work that splits into independent parts, more agents can help ([Kim et al.](https://arxiv.org/abs/2512.08296)). The trouble is an unchecked premise that many parts share.
 
 ## Count all of my attention
 
-My first definition of *agentic leverage* was a token ratio: the output tokens of the deliverable divided by the input tokens I wrote to get it. Output meant the deliverable only, not the agent's reasoning, its tool calls or the instructions it passed to other agents.
-
-That ratio captures the appeal: a little from me, a lot from the agent. But it rewards verbosity. Deleting unnecessary code can be valuable and produce almost no output. A short prompt can leave me with hours of reading and correcting.
-
-I keep the ratio under a different name, *token leverage*, as a measure of amplification. What I actually want to increase is something else.
+My first definition of *agentic leverage* was a token ratio: output tokens of the deliverable divided by the input tokens I wrote. It captures the appeal, a little from me and a lot from the agent, but it rewards verbosity. Deleting unnecessary code can be valuable and score almost nothing. A short prompt can leave me with hours of reading and correcting. What I want to increase is something else.
 
 **Agentic leverage is the useful, accepted work I get per unit of my attention: explaining, answering, reading, reviewing and correcting.**
 
-| Token leverage counts | My attention also includes |
-| --- | --- |
-| The instructions I write | Explaining context and answering questions |
-| The tokens delivered | Reading plans, checking evidence, judging results |
-| Output relative to input | Correcting mistakes and revisiting dependent work |
-
-This is a way to compare workflows, not a productivity score. Quality, compute cost and risk still sit beside it.
-
-It has to be counted, because the feeling of speed is unreliable. In [METR's early-2025 trial](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/), experienced developers took 19% longer with AI, yet believed it had made them 20% faster. The tools have changed since, and METR's [2026 follow-up](https://metr.org/blog/2026-02-24-uplift-update/) explains why later measurements are harder. The gap between felt and measured speed is the point.
+It has to be counted, because the feeling of speed is unreliable. In [METR's early-2025 trial](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/), experienced developers took 19% longer with AI, yet believed it had made them 20% faster. The tools have changed since, and METR's [2026 follow-up](https://metr.org/blog/2026-02-24-uplift-update/) explains why later measurements are harder.
 
 For the dashboard, checking the permission rules and asking how stale the numbers may be costs attention. The comparison that matters is that cost against the work it saves later.
 
@@ -71,7 +54,7 @@ I start with enough direction for the agent to investigate: why something needs 
 
 > **Found:** the query applies each viewer's permissions. Any speed-up keeps that rule; it is not up for decision.
 > **Decision:** how fresh must the numbers be, and is a cache worth its complexity?
-> **Why it matters:** the numbers are live today. Reusing an older result may improve speed but delay updates to the numbers. The existing access rules still apply.
+> **Why it matters:** the numbers are live today; a cache makes them older.
 > **Options:** (a) cache per viewer, with a short lifetime; (b) share a result between viewers whose permitted data is identical, and recheck access on every hit; (c) no cache: the slow part looks like one join, which may be fixable.
 > **Recommendation:** try (c) as a throwaway experiment and measure. Choose between (a) and (b) only if (c) falls short.
 > **Unblocks:** the experiment now, the cache design later.
@@ -96,9 +79,9 @@ Two questions need different evidence. Does a cache hit still respect the viewer
 
 Risk comes from the existing system, the change and how they interact. The cache may be a small diff. The authorization path it affects may not have changed at all. Both belong in the review.
 
-![Review attention follows the cache into existing visibility rules and permission changes, with an open freshness decision and a spot-check outside the flagged area.](03-sections/figures/05-attention-map.svg)
+![Only the cache code changed, but the review follows its interaction with unchanged access rules.](03-sections/figures/05-attention-map.svg)
 
-*Green marks an existing constraint; orange marks questions still to examine. Neither is a correctness score.*
+*The diff changes the cache. Review follows its effect on access into unchanged code.*
 
 A test that shows two requests return the same result may just encode the sharing assumption. A useful test runs as two viewers with different permissions and checks what each may see. I need to read what is asserted, and why.
 
@@ -110,28 +93,23 @@ All of this assumes I can judge what the agent shows me. Its map of the risks do
 
 ## Keep enough understanding to challenge the next answer
 
-Delegation can remove the very activity through which understanding forms. In a randomized experiment, 52 mostly junior developers learned an unfamiliar Python library with or without an AI assistant. On a quiz straight afterwards, the AI group averaged 50% against 67%, with the largest gap on debugging ([Shen and Tamkin](https://arxiv.org/abs/2601.20245)). Those in the AI group who asked for explanations did better than those who only asked for code, though that was observed, not randomized, and a short task is not years on a familiar system. The study supports the worry; it does not settle it.
+Delegation can remove the very activity through which understanding forms. In a randomized experiment, 52 mostly junior developers learned an unfamiliar Python library with or without an AI assistant. On a quiz straight afterwards, the AI group averaged 50% against 67%, with the largest gap on debugging ([Shen and Tamkin](https://arxiv.org/abs/2601.20245)). Those in the AI group who asked for explanations did better than those who only asked for code, though that was observed, not randomized, and a short task is not years on a familiar system.
 
-Reading every line of every change would give away the leverage, though some changes deserve it. As a default, I aim for the part that lets me reason about the rest: the main structures and their contracts, who owns which state, where the trust boundaries are, how things fail, and the few details that carry weight, like a cache key that decides who sees what. Call it 20/80 if you like; it is a rule of thumb, not a measurement. Consistent patterns and machine-checked contracts make reasoning about unread code less of a gamble. They do not guarantee correctness: the same mistake can recur consistently.
+Reading every line of every change would give away the leverage, though some changes deserve it. As a default, I aim for the part that lets me reason about the rest: the main structures and their contracts, who owns which state, where the trust boundaries are, how things fail, and the few details that carry weight, like a cache key that decides who sees what. Consistent patterns and machine-checked contracts make reasoning about unread code less of a gamble. They do not guarantee correctness: the same mistake can recur consistently.
 
 One practice I want to make a habit is to predict before reading. Before opening the agent's explanation, write down what you expect. A manager moves to an engineering role. Under the existing access rules, what may she see on her next refresh? Then check the prediction against the code or a test. A disagreement calls for investigation: my understanding, the implementation or the test may be wrong.
 
-Peter Naur argued in 1985 that programming builds a theory of how a program addresses a real-world problem, held by its programmers and only partly captured in documentation ([Programming as Theory Building](https://gwern.net/doc/cs/algorithm/1985-naur.pdf)). The loop gives me natural moments to keep that theory current, since every decision asks me to engage. But approving a recommendation without thinking is as easy as approving a document. The loop makes room for learning; the learning is still mine to do.
+Peter Naur argued in 1985 that programming builds a theory of how a program addresses a real-world problem, held by its programmers and only partly captured in documentation ([Programming as Theory Building](https://gwern.net/doc/cs/algorithm/1985-naur.pdf)). The loop gives me natural moments to keep that theory current, since every decision asks me to engage. But approving a recommendation without thinking is as easy as approving a document.
 
 ## Match the commitment to the task
 
 How much back-and-forth a task needs depends on the task. A familiar change with good checks may need one pass: execute, then check. An uncertain idea may be ready for a small experiment and far from ready for a large implementation.
 
-[Dex Horthy describes this proportional approach](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/wsff.md) from his own practice: straightforward tasks get one shot or light feedback, larger work gets more design and review as it goes. That is one practitioner's experience, not a schedule for every team.
+[Dex Horthy describes this proportional approach](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/wsff.md) from his own practice: straightforward tasks get one shot or light feedback, larger work gets more design and review as it goes.
 
-| When | A reasonable next step |
-| --- | --- |
-| The work is familiar and the checks are good | Execute and check |
-| An important unknown is cheap to explore | Run a small experiment |
-| An open choice is costly to undo | Settle it before building on it |
-| The bounds are agreed and the result can be evaluated | Delegate a larger bounded step |
+Settle an open choice that is costly to undo before building on it, and delegate a larger bounded step only once the bounds are agreed and the result can be evaluated.
 
-Long autonomous runs fit this too: [Anthropic describes](https://www.anthropic.com/research/harness-design-long-running-apps) agents that plan, build and evaluate for hours. How long a run takes says little about how much it commits to unchecked. Likewise, a long specification can be the right home for stable interfaces and for decisions reached one at a time. Better investigation and checking can make larger steps practical. A model still cannot guarantee recovery of a preference nobody has stated.
+Long autonomous runs fit this too: [Anthropic describes](https://www.anthropic.com/research/harness-design-long-running-apps) agents that plan, build and evaluate for hours. How long a run takes says little about how much it commits to unchecked. Investigation can find the constraints that already exist, but not a preference nobody has stated; that is still a question for me.
 
 I cannot prove this beats other ways of working; it is a proposal built on the evidence above.
 
