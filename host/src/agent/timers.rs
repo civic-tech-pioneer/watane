@@ -1,9 +1,9 @@
 //! H7: timers per mod, kept in host state and armed from it at start (TECHNICAL 19.6, 7).
 
 use super::unix_ms;
-use crate::Host;
 use crate::runtime::call::{Args, Start, Who, run_start};
 use crate::state::{TimerOp, mod_id};
+use crate::{CallCode, Host};
 use serde_json::json;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
@@ -23,6 +23,9 @@ struct Queue {
     running: HashSet<String>,
     /// (key, due) of every firing that is queued or running: `reload` and `arm` skip them.
     flight: HashSet<(String, u64)>,
+    /// Rows that `reload` skipped because their firing was in flight: armed again when that
+    /// firing ends, so one that left early (its mod was disabled) is not lost.
+    skipped: HashSet<(String, u64)>,
 }
 #[derive(Debug, Default)]
 pub(crate) struct Timers {
@@ -54,12 +57,13 @@ impl Timers {
             Ok(rows) => {
                 let mut queue = self.lock();
                 queue.heap.clear();
-                let armed: Vec<_> = rows
-                    .into_iter()
-                    .filter(|(key, due, _)| !queue.flight.contains(&(key.clone(), *due)))
-                    .map(|(key, due, _)| Reverse((due, key)))
-                    .collect();
-                queue.heap.extend(armed);
+                for (key, due, _) in rows {
+                    if queue.flight.contains(&(key.clone(), due)) {
+                        queue.skipped.insert((key, due));
+                    } else {
+                        queue.heap.push(Reverse((due, key)));
+                    }
+                }
                 drop(queue);
                 self.cv.notify_all();
             }
@@ -143,7 +147,12 @@ impl Timers {
             if let Some(host) = weak.upgrade() {
                 fire(&host, &key, due);
             }
-            self.lock().flight.remove(&(key, due));
+            let mut queue = self.lock();
+            queue.flight.remove(&(key.clone(), due));
+            if queue.skipped.remove(&(key.clone(), due)) {
+                queue.heap.push(Reverse((due, key)));
+                self.cv.notify_all();
+            }
         }
     }
 }
@@ -209,6 +218,11 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
         return;
     }
     if let Err(error) = done.result {
+        // A mod disabled or updated while the firing waited keeps its row: its timers wait, and
+        // `enable` or the next load arms them (19.6).
+        if matches!(error.code, CallCode::Disabled | CallCode::NoMod) {
+            return;
+        }
         eprintln!(
             "watane: timer {id} of {local} failed: {:?}: {}",
             error.code, error.message
