@@ -721,7 +721,7 @@ mod tests {
             .unwrap()
             .to_owned()
     }
-    /// Rewrites the provider of `advo-front`'s link to `mods:advo/api` and runs the check.
+    /// Sets the provider of `advo-front`'s `mods:advo/` link to `provider` and runs the check.
     fn rebind(host: &Arc<Host>, provider: Option<&str>) {
         for m in &mut host
             .catalog
