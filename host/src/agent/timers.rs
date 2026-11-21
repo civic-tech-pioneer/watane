@@ -162,6 +162,13 @@ impl Timers {
     }
 }
 
+fn has_sink(catalog: &crate::catalog::Catalog, local: &crate::LocalName) -> bool {
+    catalog
+        .components
+        .get(local)
+        .is_some_and(|c| c.host_exports().iter().any(|e| e == TIMER_SINK))
+}
+
 /// A due timer fires as a top-level call of `timer-sink.fired` with caller `host` (19.6).
 fn fire(host: &Arc<Host>, key: &str, due: u64) {
     let Ok(Some((row_due, origin))) = host.state.timer_row(key) else {
@@ -173,7 +180,7 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
     let Some((owner_id, id)) = key.split_once('/') else {
         return;
     };
-    let (local, exports) = {
+    let (local, exports, generation) = {
         let catalog = host
             .catalog
             .lock()
@@ -191,10 +198,8 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
         }
         (
             m.local.clone(),
-            catalog
-                .components
-                .get(&m.local)
-                .is_some_and(|c| c.host_exports().iter().any(|e| e == TIMER_SINK)),
+            has_sink(&catalog, &m.local),
+            catalog.install_of(&m.local),
         )
     };
     let delete = || {
@@ -204,7 +209,22 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
         }])
     };
     if !exports {
-        let _ = delete();
+        // The row goes only if the same install still has no `timer-sink`, checked in the
+        // write transaction that deletes it (19.6).
+        let _ = host.state.timer_write_with(&|| {
+            let catalog = host
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            if catalog.install_of(&local) == generation && !has_sink(&catalog, &local) {
+                vec![TimerOp::DeleteIfDue {
+                    key: key.to_owned(),
+                    due,
+                }]
+            } else {
+                Vec::new()
+            }
+        });
         eprintln!("watane: timer {id} of {local} dropped: no timer-sink");
         return;
     }

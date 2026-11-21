@@ -166,6 +166,19 @@ impl State {
         self.stats.record(started);
         Ok(())
     }
+    /// Like `timer_write`, with the operations chosen inside the write transaction, after
+    /// `begin_write` (19.6: the check and the delete are one step).
+    pub fn timer_write_with(&self, ops: &dyn Fn() -> Vec<TimerOp>) -> Result<(), CallError> {
+        let Some(db) = self.database(true)? else {
+            return Ok(());
+        };
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        apply_timer_ops(&txn, &ops())?;
+        let started = Instant::now();
+        txn.commit().map_err(CallError::internal)?;
+        self.stats.record(started);
+        Ok(())
+    }
     /// Removal of a mod (4.4, 19.6): deletes its timers; every other timer that carries it as
     /// origin client gets its own mod's identity, `owners` mapping a mod id to its identity
     /// (`""`, which no mod has, when the owner is not installed).
