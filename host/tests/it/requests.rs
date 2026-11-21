@@ -427,3 +427,73 @@ fn ac10_remove_rewrites_the_timers_that_carry_the_removed_mod() {
     drop(host);
     assert_eq!(timer_rows(dir.path()), BTreeMap::new());
 }
+
+struct ApproveAll;
+impl watane_host::Confirm for ApproveAll {
+    fn install(
+        &self,
+        _request: watane_host::InstallRequest,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = watane_host::Answer> + Send>> {
+        Box::pin(async { watane_host::Answer::Approve { withhold: vec![] } })
+    }
+}
+
+#[test]
+fn ac9_s56_a_published_front_mod_is_identified_as_key_slash_slug() {
+    use watane_host::watane_log::Log;
+    use watane_host::watane_pkg::{self as pkg, Mod, RELEASE_KIND, Release};
+    // `relay-front` cannot point to a local provider: all three are published under one key K.
+    let log_dir = tempfile::tempdir().unwrap();
+    let log = Log::open(&log_dir.path().join("log")).unwrap();
+    let key = log.identity().unwrap().to_string();
+    let work = tempfile::tempdir().unwrap();
+    let sources: Vec<watane_host::Source> = [
+        ("latch", None),
+        ("relay", Some("mods:latch")),
+        ("relay-front", Some("mods:relay")),
+    ]
+    .iter()
+    .map(|(name, provider)| {
+        let dir = work.path().join(name);
+        copy_dir(&fixture(name), &dir);
+        if let Some(provider) = provider {
+            std::fs::write(dir.join("deps.json"), json!({*provider: key}).to_string()).unwrap();
+        }
+        let package = pkg::pack(&dir, false).unwrap();
+        let body = Release::new(&Mod::read(&dir).unwrap(), &package).unwrap();
+        let entry = log.append(RELEASE_KIND, &body.encode()).unwrap();
+        watane_host::Source::Release { package, entry }
+    })
+    .collect();
+    let home = tempfile::tempdir().unwrap();
+    let host = Host::open(
+        home.path(),
+        Mode::Home {
+            app: Some(Arc::new(ApproveAll)),
+        },
+        Limits::default(),
+    )
+    .unwrap();
+    let plan = host.plan(sources).unwrap();
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(host.install(plan, watane_host::Requester::App))
+        .unwrap();
+    assert_eq!(
+        call_as(&host, Caller::Page, "relay-front", "api.who", json!(null)).unwrap(),
+        json!(format!("{key}/relay-front"))
+    );
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
