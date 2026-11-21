@@ -19,6 +19,44 @@ fn until(app: &App, label: &str, js: &str) {
         std::thread::yield_now();
     }
 }
+
+fn s98_start_asset_requests(app: &App) {
+    assert!(app.wait("main", TIMEOUT));
+    assert_eq!(
+        app.eval(
+            "main",
+            "window.__s98Pending = 200; for (let i = 0; i < 200; i++) fetch(`style.css?s98=${i}`, {cache: 'no-store'}).then(r => r.arrayBuffer()).finally(() => window.__s98Pending--); window.__s98Pending"
+        ),
+        200,
+        "asset requests must be in flight when the eval returns"
+    );
+}
+
+#[test]
+fn ac1_ac3_s98_quit_with_asset_requests_exits_and_removes_run_json() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    for cycle in 0..5 {
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[("TOKIO_WORKER_THREADS", "1")]);
+        assert!(home.path().join("run.json").exists());
+        s98_start_asset_requests(&app);
+        // quit waits at most TIMEOUT; a successful exit must finish shutdown.
+        assert_eq!(app.quit().code(), Some(0), "cycle {cycle}");
+        assert!(!home.path().join("run.json").exists(), "cycle {cycle}");
+    }
+}
+
+#[test]
+fn ac2_s98_close_last_with_asset_requests_exits() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    for cycle in 0..5 {
+        let home = tempfile::tempdir().unwrap();
+        let app = App::start(home.path(), &[("TOKIO_WORKER_THREADS", "1")]);
+        s98_start_asset_requests(&app);
+        assert_eq!(app.close_last("main").code(), Some(0), "cycle {cycle}");
+    }
+}
+
 #[test]
 fn ac1_new_home_has_empty_launcher_and_mark() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
