@@ -408,3 +408,43 @@ fn ac5_a_closing_stream_keeps_its_outcome_when_the_grant_is_revoked() {
         page(&env, "advo-front", "api.ended", Value::Null) == json!([line])
     });
 }
+
+// ---- second adversary pass (fix range a87c5d5..6c2226f) ---------------------------------
+
+/// 19.2 (Ends, Q46): a mod stream depends on the consumer's `Call` grant of the link that
+/// `open` ran through; revoked, the stream ends `gone`. `end_lost_streams` runs after the
+/// catalog write and only sees streams already applied; the `Open` of a chain still in flight is
+/// applied at its commit, which checks the producer and the origin client but not the grant. A
+/// revoke while the consumer's chain is in flight leaves a live stream through a revoked grant.
+#[test]
+fn adv_s96_stream_opened_by_a_chain_in_flight_outlives_the_revoke() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    // `advo.open` returned inside advo-front's chain; the `Open` is queued, not applied.
+    let grant = env
+        .host
+        .get(&local("advo-front"))
+        .unwrap()
+        .grants
+        .into_iter()
+        .find(|g| {
+            matches!(&g.grant, watane_pkg::Grant::Call { interface, .. }
+                if interface.to_string().starts_with("mods:advo/"))
+        })
+        .unwrap()
+        .grant;
+    env.host.revoke(&local("advo-front"), &grant).unwrap();
+    let opened = first.finish();
+    let s = opened["ok"].as_str().unwrap().to_owned();
+    let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
+    assert!(
+        pushed.as_str().unwrap().contains("unknown-stream"),
+        "a stream through a revoked Call grant is live: push gave {pushed}"
+    );
+}
+
