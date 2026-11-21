@@ -2422,7 +2422,8 @@ an outside effect (19.6).
 
 **The origin client must still be there.** At apply (19.6), and at each
 firing of a timer, the host checks that the origin client is installed and
-enabled with the identity it carried and the install generation it had (19.6, At apply). Else a request ends its stream `gone`,
+enabled with the identity it carried and the install generation it had (19.6,
+At apply); a timer row stores the identity only (7), and its firing checks that. Else a request ends its stream `gone`,
 and a timer fires with its own mod as origin client. The host checks when a
 call starts, after the mod's call lock is taken, not before the wait: a call of
 the host's own (an `ended` or `ready`, an item call, a firing) whose origin
