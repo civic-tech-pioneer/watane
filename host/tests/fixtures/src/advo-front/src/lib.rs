@@ -11,6 +11,11 @@ impl exports::mods::advo_front::api::Guest for Guest {
     fn open() -> Result<String, String> {
         mods::advo::api::open()
     }
+    fn open_then_sleep(ms: u64) -> Result<String, String> {
+        let answer = mods::advo::api::open();
+        sleep(ms);
+        answer
+    }
     fn push_then_sleep(s: String, bytes: u32, ms: u64) -> String {
         let answer = mods::advo::api::push(&s, bytes);
         sleep(ms);

@@ -253,6 +253,38 @@ fn ac4_two_chains_in_flight_hand_off_a_stream_once() {
     assert_eq!(first.finish(), json!("ok"));
 }
 
+/// 19.2 (Commit): the 32 open streams of a consumer count the opens that another chain in
+/// flight has queued.
+#[test]
+fn ac4_two_chains_in_flight_cannot_pass_the_open_limit() {
+    let env = Env::new(&["latch", "relay", "advo", "advo-front"]);
+    let open = || {
+        call_as(
+            &env.host,
+            Caller::Mod(local("advo-front")),
+            "advo",
+            "api.open",
+            Value::Null,
+        )
+        .unwrap()
+    };
+    for _ in 0..31 {
+        assert!(open()["ok"].is_string());
+    }
+    let first = in_flight(
+        &env,
+        "advo-front",
+        "api.open-then-sleep",
+        json!({"ms": 1000}),
+    );
+    let second = open();
+    assert!(
+        second["err"].as_str().unwrap().contains("\"full\""),
+        "{second}"
+    );
+    assert!(first.finish()["ok"].is_string());
+}
+
 /// 19.2 (Ends): a mod stream depends on the consumer's `Call` grant of the link that `open` ran
 /// through. Revoked, the stream ends `gone` for both sides at once.
 #[test]
@@ -264,20 +296,30 @@ fn ac5_a_revoked_call_grant_ends_the_streams_opened_through_it() {
         page(&env, "advo", "api.push", json!({"s": s, "bytes": 1})),
         json!("ok")
     );
-    let call = env
-        .host
-        .get(&local("advo-front"))
-        .unwrap()
-        .grants
-        .into_iter()
-        .find(|g| {
-            matches!(&g.grant, watane_pkg::Grant::Call { interface, .. }
-                if interface.to_string().starts_with("mods:advo/"))
-                && g.granted
-        })
-        .unwrap()
-        .grant;
-    env.host.revoke(&local("advo-front"), &call).unwrap();
+    let call = |provider: &str| {
+        env.host
+            .get(&local("advo-front"))
+            .unwrap()
+            .grants
+            .into_iter()
+            .find(|g| {
+                matches!(&g.grant, watane_pkg::Grant::Call { interface, .. }
+                    if interface.to_string().starts_with(provider))
+                    && g.granted
+            })
+            .unwrap()
+            .grant
+    };
+    // A catalog write that leaves this grant keeps the stream.
+    let other = call("mods:relay/");
+    env.host.revoke(&local("advo-front"), &other).unwrap();
+    assert_eq!(
+        page(&env, "advo", "api.push", json!({"s": s, "bytes": 1})),
+        json!("ok")
+    );
+    env.host
+        .revoke(&local("advo-front"), &call("mods:advo/"))
+        .unwrap();
     let pushed = page(&env, "advo", "api.push", json!({"s": s, "bytes": 1}));
     assert!(
         pushed.as_str().unwrap().contains("unknown-stream"),
