@@ -25,9 +25,10 @@ fn s98_start_asset_requests(app: &App) {
     assert_eq!(
         app.eval(
             "main",
-            "window.__s98Pending = 200; for (let i = 0; i < 200; i++) fetch(`style.css?s98=${i}`, {cache: 'no-store'}).then(r => r.arrayBuffer()).finally(() => window.__s98Pending--); window.__s98Pending"
+            // Each finished request starts the next, so requests are in flight when quit lands.
+            "window.__s98Sent = 0; const go = () => { window.__s98Sent++; fetch(`style.css?s98=${window.__s98Sent}`, {cache: 'no-store'}).then(r => r.arrayBuffer()).finally(go); }; for (let i = 0; i < 16; i++) go(); window.__s98Sent"
         ),
-        200,
+        16,
         "asset requests must be in flight when the eval returns"
     );
 }
