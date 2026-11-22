@@ -15,6 +15,42 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+/// True when `[::1]` cannot be bound on this machine at all (8.1): the address
+/// is absent, or the kernel has no IPv6. Every other failure is `port_in_use`.
+fn v6_absent(error: &std::io::Error) -> bool {
+    #[cfg(target_os = "linux")]
+    const EAFNOSUPPORT: i32 = 97;
+    #[cfg(target_os = "macos")]
+    const EAFNOSUPPORT: i32 = 47;
+    #[cfg(windows)]
+    const EAFNOSUPPORT: i32 = 10047;
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    const EAFNOSUPPORT: i32 = -1;
+    error.kind() == std::io::ErrorKind::AddrNotAvailable
+        || error.raw_os_error() == Some(EAFNOSUPPORT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::v6_absent;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn ac1_only_no_ipv6_errors_fall_back_to_v4() {
+        assert!(v6_absent(&Error::from(ErrorKind::AddrNotAvailable)));
+        #[cfg(target_os = "linux")]
+        assert!(v6_absent(&Error::from_raw_os_error(97)));
+        #[cfg(target_os = "macos")]
+        assert!(v6_absent(&Error::from_raw_os_error(47)));
+        #[cfg(windows)]
+        assert!(v6_absent(&Error::from_raw_os_error(10047)));
+        assert!(!v6_absent(&Error::from(ErrorKind::AddrInUse)));
+        assert!(!v6_absent(&Error::from(ErrorKind::PermissionDenied)));
+        assert!(!v6_absent(&Error::from(ErrorKind::Other)));
+        assert!(!v6_absent(&Error::from_raw_os_error(98)));
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ServerState {
     pub host: Arc<ServingHost>,
@@ -75,7 +111,12 @@ impl Host {
             let port = v4.local_addr()?.port();
             match TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).await {
                 Ok(v6) => {
-                    listeners = Some((v4, v6, port));
+                    listeners = Some((v4, Some(v6), port));
+                    break;
+                }
+                Err(error) if v6_absent(&error) => {
+                    eprintln!("watane: no IPv6 loopback (::1); serving 127.0.0.1 only");
+                    listeners = Some((v4, None, port));
                     break;
                 }
                 Err(_) if requested == 0 => continue,
@@ -132,7 +173,7 @@ impl Host {
             },
         )?;
         let mut tasks = Vec::new();
-        for listener in [v4, v6] {
+        for listener in std::iter::once(v4).chain(v6) {
             let router = router.clone();
             let mut rx = rx.clone();
             tasks.push(tokio::spawn(async move {

@@ -656,3 +656,60 @@ fn ac7_public_modes_and_default_home() {
         assert_eq!(host.is_preview(), preview);
     }
 }
+
+/// AC2: where `::1` is absent the program serves 127.0.0.1 alone and says so on stderr.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac2_preview_serves_v4_alone_without_ipv6() {
+    if std::net::TcpListener::bind("[::1]:0").is_ok() {
+        return; // this machine has ::1; AC3 covers it
+    }
+    let home = tempfile::tempdir().unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+    command
+        .arg("--preview")
+        .arg(home.path())
+        .args(["--port", "0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    let ready: Value = serde_json::from_str(&line).unwrap();
+    let port = ready["port"].as_u64().unwrap();
+    let response = Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .get(format!("http://127.0.0.1:{port}/api/status"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let _ = child.kill();
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(
+        stderr,
+        "watane: no IPv6 loopback (::1); serving 127.0.0.1 only\n"
+    );
+    assert!(ready.get("v6").is_none());
+}
+
+/// AC4: `[::1]:<port>` held by another socket stays `port_in_use`, and binds nothing.
+#[test]
+fn ac4_held_v6_port_is_port_in_use_and_binds_nothing() {
+    let Ok(held) = std::net::TcpListener::bind("[::1]:0") else {
+        return; // no ::1 on this machine; CI proves the in-use branch
+    };
+    let port = held.local_addr().unwrap().port();
+    let home = tempfile::tempdir().unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_watane"));
+    command
+        .arg("--preview")
+        .arg(home.path())
+        .args(["--port", &port.to_string()]);
+    let error = Preview::try_start_command(command).err().unwrap();
+    assert_eq!(error["code"], "port_in_use");
+    std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+}
