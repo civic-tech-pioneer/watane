@@ -2026,7 +2026,7 @@ HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 | `app` (W37) | `Confirm::installed`, `Installed` (12.1): one call after each install that wrote the catalog, any requester |
 | `dev` (step 10) | the manage fakes of 6.10 under the `Fakes` key `watane:host/manage`; `Outcome.manages`, `ManageRecord` (2.6); `HOST_WIT` with `manage` |
 | `dev` | the program `watane` (12.2), `Ready`, `RunInfo::read`, the local API (11), `default_home`; `Harness`, `Fakes`, `Outcome`, `EventRecord` (2.6; `FunctionInfo` joins S5); `HOST_WIT` for `wit/deps/watane-host/`; `WATANE_JS`; the JSON encoding (6.9); the CSP rule that a page has no inline script (the template must load its script from a file). The S11 cut lists deferred Harness items. |
-| `pkg` (step 11) | the `watane:host` interfaces of 19.1 as imports and exports, for pkg's import check (pkg 4.5): imports `streams`, `claude-types`, `claude-code`, `claude-code-shell`, `claude-session`, `https-stream`, `agent-tools`, `timers`, `caller.identity`; exports `stream-sink`, `stream-producer`, `timer-sink`; the grants `ClaudeCode`, `ClaudeCodeShell` (the WIT `grant` variant of 6.4) |
+| `pkg` (step 11) | the `watane:host` interfaces of 19.1 as imports and exports, for pkg's import check (pkg 4.5): imports `streams`, `claude-types`, `claude-code`, `claude-code-shell`, `claude-session`, `https-stream`, `agent-tools`, `timers`, `caller.identity`, and `host-info` from stage A2 (19.1, the row of pkg 4.5); exports `stream-sink`, `stream-producer`, `timer-sink`; the grants `ClaudeCode`, `ClaudeCodeShell` (the WIT `grant` variant of 6.4) |
 | `app` (step 11) | `Confirm::{accounts, consent}` (one consent method for the three consents), `AccountSource`, `JudgeAccount`, `AccountError::{NoAccount, Unavailable}`, `Account::{OpenAi, Judge}`, `Consent` (with its `what` text as the key), `ConsentRequest` (`origin`, `via`, `consent`, `profile`, `functions`), `ConsentAnswer`; `Host::{withdraw_consent, account_changed}`; `judge_origin`; `InstalledMod.consents`; the reserved `<home>/app/accounts/` is the app's (3.1) |
 | `dev` (step 11) | `Outcome.requests`, `RequestRecord`, the harness fakes of 19.1; `HOST_WIT` with the new interfaces; `watane.js` with the connection id; the `claude` argument and stdin rules of 19.3 for `fake-claude`; the account binding of 19.4 for `ScriptedResponses`; `Host::set_fake_claude` and `watane --preview .. --fake-claude <path>`; the feature `test-net` with `Host::set_test_net(TestNet { routes, root_pem })` (19.9) |
 | the agent layer mods (W38) | the interfaces of 19.1 to 19.8; `caller.identity()` values; the grants `claude-code`, `claude-code-shell` |
@@ -2256,7 +2256,7 @@ then; the questions stay here as the record, and the rule is in 19.1 (Q34) and
 - **Q36** Answered (option 1) by the human, 2026-11-21, with the `ask-resolved`
   and `expired` rules as the source writes them (19.3 steps 4 and 5); built in
   stage A2. The host-item rules of 19.3 step 4 and 5 (source row: "4.5 host
-  items", S8, S22). Undecided: the item `ask-resolved` and its `by` values
+  items", S8, S22). Undecided until then: the item `ask-resolved` and its `by` values
   (`answered`, `expired` for an ask the host denied at its `expires-at`,
   `cancelled` for a `control_cancel_request`); whether the host also closes a
   check with `ask-resolved {by: expired}` at its `expires-at` and writes
@@ -2453,7 +2453,7 @@ not here. The host gives them the interfaces below; pkg 5.1 gives the two
 grants, app 19 the accounts and consents, dev 18 the fakes. Rules are ported
 from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
 TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
-2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
+2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules were
 not decided in S95; the human answered them on 2026-11-21 (section 18, Q34 to
 Q36) and 19.1 and 19.3 state the rules. S95's adversary step adds Q38 to Q43
 (A2 and A3), still open. Text that depends on one says so. Q37 names where the request rule of 19.6 parts from the
