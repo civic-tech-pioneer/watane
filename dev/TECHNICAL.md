@@ -960,8 +960,8 @@ stage with an error.
    `watane_host::HOST_WIT`. This is on purpose: a mod must build against the
    WIT of the host that runs it, so the file is dev's, not the maker's. A
    rewrite means the mod's copy came from another watane-dev, and the maker
-   commits the new copy. dev touches only this file, never another file under
-   `wit/deps/`.
+   commits the new copy. This step touches only this file, never another file
+   under `wit/deps/` (those are `add`'s, 9.5 and 10.3).
 3. **Files**: no symbolic link anywhere in the mod folder (`logic/target/`
    and `.git/` are skipped): `mod.symlink`. The files of `logic/`: 5.3.
 4. **pkg**: `watane_pkg::Mod::read(dir)`. Each `Violation` of
