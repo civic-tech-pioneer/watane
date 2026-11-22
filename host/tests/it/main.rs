@@ -4,12 +4,14 @@
 mod adv_s96;
 mod agent_load;
 mod binds;
+mod claude;
 mod collect;
 mod harness;
 mod json;
 mod manage;
 mod mcp;
 mod program;
+mod r7;
 mod requests;
 mod runtime;
 mod streams;

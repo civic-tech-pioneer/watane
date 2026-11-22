@@ -5,6 +5,7 @@ pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod agent;
+pub use agent::accounts::{AccountError, AccountSource, JudgeAccount};
 mod api;
 mod bus;
 mod catalog;
@@ -100,15 +101,24 @@ pub struct Host {
     hub: Arc<agent::streams::Hub>,
     /// Timers (19.6).
     timers: Arc<agent::timers::Timers>,
+    /// The start number of this open (19.1, `host-info`).
+    generation: u64,
+    /// The live `claude` runs (19.3).
+    sessions: Arc<agent::claude::Sessions>,
+    /// A preview only: the program run in place of `claude` (19.9).
+    fake_claude: Mutex<Option<PathBuf>>,
 }
 
 impl Host {
     pub fn open(path: &Path, mode: Mode, limits: Limits) -> Result<Arc<Self>, HostError> {
         let home = home::Home::open(path, mode)?;
+        // Step 11 (3.1 step 3): the groups that a crashed host left, and `runs/`.
+        agent::claude::run::clean_runs(&home.path);
         let engine = Arc::new(runtime::engine()?);
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
         let tools = tools::Tools::open(&home.path)?;
+        let generation = state.next_generation()?;
         let host = Arc::new_cyclic(|weak| Self {
             weak: std::sync::Weak::<Host>::clone(weak),
             events: runtime::call::Deliveries::default(),
@@ -118,6 +128,9 @@ impl Host {
             fake_serial: std::sync::atomic::AtomicUsize::new(0),
             hub: agent::streams::Hub::new(),
             timers: agent::timers::Timers::new(),
+            generation,
+            sessions: Arc::default(),
+            fake_claude: Mutex::new(None),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
             state,
@@ -205,6 +218,22 @@ impl Host {
             })
             .map_err(CallError::internal)?;
         rx.await.map_err(CallError::internal)?
+    }
+
+    /// A preview only (else `bad_request`): the program that every `claude-code` and
+    /// `claude-code-shell` start runs in place of `claude` (19.9).
+    pub fn set_fake_claude(&self, program: &Path) -> Result<(), HostError> {
+        if !self.is_preview() {
+            return Err(HostError::BadRequest(
+                "a fake claude can be set in a preview only".into(),
+            ));
+        }
+        *self
+            .fake_claude
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it") =
+            Some(program.to_path_buf());
+        Ok(())
     }
 
     pub fn home(&self) -> &Path {
@@ -510,6 +539,16 @@ impl Host {
         // end, the timers that carry the removed mod are rewritten (4.4, 19.6). A failure is
         // reported at the end; the folder goes last.
         self.hub.end_mod(&identity);
+        // Its scratch workspaces go with it (19.3, Folders; 4.4).
+        let scratch = self
+            .state
+            .scratch_removed(&identity)
+            .map_err(|e| HostError::Internal(e.message))
+            .map(|ids| {
+                for id in ids {
+                    let _ = std::fs::remove_dir_all(self.home().join("scratch").join(id));
+                }
+            });
         let owners = self
             .catalog
             .lock()
@@ -531,7 +570,13 @@ impl Host {
         self.catalog_written();
         let folder = std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))
             .map_err(HostError::from);
-        folder.and(data).and(rewritten)
+        folder.and(data).and(rewritten).and(scratch)
+    }
+}
+impl Drop for Host {
+    /// The host closes: no `claude` outlives it.
+    fn drop(&mut self) {
+        self.sessions.stop_all();
     }
 }
 

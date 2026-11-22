@@ -2,6 +2,8 @@
 //! call, the effects that a chain applies after its durable commit (19.6) and the
 //! application of those effects.
 
+pub(crate) mod accounts;
+pub(crate) mod claude;
 pub(crate) mod streams;
 pub(crate) mod timers;
 
@@ -84,6 +86,37 @@ pub(crate) enum Effect {
         owner: ModRef,
         id: String,
     },
+    /// `claude-code.start` or `claude-code-shell.start` (19.3).
+    ClaudeStart {
+        id: String,
+        consumer: ModRef,
+        consumer_gen: Option<u64>,
+        origin: String,
+        origin_gen: Option<u64>,
+        launch: Arc<claude::launch::Launch>,
+        shell: bool,
+    },
+    /// `claude-session.say`, `interrupt` or `compact` (19.3).
+    ClaudeWrite {
+        id: String,
+        what: claude::Write,
+        by: ModRef,
+    },
+    /// A harness only: a request that a fake answered (19.1, Harness).
+    Fake {
+        function: &'static str,
+        args: Value,
+    },
+}
+impl Effect {
+    /// The key of the consumer's 32-streams limit, for an effect that opens a stream.
+    fn consumer_key(&self) -> Option<String> {
+        match self {
+            Self::Open { consumer, .. } => consumer.key(),
+            Self::ClaudeStart { consumer, .. } => Consumer::Mod(consumer.clone()).key(),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn unix_ms() -> u64 {
@@ -107,6 +140,10 @@ pub(crate) fn records(log: &[Effect]) -> Vec<RequestRecord> {
             Effect::TimerCancel { id, .. } => Some(RequestRecord {
                 function: "timers.cancel".into(),
                 args: json!({"id": id}),
+            }),
+            Effect::Fake { function, args } => Some(RequestRecord {
+                function: (*function).into(),
+                args: args.clone(),
             }),
             _ => None,
         })
@@ -208,6 +245,14 @@ impl Invocation {
         }
     }
     fn view(&self, log: &[Effect], id: &str) -> Option<View> {
+        self.view_of(log, id, false)
+    }
+    /// The view for a consumer's `resume` and `cancel`, which also reach a stream that its
+    /// producer ended while items wait for the consumer (19.2, Deferred batch).
+    fn consumer_view(&self, log: &[Effect], id: &str) -> Option<View> {
+        self.view_of(log, id, true)
+    }
+    fn view_of(&self, log: &[Effect], id: &str, closing: bool) -> Option<View> {
         let mut view = log.iter().find_map(|e| match e {
             Effect::Open {
                 id: i,
@@ -226,7 +271,11 @@ impl Invocation {
             _ => None,
         });
         if view.is_none() {
-            let info = self.chain.host.hub.info(id)?;
+            let info = if closing {
+                self.chain.host.hub.info_closing(id)?
+            } else {
+                self.chain.host.hub.info(id)?
+            };
             view = Some(View {
                 consumer: info.consumer,
                 producer: info.producer,
@@ -396,6 +445,9 @@ pub(crate) fn call(
     }
     let me = inv.me();
     match (interface, function) {
+        ("claude-code", "start") => claude::start(inv, claude::launch::Kind::Code, args),
+        ("claude-code-shell", "start") => claude::start(inv, claude::launch::Kind::Shell, args),
+        ("claude-session", _) => claude::session_call(inv, function, args),
         ("streams", "open") => {
             let Some(consumer) = inv.open_consumer(who) else {
                 return Ok(err(StreamError::NotYours));
@@ -410,8 +462,7 @@ pub(crate) fn call(
             if let Some(key) = consumer.key() {
                 let mut opened = 0;
                 let mut queued = |e: &Effect| {
-                    if matches!(e, Effect::Open { consumer: c, .. } if c.key().as_deref() == Some(key.as_str()))
-                    {
+                    if e.consumer_key().as_deref() == Some(key.as_str()) {
                         opened += 1;
                     }
                 };
@@ -474,7 +525,7 @@ pub(crate) fn call(
         ("streams", "cancel") => {
             let id = name(0)?;
             let mut log = inv.log();
-            if let Some(view) = inv.view(&log, &id)
+            if let Some(view) = inv.consumer_view(&log, &id)
                 && inv.acts_for(&view.consumer)
             {
                 log.push(Effect::Cancel {
@@ -488,7 +539,7 @@ pub(crate) fn call(
         ("streams", "resume") => {
             let id = name(0)?;
             let mut log = inv.log();
-            let Some(view) = inv.view(&log, &id) else {
+            let Some(view) = inv.consumer_view(&log, &id) else {
                 return Ok(err(StreamError::UnknownStream));
             };
             if !inv.acts_for(&view.consumer) {
@@ -647,6 +698,44 @@ fn fake(
             result = Value::Null;
         }
         ("streams", "close" | "cancel") => result = Value::Null,
+        ("claude-code" | "claude-code-shell", "start") => {
+            let n = inv
+                .chain
+                .host
+                .fake_serial
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
+            result = json!({"ok": format!("s{n}")});
+            log.push(Effect::Fake {
+                function: if interface == "claude-code" {
+                    "claude-code.start"
+                } else {
+                    "claude-code-shell.start"
+                },
+                args: json!({"launch": args.first().map(json::encode).transpose()?}),
+            });
+        }
+        ("claude-session", "say" | "answer" | "interrupt" | "compact") => {
+            let function_name = match function {
+                "say" => "claude-session.say",
+                "answer" => "claude-session.answer",
+                "interrupt" => "claude-session.interrupt",
+                _ => "claude-session.compact",
+            };
+            let names: &[&str] = if function == "answer" {
+                &["s", "ask", "d"]
+            } else {
+                &["s", "content"]
+            };
+            let mut named = serde_json::Map::new();
+            for (name, value) in names.iter().zip(args) {
+                named.insert((*name).to_owned(), json::encode(value)?);
+            }
+            log.push(Effect::Fake {
+                function: function_name,
+                args: Value::Object(named),
+            });
+        }
         _ => {}
     }
     Ok(fakes
@@ -654,6 +743,23 @@ fn fake(
         .and_then(|f| f.get(function))
         .cloned()
         .unwrap_or(result))
+}
+
+/// Whether an enabled, loaded mod has this identity, and the install generation `pkg`
+/// (19.6, At apply); with `local`, under that local name.
+fn live_mod(
+    catalog: &crate::catalog::Catalog,
+    local: Option<&LocalName>,
+    identity: &str,
+    pkg: Option<u64>,
+) -> bool {
+    catalog.mods.iter().any(|m| {
+        m.identity == identity
+            && m.enabled
+            && m.error.is_none()
+            && local.is_none_or(|l| &m.local == l)
+            && pkg.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
+    })
 }
 
 /// Whether the consumer still holds the enabled mod, the `Call` link `via` to this provider and
@@ -726,13 +832,7 @@ impl Host {
                         .lock()
                         .expect("lock poisoned: another thread panicked while holding it");
                     let live = |local: Option<&LocalName>, identity: &str, pkg: Option<u64>| {
-                        catalog.mods.iter().any(|m| {
-                            m.identity == identity
-                                && m.enabled
-                                && m.error.is_none()
-                                && local.is_none_or(|l| &m.local == l)
-                                && pkg.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
-                        })
+                        live_mod(&catalog, local, identity, pkg)
                     };
                     let valid = live(Some(&producer.local), &producer.identity, producer_gen)
                         && live(None, origin, origin_gen)
@@ -762,6 +862,36 @@ impl Host {
                     });
                     self.hub.apply(self, effect, valid);
                 }
+                Effect::ClaudeStart {
+                    id,
+                    consumer,
+                    consumer_gen,
+                    origin,
+                    origin_gen,
+                    launch,
+                    shell,
+                } => {
+                    let valid = {
+                        let catalog = self
+                            .catalog
+                            .lock()
+                            .expect("lock poisoned: another thread panicked while holding it");
+                        let grant = if shell {
+                            watane_pkg::Grant::ClaudeCodeShell
+                        } else {
+                            watane_pkg::Grant::ClaudeCode
+                        };
+                        live_mod(&catalog, Some(&consumer.local), &consumer.identity, consumer_gen)
+                            && live_mod(&catalog, None, &origin, origin_gen)
+                            && catalog.mods.iter().any(|m| {
+                                m.local == consumer.local
+                                    && m.grants.iter().any(|g| g.granted && g.grant == grant)
+                            })
+                    };
+                    self.claude_start(id, consumer, origin, origin_gen, launch, shell, valid);
+                }
+                Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
+                Effect::Fake { .. } => {}
                 other => self.hub.apply(self, other, true),
             }
         }

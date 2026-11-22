@@ -1,0 +1,32 @@
+#!/bin/sh
+# host's own fake `claude` (TECHNICAL 19.9, 13.1): a POSIX sh script that tests copy into a
+# folder of their own with files beside it:
+#   version  text printed by `--version` (default `2.1.295 (Claude Code)`)
+#   init     the `system/init` line to write after the answer to `initialize`
+#   lines    raw lines to play after it
+#   exit     with this file the program exits with its content as status after the lines
+#   spawn    with this file the program starts a `sleep` in its group and logs its pid
+# It logs its arguments, environment and stdin to `claude.log` beside it, one `ARG`, `ENV`,
+# `IN`, `PID`, `CHILD` or `CWD` entry per line.
+dir=$(dirname "$0")
+log="$dir/claude.log"
+if [ "$1" = "--version" ]; then
+  if [ -f "$dir/version" ]; then cat "$dir/version"; else echo "2.1.295 (Claude Code)"; fi
+  exit 0
+fi
+for a in "$@"; do printf 'ARG %s\n' "$a" >> "$log"; done
+env | sort | while IFS= read -r l; do printf 'ENV %s\n' "$l" >> "$log"; done
+printf 'PID %s\n' "$$" >> "$log"
+printf 'CWD %s\n' "$(pwd)" >> "$log"
+if [ -f "$dir/spawn" ]; then
+  sleep 300 >/dev/null 2>&1 &
+  printf 'CHILD %s\n' "$!" >> "$log"
+fi
+IFS= read -r line
+printf 'IN %s\n' "$line" >> "$log"
+rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"hook_on_failure_supported":true}}}\n' "$rid"
+[ -f "$dir/init" ] && cat "$dir/init"
+[ -f "$dir/lines" ] && cat "$dir/lines"
+if [ -f "$dir/exit" ]; then exit "$(cat "$dir/exit")"; fi
+while IFS= read -r line; do printf 'IN %s\n' "$line" >> "$log"; done

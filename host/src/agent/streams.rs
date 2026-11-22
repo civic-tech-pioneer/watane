@@ -271,6 +271,8 @@ struct Inner {
     clock: Clock,
     ended_host: HashMap<String, Value>,
     deliveries: HashMap<String, Vec<Delivery>>,
+    /// Run when a host stream ends: the claude session kills its process group (19.3).
+    on_end: HashMap<String, Box<dyn FnOnce() + Send>>,
 }
 
 pub(crate) struct Hub {
@@ -370,8 +372,19 @@ impl Hub {
     // ---- calls: checks at the call (19.2, Commit) -------------------------------------
 
     pub fn info(&self, id: &str) -> Option<Info> {
+        self.info_of(id, false)
+    }
+    /// Like `info`, also for a stream that its producer ended and whose consumer has not taken
+    /// every item yet: the consumer may still `resume` or `cancel` it (19.2, Deferred batch).
+    pub fn info_closing(&self, id: &str) -> Option<Info> {
+        self.info_of(id, true)
+    }
+    fn info_of(&self, id: &str, closing: bool) -> Option<Info> {
         let inner = self.lock();
-        let s = inner.streams.get(id).filter(|s| s.closing.is_none())?;
+        let s = inner
+            .streams
+            .get(id)
+            .filter(|s| closing || s.closing.is_none())?;
         Some(Info {
             consumer: s.consumer.clone(),
             producer: s.producer.clone(),
@@ -511,7 +524,11 @@ impl Hub {
                     inner.schedule(&id);
                 }
             }
-            Effect::TimerAfter { .. } | Effect::TimerCancel { .. } => {}
+            Effect::TimerAfter { .. }
+            | Effect::TimerCancel { .. }
+            | Effect::ClaudeStart { .. }
+            | Effect::ClaudeWrite { .. }
+            | Effect::Fake { .. } => {}
         }
         drop(inner);
         self.cv.notify_all();
@@ -833,6 +850,54 @@ impl Hub {
         self.cv.notify_all();
     }
 
+    // ---- host streams of `claude` (19.3) -----------------------------------------------
+
+    /// Opens a host stream whose consumer is a mod; `on_end` runs once when it ends.
+    pub fn open_host(
+        &self,
+        id: String,
+        consumer: ModRef,
+        origin: (String, Option<u64>),
+        on_end: Box<dyn FnOnce() + Send>,
+    ) {
+        let mut inner = self.lock();
+        inner.create(
+            id.clone(),
+            Consumer::Mod(consumer),
+            (Producer::Host, origin, None),
+            false,
+        );
+        inner.on_end.insert(id, on_end);
+    }
+    /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
+    /// host is at its limit, so that the source waits.
+    pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        if body.len() > MAX_ITEM {
+            return Err(StreamError::TooLarge);
+        }
+        let origin = {
+            let inner = self.lock();
+            match inner.streams.get(id) {
+                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
+                _ => return Err(StreamError::UnknownStream),
+            }
+        };
+        self.check_push(id, body.len(), (0, 0), &origin, 0, 0)?;
+        self.lock().enqueue(id, body.to_vec(), 0);
+        self.cv.notify_all();
+        Ok(())
+    }
+    /// The source of a host stream ended with `outcome`: the consumer takes what is queued,
+    /// also after a deferral, and then gets `ended` (19.2, Deferred batch).
+    pub fn finish(&self, id: &str, outcome: Value) {
+        let mut inner = self.lock();
+        if inner.streams.get(id).is_some_and(|s| s.closing.is_none()) {
+            inner.end(id, outcome, true);
+        }
+        drop(inner);
+        self.cv.notify_all();
+    }
+
     // ---- test streams (19.9) -----------------------------------------------------------
 
     pub fn set_clock(self: &Arc<Self>, clock: &TestClock) {
@@ -863,20 +928,7 @@ impl Hub {
     }
     /// A push by the host as producer, applied at once.
     pub fn test_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        if body.len() > MAX_ITEM {
-            return Err(StreamError::TooLarge);
-        }
-        let origin = {
-            let inner = self.lock();
-            match inner.streams.get(id) {
-                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
-                _ => return Err(StreamError::UnknownStream),
-            }
-        };
-        self.check_push(id, body.len(), (0, 0), &origin, 0, 0)?;
-        self.lock().enqueue(id, body.to_vec(), 0);
-        self.cv.notify_all();
-        Ok(())
+        self.host_push(id, body)
     }
     pub fn test_paused(&self, id: &str) -> bool {
         self.lock().streams.get(id).is_some_and(|s| {
@@ -1160,8 +1212,8 @@ impl Inner {
         };
         if !s.producer_told {
             s.producer_told = true;
-            let (producer, origin, origin_gen) =
-                (s.producer.clone(), s.origin.clone(), s.origin_gen);
+            let (producer, origin, origin_gen, test) =
+                (s.producer.clone(), s.origin.clone(), s.origin_gen, s.test);
             match producer {
                 Producer::Mod(p) => {
                     self.tasks
@@ -1175,7 +1227,12 @@ impl Inner {
                         });
                 }
                 Producer::Host => {
-                    self.ended_host.insert(id.to_owned(), outcome.clone());
+                    if test {
+                        self.ended_host.insert(id.to_owned(), outcome.clone());
+                    }
+                    if let Some(hook) = self.on_end.remove(id) {
+                        hook();
+                    }
                 }
             }
         }

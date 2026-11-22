@@ -1,8 +1,9 @@
 //! Confirmation (TECHNICAL 12.1): the `Confirm` trait the app implements, and
 //! the requests and answers that pass through it.
 
-use crate::{LocalName, PlanEntry};
+use crate::{AccountSource, LocalName, PlanEntry};
 use std::pin::Pin;
+use std::sync::Arc;
 use watane_pkg::{Grant, ReleaseRef};
 
 pub trait Confirm: Send + Sync + 'static {
@@ -25,6 +26,12 @@ pub trait Confirm: Send + Sync + 'static {
     /// Must not block. Default: nothing.
     fn reduced(&self, by: &LocalName, reduction: &Reduction) {
         let _ = (by, reduction);
+    }
+    /// Step 11 (19.4): the accounts of the participant: the `claude` program they picked, the
+    /// ChatGPT tokens, the judge's key. Default `None`: a home with no app, or an app with no
+    /// accounts.
+    fn accounts(&self) -> Option<Arc<dyn AccountSource>> {
+        None
     }
 }
 /// The changed plan entries, in install order, after the catalog commit.

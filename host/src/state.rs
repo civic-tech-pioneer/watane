@@ -14,6 +14,10 @@ use std::time::Instant;
 const SIZES: TableDefinition<&str, u64> = TableDefinition::new("sizes");
 /// `<mod id>/<timer id>` -> JSON `{"due":<unix ms>,"origin":"<identity>"}` (TECHNICAL 7).
 const TIMERS: TableDefinition<&str, &str> = TableDefinition::new("timers");
+/// The `generation` key -> the host's start number (TECHNICAL 7, 19.1).
+const HOST: TableDefinition<&str, u64> = TableDefinition::new("host");
+/// A scratch workspace id -> the identity of its owner (TECHNICAL 7, 19.3).
+const SCRATCH: TableDefinition<&str, &str> = TableDefinition::new("scratch");
 
 /// The writer's counters since open (TECHNICAL 19.9, `Host::test_stats`).
 #[derive(Debug, Default)]
@@ -93,6 +97,78 @@ impl State {
             ));
         }
         Ok(db.clone())
+    }
+    /// Raises the host's start number by one and returns it: 1 at the first open of a home
+    /// (19.1, `host-info`). Durable before it returns.
+    pub fn next_generation(&self) -> Result<u64, HostError> {
+        let internal = |e: &dyn std::fmt::Display| HostError::Internal(e.to_string());
+        let db = self
+            .database(true)
+            .map_err(|e| HostError::Internal(e.message))?
+            .expect("created database");
+        let txn = db.begin_write().map_err(|e| internal(&e))?;
+        let next = {
+            let mut table = txn.open_table(HOST).map_err(|e| internal(&e))?;
+            let next = table
+                .get("generation")
+                .map_err(|e| internal(&e))?
+                .map_or(0, |v| v.value())
+                + 1;
+            table.insert("generation", next).map_err(|e| internal(&e))?;
+            next
+        };
+        txn.commit().map_err(|e| internal(&e))?;
+        Ok(next)
+    }
+    /// The owner identity of a scratch workspace (19.3, Folders).
+    pub fn scratch_owner(&self, id: &str) -> Result<Option<String>, CallError> {
+        let Some(db) = self.database(false)? else {
+            return Ok(None);
+        };
+        let read = db.begin_read().map_err(CallError::internal)?;
+        let table = match read.open_table(SCRATCH) {
+            Ok(t) => t,
+            Err(TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(CallError::internal(e)),
+        };
+        Ok(table
+            .get(id)
+            .map_err(CallError::internal)?
+            .map(|v| v.value().to_owned()))
+    }
+    /// Records the owner of a new scratch workspace.
+    pub fn scratch_add(&self, id: &str, owner: &str) -> Result<(), CallError> {
+        let db = self.database(true)?.expect("created database");
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        {
+            let mut table = txn.open_table(SCRATCH).map_err(CallError::internal)?;
+            table.insert(id, owner).map_err(CallError::internal)?;
+        }
+        txn.commit().map_err(CallError::internal)?;
+        Ok(())
+    }
+    /// Deletes the rows of the scratch workspaces that `identity` owns and returns their ids
+    /// (4.4, remove).
+    pub fn scratch_removed(&self, identity: &str) -> Result<Vec<String>, CallError> {
+        let Some(db) = self.database(false)? else {
+            return Ok(vec![]);
+        };
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        let mut ids = vec![];
+        {
+            let mut table = txn.open_table(SCRATCH).map_err(CallError::internal)?;
+            for row in table.iter().map_err(CallError::internal)? {
+                let (key, value) = row.map_err(CallError::internal)?;
+                if value.value() == identity {
+                    ids.push(key.value().to_owned());
+                }
+            }
+            for id in &ids {
+                table.remove(id.as_str()).map_err(CallError::internal)?;
+            }
+        }
+        txn.commit().map_err(CallError::internal)?;
+        Ok(ids)
     }
     /// The ids of the live timers of one mod (19.6).
     pub fn timer_ids(&self, identity: &str) -> Result<BTreeSet<String>, CallError> {
