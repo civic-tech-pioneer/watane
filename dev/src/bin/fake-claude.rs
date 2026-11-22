@@ -80,7 +80,11 @@ fn spawn_reader(mut input: impl BufRead + Send + 'static) -> Receiver<Value> {
             log(&json!({"stdin": text}));
             let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             let allowed = match value["type"].as_str().unwrap_or("") {
-                "user" | "control_response" => true,
+                "user" => true,
+                // An allow answer never changes the session's permissions (host 19.3).
+                "control_response" => value["response"]["response"]
+                    .get("updatedPermissions")
+                    .is_none(),
                 "control_request" => value["request"]["subtype"] == "interrupt",
                 _ => false,
             };
@@ -305,6 +309,12 @@ fn check_arguments(args: &[String]) {
             }
         }
     }
+    // Claude Code's names only: a host name such as `manual` or `accept-edits` is a host bug.
+    if let Some(mode) = value_of(args, "--permission-mode=")
+        && !["default", "acceptEdits", "plan", "dontAsk"].contains(&mode)
+    {
+        die(64, &format!("unknown argument --permission-mode={mode}"));
+    }
 }
 fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     args.iter().find_map(|a| a.strip_prefix(flag))
@@ -328,12 +338,7 @@ fn init_line(args: &[String], version: &str, overrides: &Value) -> Value {
             _ => vec![],
         })
         .unwrap_or_default();
-    let mode = match value_of(args, "--permission-mode=").unwrap_or("manual") {
-        "manual" | "default" => "default",
-        "accept-edits" | "acceptEdits" => "acceptEdits",
-        "dont-ask" | "dontAsk" => "dontAsk",
-        other => other,
-    };
+    let mode = value_of(args, "--permission-mode=").unwrap_or("default");
     let servers = value_of(args, "--mcp-config=").map_or_else(Vec::new, mcp_servers);
     let mut line = json!({"type":"system","subtype":"init","session_id":SESSION,
         "cwd":std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),

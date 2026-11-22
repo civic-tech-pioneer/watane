@@ -472,6 +472,10 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                         }
                         return Err(tested.errors);
                     }
+                    // Step 2 (9.3): a missing fake is a warning; serve goes on.
+                    if let Err(warning) = preview::find_fake_claude() {
+                        outcome.warnings.push(warning);
+                    }
                     preview::serve(&dir, &env, &format!("watane-dev serve --json{args}"))
                 }
             }),
@@ -479,11 +483,6 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     match result {
         Ok(v) => {
             if name == "serve" {
-                if v.get("stopped").is_none()
-                    && let Err(warning) = preview::find_fake_claude()
-                {
-                    outcome.warnings.push(warning);
-                }
                 outcome.next = serve_next(&v, cli.json, &args);
             }
             outcome.result = Some(v);
