@@ -285,6 +285,13 @@ impl Job {
         host.state
             .scratch_add(&id, &self.session.origin)
             .map_err(|e| Self::failed(e.message))?;
+        // The owner may have been removed since the last check: delete this folder and this
+        // row only, and end `gone` (19.3, Folders, Lifetime).
+        if self.session.stopped() {
+            let _ = std::fs::remove_dir_all(&path);
+            let _ = host.state.scratch_delete(&id);
+            return Err(json!("gone"));
+        }
         Ok((id, path))
     }
 

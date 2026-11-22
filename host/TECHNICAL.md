@@ -2985,8 +2985,11 @@ checks of the table above are made at the call.
     host checks again, and a folder or row gone since ends the stream `gone`.
   - **Lifetime.** A scratch workspace outlives its stream and its process. The
     `remove` of its owner (4.4) deletes its rows and its folders; nothing else
-    does. A start checks that its stream is not stopped before each step that makes a
-    folder, a row or a process, and after the version probe; a stopped start makes nothing. A preview's home goes with the preview.
+    does. A start checks that its stream is not stopped after the version probe and before
+    each step that makes a folder, a row or a process. It checks once more after it made a
+    new scratch folder and its row; if stopped, it deletes that one folder and that one row
+    (never the owner's other rows) and the stream ends `gone`. A preview's home goes with
+    the preview.
   - **Picked folders** come with the workspace consent (stage A3): until then a
     `workspace` or `extra-workspaces` value that is not a scratch value is
     `bad-launch {field, reason: "picked folders need the workspace consent (stage A3)"}`.
