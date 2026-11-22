@@ -180,14 +180,12 @@ pub(crate) fn stored_generation(rig: &Rig) -> u64 {
     value.unwrap().value()
 }
 fn alive(pid: i32) -> bool {
-    // A zombie is gone for this purpose.
-    std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .ok()
-        .and_then(|s| {
-            s.rsplit_once(')')
-                .map(|(_, rest)| rest.trim_start().starts_with('Z'))
-        })
-        .is_some_and(|zombie| !zombie)
+    // A zombie is gone for this purpose. `ps` works on Linux and macOS alike.
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().starts_with('Z')
 }
 
 #[test]
@@ -244,14 +242,15 @@ fn ac5_a_scratch_launch_runs_the_fake_with_the_fixed_arguments_and_environment()
         format!("{pid}\n")
     );
     // The group: the program is its own leader.
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
-    let fields: Vec<&str> = stat
-        .rsplit_once(')')
-        .unwrap()
-        .1
-        .split_whitespace()
-        .collect();
-    assert_eq!(fields[2], pid, "process group differs from the pid");
+    let pgid = std::process::Command::new("ps")
+        .args(["-o", "pgid=", "-p", &pid])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&pgid.stdout).trim(),
+        pid,
+        "process group differs from the pid"
+    );
     // The environment: only the variables of 19.3.
     let env = rig.entries("ENV");
     let names: Vec<&str> = env.iter().map(|e| e.split('=').next().unwrap()).collect();
