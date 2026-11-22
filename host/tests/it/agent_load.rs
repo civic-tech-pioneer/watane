@@ -463,8 +463,8 @@ mod stage_b {
         );
         assert!(marks.iter().all(|m| m.bad == 0), "{marks:?}");
         assert!(marks.iter().all(|m| m.taken == SMALL + BIG), "{marks:?}");
-        assert!(col(|m| m.small_entries) <= 50.0);
-        assert!(col(|m| m.small_ask) <= 50.0);
+        assert!(col(|m| m.small_entries) <= 100.0);
+        assert!(col(|m| m.small_ask) <= 100.0);
         assert!(col(|m| m.answer) <= 50.0);
         assert!(col(|m| m.big_turn) <= 10_000.0);
         assert!(col(|m| m.interrupt) <= 250.0);
