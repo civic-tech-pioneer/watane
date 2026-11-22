@@ -2038,6 +2038,21 @@ the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
 percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 0, read per item 103 (the routing keys, see above). All within the budgets.
 
+**Budgets of stage B, the host part** (S100's foreman, 2026-11-22: agentic-harness
+TECHNICAL 15 names the load, 8 sessions, 2 owners, 10 and 10 000 entries; its
+kernel budgets are the kernel's, S36; the numbers below are the host's share and
+cheap to change). A slow test, `tests/it/agent_load.rs`: 8 `claude-code` streams
+on host's fixture fake, 4 consumed by each of 2 mods (the owners), each fake
+writing a turn of 10 entries, then one of 10 000 (an `assistant` line of about
+1 KiB each), with an `ask` in each turn that the consumer answers. All p95 over
+the 8 streams. Every entry arrives once and in order. An entry, written by the
+fake to taken by its consumer: at most 50 ms in the 10-entry turn; the 10 000-entry
+turn taken whole within 10 s. An `ask` written to `ask` item taken: at most 50 ms;
+`answer` to the `control_response` on the fake's stdin: at most 50 ms. `interrupt`
+during the 10 000-entry turn to its `ask-resolved` items: at most 250 ms. `cancel`
+to `ended`: at most 250 ms. Writer busy share at most 10%; state bytes written per
+entry none. The run records its numbers here, with the date and the machine.
+
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
 
@@ -2922,8 +2937,10 @@ not keep a credential from a mod on their own. Three rules do:
 |---|---|
 | `control_request` `can_use_tool` | `{"type":"ask","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
 | `control_request` `hook_callback` (PreToolUse) | `{"type":"check","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
+|  | (S100's foreman) The host id is a decimal counter from `"1"` per stream, one count for asks and checks. An ask's `tool` and `input` are the request's `tool_name` and `input`; a check's are its `input.tool_name` and `input.tool_input`; `tool_use_id` is the request's `tool_use_id` for both. A `tool` that is not a string or an `input` that is not an object is answered deny at once and pushes nothing, as a missing `tool_use_id` is |
 | a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through (Q36, option 1): the line goes on the stream as `{"type":"wrapped","line":"<the line as a JSON string>"}`, so that no `claude` line can pass as a host item |
 | a line that is not UTF-8, is not one JSON object, or has a duplicate top-level key | `{"type":"wrapped","line":"<the line as a JSON string>"}`, the bytes decoded with U+FFFD for the invalid ones |
+| `control_cancel_request` | never pushed. When its `request_id` is that of an open ask or check, the host closes it with `ask-resolved {by: cancelled}`; any other cancel does nothing (S100's foreman) |
 | any other line | the line unchanged |
 
    `expires-at` is on the host's clock: for an ask, the push time plus 10
@@ -2941,7 +2958,8 @@ not keep a credential from a mod on their own. Three rules do:
    `claude`; `none` only for a check, Q35); `expired` (an ask that the host
    denied at its `expires-at`, step 5; or a check that reached its
    `expires-at`: the host closes it, and writes nothing to stdin for it);
-   `cancelled` (`claude` sent a `control_cancel_request` for it). Each ask or
+   `cancelled` (`claude` sent a `control_cancel_request` for it, or the
+   consumer's `interrupt` ended its turn, step 5). Each ask or
    check gets exactly one `ask-resolved`, and a later answer to it is
    `unknown-ask` (Q36).
 5. Writes to stdin are only these; after `initialize`, none is written until the answer to it has passed step 2 (not until `system/init`), then they go in queue order, and none if step 2 fails:
@@ -2952,13 +2970,19 @@ not keep a credential from a mod on their own. Three rules do:
 | `compact` | a `user` message `/compact` | – |
 | `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused `not-allowed-here`; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
 | `answer` to a check | `{}` for `none`; `{hookSpecificOutput: {hookEventName: PreToolUse, permissionDecision: deny, permissionDecisionReason}}` for `deny` | `allow` refused `not-allowed-here` |
-| `interrupt` | `control_request` `interrupt` | – |
+| `interrupt` | `control_request` `interrupt` | first, a deny (`message` `interrupted`) for each open ask of the stream, nothing for an open check; each open ask and check then closes with `ask-resolved {by: cancelled}`, in the order they were pushed, before the stream's next item (S100's foreman) |
 
    An ask the host has not had answered at its `expires-at` is denied (written
    as the deny above) and closes with `ask-resolved {by: expired}`. A check
    that is not answered at its `expires-at` is closed with `ask-resolved
    {by: expired}` and nothing is written to stdin for it. A second
    answer, or an answer to an ask or check that is closed, is `unknown-ask`.
+   The checks of an `answer` are made at the call against the asks open then
+   (`unknown-ask` for an id that is not open on `s`); one that closes between the
+   call and its apply (expired, cancelled, a second answer applied first) writes
+   nothing and pushes nothing more. An ask's `permission_suggestions` and every
+   other field of `claude`'s request but `tool_name`, `input` and `tool_use_id`
+   stay out of the item; an `allow` never carries `updatedPermissions`.
    The items for a close are those of step 4. Nothing else is ever written: no
    `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`,
    `updatedPermissions` or second `initialize`.

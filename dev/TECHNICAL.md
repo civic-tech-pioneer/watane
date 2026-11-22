@@ -2767,6 +2767,18 @@ control protocol, as `claude` does:
 | `exit` | exit with `code` (default 0) after flushing |
 | `crash` | kill itself with `SIGKILL`, with nothing flushed |
 | `hang` | stop reading and writing, until the host kills it |
+| `long-turn` | (S100) a turn of `entries` `assistant` messages (default 100), one every `every-ms` (default 0), each with the text `entry <i> ` (from 1) padded with `x` to `bytes` bytes (default 32); then `result` and `idle`. An `interrupt` that arrives during it is answered, the rest is not written, and the turn ends with a `result` of subtype `error_during_execution` and `idle`. A `user` message that arrives during it is kept for the next step |
+| `load` | (S100) the load mode for the stage B budgets (host 15): `long-turn` with `every-ms` 0 and `bytes` 1024 by default, written in bursts of 64 lines per flush |
+| `reply-per-say` | (S100) for each `user` message, up to `turns` (default: until standard input closes): write a `delta` and a `message` with the text `<text><what was said>` (`text` default `you said: `), a `result` and `idle`. An `interrupt` while it waits is answered |
+
+`ask` with `await: true` resumes on the answer (S100): an allow goes on with the
+next step; a deny writes a `message` `denied: <message>`, a `result` and `idle`,
+and skips the steps up to the next `expect-user` or `reply-per-say` (the turn
+ended). An `interrupt` that arrives in its place is answered and ends the turn
+the same way. An `interrupt` that no step awaits is answered and logged, never an
+exit 70: the host writes one whenever the consumer asks (host 19.3 step 5). The
+program accepts `--permission-prompts=host` with `--permission-prompt-tool=stdio`
+(a launch with `ask: true`) as it accepts `--permission-prompts=none`.
 
 When the host writes a line that no step awaits and that is not one of the
 writes of host 19.3 (a `user` message, a `control_response`, a hook answer,
