@@ -136,6 +136,9 @@ impl exports::mods::claude::api::Guest for Guest {
         let _ = streams::hand_off(&s);
         panic!("failed after hand-off");
     }
+    fn open_stream() -> String {
+        streams::open().unwrap_or_else(|e| format!("open:{e:?}"))
+    }
     fn who() -> String {
         caller::identity()
     }

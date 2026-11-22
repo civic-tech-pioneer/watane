@@ -269,10 +269,11 @@ pub(crate) fn session_call(
     let Some(view) = inv.view(&log, &id) else {
         return err("unknown-stream");
     };
-    // A stream started in this chain has no session yet: it is a shell's when the effect says so.
+    // A stream started in this chain has no session yet: it is one when a `claude-code.start`
+    // of this chain opened it (a shell's or a mod's stream is not).
     let session = if view.in_chain {
-        !log.iter()
-            .any(|e| matches!(e, Effect::ClaudeStart { id: i, shell: true, .. } if *i == id))
+        log.iter()
+            .any(|e| matches!(e, Effect::ClaudeStart { id: i, shell: false, .. } if *i == id))
     } else {
         host.sessions.get(&id).is_some()
     };
