@@ -871,11 +871,13 @@ impl Host {
                     launch,
                     shell,
                 } => {
+                    // The stream opens under the catalog lock, so that a `remove` of the
+                    // origin either comes first (not valid) or ends the stream (19.6, At apply).
+                    let catalog = self
+                        .catalog
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it");
                     let valid = {
-                        let catalog = self
-                            .catalog
-                            .lock()
-                            .expect("lock poisoned: another thread panicked while holding it");
                         let grant = if shell {
                             watane_pkg::Grant::ClaudeCodeShell
                         } else {
@@ -893,6 +895,7 @@ impl Host {
                             })
                     };
                     self.claude_start(id, consumer, origin, origin_gen, launch, shell, valid);
+                    drop(catalog);
                 }
                 Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
                 Effect::Fake { .. } => {}
