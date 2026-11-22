@@ -1170,7 +1170,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
   For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
   `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
-- [ ] **S99 Stage B, end to end: Alice has a first conversation with Claude on dev's fake `claude`
+- [~] **S99 (routine `trig_01SRQRzaH2pwAAJuwqnW84TT`, cloud) Stage B, end to end: Alice has a first conversation with Claude on dev's fake `claude`
   (host H2, `host-info.generation`, dev's fake `claude`, pkg; the watane half).** After S96 and S97.
   One story in two repositories, handed out together: agentic-harness S35 is the kernel, provider
   and console half (its PLAN). Alice runs `watane-dev serve` with the agent kernel and the unchecked
