@@ -1125,6 +1125,7 @@ One redb database at `state/state.redb`.
 | `s/<id>`, one per mod | `&str` state key | `&[u8]` value |
 | `sizes` | `&str` `<id>` | `u64` stored bytes (keys + values) |
 | `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | `&str`: JSON text `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
+| `host` (step 11, stage A2) | `&str` name; the one key `generation` | `u64`: the start number that `host-info.generation()` returns (19.1); not counted in `sizes`; stage A2 (S99) creates the table |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1290,7 +1291,10 @@ page runs as a top-level view, never in a frame.
 - A receiver that lags on the bus (section 9.3) gets one
   `{"type":"changed"}` in place of the lost messages.
 - The stream ends when the mod is disabled or removed, or the server stops;
-  its streams then end `gone` (19.2).
+  its streams then end `gone` (19.2). The same holds for one connection: when
+  it closes, the streams whose consumer it is end `gone` (19.2, Ends), and
+  they are not carried over to a later connection; a page that opens a new
+  connection opens its streams again (8.5, Connection replaced).
 
 ### 8.5 `watane.js`
 
@@ -1347,6 +1351,24 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
 The stream opens at the first `watane.on`. A page that never calls
 `watane.on` gets no `reload` and no connection id. The id is that of the
 latest `connection` message; a call made before the first one carries none.
+
+**Connection replaced (a change that stage A2 makes, S99).** The code above
+is that of stage A1 and stays as it is until S99, which changes it together
+with this section. An `EventSource` that reconnects opens a new `/events`
+connection (8.4) with a new id, and the streams of the old connection ended
+`gone` when it closed. The first `connection` message of a page stays private,
+as above. A later one also goes to every `watane.on` handler, after
+`connection` is set, as `{"type":"connection","id":"<new id>","previous":"<old
+id>"}`, so a call made in the handler already carries the new id, and a page
+that sees it opens its streams again. The one changed line of `dispatch` is
+
+```js
+    if (message.type === 'connection') { const previous = connection; connection = message.id; if (previous === null) return; message = { type: 'connection', id: message.id, previous }; }
+```
+
+in place of its first line; the `for` loop after it delivers `message` to the
+handlers. S99 replaces the code block of this section with the result, and
+`tests/it/program/pages.rs` keeps comparing the block with `src/watane.js`.
 
 ## 9. Events
 
@@ -1909,7 +1931,7 @@ is added.
 | 11 Manage (step 10) | `manage` in `wit/host.wit`; the linker row and 6.10 (reads, reductions, the request table, effects after the chain, the grant checks); `Confirm::{manage, reduced}`, `Requester::Mod`, `ManageRequest`, `Ask`, `ManageOutcome`, `Reduction`; the 12.1 rule for `Requester::Mod`; the `catalog` page message; the 5.3 rule; manage fakes and `Outcome.manages` in `Harness`; fixture `manager` | stage 5; `pkg` stage 11 (`Grant::Manage`, `World::manage`) | none; the stage waits for pkg | S40 to S47 pass (`tests/it/manage.rs`); J10 with `dev` and `app` |
 | 12 Installed hook (W37) | `Confirm::installed` and `Installed` (12.1), called from `install` | stage 5 | none | the W37 row of `tests/it/program/api.rs` passes; every earlier test passes unchanged (the default body) |
 | A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6, the chain rule of requests and stream effects, 6.6 step 4) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixtures `latch`, `relay`, `relay-front`; `Outcome.requests`; the feature `test-streams` (19.9) | stage 5; `pkg` stage 12 (the step 11 rows of 4.5, `World::host_exports`, 4.6) | `RawMod` and the test streams of 19.9 for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); S48 to S56 of FUNCTIONAL; the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
-| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders; `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` stage 12 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); S63, S64 (`say` part), S67 |
+| A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders, the `ask-resolved` and `wrapped` items (19.3; Q35, Q36); `host-info` (19.1, Q34 decided: the interface in `wit/host.wit`, its linker row, the `host` table of 7, the fake); the connection-replaced message of `watane.js` (8.5); `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` stage 12 (`Grant::ClaudeCode`, `ClaudeCodeShell`); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); `host-info` and the restart rule: `generation()` is raised by one at each `Host::open` and is the same between; S63, S64 (`say` part), S67 |
 | A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C; S61, S62, S65, S66, S68 |
 | A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D; S64 (header part) |
 | A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_origin`, `account_changed(&Account::Judge { .. })` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
@@ -2208,11 +2230,14 @@ or whether one is shown.
   naming a manager's functions as such. Cost to undo: (b) is one check at
   each function in 6.10, but breaks a manager that an agent drives.
 
-Open for the human (S95, agentic-harness `factory/PLAN.md`, "Waiting on the
-human"). Each is left out of 19 on purpose; no document decides it, and text
-that depends on it points here. Stage A1 needs none; A2 needs all three.
+Answered by the human on 2026-11-21 (S95, agentic-harness `factory/PLAN.md`,
+"Waiting on the human"; written into 19 by S97). Each was left out of 19 until
+then; the questions stay here as the record, and the rule is in 19.1 (Q34) and
+19.3 (Q35, Q36), built by stage A2.
 
-- **Q34** `caller.boot()` (source row: "`caller.boot()`, a new watane host
+- **Q34** Answered (a) by the human, 2026-11-21; but as a new interface
+  `host-info` with `generation()`, not a function of `caller` (19.1); built in
+  stage A2. `caller.boot()` (source row: "`caller.boot()`, a new watane host
   import", S17). The kernel cannot tell a restart from its own state, so it
   needs the host's start number. (a) `caller.boot() -> u64`: raised once each
   time the host starts, kept in host state, the same for every call until the
@@ -2220,14 +2245,17 @@ that depends on it points here. Stage A1 needs none; A2 needs all three.
   `started()` called once per start into each mod. Recommended: (a); no new
   call into mods at start. Cost to undo: one line of 19.1, one row of 15, and
   the kernel's restart rule. Blocks only A2.
-- **Q35** `outcome` on `ask-resolved {by: answered}` (source row: "`answered`
+- **Q35** Answered (a) by the human, 2026-11-21 (19.3 step 4); built in stage
+  A2. `outcome` on `ask-resolved {by: answered}` (source row: "`answered`
   carries `outcome`", S18). Without it the kernel cannot record what a checked
   provider decided (`allow`, `deny` or `none`). (a) The item carries
   `"outcome":"allow"|"deny"|"none"`, the answer the host sent to `claude`
   (`none` only for a check). (b) No field; the kernel learns the outcome
   another way at stage E. Recommended: (a). Cost to undo: one field. Blocks
   only A2.
-- **Q36** The host-item rules of 19.3 step 4 and 5 (source row: "4.5 host
+- **Q36** Answered (option 1) by the human, 2026-11-21, with the `ask-resolved`
+  and `expired` rules as the source writes them (19.3 steps 4 and 5); built in
+  stage A2. The host-item rules of 19.3 step 4 and 5 (source row: "4.5 host
   items", S8, S22). Undecided: the item `ask-resolved` and its `by` values
   (`answered`, `expired` for an ask the host denied at its `expires-at`,
   `cancelled` for a `control_cancel_request`); whether the host also closes a
@@ -2426,9 +2454,9 @@ grants, app 19 the accounts and consents, dev 18 the fakes. Rules are ported
 from agentic-harness `design/TECHNICAL.md` and cited "(agentic-harness
 TECHNICAL n)". The human's answers there are cited `(N<n>, the human,
 2026-11-20)`. The host is built in stages A1 to A5 (15). Three rules are
-not decided and wait on the human: section 18, Q34 to Q36; S95's adversary
-step adds Q38 to Q43 (A2 and A3). Text that depends
-on one says so. Q37 names where the request rule of 19.6 parts from the
+not decided in S95; the human answered them on 2026-11-21 (section 18, Q34 to
+Q36) and 19.1 and 19.3 state the rules. S95's adversary step adds Q38 to Q43
+(A2 and A3), still open. Text that depends on one says so. Q37 names where the request rule of 19.6 parts from the
 source's, because the host commits each invoke on its own (Q3).
 
 **Terms.** *Producer* and *consumer* of a stream (19.2). A *host stream* has
@@ -2573,13 +2601,29 @@ caller of the current call, compared exactly by mods:
 `who()` is unchanged for mods, pages and agents and returns `host` for the
 host. A rename of a local name changes `who()` and never `identity()`. `Caller`
 (2.3) gets no variant: the host's own calls use a crate-private caller.
-`caller.boot()` is not added: Q34.
+
+**`host-info`** (Q34, answered by the human, 2026-11-21; built in stage A2,
+S99). Restart detection is not a function of `caller` (nothing is added to it);
+it is a new interface, no grant:
+
+```wit
+interface host-info { generation: func() -> u64; }
+```
+
+`generation()` is a pure read, no grant, not a request. The host raises it by
+one at each `Host::open` and keeps it durably in host state (the `host` table
+of 7, key `generation`; the first open of a home gives 1), so it never repeats
+for one home, also after a crash. It is the same for every call, of every mod,
+until the next open, so a mod that stored the number can tell a restart. The harness fake (2.6) returns 1. `host-info` is
+not in `wit/host.wit` until stage A2 (S99) adds it with its code, so the
+package of 6.4 and its test are unchanged by this text.
 
 Linking (rows of 6.4):
 
 | Import | Linked to |
 |---|---|
 | `streams`, `claude-session`, `agent-tools`, `timers` | the functions of 19.2, 19.3, 19.5, 19.6 at every call; no grant to check |
+| `host-info` (stage A2) | `generation()` of this section at every call; no grant to check |
 | `claude-types` | types only |
 | `claude-code`, `claude-code-shell` | each function first checks `Grant::ClaudeCode` / `Grant::ClaudeCodeShell` granted in the current catalog, else the call traps `not_granted` ("<local> has no grant for watane:host/claude-code"): the stub of W9 |
 | `https-stream` | 19.4; the hosts are those of the mod's granted `Http` grants (6.8) |
@@ -2590,7 +2634,7 @@ A grant revoked or a mod disabled stops the next host import of a running chain
 
 **Harness** (2.6). The new imports are fakes: `streams.open` returns `s1`,
 `s2`, ... in call order (one count for the host), every other function returns ok, `identity` returns
-`local/<slug>` of the caller or `page`. Each request (19.6) of a succeeded
+`local/<slug>` of the caller or `page`, and `host-info.generation` returns 1. Each request (19.6) of a succeeded
 call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
 in call order; a failed call records none. A `Fakes` entry under
 `watane:host/<interface>` overrides a result.
@@ -2615,7 +2659,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Driver | delivery is asynchronous: `Host::call` returns after step 6 of 6.6 without waiting for any `items`, `ready` or `ended` call. The host runs deliveries and timer firings (19.6) on its own workers, started by `Host::open` in every mode (no `serve` needed) and holding a `Weak` of the host like the epoch ticker (6.3): dropping the last `Arc<Host>` stops them after the call in progress, so a test can open `state/state.redb` after `drop(host)` |
 | Producer signals | a producer mod that does not export `stream-producer` gets no `ready` and no `ended`; its pushes still fail `full` |
 | Failed batch | delivered once more with the same numbers; a second failure ends the stream `consumer-failed` |
-| Deferred batch | an `items` call that returns `defer` is rolled back like a failed call (its pushes, writes and requests are dropped) but is not a failure: it does not count towards `consumer-failed`. The host keeps that batch and every later item, delivers nothing more on that stream, and a host stream stops reading its source, until the consumer calls `resume` |
+| Deferred batch | an `items` call that returns `defer` is rolled back like a failed call (its pushes, writes and requests are dropped) but is not a failure: it does not count towards `consumer-failed`. The host keeps that batch and every later item, delivers nothing more on that stream, and a host stream stops reading its source, until the consumer calls `resume`. A stream that ends (any outcome) while its consumer holds a deferred batch delivers the held batch and every item still queued, in order, after `resume`, and only then `ended(outcome)`; `ended` never overtakes a held item, and the items count against the budgets until delivered (agentic-harness S32, R7; stage A2 builds it, today only a producer's `close` delivers what is queued before `ended`). A consumer that never resumes gets the 5-minute backstop (Deferral), then `ended` |
 | Resume | consumer only; the host then delivers the kept batch again, with the same numbers. `resume` of a stream that is not deferred does nothing. It takes effect with its chain (Commit); one made in the call that returns `defer` is dropped with it |
 | Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what every chain in flight has queued, not only the current chain: a call checks and queues its effect under one lock of the host, and a chain releases its reservation when it applies or rolls back. So the in-flight limit, the budgets, the 32 open streams, the 256 live timers (their cancels count only in the chain that made them) and the single hand-off hold across chains running at once. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain |
 | Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
@@ -2810,7 +2854,8 @@ not keep a credential from a mod on their own. Three rules do:
 |---|---|
 | `control_request` `can_use_tool` | `{"type":"ask","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
 | `control_request` `hook_callback` (PreToolUse) | `{"type":"check","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
-| a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through; what goes on the stream instead is Q36 |
+| a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through (Q36, option 1): the line goes on the stream as `{"type":"wrapped","line":"<the line as a JSON string>"}`, so that no `claude` line can pass as a host item |
+| a line that is not UTF-8, is not one JSON object, or has a duplicate top-level key | `{"type":"wrapped","line":"<the line as a JSON string>"}`, the bytes decoded with U+FFFD for the invalid ones |
 | any other line | the line unchanged |
 
    `expires-at` is on the host's clock: for an ask, the push time plus 10
@@ -2820,9 +2865,17 @@ not keep a credential from a mod on their own. Three rules do:
    nothing for it. The host's `id` of an `ask` or `check` is unique on its
    stream and never reused. The host builds each `ask` and `check` item from
    its own parsed value and serializes it itself; it never copies bytes of a
-   `claude` line into an item, so no `claude` line can pass as a host item. The
-   items that close an ask or check (`ask-resolved`, its values and its
-   `outcome`) are Q35 and Q36.
+   `claude` line into an item, so no `claude` line can pass as a host item. An
+   ask or check closes with one item, built by the host as well:
+   `{"type":"ask-resolved","ask":"<the id of the ask or check>","by":<by>}`, with
+   `by` one of: `answered` (a `claude-session.answer` was written, and the item
+   also carries `"outcome":"allow"|"deny"|"none"`, the answer the host sent to
+   `claude`; `none` only for a check, Q35); `expired` (an ask that the host
+   denied at its `expires-at`, step 5; or a check that reached its
+   `expires-at`: the host closes it, and writes nothing to stdin for it);
+   `cancelled` (`claude` sent a `control_cancel_request` for it). Each ask or
+   check gets exactly one `ask-resolved`, and a later answer to it is
+   `unknown-ask` (Q36).
 5. Writes to stdin are only these:
 
 | Operation | Written | Rule |
@@ -2834,9 +2887,11 @@ not keep a credential from a mod on their own. Three rules do:
 | `interrupt` | `control_request` `interrupt` | – |
 
    An ask the host has not had answered at its `expires-at` is denied (written
-   as the deny above). A second answer, or an answer to an ask or check that
-   is closed, is `unknown-ask`. What the host pushes when an ask or check
-   closes is Q35 and Q36. Nothing else is ever written: no
+   as the deny above) and closes with `ask-resolved {by: expired}`. A check
+   that is not answered at its `expires-at` is closed with `ask-resolved
+   {by: expired}` and nothing is written to stdin for it. A second
+   answer, or an answer to an ask or check that is closed, is `unknown-ask`.
+   The items for a close are those of step 4. Nothing else is ever written: no
    `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`,
    `updatedPermissions` or second `initialize`.
 6. A turn is over when `claude` reports itself idle, not at the first
