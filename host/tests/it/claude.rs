@@ -1231,3 +1231,35 @@ while IFS= read -r line; do printf 'IN %s\n' "$line" >> "$log"; done
         "written to stdin before the answer to initialize: {early:?}"
     );
 }
+
+/// A `say` queued behind `initialize` is not written when the process ends before it answers
+/// (19.3, step 5: none if step 2 fails). A reader outside the group keeps stdin open after the
+/// process exits (`OUT`) and logs each line, then `EOF` when the host closes stdin; the process
+/// exits only once the `say` is queued (`go`).
+#[test]
+fn a_say_queued_behind_initialize_is_not_written_when_the_process_exits_unanswered() {
+    let rig = Rig::new(&[]);
+    rig.put(
+        "claude",
+        br#"#!/bin/sh
+dir=$(dirname "$0")
+log="$dir/claude.log"
+if [ "$1" = "--version" ]; then echo "2.1.295 (Claude Code)"; exit 0; fi
+IFS= read -r line
+printf 'IN %s\n' "$line" >> "$log"
+exec 3<&0
+perl -e 'sub put { open my $f, ">>", $ARGV[0]; print $f @_; close $f }
+setpgrp(0, 0); put("OUT \n"); while (<STDIN>) { put("IN $_") } put("EOF \n")' "$log" <&3 >/dev/null &
+until grep -q '^OUT' "$log"; do sleep 0.05; done
+until [ -e "$dir/go" ]; do sleep 0.05; done
+exit 0
+"#,
+    );
+    let answer = rig.front("api.run-say", json!({"launch": LAUNCH, "text": "early"}));
+    assert!(answer.as_str().unwrap().ends_with(" ok"), "{answer}");
+    rig.put("go", b"");
+    rig.wait_log("stdin closed", |l| l.iter().any(|e| e.starts_with("EOF")));
+    let written = rig.entries("IN");
+    assert_eq!(written.len(), 1, "only initialize is written: {written:?}");
+    assert!(written[0].contains("initialize"), "{written:?}");
+}
