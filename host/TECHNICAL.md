@@ -2882,7 +2882,9 @@ not keep a credential from a mod on their own. Three rules do:
    `{"type":"initialized","workspace":"<the launch's workspace id>"}` on the
    stream (Folders). The process starts only after the
    workspace consent is held, so `initialized` never comes before it; the
-   checked provider relies on that.
+   checked provider relies on that. Before the answer only control lines may come, and none
+   is pushed: any other line kills the group and ends the stream `mismatch "init"`, so
+   `initialized` is the first item.
 3. The `system/init` line must match the launch in tools, MCP servers, agents,
    permission mode (`manual` reads `default`) and plugins (exactly
    `watane-run` and Claude Code's `cc-plugin-*`). Skills are not compared. A
