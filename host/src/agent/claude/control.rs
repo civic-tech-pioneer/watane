@@ -22,12 +22,58 @@ const HOST_ITEM_TYPES: [&str; 8] = [
 pub(crate) enum Line {
     /// Push these bytes as one item.
     Item(Vec<u8>),
-    /// Answer the control request deny at once and push nothing (asks and checks wait for S100).
-    Deny { request_id: String, hook: bool },
+    /// A `can_use_tool` or a `hook_callback`: an ask or a check when the launch asked for it and
+    /// `fields` is `Some`, else the host answers deny at once and pushes nothing.
+    Request {
+        request_id: String,
+        hook: bool,
+        fields: Option<Fields>,
+    },
+    /// A `control_cancel_request`: never pushed; it closes the ask or check it names.
+    Cancel { request_id: String },
     /// A `system/init` line: checked, then pushed unchanged.
     Init(Value, Vec<u8>),
     /// The answer to a control request of the host.
-    Response { request_id: String, ok: bool },
+    Response {
+        request_id: String,
+        ok: bool,
+        /// The `response.response` object of a success.
+        body: Value,
+    },
+}
+
+/// What the host reads of a tool request of `claude`, and nothing else (19.3, step 4).
+#[derive(Debug, PartialEq)]
+pub(crate) struct Fields {
+    pub tool_use_id: String,
+    pub tool: String,
+    pub input: Value,
+}
+
+/// The fields of a `can_use_tool` (`tool_name`, `input`) or of a PreToolUse `hook_callback`
+/// (`input.tool_name`, `input.tool_input`); `None` when one is missing or of the wrong type.
+fn fields(request: &Value, hook: bool) -> Option<Fields> {
+    let tool_use_id = request.get("tool_use_id")?.as_str()?;
+    let (tool, input) = if hook {
+        let data = request.get("input")?;
+        if data
+            .get("hook_event_name")
+            .is_some_and(|e| e.as_str() != Some("PreToolUse"))
+        {
+            return None;
+        }
+        (data.get("tool_name")?, data.get("tool_input")?)
+    } else {
+        (request.get("tool_name")?, request.get("input")?)
+    };
+    if tool_use_id.is_empty() || !input.is_object() {
+        return None;
+    }
+    Some(Fields {
+        tool_use_id: tool_use_id.to_owned(),
+        tool: tool.as_str()?.to_owned(),
+        input: input.clone(),
+    })
 }
 
 /// Whether the top level of a JSON object text has a key twice.
@@ -80,13 +126,24 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
             let subtype = value.pointer("/request/subtype").and_then(Value::as_str);
             let id = value.get("request_id").and_then(Value::as_str);
             match (subtype, id) {
-                (Some(s @ ("can_use_tool" | "hook_callback")), Some(id)) => Line::Deny {
-                    request_id: id.to_owned(),
-                    hook: s == "hook_callback",
-                },
+                (Some(s @ ("can_use_tool" | "hook_callback")), Some(id)) => {
+                    let hook = s == "hook_callback";
+                    Line::Request {
+                        request_id: id.to_owned(),
+                        hook,
+                        fields: value.get("request").and_then(|r| fields(r, hook)),
+                    }
+                }
                 _ => Line::Item(raw.to_vec()),
             }
         }
+        Some("control_cancel_request") => Line::Cancel {
+            request_id: value
+                .get("request_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        },
         Some("control_response") => {
             let id = value
                 .pointer("/response/request_id")
@@ -96,6 +153,10 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
                     request_id: id.to_owned(),
                     ok: value.pointer("/response/subtype").and_then(Value::as_str)
                         == Some("success"),
+                    body: value
+                        .pointer("/response/response")
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 },
                 None => Line::Item(raw.to_vec()),
             }
@@ -111,7 +172,8 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
 /// `control_request` or `control_response` object (a wrapped line has the type `wrapped`).
 pub(crate) fn is_control(line: &Line) -> bool {
     match line {
-        Line::Deny { .. } | Line::Response { .. } => true,
+        Line::Request { .. } | Line::Response { .. } => true,
+        Line::Cancel { .. } => false,
         Line::Item(body) => serde_json::from_slice::<Value>(body).is_ok_and(|v| {
             matches!(
                 v.get("type").and_then(Value::as_str),
@@ -124,8 +186,21 @@ pub(crate) fn is_control(line: &Line) -> bool {
 
 // ---- what the host writes (19.3, step 5 and Wire shapes) ---------------------------------
 
-pub(crate) fn initialize(request_id: &str) -> Vec<u8> {
-    json!({"type":"control_request","request_id":request_id,"request":{"subtype":"initialize"}})
+/// The id of the host's PreToolUse callback in `initialize` (19.3, step 1).
+pub(crate) const HOOK_CALLBACK: &str = "watane-pre-tool-use";
+
+/// `initialize`; with a `pre-tool-check` of `timeout` seconds it holds the PreToolUse hook.
+pub(crate) fn initialize(request_id: &str, timeout: Option<u64>) -> Vec<u8> {
+    let mut request = json!({"subtype": "initialize"});
+    if let Some(timeout) = timeout {
+        request["hooks"] = json!({"PreToolUse": [{
+            "matcher": "*",
+            "hookCallbackIds": [HOOK_CALLBACK],
+            "timeout": timeout,
+            "onFailure": "block",
+        }]});
+    }
+    json!({"type":"control_request","request_id":request_id,"request":request})
         .to_string()
         .into_bytes()
 }
@@ -140,21 +215,62 @@ pub(crate) fn interrupt(request_id: &str) -> Vec<u8> {
         .to_string()
         .into_bytes()
 }
-/// The deny that answers a `can_use_tool` (or, as a hook answer, a `hook_callback`) at once.
-pub(crate) fn deny(request_id: &str, hook: bool) -> Vec<u8> {
-    let reason = "the host answers deny: asks and checks are not built yet";
-    let body = if hook {
-        json!({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }})
-    } else {
-        json!({"behavior": "deny", "message": reason})
-    };
+/// A `control_response` to a request of `claude`.
+fn respond(request_id: &str, body: Value) -> Vec<u8> {
     json!({"type":"control_response","response":{
         "subtype":"success","request_id":request_id,"response":body}})
     .to_string()
+    .into_bytes()
+}
+/// The deny of an ask (`{behavior: deny, message}`), or of a check (a `hookSpecificOutput`).
+pub(crate) fn deny(request_id: &str, hook: bool, reason: &str) -> Vec<u8> {
+    respond(
+        request_id,
+        if hook {
+            json!({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }})
+        } else {
+            json!({"behavior": "deny", "message": reason})
+        },
+    )
+}
+/// The allow of an ask: `updatedInput` is the original input or the one the mod changed.
+/// Never `updatedPermissions` (19.3, step 5).
+pub(crate) fn allow(request_id: &str, input: &Value) -> Vec<u8> {
+    respond(
+        request_id,
+        json!({"behavior": "allow", "updatedInput": input}),
+    )
+}
+/// The answer `none` of a check: `{}`.
+pub(crate) fn pass(request_id: &str) -> Vec<u8> {
+    respond(request_id, json!({}))
+}
+
+/// `{"type":"ask"|"check","id":..,"tool_use_id":..,"tool":..,"input":..,"expires-at":<ms>}`,
+/// built from the host's own parsed values; the key order is part of the item.
+pub(crate) fn request_item(hook: bool, id: &str, fields: &Fields, expires_at: u64) -> Vec<u8> {
+    let kind = if hook { "check" } else { "ask" };
+    let text = |s: &str| Value::String(s.to_owned());
+    format!(
+        r#"{{"type":"{kind}","id":{},"tool_use_id":{},"tool":{},"input":{},"expires-at":{expires_at}}}"#,
+        text(id),
+        text(&fields.tool_use_id),
+        text(&fields.tool),
+        fields.input
+    )
+    .into_bytes()
+}
+/// `{"type":"ask-resolved","ask":<id>,"by":<by>}` with `"outcome"` when the answer was written.
+pub(crate) fn resolved_item(id: &str, by: &str, outcome: Option<&str>) -> Vec<u8> {
+    let id = Value::String(id.to_owned());
+    match outcome {
+        Some(o) => format!(r#"{{"type":"ask-resolved","ask":{id},"by":"{by}","outcome":"{o}"}}"#),
+        None => format!(r#"{{"type":"ask-resolved","ask":{id},"by":"{by}"}}"#),
+    }
     .into_bytes()
 }
 

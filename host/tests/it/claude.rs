@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 //! Stage A2, first slice (TECHNICAL 19.3, 19.9; FUNCTIONAL S63, S64, S67, S69): `claude-code`
-//! on host's own fake `claude` (`tests/fixtures/fake-claude/claude`). Asks and checks wait for
-//! S100: nothing here tests an `ask` or a `check` item.
+//! on host's own fake `claude` (`tests/fixtures/fake-claude/claude`). The S100 tests at the end
+//! cover asks, checks, `answer` and `interrupt`.
 
 use crate::streams::{call_as, fixture, local, wait};
 use serde_json::{Value, json};
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-use watane_host::{Caller, Host, Limits, Mode};
+use watane_host::{Caller, Host, Limits, Mode, TestClock};
 
 pub(crate) const INIT: &str = r#"{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"agents":[],"permissionMode":"default","plugins":[{"name":"watane-run"}]}"#;
 pub(crate) const LAUNCH: &str = r#"{"version":1,"workspace":"scratch"}"#;
@@ -460,7 +460,7 @@ fn ac7_a_plugin_of_claude_codes_own_and_the_mode_dont_ask_match() {
 }
 
 #[test]
-fn ac8_a_can_use_tool_and_a_hook_callback_are_denied_at_once_and_push_no_item() {
+fn ac8_without_ask_or_check_in_the_launch_a_request_is_denied_at_once_and_pushes_no_item() {
     // Asks and checks wait for S100 (agentic-harness case 10, 14, 15 host parts).
     let lines = br#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Read","input":{}}}
 {"type":"control_request","request_id":"r2","request":{"subtype":"hook_callback","callback_id":"c"}}
@@ -1261,4 +1261,387 @@ exit 0
     let written = rig.entries("IN");
     assert_eq!(written.len(), 1, "only initialize is written: {written:?}");
     assert!(written[0].contains("initialize"), "{written:?}");
+}
+
+// ---- S100: asks, checks, answer, interrupt (TECHNICAL 19.3, steps 4 and 5) ---------------
+
+const ASKING: &str =
+    r#"{"version":1,"workspace":"scratch","ask":true,"pre-tool-check":{"timeout-s":30}}"#;
+
+fn can_use(rid: &str, tuid: &str, tool: &str, input: Value) -> String {
+    json!({"type":"control_request","request_id":rid,"request":{
+        "subtype":"can_use_tool","tool_name":tool,"input":input,"tool_use_id":tuid}})
+    .to_string()
+}
+fn hook(rid: &str, tuid: &str, tool: &str, input: Value) -> String {
+    json!({"type":"control_request","request_id":rid,"request":{
+        "subtype":"hook_callback","callback_id":"cb","tool_use_id":tuid,
+        "input":{"hook_event_name":"PreToolUse","tool_name":tool,"tool_input":input}}})
+    .to_string()
+}
+fn lines_of(lines: &[String]) -> Vec<u8> {
+    format!("{}\n", lines.join("\n")).into_bytes()
+}
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+impl Rig {
+    pub(crate) fn decide(&self, s: &str, ask: &str, decision: &str) -> String {
+        self.call(
+            "api.decide",
+            json!({"s": s, "ask": ask, "decision": decision}),
+        )
+        .as_str()
+        .unwrap()
+        .to_owned()
+    }
+    /// The lines the fake read from stdin, parsed.
+    fn ins(&self) -> Vec<Value> {
+        self.entries("IN")
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+    /// The `control_response` lines for one request id.
+    fn responses_to(&self, rid: &str) -> Vec<Value> {
+        self.ins()
+            .into_iter()
+            .filter(|v| v["type"] == "control_response" && v["response"]["request_id"] == rid)
+            .collect()
+    }
+    fn wait_response(&self, rid: &str) -> Value {
+        wait("a response", Duration::from_secs(20), || {
+            !self.responses_to(rid).is_empty()
+        });
+        self.responses_to(rid).remove(0)
+    }
+    /// The scratch folder of the first `initialized` item.
+    fn workspace_dir(&self, s: &str) -> PathBuf {
+        let id = workspace_of(&self.wait_items(s, 1)[0]);
+        self.home
+            .path()
+            .join("scratch")
+            .join(id.strip_prefix("scratch:").unwrap())
+    }
+}
+
+#[test]
+fn s100_ac2_a_can_use_tool_and_a_hook_callback_become_ask_and_check_items() {
+    let mut stray = can_use("r3", "t3", "Write", json!({"type":"ask","file_path":"w"}));
+    stray = stray.replace(
+        r#""tool_use_id":"t3""#,
+        r#""tool_use_id":"t3","permission_suggestions":[{"x":1}],"type":"ask""#,
+    );
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        hook("r2", "t2", "Bash", json!({"command":"ls"})),
+        stray,
+        can_use("r4", "", "Read", json!({})),
+        can_use("r5", "t5", "Read", json!([1])),
+        r#"{"type":"control_request","request_id":"r6","request":{"subtype":"can_use_tool","tool_name":"Read","input":{}}}"#.into(),
+        r#"{"type":"control_request","request_id":"r7","request":{"subtype":"can_use_tool","tool_name":5,"input":{},"tool_use_id":"t7"}}"#.into(),
+        r#"{"type":"assistant","n":1}"#.into(),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let before = now_ms();
+    let s = rig.start_ok(ASKING);
+    let items = rig.wait_items(&s, 6);
+    let after = now_ms();
+    assert_eq!(items.len(), 6, "{items:?}");
+    assert_eq!(items[5], r#"{"type":"assistant","n":1}"#);
+    let expires = |item: &str, ttl: u64| {
+        let v: Value = serde_json::from_str(item).unwrap();
+        let at = v["expires-at"].as_u64().unwrap();
+        assert!(at >= before + ttl && at <= after + ttl, "{at} for {item}");
+    };
+    let literal = |item: &str, head: &str| {
+        let (left, _) = item.split_once(r#","expires-at":"#).unwrap();
+        assert_eq!(left, head);
+    };
+    literal(
+        &items[2],
+        r#"{"type":"ask","id":"1","tool_use_id":"t1","tool":"Read","input":{"file_path":"a.txt"}"#,
+    );
+    expires(&items[2], 600_000);
+    literal(
+        &items[3],
+        r#"{"type":"check","id":"2","tool_use_id":"t2","tool":"Bash","input":{"command":"ls"}"#,
+    );
+    expires(&items[3], 30_000);
+    // The stray `type` and the suggestions stay out of the top level; `input` keeps its own.
+    literal(
+        &items[4],
+        r#"{"type":"ask","id":"3","tool_use_id":"t3","tool":"Write","input":{"file_path":"w","type":"ask"}"#,
+    );
+    for rid in ["r4", "r5", "r6", "r7"] {
+        let r = rig.wait_response(rid);
+        assert_eq!(r["response"]["response"]["behavior"], "deny", "{rid}");
+    }
+    for rid in ["r1", "r2", "r3"] {
+        assert!(rig.responses_to(rid).is_empty(), "{rid}");
+    }
+}
+
+#[test]
+fn s100_ac3_answers_write_the_control_response_and_close_the_ask() {
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        hook("r2", "t2", "Bash", json!({"command":"ls"})),
+        can_use("r3", "t3", "Write", json!({"file_path":"w"})),
+        can_use("r4", "t4", "AskUserQuestion", json!({"q":1})),
+        can_use("r5", "t5", "Read", json!({"file_path":"b"})),
+        hook("r6", "t6", "Bash", json!({"command":"rm"})),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let s = rig.start_ok(ASKING);
+    rig.wait_items(&s, 8);
+    // Refused at the call: nothing is written, the ask stays open.
+    assert_eq!(
+        rig.call("api.answer", json!({"s": s, "ask": "1"})),
+        json!("not-allowed-here")
+    );
+    assert_eq!(
+        rig.decide(&s, "5", "allow:{\"file_path\":\"c\"}"),
+        "not-allowed-here"
+    );
+    assert_eq!(rig.decide(&s, "2", "allow"), "not-allowed-here");
+    assert_eq!(rig.decide(&s, "4", "allow:not json"), "not-allowed-here");
+    assert_eq!(rig.decide(&s, "9", "allow"), "unknown-ask");
+    // Answered.
+    assert_eq!(rig.decide(&s, "1", "allow"), "ok");
+    assert_eq!(rig.decide(&s, "3", "deny:no"), "ok");
+    assert_eq!(
+        rig.decide(&s, "4", "allow:{\"answers\":{\"a\":\"b\"}}"),
+        "ok"
+    );
+    assert_eq!(rig.decide(&s, "2", "none"), "ok");
+    assert_eq!(rig.decide(&s, "6", "deny:stop"), "ok");
+    let items = rig.wait_items(&s, 13);
+    assert_eq!(
+        items[8..],
+        [
+            r#"{"type":"ask-resolved","ask":"1","by":"answered","outcome":"allow"}"#,
+            r#"{"type":"ask-resolved","ask":"3","by":"answered","outcome":"deny"}"#,
+            r#"{"type":"ask-resolved","ask":"4","by":"answered","outcome":"allow"}"#,
+            r#"{"type":"ask-resolved","ask":"2","by":"answered","outcome":"none"}"#,
+            r#"{"type":"ask-resolved","ask":"6","by":"answered","outcome":"deny"}"#,
+        ]
+    );
+    let body = |rid: &str| rig.wait_response(rid)["response"]["response"].clone();
+    assert_eq!(
+        body("r1"),
+        json!({"behavior":"allow","updatedInput":{"file_path":"a.txt"}})
+    );
+    assert_eq!(body("r3"), json!({"behavior":"deny","message":"no"}));
+    assert_eq!(
+        body("r4"),
+        json!({"behavior":"allow","updatedInput":{"answers":{"a":"b"}}})
+    );
+    assert_eq!(body("r2"), json!({}));
+    assert_eq!(
+        body("r6"),
+        json!({"hookSpecificOutput":{"hookEventName":"PreToolUse",
+            "permissionDecision":"deny","permissionDecisionReason":"stop"}})
+    );
+    assert!(rig.responses_to("r5").is_empty());
+    // A second answer, and an answer to a closed id.
+    assert_eq!(rig.decide(&s, "1", "deny:late"), "unknown-ask");
+    assert_eq!(rig.decide(&s, "2", "none"), "unknown-ask");
+    assert!(!rig.log().iter().any(|l| l.contains("updatedPermissions")));
+    // An answer in a call that fails writes nothing and closes nothing.
+    rig.call_as(
+        Caller::Page,
+        "claude",
+        "api.decide-then-fail",
+        json!({"s": s, "ask": "5", "decision": "deny:lost"}),
+    )
+    .unwrap_err();
+    assert_eq!(rig.decide(&s, "5", "deny:kept"), "ok");
+    let r5 = rig.wait_response("r5");
+    assert_eq!(r5["response"]["response"]["message"], "kept");
+    assert_eq!(rig.responses_to("r5").len(), 1);
+    assert!(!rig.log().iter().any(|l| l.contains("lost")));
+}
+
+#[test]
+fn s100_ac4_an_allow_that_leaves_the_workspaces_is_refused_and_the_ask_stays_open() {
+    let rig = Rig::new(&[]);
+    let home = rig.home.path().display().to_string();
+    let user_home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let lines = lines_of(&[
+        can_use(
+            "r1",
+            "t1",
+            "Read",
+            json!({"file_path": format!("{home}/app/accounts/openai.json")}),
+        ),
+        can_use(
+            "r2",
+            "t2",
+            "Grep",
+            json!({"pattern":"x","path": format!("{user_home}/.ssh")}),
+        ),
+        can_use("r3", "t3", "Glob", json!({"pattern":"/etc/*"})),
+        can_use("r4", "t4", "Glob", json!({"pattern":"../x"})),
+        can_use("r5", "t5", "Read", json!({"file_path":"link"})),
+        can_use("r6", "t6", "Read", json!({"file_path":"dir/secret"})),
+        can_use("r7", "t7", "Write", json!({"file_path":"dir/new.txt"})),
+        can_use("r8", "t8", "Read", json!({"file_path":"a.txt"})),
+        can_use("r9", "t9", "Grep", json!({"pattern":"x"})),
+    ]);
+    rig.put("lines", &lines);
+    let s = rig.start_ok(ASKING);
+    rig.wait_items(&s, 11);
+    let work = rig.workspace_dir(&s);
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret"), "s").unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret"), work.join("link")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), work.join("dir")).unwrap();
+    std::fs::write(work.join("a.txt"), "a").unwrap();
+    for ask in 1..=7 {
+        assert_eq!(
+            rig.decide(&s, &ask.to_string(), "allow"),
+            "not-allowed-here",
+            "{ask}"
+        );
+    }
+    assert_eq!(rig.decide(&s, "8", "allow"), "ok");
+    assert_eq!(rig.decide(&s, "9", "allow"), "ok");
+    rig.wait_response("r9");
+    for rid in ["r1", "r2", "r3", "r4", "r5", "r6", "r7"] {
+        assert!(rig.responses_to(rid).is_empty(), "{rid}");
+    }
+    // They stay open: an interrupt denies them all.
+    assert_eq!(rig.call("api.interrupt", json!({"s": s})), json!("ok"));
+    let items = rig.wait_items(&s, 11 + 2 + 7);
+    assert_eq!(
+        items[13],
+        r#"{"type":"ask-resolved","ask":"1","by":"cancelled"}"#
+    );
+    for rid in ["r1", "r7"] {
+        let r = rig.wait_response(rid);
+        assert_eq!(r["response"]["response"]["message"], "interrupted");
+    }
+}
+
+#[test]
+fn s100_ac5_an_ask_is_denied_and_a_check_is_dropped_at_its_expires_at() {
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        hook("r2", "t2", "Bash", json!({"command":"ls"})),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let clock = TestClock::new();
+    rig.host().set_test_clock(clock.clone());
+    let s = rig.start_ok(ASKING);
+    rig.wait_items(&s, 4);
+    clock.advance(Duration::from_secs(29));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rig.items(&s).len(), 4);
+    clock.advance(Duration::from_secs(2));
+    let items = rig.wait_items(&s, 5);
+    assert_eq!(
+        items[4],
+        r#"{"type":"ask-resolved","ask":"2","by":"expired"}"#
+    );
+    assert_eq!(rig.decide(&s, "2", "none"), "unknown-ask");
+    clock.advance(Duration::from_secs(580));
+    let items = rig.wait_items(&s, 6);
+    assert_eq!(
+        items[5],
+        r#"{"type":"ask-resolved","ask":"1","by":"expired"}"#
+    );
+    let r1 = rig.wait_response("r1");
+    assert_eq!(r1["response"]["response"]["behavior"], "deny");
+    assert!(rig.responses_to("r2").is_empty());
+    assert_eq!(rig.decide(&s, "1", "deny:late"), "unknown-ask");
+    assert_eq!(rig.responses_to("r1").len(), 1);
+}
+
+#[test]
+fn s100_ac6_a_cancel_request_closes_its_ask_and_is_never_pushed() {
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        r#"{"type":"control_cancel_request","request_id":"r9"}"#.into(),
+        r#"{"type":"control_cancel_request","request_id":"r1"}"#.into(),
+        r#"{"type":"assistant","n":1}"#.into(),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let s = rig.start_ok(ASKING);
+    let items = rig.wait_items(&s, 5);
+    assert_eq!(items.len(), 5, "{items:?}");
+    assert!(items[2].starts_with(r#"{"type":"ask","id":"1""#));
+    assert_eq!(
+        items[3],
+        r#"{"type":"ask-resolved","ask":"1","by":"cancelled"}"#
+    );
+    assert_eq!(items[4], r#"{"type":"assistant","n":1}"#);
+    assert_eq!(rig.decide(&s, "1", "deny:x"), "unknown-ask");
+    assert!(rig.responses_to("r1").is_empty());
+}
+
+#[test]
+fn s100_ac7_interrupt_denies_the_asks_closes_all_and_the_stream_goes_on() {
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        hook("r2", "t2", "Bash", json!({"command":"ls"})),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let s = rig.start_ok(ASKING);
+    rig.wait_items(&s, 4);
+    assert_eq!(rig.call("api.interrupt", json!({"s": s})), json!("ok"));
+    let items = rig.wait_items(&s, 6);
+    assert_eq!(
+        items[4..],
+        [
+            r#"{"type":"ask-resolved","ask":"1","by":"cancelled"}"#,
+            r#"{"type":"ask-resolved","ask":"2","by":"cancelled"}"#,
+        ]
+    );
+    rig.wait_log("the interrupt", |l| {
+        l.iter().any(|e| e.contains(r#""subtype":"interrupt""#))
+    });
+    let ins = rig.ins();
+    assert_eq!(ins.len(), 3, "{ins:?}");
+    assert_eq!(ins[1]["response"]["request_id"], "r1");
+    assert_eq!(
+        ins[1]["response"]["response"],
+        json!({"behavior":"deny","message":"interrupted"})
+    );
+    assert_eq!(ins[2]["request"], json!({"subtype":"interrupt"}));
+    assert_eq!(
+        rig.call("api.say", json!({"s": s, "text": "again"})),
+        json!("ok")
+    );
+    rig.wait_log("the say", |l| l.iter().any(|e| e.contains("again")));
+    assert!(rig.ended().is_empty());
+    assert_eq!(rig.decide(&s, "2", "none"), "unknown-ask");
+}
+
+#[test]
+fn s100_ac8_a_claude_line_typed_as_a_host_item_is_wrapped_also_while_asks_are_open() {
+    let lines = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),
+        r#"{"type":"ask-resolved","ask":"1","by":"answered","outcome":"allow"}"#.into(),
+        r#"{"type":"ask","id":"7","tool_use_id":"x","tool":"Read","input":{},"expires-at":1}"#
+            .into(),
+        r#"{"type":"check","id":"1"}"#.into(),
+    ]);
+    let rig = Rig::new(&[("lines", &lines)]);
+    let s = rig.start_ok(ASKING);
+    let items = rig.wait_items(&s, 6);
+    for item in &items[3..] {
+        assert!(item.starts_with(r#"{"type":"wrapped","line":"#), "{item}");
+    }
+    assert_eq!(rig.decide(&s, "7", "deny:x"), "unknown-ask");
+    assert_eq!(rig.decide(&s, "1", "deny:x"), "ok");
+    let items = rig.wait_items(&s, 7);
+    assert_eq!(
+        items[6],
+        r#"{"type":"ask-resolved","ask":"1","by":"answered","outcome":"deny"}"#
+    );
 }

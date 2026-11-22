@@ -2,15 +2,18 @@
 //! functions of `claude-session` at the call, the table of live sessions, and the start that
 //! a committed chain applies.
 
+mod asks;
 pub(crate) mod control;
 mod init;
 pub(crate) mod launch;
+mod paths;
 pub(crate) mod run;
 
 use super::streams::{Consumer, MAX_OPEN};
 use super::{Effect, ModRef};
 use crate::runtime::call::Invocation;
 use crate::{CallError, Host};
+use asks::{Asks, Decision};
 use launch::{Kind, Launch, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -29,6 +32,7 @@ pub(crate) enum Write {
     Say(String),
     Compact,
     Interrupt,
+    Answer { ask: String, decision: Decision },
 }
 
 #[derive(Debug, Default)]
@@ -49,13 +53,16 @@ pub(crate) struct Session {
     state: Mutex<Running>,
     tx: Mutex<Option<Sender<Vec<u8>>>>,
     rx: Mutex<Option<Receiver<Vec<u8>>>>,
+    /// The open asks and checks (19.3, steps 4 and 5).
+    asks: Mutex<Asks>,
 }
 impl Session {
-    pub(crate) fn new(id: String, origin: String) -> Self {
+    /// `hook_timeout`: the `pre-tool-check`'s `timeout-s`, for the hook of `initialize`.
+    pub(crate) fn new(id: String, origin: String, hook_timeout: Option<u64>) -> Self {
         let (tx, rx) = channel();
         let request_id = super::streams::random_id();
         // `initialize` is the first line, whatever else is queued while the process starts.
-        let _ = tx.send(control::initialize(&request_id));
+        let _ = tx.send(control::initialize(&request_id, hook_timeout));
         Self {
             id,
             origin,
@@ -63,6 +70,7 @@ impl Session {
             state: Mutex::new(Running::default()),
             tx: Mutex::new(Some(tx)),
             rx: Mutex::new(Some(rx)),
+            asks: Mutex::default(),
         }
     }
     fn running(&self) -> std::sync::MutexGuard<'_, Running> {
@@ -199,6 +207,24 @@ fn bad_launch(field: &str, reason: &str) -> Value {
     json!({"err": {"bad-launch": {"field": field, "reason": reason}}})
 }
 
+/// The WIT `decision`: `allow(option<string>)`, `deny(string)` or `none`.
+fn decision_arg(v: Option<&Val>) -> Result<Decision, CallError> {
+    let bad = || CallError::internal("answer: bad decision");
+    match v {
+        Some(Val::Variant(case, payload)) => match (case.as_str(), payload.as_deref()) {
+            ("none", None) => Ok(Decision::None),
+            ("deny", Some(Val::String(why))) => Ok(Decision::Deny(why.clone())),
+            ("allow", Some(Val::Option(None))) => Ok(Decision::Allow(None)),
+            ("allow", Some(Val::Option(Some(inner)))) => match &**inner {
+                Val::String(json) => Ok(Decision::Allow(Some(json.clone()))),
+                _ => Err(bad()),
+            },
+            _ => Err(bad()),
+        },
+        _ => Err(bad()),
+    }
+}
+
 /// `claude-code.start` and `claude-code-shell.start` at the call (19.3): the checks that
 /// need nothing outside, then the request.
 pub(crate) fn start(inv: &Invocation, kind: Kind, args: &[Val]) -> Result<Value, CallError> {
@@ -288,7 +314,17 @@ pub(crate) fn session_call(
             }
             Write::Say(content)
         }
-        "answer" => return err("unknown-ask"),
+        "answer" => {
+            let ask = text_arg(args, 1, function)?;
+            let decision = decision_arg(args.get(2))?;
+            // A stream started in this chain has no ask open yet.
+            let live = (!view.in_chain).then(|| host.sessions.get(&id)).flatten();
+            match live.map(|s| s.check_answer(&ask, &decision)) {
+                Some(Ok(())) => Write::Answer { ask, decision },
+                Some(Err(refused)) => return err(refused.case()),
+                None => return err("unknown-ask"),
+            }
+        }
         "interrupt" => Write::Interrupt,
         "compact" => Write::Compact,
         other => {
@@ -315,7 +351,7 @@ impl Host {
         shell: bool,
         valid: bool,
     ) -> Option<run::Job> {
-        let session = Arc::new(Session::new(id.clone(), origin.clone()));
+        let session = Arc::new(Session::new(id.clone(), origin.clone(), launch.check));
         let hook = Arc::clone(&session);
         self.hub.open_host(
             id.clone(),
@@ -381,10 +417,13 @@ impl Host {
         {
             return;
         }
-        session.write(match what {
-            Write::Say(text) => control::user(&text),
-            Write::Compact => control::user("/compact"),
-            Write::Interrupt => control::interrupt(&super::streams::random_id()),
-        });
+        match what {
+            Write::Say(text) => session.write(control::user(&text)),
+            Write::Compact => session.write(control::user("/compact")),
+            Write::Interrupt => {
+                session.interrupt(&self.hub, control::interrupt(&super::streams::random_id()));
+            }
+            Write::Answer { ask, decision } => session.apply_answer(&self.hub, &ask, &decision),
+        }
     }
 }

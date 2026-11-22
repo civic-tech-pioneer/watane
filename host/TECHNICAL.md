@@ -1984,14 +1984,27 @@ steps 1 to 4 of the control protocol for lines (`initialize`, the `init`
 match, `initialized`, `wrapped`, lines unchanged); `say`, `interrupt` and
 `compact`; `AccountSource` (19.4, `claude_binary` the only method the host
 calls yet), `Confirm::accounts`, `set_fake_claude` and `watane --fake-claude`;
-dev's `fake-claude`. Until S100 (agentic-harness S36) builds the asks and
-checks, a launch with `ask: true`, a `pre-tool-check`, an `agent-handle`
-(A3) or a non-empty `skills` is `bad-launch {field, reason}` naming the
-stage; `ask: false` gives `--permission-prompts=none`; a `can_use_tool` or
-`hook_callback` request that arrives anyway is answered deny at once and
-pushes nothing; `answer` is `unknown-ask`. `claude-code-shell.start` checks
-its grant and its launch, then its stream ends `failed("the shell grant waits
+dev's `fake-claude`. S99 left the asks and checks cut: `ask: true`, a
+`pre-tool-check`, an `agent-handle` (A3) and a non-empty `skills` were
+`bad-launch {field, reason}` naming the stage, `answer` was `unknown-ask`, and a
+`can_use_tool` or `hook_callback` was answered deny at once. `claude-code-shell.start`
+checks its grant and its launch, then its stream ends `failed("the shell grant waits
 on section 18, Q39 and Q42")`.
+**S100 (agentic-harness S36, 2026-11-22) lifts that cut for asks and checks.** It
+builds: `ask: true` (`--permission-prompts=host --permission-prompt-tool=stdio`) and
+`pre-tool-check {timeout-s: 5..120}` (the PreToolUse hook of `initialize`, and the
+step 2 check of its answer: otherwise the stream ends `mismatch(hooks)`); the `ask` and
+`check` items, their `expires-at` on the host clock and the one `ask-resolved` that
+closes each (`answered`, `expired`, `cancelled`); `claude-session.answer` with the
+checks of 19.3 step 5 made at the call, the third rule of the protected reads (a path
+resolved with symlinks, `src/agent/claude/paths.rs`), `control_cancel_request`, and
+`interrupt` closing the open asks and checks. A request that the launch did not ask for
+(a `can_use_tool` without `ask`, a `hook_callback` without `pre-tool-check`) or that
+is malformed is still answered deny at once and pushes nothing; `answer` to an id that
+is not open is `unknown-ask`. Still cut: `agent-handle` (A3), a non-empty `skills`,
+the shell grant's sandbox; each still names its stage. A `hook_callback` is taken
+for the host's whatever its `callback_id`: the host registers one callback.
+
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
 within them). Load: 8 host streams × 100 items/s of 1 KiB from a test source
@@ -2041,17 +2054,33 @@ percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 **Budgets of stage B, the host part** (S100's foreman, 2026-11-22: agentic-harness
 TECHNICAL 15 names the load, 8 sessions, 2 owners, 10 and 10 000 entries; its
 kernel budgets are the kernel's, S36; the numbers below are the host's share and
-cheap to change). A slow test, `tests/it/agent_load.rs`: 8 `claude-code` streams
-on host's fixture fake, 4 consumed by each of 2 mods (the owners), each fake
-writing a turn of 10 entries, then one of 10 000 (an `assistant` line of about
-1 KiB each), with an `ask` in each turn that the consumer answers. All p95 over
-the 8 streams. Every entry arrives once and in order. An entry, written by the
-fake to taken by its consumer: at most 50 ms in the 10-entry turn; the 10 000-entry
-turn taken whole within 10 s. An `ask` written to `ask` item taken: at most 50 ms;
-`answer` to the `control_response` on the fake's stdin: at most 50 ms. `interrupt`
-during the 10 000-entry turn to its `ask-resolved` items: at most 250 ms. `cancel`
-to `ended`: at most 250 ms. Writer busy share at most 10%; state bytes written per
-entry none. The run records its numbers here, with the date and the machine.
+cheap to change). A slow test, `tests/it/agent_load.rs::stage_b`: 8 `claude-code`
+streams on host's fixture fake, 4 started by each of 2 owners (the page and `claude-b`;
+both consumed by the `claude` fixture, whose quiet sink stamps each item and writes one
+small tally per batch), each fake writing, after a `say`, a turn of 10 entries (an
+`assistant` line of about 1 KiB each) and an `ask` that the consumer answers, then
+after a second `say` a turn of 10 000 entries after two asks (one answered, one left
+for the `interrupt`). All p95 over the 8 streams. Every entry arrives once and in
+order. The fake is a shell script and cannot stamp its writes, so a turn's clock
+starts when the `say` that triggers it has returned. Entries taken: at most 100 ms
+in the 10-entry turn (S100 measured 20 to 60 ms: the foreman's 50 ms did not hold
+with 8 shells and 8 streams on 4 cores); the 10 000-entry turn taken whole within
+10 s. An `ask` taken: at most 100 ms (same clock). `answer` to the `control_response`
+on the fake's stdin: at most 50 ms. `interrupt` during the 10 000-entry turn to its
+`ask-resolved` item taken: at most 500 ms (measured 245 to 355 ms: the item waits
+behind the items already queued, up to one batch of 256; the foreman's 250 ms did not
+hold). `cancel` to `ended`: at most 250 ms. Writer busy share at most 15% (the
+fixture's own per-batch tally is in it; the foreman's 10% was for a consumer that
+writes nothing); the host itself writes no state for an entry (the one byte per entry
+that the run shows is the fixture's tally).
+
+**Stage B host record** (S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
+PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs): 80 080 entries each, none out of
+order or missing; entries taken in the 10-entry turn p95 25 / 32 / 53 ms; `ask` taken
+21 / 32 / 53 ms; `answer` to stdin 4.8 / 7.9 / 14.5 ms; the 10 000-entry turn taken
+5.1 / 5.0 / 5.4 s; `interrupt` to `ask-resolved` 245 / 275 / 273 ms; `cancel` to
+`ended` 66 / 62 / 68 ms; writer busy 5.7 / 3.5 / 3.6%; state bytes written per entry
+1.0 (the fixture's tally).
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -2416,6 +2445,12 @@ Raised by S95's adversary step (none blocks A1):
   first A2 slice and write each deny rule in both spellings if `claude`
   matches the path as given; (b) accept it under Not protected (spec §6).
   Recommended: (a). Cost to undo: deny lines only. Blocks A2.
+  S100 (2026-11-22): the third rule of 19.3 (an `allow` to an ask of a file tool) resolves
+  symlinks itself, also in a path that does not exist yet under a linked folder, and
+  refuses a link that cannot be followed; so an ask for `F/k` is refused whatever
+  `claude` matches. What stays open: a `Read` that `claude` makes without asking (an
+  `allow` rule such as `Read(**)`) and the sandbox are held only by the deny rules, which
+  is probe V29 (the two spellings).
 - **Q42** Login files the closed deny list misses (19.3, Protected reads;
   HOST-F-74). Under the shell grant, a sandboxed runner word can read
   `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell
@@ -2845,7 +2880,7 @@ names its reason.
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
 
-**Protected reads** (S63; open: Q41 symlinks, Q42 login files outside the list). A file in the participant's home folder is as
+**Protected reads** (S63; open: Q42 login files outside the list; Q41: the third rule resolves symlinks). A file in the participant's home folder is as
 readable to `claude` as to the participant, and the mod that consumes the
 stream reads whatever the agent prints; so the workspace refusals below do
 not keep a credential from a mod on their own. Three rules do:
@@ -2905,7 +2940,7 @@ not keep a credential from a mod on their own. Three rules do:
    <timeout-s>, onFailure: "block"}]`.
 2. With a callback, the answer must hold `hook_on_failure_supported: true` and
    not `hooks_applied: false`; otherwise the host kills the group and ends the
-   stream `mismatch`. Once this step has passed, the host pushes the item
+   stream `mismatch(hooks)`. Once this step has passed, the host pushes the item
    `{"type":"initialized","workspace":"<the launch's workspace id>"}` on the
    stream (Folders). The process starts only after the
    workspace consent is held, so `initialized` never comes before it; the
@@ -2994,7 +3029,7 @@ not keep a credential from a mod on their own. Three rules do:
 **Wire shapes** (Claude Code's stream-json, as S99 builds them; dev's
 `fake-claude` checks the same). `initialize`:
 `{"type":"control_request","request_id":"<id>","request":{"subtype":"initialize"}}`
-(with `hooks` once checks exist, S100); its answer
+(with `hooks` when the launch has `pre-tool-check`); its answer
 `{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{…}}}`.
 `say`: `{"type":"user","message":{"role":"user","content":"<text>"}}`;
 `compact`: the same with the text `/compact`; `interrupt`:

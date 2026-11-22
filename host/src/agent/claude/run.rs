@@ -2,7 +2,8 @@
 //! scratch workspace, the run folder, the process group, the fixed environment, the host's
 //! `--settings=`, and the thread that reads the stream and ends it.
 
-use super::control::{self, Line};
+use super::asks::ASK_TTL;
+use super::control::{self, Fields, Line};
 use super::launch::{Launch, Workspace};
 use super::{Session, Sessions, init};
 use crate::agent::streams::{Hub, MAX_ITEM, StreamError};
@@ -20,6 +21,9 @@ use std::time::Duration;
 const MIN_VERSION: (u64, u64, u64) = (2, 1, 295);
 const NEED: &str = "2.1.295";
 const PATH: &str = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+/// The reason of a deny at once.
+const REFUSED: &str =
+    "the host refused: the launch did not ask for this, or the request is malformed";
 const SHELL_WAITS: &str = "the shell grant waits on section 18, Q39 and Q42";
 
 /// Files that no launch can let `claude` write (19.3, Protected paths), as rules for `Edit`,
@@ -345,9 +349,13 @@ impl Job {
             "--settings={}",
             settings(&self.home, user_home.as_deref())
         ));
+        let mut extra_paths = vec![];
         for id in &launch.extra {
             match self.held_scratch(id) {
-                Ok(path) => args.push(format!("--add-dir={}", path.display())),
+                Ok(path) => {
+                    args.push(format!("--add-dir={}", path.display()));
+                    extra_paths.push(path);
+                }
                 Err(outcome) => return outcome,
             }
         }
@@ -369,6 +377,9 @@ impl Job {
                 r#"{"name":"watane-run","version":"0.1.0","description":"The host's plugin for one run."}"#,
             )
         });
+        let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        let mut roots = vec![canon(&cwd), canon(&plugin)];
+        roots.extend(extra_paths.iter().map(|p| canon(p)));
         cleanup.folder = Some(folder);
         if let Err(e) = made {
             return Self::failed(format!("cannot make the run folder: {e}"));
@@ -395,6 +406,15 @@ impl Job {
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
         let stdin = child.stdin.take().expect("piped");
+        self.session.set_roots(cwd.clone(), roots);
+        let ticker = Arc::clone(&self.session);
+        let hub = Arc::clone(&self.hub);
+        std::thread::spawn(move || {
+            while !ticker.stopped() {
+                ticker.tick(&hub);
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        });
         let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped"));
         // The writer thread is the one place that writes to stdin; a line goes through its queue.
         // `initialize` goes at once; every later line waits for `release`, which the reader sends
@@ -472,13 +492,45 @@ impl Reading<'_> {
     fn push(&self, body: Vec<u8>) -> Result<(), Value> {
         let session = &self.job.session;
         loop {
-            match self.job.hub.host_push(&session.id, &body) {
+            match session.push(&self.job.hub, &body) {
                 Ok(()) => return Ok(()),
                 Err(StreamError::Full) if !session.stopped() => {
                     std::thread::sleep(Duration::from_millis(10));
                 }
                 Err(StreamError::TooLarge) => {
                     return Err(Job::failed("a line of claude is over 4 MiB"));
+                }
+                Err(_) => return Err(json!("gone")),
+            }
+        }
+    }
+    /// An ask or a check, or a deny at once when the launch did not ask for it, the request
+    /// is malformed, or its item is too large to push (19.3, step 4).
+    fn request(&self, request_id: &str, hook: bool, fields: Option<&Fields>) -> Result<(), Value> {
+        let session = &self.job.session;
+        let launch = &self.job.launch;
+        let wanted = if hook {
+            launch.check.is_some()
+        } else {
+            launch.ask
+        };
+        let (true, true, Some(fields)) = (wanted, self.answered, fields) else {
+            session.write(control::deny(request_id, hook, REFUSED));
+            return Ok(());
+        };
+        let ttl = match launch.check {
+            Some(t) if hook => Duration::from_secs(t),
+            _ => ASK_TTL,
+        };
+        loop {
+            match session.open_request(&self.job.hub, request_id, hook, fields, ttl) {
+                Ok(()) => return Ok(()),
+                Err(StreamError::Full) if !session.stopped() => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(StreamError::TooLarge) => {
+                    session.write(control::deny(request_id, hook, REFUSED));
+                    return Ok(());
                 }
                 Err(_) => return Err(json!("gone")),
             }
@@ -526,8 +578,13 @@ impl Reading<'_> {
         }
         match line {
             Line::Item(body) => self.item(body),
-            Line::Deny { request_id, hook } => {
-                self.job.session.write(control::deny(&request_id, hook));
+            Line::Request {
+                request_id,
+                hook,
+                fields,
+            } => self.request(&request_id, hook, fields.as_ref()),
+            Line::Cancel { request_id } => {
+                self.job.session.cancel_request(&self.job.hub, &request_id);
                 Ok(())
             }
             Line::Init(value, body) => {
@@ -540,10 +597,21 @@ impl Reading<'_> {
                 }
                 self.item(body)
             }
-            Line::Response { request_id, ok } => {
+            Line::Response {
+                request_id,
+                ok,
+                body,
+            } => {
                 if !self.answered && request_id == self.request_id {
                     if !ok {
                         return Err(Job::failed("claude refused initialize"));
+                    }
+                    // With a callback, the answer must hold the hook support (19.3, step 2).
+                    if self.job.launch.check.is_some()
+                        && (body.get("hook_on_failure_supported") != Some(&Value::Bool(true))
+                            || body.get("hooks_applied") == Some(&Value::Bool(false)))
+                    {
+                        return Err(json!({"mismatch": "hooks"}));
                     }
                     let workspace = Value::String(self.workspace.clone());
                     self.push(
@@ -582,7 +650,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
         host.state.scratch_add("kept", "owner").unwrap();
-        let session = Arc::new(Session::new("s".into(), "owner".into()));
+        let session = Arc::new(Session::new("s".into(), "owner".into(), None));
         session.stop();
         let job = Job {
             weak: Arc::downgrade(&host),
@@ -597,6 +665,8 @@ mod tests {
                 agents: vec![],
                 init_mode: "default",
                 depth: 0,
+                ask: false,
+                check: None,
             }),
             home: host.home().to_path_buf(),
             mode: Mode::Preview,

@@ -65,7 +65,6 @@ const FIELDS: [&str; 22] = [
 ];
 const FIELDS_2: [&str; 3] = ["persist", "partial", "profile"];
 
-const STAGE_ASKS: &str = "asks and checks wait for stage A2's second slice (S100)";
 const STAGE_HANDLE: &str = "an agent handle waits for stage A3";
 const STAGE_SKILLS: &str = "skills wait for a later slice of stage A2";
 const STAGE_PICKED: &str = "picked folders need the workspace consent (stage A3)";
@@ -93,6 +92,10 @@ pub(crate) struct Launch {
     /// The permission mode as `system/init` names it.
     pub init_mode: &'static str,
     pub depth: u8,
+    /// `ask: true`: `claude` sends `can_use_tool` requests, which become `ask` items.
+    pub ask: bool,
+    /// `pre-tool-check {timeout-s}`: the hook's timeout in seconds; its callback gives `check` items.
+    pub check: Option<u64>,
 }
 
 fn is_model(s: &str) -> bool {
@@ -451,6 +454,21 @@ fn rules(field: &str, v: &Value, kind: Kind, allow: bool) -> Result<Vec<String>,
     Ok(list)
 }
 
+/// `{timeout-s: 5..120}` and nothing else (19.3, The launch document).
+fn pre_tool_check(v: &Value) -> Result<u64, BadLaunch> {
+    let field = "pre-tool-check";
+    let Some(o) = v.as_object() else {
+        return bad(field, "expected {timeout-s: 5 to 120}");
+    };
+    if let Some(extra) = o.keys().find(|k| *k != "timeout-s") {
+        return bad(field, format!("`{extra}` is not a key of the check"));
+    }
+    match o.get("timeout-s").and_then(Value::as_u64) {
+        Some(n @ 5..=120) => Ok(n),
+        _ => bad(field, "`timeout-s` is a whole number of seconds, 5 to 120"),
+    }
+}
+
 fn subagents(
     v: &Value,
     tools: &[String],
@@ -715,13 +733,14 @@ impl Launch {
             init_mode = init;
             flags.push(format!("--permission-mode={flag}"));
         }
-        if doc.get("ask").map(|v| boolean("ask", v)).transpose()? == Some(true) {
-            return bad("ask", STAGE_ASKS);
+        let ask = doc.get("ask").map(|v| boolean("ask", v)).transpose()? == Some(true);
+        if ask {
+            flags.push("--permission-prompts=host".into());
+            flags.push("--permission-prompt-tool=stdio".into());
+        } else {
+            flags.push("--permission-prompts=none".into());
         }
-        flags.push("--permission-prompts=none".into());
-        if doc.contains_key("pre-tool-check") {
-            return bad("pre-tool-check", STAGE_ASKS);
-        }
+        let check = doc.get("pre-tool-check").map(pre_tool_check).transpose()?;
         if doc.contains_key("agent-handle") {
             return bad("agent-handle", STAGE_HANDLE);
         }
@@ -799,6 +818,8 @@ impl Launch {
             agents,
             init_mode,
             depth,
+            ask,
+            check,
         })
     }
 }

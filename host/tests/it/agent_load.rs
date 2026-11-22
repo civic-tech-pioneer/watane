@@ -216,3 +216,226 @@ fn ac12_a_release_build_holds_no_test_streams() {
     assert!(text.contains("watane-host"), "{text}");
     assert!(!text.contains("test-streams"), "{text}");
 }
+
+// ---- Stage B, the host part (TECHNICAL 15, "Budgets of stage B, the host part") ----------
+
+mod stage_b {
+    use crate::claude::{LAUNCH, Rig};
+    use crate::streams::local;
+    use serde_json::{Value, json};
+    use std::collections::BTreeMap;
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    use watane_host::Caller;
+
+    const STREAMS: usize = 8;
+    const SMALL: u64 = 10;
+    const BIG: u64 = 10_000;
+
+    fn micros() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros()
+    }
+    fn can_use(rid: &str, tuid: &str) -> String {
+        json!({"type":"control_request","request_id":rid,"request":{
+            "subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"a.txt"},
+            "tool_use_id":tuid}})
+        .to_string()
+    }
+    /// `assistant` lines `n` in `from..=to`, about 1 KiB each.
+    fn entries(from: u64, to: u64) -> String {
+        let pad = "x".repeat(1000);
+        (from..=to)
+            .map(|n| format!(r#"{{"type":"assistant","n":{n},"pad":"{pad}"}}"#) + "\n")
+            .collect()
+    }
+    fn tally(rig: &Rig, s: &str) -> BTreeMap<String, String> {
+        let text = rig.call("api.tally", json!({"s": s}));
+        text.as_str()
+            .unwrap()
+            .lines()
+            .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
+            .collect()
+    }
+    /// Polls `done` every `ms` milliseconds. The times that the budgets use are stamped by the
+    /// consumer's sink or are read from the fake's log, so a slow poll costs no precision, and a
+    /// fast one would only compete with the sink for the consumer's call lock.
+    fn wait_for(what: &str, secs: u64, ms: u64, mut done: impl FnMut() -> bool) {
+        let end = Instant::now() + Duration::from_secs(secs);
+        while !done() {
+            assert!(Instant::now() < end, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(ms));
+        }
+    }
+    fn p95(mut v: Vec<f64>) -> f64 {
+        v.sort_by(f64::total_cmp);
+        v[((v.len() as f64 * 0.95) as usize).min(v.len() - 1)]
+    }
+
+    #[derive(Debug, Default)]
+    struct Marks {
+        small_entries: f64,
+        small_ask: f64,
+        answer: f64,
+        interrupt: f64,
+        big_turn: f64,
+        cancel: f64,
+        bad: u64,
+        taken: u64,
+    }
+
+    fn one(rig: &Rig, s: &str) -> Marks {
+        let mut m = Marks::default();
+        let ms = |from: u128, to: u128| to.saturating_sub(from) as f64 / 1000.0;
+        // Turn 1: 10 entries and an ask.
+        // The clock starts when the `say` call has returned: the turn is the fake's, and the
+        // call's own chain (one at a time per mod) is not the stream's path.
+        assert_eq!(
+            rig.call("api.say", json!({"s": s, "text": "one"})),
+            json!("ok")
+        );
+        let t = micros();
+        wait_for("turn 1", 30, 25, || {
+            let t = tally(rig, s);
+            t.get("next").is_some_and(|n| n == &(SMALL + 1).to_string()) && t.contains_key("ask1")
+        });
+        let tl = tally(rig, s);
+        m.small_entries = ms(t, tl["last"].parse().unwrap());
+        m.small_ask = ms(t, tl["ask1"].parse().unwrap());
+        // Its answer reaches the fake's stdin.
+        let rid = format!(
+            "r{}a",
+            tl["tu1"].trim_start_matches('t').trim_end_matches('a')
+        );
+        let t = micros();
+        assert_eq!(rig.decide(s, "1", "allow"), "ok");
+        let seen = |rid: &str| {
+            rig.log()
+                .iter()
+                .any(|l| l.starts_with("IN ") && l.contains(&format!(r#""request_id":"{rid}""#)))
+        };
+        let mut at = 0;
+        wait_for("the answer on stdin", 30, 1, || {
+            let now = micros();
+            if seen(&rid) {
+                at = now;
+                true
+            } else {
+                false
+            }
+        });
+        m.answer = ms(t, at);
+        // Turn 2: 10 000 entries after two asks; the first is answered, an interrupt closes the
+        // second while the entries flow.
+        assert_eq!(
+            rig.call("api.say", json!({"s": s, "text": "two"})),
+            json!("ok")
+        );
+        let t2 = micros();
+        wait_for("the asks of turn 2", 30, 25, || {
+            tally(rig, s).contains_key("ask3")
+        });
+        assert_eq!(rig.decide(s, "2", "allow"), "ok");
+        let t = micros();
+        assert_eq!(rig.call("api.interrupt", json!({"s": s})), json!("ok"));
+        wait_for("the interrupt's close", 30, 25, || {
+            tally(rig, s).contains_key("res3")
+        });
+        m.interrupt = ms(t, tally(rig, s)["res3"].parse().unwrap());
+        let total = SMALL + BIG + 1;
+        wait_for("turn 2", 60, 100, || {
+            tally(rig, s)
+                .get("next")
+                .is_some_and(|n| n == &total.to_string())
+        });
+        let tl = tally(rig, s);
+        m.big_turn = ms(t2, tl["last"].parse().unwrap());
+        m.bad = tl["bad"].parse().unwrap();
+        m.taken = tl["next"].parse::<u64>().unwrap() - 1;
+        // `cancel` to `ended`.
+        let t = Instant::now();
+        rig.call("api.cancel", json!({"s": s}));
+        wait_for("ended", 30, 1, || {
+            rig.ended().iter().any(|l| l == &format!("{s} cancelled"))
+        });
+        m.cancel = t.elapsed().as_secs_f64() * 1000.0;
+        m
+    }
+
+    #[test]
+    #[ignore = "slow: the stage B host budgets, 8 streams of 10 010 entries"]
+    fn ac9_stage_b_host_budgets() {
+        let launch = r#"{"version":1,"workspace":"scratch","ask":true,"tools":["Read"]}"#;
+        let _ = LAUNCH;
+        let rig = Rig::new(&[]);
+        let turn1 = can_use("r@P@a", "t@P@a") + "\n" + &entries(1, SMALL);
+        let turn2 = can_use("r@P@b", "t@P@b")
+            + "\n"
+            + &can_use("r@P@c", "t@P@c")
+            + "\n"
+            + &entries(SMALL + 1, SMALL + BIG);
+        rig.put("after.2", turn1.as_bytes());
+        rig.put("after.4", turn2.as_bytes());
+        rig.call("api.quiet", Value::Null);
+        // Two owners: the page, and the other fixture mod, four streams each.
+        let mut streams = vec![];
+        for i in 0..STREAMS {
+            let caller = if i % 2 == 0 {
+                Caller::Page
+            } else {
+                Caller::Mod(local("claude-b"))
+            };
+            let s = rig
+                .call_as(caller, "claude", "api.start", json!({"launch": launch}))
+                .unwrap();
+            streams.push(s.as_str().unwrap().to_owned());
+        }
+        for s in &streams {
+            assert_eq!(s.len(), 32, "{s}");
+        }
+        let before = rig.host().test_stats();
+        let started = Instant::now();
+        let marks: Vec<Marks> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = streams
+                .iter()
+                .map(|s| {
+                    let rig = &rig;
+                    scope.spawn(move || one(rig, s))
+                })
+                .collect();
+            jobs.into_iter().map(|j| j.join().unwrap()).collect()
+        });
+        let wall = started.elapsed();
+        let after = rig.host().test_stats();
+        let busy = (after.commit_time - before.commit_time).as_secs_f64() / wall.as_secs_f64();
+        let entries_taken: u64 = marks.iter().map(|m| m.taken).sum();
+        let written =
+            (after.state_bytes_written - before.state_bytes_written) as f64 / entries_taken as f64;
+        let col = |f: fn(&Marks) -> f64| p95(marks.iter().map(f).collect());
+        println!(
+            "stage B host: streams {STREAMS} entries {entries_taken} \
+             small-turn p95 {:.1} ms, small-ask p95 {:.1} ms, answer p95 {:.1} ms, \
+             big-turn p95 {:.0} ms, interrupt p95 {:.1} ms, cancel p95 {:.1} ms, \
+             writer-busy {:.4}, state bytes written per entry {:.2}",
+            col(|m| m.small_entries),
+            col(|m| m.small_ask),
+            col(|m| m.answer),
+            col(|m| m.big_turn),
+            col(|m| m.interrupt),
+            col(|m| m.cancel),
+            busy,
+            written,
+        );
+        assert!(marks.iter().all(|m| m.bad == 0), "{marks:?}");
+        assert!(marks.iter().all(|m| m.taken == SMALL + BIG), "{marks:?}");
+        assert!(col(|m| m.small_entries) <= 100.0);
+        assert!(col(|m| m.small_ask) <= 100.0);
+        assert!(col(|m| m.answer) <= 50.0);
+        assert!(col(|m| m.big_turn) <= 10_000.0);
+        assert!(col(|m| m.interrupt) <= 500.0);
+        assert!(col(|m| m.cancel) <= 250.0);
+        // The consumer fixture writes one small tally per batch; the host writes nothing.
+        assert!(busy <= 0.15, "writer busy {busy}");
+    }
+}

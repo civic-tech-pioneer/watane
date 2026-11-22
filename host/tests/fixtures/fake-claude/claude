@@ -5,6 +5,10 @@
 #   before   raw lines to write before the answer to `initialize`
 #   init     the `system/init` line to write after the answer to `initialize`
 #   lines    raw lines to play after it
+#   reply    the `response` object of the answer to `initialize` (default
+#            `{"hook_on_failure_supported":true}`)
+#   after.N  raw lines to write after the Nth line of stdin (`initialize` is the first); `@P@`
+#            in them is replaced by the program's pid, so that streams can tell their lines apart
 #   exit     with this file the program exits with its content as status after the lines
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
 # It logs its arguments, environment and stdin to `claude.log` beside it, one `ARG`, `ENV`,
@@ -27,8 +31,16 @@ IFS= read -r line
 printf 'IN %s\n' "$line" >> "$log"
 rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
 [ -f "$dir/before" ] && cat "$dir/before"
-printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"hook_on_failure_supported":true}}}\n' "$rid"
+reply='{"hook_on_failure_supported":true}'
+[ -f "$dir/reply" ] && reply=$(cat "$dir/reply")
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":%s}}\n' "$rid" "$reply"
 [ -f "$dir/init" ] && cat "$dir/init"
 [ -f "$dir/lines" ] && cat "$dir/lines"
 if [ -f "$dir/exit" ]; then exit "$(cat "$dir/exit")"; fi
-while IFS= read -r line; do printf 'IN %s\n' "$line" >> "$log"; done
+n=1
+[ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"
+while IFS= read -r line; do
+  printf 'IN %s\n' "$line" >> "$log"
+  n=$((n + 1))
+  [ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"
+done
