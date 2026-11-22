@@ -2809,7 +2809,8 @@ not keep a credential from a mod on their own. Three rules do:
   after canonicalization. No launch can remove them.
 - An `allow` rule on `Read`, `Glob`, `Grep`, `Edit`, `Write` or
   `NotebookEdit` (deny rules only narrow) is refused `bad-launch {field: "allow"}`
-  unless it has an argument and the argument is a relative pattern: it does
+  unless it has an argument and the argument is a relative pattern (not empty and not exactly
+  `*`: Claude Code reads `Read()` and `Read(*)` as the bare `Read`): it does
   not start with `/`, `~` or `//`, and has no `..` segment. A bare name
   (`Read`, `Write`) is refused: it matches every path, so `claude` would read
   or write outside the workspaces without an ask, and the third rule would
@@ -2868,7 +2869,10 @@ not keep a credential from a mod on their own. Three rules do:
    ask for is a difference (a tool not in the launch's `tools`, any MCP server until
    A3, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
    a missing list holds nothing, a missing or other `permissionMode` differs. Every `system/init` line is checked,
-   and then passed on as an ordinary line after `initialized`.
+   and then passed on as an ordinary line after `initialized`. The first line after the answer
+   to `initialize` that is not a control line (`control_request`, `control_response`) must be a
+   valid `system/init` (UTF-8, one JSON object, no duplicate key); any other line there, wrapped
+   or not, kills the group and ends the stream `mismatch "init"`.
    Claude Code's own agents are the built-in `agentType`s of 2.1.330: `general-purpose`,
    `statusline-setup`, `Explore`, `Plan`, `claude-code-guide`, `claude`, `fork`, `worker`,
    `comment-thread-analyst` (`src/agent/claude/init.rs`). Fail-closed: a user's or a
@@ -2981,7 +2985,8 @@ checks of the table above are made at the call.
     host checks again, and a folder or row gone since ends the stream `gone`.
   - **Lifetime.** A scratch workspace outlives its stream and its process. The
     `remove` of its owner (4.4) deletes its rows and its folders; nothing else
-    does. A preview's home goes with the preview.
+    does. A start checks that its stream is not stopped before each step that makes a
+    folder, a row or a process, and after the version probe; a stopped start makes nothing. A preview's home goes with the preview.
   - **Picked folders** come with the workspace consent (stage A3): until then a
     `workspace` or `extra-workspaces` value that is not a scratch value is
     `bad-launch {field, reason: "picked folders need the workspace consent (stage A3)"}`.

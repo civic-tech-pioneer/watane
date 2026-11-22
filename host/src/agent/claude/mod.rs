@@ -15,7 +15,6 @@ use launch::{Kind, Launch, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use wasmtime::component::Val;
@@ -32,6 +31,12 @@ pub(crate) enum Write {
     Interrupt,
 }
 
+#[derive(Debug, Default)]
+struct Running {
+    pgid: i32,
+    stopped: bool,
+}
+
 /// One `claude` run: its process group, and the queue of lines for its stdin.
 #[derive(Debug)]
 pub(crate) struct Session {
@@ -39,8 +44,9 @@ pub(crate) struct Session {
     pub origin: String,
     /// The `initialize` request's id: the answer to it is the one the run waits for.
     pub request_id: String,
-    pgid: AtomicI32,
-    stopped: AtomicBool,
+    /// The group and the stop flag under one lock: `stop` and `started` each read what the
+    /// other wrote, so one of them always kills the group.
+    state: Mutex<Running>,
     tx: Mutex<Option<Sender<Vec<u8>>>>,
     rx: Mutex<Option<Receiver<Vec<u8>>>>,
 }
@@ -54,19 +60,27 @@ impl Session {
             id,
             origin,
             request_id,
-            pgid: AtomicI32::new(0),
-            stopped: AtomicBool::new(false),
+            state: Mutex::new(Running::default()),
             tx: Mutex::new(Some(tx)),
             rx: Mutex::new(Some(rx)),
         }
     }
+    fn running(&self) -> std::sync::MutexGuard<'_, Running> {
+        self.state
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+    }
     pub(crate) fn stopped(&self) -> bool {
-        self.stopped.load(Ordering::Acquire)
+        self.running().stopped
     }
     /// Kills the group and closes the queue. Safe to call again.
     pub(crate) fn stop(&self) {
-        self.stopped.store(true, Ordering::Release);
-        run::kill_group(self.pgid.load(Ordering::Acquire));
+        let pgid = {
+            let mut state = self.running();
+            state.stopped = true;
+            state.pgid
+        };
+        run::kill_group(pgid);
         self.tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
@@ -74,8 +88,12 @@ impl Session {
     }
     /// The process started: its group, and the queue of its stdin.
     pub(crate) fn started(&self, pgid: i32) -> Receiver<Vec<u8>> {
-        self.pgid.store(pgid, Ordering::Release);
-        if self.stopped() {
+        let stopped = {
+            let mut state = self.running();
+            state.pgid = pgid;
+            state.stopped
+        };
+        if stopped {
             run::kill_group(pgid);
         }
         self.rx

@@ -308,6 +308,10 @@ impl Job {
         if version < MIN_VERSION {
             return json!({"version": {"found": found, "need": NEED}});
         }
+        // The owner may have been removed while the probe ran: a stopped start makes nothing.
+        if self.session.stopped() {
+            return json!("gone");
+        }
         let (workspace, cwd) = match &launch.workspace {
             Workspace::NewScratch => match self.new_scratch() {
                 Ok((id, path)) => (scratch_name(&id), path),
@@ -341,6 +345,9 @@ impl Job {
             }
         }
         args.extend(launch.flags.iter().cloned());
+        if self.session.stopped() {
+            return json!("gone");
+        }
         let mut cleanup = Cleanup {
             sessions: Arc::clone(&self.sessions),
             home: self.home.clone(),
@@ -360,6 +367,9 @@ impl Job {
             return Self::failed(format!("cannot make the run folder: {e}"));
         }
         args.push(format!("--plugin-dir={}", plugin.display()));
+        if self.session.stopped() {
+            return json!("gone");
+        }
         let mut child = match Command::new(&program)
             .args(&args)
             .current_dir(&cwd)
@@ -404,6 +414,7 @@ impl Job {
             held: Some(vec![]),
             request_id,
             workspace,
+            awaiting_init: false,
         };
         let ended = reader.read(&mut stdout);
         let status = waiter.join().ok().and_then(Result::ok);
@@ -429,6 +440,9 @@ struct Reading<'a> {
     held: Option<Vec<Vec<u8>>>,
     request_id: String,
     workspace: String,
+    /// The answer to `initialize` came and the `system/init` line has not: only control lines
+    /// may come before it (19.3, step 3).
+    awaiting_init: bool,
 }
 impl Reading<'_> {
     /// Pushes one item, waiting while the stream is full (a host stream stops reading its
@@ -483,13 +497,19 @@ impl Reading<'_> {
         }
     }
     fn line(&mut self, raw: &[u8]) -> Result<(), Value> {
-        match control::classify(raw) {
+        let line = control::classify(raw);
+        if self.awaiting_init && !matches!(line, Line::Init(..)) && !control::is_control(raw, &line)
+        {
+            return Err(json!({"mismatch": "init"}));
+        }
+        match line {
             Line::Item(body) => self.item(body),
             Line::Deny { request_id, hook } => {
                 self.job.session.write(control::deny(&request_id, hook));
                 Ok(())
             }
             Line::Init(value, body) => {
+                self.awaiting_init = false;
                 if let Err(field) = init::check(&self.job.launch, &value) {
                     return Err(json!({"mismatch": field}));
                 }
@@ -507,6 +527,7 @@ impl Reading<'_> {
                     for body in self.held.take().unwrap_or_default() {
                         self.push(body)?;
                     }
+                    self.awaiting_init = true;
                     Ok(())
                 } else {
                     self.item(raw.to_vec())
