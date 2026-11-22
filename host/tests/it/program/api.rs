@@ -83,7 +83,11 @@ async fn ac2_status_and_api_guards() {
             "text/plain; charset=utf-8"
         );
     }
-    for ip in ["127.0.0.1", "[::1]"] {
+    let mut ips = vec!["127.0.0.1"];
+    if std::net::TcpListener::bind("[::1]:0").is_ok() {
+        ips.push("[::1]");
+    }
+    for ip in ips {
         let response = client
             .get(format!("http://{ip}:{}/api/status", preview.ready.port))
             .send()

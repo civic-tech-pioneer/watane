@@ -1168,7 +1168,12 @@ A put of the stored value is no change, so a page that re-reads on
 serves both with one router (macOS resolves `<x>.localhost` to `::1`
 first), and no other address. Port 0: `[::1]` takes the port that
 `127.0.0.1:0` got; on a clash, try again, at most 8 times. A failed bind is
-`port_in_use`. Then it writes `run.json`. A second `serve` is
+`port_in_use`, with one exception: when `[::1]` fails because the machine has
+no `::1` (`AddrNotAvailable`, or the OS error `EAFNOSUPPORT`: a kernel
+without IPv6, as in a Linux container), `serve` serves `127.0.0.1:<port>`
+alone and prints one line on stderr, `watane: no IPv6 loopback (::1); serving
+127.0.0.1 only`. Every other `[::1]` failure stays `port_in_use`, and the
+`Ready` line does not change. Then it writes `run.json`. A second `serve` is
 `already_serving`.
 
 Every request must have exactly one `Host` header. Repeated headers get
