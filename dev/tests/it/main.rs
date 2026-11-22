@@ -13,6 +13,7 @@ mod check;
 mod contract;
 mod doctor;
 mod envelope;
+mod fake_claude;
 mod install;
 mod journey;
 mod journey_s11;

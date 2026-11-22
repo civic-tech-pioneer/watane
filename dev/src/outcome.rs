@@ -49,6 +49,7 @@ pub enum Code {
     BuildReadsOutside,
     BuildImports,
     PreviewPrevious,
+    PreviewFakeClaudeMissing,
     EnvGitMissing,
     EnvGhMissing,
     EnvGhAuth,
@@ -103,6 +104,7 @@ impl Code {
             Self::BuildReadsOutside => "build.reads_outside",
             Self::BuildImports => "build.imports",
             Self::PreviewPrevious => "preview.previous",
+            Self::PreviewFakeClaudeMissing => "preview.fake_claude_missing",
             Self::EnvGitMissing => "env.git_missing",
             Self::EnvGhMissing => "env.gh_missing",
             Self::EnvGhAuth => "env.gh_auth",
@@ -117,6 +119,7 @@ impl Code {
         match self {
             Self::NewPrebuiltRenamed
             | Self::PreviewPrevious
+            | Self::PreviewFakeClaudeMissing
             | Self::PublishProviderUnlisted
             | Self::NewForkUnavailable
             | Self::NewForkDiffers

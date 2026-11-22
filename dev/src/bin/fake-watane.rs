@@ -8,7 +8,7 @@ use watane_host::{InstalledMod, LocalName, Ready, RunInfo};
 use watane_pkg::Mod;
 
 const USAGE: &str = "Usage: fake-watane --preview <dir> | --home <dir>
-  --preview <dir>  Run a fake preview host in <dir>.
+  --preview <dir> [--fake-claude <program>]  Run a fake preview host in <dir>.
   --home <dir>     Run a fake home host with app consent in <dir>.
   -h, --help       Print this help.";
 
@@ -43,7 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("{USAGE}");
         return Ok(());
     }
-    if args.len() != 2 || (args[0] != "--preview" && args[0] != "--home") {
+    let fake_claude = args.len() == 4 && args[0] == "--preview" && args[2] == "--fake-claude";
+    if (args.len() != 2 && !fake_claude) || (args[0] != "--preview" && args[0] != "--home") {
         eprintln!("{USAGE}");
         std::process::exit(2);
     }
@@ -55,6 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let home = PathBuf::from(&args[1]);
     fs::create_dir_all(&home)?;
     let home = home.canonicalize()?;
+    // What the host was started with, for a test of `serve`.
+    fs::write(
+        home.join("args.json"),
+        serde_json::to_vec(&args.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>())?,
+    )?;
     let server = Server::http("127.0.0.1:0")?;
     let port = server
         .server_addr()

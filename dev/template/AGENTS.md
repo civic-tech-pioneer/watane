@@ -8,7 +8,7 @@
 | logic/src/lib.rs | You: logic |
 | ui/ | You: page and scripts |
 | tests/*.json | You: contract tests |
-| wit/deps/, deps.json, .watane-dev.json | watane-dev; do not edit |
+| wit/deps/, deps.json, .watane-dev.json | watane-dev; do not edit; commit `wit/deps/watane-host/host.wit` too: `check` and `serve` rewrite it to the host's copy |
 | logic.wasm, logic/Cargo.lock | watane-dev builds these |
 | AGENTS.md, CLAUDE.md | Keep these guides |
 

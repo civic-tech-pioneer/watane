@@ -7,8 +7,9 @@ rust-version = "1.95"
 publish = false
 
 [features]
-default = ["fake-host"]
+default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
+fake-claude = ["dep:claude-codes"]
 
 [lib]
 # No doc examples: skip the rustdoc pass of every `cargo test`.
@@ -16,6 +17,7 @@ doctest = false
 
 [dependencies]
 tiny_http = { version = "0.12", optional = true }
+claude-codes = { version = "=2.1.330", default-features = false, features = ["types"], optional = true }
 watane-pkg = { path = "../pkg" }
 watane-host = { path = "../host" }
 clap = { version = "4", features = ["derive"] }
@@ -36,6 +38,11 @@ tempfile = "3"
 name = "fake-watane"
 path = "src/bin/fake-watane.rs"
 required-features = ["fake-host"]
+
+[[bin]]
+name = "fake-claude"
+path = "src/bin/fake-claude.rs"
+required-features = ["fake-claude"]
 
 [[bin]]
 name = "fake-gh"
