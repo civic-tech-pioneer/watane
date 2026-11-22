@@ -864,3 +864,40 @@ fn s100_ac6_host_permission_arguments_and_unawaited_interrupt() {
     );
     assert!(log.iter().all(|l| l.get("error").is_none()));
 }
+
+/// S100 acceptance, outcome 3: the host interrupts a long turn while an ask the script did not
+/// await is open, so it writes the ask's deny (`interrupted`) and then the `interrupt` (host 19.3
+/// step 5). The deny is a `control_response`, one of the host's writes (18.2): the fake must not
+/// keep it for the next turn step, where it exits 70 ("expected a user message").
+#[test]
+fn regress_s100_unawaited_ask_deny_during_long_turn_keeps_the_session() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Read","input":{"file_path":"a.txt"},"tool_use_id":"t1"},
+        {"do":"long-turn","entries":1000,"every-ms":5},
+        {"do":"expect-user"},{"do":"message","text":"next"}]}"#,
+    );
+    let mut s = f.start(&[
+        "--permission-prompts=host",
+        "--permission-prompt-tool=stdio",
+    ]);
+    s.initialize(false);
+    let ask = parsed(&s);
+    assert_eq!(ask["request"]["subtype"], "can_use_tool");
+    assert_eq!(parsed(&s)["type"], "assistant");
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"interrupted"}),
+    ));
+    interrupt(&mut s, "i3");
+    loop {
+        let v = parsed(&s);
+        if v["type"] != "assistant" {
+            assert_eq!(v, interrupt_answer("i3"));
+            break;
+        }
+    }
+    assert_eq!(parsed(&s)["subtype"], "error_during_execution");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
