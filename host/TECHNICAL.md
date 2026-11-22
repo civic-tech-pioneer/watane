@@ -1126,6 +1126,7 @@ One redb database at `state/state.redb`.
 | `sizes` | `&str` `<id>` | `u64` stored bytes (keys + values) |
 | `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | `&str`: JSON text `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
 | `host` (step 11, stage A2) | `&str` name; the one key `generation` | `u64`: the start number that `host-info.generation()` returns (19.1); not counted in `sizes`; stage A2 (S99) creates the table |
+| `scratch` (step 11, stage A2) | `&str` the 32 hex chars of a scratch workspace id (19.3, Folders) | `&str`: the identity of its owner, the origin client of the launch that made it; not counted in `sizes` |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1965,6 +1966,26 @@ controls), 58 (host part: producers past an origin client's 128 MiB or the
 host's 512 MiB get `full`; a page connection past 16 MiB ends and its streams
 end `lagging`).
 
+**A2 in two slices (S99's foreman, 2026-11-22).** S99 (agentic-harness S35,
+one turn) builds: `host-info` (19.1, 7); the doc comment of `caller`; the
+connection-replaced message of `watane.js` (8.5); R7 (19.2); the WIT linking of
+`claude-types`, `claude-code`, `claude-code-shell` and `claude-session`; the
+launch document of 19.3 with every field parsed and checked; the scratch
+workspaces (Folders); the run (binary, version, process group, `runs/pids`,
+the fixed environment, the host's `--settings=` with the protected paths, the
+protected reads and `sandbox.allowUnsandboxedCommands: false` for every start);
+steps 1 to 4 of the control protocol for lines (`initialize`, the `init`
+match, `initialized`, `wrapped`, lines unchanged); `say`, `interrupt` and
+`compact`; `AccountSource` (19.4, `claude_binary` the only method the host
+calls yet), `Confirm::accounts`, `set_fake_claude` and `watane --fake-claude`;
+dev's `fake-claude`. Until S100 (agentic-harness S36) builds the asks and
+checks, a launch with `ask: true`, a `pre-tool-check`, an `agent-handle`
+(A3) or a non-empty `skills` is `bad-launch {field, reason}` naming the
+stage; `ask: false` gives `--permission-prompts=none`; a `can_use_tool` or
+`hook_callback` request that arrives anyway is answered deny at once and
+pushes nothing; `answer` is `unknown-ask`. `claude-code-shell.start` checks
+its grant and its launch, then its stream ends `failed("the shell grant waits
+on section 18, Q39 and Q42")`.
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
 within them). Load: 8 host streams × 100 items/s of 1 KiB from a test source
@@ -2693,8 +2714,8 @@ argument.
 
 | Field | Grammar or rule | Goes to `claude` as |
 |---|---|---|
-| `workspace` | a workspace id the origin client holds (19.7) | cwd |
-| `extra-workspaces` | workspace ids, the same rule | `--add-dir=` each |
+| `workspace` | a workspace id the origin client holds (19.7), or `scratch` for a new scratch workspace (Folders) | cwd |
+| `extra-workspaces` | workspace ids, the same rule; `scratch` is refused here | `--add-dir=` each |
 | `model` | `[A-Za-z0-9.\-\[\]]{1,64}` | `--model=` |
 | `fallback-models` | the same, at most 4 | `--fallback-model=` |
 | `effort` | `low`, `medium`, `high`, `xhigh`, `max` | `--effort=` |
@@ -2826,7 +2847,7 @@ not keep a credential from a mod on their own. Three rules do:
 - Process: its own process group; the pid is recorded in `<home>/runs/pids`.
   The consent of 19.7 is held first: the host starts the process only then.
 - Environment: only `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TMPDIR`,
-  `SHELL`, a fixed `PATH`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
+  `SHELL`, a fixed `PATH` (`/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`), `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
   `CLAUDE_CODE_OAUTH_TOKEN` when the participant set it. The host never reads
   that token. Whether a sandboxed `Bash` child can read it, and
   whether `WebFetch` reaches loopback, is section 18, Q39 (probe V28).
@@ -2841,7 +2862,8 @@ not keep a credential from a mod on their own. Three rules do:
 2. With a callback, the answer must hold `hook_on_failure_supported: true` and
    not `hooks_applied: false`; otherwise the host kills the group and ends the
    stream `mismatch`. Once this step has passed, the host pushes the item
-   `{"type":"initialized"}` on the stream. The process starts only after the
+   `{"type":"initialized","workspace":"<the launch's workspace id>"}` on the
+   stream (Folders). The process starts only after the
    workspace consent is held, so `initialized` never comes before it; the
    checked provider relies on that.
 3. The `system/init` line must match the launch in tools, MCP servers, agents,
@@ -2896,6 +2918,20 @@ not keep a credential from a mod on their own. Three rules do:
    `updatedPermissions` or second `initialize`.
 6. A turn is over when `claude` reports itself idle, not at the first
    `result`.
+   That line is `{"type":"system","subtype":"session_state_changed","state":"idle"}`;
+   the host passes it unchanged.
+
+**Wire shapes** (Claude Code's stream-json, as S99 builds them; dev's
+`fake-claude` checks the same). `initialize`:
+`{"type":"control_request","request_id":"<id>","request":{"subtype":"initialize"}}`
+(with `hooks` once checks exist, S100); its answer
+`{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{…}}}`.
+`say`: `{"type":"user","message":{"role":"user","content":"<text>"}}`;
+`compact`: the same with the text `/compact`; `interrupt`:
+`{"type":"control_request","request_id":"<id>","request":{"subtype":"interrupt"}}`;
+the host's answer to a control request of `claude`:
+`{"type":"control_response","response":{"subtype":"success","request_id":"<its id>","response":<body>}}`,
+with the body `{"behavior":"deny","message":"…"}` for a deny.
 
 **The session functions.** `claude-session.say`, `answer`, `interrupt` and
 `compact` act on host stream `s` of a `claude-code` start; the caller must be
@@ -2909,13 +2945,31 @@ checks of the table above are made at the call.
 - Run folder `<home>/runs/<random>/`: the plugin folder `watane-run`. Deleted
   when the stream ends; all of `runs/` is deleted at open, after the recorded
   process groups are killed (3.1 step 3).
-- Scratch workspace `<home>/scratch/<random>/`, named by the host, owned by a
-  session; a mod sees its id. It asks no consent: no participant folder is in
-  it. Not yet specified (agentic-harness TECHNICAL 4.6): which call creates a
-  scratch workspace, how a picked folder becomes a workspace id, and how a mod
-  holds one across a resume. The first slice of stage A2 adds this here, to the
-  launch table and to 15 before any other A2 slice starts. Whether one
-  session can read another's scratch or run folder is section 18, Q40.
+- Scratch workspace `<home>/scratch/<random>/`, named by the host, owned by
+  the origin client; a mod sees its id. It asks no consent: no participant
+  folder is in it. Decided by S99's foreman (agentic-harness TECHNICAL 4.6
+  left it open; no WIT change, so cheap to undo):
+  - **Made by the launch.** `workspace: "scratch"` makes a new one when the
+    start applies (19.6), before the process starts: 128 random bits as 32 hex
+    chars, the folder created mode 0700. Its id is `scratch:<32 hex>`.
+  - **Seen in `initialized`.** Every `claude-code` stream's `initialized` item
+    names the launch's workspace: `{"type":"initialized","workspace":"<id>"}`,
+    so the mod learns a new scratch id there.
+  - **Held across a resume.** A later launch names it as `workspace:
+    "scratch:<32 hex>"` (or in `extra-workspaces`). The owner is kept in host
+    state (the `scratch` table of 7: the id to the origin client's identity),
+    so it survives a restart. An id that is unknown, malformed or owned by
+    another identity is `bad-launch {field, reason}` at the call; at apply the
+    host checks again, and a folder or row gone since ends the stream `gone`.
+  - **Lifetime.** A scratch workspace outlives its stream and its process. The
+    `remove` of its owner (4.4) deletes its rows and its folders; nothing else
+    does. A preview's home goes with the preview.
+  - **Picked folders** come with the workspace consent (stage A3): until then a
+    `workspace` or `extra-workspaces` value that is not a scratch value is
+    `bad-launch {field, reason: "picked folders need the workspace consent (stage A3)"}`.
+  - Whether one session can read another's scratch or run folder is section
+    18, Q40, still open. Mods see only ids, so moving the folders (Q40 b)
+    changes no interface.
 - Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
   folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
   `~/.aws`, `~/Library/Keychains`, the run and scratch trees; compared without
