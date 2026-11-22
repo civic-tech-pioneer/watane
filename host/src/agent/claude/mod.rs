@@ -265,10 +265,18 @@ pub(crate) fn session_call(
     let id = text_arg(args, 0, function)?;
     let host = &inv.chain.host;
     let me = inv.me();
-    let Some(info) = host.hub.info(&id) else {
+    let mut log = inv.log();
+    let Some(view) = inv.view(&log, &id) else {
         return err("unknown-stream");
     };
-    if info.consumer != Consumer::Mod(me.clone()) || host.sessions.get(&id).is_none() {
+    // A stream started in this chain has no session yet: it is a shell's when the effect says so.
+    let session = if view.in_chain {
+        !log.iter()
+            .any(|e| matches!(e, Effect::ClaudeStart { id: i, shell: true, .. } if *i == id))
+    } else {
+        host.sessions.get(&id).is_some()
+    };
+    if view.consumer != Consumer::Mod(me.clone()) || !session {
         return err("not-yours");
     }
     let what = match function {
@@ -288,7 +296,7 @@ pub(crate) fn session_call(
             )));
         }
     };
-    inv.log().push(Effect::ClaudeWrite { id, what, by: me });
+    log.push(Effect::ClaudeWrite { id, what, by: me });
     Ok(json!({"ok": null}))
 }
 
@@ -305,7 +313,7 @@ impl Host {
         launch: Arc<Launch>,
         shell: bool,
         valid: bool,
-    ) {
+    ) -> Option<run::Job> {
         let session = Arc::new(Session::new(id.clone(), origin.clone()));
         let hook = Arc::clone(&session);
         self.hub.open_host(
@@ -316,18 +324,18 @@ impl Host {
         );
         if !valid {
             self.hub.end_gone(&[id]);
-            return;
+            return None;
         }
         if shell {
             self.hub.finish(&id, run::shell_waits());
-            return;
+            return None;
         }
         if self.sessions.register(&session).is_err() {
             self.hub
                 .finish(&id, json!({"failed": "too many claude processes"}));
-            return;
+            return None;
         }
-        let job = run::Job {
+        Some(run::Job {
             weak: std::sync::Weak::<Host>::clone(&self.weak),
             hub: Arc::clone(&self.hub),
             session: Arc::clone(&session),
@@ -340,7 +348,16 @@ impl Host {
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it")
                 .clone(),
-        };
+        })
+    }
+
+    /// Starts the thread of a session, unless its stream ended first (19.3, At apply).
+    pub(crate) fn claude_run(&self, job: run::Job) {
+        let id = job.session.id.clone();
+        if job.session.stopped() {
+            self.sessions.remove(&id);
+            return;
+        }
         let spawned = std::thread::Builder::new()
             .name("watane-claude".into())
             .spawn(move || job.go());

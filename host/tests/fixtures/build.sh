@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-for name in counter echo hog shelf recs loop-a loop-b cyc-a cyc-b menu item-a item-b item-c item-bad item-spin item-back manager latch relay relay-front advo advo-front claude claude-b; do
+for name in counter echo hog shelf recs loop-a loop-b cyc-a cyc-b menu item-a item-b item-c item-bad item-spin item-back manager latch relay relay-front advo advo-front claude claude-b claude-front; do
   [ -f "src/$name/Cargo.toml" ] || continue
   # One target folder for all fixtures, so their shared dependencies build once: under the
   # shared target directory when set, else a git-ignored one here.

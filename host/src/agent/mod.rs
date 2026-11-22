@@ -268,6 +268,20 @@ impl Invocation {
                 handoffs: 0,
                 in_chain: true,
             }),
+            // A stream that `claude-code.start` opened in this chain (19.2, Commit).
+            Effect::ClaudeStart {
+                id: i,
+                consumer,
+                origin,
+                ..
+            } if i == id => Some(View {
+                consumer: Consumer::Mod(consumer.clone()),
+                producer: Producer::Host,
+                origin: origin.clone(),
+                handed_off: false,
+                handoffs: 0,
+                in_chain: true,
+            }),
             _ => None,
         });
         if view.is_none() {
@@ -809,6 +823,9 @@ impl Host {
     }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
+        // A `claude` process starts after the whole chain is applied, so that a `cancel` of the
+        // same chain ends the stream before any process starts (19.3, At apply).
+        let mut runs = Vec::new();
         for effect in effects {
             match effect {
                 Effect::TimerAfter { owner, id, due, .. } => self
@@ -894,13 +911,18 @@ impl Host {
                                     && m.grants.iter().any(|g| g.granted && g.grant == grant)
                             })
                     };
-                    self.claude_start(id, consumer, origin, origin_gen, launch, shell, valid);
+                    runs.extend(
+                        self.claude_start(id, consumer, origin, origin_gen, launch, shell, valid),
+                    );
                     drop(catalog);
                 }
                 Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
                 Effect::Fake { .. } => {}
                 other => self.hub.apply(self, other, true),
             }
+        }
+        for job in runs {
+            self.claude_run(job);
         }
     }
 }

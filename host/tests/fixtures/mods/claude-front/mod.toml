@@ -1,0 +1,2 @@
+name = "claude-front"
+summary = "S99 fixture: a consumer that calls claude, which starts a stream and hands it off."

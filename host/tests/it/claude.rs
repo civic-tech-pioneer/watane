@@ -57,8 +57,15 @@ impl Rig {
         let host = Host::open(self.home.path(), Mode::Preview, Limits::default()).unwrap();
         host.set_fake_claude(&self.program()).unwrap();
         if host.mods().is_empty() {
-            host.install_folders(&[fixture("claude"), fixture("claude-b")], 0)
-                .unwrap();
+            host.install_folders(
+                &[
+                    fixture("claude"),
+                    fixture("claude-b"),
+                    fixture("claude-front"),
+                ],
+                0,
+            )
+            .unwrap();
         }
         self.host = Some(host);
     }
@@ -980,4 +987,158 @@ fn ac2_a_control_request_before_the_answer_is_denied_and_nothing_is_held() {
     rig.wait_log("the deny", |l| {
         l.iter().any(|e| e.starts_with("IN ") && e.contains("r1"))
     });
+}
+
+// ---- S99 fix 3: a stream started in a chain is that chain's at once (TECHNICAL 19.2, Commit) ----
+
+impl Rig {
+    fn front(&self, function: &str, args: Value) -> Value {
+        self.call_as(Caller::Page, "claude-front", function, args)
+            .unwrap()
+    }
+    fn front_items(&self, s: &str) -> Vec<String> {
+        serde_json::from_value(self.front("api.items", json!({"s": s}))).unwrap()
+    }
+    fn front_ended(&self) -> Vec<String> {
+        serde_json::from_value(self.front("api.ended", Value::Null)).unwrap()
+    }
+    fn scratch_folders(&self) -> usize {
+        std::fs::read_dir(self.home.path().join("scratch")).map_or(0, Iterator::count)
+    }
+}
+
+#[test]
+fn ac1_start_then_hand_off_in_one_call_makes_the_caller_the_consumer() {
+    let rig = Rig::new(&[("lines", b"{\"type\":\"assistant\"}\n")]);
+    let s = rig
+        .front("api.run", json!({"launch": LAUNCH}))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(s.len(), 32, "no stream id: {s}");
+    wait("items of the front", Duration::from_secs(20), || {
+        rig.front_items(&s).len() >= 3
+    });
+    let items = rig.front_items(&s);
+    assert_eq!(items[0].matches("\"initialized\"").count(), 1);
+    assert_eq!(items[2], r#"{"type":"assistant"}"#);
+    // The provider is not the consumer: its own items stay empty.
+    assert!(rig.items(&s).is_empty());
+    assert_eq!(
+        rig.front("api.say", json!({"s": s, "text": "hi"})),
+        json!("ok")
+    );
+    wait("the say", Duration::from_secs(20), || {
+        rig.entries("IN")
+            .iter()
+            .any(|l| l.contains(r#""content":"hi""#))
+    });
+    assert_eq!(
+        rig.call("api.say", json!({"s": s, "text": "no"})),
+        json!("not-yours")
+    );
+}
+
+#[test]
+fn ac1_the_caller_of_the_chain_can_say_at_once_after_the_hand_off() {
+    let rig = Rig::new(&[]);
+    let answer = rig
+        .front("api.run-say", json!({"launch": LAUNCH, "text": "hello"}))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (s, said) = answer.split_once(' ').unwrap();
+    assert_eq!(s.len(), 32, "{answer}");
+    assert_eq!(said, "ok");
+    rig.wait_log("the say", |l| {
+        l.iter().any(|e| e.contains(r#""content":"hello""#))
+    });
+}
+
+#[test]
+fn ac2_a_say_between_start_and_hand_off_reaches_stdin_once_after_initialize() {
+    let rig = Rig::new(&[]);
+    let answer = rig
+        .front("api.run-say-first", json!({"launch": LAUNCH, "text": "hi"}))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // The stream, the first say, the hand-off, and the old consumer's late say.
+    let parts: Vec<&str> = answer.split(' ').collect();
+    assert_eq!(parts[0].len(), 32, "{answer}");
+    assert_eq!(parts[1..], ["ok", "ok", "not-yours"], "{answer}");
+    let log = rig.wait_log("the say", |l| {
+        l.iter().any(|e| e.contains(r#""content":"hi""#))
+    });
+    let inputs = rig.entries("IN");
+    assert!(
+        inputs[0].contains(r#""subtype":"initialize""#),
+        "{inputs:?}"
+    );
+    let says: Vec<_> = inputs
+        .iter()
+        .filter(|l| l.contains(r#""type":"user""#))
+        .collect();
+    assert_eq!(says.len(), 1, "{log:?}");
+    assert!(says[0].contains(r#""content":"hi""#));
+    // The consumer after the commit is the hand-off target: the provider is refused.
+    assert_eq!(
+        rig.call("api.say", json!({"s": parts[0], "text": "no"})),
+        json!("not-yours")
+    );
+    assert_eq!(
+        rig.front("api.say", json!({"s": parts[0], "text": "yes"})),
+        json!("ok")
+    );
+}
+
+#[test]
+fn ac3_start_then_cancel_in_one_chain_starts_no_process_and_ends_cancelled() {
+    let rig = Rig::new(&[]);
+    let s = rig
+        .front("api.run-cancel", json!({"launch": LAUNCH}))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(s.len(), 32, "{s}");
+    wait("cancelled", Duration::from_secs(20), || {
+        rig.front_ended().contains(&format!("{s} cancelled"))
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(rig.log().is_empty(), "a process started: {:?}", rig.log());
+    assert_eq!(rig.scratch_folders(), 0);
+}
+
+#[test]
+fn ac3_the_starting_mod_cancels_its_own_stream_in_the_chain() {
+    let rig = Rig::new(&[]);
+    let s = rig
+        .call("api.start-cancel", json!({"launch": LAUNCH}))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(s.len(), 32, "{s}");
+    wait("cancelled", Duration::from_secs(20), || {
+        rig.ended().contains(&format!("{s} cancelled"))
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(rig.log().is_empty(), "a process started: {:?}", rig.log());
+    assert_eq!(rig.scratch_folders(), 0);
+}
+
+#[test]
+fn ac4_a_chain_that_starts_hands_off_and_fails_applies_nothing() {
+    let rig = Rig::new(&[]);
+    let result = rig.call_as(
+        Caller::Page,
+        "claude-front",
+        "api.run-fail",
+        json!({"launch": LAUNCH}),
+    );
+    assert!(result.is_err(), "{result:?}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(rig.log().is_empty(), "a process started: {:?}", rig.log());
+    assert_eq!(rig.scratch_folders(), 0);
+    assert!(rig.front_ended().is_empty());
+    assert!(rig.ended().is_empty());
 }
