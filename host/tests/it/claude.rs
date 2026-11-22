@@ -438,7 +438,7 @@ fn ac7_an_init_that_differs_from_the_launch_kills_the_group_and_ends_mismatch() 
 
 #[test]
 fn ac7_a_plugin_of_claude_codes_own_and_the_mode_dont_ask_match() {
-    let init = r#"{"type":"system","subtype":"init","tools":["Read"],"mcp_servers":[],"agents":["rev"],"permissionMode":"dontAsk","plugins":[{"name":"watane-run"},{"name":"cc-plugin-x"}]}"#;
+    let init = r#"{"type":"system","subtype":"init","tools":["Read"],"mcp_servers":[],"agents":["general-purpose","rev","Explore"],"permissionMode":"dontAsk","plugins":[{"name":"watane-run"},{"name":"cc-plugin-x"}]}"#;
     let rig = Rig::new(&[("init", format!("{init}\n").as_bytes())]);
     let launch = r#"{"version":1,"workspace":"scratch","mode":"dont-ask","tools":["Read"],"subagents":[{"name":"rev","description":"d","prompt":"p","tools":["Read"],"model":"sonnet"}]}"#;
     let s = rig.start_ok(launch);
@@ -509,11 +509,11 @@ fn ac9_say_interrupt_and_compact_write_to_stdin_after_the_commit() {
         json!({"s": s, "text": "lost"}),
     );
     failed.unwrap_err();
-    std::thread::sleep(Duration::from_millis(400));
-    assert!(!rig.log().iter().any(|l| l.contains("lost")));
     assert_eq!(rig.call("api.interrupt", json!({"s": s})), json!("ok"));
     assert_eq!(rig.call("api.compact", json!({"s": s})), json!("ok"));
+    // stdin is one queue: a written "lost" would be in the log before `/compact`.
     let log = rig.wait_log("compact", |l| l.iter().any(|e| e.contains("/compact")));
+    assert!(!log.iter().any(|l| l.contains("lost")));
     let ins: Vec<Value> = log
         .iter()
         .filter_map(|l| l.strip_prefix("IN "))

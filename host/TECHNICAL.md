@@ -2866,9 +2866,14 @@ not keep a credential from a mod on their own. Three rules do:
    names, as strings or as objects with a `name` (Claude Code's `{"name","path"}`
    plugins and `{"name","status"}` servers). Only an entry that the launch did not
    ask for is a difference (a tool not in the launch's `tools`, any MCP server until
-   A3, an agent not in `subagents`, another plugin); a missing list holds nothing,
-   a missing or other `permissionMode` differs. Every `system/init` line is checked,
+   A3, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
+   a missing list holds nothing, a missing or other `permissionMode` differs. Every `system/init` line is checked,
    and then passed on as an ordinary line after `initialized`.
+   Claude Code's own agents are the built-in `agentType`s of 2.1.330: `general-purpose`,
+   `statusline-setup`, `Explore`, `Plan`, `claude-code-guide`, `claude`, `fork`, `worker`,
+   `comment-thread-analyst` (`src/agent/claude/init.rs`). Fail-closed: a user's or a
+   project's agent, or a built-in one that a later version adds, is `mismatch(agents)`
+   until it is named here (validator of S99).
 4. Then each stdout line becomes an item:
 
 | Line | Item |

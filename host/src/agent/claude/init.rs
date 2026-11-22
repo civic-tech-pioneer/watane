@@ -4,6 +4,22 @@
 use super::launch::Launch;
 use serde_json::Value;
 
+/// Claude Code's own agents, which its `system/init` lists beside the launch's `subagents`:
+/// the built-in `agentType`s of Claude Code 2.1.330. Any other name is a difference, so a
+/// user's or a project's agent fails closed, and so does a built-in agent added later until
+/// it is named here.
+const BUILT_IN_AGENTS: [&str; 9] = [
+    "general-purpose",
+    "statusline-setup",
+    "Explore",
+    "Plan",
+    "claude-code-guide",
+    "claude",
+    "fork",
+    "worker",
+    "comment-thread-analyst",
+];
+
 /// The names in a list of strings or of objects with a `name`.
 fn names(v: Option<&Value>) -> Option<Vec<String>> {
     let Some(v) = v else {
@@ -30,7 +46,9 @@ pub(crate) fn check(launch: &Launch, init: &Value) -> Result<(), &'static str> {
     };
     extra("tools", &|n| launch.tools.iter().any(|t| t == n))?;
     extra("mcp_servers", &|_| false)?;
-    extra("agents", &|n| launch.agents.iter().any(|a| a == n))?;
+    extra("agents", &|n| {
+        BUILT_IN_AGENTS.contains(&n) || launch.agents.iter().any(|a| a == n)
+    })?;
     if init.get("permissionMode").and_then(Value::as_str) != Some(launch.init_mode) {
         return Err("permissionMode");
     }
