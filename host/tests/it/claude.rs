@@ -447,7 +447,10 @@ fn ac7_a_plugin_of_claude_codes_own_and_the_mode_dont_ask_match() {
     assert!(rig.ended().is_empty());
     let args = rig.entries("ARG");
     assert!(args.contains(&"--permission-mode=dontAsk".to_owned()));
-    assert!(args.contains(&r#"--agents={"rev":{"description":"d","model":"sonnet","prompt":"p","tools":["Read"]}}"#.to_owned()));
+    assert!(args.contains(
+        &r#"--agents={"rev":{"description":"d","model":"sonnet","prompt":"p","tools":["Read"]}}"#
+            .to_owned()
+    ));
 }
 
 #[test]
@@ -891,5 +894,30 @@ fn limits_a_fifth_process_of_one_origin_client_ends_failed() {
     assert_eq!(
         ended,
         [format!("{} failed(too many claude processes)", ids[4])]
+    );
+}
+
+/// Adversarial (S99): the owner is removed while its start waits on the version probe. The run
+/// goes on after the stream ended `gone`: it makes a scratch folder and its row for the removed
+/// identity, though 19.3 (Folders, Lifetime) says the remove of the owner deletes its rows and
+/// folders; a later install of the same identity inherits them.
+#[test]
+fn adv_s99_a_start_in_its_version_probe_makes_a_scratch_folder_after_the_owners_remove() {
+    let rig = Rig::new(&[]);
+    rig.put(
+        "claude",
+        b"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then sleep 2; echo '2.1.295 (Claude Code)'; exit 0; fi\nprintf 'ARG %s\\n' \"$1\" >> \"$(dirname \"$0\")/claude.log\"\ncat >/dev/null\n",
+    );
+    let s = rig.start_ok(LAUNCH);
+    std::thread::sleep(Duration::from_millis(500));
+    rig.host().remove(&local("claude"), true).unwrap();
+    std::thread::sleep(Duration::from_secs(4));
+    let scratch = rig.home.path().join("scratch");
+    let left: Vec<_> = std::fs::read_dir(&scratch)
+        .map(|d| d.filter_map(Result::ok).map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert!(
+        left.is_empty(),
+        "{s}: scratch folders after the remove: {left:?}"
     );
 }
