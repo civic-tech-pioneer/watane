@@ -2459,6 +2459,14 @@ Raised by S95's adversary step (none blocks A1):
   S100-fix1 closes the adversary's lookalike paths: the rule refuses a path with white space at an
   end or not in NFC, a `Glob` or `Grep` pattern with `{`, `}`, `,` or white space, and an
   `Edit`, `Write` or `NotebookEdit` into the run folder (19.3, "Read as `claude` reads it").
+  Still open after S100's second adversary pass (for V29 or A3): a `Glob` pattern with `\`, `[`
+  or `]` (`\.\./x`, `[/]etc/*`) passes the rule; whether Claude Code's glob engine reads such a
+  pattern as leaving its base is not probed (refusing those characters is the fail-closed
+  choice). On a case-insensitive file system, the run-folder write check compares bytes, so a
+  workspace that holds the run folder could reach it by another case (picked folders refuse the
+  watane home and its ancestors, so not reachable before A3). A picked folder whose canonical
+  name is NFD (macOS) refuses every read in it (fail-closed; a usability gap for A3). Brace
+  globs such as `**/*.{ts,tsx}` cannot be allowed.
 - **Q42** Login files the closed deny list misses (19.3, Protected reads;
   HOST-F-74). Under the shell grant, a sandboxed runner word can read
   `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell
