@@ -436,6 +436,6 @@ mod stage_b {
         assert!(col(|m| m.interrupt) <= 500.0);
         assert!(col(|m| m.cancel) <= 250.0);
         // The consumer fixture writes one small tally per batch; the host writes nothing.
-        assert!(busy <= 0.15, "writer busy {busy}");
+        assert!(busy <= 0.10, "writer busy {busy}");
     }
 }

@@ -2069,9 +2069,8 @@ with 8 shells and 8 streams on 4 cores); the 10 000-entry turn taken whole withi
 on the fake's stdin: at most 50 ms. `interrupt` during the 10 000-entry turn to its
 `ask-resolved` item taken: at most 500 ms (measured 245 to 355 ms: the item waits
 behind the items already queued, up to one batch of 256; the foreman's 250 ms did not
-hold). `cancel` to `ended`: at most 250 ms. Writer busy share at most 15% (the
-fixture's own per-batch tally is in it; the foreman's 10% was for a consumer that
-writes nothing); the host itself writes no state for an entry (the one byte per entry
+hold). `cancel` to `ended`: at most 250 ms. Writer busy share at most 10% (the
+fixture's own per-batch tally is in it; S100 measured 3.5 to 5.7%); the host itself writes no state for an entry (the one byte per entry
 that the run shows is the fixture's tally).
 
 **Stage B host record** (S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
@@ -2446,11 +2445,15 @@ Raised by S95's adversary step (none blocks A1):
   matches the path as given; (b) accept it under Not protected (spec §6).
   Recommended: (a). Cost to undo: deny lines only. Blocks A2.
   S100 (2026-11-22): the third rule of 19.3 (an `allow` to an ask of a file tool) resolves
-  symlinks itself, also in a path that does not exist yet under a linked folder, and
-  refuses a link that cannot be followed; so an ask for `F/k` is refused whatever
-  `claude` matches. What stays open: a `Read` that `claude` makes without asking (an
-  `allow` rule such as `Read(**)`) and the sandbox are held only by the deny rules, which
-  is probe V29 (the two spellings).
+  symlinks itself, also in a path that does not exist yet under a linked folder and in the
+  working folder's own path, and refuses a link that cannot be followed; a path with `..`
+  must stay inside both as the kernel reads it (from the link's target) and as Node's
+  `path.resolve` reads it (the name before `..` dropped); so an ask for `F/k` is refused
+  whatever `claude` matches. What stays open: a `Read` that `claude` makes without asking
+  (an `allow` rule such as `Read(**)`) and the sandbox are held only by the deny rules,
+  which is probe V29 (the two spellings); and a `Grep` or `Glob` of a folder inside, whose
+  tree holds a link out, is allowed: whether `claude`'s search follows links is not
+  probed (validator of S100).
 - **Q42** Login files the closed deny list misses (19.3, Protected reads;
   HOST-F-74). Under the shell grant, a sandboxed runner word can read
   `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell

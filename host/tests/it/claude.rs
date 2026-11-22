@@ -461,9 +461,9 @@ fn ac7_a_plugin_of_claude_codes_own_and_the_mode_dont_ask_match() {
 
 #[test]
 fn ac8_without_ask_or_check_in_the_launch_a_request_is_denied_at_once_and_pushes_no_item() {
-    // Asks and checks wait for S100 (agentic-harness case 10, 14, 15 host parts).
-    let lines = br#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Read","input":{}}}
-{"type":"control_request","request_id":"r2","request":{"subtype":"hook_callback","callback_id":"c"}}
+    // Well-formed requests that the launch did not ask for (no `ask`, no `pre-tool-check`).
+    let lines = br#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Read","input":{},"tool_use_id":"t1"}}
+{"type":"control_request","request_id":"r2","request":{"subtype":"hook_callback","callback_id":"c","tool_use_id":"t2","input":{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}}}
 {"type":"assistant","n":1}
 "#;
     let rig = Rig::new(&[("lines", lines)]);

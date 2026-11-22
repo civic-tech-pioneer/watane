@@ -56,12 +56,34 @@ fn expand(text: &str, home: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
-/// Whether the file path `text` (relative to `cwd`) resolves inside one of `roots`.
+/// The path with each `..` dropping the name before it, as Node's `path.resolve` does before
+/// `claude` opens the file.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::from("/");
+    for part in path.components() {
+        match part {
+            Component::Normal(name) => out.push(name),
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::Prefix(_) | Component::RootDir | Component::CurDir => {}
+        }
+    }
+    out
+}
+
+/// Whether the file path `text` (relative to `cwd`) resolves inside one of `roots`. The links
+/// of `cwd` itself are resolved too, and the path must stay inside both as given (a `..` after
+/// a link climbs from its target) and with its `..` removed first (from the link's folder).
 fn inside(text: &str, cwd: &Path, roots: &[PathBuf], home: Option<&Path>) -> bool {
     let Some(path) = expand(text, home) else {
         return false;
     };
-    resolve(&path, cwd, &mut 0).is_some_and(|real| roots.iter().any(|root| real.starts_with(root)))
+    let joined = cwd.join(path);
+    [lexical(&joined), joined].iter().all(|p| {
+        resolve(p, Path::new("/"), &mut 0)
+            .is_some_and(|real| roots.iter().any(|root| real.starts_with(root)))
+    })
 }
 
 /// Whether a glob pattern could leave the workspace: absolute, home-relative, or with `..`.
@@ -196,6 +218,50 @@ mod tests {
             &f,
             "Grep",
             json!({"pattern": "x", "path": "dir"})
+        ));
+    }
+
+    #[test]
+    fn a_climb_after_a_link_is_refused_when_either_reading_leaves() {
+        let f = folders();
+        // `up/..` is `deep` as the kernel reads it, `work` as `path.resolve` reads it; `peek`
+        // is a plain file in `deep` and a link out in `work`.
+        std::fs::create_dir_all(f.work.join("deep/deeper")).unwrap();
+        std::fs::write(f.work.join("deep/peek"), "p").unwrap();
+        symlink(f.work.join("deep/deeper"), f.work.join("up")).unwrap();
+        symlink(f.outside.join("secret"), f.work.join("peek")).unwrap();
+        assert!(refused_in(&f, "Read", json!({"file_path": "up/../peek"})));
+        assert!(refused_in(
+            &f,
+            "Read",
+            json!({"file_path": "up/../../a.txt"})
+        ));
+        assert!(!refused_in(&f, "Read", json!({"file_path": "up/../a.txt"})));
+    }
+
+    #[test]
+    fn a_working_folder_reached_through_a_link_is_resolved() {
+        let f = folders();
+        let alias = f.outside.join("alias");
+        symlink(&f.work, &alias).unwrap();
+        let roots = std::slice::from_ref(&f.work);
+        assert!(!refused(
+            "Read",
+            &json!({"file_path": "a.txt"}),
+            &alias,
+            roots
+        ));
+        assert!(!refused(
+            "Grep",
+            &json!({"pattern": "x", "path": "."}),
+            &alias,
+            roots
+        ));
+        assert!(refused(
+            "Read",
+            &json!({"file_path": "../secret"}),
+            &alias,
+            roots
         ));
     }
 

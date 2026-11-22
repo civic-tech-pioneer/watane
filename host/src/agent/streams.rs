@@ -869,12 +869,12 @@ impl Hub {
         );
         inner.on_end.insert(id, on_end);
     }
-    /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
-    /// host is at its limit, so that the source waits.
     /// The hub's clock: real, or the one a test moves (19.9).
     pub(crate) fn now(&self) -> Instant {
         self.lock().clock.now()
     }
+    /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
+    /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
