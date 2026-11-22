@@ -1277,6 +1277,10 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+- (guard, 3 cloud runs: S96, S97, agentic-harness S32) The host refuses to start without an IPv6 loopback
+  (`host/src/server.rs:76`); cloud containers have none, so each cloud slice patches it by hand. Rec: serve on
+  127.0.0.1 alone when `[::1]` cannot bind (a host TECHNICAL line + one test). Next upkeep slice, or S99 if it fits.
+- A watane release with host 19 (past v0.1.0), so agentic-harness CI's watane-dev can link the kernel's world.
 - S96 Q47: `remove` waits for a busy mod's call lock with no deadline while every install waits behind it.
 - S96 Q48: no startup sweep of timer rows left by a crash between `remove`'s catalog save and its timer rewrite.
 - S96: the fixture build is not byte-reproducible (every rebuild rewrites each `logic.wasm`).
