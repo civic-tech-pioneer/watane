@@ -5,6 +5,8 @@ interface api {
   run-say-first: func(launch: string, text: string) -> string;
   run-cancel: func(launch: string) -> string;
   run-fail: func(launch: string) -> string;
+  run-then-sleep: func(launch: string, ms: u64) -> string;
+  open-say: func(text: string) -> string;
   say: func(s: string, text: string) -> string;
   items: func(s: string) -> list<string>;
   ended: func() -> list<string>;

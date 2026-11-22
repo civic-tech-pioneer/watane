@@ -16,6 +16,7 @@ interface api {
   start-say-hand-off: func(launch: string, text: string) -> string;
   start-cancel: func(launch: string) -> string;
   start-hand-off-fail: func(launch: string);
+  open-stream: func() -> string;
 }
 world claude {
   import watane:host/state@0.1.0;

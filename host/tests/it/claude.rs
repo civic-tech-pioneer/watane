@@ -1142,3 +1142,43 @@ fn ac4_a_chain_that_starts_hands_off_and_fails_applies_nothing() {
     assert!(rig.front_ended().is_empty());
     assert!(rig.ended().is_empty());
 }
+
+#[test]
+fn ac5_a_hand_off_whose_target_is_disabled_in_flight_ends_gone_and_starts_no_process() {
+    // 19.6 (At apply): the hand-off target is checked again, as for any hand-off. A `remove`
+    // would wait for the chain (it takes the mod's call lock); `disable` does not.
+    let rig = Rig::new(&[]);
+    let host = Arc::clone(rig.host());
+    let chain = std::thread::spawn(move || {
+        call_as(
+            &host,
+            // Not `page`: the origin client is then `claude-b`, which stays live, so only the
+            // target's check can end the stream.
+            Caller::Mod(local("claude-b")),
+            "claude-front",
+            "api.run-then-sleep",
+            json!({"launch": LAUNCH, "ms": 1000}),
+        )
+        .unwrap()
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    rig.host().disable(&local("claude-front")).unwrap();
+    let s = chain.join().unwrap().as_str().unwrap().to_owned();
+    assert_eq!(s.len(), 32, "{s}");
+    wait("gone", Duration::from_secs(20), || {
+        rig.ended().contains(&format!("{s} gone"))
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(rig.log().is_empty(), "a process started: {:?}", rig.log());
+    assert_eq!(rig.scratch_folders(), 0);
+}
+
+#[test]
+fn ac5_a_say_on_a_mod_stream_of_the_chain_is_not_yours() {
+    // 19.3: the session functions act on a `claude-code` stream only, also inside the chain.
+    let rig = Rig::new(&[]);
+    assert_eq!(
+        rig.front("api.open-say", json!({"text": "hi"})),
+        json!("not-yours")
+    );
+}

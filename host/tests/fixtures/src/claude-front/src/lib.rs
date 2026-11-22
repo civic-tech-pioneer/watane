@@ -47,6 +47,16 @@ impl exports::mods::claude_front::api::Guest for Guest {
         mods::claude::api::start_hand_off_fail(&launch);
         "unreachable".into()
     }
+    fn run_then_sleep(launch: String, ms: u64) -> String {
+        let s = mods::claude::api::start_hand_off(&launch);
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        s
+    }
+    fn open_say(text: String) -> String {
+        // A mod stream of this chain whose consumer is this mod: not a session.
+        let s = mods::claude::api::open_stream();
+        say_to(&s, &text)
+    }
     fn say(s: String, text: String) -> String {
         say_to(&s, &text)
     }
