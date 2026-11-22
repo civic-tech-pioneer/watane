@@ -2724,7 +2724,9 @@ flag that the host never passes (`--safe-mode`, `--bare`, `--plugin-url`,
 `--file`, `--betas`, or a permission mode `auto` or a bypass mode), or if a
 fixed argument is missing (`-p`, `--input-format=stream-json`,
 `--output-format=stream-json`, `--verbose`, `--restricted`,
-`--strict-mcp-config`, `--system-prompt-snapshot=off`, a `--settings=`), it
+`--strict-mcp-config`, `--system-prompt-snapshot=off`, a `--settings=`), or if
+`--permission-mode=` is not one of `claude`'s names (`default`, `acceptEdits`,
+`plan`, `dontAsk`; the host translates its own, 19.3), it
 exits with status 64 and names the argument on standard error. It writes
 everything it receives to `fake-claude.log` beside the script: one JSON line
 for the arguments, for each variable of its environment, and for each line

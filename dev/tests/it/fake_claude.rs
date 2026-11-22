@@ -159,7 +159,7 @@ fn ac2_default_script_over_pipes() {
     let f = Folder::new(DEFAULT);
     let mut s = f.start(&[
         "--tools=Read,Grep",
-        "--permission-mode=manual",
+        "--permission-mode=default",
         "--agents={\"scout\":{\"description\":\"d\",\"prompt\":\"p\"}}",
     ]);
     let (answer, init) = s.initialize(false);
@@ -183,18 +183,32 @@ fn ac2_default_script_over_pipes() {
         json!({"type":"stream_event","session_id":"fake-session","uuid":"fake-uuid","event":{"type":"content_block_delta",
             "index":0,"delta":{"type":"text_delta","text":"This is the fake claude."}}})
     );
-    assert_eq!(rest[1]["type"], "assistant");
     assert_eq!(
-        rest[1]["message"]["content"],
-        json!([{"type":"text","text":"This is the fake claude."}])
+        rest[1],
+        json!({"type":"assistant","session_id":"fake-session","message":{
+            "id":"msg_fake","type":"message","role":"assistant","model":"fake-claude",
+            "content":[{"type":"text","text":"This is the fake claude."}],
+            "stop_reason":"end_turn","stop_sequence":null,
+            "usage":{"input_tokens":1,"output_tokens":1}}})
     );
-    assert_eq!(rest[2]["type"], "result");
-    assert_eq!(rest[2]["subtype"], "success");
+    assert_eq!(
+        rest[2],
+        json!({"type":"result","subtype":"success","is_error":false,"duration_ms":1,
+            "duration_api_ms":1,"num_turns":1,"result":"","session_id":"fake-session",
+            "total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1}})
+    );
     assert_eq!(rest[3], serde_json::from_str::<Value>(IDLE).unwrap());
     // The kernel's own types read every line it wrote.
     for line in [&answer, &init, &rest[0], &rest[1], &rest[2], &rest[3]] {
         claude_codes::ClaudeOutput::parse_json(&line.to_string()).unwrap();
     }
+    // A system line parses whatever it holds; the init line must read as the crate's init.
+    let Ok(claude_codes::ClaudeOutput::System(system)) =
+        claude_codes::ClaudeOutput::parse_json(&init.to_string())
+    else {
+        panic!("{init}")
+    };
+    assert!(system.as_init().is_some(), "{init}");
     assert_eq!(s.status(), 0);
 }
 
@@ -204,7 +218,7 @@ fn ac2_script_overrides_and_hooks() {
         "init":{"plugins":[{"name":"watane-run","path":""},{"name":"evil","path":""}],"tools":["Bash"]},
         "steps":[]});
     let f = Folder::new(&script.to_string());
-    let mut s = f.start(&["--tools=Read", "--permission-mode=accept-edits"]);
+    let mut s = f.start(&["--tools=Read", "--permission-mode=acceptEdits"]);
     let (answer, init) = s.initialize(true);
     assert_eq!(
         answer["response"]["response"],
@@ -245,6 +259,11 @@ fn ac3_missing_and_forbidden_arguments_exit_64() {
         "--betas=b",
         "--permission-mode=auto",
         "--permission-mode=bypassPermissions",
+        "--dangerously-skip-permissions",
+        "--allow-dangerously-skip-permissions",
+        // Host names: `claude` knows only its own (default, acceptEdits, plan, dontAsk).
+        "--permission-mode=manual",
+        "--permission-mode=accept-edits",
     ] {
         let mut s = f.start(&[bad]);
         assert_eq!(s.status(), 64, "{bad}");
@@ -288,6 +307,9 @@ fn ac5_lines_no_step_awaits_exit_70() {
         json!({"type":"control_request","request_id":"i2","request":{"subtype":"initialize"}}),
         json!({"type":"control_request","request_id":"p","request":{"subtype":"set_permission_mode","mode":"plan"}}),
         json!({"type":"control_request","request_id":"p","request":{"subtype":"apply_flag_settings"}}),
+        json!({"type":"control_request","request_id":"p","request":{"subtype":"mcp_set_servers"}}),
+        json!({"type":"control_response","response":{"subtype":"success","request_id":"r",
+            "response":{"behavior":"allow","updatedPermissions":[]}}}),
     ] {
         let f = Folder::new(r#"{"steps":[{"do":"sleep","ms":5000}]}"#);
         let mut s = f.start(&[]);
@@ -403,6 +425,9 @@ fn ac6_ask_check_cancel_and_answers() {
         cancel,
         json!({"type":"control_cancel_request","request_id":third["request_id"]})
     );
+    for line in [&ask, &check, &third, &cancel] {
+        claude_codes::ClaudeOutput::parse_json(&line.to_string()).unwrap();
+    }
     assert_eq!(s.line()["state"], "idle");
     assert!(
         f.log()
