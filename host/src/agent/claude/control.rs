@@ -35,8 +35,8 @@ fn has_duplicate_key(text: &str) -> bool {
     struct Keys;
     impl<'de> Visitor<'de> for Keys {
         type Value = bool;
-        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("a JSON object")
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a JSON object")
         }
         fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<bool, A::Error> {
             let mut seen = HashSet::new();
@@ -88,7 +88,9 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
             }
         }
         Some("control_response") => {
-            let id = value.pointer("/response/request_id").and_then(Value::as_str);
+            let id = value
+                .pointer("/response/request_id")
+                .and_then(Value::as_str);
             match id {
                 Some(id) => Line::Response {
                     request_id: id.to_owned(),
@@ -203,7 +205,10 @@ mod tests {
 
     #[test]
     fn invalid_utf8_a_second_object_and_a_duplicate_key_are_wrapped() {
-        assert!(item(b"{\"a\":\"\xff\"}").contains("\\ufffd") || item(b"{\"a\":\"\xff\"}").contains('\u{fffd}'));
+        assert!(
+            item(b"{\"a\":\"\xff\"}").contains("\\ufffd")
+                || item(b"{\"a\":\"\xff\"}").contains('\u{fffd}')
+        );
         assert!(item(br#"{"a":1} {"b":2}"#).contains("wrapped"));
         assert!(item(b"[1]").contains("wrapped"));
         assert!(item(br#"{"type":"x","type":"y"}"#).contains("wrapped"));
@@ -212,7 +217,14 @@ mod tests {
 
     #[test]
     fn slash_commands_are_found_after_white_space_and_invisible_characters() {
-        for text in ["/x", " /x", "\u{feff}/x", "\u{200b}/x", "\t\n/x", "\u{00a0}\u{2028}/x"] {
+        for text in [
+            "/x",
+            " /x",
+            "\u{feff}/x",
+            "\u{200b}/x",
+            "\t\n/x",
+            "\u{00a0}\u{2028}/x",
+        ] {
             assert!(is_slash_command(text), "{text:?}");
         }
         for text in ["hello", "a /x", "", "  ", "x/"] {

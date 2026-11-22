@@ -24,11 +24,9 @@ fn names(v: Option<&Value>) -> Option<Vec<String>> {
 /// names differs. Only what the launch did not ask for is a difference: a plugin that is
 /// `watane-run` or one of Claude Code's own `cc-plugin-*` is the launch's.
 pub(crate) fn check(launch: &Launch, init: &Value) -> Result<(), &'static str> {
-    let extra = |field: &'static str, allowed: &dyn Fn(&str) -> bool| {
-        match names(init.get(field)) {
-            Some(list) if list.iter().all(|n| allowed(n)) => Ok(()),
-            _ => Err(field),
-        }
+    let extra = |field: &'static str, allowed: &dyn Fn(&str) -> bool| match names(init.get(field)) {
+        Some(list) if list.iter().all(|n| allowed(n)) => Ok(()),
+        _ => Err(field),
     };
     extra("tools", &|n| launch.tools.iter().any(|t| t == n))?;
     extra("mcp_servers", &|_| false)?;
@@ -36,6 +34,8 @@ pub(crate) fn check(launch: &Launch, init: &Value) -> Result<(), &'static str> {
     if init.get("permissionMode").and_then(Value::as_str) != Some(launch.init_mode) {
         return Err("permissionMode");
     }
-    extra("plugins", &|n| n == "watane-run" || n.starts_with("cc-plugin-"))?;
+    extra("plugins", &|n| {
+        n == "watane-run" || n.starts_with("cc-plugin-")
+    })?;
     Ok(())
 }

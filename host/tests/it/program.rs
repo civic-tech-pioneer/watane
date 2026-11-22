@@ -14,6 +14,7 @@ use watane_host::{Ready, RunInfo};
 
 mod api;
 mod catalog;
+mod connection;
 mod events;
 mod hostile;
 mod pages;

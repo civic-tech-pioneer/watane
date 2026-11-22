@@ -12,7 +12,7 @@
     }
   }
   const dispatch = (message) => {
-    if (message.type === 'connection') { connection = message.id; return; }
+    if (message.type === 'connection') { const previous = connection; connection = message.id; if (previous === null) return; message = { type: 'connection', id: message.id, previous }; }
     if (message.type === 'reload') { location.reload(); return; }
     for (const handler of handlers) {
       try { handler(message); } catch (error) { console.error(error); }

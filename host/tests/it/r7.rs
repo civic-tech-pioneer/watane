@@ -11,7 +11,10 @@ fn set_mode(env: &Env, mode: &str) {
     relay(&env.host, "api.mode", json!({"m": mode}));
 }
 fn resume(env: &Env, s: &str) {
-    assert_eq!(relay(&env.host, "api.resume", json!({"s": s})), json!({"ok":null}));
+    assert_eq!(
+        relay(&env.host, "api.resume", json!({"s": s})),
+        json!({"ok":null})
+    );
 }
 
 #[test]
@@ -35,7 +38,10 @@ fn ac15_a_producer_end_waits_for_the_deferred_consumer_then_delivers_everything(
         !lines(&env.host, "api.ended").is_empty()
     });
     assert_eq!(lines(&env.host, "api.received"), ["a", "b"]);
-    assert_eq!(lines(&env.host, "api.ended"), [format!("{} closed", s.id())]);
+    assert_eq!(
+        lines(&env.host, "api.ended"),
+        [format!("{} closed", s.id())]
+    );
     assert_eq!(s.ended(), Some(json!("closed")));
 }
 
@@ -57,7 +63,10 @@ fn ac15_a_failed_end_of_the_producer_delivers_the_held_items_too() {
         !lines(&env.host, "api.ended").is_empty()
     });
     assert_eq!(lines(&env.host, "api.received"), ["a"]);
-    assert_eq!(lines(&env.host, "api.ended"), [format!("{} failed", s.id())]);
+    assert_eq!(
+        lines(&env.host, "api.ended"),
+        [format!("{} failed", s.id())]
+    );
 }
 
 #[test]
@@ -75,7 +84,10 @@ fn ac15_the_consumers_cancel_still_drops_the_held_items() {
         !lines(&env.host, "api.ended").is_empty()
     });
     settle();
-    assert_eq!(lines(&env.host, "api.ended"), [format!("{} cancelled", s.id())]);
+    assert_eq!(
+        lines(&env.host, "api.ended"),
+        [format!("{} cancelled", s.id())]
+    );
     // The relay's mode stored what it was given while it deferred; nothing more arrived.
     assert_eq!(s.deliveries().len(), 1);
 }
@@ -95,6 +107,9 @@ fn ac15_a_cancel_after_the_producer_ended_drops_the_held_items() {
     wait("ended", Duration::from_secs(10), || {
         !lines(&env.host, "api.ended").is_empty()
     });
-    assert_eq!(lines(&env.host, "api.ended"), [format!("{} cancelled", s.id())]);
+    assert_eq!(
+        lines(&env.host, "api.ended"),
+        [format!("{} cancelled", s.id())]
+    );
     assert_eq!(s.deliveries().len(), 1);
 }

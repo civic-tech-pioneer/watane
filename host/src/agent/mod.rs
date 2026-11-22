@@ -881,8 +881,12 @@ impl Host {
                         } else {
                             watane_pkg::Grant::ClaudeCode
                         };
-                        live_mod(&catalog, Some(&consumer.local), &consumer.identity, consumer_gen)
-                            && live_mod(&catalog, None, &origin, origin_gen)
+                        live_mod(
+                            &catalog,
+                            Some(&consumer.local),
+                            &consumer.identity,
+                            consumer_gen,
+                        ) && live_mod(&catalog, None, &origin, origin_gen)
                             && catalog.mods.iter().any(|m| {
                                 m.local == consumer.local
                                     && m.grants.iter().any(|g| g.granted && g.grant == grant)

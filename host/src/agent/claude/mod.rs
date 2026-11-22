@@ -310,7 +310,7 @@ impl Host {
             return;
         }
         let job = run::Job {
-            weak: self.weak.clone(),
+            weak: std::sync::Weak::<Host>::clone(&self.weak),
             hub: Arc::clone(&self.hub),
             session: Arc::clone(&session),
             sessions: Arc::clone(&self.sessions),

@@ -87,7 +87,7 @@ target `wasm32-wasip2`.
 | `wit/host.wit` | the `watane:host` package (section 6.4; step 11: 19.1) |
 | `src/agent/mod.rs` | the host functions of `streams` and `timers` at the call (19.2, 19.6), the effects of a chain and their application after its commit |
 | `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
-| planned `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`) | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
+| `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`, `mod.rs`) and `src/agent/accounts.rs` | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
 | planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
 | planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
@@ -1317,7 +1317,7 @@ A page loads it with `<script src="/watane.js"></script>`. Exact source:
     }
   }
   const dispatch = (message) => {
-    if (message.type === 'connection') { connection = message.id; return; }
+    if (message.type === 'connection') { const previous = connection; connection = message.id; if (previous === null) return; message = { type: 'connection', id: message.id, previous }; }
     if (message.type === 'reload') { location.reload(); return; }
     for (const handler of handlers) {
       try { handler(message); } catch (error) { console.error(error); }
@@ -1353,23 +1353,17 @@ The stream opens at the first `watane.on`. A page that never calls
 `watane.on` gets no `reload` and no connection id. The id is that of the
 latest `connection` message; a call made before the first one carries none.
 
-**Connection replaced (a change that stage A2 makes, S99).** The code above
-is that of stage A1 and stays as it is until S99, which changes it together
-with this section. An `EventSource` that reconnects opens a new `/events`
-connection (8.4) with a new id, and the streams of the old connection ended
-`gone` when it closed. The first `connection` message of a page stays private,
-as above. A later one also goes to every `watane.on` handler, after
-`connection` is set, as `{"type":"connection","id":"<new id>","previous":"<old
-id>"}`, so a call made in the handler already carries the new id, and a page
-that sees it opens its streams again. The one changed line of `dispatch` is
-
-```js
-    if (message.type === 'connection') { const previous = connection; connection = message.id; if (previous === null) return; message = { type: 'connection', id: message.id, previous }; }
-```
-
-in place of its first line; the `for` loop after it delivers `message` to the
-handlers. S99 replaces the code block of this section with the result, and
-`tests/it/program/pages.rs` keeps comparing the block with `src/watane.js`.
+**Connection replaced** (stage A2, S99). An `EventSource` that reconnects opens a
+new `/events` connection (8.4) with a new id, and the streams of the old
+connection ended `gone` when it closed. The first `connection` message of a
+page stays private, as above. A later one also goes to every `watane.on`
+handler, after `connection` is set, as `{"type":"connection","id":"<new
+id>","previous":"<old id>"}`, so a call made in the handler already carries
+the new id, and a page that sees it opens its streams again. The one line of
+`dispatch` that does this is the first one of the code above. `tests/it/program/pages.rs`
+compares the block with `src/watane.js`, and `tests/it/program/connection.rs`
+runs the source under `node` (when it is installed) with a stand-in
+`EventSource`.
 
 ## 9. Events
 
@@ -2635,9 +2629,7 @@ interface host-info { generation: func() -> u64; }
 one at each `Host::open` and keeps it durably in host state (the `host` table
 of 7, key `generation`; the first open of a home gives 1), so it never repeats
 for one home, also after a crash. It is the same for every call, of every mod,
-until the next open, so a mod that stored the number can tell a restart. The harness fake (2.6) returns 1. `host-info` is
-not in `wit/host.wit` until stage A2 (S99) adds it with its code, so the
-package of 6.4 and its test are unchanged by this text.
+until the next open, so a mod that stored the number can tell a restart. The harness fake (2.6) returns 1. `host-info` is in `wit/host.wit` since stage A2 (S99).
 
 Linking (rows of 6.4):
 
@@ -2722,7 +2714,7 @@ argument.
 | `system-prompt` | `{replace \| append: text}`, at most 64 KiB | `--system-prompt=` / `--append-system-prompt=` |
 | `tools` | names from the grant's allowlist (below); an absent `tools` and `[]` both mean no built-in tools | `--tools=` |
 | `allow`, `deny` | `Name` or `Name(arg)`, `arg` without parentheses, no control character anywhere; Name from the allowlist or `mcp__watane__<tool>`; no comma, space or leading `-` outside the parentheses; an allow `Bash(…)` follows the grammar below | `--allowedTools=`, `--disallowedTools=` each |
-| `mode` | `manual`, `accept-edits`, `plan`, `dont-ask` | `--permission-mode=` |
+| `mode` | `manual`, `accept-edits`, `plan`, `dont-ask` | `--permission-mode=` with Claude's names: `default`, `acceptEdits`, `plan`, `dontAsk`; `system/init` has `permissionMode` in the same names (an absent `mode` reads `default`) |
 | `ask` | bool | `--permission-prompts=host --permission-prompt-tool=stdio`, or `--permission-prompts=none` |
 | `pre-tool-check` | `{timeout-s: 5..120}` | the host's PreToolUse callback in `initialize` |
 | `agent-handle` | a handle the origin client holds (19.5) | `--mcp-config=/dev/fd/3` |
@@ -2869,7 +2861,14 @@ not keep a credential from a mod on their own. Three rules do:
 3. The `system/init` line must match the launch in tools, MCP servers, agents,
    permission mode (`manual` reads `default`) and plugins (exactly
    `watane-run` and Claude Code's `cc-plugin-*`). Skills are not compared. A
-   difference: kill, `mismatch {field}`.
+   difference: kill, `mismatch {field}`, the field named as `system/init` names
+   it: `tools`, `mcp_servers`, `agents`, `permissionMode`, `plugins`. The lists hold
+   names, as strings or as objects with a `name` (Claude Code's `{"name","path"}`
+   plugins and `{"name","status"}` servers). Only an entry that the launch did not
+   ask for is a difference (a tool not in the launch's `tools`, any MCP server until
+   A3, an agent not in `subagents`, another plugin); a missing list holds nothing,
+   a missing or other `permissionMode` differs. Every `system/init` line is checked,
+   and then passed on as an ordinary line after `initialized`.
 4. Then each stdout line becomes an item:
 
 | Line | Item |
@@ -2932,6 +2931,20 @@ not keep a credential from a mod on their own. Three rules do:
 the host's answer to a control request of `claude`:
 `{"type":"control_response","response":{"subtype":"success","request_id":"<its id>","response":<body>}}`,
 with the body `{"behavior":"deny","message":"…"}` for a deny.
+
+**Argument order and details as S99 built them.** `-p ...` (the fixed arguments),
+`--settings=<json>`, then `--add-dir=` per extra workspace, then one flag per launch
+value in the order of the table: `--model=`, `--fallback-model=`, `--effort=`,
+`--system-prompt=` or `--append-system-prompt=`, `--tools=`, `--allowedTools=`,
+`--disallowedTools=`, `--permission-mode=`, `--permission-prompts=none`, `--agents=`
+(one JSON object keyed by name), `--json-schema=`, `--max-turns=`, `--max-budget-usd=`,
+the session flags, `--no-session-persistence`, `--include-partial-messages`, and last
+`--plugin-dir=<run folder>/watane-run`. `--tools=` always goes out, empty when the launch
+names no tool, because `claude` has every built-in tool without it; at `subagent-depth`
+0 `Task` is dropped from it. The program is started with `process_group(0)`; the workspace
+forbids `unsafe`, so a group is killed by running `kill -KILL -- -<pgid>`. A line over 4 MiB
+ends the stream `failed`. `claude-code-shell.start` requires a `sandbox` object and
+takes its content unchecked until Q39 and Q42 are decided.
 
 **The session functions.** `claude-session.say`, `answer`, `interrupt` and
 `compact` act on host stream `s` of a `claude-code` start; the caller must be
