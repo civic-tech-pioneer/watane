@@ -1173,7 +1173,9 @@ no `::1` (`AddrNotAvailable`, or the OS error `EAFNOSUPPORT`: a kernel
 without IPv6, as in a Linux container), `serve` serves `127.0.0.1:<port>`
 alone and prints one line on stderr, `watane: no IPv6 loopback (::1); serving
 127.0.0.1 only`. Every other `[::1]` failure stays `port_in_use`, and the
-`Ready` line does not change. Then it writes `run.json`. A second `serve` is
+`Ready` line does not change. The choice is made once, at bind time: if a
+privileged change adds `::1` later, the running host does not bind it
+(section 14, not protected). Then it writes `run.json`. A second `serve` is
 `already_serving`.
 
 Every request must have exactly one `Host` header. Repeated headers get
@@ -1776,7 +1778,9 @@ run on the preview install path.
 
 Not protected (spec §6): another program of the same user, which can read
 the home and call `/call` or `/events` with a forged `Origin`; a
-compromised OS; a fault in Wasmtime. Step 11 (agentic-harness TECHNICAL
+compromised OS; a fault in Wasmtime; a privileged network change that adds
+`::1` after a host started without it (8.1): `[::1]:<port>` is then free for
+another program until the host restarts. Step 11 (agentic-harness TECHNICAL
 14): `claude` itself within its limits; a prompt injection within what a
 launch allows; an allowed command word that the list of 19.3 misses, or a
 package-runner word that runs the project's own scripts, inside the shell
