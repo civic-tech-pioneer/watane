@@ -462,7 +462,11 @@ impl Reading<'_> {
         loop {
             let mut raw = vec![];
             let limit = MAX_ITEM as u64 + 2;
-            let n = stdout.by_ref().take(limit).read_until(b'\n', &mut raw).ok()?;
+            let n = stdout
+                .by_ref()
+                .take(limit)
+                .read_until(b'\n', &mut raw)
+                .ok()?;
             if n == 0 {
                 return None;
             }
@@ -498,8 +502,7 @@ impl Reading<'_> {
                     }
                     let workspace = Value::String(self.workspace.clone());
                     self.push(
-                        format!(r#"{{"type":"initialized","workspace":{workspace}}}"#)
-                            .into_bytes(),
+                        format!(r#"{{"type":"initialized","workspace":{workspace}}}"#).into_bytes(),
                     )?;
                     for body in self.held.take().unwrap_or_default() {
                         self.push(body)?;

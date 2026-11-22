@@ -10,6 +10,7 @@ struct Args {
     mode: Mode,
     port: u16,
     folders: Vec<PathBuf>,
+    fake_claude: Option<PathBuf>,
 }
 
 fn arguments() -> Result<Option<Args>, &'static str> {
@@ -22,6 +23,7 @@ fn arguments() -> Result<Option<Args>, &'static str> {
     let mut mode = Mode::Home { app: None };
     let mut port = None;
     let mut folders = Vec::new();
+    let mut fake_claude = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some(option @ ("--preview" | "--home")) if home.is_none() => {
@@ -55,15 +57,25 @@ fn arguments() -> Result<Option<Args>, &'static str> {
                 }
                 folders.push(PathBuf::from(path));
             }
+            Some("--fake-claude") if fake_claude.is_none() => {
+                let path = args.next().ok_or("--fake-claude needs a program")?;
+                if path.to_str().is_some_and(|s| s.starts_with("--")) {
+                    return Err("--fake-claude needs a program, not an option");
+                }
+                fake_claude = Some(PathBuf::from(path));
+            }
             _ => {
                 return Err(
-                    "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>], or --version",
+                    "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>] [--fake-claude <path>], or --version",
                 );
             }
         }
     }
     if matches!(mode, Mode::Home { .. }) && !folders.is_empty() {
         return Err("--install requires --preview");
+    }
+    if matches!(mode, Mode::Home { .. }) && fake_claude.is_some() {
+        return Err("--fake-claude requires --preview");
     }
     Ok(Some(Args {
         home,
@@ -74,6 +86,7 @@ fn arguments() -> Result<Option<Args>, &'static str> {
             DEFAULT_PORT
         }),
         folders,
+        fake_claude,
     }))
 }
 
@@ -111,6 +124,9 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
         None => default_home()?,
     };
     let host = Host::open(&home, args.mode, watane_host::Limits::default())?;
+    if let Some(program) = &args.fake_claude {
+        host.set_fake_claude(program)?;
+    }
     let served = host.serve(args.port, axum::Router::new()).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {

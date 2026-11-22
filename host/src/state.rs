@@ -140,10 +140,10 @@ impl State {
     pub fn scratch_add(&self, id: &str, owner: &str) -> Result<(), CallError> {
         let db = self.database(true)?.expect("created database");
         let txn = db.begin_write().map_err(CallError::internal)?;
-        {
-            let mut table = txn.open_table(SCRATCH).map_err(CallError::internal)?;
-            table.insert(id, owner).map_err(CallError::internal)?;
-        }
+        txn.open_table(SCRATCH)
+            .map_err(CallError::internal)?
+            .insert(id, owner)
+            .map_err(CallError::internal)?;
         txn.commit().map_err(CallError::internal)?;
         Ok(())
     }

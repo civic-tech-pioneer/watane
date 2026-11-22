@@ -124,10 +124,12 @@ pub(crate) fn is_scratch_id(s: &str) -> bool {
 }
 
 fn string<'a>(field: &str, v: &'a Value) -> Result<&'a str, BadLaunch> {
-    v.as_str().map_or_else(|| bad(field, "expected a string"), Ok)
+    v.as_str()
+        .map_or_else(|| bad(field, "expected a string"), Ok)
 }
 fn boolean(field: &str, v: &Value) -> Result<bool, BadLaunch> {
-    v.as_bool().map_or_else(|| bad(field, "expected true or false"), Ok)
+    v.as_bool()
+        .map_or_else(|| bad(field, "expected true or false"), Ok)
 }
 fn strings(field: &str, v: &Value) -> Result<Vec<String>, BadLaunch> {
     let Some(items) = v.as_array() else {
@@ -143,7 +145,10 @@ fn model(field: &str, v: &Value) -> Result<String, BadLaunch> {
     if is_model(s) {
         Ok(s.to_owned())
     } else {
-        bad(field, "use 1 to 64 of letters, digits, `.`, `-`, `[` and `]`")
+        bad(
+            field,
+            "use 1 to 64 of letters, digits, `.`, `-`, `[` and `]`",
+        )
     }
 }
 fn workspace_id(field: &str, v: &Value, scratch_ok: bool) -> Result<Workspace, BadLaunch> {
@@ -152,12 +157,18 @@ fn workspace_id(field: &str, v: &Value, scratch_ok: bool) -> Result<Workspace, B
         return if scratch_ok {
             Ok(Workspace::NewScratch)
         } else {
-            bad(field, "`scratch` makes a new workspace: name an existing one here")
+            bad(
+                field,
+                "`scratch` makes a new workspace: name an existing one here",
+            )
         };
     }
     match s.strip_prefix("scratch:") {
         Some(id) if is_scratch_id(id) => Ok(Workspace::Scratch(id.to_owned())),
-        Some(_) => bad(field, "a scratch id is `scratch:` and 32 lowercase hex characters"),
+        Some(_) => bad(
+            field,
+            "a scratch id is `scratch:` and 32 lowercase hex characters",
+        ),
         None => bad(field, STAGE_PICKED),
     }
 }
@@ -172,7 +183,11 @@ fn allowed_names(kind: Kind) -> Vec<&'static str> {
 }
 
 /// `Name` or `Name(arg)`, split; the checks of the table (19.3).
-fn rule<'a>(field: &str, text: &'a str, kind: Kind) -> Result<(&'a str, Option<&'a str>), BadLaunch> {
+fn rule<'a>(
+    field: &str,
+    text: &'a str,
+    kind: Kind,
+) -> Result<(&'a str, Option<&'a str>), BadLaunch> {
     if text.chars().any(char::is_control) {
         return bad(field, "a rule holds a control character");
     }
@@ -192,7 +207,9 @@ fn rule<'a>(field: &str, text: &'a str, kind: Kind) -> Result<(&'a str, Option<&
         return bad(field, "a rule name has no comma, space or leading `-`");
     }
     let mcp = name.strip_prefix("mcp__watane__").is_some_and(|t| {
-        !t.is_empty() && t.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+        !t.is_empty()
+            && t.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
     });
     if !mcp && !allowed_names(kind).contains(&name) {
         return bad(field, format!("`{name}` is not a tool of this grant"));
@@ -206,22 +223,112 @@ fn relative_pattern(arg: &str) -> bool {
 
 /// Interpreters and runners that an allow `Bash` rule may not start with (19.3, the Bash grammar).
 const BASH_DENIED: &[&str] = &[
-    ".", "ash", "at", "awk", "bash", "batch", "builtin", "bun", "bunx", "busybox", "byobu",
-    "capsh", "chroot", "chrt", "command", "coproc", "corepack", "crontab", "csh", "dash", "deno",
-    "doas", "dtach", "elixir", "enable", "env", "eval", "exec", "expect", "fakeroot", "fc",
-    "fish", "flock", "gawk", "gdb", "ionice", "irb", "julia", "ksh", "lldb", "ltrace", "lua",
-    "mawk", "mksh", "nawk", "nice", "node", "nohup", "npx", "nsenter", "numactl", "osascript",
-    "parallel", "perl", "php", "pipx", "pkexec", "pnpx", "prlimit", "pwsh", "r", "rbash",
-    "rscript", "ruby", "run0", "runuser", "screen", "script", "sem", "setpriv", "setsid", "sg",
-    "sh", "source", "ssh", "stdbuf", "strace", "su", "sudo", "systemd-run", "taskset", "tclsh",
-    "tcsh", "time", "timeout", "tmux", "toybox", "trap", "ts-node", "tsx", "unshare", "uvx",
-    "valgrind", "watch", "xargs", "yarnpkg", "zellij", "zsh",
+    ".",
+    "ash",
+    "at",
+    "awk",
+    "bash",
+    "batch",
+    "builtin",
+    "bun",
+    "bunx",
+    "busybox",
+    "byobu",
+    "capsh",
+    "chroot",
+    "chrt",
+    "command",
+    "coproc",
+    "corepack",
+    "crontab",
+    "csh",
+    "dash",
+    "deno",
+    "doas",
+    "dtach",
+    "elixir",
+    "enable",
+    "env",
+    "eval",
+    "exec",
+    "expect",
+    "fakeroot",
+    "fc",
+    "fish",
+    "flock",
+    "gawk",
+    "gdb",
+    "ionice",
+    "irb",
+    "julia",
+    "ksh",
+    "lldb",
+    "ltrace",
+    "lua",
+    "mawk",
+    "mksh",
+    "nawk",
+    "nice",
+    "node",
+    "nohup",
+    "npx",
+    "nsenter",
+    "numactl",
+    "osascript",
+    "parallel",
+    "perl",
+    "php",
+    "pipx",
+    "pkexec",
+    "pnpx",
+    "prlimit",
+    "pwsh",
+    "r",
+    "rbash",
+    "rscript",
+    "ruby",
+    "run0",
+    "runuser",
+    "screen",
+    "script",
+    "sem",
+    "setpriv",
+    "setsid",
+    "sg",
+    "sh",
+    "source",
+    "ssh",
+    "stdbuf",
+    "strace",
+    "su",
+    "sudo",
+    "systemd-run",
+    "taskset",
+    "tclsh",
+    "tcsh",
+    "time",
+    "timeout",
+    "tmux",
+    "toybox",
+    "trap",
+    "ts-node",
+    "tsx",
+    "unshare",
+    "uvx",
+    "valgrind",
+    "watch",
+    "xargs",
+    "yarnpkg",
+    "zellij",
+    "zsh",
 ];
 const BASH_PREFIXES: [&str; 7] = ["python", "pypy", "node", "perl", "ruby", "php", "lua"];
 const RUNNERS: [(&str, &[&str]); 5] = [
     (
         "npm",
-        &["install", "i", "ci", "test", "ls", "list", "audit", "outdated"],
+        &[
+            "install", "i", "ci", "test", "ls", "list", "audit", "outdated",
+        ],
     ),
     (
         "pnpm",
@@ -248,9 +355,12 @@ fn bash_allow(arg: Option<&str>) -> Result<(), String> {
         return Err("an empty command allows any command".into());
     }
     if !arg.is_ascii()
-        || arg
-            .chars()
-            .any(|c| matches!(c, '`' | '$' | '{' | '}' | ';' | '|' | '&' | '<' | '>' | '\'' | '"' | '\\'))
+        || arg.chars().any(|c| {
+            matches!(
+                c,
+                '`' | '$' | '{' | '}' | ';' | '|' | '&' | '<' | '>' | '\'' | '"' | '\\'
+            )
+        })
     {
         return Err("a command has no non-ASCII character and none of the shell's".into());
     }
@@ -272,15 +382,17 @@ fn bash_allow(arg: Option<&str>) -> Result<(), String> {
         return Err("the first word is a plain program name".into());
     }
     let lower = first.to_ascii_lowercase();
-    if BASH_PREFIXES.iter().any(|p| lower.starts_with(p))
-        || BASH_DENIED.contains(&lower.as_str())
-    {
-        return Err(format!("`{first}` runs, wraps or schedules another command"));
+    if BASH_PREFIXES.iter().any(|p| lower.starts_with(p)) || BASH_DENIED.contains(&lower.as_str()) {
+        return Err(format!(
+            "`{first}` runs, wraps or schedules another command"
+        ));
     }
     if lower == "find" {
         const BAD: [&str; 4] = ["-exec", "-execdir", "-ok", "-okdir"];
         if arg.contains('*') || words.iter().any(|w| BAD.contains(w)) {
-            return Err("`find` is allowed with no `*` and no -exec, -execdir, -ok or -okdir".into());
+            return Err(
+                "`find` is allowed with no `*` and no -exec, -execdir, -ok or -okdir".into(),
+            );
         }
     }
     if let Some((_, seconds)) = RUNNERS.iter().find(|(name, _)| *name == lower) {
@@ -296,12 +408,7 @@ fn bash_allow(arg: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-fn rules(
-    field: &str,
-    v: &Value,
-    kind: Kind,
-    allow: bool,
-) -> Result<Vec<String>, BadLaunch> {
+fn rules(field: &str, v: &Value, kind: Kind, allow: bool) -> Result<Vec<String>, BadLaunch> {
     let list = strings(field, v)?;
     for text in &list {
         let (name, arg) = rule(field, text, kind)?;
@@ -313,11 +420,16 @@ fn rules(
                 None => {
                     return bad(
                         field,
-                        format!("`{name}` with no argument allows every path: use `{name}(**)` for the workspace"),
+                        format!(
+                            "`{name}` with no argument allows every path: use `{name}(**)` for the workspace"
+                        ),
                     );
                 }
                 Some(a) if !relative_pattern(a) => {
-                    return bad(field, format!("the pattern of `{name}` is relative to the workspace"));
+                    return bad(
+                        field,
+                        format!("the pattern of `{name}` is relative to the workspace"),
+                    );
                 }
                 Some(_) => {}
             }
@@ -347,7 +459,10 @@ fn subagents(
             return bad("subagents", format!("subagent {i} is not an object"));
         };
         if let Some(extra) = o.keys().find(|k| !KEYS.contains(&k.as_str())) {
-            return bad("subagents", format!("subagent {i} has the key `{extra}`: refused"));
+            return bad(
+                "subagents",
+                format!("subagent {i} has the key `{extra}`: refused"),
+            );
         }
         for key in KEYS {
             if !o.contains_key(key) {
@@ -356,13 +471,19 @@ fn subagents(
         }
         let name = string("subagents", &o["name"])?;
         if !is_slug(name) {
-            return bad("subagents", format!("subagent {i}: name is 1 to 64 of a-z, 0-9, `-`"));
+            return bad(
+                "subagents",
+                format!("subagent {i}: name is 1 to 64 of a-z, 0-9, `-`"),
+            );
         }
         string("subagents", &o["description"])?;
         string("subagents", &o["prompt"])?;
         let agent_tools = strings("subagents", &o["tools"])?;
         if let Some(t) = agent_tools.iter().find(|t| !tools.contains(t)) {
-            return bad("subagents", format!("subagent {i} names the tool `{t}`, which the launch's tools lack"));
+            return bad(
+                "subagents",
+                format!("subagent {i} names the tool `{t}`, which the launch's tools lack"),
+            );
         }
         model("subagents", &o["model"])?;
         if map.contains_key(name) {
@@ -507,7 +628,10 @@ impl Launch {
                 return bad("fallback-models", "at most 4");
             }
             for item in list {
-                flags.push(format!("--fallback-model={}", model("fallback-models", item)?));
+                flags.push(format!(
+                    "--fallback-model={}",
+                    model("fallback-models", item)?
+                ));
             }
         }
         if let Some(v) = doc.get("effort") {
@@ -519,7 +643,10 @@ impl Launch {
         }
         if let Some(v) = doc.get("system-prompt") {
             let Some(o) = v.as_object() else {
-                return bad("system-prompt", "expected {replace: text} or {append: text}");
+                return bad(
+                    "system-prompt",
+                    "expected {replace: text} or {append: text}",
+                );
             };
             let [(key, text)] = o.iter().collect::<Vec<_>>()[..] else {
                 return bad("system-prompt", "use exactly one of `replace` and `append`");
@@ -667,4 +794,3 @@ impl Launch {
         })
     }
 }
-
