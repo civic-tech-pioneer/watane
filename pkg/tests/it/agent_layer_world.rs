@@ -14,6 +14,8 @@ interface timers { now: func() -> u32; }
 interface caller { identity: func() -> string; }
 interface https-stream { start: func() -> u32; }
 interface unknown { f: func(); }
+interface host-info { generation: func() -> u64; }
+interface host-infos { f: func(); }
 interface stream-sink { push: func(); }
 interface stream-producer { signal: func(); }
 interface timer-sink { fired: func(); }";
@@ -139,4 +141,23 @@ fn ac2_host_exports_alone_are_a_logic_part() {
     let none = build(imports, "", false, false);
     assert!(rules(none.path()).iter().all(|r| *r == Rule::Parts));
     assert!(!rules(none.path()).is_empty());
+}
+
+#[test]
+fn ac1_host_info_import_needs_no_grant() {
+    let items = "import watane:host/state@0.1.0; import watane:host/host-info@0.1.0;";
+    let dir = build(items, "", true, true);
+    let m = Mod::read(dir.path()).unwrap();
+    assert_eq!(m.grants(), vec![Grant::Storage]);
+}
+
+#[test]
+fn ac2_other_host_info_names_are_refused() {
+    let infos = build("import watane:host/host-infos@0.1.0;", "", true, true);
+    assert_eq!(rules(infos.path()), vec![Rule::Import]);
+    let next = build("import watane:host/host-info@0.2.0;", "", true, true);
+    match Mod::read(next.path()) {
+        Err(ModError::Invalid(v)) => assert!(v[0].message.contains("host-info@0.2.0"), "{v:?}"),
+        other => panic!("{other:?}"),
+    }
 }

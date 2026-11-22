@@ -459,7 +459,8 @@ pub(crate) fn read(
                         | "watane:host/claude-types@0.1.0"
                         | "watane:host/claude-session@0.1.0"
                         | "watane:host/agent-tools@0.1.0"
-                        | "watane:host/timers@0.1.0" => true,
+                        | "watane:host/timers@0.1.0"
+                        | "watane:host/host-info@0.1.0" => true,
                         _ => false,
                     },
                     "wasi" if v.major == 0 && v.minor == 2 => match pkg {
