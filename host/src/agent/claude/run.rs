@@ -498,8 +498,7 @@ impl Reading<'_> {
     }
     fn line(&mut self, raw: &[u8]) -> Result<(), Value> {
         let line = control::classify(raw);
-        if self.awaiting_init && !matches!(line, Line::Init(..)) && !control::is_control(raw, &line)
-        {
+        if self.awaiting_init && !matches!(line, Line::Init(..)) && !control::is_control(&line) {
             return Err(json!({"mismatch": "init"}));
         }
         match line {

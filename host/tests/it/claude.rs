@@ -932,7 +932,9 @@ fn ac3_a_non_utf8_or_duplicate_key_init_line_ends_mismatch_init() {
         .replace(r#""plugins""#, "\"plugins\u{1}\"")
         .into_bytes();
     non_utf8.extend_from_slice(b"\xff\n");
-    for init in [dup.into_bytes(), non_utf8] {
+    // A plain line before the init, the init right after it: not wrapped, still not the init.
+    let plain = format!("{}\n{INIT}\n", r#"{"type":"assistant","message":{}}"#).into_bytes();
+    for init in [dup.into_bytes(), non_utf8, plain] {
         let rig = Rig::new(&[("init", &init), ("spawn", b"")]);
         let s = rig.start_ok(LAUNCH);
         assert_eq!(rig.wait_ended(1), [format!("{s} mismatch(init)")]);
