@@ -208,3 +208,27 @@ fn ac4_the_bash_grammar_refuses_what_runs_other_commands_and_allows_plain_ones()
         32
     );
 }
+
+/// Adversarial (S99): Claude Code 2.1.330's rule parser (`Ur`) drops a content of `""` or `"*"`
+/// and keeps the bare tool name, so `Write(*)` and `Read()` are the bare `Write` and `Read`,
+/// which match every path; 19.3 (Protected reads) refuses a bare file-tool allow.
+#[test]
+fn adv_s99_file_allow_with_an_empty_or_star_argument_is_a_bare_name() {
+    let rig = Rig::new(&[]);
+    for rule in [
+        "Write(*)",
+        "Read(*)",
+        "Edit(*)",
+        "NotebookEdit(*)",
+        "Glob(*)",
+        "Grep(*)",
+        "Read()",
+        "Write()",
+    ] {
+        let text = launch(json!({
+            "tools": ["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"],
+            "allow": [rule],
+        }));
+        bad(&rig, "api.start", &text, "allow");
+    }
+}
