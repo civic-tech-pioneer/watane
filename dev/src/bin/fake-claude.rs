@@ -173,15 +173,29 @@ impl Fake {
     fn next_any(&mut self) -> Option<Value> {
         self.queue.pop_front().or_else(|| self.rx.recv().ok())
     }
-    /// The next line that is not an `interrupt` no step awaits: those are answered (host 19.3 step 5).
+    /// The next line that is not an `interrupt` or an answer no step awaits: an `interrupt` is
+    /// answered (host 19.3 step 5), an answer to a written ask or check is consumed.
     fn next_unawaited(&mut self) -> Option<Value> {
         loop {
             let line = self.next_any()?;
-            if !is_interrupt(&line) {
+            if is_interrupt(&line) {
+                answer_interrupt(&line);
+            } else if !self.consumed_answer(&line) {
                 return Some(line);
             }
-            answer_interrupt(&line);
         }
+    }
+    /// A `control_response` that no step awaits is consumed when it answers a request the fake
+    /// wrote; one that names none is fatal (TECHNICAL 18.2).
+    fn consumed_answer(&self, line: &Value) -> bool {
+        if line["type"] != "control_response" {
+            return false;
+        }
+        let id = line["response"]["request_id"].as_str().unwrap_or("");
+        if !self.requests.values().any(|r| r == id) {
+            die(70, &format!("a line that no step awaits: {line}"));
+        }
+        true
     }
     fn await_line(&mut self, what: &str) -> Value {
         self.next_unawaited()
@@ -203,6 +217,7 @@ impl Fake {
                     answer_interrupt(&line);
                     return true;
                 }
+                Some(line) if self.consumed_answer(&line) => {}
                 Some(line) => self.queue.push_back(line),
                 None => return false,
             }

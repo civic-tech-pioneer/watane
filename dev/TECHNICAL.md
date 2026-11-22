@@ -2551,6 +2551,7 @@ lines and bytes written in the test.
 | `fake_claude::s100_ac4_ask_allow_goes_on`, `s100_ac4_ask_deny_ends_the_turn`, `s100_ac4_ask_deny_interrupted_then_interrupt`, `s100_ac4_interrupt_in_place_of_the_answer` | an awaited `ask`: allow logs the answer and goes on; deny writes `denied: <message>`, `result`, idle and skips to the next `expect-user`; the deny `interrupted` followed by the `interrupt` ends the turn and the interrupt is answered; an `interrupt` in place of the answer is answered and ends the turn | child process; literal lines |
 | `fake_claude::s100_ac5_load_writes_ten_thousand_entries` | `load {entries: 10000}` writes 10 000 entries of 1024 bytes in order, `result` and idle, within 5 s (the time is printed) | child process; literal texts |
 | `fake_claude::s100_ac6_host_permission_arguments_and_unawaited_interrupt` | `--permission-prompts=host --permission-prompt-tool=stdio` are accepted; an `interrupt` no step awaits is answered and logged, never exit 70 | child process; literal lines and log |
+| `fake_claude::regress_s100_unawaited_ask_deny_during_long_turn_keeps_the_session`, `regress_s100_answer_to_no_written_request_exits_70` | a deny for an unawaited `ask` during a `long-turn` is consumed and the next `say` is answered; an answer naming no written request exits 70 | child process; literal lines |
 | `fake_claude::ac5_lines_no_step_awaits_exit_70` | a line `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`, a `control_response` with `updatedPermissions` or a second `initialize` exits 70 and is logged; a `user` line, an answer and an `interrupt` (awaited or not, S100) do not | child process; literal lines |
 | `fake_claude::ac6_sleep_exit_and_crash`, `ac6_hang_ignores_stdin_until_killed` | `exit {code: 3}` exits 3 after flushing; `crash` ends by `SIGKILL`; `hang` writes nothing more until it is killed | child process |
 | `fake_claude::ac4_log_holds_arguments_environment_and_stdin_in_order` | `fake-claude.log` holds the arguments, the environment variables and each stdin line, in order | file compared with literal lines |
@@ -2784,7 +2785,7 @@ ended). An `interrupt` that arrives in its place is answered and ends the turn
 the same way (`result` `error_during_execution` and `idle`). A deny ends the turn only when a
 later `expect-user` or `reply-per-say` step exists; with none, the script goes on with its next
 step (a script that only checks what the host wrote). An `interrupt` that no step awaits is answered and logged, never an
-exit 70: the host writes one whenever the consumer asks (host 19.3 step 5). The
+exit 70: the host writes one whenever the consumer asks (host 19.3 step 5); so is a `control_response` to an `ask` or `check` the fake wrote that no step awaits (the deny of host 19.3 step 5), which is logged and consumed, while one whose `request_id` names none exits 70. The
 program accepts `--permission-prompts=host` with `--permission-prompt-tool=stdio`
 (a launch with `ask: true`) as it accepts `--permission-prompts=none`.
 

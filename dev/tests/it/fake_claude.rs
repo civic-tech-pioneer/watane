@@ -901,3 +901,17 @@ fn regress_s100_unawaited_ask_deny_during_long_turn_keeps_the_session() {
     s.user("go");
     assert_eq!(text_of(&parsed(&s)), "next");
 }
+
+/// S100 fix 2: an answer whose `request_id` names no ask or check the fake wrote is a line no
+/// step awaits (TECHNICAL 18.2).
+#[test]
+fn regress_s100_answer_to_no_written_request_exits_70() {
+    let f = Folder::new(r#"{"steps":[{"do":"expect-user"},{"do":"idle"}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let bad = answer(&json!("nobody"), &json!({"behavior":"deny","message":"x"}));
+    s.send(&bad);
+    s.user("hello");
+    assert_eq!(s.child.wait().unwrap().code(), Some(70));
+    assert!(f.log().last().unwrap()["error"].is_string());
+}
