@@ -1170,7 +1170,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
   For stage B's host slice (H2), from agentic-harness S31: the host sets Claude's
   `allowUnsandboxedCommands: false` explicitly (Claude's default is `true`).
-- [~] **S99 (routine `trig_01SRQRzaH2pwAAJuwqnW84TT`, cloud) Stage B, end to end: Alice has a first conversation with Claude on dev's fake `claude`
+- [~] **S99 (routine `trig_01SRQRzaH2pwAAJuwqnW84TT`, cloud) [PO, 2026-11-22: agentic-harness S35 delivered against slice/s99 at 5471b16 and found a gap S99 must close before it merges: a `claude-code` stream started in a call chain is unknown to `streams.hand-off`, `streams.cancel` and `claude-session.say` in that same chain (`view_of` in `host/src/agent/mod.rs` knows only `Effect::Open`; `session_call` checks only `hub.info`), while agentic-harness TECHNICAL 10 has the unchecked provider start, say and hand off in one call. Without it a start fails `bad-launch: stream: unknown-stream`. If S99 delivers without it, a continuation adds it.] Stage B, end to end: Alice has a first conversation with Claude on dev's fake `claude`
   (host H2, `host-info.generation`, dev's fake `claude`, pkg; the watane half).** After S96 and S97.
   One story in two repositories, handed out together: agentic-harness S35 is the kernel, provider
   and console half (its PLAN). Alice runs `watane-dev serve` with the agent kernel and the unchecked
