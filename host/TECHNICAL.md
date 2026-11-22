@@ -1787,7 +1787,12 @@ package-runner word that runs the project's own scripts, inside the shell
 grant's sandbox only (whether that sandbox blocks loopback is not yet
 probed); the judge account reaches any `POST` path of the origin the
 participant entered; plan usage; a launch is as safe as the grant, and the
-grants are the participant's (W38, W39).
+grants are the participant's (W38, W39). The protected-reads answer rule
+(19.3) checks a file tool's path when `answer` is called; a link swapped
+between that check and the moment `claude` opens the file (by a sandboxed
+`Bash` under the shell grant, or another program) is not caught there, and
+the deny rules of the host's `--settings=` are the limit (S100's adversary;
+the product owner may decide otherwise).
 
 ## 15. Build plan
 
@@ -2909,6 +2914,17 @@ not keep a credential from a mod on their own. Three rules do:
   host resolves it as `claude` would (relative to the workspace, symlinks
   resolved), is refused `not-allowed-here`; nothing is written to stdin, and
   the ask is denied at its `expires-at`.
+  Read as `claude` reads it, fail-closed (S100's adversary; foreman's
+  decision): a path input with leading or trailing white space (what
+  JavaScript's `trim` removes) or that is not in Unicode NFC is refused, so
+  the host never resolves another name than `claude` does; a `Glob` `pattern`
+  or `Grep` `glob` holding `{`, `}`, `,` or white space is refused (Claude
+  Code splits a `glob` into several and expands braces). The run folder counts
+  for `Read`, `Glob` and `Grep` only: an `allow` of `Edit`, `Write` or
+  `NotebookEdit` there is refused, so a consumer cannot plant a skill file
+  past the `skills` frontmatter rule. The path is checked at the call; a link
+  swapped before `claude` opens the file is section 14, Not protected (the
+  deny rules of `--settings=` stay the hard limit).
 
 **The run.**
 
