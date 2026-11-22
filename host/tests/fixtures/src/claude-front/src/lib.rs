@@ -57,6 +57,11 @@ impl exports::mods::claude_front::api::Guest for Guest {
         let s = mods::claude::api::open_stream();
         say_to(&s, &text)
     }
+    fn run_say_to(launch: String, other: String, text: String) -> String {
+        let s = mods::claude::api::start_hand_off(&launch);
+        // Another id than the stream started in this chain.
+        format!("{s} {}", say_to(&other, &text))
+    }
     fn say(s: String, text: String) -> String {
         say_to(&s, &text)
     }

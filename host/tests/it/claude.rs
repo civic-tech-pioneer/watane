@@ -1182,3 +1182,17 @@ fn ac5_a_say_on_a_mod_stream_of_the_chain_is_not_yours() {
         json!("not-yours")
     );
 }
+
+#[test]
+fn ac5_a_say_on_another_id_than_the_stream_of_the_chain_is_unknown_stream() {
+    let rig = Rig::new(&[]);
+    let zero = "0".repeat(32);
+    let answer = rig.front(
+        "api.run-say-to",
+        json!({"launch": LAUNCH, "other": zero, "text": "hi"}),
+    );
+    assert!(
+        answer.as_str().unwrap().ends_with(" unknown-stream"),
+        "{answer}"
+    );
+}
