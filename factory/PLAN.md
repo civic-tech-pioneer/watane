@@ -1124,22 +1124,20 @@ names the same interface in its sketch and fakes it until this one merges.
   crate. User-sim ACCEPTED after fixes it wrote; adversary BREACHED 5 then 4 (S61 to S68), each closed
   in the documents as a rule plus a FUNCTIONAL scenario the building slice turns red first. Six open
   security questions for the human in host 18 (Q38 to Q43), none blocking A1; Q37 open.
-- [~] **S96 (routine `trig_01G5BG7xm1TfA3JsHSBHzs8J`) Stage A, end to end: Alice watches a real agent-kernel stream in its console (host A1,
-  pkg 12; the watane half).** One story in two repositories, handed out together: this is the host
-  half, agentic-harness S32 the kernel-and-console half (its PLAN); Alice runs `watane-dev serve`
-  with the agent kernel installed and watches numbered items of a real kernel stream arrive in its
-  page, live and after a reload. The slice is done when that story passes with S32's kernel, not
-  only when host tests pass. Earlier sketch:
-  After S95 (PR #7). Builds host stage A1 and pkg stage 12 as S95 wrote them (host 19), and what S95 writes for H1 (streams: table, FIFO per consumer, numbered batches,
-  `taken | defer`, ends, byte budgets, page connections), H5 (effects after a durable commit) and H7
-  (timers per mod, kept across restarts), and measures V8 (agentic-harness 16, "Probes named here")
-  against stage A's budgets (agentic-harness 17: 8 host streams x 100 items/s of 1 KiB, item delay
-  <= 50 ms, `cancel` to `ended` <= 250 ms, writer busy share <= 10%). Outcome: agentic-harness cases
-  7, 20, 21, 36, 51 and 58 (host part) pass as host tests; the V8 record is written. Interface: the
-  `watane:host@0.1.0` streams and timers of agentic-harness TECHNICAL 2.1, as S95 writes them in
-  host/TECHNICAL; agentic-harness's stage A slice (its kernel stream and console skeleton) codes
-  against the same names. Touches: host, pkg (stage 12 and the 4.5 rows), not dev (S95: A1 needs nothing from it), not app. Also: S51's 512 MiB test is `#[ignore = "slow"]`. Cloud.
-
+- [x] **S96 Stage A host half (host A1, pkg 12).** Delivered 2026-11-21 through PR #10, merged ~15:50 UTC
+  (routine `trig_01G5BG7xm1TfA3JsHSBHzs8J`, branch `slice/s96`; 08:58 to 15:30, 6.5 h). A mod opens a stream
+  and pushes numbered items to one consumer (a mod or its page's `/events`), in order, live, with
+  `taken`/`defer`/`resume`, backpressure, the lag clock, byte budgets; requests and timers act only after
+  a durable commit; timers survive a restart; `caller.identity()`. User-sim ACCEPTED on `watane --preview`
+  with a page in headless Chrome (cases 20, 51, 58 host parts; 7, 21, 36 as host tests; stage A budgets);
+  adversary BREACHED 3/4/3/1 over 4 passes (origins of removed mods, revoke and update races, install
+  generations, remove's authority tail), all fixed with red tests in `host/tests/it/adv_s96.rs`, HELD on
+  pass 5. V8: p95 3.25 ms (no write), 6.36 ms (one write per batch, writer busy 24.5%). Implementer
+  runs 1/2/2/2/1/2 (Claude stand-in: the Codex relay was down). Suites: host `it` 40-46 s, with ignored
+  144 s; pkg 5.2 s; dev 42.6 s. CI: Windows red (known, watane-log), the rest green.
+  Friction: no IPv6 loopback in the cloud (4 `[::1]` tests run only in CI); no `cargo deny` there; the
+  fixture build is not byte-reproducible (`logic.wasm` rewritten on every rebuild); scratch branches
+  `slice/s96-2`, `slice/s96-adv` left on the remote (delete refused).
 - [x] **S98 The macOS CI job is green again (guard).** Delivered 2026-11-21 through PR #8, merged 14:29 UTC
   (local foreman, then cloud routine `trig_01FuwkKwLpw5dh9JGrGdvM6P`, branch `slice/s98`). 5 workflow_dispatch runs in a
   row green on lint, ubuntu and macos-26 (runs 33, 35-38). Causes: a quit deadlock (main thread blocked on
@@ -1149,7 +1147,7 @@ names the same interface in its sketch and fakes it until this one merges.
   test corrupts exactly `dist/packages/<id>`, not a same-size temporary. Windows: the build.rs panic was the
   missing `app/icons/icon.ico` (added); Windows now stops in `watane-log` (`std::os::unix` file modes, 13 errors,
   Verification boundary: its own slice if ever wanted). No user-sim (CI state) or adversary (no boundary). 4.5 h.
-- [ ] **S97 The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
+- [~] **S97 (routine `trig_01AYz5xREjDp9cnjUabKdpJP`, cloud) The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
   The human decided (2026-11-21): restart detection is a new interface `host-info` with
   `generation()` (in place of `caller.boot()`, Q34); `answered` carries `outcome` (Q35); the host
   closes a check with `ask-resolved {by: expired}` at its `expires-at`, and the 4.5 host-item rules
@@ -1270,6 +1268,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+- S96 Q47: `remove` waits for a busy mod's call lock with no deadline while every install waits behind it.
+- S96 Q48: no startup sweep of timer rows left by a crash between `remove`'s catalog save and its timer rewrite.
+- S96: the fixture build is not byte-reproducible (every rebuild rewrites each `logic.wasm`).
 - S54: dev's publish still suggests raw.githubusercontent.com as the base; GitHub Pages is a real static host and could be offered.
 
 Every deferred note in "Slices" audited against main on 2026-11-14: 95 items from 27 notes.
@@ -1534,6 +1535,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- **V8 writer busy share (S96).** One durable write per batch costs 24.5% writer busy at stage A's load
+  (budget 10%, which S96 applies to the no-write run). Options: (a) keep "durable first" (19.6) and
+  accept the write run's share as N4's price (rec: a kernel batch rarely writes); (b) group commits
+  across batches (a host change, weaker per-batch durability). Undo: (a) none; (b) a host write path.
 - (2026-11-21, from S95; none blocks stage A's A1) Six security questions in host/TECHNICAL 18, each
   with its options there: Q38 the consent key names no provider (`via`), blocks A3; Q39 the Claude
   login token and loopback under the shell grant (probe V28; agentic-harness S1's V27 found a
@@ -1588,6 +1593,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- S96 (2026-11-22): Q46 confirmed: a mod stream depends on the consumer's `Call` grant and the link `open`
+  ran through; a side disabled and enabled again while an `open` is in flight keeps the stream (host
+  19.2). Q47 and Q48 are fixes, not questions: they go to Leftovers for the next upkeep slice.
 - S50c (2026-11-19): GitHub retired the `macos-14` runner on 2026-11-02, so release.yml builds on
   `macos-15`; the deployment target stays 14.0, built for but not tested (install/TECHNICAL Q4 says
   how to raise it to 15.0). Rejected: raising the target to 15.0 now (drops 14 users for no test
