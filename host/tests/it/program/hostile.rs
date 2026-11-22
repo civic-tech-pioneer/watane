@@ -292,7 +292,10 @@ fn counter_call(preview: &Preview, function: &str, value: u32) {
 fn ac1_host_is_exact_on_both_loopbacks_and_unknown_mod_is_missing() {
     let (_home, preview) = setup();
     let port = preview.ready.port;
-    for ip in ["127.0.0.1", "::1"] {
+    for ip in ["127.0.0.1"]
+        .into_iter()
+        .chain(super::has_v6().then_some("::1"))
+    {
         for host in [
             format!("Host: COUNTER.localhost:{port}\r\n"),
             "Host: counter.localhost\r\n".into(),

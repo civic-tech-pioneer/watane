@@ -198,7 +198,10 @@ async fn ac1_watane_js_is_the_host_library_with_page_headers() {
     let preview = Preview::start(home.path());
     assert_eq!(preview.install(folder.path()).await.status(), 200);
     let url = format!("http://hello.localhost:{}/watane.js", preview.ready.port);
-    for ip in ["127.0.0.1", "::1"] {
+    for ip in ["127.0.0.1"]
+        .into_iter()
+        .chain(super::has_v6().then_some("::1"))
+    {
         let response = preview
             .client("hello.localhost", ip)
             .get(&url)
@@ -261,7 +264,10 @@ async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
     let preview = Preview::start(home.path());
     assert_eq!(preview.install(&fixture("hello")).await.status(), 200);
     let url = format!("http://hello.localhost:{}/", preview.ready.port);
-    for ip in ["127.0.0.1", "::1"] {
+    for ip in ["127.0.0.1"]
+        .into_iter()
+        .chain(super::has_v6().then_some("::1"))
+    {
         let client = preview.client("hello.localhost", ip);
         let response = client.get(&url).send().await.unwrap();
         assert_eq!(response.status(), 200);
