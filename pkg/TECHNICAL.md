@@ -239,6 +239,7 @@ rule `wit`. Type items are allowed and ignored.
 | import | `watane:host/https-stream@0.1.0` (step 11) | an HTTPS request as a stream (host 19.4); needs `[http] hosts` (rule `http`) | one `Http { host }` for each host of `[http] hosts`, as `wasi:http/outgoing-handler` |
 | import | `watane:host/agent-tools@0.1.0` (step 11) | open, describe, call and close toolsets (host 19.5) | none |
 | import | `watane:host/timers@0.1.0` (step 11) | per-mod timers (host 19.6) | none |
+| import | `watane:host/host-info@0.1.0` (step 11) | the host's start number (host 19.1) | none |
 | import | other `watane:*` | — | rule `import` |
 | import | `wasi:{cli,clocks,filesystem,io,random,sockets}/*@0.2.x` | base WASI, linked to nothing | none |
 | import | `wasi:http/outgoing-handler@0.2.x` | network | one `Http { host }` for each host of `[http] hosts` |
@@ -257,16 +258,16 @@ rows marked step 11 list every import and export of the Interface list of
 host 19.1, one row each, and no other `watane:host` interface. Only two give
 a grant, one for each way to start Claude Code (5.1): the two grants do not
 imply each other, so a mod that imports both holds both. `claude-types`,
-`claude-session`, `streams`, `agent-tools`, `timers` and the three exports
-give none: what they allow is decided by the host at run time (host 19:
+`claude-session`, `streams`, `agent-tools`, `timers`, `host-info` and the three
+exports give none: what they allow is decided by the host at run time (host 19:
 the stream's consumer, a consent, the caller's identity). `https-stream`
 gives only the `Http` grants of the mod's own `[http] hosts`, so it reaches
 only the hosts that `mod.toml` names; the host checks every request's URL
 against them (host 19.4). The `identity` function of `caller` is a function
-of an interface already allowed, so it changes no row. The source's row
-names `caller.boot` among the imports too (agentic-harness TECHNICAL 15,
-"`pkg/TECHNICAL.md` 4.5"); it is left out until the human answers host 18,
-Q34, and as a function of `caller` it would change no row either. A host-only export is
+of an interface already allowed, so it changes no row. The human chose `host-info.generation()` for restart detection
+(host 18, Q34, 2026-11-21), in place of `caller.boot`: a new interface, so it
+has its own row, and a pure read that gives no grant. The source's row named
+`caller.boot` (agentic-harness TECHNICAL 15); it was replaced and is not built. A host-only export is
 an export that a mod makes for the host and that is not one of its own
 `mods:` interfaces: it is not in `World::exports` (a mod offers it to no
 one) but in `World::host_exports` (sorted, no duplicates), and
@@ -1004,7 +1005,7 @@ fmt --check` green.
 | 9 (step 9) | the outlet-function rule and `World::collects` in `world.rs` (4.5) | `outlet_functions` passes (A26, A27) | host collect and cycle check, dev contract fakes (step 9) |
 | 10 (W36) | `main` in `meta.rs` (4.2), `Mod::main` | `mod_toml_main` passes (A28, A29) | app stage I |
 | 11 (step 10) | `Grant::Manage` (5.1), `World::manage` and the 4.5 row in `world.rs`, the grant `[4]` and the limit 82 in `release.rs` (7.2) | `grant_manage` passes (A30, A31); every earlier golden byte unchanged | host stage 11, dev stage 13, app stage J |
-| 12 (step 11) | `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` (5.1), the rows of the agent layer and the three host-only exports (`World::host_exports`) in `world.rs` (4.5) and their logic part in `folder.rs` (4.6), `https-stream` in rule `http` and `World::http`, the grants `[5]` and `[6]` and the limit 84 in `release.rs` (7.2) | `grant_claude_code`, `agent_layer_world`, `release_agent_grants` pass (A32 to A35); every earlier golden byte unchanged | host stages A1 to A5 (host 19); app stage L |
+| 12 (step 11) | `Grant::ClaudeCode` and `Grant::ClaudeCodeShell` (5.1), the rows of the agent layer (the `host-info` row is added by S99, built with host's `host-info`) and the three host-only exports (`World::host_exports`) in `world.rs` (4.5) and their logic part in `folder.rs` (4.6), `https-stream` in rule `http` and `World::http`, the grants `[5]` and `[6]` and the limit 84 in `release.rs` (7.2) | `grant_claude_code`, `agent_layer_world`, `release_agent_grants` pass (A32 to A35); every earlier golden byte unchanged | host stages A1 to A5 (host 19); app stage L |
 
 Stage 12 splits for the host's stages (agentic-harness TECHNICAL 17): stage A
 (host A1: `streams`, `timers`, the three exports) needs only the rows of
