@@ -397,14 +397,25 @@ impl Job {
         let stdin = child.stdin.take().expect("piped");
         let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped"));
         // The writer thread is the one place that writes to stdin; a line goes through its queue.
+        // `initialize` goes at once; every later line waits for `release`, which the reader sends
+        // once the answer passed step 2. When the reader ends without it, `release` drops and
+        // nothing more is written (19.3, step 5).
         let rx = self.session.started(pgid);
+        let (release, held) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             use std::io::Write;
             let mut stdin = stdin;
+            let mut released = false;
             for mut line in rx {
                 line.push(b'\n');
                 if stdin.write_all(&line).and_then(|()| stdin.flush()).is_err() {
                     break;
+                }
+                if !released {
+                    if held.recv().is_err() {
+                        break;
+                    }
+                    released = true;
                 }
             }
         });
@@ -422,6 +433,7 @@ impl Job {
             request_id,
             workspace,
             awaiting_init: false,
+            release: Some(release),
         };
         let ended = reader.read(&mut stdout);
         let status = waiter.join().ok().and_then(Result::ok);
@@ -451,6 +463,8 @@ struct Reading<'a> {
     /// The answer to `initialize` came and the `system/init` line has not: only control lines
     /// may come before it (19.3, step 3).
     awaiting_init: bool,
+    /// Lets the writer thread go on after `initialize`; dropped unsent when the check fails.
+    release: Option<std::sync::mpsc::Sender<()>>,
 }
 impl Reading<'_> {
     /// Pushes one item, waiting while the stream is full (a host stream stops reading its
@@ -537,6 +551,9 @@ impl Reading<'_> {
                     )?;
                     self.answered = true;
                     self.awaiting_init = true;
+                    if let Some(release) = self.release.take() {
+                        let _ = release.send(());
+                    }
                     Ok(())
                 } else {
                     self.item(raw.to_vec())

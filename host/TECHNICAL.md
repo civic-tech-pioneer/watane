@@ -2932,7 +2932,7 @@ not keep a credential from a mod on their own. Three rules do:
    `cancelled` (`claude` sent a `control_cancel_request` for it). Each ask or
    check gets exactly one `ask-resolved`, and a later answer to it is
    `unknown-ask` (Q36).
-5. Writes to stdin are only these:
+5. Writes to stdin are only these; after `initialize`, none is written until the answer to it has passed step 2 (not until `system/init`), then they go in queue order, and none if step 2 fails:
 
 | Operation | Written | Rule |
 |---|---|---|
