@@ -107,7 +107,7 @@ scenarios (`counter`, `echo`, `hog`, `shelf`, `recs`, `net`) are defined in
 
 - **HOST-F-57** The host shall number the items of each stream from 1 and deliver them to the one consumer in order, in batches of at most 256 items or 1 MiB, at least one item. Traces: F-AGENT-5, J11.
 - **HOST-F-58** If a batch fails, then the host shall deliver it once more with the same numbers, and shall end the stream `consumer-failed` when the second delivery fails too. Traces: F-AGENT-5.
-- **HOST-F-59** When a consumer answers `defer` to a batch, the host shall drop that call's writes, keep the batch, deliver nothing more on the stream until the consumer calls `resume`, and then deliver the same batch with the same numbers; a deferral shall not count as a failure, and a stream deferred for 5 minutes without `resume` shall end `consumer-failed`; and a stream that the producer side ends while a batch is deferred shall deliver the held and queued items after `resume` before `ended`, while an end `gone`, the consumer's own `cancel` or `consumer-failed` shall drop them and end at once. Traces: F-AGENT-5.
+- **HOST-F-59** When a consumer answers `defer` to a batch, the host shall drop that call's writes, keep the batch, deliver nothing more on the stream until the consumer calls `resume`, and then deliver the same batch with the same numbers; a deferral shall not count as a failure, and a stream deferred for 5 minutes without `resume` shall end `consumer-failed`; and a stream that the producer side ends while a batch is deferred shall deliver the held and queued items after `resume` before `ended`, while an end `gone`, a page connection's `lagging`, the consumer's own `cancel` or `consumer-failed` shall drop them and end at once. Traces: F-AGENT-5.
 - **HOST-F-60** If a stream is full (256 items or 4 MiB in flight), then a `push` shall fail `full`, and a stream that stays full for 10 s without its consumer deferring it shall end `lagging`, both sides told. Traces: F-AGENT-5.
 - **HOST-F-61** The host shall refuse a `push` that would pass 128 MiB of queued items for an origin client or 512 MiB for the host with `full`, and shall end the streams of a page connection that holds more than 16 MiB `lagging`. Traces: F-AGENT-5.
 - **HOST-F-62** A page shall be the consumer of a stream only through the connection id that `watane.js` sends with `/call`, naming one of its own `/events` connections; the host shall keep one lossless queue for each connection and end its streams `gone` when it closes. Traces: F-AGENT-5, W8.
@@ -497,7 +497,8 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   and `resume(s)` run, the deliveries are `[1,2]` taken, `received` is
   `["a","b"]`, and only then `relay`'s `ended` line is `<s> <outcome>`. When
   instead the consumer's own `cancel`, a disable of either side, a withdrawn
-  consent or a closed page connection ends it (`gone`), the held items are
+  consent or a closed page connection ends it (`gone`), or a page connection
+  past its 16 MiB ends it (`lagging`, S51), the held items are
   dropped and `ended` comes at once (no item reaches a consumer after its
   consent is withdrawn, S58). A consumer that never calls `resume` gets its
   held items dropped and `ended` `consumer-failed` after the 5 minutes of S49
