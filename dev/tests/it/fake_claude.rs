@@ -636,3 +636,225 @@ fn ac9_real_preview_runs_a_conversation_on_the_fake() {
         "{written}"
     );
 }
+
+fn parsed(s: &Session) -> Value {
+    let v = s.line();
+    claude_codes::ClaudeOutput::parse_json(&v.to_string()).unwrap();
+    v
+}
+fn text_of(v: &Value) -> &str {
+    v["message"]["content"][0]["text"].as_str().unwrap()
+}
+fn interrupt(s: &mut Session, id: &str) {
+    s.send(&json!({"type":"control_request","request_id":id,"request":{"subtype":"interrupt"}}));
+}
+fn interrupt_answer(id: &str) -> Value {
+    json!({"type":"control_response","response":{"subtype":"success","request_id":id,"response":{}}})
+}
+
+#[test]
+fn s100_ac1_long_turn_entries_result_idle() {
+    let f = Folder::new(r#"{"steps":[{"do":"long-turn","entries":3,"bytes":16}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for want in ["entry 1 xxxxxxxx", "entry 2 xxxxxxxx", "entry 3 xxxxxxxx"] {
+        let v = parsed(&s);
+        assert_eq!(v["type"], "assistant");
+        assert_eq!(text_of(&v), want);
+    }
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "success");
+    assert_eq!(s.line()["state"], "idle");
+}
+
+#[test]
+fn s100_ac1_long_turn_defaults() {
+    let f = Folder::new(r#"{"steps":[{"do":"long-turn"}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for i in 1..=100 {
+        let v = s.line();
+        let text = text_of(&v);
+        assert_eq!(text.len(), 32);
+        assert!(text.starts_with(&format!("entry {i} x")));
+    }
+    assert_eq!(s.line()["type"], "result");
+}
+
+#[test]
+fn s100_ac2_long_turn_interrupted_session_goes_on() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"long-turn","entries":1000,"every-ms":5},{"do":"expect-user","contains":"next"},{"do":"message","text":"ok"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    assert_eq!(text_of(&parsed(&s)), format!("entry 1 {}", "x".repeat(24)));
+    interrupt(&mut s, "x1");
+    let mut entries = 1;
+    loop {
+        let v = parsed(&s);
+        if v["type"] == "assistant" {
+            entries += 1;
+        } else {
+            assert_eq!(v, interrupt_answer("x1"));
+            break;
+        }
+    }
+    assert!(entries < 1000);
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "error_during_execution");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("next please");
+    assert_eq!(text_of(&parsed(&s)), "ok");
+}
+
+#[test]
+fn s100_ac3_reply_per_say() {
+    let f = Folder::new(r#"{"steps":[{"do":"reply-per-say","turns":2}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for said in ["a", "b"] {
+        s.user(said);
+        let d = parsed(&s);
+        assert_eq!(d["event"]["delta"]["text"], format!("you said: {said}"));
+        assert_eq!(text_of(&parsed(&s)), format!("you said: {said}"));
+        assert_eq!(parsed(&s)["type"], "result");
+        assert_eq!(s.line()["state"], "idle");
+    }
+}
+
+#[test]
+fn s100_ac3_reply_per_say_text_until_stdin_closes_and_interrupt() {
+    let f = Folder::new(r#"{"steps":[{"do":"reply-per-say","text":"echo "}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    interrupt(&mut s, "q");
+    assert_eq!(s.line(), interrupt_answer("q"));
+    s.user("hi");
+    assert_eq!(s.line()["event"]["delta"]["text"], "echo hi");
+    assert_eq!(text_of(&s.line()), "echo hi");
+    s.line();
+    s.line();
+    assert_eq!(s.status(), 0);
+}
+
+fn ask_script() -> Folder {
+    Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"t1","await":true},
+        {"do":"message","text":"after"},{"do":"result"},{"do":"idle"},
+        {"do":"expect-user"},{"do":"message","text":"next"}]}"#,
+    )
+}
+fn answer(id: &Value, response: &Value) -> Value {
+    json!({"type":"control_response","response":{"subtype":"success",
+        "request_id":id,"response":response}})
+}
+
+#[test]
+fn s100_ac4_ask_allow_goes_on() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    let allow = answer(
+        &ask["request_id"],
+        &json!({"behavior":"allow","updatedInput":{}}),
+    );
+    s.send(&allow);
+    assert_eq!(text_of(&parsed(&s)), "after");
+    assert_eq!(parsed(&s)["type"], "result");
+    let text = allow.to_string();
+    assert!(f.log().iter().any(|l| l["stdin"] == text.as_str()));
+}
+
+#[test]
+fn s100_ac4_ask_deny_ends_the_turn() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"no"}),
+    ));
+    assert_eq!(text_of(&parsed(&s)), "denied: no");
+    assert_eq!(parsed(&s)["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac4_ask_deny_interrupted_then_interrupt() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"interrupted"}),
+    ));
+    interrupt(&mut s, "i1");
+    assert_eq!(text_of(&parsed(&s)), "denied: interrupted");
+    assert_eq!(parsed(&s)["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(s.line(), interrupt_answer("i1"));
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac4_interrupt_in_place_of_the_answer() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    parsed(&s);
+    interrupt(&mut s, "i2");
+    assert_eq!(s.line(), interrupt_answer("i2"));
+    assert_eq!(parsed(&s)["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac5_load_writes_ten_thousand_entries() {
+    let f = Folder::new(r#"{"steps":[{"do":"load","entries":10000}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let start = std::time::Instant::now();
+    for i in 1..=10_000 {
+        let bytes = s.bytes();
+        let v: Value = serde_json::from_slice(&bytes).unwrap();
+        let text = text_of(&v);
+        assert_eq!(text.len(), 1024);
+        assert!(text.starts_with(&format!("entry {i} x")));
+    }
+    assert_eq!(s.line()["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    let took = start.elapsed();
+    println!("load of 10000 entries took {took:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn s100_ac6_host_permission_arguments_and_unawaited_interrupt() {
+    let f = Folder::new(r#"{"steps":[{"do":"sleep","ms":300},{"do":"expect-user"}]}"#);
+    let mut s = f.start(&[
+        "--permission-prompts=host",
+        "--permission-prompt-tool=stdio",
+    ]);
+    s.initialize(false);
+    interrupt(&mut s, "u1");
+    s.user("x");
+    assert_eq!(s.line(), interrupt_answer("u1"));
+    assert_eq!(s.status(), 0);
+    let log = f.log();
+    assert!(
+        log.iter()
+            .any(|l| l["stdin"].as_str().is_some_and(|t| t.contains("\"u1\"")))
+    );
+    assert!(log.iter().all(|l| l.get("error").is_none()));
+}
