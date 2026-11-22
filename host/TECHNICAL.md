@@ -2055,31 +2055,28 @@ percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 TECHNICAL 15 names the load, 8 sessions, 2 owners, 10 and 10 000 entries; its
 kernel budgets are the kernel's, S36; the numbers below are the host's share and
 cheap to change). A slow test, `tests/it/agent_load.rs::stage_b`: 8 `claude-code`
-streams on host's fixture fake, 4 started by each of 2 owners (the page and `claude-b`;
-both consumed by the `claude` fixture, whose quiet sink stamps each item and writes one
-small tally per batch), each fake writing, after a `say`, a turn of 10 entries (an
+streams on host's fixture fake, 4 started and consumed by each of 2 consumer mods
+(`claude` and `claude-b`, the same fixture: its quiet sink stamps each item and writes
+one small tally per batch), each fake writing, after a `say`, a turn of 10 entries (an
 `assistant` line of about 1 KiB each) and an `ask` that the consumer answers, then
 after a second `say` a turn of 10 000 entries after two asks (one answered, one left
 for the `interrupt`). All p95 over the 8 streams. Every entry arrives once and in
 order. The fake is a shell script and cannot stamp its writes, so a turn's clock
-starts when the `say` that triggers it has returned. Entries taken: at most 100 ms
-in the 10-entry turn (S100 measured 20 to 60 ms: the foreman's 50 ms did not hold
-with 8 shells and 8 streams on 4 cores); the 10 000-entry turn taken whole within
-10 s. An `ask` taken: at most 100 ms (same clock). `answer` to the `control_response`
-on the fake's stdin: at most 50 ms. `interrupt` during the 10 000-entry turn to its
-`ask-resolved` item taken: at most 500 ms (measured 245 to 355 ms: the item waits
-behind the items already queued, up to one batch of 256; the foreman's 250 ms did not
-hold). `cancel` to `ended`: at most 250 ms. Writer busy share at most 10% (the
-fixture's own per-batch tally is in it; S100 measured 3.5 to 5.7%); the host itself writes no state for an entry (the one byte per entry
-that the run shows is the fixture's tally).
+starts when the `say` that triggers it has returned. Budgets: entries taken in the
+10-entry turn at most 50 ms; the 10 000-entry turn taken whole within 10 s; an `ask`
+taken at most 50 ms (same clock); `answer` to the `control_response` on the fake's
+stdin at most 50 ms; `interrupt` during the 10 000-entry turn to its `ask-resolved`
+item taken at most 250 ms; `cancel` to `ended` at most 250 ms; writer busy share at
+most 10% (the fixture's own per-batch tally is in it). The host itself writes no state
+for an entry; the one byte per entry that the run shows is the fixture's tally.
 
 **Stage B host record** (S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
-PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs): 80 080 entries each, none out of
-order or missing; entries taken in the 10-entry turn p95 25 / 32 / 53 ms; `ask` taken
-21 / 32 / 53 ms; `answer` to stdin 4.8 / 7.9 / 14.5 ms; the 10 000-entry turn taken
-5.1 / 5.0 / 5.4 s; `interrupt` to `ask-resolved` 245 / 275 / 273 ms; `cancel` to
-`ended` 66 / 62 / 68 ms; writer busy 5.7 / 3.5 / 3.6%; state bytes written per entry
-1.0 (the fixture's tally).
+PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs, every budget met): 80 080 entries each,
+none out of order or missing; entries taken in the 10-entry turn p95 31 / 36 / 35 ms;
+`ask` taken 31 / 36 / 35 ms; `answer` to stdin 10.5 / 3.6 / 7.0 ms; the 10 000-entry
+turn taken 2.8 / 2.9 / 3.1 s; `interrupt` to `ask-resolved` 129 / 154 / 132 ms;
+`cancel` to `ended` 50 / 64 / 88 ms; writer busy 5.1 / 5.8 / 6.7%; state bytes written
+per entry 1.0 (the fixture's tally).
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.

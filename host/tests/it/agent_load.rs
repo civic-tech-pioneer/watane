@@ -220,8 +220,7 @@ fn ac12_a_release_build_holds_no_test_streams() {
 // ---- Stage B, the host part (TECHNICAL 15, "Budgets of stage B, the host part") ----------
 
 mod stage_b {
-    use crate::claude::{LAUNCH, Rig};
-    use crate::streams::local;
+    use crate::claude::Rig;
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -250,7 +249,34 @@ mod stage_b {
             .map(|n| format!(r#"{{"type":"assistant","n":{n},"pad":"{pad}"}}"#) + "\n")
             .collect()
     }
-    fn tally(rig: &Rig, s: &str) -> BTreeMap<String, String> {
+    /// One consumer mod (`claude` or `claude-b`) and the rig that holds the fake.
+    struct Side<'a> {
+        rig: &'a Rig,
+        target: &'static str,
+    }
+    impl Side<'_> {
+        fn call(&self, function: &str, args: Value) -> Value {
+            self.rig
+                .call_as(Caller::Page, self.target, function, args)
+                .unwrap()
+        }
+        fn decide(&self, s: &str, ask: &str, decision: &str) -> String {
+            self.call(
+                "api.decide",
+                json!({"s": s, "ask": ask, "decision": decision}),
+            )
+            .as_str()
+            .unwrap()
+            .to_owned()
+        }
+        fn ended(&self) -> Vec<String> {
+            serde_json::from_value(self.call("api.ended", Value::Null)).unwrap()
+        }
+        fn log(&self) -> Vec<String> {
+            self.rig.log()
+        }
+    }
+    fn tally(rig: &Side, s: &str) -> BTreeMap<String, String> {
         let text = rig.call("api.tally", json!({"s": s}));
         text.as_str()
             .unwrap()
@@ -285,7 +311,7 @@ mod stage_b {
         taken: u64,
     }
 
-    fn one(rig: &Rig, s: &str) -> Marks {
+    fn one(rig: &Side, s: &str) -> Marks {
         let mut m = Marks::default();
         let ms = |from: u128, to: u128| to.saturating_sub(from) as f64 / 1000.0;
         // Turn 1: 10 entries and an ask.
@@ -367,7 +393,6 @@ mod stage_b {
     #[ignore = "slow: the stage B host budgets, 8 streams of 10 010 entries"]
     fn ac9_stage_b_host_budgets() {
         let launch = r#"{"version":1,"workspace":"scratch","ask":true,"tools":["Read"]}"#;
-        let _ = LAUNCH;
         let rig = Rig::new(&[]);
         let turn1 = can_use("r@P@a", "t@P@a") + "\n" + &entries(1, SMALL);
         let turn2 = can_use("r@P@b", "t@P@b")
@@ -377,32 +402,26 @@ mod stage_b {
             + &entries(SMALL + 1, SMALL + BIG);
         rig.put("after.2", turn1.as_bytes());
         rig.put("after.4", turn2.as_bytes());
-        rig.call("api.quiet", Value::Null);
-        // Two owners: the page, and the other fixture mod, four streams each.
-        let mut streams = vec![];
-        for i in 0..STREAMS {
-            let caller = if i % 2 == 0 {
-                Caller::Page
-            } else {
-                Caller::Mod(local("claude-b"))
-            };
-            let s = rig
-                .call_as(caller, "claude", "api.start", json!({"launch": launch}))
-                .unwrap();
-            streams.push(s.as_str().unwrap().to_owned());
+        // Two consumer mods, `claude` and `claude-b` (the same fixture), each with its own
+        // four streams.
+        let sides = ["claude", "claude-b"].map(|target| Side { rig: &rig, target });
+        for side in &sides {
+            side.call("api.quiet", Value::Null);
         }
-        for s in &streams {
+        let mut streams: Vec<(&Side, String)> = vec![];
+        for i in 0..STREAMS {
+            let side = &sides[i % 2];
+            let s = side.call("api.start", json!({"launch": launch}));
+            let s = s.as_str().unwrap().to_owned();
             assert_eq!(s.len(), 32, "{s}");
+            streams.push((side, s));
         }
         let before = rig.host().test_stats();
         let started = Instant::now();
         let marks: Vec<Marks> = std::thread::scope(|scope| {
             let jobs: Vec<_> = streams
                 .iter()
-                .map(|s| {
-                    let rig = &rig;
-                    scope.spawn(move || one(rig, s))
-                })
+                .map(|(side, s)| scope.spawn(move || one(side, s)))
                 .collect();
             jobs.into_iter().map(|j| j.join().unwrap()).collect()
         });
@@ -429,11 +448,11 @@ mod stage_b {
         );
         assert!(marks.iter().all(|m| m.bad == 0), "{marks:?}");
         assert!(marks.iter().all(|m| m.taken == SMALL + BIG), "{marks:?}");
-        assert!(col(|m| m.small_entries) <= 100.0);
-        assert!(col(|m| m.small_ask) <= 100.0);
+        assert!(col(|m| m.small_entries) <= 50.0);
+        assert!(col(|m| m.small_ask) <= 50.0);
         assert!(col(|m| m.answer) <= 50.0);
         assert!(col(|m| m.big_turn) <= 10_000.0);
-        assert!(col(|m| m.interrupt) <= 500.0);
+        assert!(col(|m| m.interrupt) <= 250.0);
         assert!(col(|m| m.cancel) <= 250.0);
         // The consumer fixture writes one small tally per batch; the host writes nothing.
         assert!(busy <= 0.10, "writer busy {busy}");
