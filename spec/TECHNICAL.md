@@ -402,9 +402,11 @@ Step 11 is designed (W38, W39; S95): the interfaces, streams, the launch of
 `host/TECHNICAL.md` 19 (host stages A1 to A5); the grants in
 `pkg/TECHNICAL.md` 4.5, 5.1 and 7.2; the fakes in `dev/TECHNICAL.md` 18; Sign
 in with ChatGPT, the consent words, the `claude` setting and the judge key in
-`app/TECHNICAL.md` 19 (app stage L). Left open until the human answers (host
-18): `caller.boot()` (B1), the `outcome` of `ask-resolved {by: answered}` and the
-host-item rules of agentic-harness 4.5. The kernel and the providers are
+`app/TECHNICAL.md` 19 (app stage L). Answered by the human on 2026-11-21 (host
+18, Q34 to Q36): restart detection is the interface `host-info` with
+`generation()` (host 19.1), `ask-resolved {by: answered}` carries `outcome`, and
+the host-item rules of agentic-harness 4.5 (`ask-resolved`, `wrapped`) are in
+host 19.3. The kernel and the providers are
 specified and built in agentic-harness. J11 lives in `app/tests/`. It comes
 before the factory (step 6) in the order of work, and numbers 11 only
 because steps 7 to 10 were named first.

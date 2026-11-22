@@ -486,3 +486,15 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   new `open(["t"])` asks with `functions` `["tool_api_a"]`. Likewise, with the
   first `tool` installed, when the participant grants it `Manage` (no update), the stored list
   becomes `[]` and `tool_api_a` is `unknown-tool` until a new consent.
+- **S69 A stream ends while deferred** (HOST-F-59; agentic-harness S32, R7;
+  built by stage A2, no test covers it before: today only a producer's
+  `close` delivers the items that are queued before `ended`). Given `relay` in
+  mode `defer` and a host stream from the test source, with `"a"` held as
+  deferred batch `[1]` and `"b"` queued behind it. When the stream ends
+  (the producer closes it, or any other outcome, for example `cancelled`), then
+  `relay` gets no `ended` yet and no further `items`; when `relay`'s
+  `mode("taken")` and `resume(s)` run, the deliveries are `[1,2]` taken,
+  `received` is `["a","b"]`, and only then `relay`'s `ended` line is
+  `<s> <outcome>`. A consumer that never calls `resume` gets `ended` after the
+  5 minutes of S49 (the test clock advanced), and the items count against the
+  budgets of S51 until delivered.
