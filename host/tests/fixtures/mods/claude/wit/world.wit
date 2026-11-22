@@ -12,6 +12,10 @@ interface api {
   ended: func() -> list<string>;
   generation: func() -> u64;
   who: func() -> string;
+  start-hand-off: func(launch: string) -> string;
+  start-say-hand-off: func(launch: string, text: string) -> string;
+  start-cancel: func(launch: string) -> string;
+  start-hand-off-fail: func(launch: string);
 }
 world claude {
   import watane:host/state@0.1.0;

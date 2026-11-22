@@ -104,6 +104,38 @@ impl exports::mods::claude::api::Guest for Guest {
     fn generation() -> u64 {
         host_info::generation()
     }
+    fn start_hand_off(launch: String) -> String {
+        match claude_code::start(&launch) {
+            Ok(s) => match streams::hand_off(&s) {
+                Ok(()) => s,
+                Err(e) => format!("hand-off:{e:?}"),
+            },
+            Err(e) => start_error(e),
+        }
+    }
+    fn start_say_hand_off(launch: String, text: String) -> String {
+        let Ok(s) = claude_code::start(&launch) else {
+            return "start failed".into();
+        };
+        let said = session(claude_session::say(&s, &text));
+        let handed = streams::hand_off(&s).map_or_else(|e| format!("{e:?}"), |()| "ok".into());
+        let late = session(claude_session::say(&s, "late"));
+        format!("{s} {said} {handed} {late}")
+    }
+    fn start_cancel(launch: String) -> String {
+        match claude_code::start(&launch) {
+            Ok(s) => {
+                streams::cancel(&s);
+                s
+            }
+            Err(e) => start_error(e),
+        }
+    }
+    fn start_hand_off_fail(launch: String) {
+        let s = claude_code::start(&launch).unwrap();
+        let _ = streams::hand_off(&s);
+        panic!("failed after hand-off");
+    }
     fn who() -> String {
         caller::identity()
     }
