@@ -444,7 +444,8 @@ in `Outcome.value`.
 ```
 
 `host` never reads or writes the four reserved names, and never creates
-another name. A preview home has none of them (W5).
+another name. A preview home has none of them (W5); it does have `state/`,
+which `Host::open` creates (3.1 step 6).
 
 `default_home()`: `$WATANE_HOME` if set and not empty, else
 `$HOME/.watane`. It does not create the directory.
@@ -464,6 +465,8 @@ another name. A preview home has none of them (W5).
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
 5. Start the epoch ticker (section 6.3).
+6. Step 11 (A2): raise `generation` in the `host` table of state by one
+   (19.1, 7). This creates `state/state.redb` at every open, a preview's too.
 
 ### 3.2 Local name grammar
 

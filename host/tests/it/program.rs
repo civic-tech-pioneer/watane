@@ -242,7 +242,8 @@ fn ac1_preview_creates_home_and_reports_ready() {
                 "watane":1,"pid":preview.child.id(),"port":preview.ready.port,"mode":"preview"
             })
         );
-        for reserved in ["state", "log", "dist", "app", "toolsets.json"] {
+        assert!(home.join("state/state.redb").is_file());
+        for reserved in ["log", "dist", "app", "toolsets.json"] {
             assert!(!home.join(reserved).exists());
         }
         preview.stop();

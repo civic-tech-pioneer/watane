@@ -54,21 +54,25 @@ async fn ac13_a_preview_with_fake_claude_runs_it_for_a_claude_code_start() {
         ],
     );
     let client = preview.client("claude.localhost", "127.0.0.1");
-    let url = format!("http://claude.localhost:{}/call", preview.ready.port);
+    let origin = format!("http://claude.localhost:{}", preview.ready.port);
+    let url = format!("{origin}/call");
     let call = |function: &str, args: Value| {
         let client = client.clone();
         let url = url.clone();
         let function = function.to_owned();
+        let origin = origin.clone();
         async move {
-            let r: Value = client
+            let response = client
                 .post(url)
+                .header("Origin", origin)
                 .json(&json!({"fn": function, "args": args}))
                 .send()
                 .await
-                .unwrap()
-                .json()
-                .await
                 .unwrap();
+            let status = response.status();
+            let body = response.text().await.unwrap();
+            assert_eq!(status, 200, "{function}: {body}");
+            let r: Value = serde_json::from_str(&body).unwrap();
             r["value"].clone()
         }
     };
