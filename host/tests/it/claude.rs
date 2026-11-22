@@ -1196,3 +1196,38 @@ fn ac5_a_say_on_another_id_than_the_stream_of_the_chain_is_unknown_stream() {
         "{answer}"
     );
 }
+
+/// Adversary S99 (third pass): a `say` made in the chain of its `claude-code.start` reaches
+/// stdin before the process has answered `initialize` (s99-fix3 AC5: "the say of AC2 reaches
+/// stdin only after the process has answered initialize"). This fake reads a second line before
+/// it answers: it gets one only when the host wrote past the answer it has not seen yet.
+#[test]
+fn adv_s99_say_in_the_start_chain_reaches_stdin_before_the_answer_to_initialize() {
+    let rig = Rig::new(&[]);
+    rig.put(
+        "claude",
+        br#"#!/bin/sh
+dir=$(dirname "$0")
+log="$dir/claude.log"
+if [ "$1" = "--version" ]; then echo "2.1.295 (Claude Code)"; exit 0; fi
+printf 'PID %s\n' "$$" >> "$log"
+IFS= read -r line
+printf 'IN %s\n' "$line" >> "$log"
+rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+IFS= read -r early
+printf 'EARLY %s\n' "$early" >> "$log"
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"hook_on_failure_supported":true}}}\n' "$rid"
+cat "$dir/init"
+while IFS= read -r line; do printf 'IN %s\n' "$line" >> "$log"; done
+"#,
+    );
+    let answer = rig.front("api.run-say", json!({"launch": LAUNCH, "text": "early"}));
+    assert!(answer.as_str().unwrap().ends_with(" ok"), "{answer}");
+    rig.wait_log("the process", |l| l.iter().any(|e| e.starts_with("IN ")));
+    std::thread::sleep(Duration::from_secs(2));
+    let early = rig.entries("EARLY");
+    assert!(
+        early.is_empty(),
+        "written to stdin before the answer to initialize: {early:?}"
+    );
+}
