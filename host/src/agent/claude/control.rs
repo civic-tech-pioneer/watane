@@ -107,6 +107,19 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
     }
 }
 
+/// Whether a line, as `classify` made it, is a control line that `claude` wrote: a
+/// `control_request` or `control_response` object, not wrapped.
+pub(crate) fn is_control(raw: &[u8], line: &Line) -> bool {
+    match line {
+        Line::Deny { .. } | Line::Response { .. } => true,
+        Line::Item(body) if body == raw => serde_json::from_slice::<Value>(raw)
+            .ok()
+            .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
+            .is_some_and(|t| t == "control_request" || t == "control_response"),
+        _ => false,
+    }
+}
+
 // ---- what the host writes (19.3, step 5 and Wire shapes) ---------------------------------
 
 pub(crate) fn initialize(request_id: &str) -> Vec<u8> {

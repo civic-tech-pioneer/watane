@@ -921,3 +921,22 @@ fn adv_s99_a_start_in_its_version_probe_makes_a_scratch_folder_after_the_owners_
         "{s}: scratch folders after the remove: {left:?}"
     );
 }
+
+#[test]
+fn ac3_a_non_utf8_or_duplicate_key_init_line_ends_mismatch_init() {
+    let dup = format!(
+        r#"{{"type":"system","subtype":"init","tools":[],"tools":["Bash"],"mcp_servers":[],"agents":[],"permissionMode":"default","plugins":[]}}{}"#,
+        "\n"
+    );
+    let mut non_utf8 = INIT
+        .replace(r#""plugins""#, "\"plugins\u{1}\"")
+        .into_bytes();
+    non_utf8.extend_from_slice(b"\xff\n");
+    for init in [dup.into_bytes(), non_utf8] {
+        let rig = Rig::new(&[("init", &init), ("spawn", b"")]);
+        let s = rig.start_ok(LAUNCH);
+        assert_eq!(rig.wait_ended(1), [format!("{s} mismatch(init)")]);
+        let pid: i32 = rig.entries("PID")[0].parse().unwrap();
+        wait("the group to die", Duration::from_secs(10), || !alive(pid));
+    }
+}

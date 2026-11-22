@@ -425,6 +425,14 @@ fn rules(field: &str, v: &Value, kind: Kind, allow: bool) -> Result<Vec<String>,
                         ),
                     );
                 }
+                Some(a) if a.is_empty() || a == "*" => {
+                    return bad(
+                        field,
+                        format!(
+                            "`{name}({a})` is read as the bare `{name}`, which allows every path: use `{name}(**)` for the workspace"
+                        ),
+                    );
+                }
                 Some(a) if !relative_pattern(a) => {
                     return bad(
                         field,
