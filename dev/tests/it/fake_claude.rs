@@ -520,70 +520,18 @@ impl Drop for Serve {
 }
 
 #[test]
-fn ac7_serve_links_the_fake_writes_the_script_and_passes_the_flag() {
+#[ignore = "slow: full serve pipeline: the spawned host gets --fake-claude"]
+fn ac7_serve_passes_the_flag_to_the_host() {
     let s = Serve::new();
     let v = s.serve(None);
     let p = Serve::preview(&v);
     let link = p.join("claude/fake-claude");
-    assert!(link.is_file());
-    assert_eq!(
-        fs::read_to_string(p.join("claude/fake-claude.json")).unwrap(),
-        DEFAULT
-    );
     let home = v["result"]["home"].as_str().unwrap();
     assert_eq!(
         Serve::started_with(&v),
         ["--preview", home, "--fake-claude", link.to_str().unwrap()]
     );
     assert!(v["warnings"].as_array().is_none_or(Vec::is_empty), "{v}");
-    // The maker's script is kept at the next serve.
-    fs::write(p.join("claude/fake-claude.json"), r#"{"steps":[]}"#).unwrap();
-    s.serve(None);
-    assert_eq!(
-        fs::read_to_string(p.join("claude/fake-claude.json")).unwrap(),
-        r#"{"steps":[]}"#
-    );
-}
-
-#[test]
-fn ac7_missing_fake_claude_warns_in_serve_and_doctor_and_starts_without_the_flag() {
-    let s = Serve::new();
-    let v = s.serve(Some("/nonexistent/fake-claude"));
-    assert_eq!(v["warnings"][0]["code"], "preview.fake_claude_missing");
-    assert_eq!(Serve::started_with(&v).len(), 2);
-    assert!(!Serve::preview(&v).join("claude").exists());
-    let (_, d) = Serve::run_in(
-        s.root.path(),
-        &["doctor", "--json"],
-        Some("/nonexistent/fake-claude"),
-    );
-    assert!(d["result"]["fake_claude"].is_null());
-    let (_, d) = Serve::run_in(
-        s.root.path(),
-        &["doctor", "--json"],
-        Some(env!("CARGO_BIN_EXE_fake-claude")),
-    );
-    assert_eq!(
-        d["result"]["fake_claude"],
-        json!(
-            Path::new(env!("CARGO_BIN_EXE_fake-claude"))
-                .canonicalize()
-                .unwrap()
-        )
-    );
-    let (_, d) = Serve::run_in(
-        s.root.path(),
-        &["doctor", "--json"],
-        Some("/nonexistent/fake-claude"),
-    );
-    assert!(
-        d["warnings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|w| w["code"] == "preview.fake_claude_missing"),
-        "{d}"
-    );
 }
 
 const PROBE_WORLD: &str = include_str!("../fixtures/probe/world.wit");

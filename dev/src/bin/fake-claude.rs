@@ -6,6 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
@@ -38,6 +39,8 @@ const FORBIDDEN: [&str; 15] = [
 ];
 const SESSION: &str = "fake-session";
 
+/// Set by `hang`: the reader then reads, logs and checks nothing more (TECHNICAL 18.2).
+static HANGING: AtomicBool = AtomicBool::new(false);
 static LOG: Mutex<Option<File>> = Mutex::new(None);
 
 fn log(value: &Value) {
@@ -74,6 +77,9 @@ fn spawn_reader(mut input: impl BufRead + Send + 'static) -> Receiver<Value> {
         loop {
             let mut raw = Vec::new();
             if input.read_until(b'\n', &mut raw).unwrap_or(0) == 0 {
+                return;
+            }
+            if HANGING.load(Ordering::SeqCst) {
                 return;
             }
             let text = String::from_utf8_lossy(&raw).trim_end().to_owned();
@@ -278,9 +284,12 @@ impl Fake {
                     std::thread::park();
                 }
             }
-            "hang" => loop {
-                std::thread::park();
-            },
+            "hang" => {
+                HANGING.store(true, Ordering::SeqCst);
+                loop {
+                    std::thread::park();
+                }
+            }
             other => die(70, &format!("unknown step {other:?}")),
         }
     }

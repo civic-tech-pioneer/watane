@@ -64,7 +64,7 @@ publish = false
 [features]
 default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
-fake-claude = ["dep:claude-codes", "dep:rustls", "dep:rcgen"]   # step 11 (18.1): ships in the release
+fake-claude = ["dep:rustls", "dep:rcgen"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
 
 [dependencies]
 watane-pkg = { path = "../pkg" }
@@ -80,12 +80,12 @@ wasmtime = { version = "=48.0.10", default-features = false, features = ["compon
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 # step 11, feature `fake-claude` (18.1); versions are fixed by the stage 14 and 15 briefs
-claude-codes = { version = "=2.1.330", default-features = false, features = ["types"], optional = true }   # the version of the agentic-harness kernel; fake-claude's tests parse its lines with it
 rustls = { version = "*", optional = true }                       # the TLS server of scripted-responses
 rcgen = { version = "*", optional = true }                        # the test authority and its certificates
 
 [dev-dependencies]
 tempfile = "3.27"
+claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }   # the kernel's version: the oracle that parses every line of fake-claude (18.1)
 regex = "1"
 
 [[bin]]
@@ -2213,7 +2213,7 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 
 **app** (step 11): nothing; the fakes need no app.
 
-**Crates** (step 11): `claude-codes` with its types feature, for the stream-json types of `fake-claude` (agentic-harness TECHNICAL 13); for `ScriptedResponses`, a TLS server library and a test certificate generator, both only under the feature `fake-claude`, named by the stage D brief.
+**Crates** (step 11): `claude-codes` with its types feature, as a dev-dependency only: the tests of `fake-claude` parse its lines with the kernel's types (agentic-harness TECHNICAL 13; 18.1); for `ScriptedResponses`, a TLS server library and a test certificate generator, both only under the feature `fake-claude`, named by the stage D brief.
 
 **log**, **dist**: nothing directly; through the home host only.
 
@@ -2343,7 +2343,10 @@ rules belong to 15.1.
 | DEV-S-61 | `scripted::ac5_trust_only_ca` | https client; planned: dev stage 15 |
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
-| DEV-S-64 | `serve::ac1_step11_links_fake_and_passes_flag`, `doctor::ac1_step11_fake_claude_field` | scripted `Runner`; planned: dev stage 14 |
+| DEV-S-64 | `preview::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `ac7_link_is_replaced_and_copied_where_linking_fails` | `<P>/claude/fake-claude` links the program, the default script of 18.4 is written once and a maker's script is kept, a link is replaced, and a copy is made where linking fails | temp folder; literal script |
+| `preview::tests::ac7_find_fake_claude_reads_the_variable` | `WATANE_FAKE_CLAUDE` names the program, or a missing file gives `preview.fake_claude_missing` with the message and fix of 2.2 | `env::with_vars`; literal JSON |
+| `preview::tests::ac7_spawn_arguments_with_and_without_the_fake` | the host's arguments are `--preview <home>`, then `--fake-claude <P>/claude/fake-claude` only when linked | literal argument vector |
+| `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | the full `serve` against `fake-watane` gives the host the flag | process; literal arguments |
 | DEV-S-65 | `scripted::ac9_program_line_and_log` | child process; planned: dev stage 15 |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -2549,7 +2552,7 @@ lines and bytes written in the test.
 | `fake_claude::ac7_exits_crash_hang` | `exit {code: 3}` exits 3 after flushing; `crash` ends by `SIGKILL`; `hang` writes nothing more until it is killed | child process |
 | `fake_claude::ac8_log_records_everything` | `fake-claude.log` holds the arguments, the environment variables and each stdin line, in order | file compared with literal lines |
 | `serve::ac1_step11_links_fake_and_passes_flag` | with a `fake-claude` beside the executable, `serve` links `<P>/claude/fake-claude`, writes the default script once, never overwrites a script that exists, and the spawn line holds `--fake-claude <P>/claude/fake-claude`; without one, the warning `preview.fake_claude_missing` is in `warnings`, the spawn line has no flag and `ok` stays true; `WATANE_FAKE_CLAUDE` set to a missing file gives the same warning | scripted `Runner` of the preview spawn; literal argument vector and JSON |
-| `doctor::ac1_step11_fake_claude_field` | `doctor --json` has `fake_claude` set when the program is found and `null` with the warning, and no error and no change of exit status, when it is not | literal JSON |
+| `doctor::tests::ac7_fake_claude_field_and_warning` | `doctor --json` has `fake_claude` set when found, and `null` with the warning `preview.fake_claude_missing` and no error when not | in-process; literal JSON |
 | `scripted::ac1_sse_and_usage` | an `Sse` reply with `Delta`, `ToolCalls(33)` and `Completed {input_tokens, output_tokens}` gives the lines of 18.3, one write each; `Failed {code: "usage_limit_reached"}` gives `response.failed`; `UsageLimit` gives status 429 with the body of a usage limit; `Cut` ends with no `response.completed` | https client; literal bytes |
 | `scripted::ac2_errors_redirect_reset_stall` | `Status 500`, `Status 429` with no usage body, `Redirect`, `Reset` and `Stall` act as written; the script is consumed in order and the last reply repeats | https client; literal statuses and timing |
 | `scripted::ac3_models_and_token` | `GET /v1/models` answers the slugs; another path or method is 404 and recorded; a wrong or missing token is 401 | https client; literal bodies |
