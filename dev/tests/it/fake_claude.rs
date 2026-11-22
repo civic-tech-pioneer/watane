@@ -379,9 +379,17 @@ fn ac6_hang_ignores_stdin_until_killed() {
     let f = Folder::new(r#"{"steps":[{"do":"hang"}]}"#);
     let mut s = f.start(&[]);
     s.initialize(false);
-    s.user("anyone?");
+    std::thread::sleep(Duration::from_millis(100));
+    // A line that a reading fake would refuse (exit 70): the hanging one reads and logs nothing.
+    let stray = json!({"type":"control_request","request_id":"p","request":{"subtype":"set_permission_mode","mode":"plan"}});
+    s.send(&stray);
     std::thread::sleep(Duration::from_millis(200));
     assert!(s.child.try_wait().unwrap().is_none());
+    assert!(
+        !f.log()
+            .iter()
+            .any(|l| l["stdin"] == stray.to_string().as_str())
+    );
     s.child.kill().unwrap();
 }
 
@@ -532,6 +540,16 @@ fn ac7_serve_passes_the_flag_to_the_host() {
         ["--preview", home, "--fake-claude", link.to_str().unwrap()]
     );
     assert!(v["warnings"].as_array().is_none_or(Vec::is_empty), "{v}");
+    // Without the program: the warning, and the host starts without the flag.
+    let dir = s.root.path().join("hello");
+    let (code, _) = Serve::run_in(&dir, &["serve", "--stop", "--json"], None);
+    assert_eq!(code, 0);
+    let v = s.serve(Some("/nonexistent/fake-claude"));
+    assert_eq!(
+        v["warnings"][0]["code"], "preview.fake_claude_missing",
+        "{v}"
+    );
+    assert_eq!(Serve::started_with(&v), ["--preview", home]);
 }
 
 const PROBE_WORLD: &str = include_str!("../fixtures/probe/world.wit");
