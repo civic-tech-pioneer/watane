@@ -547,3 +547,48 @@ impl Reading<'_> {
 pub(crate) fn shell_waits() -> Value {
     Job::failed(SHELL_WAITS)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Job, Launch, Session, Workspace};
+    use crate::{Host, Limits, Mode};
+    use serde_json::json;
+    use std::sync::Arc;
+
+    /// A start stopped while it made its scratch folder deletes that folder and its row, and
+    /// no other row of the owner (19.3, Folders, Lifetime).
+    #[test]
+    fn a_start_stopped_while_it_made_its_scratch_deletes_that_folder_and_row_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        host.state.scratch_add("kept", "owner").unwrap();
+        let session = Arc::new(Session::new("s".into(), "owner".into()));
+        session.stop();
+        let job = Job {
+            weak: Arc::downgrade(&host),
+            hub: Arc::clone(&host.hub),
+            session,
+            sessions: Arc::clone(&host.sessions),
+            launch: Arc::new(Launch {
+                workspace: Workspace::NewScratch,
+                extra: vec![],
+                flags: vec![],
+                tools: vec![],
+                agents: vec![],
+                init_mode: "default",
+                depth: 0,
+            }),
+            home: host.home().to_path_buf(),
+            mode: Mode::Preview,
+            fake: None,
+        };
+        assert_eq!(job.new_scratch().unwrap_err(), json!("gone"));
+        let left: Vec<_> = std::fs::read_dir(host.home().join("scratch"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.is_empty(), "scratch folders left: {left:?}");
+        assert_eq!(host.state.scratch_removed("owner").unwrap(), ["kept"]);
+    }
+}
