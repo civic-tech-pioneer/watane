@@ -2460,6 +2460,30 @@ blocks A1):
   row (it lives in memory today, so it needs a persisted install id);
   (c) keep. Recommended: (a). Cost to undo: one pass at start.
 
+
+Raised by S99's adversary (open; none blocks S99, which runs only in scratch
+workspaces; each blocks A3's picked folders):
+
+- **Q49** (open) The protected paths of 19.3 are relative rules, so Claude
+  Code anchors them at the working folder only: an `--add-dir` workspace gets
+  none, and `.git/**`, `.claude/**`, `.agents/**`, `.codex/**`, `.husky/**`
+  match only at the top (`sub/.git/hooks/x` can be written). Harmless in a
+  scratch workspace (`--restricted` loads nothing from it). Options: (a) one
+  rule set per workspace root, as absolute `//<root>/...` rules, and `**/`
+  forms for the folder patterns; (b) keep, and add nested folders to Not
+  protected. Recommended: (a). Cost to undo: deny lines only.
+- **Q50** (open) `session {resume | fork}` accepts any uuid; privacy rests on
+  Claude Code keeping transcripts per working folder. Two origin clients that
+  hold the same picked folder could resume each other's sessions. Options:
+  (a) the host keeps the session ids each origin client started (a table like
+  `scratch`) and refuses others `bad-launch {field: "session"}`; (b) accept it
+  with the folder consent's words. Recommended: (a). Cost to undo: one table
+  and one check.
+- **Q51** (open) The protected reads name each root by its canonical spelling
+  only; if `HOME` or the watane home is reached through a symlink, the
+  spelled path is not denied. Safe only if Claude Code matches the resolved
+  path (its rule matcher has an `asSpelledOnly` option, which suggests it
+  matches both). Folded into probe V29 (Q41). Cost to undo: deny lines only.
 ## 19. The agent layer (step 11)
 
 W38 (spec §7): a layer of mods runs on the host. The kernel `mods:agent` and
