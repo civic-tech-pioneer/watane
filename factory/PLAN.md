@@ -1181,6 +1181,7 @@ names the same interface in its sketch and fakes it until this one merges.
   `claude` (scripted stream-json, 16 of agentic-harness). Interface: the `watane:host@0.1.0` H2 and
   `host-info` additions of agentic-harness TECHNICAL 2.1 as host 19 states them. Done when the story
   passes with S35's kernel. Touches: host, dev, pkg. Boundary: W39 (adversary). Cloud.
+- [~] **S101 (upkeep, cloud, routine `trig_01HEyZRTMir1EQSfMN8pKuw5`) A preview starts in a container without IPv6.** Bob's cloud agent runs `watane --preview` / `watane-dev serve` in a Linux container whose kernel has no IPv6, and the preview starts on 127.0.0.1 instead of refusing. host TECHNICAL 8.1: when binding `[::1]:<port>` fails with `AddrNotAvailable` (the machine has no `::1`; nobody else can bind it either), serve `127.0.0.1:<port>` alone and say so in the ready line or log; every other `[::1]` failure (in use, permission) stays `port_in_use`, and the 8-try clash loop for port 0 is unchanged. Tests: the error-kind decision as a unit test (AddrNotAvailable → v4 only; AddrInUse → port_in_use), plus the preview and serve tests that need IPv6 now running in the cloud container. Protects: host 8.1, no 14 check changes. Touches: `host/src/server.rs`, `host/TECHNICAL.md` 8.1, its tests. No adversary beyond the validator's look at the in-use branch.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -1277,9 +1278,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
-- (guard, 3 cloud runs: S96, S97, agentic-harness S32) The host refuses to start without an IPv6 loopback
-  (`host/src/server.rs:76`); cloud containers have none, so each cloud slice patches it by hand. Rec: serve on
-  127.0.0.1 alone when `[::1]` cannot bind (a host TECHNICAL line + one test). Next upkeep slice, or S99 if it fits.
+- (guard, 4 cloud runs: S96, S97, S99, agentic-harness S32) The host refuses to start without an IPv6 loopback
+  (`host/src/server.rs:76`); cloud containers have none, so each cloud slice patches it by hand. Now S101 (Slices).
 - A watane release with host 19 (past v0.1.0), so agentic-harness CI's watane-dev can link the kernel's world.
 - S96 Q47: `remove` waits for a busy mod's call lock with no deadline while every install waits behind it.
 - S96 Q48: no startup sweep of timer rows left by a crash between `remove`'s catalog save and its timer rewrite.
