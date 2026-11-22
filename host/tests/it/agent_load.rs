@@ -166,7 +166,7 @@ static LOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[ignore = "slow: stage A budgets and V8"]
 fn ac13_stage_a_budgets_and_v8() {
     // Lock before building the runtime, so no worker blocks on it.
-    let _serial = LOAD.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = LOAD.lock().unwrap();
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -406,7 +406,7 @@ mod stage_b {
     #[test]
     #[ignore = "slow: the stage B host budgets, 8 streams of 10 010 entries"]
     fn ac9_stage_b_host_budgets() {
-        let _serial = super::LOAD.lock().unwrap_or_else(|e| e.into_inner());
+        let _serial = super::LOAD.lock().unwrap();
         let launch = r#"{"version":1,"workspace":"scratch","ask":true,"tools":["Read"]}"#;
         let rig = Rig::new(&[]);
         let turn1 = can_use("r@P@a", "t@P@a") + "\n" + &entries(1, SMALL);
