@@ -28,3 +28,8 @@ platforms = [
 
 # Build scripts and proc macros get the same features too, so `-p` builds share them.
 unify-target-host = "replicate-target-on-host"
+
+# chrono comes only through dev-dependencies (claude-codes, dev's test oracle, S99) and is
+# unmaintained (RUSTSEC-2026-0543); unified, it would become a normal dependency that cargo deny refuses.
+[final-excludes]
+third-party = [{ name = "chrono" }]
