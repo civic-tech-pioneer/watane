@@ -281,3 +281,91 @@ mod tests {
         assert!(!refused_in(&f, "Glob", json!({"pattern": "src/**/*.rs"})));
     }
 }
+
+/// Adversary step of S100 (red): allows that pass the third rule but that `claude` reads
+/// outside the workspaces.
+#[cfg(test)]
+mod adv_s100 {
+    use super::*;
+    use serde_json::json;
+    use std::os::unix::fs::symlink;
+
+    fn setup() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let work = base.join("work");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret"), "s").unwrap();
+        (dir, work, outside)
+    }
+
+    /// `claude`'s `expandPath` trims the path before it resolves it: ` /etc/passwd` is read
+    /// as `/etc/passwd`, but the host joins it to the working folder as a relative name.
+    #[test]
+    fn adv_s100_path_with_leading_space_is_read_as_absolute() {
+        let (_d, work, outside) = setup();
+        let roots = std::slice::from_ref(&work);
+        let secret = format!(" {}", outside.join("secret").display());
+        for path in [secret.as_str(), " /etc/passwd", "\t~/.bash_history"] {
+            assert!(
+                refused("Read", &json!({ "file_path": path }), &work, roots),
+                "{path:?} passes the host, and claude trims it to a path outside"
+            );
+        }
+    }
+
+    /// `claude` NFC-normalizes the path it opens; the host stats the bytes as given. A link
+    /// named in NFC (a picked folder may hold one) is missed when the path names it in NFD.
+    #[test]
+    fn adv_s100_nfd_path_misses_an_nfc_link_out() {
+        let (_d, work, outside) = setup();
+        symlink(outside.join("secret"), work.join("caf\u{e9}")).unwrap();
+        let roots = std::slice::from_ref(&work);
+        assert!(refused(
+            "Read",
+            &json!({"file_path": "caf\u{e9}"}),
+            &work,
+            roots
+        ));
+        assert!(
+            refused("Read", &json!({"file_path": "cafe\u{301}"}), &work, roots),
+            "the NFD name passes the host; claude opens the NFC link to the outside file"
+        );
+    }
+
+    /// `claude`'s Grep splits `glob` on white space and on commas (outside braces) into
+    /// several globs; the host checks the whole text, so a second glob may climb or be
+    /// absolute.
+    #[test]
+    fn adv_s100_grep_glob_list_hides_a_climb() {
+        let (_d, work, _o) = setup();
+        let roots = std::slice::from_ref(&work);
+        for glob in [
+            "*.rs ../outside/*",
+            "*.rs,../outside/*",
+            "*.rs /etc/*",
+            "*.rs,~/x",
+        ] {
+            assert!(
+                refused("Grep", &json!({"pattern": "x", "glob": glob}), &work, roots),
+                "{glob:?} passes the host; claude reads a second glob that leaves"
+            );
+        }
+    }
+
+    /// A brace alternative expands to a pattern that starts with `/` or `~` or climbs; the
+    /// host only looks at the first character and the `/`-separated segments.
+    #[test]
+    fn adv_s100_glob_brace_hides_an_absolute_or_climbing_pattern() {
+        let (_d, work, _o) = setup();
+        let roots = std::slice::from_ref(&work);
+        for pattern in ["{/etc,x}/*", "{..,x}/outside/*", "{~,x}/.bash_history"] {
+            assert!(
+                refused("Glob", &json!({ "pattern": pattern }), &work, roots),
+                "{pattern:?} passes the host; the glob expands to one that leaves"
+            );
+        }
+    }
+}
