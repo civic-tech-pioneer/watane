@@ -108,15 +108,17 @@ pub(crate) fn classify(raw: &[u8]) -> Line {
 }
 
 /// Whether a line, as `classify` made it, is a control line that `claude` wrote: a
-/// `control_request` or `control_response` object, not wrapped.
-pub(crate) fn is_control(raw: &[u8], line: &Line) -> bool {
+/// `control_request` or `control_response` object (a wrapped line has the type `wrapped`).
+pub(crate) fn is_control(line: &Line) -> bool {
     match line {
         Line::Deny { .. } | Line::Response { .. } => true,
-        Line::Item(body) if body == raw => serde_json::from_slice::<Value>(raw)
-            .ok()
-            .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
-            .is_some_and(|t| t == "control_request" || t == "control_response"),
-        _ => false,
+        Line::Item(body) => serde_json::from_slice::<Value>(body).is_ok_and(|v| {
+            matches!(
+                v.get("type").and_then(Value::as_str),
+                Some("control_request" | "control_response")
+            )
+        }),
+        Line::Init(..) => false,
     }
 }
 
@@ -244,6 +246,35 @@ mod tests {
         assert!(item(b"[1]").contains("wrapped"));
         assert!(item(br#"{"type":"x","type":"y"}"#).contains("wrapped"));
         assert!(item(b"").contains("wrapped"));
+    }
+
+    #[test]
+    fn control_lines_are_control_and_wrapped_or_other_lines_are_not() {
+        for raw in [
+            &br#"{"type":"control_request","request_id":"1","request":{"subtype":"can_use_tool"}}"#
+                [..],
+            br#"{"type":"control_request","request_id":"1","request":{"subtype":"other"}}"#,
+            br#"{"type":"control_response","response":{"subtype":"success","request_id":"1"}}"#,
+            br#"{"type":"control_response","response":{}}"#,
+        ] {
+            assert!(
+                is_control(&classify(raw)),
+                "{}",
+                String::from_utf8_lossy(raw)
+            );
+        }
+        for raw in [
+            &br#"{"type":"control_request","type":"control_request"}"#[..],
+            br#"{"type":"assistant"}"#,
+            br#"{"type":"system","subtype":"init"}"#,
+            b"{\"type\":\"control_response\",\"x\":\"\xff\"}",
+        ] {
+            assert!(
+                !is_control(&classify(raw)),
+                "{}",
+                String::from_utf8_lossy(raw)
+            );
+        }
     }
 
     #[test]

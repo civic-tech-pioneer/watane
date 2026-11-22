@@ -232,3 +232,22 @@ fn adv_s99_file_allow_with_an_empty_or_star_argument_is_a_bare_name() {
         bad(&rig, "api.start", &text, "allow");
     }
 }
+
+#[test]
+fn ac1_s99_a_file_allow_with_a_relative_pattern_that_holds_a_star_is_kept() {
+    let rig = Rig::new(&[]);
+    for rule in [
+        "Read(**)",
+        "Write(*.rs)",
+        "Edit(src/*)",
+        "Glob(**/*)",
+        "Grep(**)",
+    ] {
+        let text = launch(json!({
+            "tools": ["Read", "Write", "Edit", "Glob", "Grep"],
+            "allow": [rule],
+        }));
+        let r = rig.call("api.start", json!({"launch": text}));
+        assert_eq!(r.as_str().unwrap().len(), 32, "{rule} gave {r}");
+    }
+}
