@@ -217,7 +217,6 @@ impl Fake {
                     answer_interrupt(&line);
                     return true;
                 }
-                Some(line) if self.consumed_answer(&line) => {}
                 Some(line) => self.queue.push_back(line),
                 None => return false,
             }
