@@ -38,6 +38,29 @@ fn ac1_the_harness_fake_returns_1() {
 }
 
 #[test]
+fn the_harness_fakes_return_s1_and_ok_and_record_the_claude_requests() {
+    // 19.1, Harness: `start` returns `s<n>`, a session function ok, each one a request.
+    let harness = Harness::open(&fixture("claude"), Default::default()).unwrap();
+    let start = harness
+        .call("api.start", json!({"launch": crate::claude::LAUNCH}))
+        .unwrap();
+    assert_eq!(start.value, json!("s1"));
+    let say = harness
+        .call("api.say", json!({"s": "s1", "text": "hello"}))
+        .unwrap();
+    assert_eq!(say.value, json!("ok"));
+    let record = |r: &watane_host::RequestRecord| json!([r.function, r.args]);
+    assert_eq!(
+        start.requests.iter().map(record).collect::<Vec<_>>(),
+        [json!(["claude-code.start", {"launch": crate::claude::LAUNCH}])]
+    );
+    assert_eq!(
+        say.requests.iter().map(record).collect::<Vec<_>>(),
+        [json!(["claude-session.say", {"s": "s1", "content": "hello"}])]
+    );
+}
+
+#[test]
 fn ac3_claude_code_without_its_grant_traps_not_granted() {
     let rig = Rig::new(&[]);
     let local = crate::streams::local("claude");

@@ -204,6 +204,24 @@ mod tests {
     }
 
     #[test]
+    fn every_host_item_type_is_wrapped() {
+        for kind in [
+            "ask",
+            "check",
+            "ask-resolved",
+            "initialized",
+            "wrapped",
+            "consent-pending",
+            "verdict",
+            "checking",
+        ] {
+            let line = format!(r#"{{"type":"{kind}"}}"#);
+            let v: Value = serde_json::from_str(&item(line.as_bytes())).unwrap();
+            assert_eq!(v, json!({"type": "wrapped", "line": line}), "{kind}");
+        }
+    }
+
+    #[test]
     fn invalid_utf8_a_second_object_and_a_duplicate_key_are_wrapped() {
         assert!(
             item(b"{\"a\":\"\xff\"}").contains("\\ufffd")
