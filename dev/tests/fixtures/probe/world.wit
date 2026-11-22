@@ -1,0 +1,15 @@
+package mods:probe@0.1.0;
+
+interface chat {
+  start: func() -> string;
+  say: func(text: string);
+  seen: func() -> list<string>;
+}
+
+world probe {
+  import watane:host/state@0.1.0;
+  import watane:host/claude-code@0.1.0;
+  import watane:host/claude-session@0.1.0;
+  export chat;
+  export watane:host/stream-sink@0.1.0;
+}

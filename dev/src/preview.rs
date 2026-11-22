@@ -50,13 +50,70 @@ pub fn find_watane() -> Result<PathBuf, Problem> {
     }
     Err(missing("beside watane-dev or on PATH".into()))
 }
+/// The program `fake-claude` (TECHNICAL 9.1); a missing one is the warning, never an error.
+pub fn find_fake_claude() -> Result<PathBuf, Problem> {
+    let executable = |p: &Path| {
+        fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    let missing = |where_: String| {
+        Problem::new(
+            Code::PreviewFakeClaudeMissing,
+            format!("the program fake-claude was not found ({where_}); a preview cannot start Claude Code"),
+        )
+        .fix("Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program")
+    };
+    if let Some(p) = crate::env::var_os("WATANE_FAKE_CLAUDE") {
+        let p = PathBuf::from(p);
+        return if executable(&p) {
+            p.canonicalize().map_err(Problem::internal)
+        } else {
+            Err(missing(p.display().to_string()))
+        };
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let p = exe.with_file_name("fake-claude");
+        if executable(&p) {
+            return Ok(p);
+        }
+    }
+    if let Some(paths) = crate::env::var_os("PATH") {
+        for path in std::env::split_paths(&paths) {
+            let p = path.join("fake-claude");
+            if executable(&p) {
+                return p.canonicalize().map_err(Problem::internal);
+            }
+        }
+    }
+    Err(missing("beside watane-dev or on PATH".into()))
+}
+const DEFAULT_SCRIPT: &str = r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#;
+/// Links the fake into `<P>/claude/` (a copy where links fail), keeps the maker's script (TECHNICAL 18.4).
+fn link_fake_claude(folder: &Path, program: &Path) -> Result<PathBuf, Problem> {
+    let claude = folder.join("claude");
+    fs::create_dir_all(&claude).map_err(Problem::internal)?;
+    let link = claude.join("fake-claude");
+    let _ = fs::remove_file(&link);
+    if std::os::unix::fs::symlink(program, &link).is_err() {
+        fs::copy(program, &link).map_err(Problem::internal)?;
+    }
+    let script = claude.join("fake-claude.json");
+    if !script.exists() {
+        fs::write(&script, DEFAULT_SCRIPT).map_err(Problem::internal)?;
+    }
+    Ok(link)
+}
 fn folder(dir: &Path, env: &Env, slug: &str) -> PathBuf {
     let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
     env.cache
         .join("previews")
         .join(format!("{slug}-{}", &hash[..8]))
 }
-fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
+fn start(
+    home: &Path,
+    folder: &Path,
+    log: &Path,
+    fake_claude: Option<&Path>,
+) -> Result<Ready, Problem> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
     let stderr = fs::OpenOptions::new()
@@ -81,9 +138,12 @@ fn start(home: &Path, folder: &Path, log: &Path) -> Result<Ready, Problem> {
         )
         .fix(format!("Read {}", log.display()))
     };
-    let mut child = Command::new(binary)
-        .arg("--preview")
-        .arg(home)
+    let mut command = Command::new(binary);
+    command.arg("--preview").arg(home);
+    if let Some(fake) = fake_claude {
+        command.arg("--fake-claude").arg(fake);
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr)
@@ -184,6 +244,10 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
         let home = folder.join("home");
         let log = folder.join("watane.log");
         let (running, cached) = running_preview(&folder)?;
+        let fake_claude = match find_fake_claude() {
+            Ok(program) => Some(link_fake_claude(&folder, &program)?),
+            Err(_) => None,
+        };
         let reuse = cached.is_some();
         let mut ready = if let Some(ready) = cached {
             ready
@@ -191,7 +255,7 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
             if running.is_some() {
                 stop_home(&home)?;
             }
-            start(&home, &folder, &log)?
+            start(&home, &folder, &log, fake_claude.as_deref())?
         };
         let client = Client::for_home(&home)?
             .ok_or_else(|| {

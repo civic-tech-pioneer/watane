@@ -479,6 +479,11 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     match result {
         Ok(v) => {
             if name == "serve" {
+                if v.get("stopped").is_none()
+                    && let Err(warning) = preview::find_fake_claude()
+                {
+                    outcome.warnings.push(warning);
+                }
                 outcome.next = serve_next(&v, cli.json, &args);
             }
             outcome.result = Some(v);

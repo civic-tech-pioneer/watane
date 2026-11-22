@@ -236,6 +236,8 @@ mod tests {
         let guide = include_str!("../template/AGENTS.md");
         // TECHNICAL 4.1: at most 150 lines.
         assert!(guide.lines().count() <= 150);
+        assert!(guide.contains("commit `wit/deps/watane-host/host.wit`"));
+        assert!(guide.contains("`check` and `serve` rewrite it to the host's copy"));
         let sections: Vec<_> = guide
             .lines()
             .filter(|line| line.starts_with("## "))

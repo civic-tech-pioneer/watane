@@ -80,7 +80,7 @@ wasmtime = { version = "=48.0.10", default-features = false, features = ["compon
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 # step 11, feature `fake-claude` (18.1); versions are fixed by the stage 14 and 15 briefs
-claude-codes = { version = "*", default-features = false, features = ["types"], optional = true }   # stream-json types of fake-claude
+claude-codes = { version = "=2.1.330", default-features = false, features = ["types"], optional = true }   # the version of the agentic-harness kernel; fake-claude's tests parse its lines with it
 rustls = { version = "*", optional = true }                       # the TLS server of scripted-responses
 rcgen = { version = "*", optional = true }                        # the test authority and its certificates
 
@@ -719,7 +719,7 @@ After the replacement no `{{` may remain; a unit test checks this.
 | `.gitignore` | `logic.wasm` and `logic/target/` |
 | `mod.toml` | `template/mod.toml` |
 | `wit/world.wit` | `template/wit/world.wit` |
-| `wit/deps/watane-host/host.wit` | `watane_host::HOST_WIT`; dev's file, rewritten by every stage run when it differs (5.1 step 2) |
+| `wit/deps/watane-host/host.wit` | `watane_host::HOST_WIT`; dev's file, rewritten by every stage run when it differs (5.1 step 2); the template's AGENTS.md tells the maker to commit it |
 | `logic/Cargo.toml` | `template/logic/Cargo.toml.tmpl` (`.tmpl` keeps cargo away from it) |
 | `logic/src/lib.rs` | `template/logic/src/lib.rs` |
 | `ui/index.html` | `template/ui/index.html` |
@@ -2415,7 +2415,9 @@ S39 recovery proofs (default suite unless marked):
 ### 15.3 The fake host (`src/bin/fake-watane.rs`, feature `fake-host`)
 
 Arguments `--preview <dir>` (run a fake preview host) or `--home <dir>`
-(run a fake home host with app consent). `--help` and `-h` print usage
+(run a fake home host with app consent); `--preview <dir>` may be followed by
+`--fake-claude <program>` (S99). It writes the arguments it was started with,
+as a JSON array of strings, to `<dir>/args.json`. `--help` and `-h` print usage
 with both arguments and their purposes, then exit 0. Wrong arguments
 print usage and exit non-zero. `install::fake::ac2_fake_help_and_wrong_arguments`
 proves both help flags and invalid invocations. It listens on
@@ -2698,7 +2700,9 @@ because a maker's preview starts `fake-claude` (18.4, F-MAKE-4). They hold
 no credential: `fake-claude` opens no socket, and `scripted-responses` only
 `127.0.0.1` (DEV-F-5). `fake-claude` uses the `claude-codes` types for its
 lines (agentic-harness TECHNICAL 13), so that it and the host read one
-shape. The `install/` subsystem packs them (question 14).
+shape: the program builds each line as a `serde_json` value, and its tests
+parse every line with the crate's `ClaudeOutput` (S99), so a shape the
+crate does not read fails there. The `install/` subsystem packs them (question 14).
 
 ### 18.2 `fake-claude`
 
@@ -2725,7 +2729,9 @@ exits with status 64 and names the argument on standard error. It writes
 everything it receives to `fake-claude.log` beside the script: one JSON line
 for the arguments, for each variable of its environment, and for each line
 read from standard input, in order, so a test checks what the host wrote and
-that it wrote nothing else.
+that it wrote nothing else. The lines are `{"args":[...]}`, `{"env":{"NAME":"value"}}`, `{"stdin":"<line>"}`, and
+`{"error":"<why>"}` before an exit of 64 or 70. The program finds its script and log by
+the path it was started with (`argv[0]`), so a link keeps them beside the link.
 
 **Protocol.** It speaks stream-json on standard input and output, and the
 control protocol, as `claude` does:

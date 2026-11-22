@@ -36,3 +36,8 @@ and `logic.wasm` into `ratings/`. It exports `api.get`, `api.add` and
 (exports `mods:menu/menu`, `ask` returns `["a"]`) are copies of the host's `menu` and `item-a`
 fixtures with their committed `logic.wasm` (`item` renamed from `item-a` in `mod.toml` and
 `wit/world.wit`; the component names no own package); rebuild them from `../../host/tests/fixtures/build.sh`.
+
+`probe/` (`world.wit`, `lib.rs`) is the logic of the slow S99 test
+`fake_claude::ac9_...`: a mod that starts Claude Code, says what the page
+tells it, and keeps what its stream delivers. The test writes it into a new mod
+named `hello` (the word `probe` becomes the slug).

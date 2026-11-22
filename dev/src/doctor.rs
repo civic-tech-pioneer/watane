@@ -49,6 +49,13 @@ pub fn doctor(dir: &Path) -> Outcome {
             Value::Null
         }
     };
+    let fake_claude = match preview::find_fake_claude() {
+        Ok(path) => json!(path),
+        Err(warning) => {
+            outcome.warnings.push(warning);
+            Value::Null
+        }
+    };
     let home = match watane_host::default_home() {
         Ok(path) => {
             let status = Client::home_status(&path);
@@ -61,7 +68,7 @@ pub fn doctor(dir: &Path) -> Outcome {
         }
     };
     outcome.result = Some(json!({"toolchain":toolchain,"allowlist":allowlist,
-        "watane":watane,"home":home}));
+        "watane":watane,"fake_claude":fake_claude,"home":home}));
     outcome.next = Some(doctor_next(dir, errors.is_empty()).into());
     if errors.is_empty() {
         outcome
