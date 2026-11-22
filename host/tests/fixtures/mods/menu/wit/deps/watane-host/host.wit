@@ -8,7 +8,7 @@ interface state {
   delete: func(key: string);
 }
 
-/// Who made the current call: "page", "agent:<handle>" or "mod:<local name>".
+/// Who made the current call: "page", "agent:<handle>", "mod:<local name>" or "host".
 interface caller {
   who: func() -> string;
   /// Step 11 (19.1): the caller's identity: "<publisher>/<slug>", "local/<slug>",
@@ -130,6 +130,12 @@ interface timers {                                   // no grant
   enum timer-error { too-many, bad-id, bad-delay }
   after: func(id: string, delay-ms: u64) -> result<_, timer-error>;
   cancel: func(id: string);
+}
+
+/// Step 11 (19.1): the host's start number, raised by one at each open and
+/// the same for every call until the next. A pure read, no grant.
+interface host-info {
+  generation: func() -> u64;
 }
 
 // host-only exports: a mod exports them to receive; no page, tool or mod can call them

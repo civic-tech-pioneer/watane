@@ -1,0 +1,11 @@
+package mods:claude-b@0.1.0;
+interface api {
+  say: func(s: string, text: string) -> string;
+  generation: func() -> u64;
+}
+world claude-b {
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-session@0.1.0;
+  import watane:host/host-info@0.1.0;
+  export api;
+}

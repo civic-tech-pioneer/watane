@@ -12,7 +12,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use watane_pkg::Mod;
 
 /// The imports of step 11 (19.1) that a mod may hold, besides `streams` and `timers`.
-pub(super) const AGENT_IMPORTS: [&str; 8] = [
+pub(super) const AGENT_IMPORTS: [&str; 9] = [
     "watane:host/streams@0.1.0",
     "watane:host/timers@0.1.0",
     "watane:host/claude-types@0.1.0",
@@ -21,6 +21,7 @@ pub(super) const AGENT_IMPORTS: [&str; 8] = [
     "watane:host/claude-session@0.1.0",
     "watane:host/https-stream@0.1.0",
     "watane:host/agent-tools@0.1.0",
+    "watane:host/host-info@0.1.0",
 ];
 impl WasiView for Ctx {
     fn ctx(&mut self) -> WasiCtxView<'_> {
@@ -299,21 +300,31 @@ fn link_agent(
             interface.func_new(function, move |ctx, ty, values, results| {
                 let invocation = ctx.data().invocation.clone();
                 let value = match short.as_str() {
-                    "streams" | "timers" => {
+                    "streams" | "timers" | "claude-session" => {
+                        let who = ctx.data().who.clone();
+                        crate::agent::call(&invocation, &who, &short, &function_name, values)?
+                    }
+                    "host-info" => {
+                        // The harness fake returns 1 (19.1).
+                        let host = &invocation.chain.host;
+                        serde_json::json!(if invocation.chain.fakes.is_some() {
+                            1
+                        } else {
+                            host.generation
+                        })
+                    }
+                    "claude-code" | "claude-code-shell" => {
+                        let grant = if short == "claude-code" {
+                            watane_pkg::Grant::ClaudeCode
+                        } else {
+                            watane_pkg::Grant::ClaudeCodeShell
+                        };
+                        invocation.granted(&grant, &short)?;
                         let who = ctx.data().who.clone();
                         crate::agent::call(&invocation, &who, &short, &function_name, values)?
                     }
                     other => {
-                        // Not built yet (A2 to A4): a clear error at the call.
-                        match other {
-                            "claude-code" => {
-                                invocation.granted(&watane_pkg::Grant::ClaudeCode, other)?
-                            }
-                            "claude-code-shell" => {
-                                invocation.granted(&watane_pkg::Grant::ClaudeCodeShell, other)?;
-                            }
-                            _ => {}
-                        }
+                        // Not built yet (A3, A4): a clear error at the call.
                         return Err(CallError::internal(format!(
                             "watane:host/{other}.{function_name} is not available in this host yet"
                         ))
