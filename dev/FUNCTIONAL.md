@@ -27,6 +27,8 @@ test; `TECHNICAL.md` section 15 names its oracle.
 - **DEV-F-10** When a check passes, dev shall report the grants that the mod asks for, its exports, its imports and its events. Traces: F-MAKE-2, F-INST-1.
 - **DEV-F-11** If the logic part has a build script, a procedural macro, a cargo configuration, a toolchain file, a symbolic link, or a dependency outside the allowlist, then dev shall refuse the mod and name the item. Traces: F-MAKE-2, F-RUN-2.
 
+The file `wit/deps/watane-host/host.wit` is managed by watane-dev: `check`, `test` and `serve` rewrite it to match the running watane-dev, so commit the new copy when it changes.
+
 ### 2.3 Build
 
 - **DEV-F-12** dev shall build the logic part with no network access and only with the crates of the allowlist that ships with dev. Traces: F-MAKE-2, F-QUAL-1.

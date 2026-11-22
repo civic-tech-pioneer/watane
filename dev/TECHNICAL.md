@@ -719,7 +719,7 @@ After the replacement no `{{` may remain; a unit test checks this.
 | `.gitignore` | `logic.wasm` and `logic/target/` |
 | `mod.toml` | `template/mod.toml` |
 | `wit/world.wit` | `template/wit/world.wit` |
-| `wit/deps/watane-host/host.wit` | `watane_host::HOST_WIT` |
+| `wit/deps/watane-host/host.wit` | `watane_host::HOST_WIT`; dev's file, rewritten by every stage run when it differs (5.1 step 2) |
 | `logic/Cargo.toml` | `template/logic/Cargo.toml.tmpl` (`.tmpl` keeps cargo away from it) |
 | `logic/src/lib.rs` | `template/logic/src/lib.rs` |
 | `ui/index.html` | `template/ui/index.html` |
@@ -957,7 +957,11 @@ stage with an error.
 
 1. `<dir>/mod.toml` exists, else `usage.not_a_mod`.
 2. dev writes `wit/deps/watane-host/host.wit` when its bytes differ from
-   `watane_host::HOST_WIT`.
+   `watane_host::HOST_WIT`. This is on purpose: a mod must build against the
+   WIT of the host that runs it, so the file is dev's, not the maker's. A
+   rewrite means the mod's copy came from another watane-dev, and the maker
+   commits the new copy. dev touches only this file, never another file under
+   `wit/deps/`.
 3. **Files**: no symbolic link anywhere in the mod folder (`logic/target/`
    and `.git/` are skipped): `mod.symlink`. The files of `logic/`: 5.3.
 4. **pkg**: `watane_pkg::Mod::read(dir)`. Each `Violation` of
