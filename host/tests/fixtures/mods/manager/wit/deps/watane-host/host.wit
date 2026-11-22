@@ -8,7 +8,7 @@ interface state {
   delete: func(key: string);
 }
 
-/// Who made the current call: "page", "agent:<handle>", "mod:<local name>" or "host".
+/// Who made the current call: "page", "agent:<handle>" or "mod:<local name>".
 interface caller {
   who: func() -> string;
   /// Step 11 (19.1): the caller's identity: "<publisher>/<slug>", "local/<slug>",
