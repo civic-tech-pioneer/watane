@@ -91,13 +91,17 @@ fn inside(text: &str, cwd: &Path, roots: &[PathBuf], home: Option<&Path>) -> boo
 /// is trimmed by `claude`, and one not in NFC is normalized; the host resolves neither, so
 /// it refuses both.
 fn misread(path: &str) -> bool {
-    let space = |c: char| c.is_whitespace() || c == '\u{FEFF}';
     path.starts_with(space) || path.ends_with(space) || !is_nfc(path)
+}
+
+/// White space as JavaScript's `trim` and `\s` read it: Rust's set (which adds U+0085) and U+FEFF.
+fn space(c: char) -> bool {
+    c.is_whitespace() || c == '\u{FEFF}'
 }
 
 /// A glob that `claude` may split into several or expand with braces; refused whole.
 fn glob_ambiguous(pattern: &str) -> bool {
-    pattern.contains(['{', '}', ',']) || pattern.contains(|c: char| c.is_whitespace())
+    pattern.contains(['{', '}', ',']) || pattern.contains(space)
 }
 
 /// Whether a glob pattern could leave the workspace: absolute, home-relative, or with `..`.
@@ -140,7 +144,7 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
 }
 
 /// `refused` for an answer: the run folder `run` (one of `roots`) is read-only, so it counts
-/// for `Read`, `Glob` and `Grep` only (19.3).
+/// for `Read`, `Glob` and `Grep` only (19.3), also when a workspace holds it or a link leads in.
 pub(crate) fn refused_for_answer(
     tool: &str,
     input: &Value,
@@ -148,11 +152,24 @@ pub(crate) fn refused_for_answer(
     roots: &[PathBuf],
     run: &Path,
 ) -> bool {
-    if matches!(tool, "Edit" | "Write" | "NotebookEdit") {
-        let writable: Vec<PathBuf> = roots.iter().filter(|r| *r != run).cloned().collect();
-        return refused(tool, input, cwd, &writable);
-    }
     refused(tool, input, cwd, roots)
+        || matches!(tool, "Edit" | "Write" | "NotebookEdit") && reaches(input, cwd, run)
+}
+
+/// Whether a path input, as given or with its `..` removed first, resolves inside `run`.
+fn reaches(input: &Value, cwd: &Path, run: &Path) -> bool {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    ["file_path", "path", "notebook_path"]
+        .iter()
+        .filter_map(|key| input.get(*key)?.as_str())
+        .any(|text| {
+            expand(text, home.as_deref()).is_some_and(|path| {
+                let joined = cwd.join(path);
+                [lexical(&joined), joined].iter().any(|p| {
+                    resolve(p, Path::new("/"), &mut 0).is_some_and(|real| real.starts_with(run))
+                })
+            })
+        })
 }
 
 #[cfg(test)]
@@ -316,7 +333,7 @@ mod tests {
             );
         }
         assert!(!refused_in(&f, "Read", json!({"file_path": "caf\u{e9}"})));
-        for glob in ["{a,b}", "a}", "a,b", "a b", "a\tb"] {
+        for glob in ["{a,b}", "a}", "a,b", "a b", "a\tb", "a\u{feff}../b"] {
             assert!(refused_in(&f, "Glob", json!({"pattern": glob})), "{glob:?}");
             assert!(
                 refused_in(&f, "Grep", json!({"pattern": "x", "glob": glob})),
@@ -346,6 +363,27 @@ mod tests {
             json!({"pattern": "x", "path": run.display().to_string()})
         ));
         assert!(!check("Write", json!({"file_path": "new.txt"})));
+        // A link from a workspace into the run folder, and a run folder a workspace holds.
+        symlink(&run, f.work.join("r")).unwrap();
+        assert!(check(
+            "Edit",
+            json!({"file_path": "r/watane-run/skills/x/SKILL.md"})
+        ));
+        assert!(!check(
+            "Read",
+            json!({"file_path": "r/watane-run/skills/x/SKILL.md"})
+        ));
+        let held = f.work.join("home/runs/1/watane-run");
+        std::fs::create_dir_all(held.join("skills/x")).unwrap();
+        let roots = [f.work.clone(), held.clone()];
+        let skill = held.join("skills/x/SKILL.md").display().to_string();
+        assert!(refused_for_answer(
+            "Write",
+            &json!({"file_path": skill}),
+            &f.work,
+            &roots,
+            &held
+        ));
     }
 
     #[test]
