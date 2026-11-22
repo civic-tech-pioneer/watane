@@ -147,6 +147,19 @@ impl State {
         txn.commit().map_err(CallError::internal)?;
         Ok(())
     }
+    /// Deletes the row of one scratch workspace (19.3, Folders, Lifetime).
+    pub fn scratch_delete(&self, id: &str) -> Result<(), CallError> {
+        let Some(db) = self.database(false)? else {
+            return Ok(());
+        };
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        txn.open_table(SCRATCH)
+            .map_err(CallError::internal)?
+            .remove(id)
+            .map_err(CallError::internal)?;
+        txn.commit().map_err(CallError::internal)?;
+        Ok(())
+    }
     /// Deletes the rows of the scratch workspaces that `identity` owns and returns their ids
     /// (4.4, remove).
     pub fn scratch_removed(&self, identity: &str) -> Result<Vec<String>, CallError> {
