@@ -723,6 +723,10 @@ fn s100_ac3_reply_per_say() {
         assert_eq!(parsed(&s)["type"], "result");
         assert_eq!(s.line()["state"], "idle");
     }
+    // `turns` bounds it: a third message gets no reply and the program ends cleanly.
+    s.user("c");
+    assert_eq!(s.status(), 0);
+    s.rx.recv_timeout(Duration::from_secs(1)).unwrap_err();
 }
 
 #[test]
@@ -813,7 +817,9 @@ fn s100_ac4_interrupt_in_place_of_the_answer() {
     parsed(&s);
     interrupt(&mut s, "i2");
     assert_eq!(s.line(), interrupt_answer("i2"));
-    assert_eq!(parsed(&s)["type"], "result");
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "error_during_execution");
     assert_eq!(s.line()["state"], "idle");
     s.user("go");
     assert_eq!(text_of(&parsed(&s)), "next");
