@@ -1147,7 +1147,16 @@ names the same interface in its sketch and fakes it until this one merges.
   test corrupts exactly `dist/packages/<id>`, not a same-size temporary. Windows: the build.rs panic was the
   missing `app/icons/icon.ico` (added); Windows now stops in `watane-log` (`std::os::unix` file modes, 13 errors,
   Verification boundary: its own slice if ever wanted). No user-sim (CI state) or adversary (no boundary). 4.5 h.
-- [~] **S97 (routine `trig_01AYz5xREjDp9cnjUabKdpJP`, cloud) The human's answers to Q34 to Q36 in the contracts.** After S96 (same host/TECHNICAL).
+- [x] **S97 The human's answers to Q34 to Q36 in the contracts.** Delivered 2026-11-22 through PR #11, merged by
+  the PO with `--admin` (routine `trig_01AYz5xREjDp9cnjUabKdpJP`, ~1.5 h). S99's foreman finds `host-info.generation()`,
+  `ask-resolved {by: answered{outcome} | expired | cancelled}`, `wrapped` claude lines, R7 (producer-side ends only:
+  held items delivered before `ended`; consumer ends, `gone`, `lagging` and the backstop drop them, keeping
+  HOST-F-68), the `connection` replaced message (prose under 8.5; S99 changes `watane.js`) and dev's `host.wit`
+  rewrite as intended. User-sim ACCEPTED after two wording fixes; no adversary (docs only). For S99: the `caller`
+  doc comment lists `host`; `watane-dev check` rewrites `host.wit` silently and the template's AGENTS.md does not
+  say to commit it; whether `idle-s` runs while a deferred stream is not reading; stdin on `cancelled`; `changed`
+  fires before the new `connection` after a reconnect. Friction: no IPv6 in the cloud (74 host tests fail there).
+  Implementer runs 1/2/1 (Claude stand-in). Original sketch:
   The human decided (2026-11-21): restart detection is a new interface `host-info` with
   `generation()` (in place of `caller.boot()`, Q34); `answered` carries `outcome` (Q35); the host
   closes a check with `ask-resolved {by: expired}` at its `expires-at`, and the 4.5 host-item rules
@@ -1593,6 +1602,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+- 2026-11-22 (the human's answer) Auto-merge is retired: the `codex-push` rulesets (watane 27841000,
+  agentic-harness 27841001: only `slice/*` without bypass, for the Codex push App) block it, so the PO merges
+  each green PR with `gh pr merge <n> --admin --rebase`. Foremen open their PR and do not arm it.
+- 2026-11-22 Main went red on RUSTSEC-2026-0592 (`url` 2.5.8): the PO bumped `url` to 2.5.9 (PR #12).
 - S96 (2026-11-22): Q46 confirmed: a mod stream depends on the consumer's `Call` grant and the link `open`
   ran through; a side disabled and enabled again while an `open` is in flight keeps the stream (host
   19.2). Q47 and Q48 are fixes, not questions: they go to Leftovers for the next upkeep slice.
