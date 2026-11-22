@@ -105,4 +105,34 @@ mod tests {
             "Run each error's fix, then run: watane-dev doctor --json"
         );
     }
+
+    #[test]
+    fn ac7_fake_claude_field_and_warning() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("nope");
+        let outcome =
+            crate::env::with_vars(&[("WATANE_FAKE_CLAUDE", Some(missing.as_os_str()))], || {
+                doctor(temp.path())
+            });
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert!(json["result"]["fake_claude"].is_null());
+        assert_eq!(json["warnings"][0]["code"], "preview.fake_claude_missing");
+        let program = temp.path().join("fake-claude");
+        std::fs::write(&program, "x").unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let outcome =
+            crate::env::with_vars(&[("WATANE_FAKE_CLAUDE", Some(program.as_os_str()))], || {
+                doctor(temp.path())
+            });
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(
+            json["result"]["fake_claude"],
+            json!(program.canonicalize().unwrap())
+        );
+        assert!(json["warnings"].as_array().is_none_or(Vec::is_empty));
+    }
 }

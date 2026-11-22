@@ -92,21 +92,38 @@ fn link_fake_claude(folder: &Path, program: &Path) -> Result<PathBuf, Problem> {
     let claude = folder.join("claude");
     fs::create_dir_all(&claude).map_err(Problem::internal)?;
     let link = claude.join("fake-claude");
-    let _ = fs::remove_file(&link);
-    if std::os::unix::fs::symlink(program, &link).is_err() {
-        fs::copy(program, &link).map_err(Problem::internal)?;
-    }
+    place(program, &link, |p, l| std::os::unix::fs::symlink(p, l))?;
     let script = claude.join("fake-claude.json");
     if !script.exists() {
         fs::write(&script, DEFAULT_SCRIPT).map_err(Problem::internal)?;
     }
     Ok(link)
 }
+/// `link` as a link to `program`, or a copy where `symlink` fails.
+fn place(
+    program: &Path,
+    link: &Path,
+    symlink: fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), Problem> {
+    let _ = fs::remove_file(link);
+    if symlink(program, link).is_err() {
+        fs::copy(program, link).map_err(Problem::internal)?;
+    }
+    Ok(())
+}
 fn folder(dir: &Path, env: &Env, slug: &str) -> PathBuf {
     let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
     env.cache
         .join("previews")
         .join(format!("{slug}-{}", &hash[..8]))
+}
+/// The arguments of the preview host: `--fake-claude` after `--preview` when the fake was linked.
+fn spawn_args(home: &Path, fake_claude: Option<&Path>) -> Vec<std::ffi::OsString> {
+    let mut args = vec!["--preview".into(), home.into()];
+    if let Some(fake) = fake_claude {
+        args.extend(["--fake-claude".into(), fake.into()]);
+    }
+    args
 }
 fn start(
     home: &Path,
@@ -138,12 +155,8 @@ fn start(
         )
         .fix(format!("Read {}", log.display()))
     };
-    let mut command = Command::new(binary);
-    command.arg("--preview").arg(home);
-    if let Some(fake) = fake_claude {
-        command.arg("--fake-claude").arg(fake);
-    }
-    let mut child = command
+    let mut child = Command::new(binary)
+        .args(spawn_args(home, fake_claude))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr)
@@ -567,5 +580,92 @@ mod tests {
         );
         server.join().unwrap();
         assert!(previous_warning(&dir, &env, "").is_none());
+    }
+
+    #[test]
+    fn ac7_link_writes_default_script_once_and_keeps_the_makers() {
+        let temp = tempfile::tempdir().unwrap();
+        let program = temp.path().join("fake-claude-bin");
+        fs::write(&program, "x").unwrap();
+        let folder = temp.path().join("P");
+        let link = link_fake_claude(&folder, &program).unwrap();
+        assert_eq!(link, folder.join("claude/fake-claude"));
+        assert_eq!(fs::read_link(&link).unwrap(), program);
+        let script = folder.join("claude/fake-claude.json");
+        assert_eq!(
+            fs::read_to_string(&script).unwrap(),
+            r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#
+        );
+        fs::write(&script, r#"{"steps":[]}"#).unwrap();
+        link_fake_claude(&folder, &program).unwrap();
+        assert_eq!(fs::read_to_string(&script).unwrap(), r#"{"steps":[]}"#);
+    }
+
+    #[test]
+    fn ac7_link_is_replaced_and_copied_where_linking_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let (a, b) = (temp.path().join("a"), temp.path().join("b"));
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+        let folder = temp.path().join("P");
+        link_fake_claude(&folder, &a).unwrap();
+        let link = link_fake_claude(&folder, &b).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), b);
+        let copy = temp.path().join("copy");
+        place(
+            &a,
+            &copy,
+            |_, _| Err(std::io::ErrorKind::Unsupported.into()),
+        )
+        .unwrap();
+        fs::read_link(&copy).unwrap_err();
+        assert_eq!(fs::read_to_string(&copy).unwrap(), "a");
+    }
+
+    #[test]
+    fn ac7_find_fake_claude_reads_the_variable() {
+        let temp = tempfile::tempdir().unwrap();
+        let program = temp.path().join("fake-claude");
+        fs::write(&program, "x").unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        let found = crate::env::with_vars(
+            &[("WATANE_FAKE_CLAUDE", Some(program.as_os_str()))],
+            find_fake_claude,
+        );
+        assert_eq!(found.unwrap(), program.canonicalize().unwrap());
+        let missing = temp.path().join("nope");
+        let warning = crate::env::with_vars(
+            &[("WATANE_FAKE_CLAUDE", Some(missing.as_os_str()))],
+            find_fake_claude,
+        )
+        .unwrap_err();
+        let json = serde_json::to_value(&warning).unwrap();
+        assert_eq!(json["code"], "preview.fake_claude_missing");
+        assert_eq!(
+            json["message"],
+            format!(
+                "the program fake-claude was not found ({}); a preview cannot start Claude Code",
+                missing.display()
+            )
+        );
+        assert_eq!(
+            json["fix"],
+            "Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program"
+        );
+    }
+
+    #[test]
+    fn ac7_spawn_arguments_with_and_without_the_fake() {
+        let home = Path::new("/p/home");
+        assert_eq!(spawn_args(home, None), ["--preview", "/p/home"]);
+        assert_eq!(
+            spawn_args(home, Some(Path::new("/p/claude/fake-claude"))),
+            [
+                "--preview",
+                "/p/home",
+                "--fake-claude",
+                "/p/claude/fake-claude"
+            ]
+        );
     }
 }
