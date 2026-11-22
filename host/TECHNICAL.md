@@ -2456,6 +2456,9 @@ Raised by S95's adversary step (none blocks A1):
   which is probe V29 (the two spellings); and a `Grep` or `Glob` of a folder inside, whose
   tree holds a link out, is allowed: whether `claude`'s search follows links is not
   probed (validator of S100).
+  S100-fix1 closes the adversary's lookalike paths: the rule refuses a path with white space at an
+  end or not in NFC, a `Glob` or `Grep` pattern with `{`, `}`, `,` or white space, and an
+  `Edit`, `Write` or `NotebookEdit` into the run folder (19.3, "Read as `claude` reads it").
 - **Q42** Login files the closed deny list misses (19.3, Protected reads;
   HOST-F-74). Under the shell grant, a sandboxed runner word can read
   `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell

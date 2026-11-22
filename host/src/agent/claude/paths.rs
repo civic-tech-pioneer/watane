@@ -3,6 +3,7 @@
 
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
+use unicode_normalization::is_nfc;
 
 /// The tools whose asks the rule checks (19.3, Protected reads).
 const FILE_TOOLS: [&str; 6] = ["Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit"];
@@ -86,6 +87,19 @@ fn inside(text: &str, cwd: &Path, roots: &[PathBuf], home: Option<&Path>) -> boo
     })
 }
 
+/// Read as `claude` reads it (19.3): a path with white space (JavaScript's `trim` set) at an end
+/// is trimmed by `claude`, and one not in NFC is normalized; the host resolves neither, so
+/// it refuses both.
+fn misread(path: &str) -> bool {
+    let space = |c: char| c.is_whitespace() || c == '\u{FEFF}';
+    path.starts_with(space) || path.ends_with(space) || !is_nfc(path)
+}
+
+/// A glob that `claude` may split into several or expand with braces; refused whole.
+fn glob_ambiguous(pattern: &str) -> bool {
+    pattern.contains(['{', '}', ',']) || pattern.contains(|c: char| c.is_whitespace())
+}
+
 /// Whether a glob pattern could leave the workspace: absolute, home-relative, or with `..`.
 fn pattern_escapes(pattern: &str) -> bool {
     pattern.starts_with('/') || pattern.starts_with('~') || pattern.split('/').any(|s| s == "..")
@@ -104,7 +118,7 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
         match input.get(key) {
             None => {}
             Some(Value::String(text)) => {
-                if !inside(text, cwd, roots, home.as_deref()) {
+                if misread(text) || !inside(text, cwd, roots, home.as_deref()) {
                     return true;
                 }
             }
@@ -113,12 +127,32 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
     }
     for (name, key) in [("Glob", "pattern"), ("Grep", "glob")] {
         match input.get(key) {
-            Some(Value::String(text)) if tool == name && pattern_escapes(text) => return true,
+            Some(Value::String(text))
+                if tool == name && (pattern_escapes(text) || glob_ambiguous(text)) =>
+            {
+                return true;
+            }
             Some(v) if tool == name && !v.is_string() => return true,
             _ => {}
         }
     }
     false
+}
+
+/// `refused` for an answer: the run folder `run` (one of `roots`) is read-only, so it counts
+/// for `Read`, `Glob` and `Grep` only (19.3).
+pub(crate) fn refused_for_answer(
+    tool: &str,
+    input: &Value,
+    cwd: &Path,
+    roots: &[PathBuf],
+    run: &Path,
+) -> bool {
+    if matches!(tool, "Edit" | "Write" | "NotebookEdit") {
+        let writable: Vec<PathBuf> = roots.iter().filter(|r| *r != run).cloned().collect();
+        return refused(tool, input, cwd, &writable);
+    }
+    refused(tool, input, cwd, roots)
 }
 
 #[cfg(test)]
@@ -263,6 +297,55 @@ mod tests {
             &alias,
             roots
         ));
+    }
+
+    #[test]
+    fn ac2_white_space_and_non_nfc_paths_and_ambiguous_globs_are_refused() {
+        let f = folders();
+        for path in [
+            "a.txt ",
+            " a.txt",
+            "\na.txt",
+            "a.txt\u{a0}",
+            "\u{feff}a.txt",
+            "cafe\u{301}",
+        ] {
+            assert!(
+                refused_in(&f, "Read", json!({"file_path": path})),
+                "{path:?}"
+            );
+        }
+        assert!(!refused_in(&f, "Read", json!({"file_path": "caf\u{e9}"})));
+        for glob in ["{a,b}", "a}", "a,b", "a b", "a\tb"] {
+            assert!(refused_in(&f, "Glob", json!({"pattern": glob})), "{glob:?}");
+            assert!(
+                refused_in(&f, "Grep", json!({"pattern": "x", "glob": glob})),
+                "{glob:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ac3_the_run_folder_is_read_only_for_an_answer() {
+        let f = folders();
+        let run = f.outside.join("run");
+        std::fs::create_dir_all(run.join("watane-run/skills/x")).unwrap();
+        let roots = [f.work.clone(), run.clone()];
+        let skill = run
+            .join("watane-run/skills/x/SKILL.md")
+            .display()
+            .to_string();
+        let check =
+            |tool: &str, input: Value| refused_for_answer(tool, &input, &f.work, &roots, &run);
+        assert!(check("Edit", json!({"file_path": skill})));
+        assert!(check("Write", json!({"file_path": skill})));
+        assert!(check("NotebookEdit", json!({"notebook_path": skill})));
+        assert!(!check("Read", json!({"file_path": skill})));
+        assert!(!check(
+            "Grep",
+            json!({"pattern": "x", "path": run.display().to_string()})
+        ));
+        assert!(!check("Write", json!({"file_path": "new.txt"})));
     }
 
     #[test]

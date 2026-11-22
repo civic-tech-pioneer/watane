@@ -378,7 +378,8 @@ impl Job {
             )
         });
         let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-        let mut roots = vec![canon(&cwd), canon(&plugin)];
+        let run_root = canon(&plugin);
+        let mut roots = vec![canon(&cwd), run_root.clone()];
         roots.extend(extra_paths.iter().map(|p| canon(p)));
         cleanup.folder = Some(folder);
         if let Err(e) = made {
@@ -406,7 +407,7 @@ impl Job {
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
         let stdin = child.stdin.take().expect("piped");
-        self.session.set_roots(cwd.clone(), roots);
+        self.session.set_roots(cwd.clone(), roots, run_root);
         let ticker = Arc::clone(&self.session);
         let hub = Arc::clone(&self.hub);
         std::thread::spawn(move || {

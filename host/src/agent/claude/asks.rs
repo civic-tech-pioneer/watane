@@ -57,6 +57,8 @@ pub(crate) struct Asks {
     pending: VecDeque<Vec<u8>>,
     cwd: PathBuf,
     roots: Vec<PathBuf>,
+    /// The run folder's plugin folder, one of `roots`: read-only for an answer.
+    run: PathBuf,
 }
 
 fn now_ms() -> u64 {
@@ -73,10 +75,11 @@ impl Session {
     }
 
     /// The working folder and the folders an `allow` to a file tool may name (canonical).
-    pub(crate) fn set_roots(&self, cwd: PathBuf, roots: Vec<PathBuf>) {
+    pub(crate) fn set_roots(&self, cwd: PathBuf, roots: Vec<PathBuf>, run: PathBuf) {
         let mut asks = self.asks();
         asks.cwd = cwd;
         asks.roots = roots;
+        asks.run = run;
     }
 
     /// Pushes the closes that waited for room. Stops at the first that does not fit.
@@ -150,9 +153,13 @@ impl Session {
             match d {
                 Decision::None => false,
                 Decision::Deny(_) => true,
-                Decision::Allow(None) => {
-                    !paths::refused(&open.tool, &open.input, &asks.cwd, &asks.roots)
-                }
+                Decision::Allow(None) => !paths::refused_for_answer(
+                    &open.tool,
+                    &open.input,
+                    &asks.cwd,
+                    &asks.roots,
+                    &asks.run,
+                ),
                 Decision::Allow(Some(json)) => {
                     matches!(open.tool.as_str(), "AskUserQuestion" | "ExitPlanMode")
                         && serde_json::from_str::<Value>(json).is_ok_and(|v| v.is_object())
