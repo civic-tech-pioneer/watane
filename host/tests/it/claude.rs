@@ -942,3 +942,29 @@ fn ac3_a_non_utf8_or_duplicate_key_init_line_ends_mismatch_init() {
         wait("the group to die", Duration::from_secs(10), || !alive(pid));
     }
 }
+
+#[test]
+fn ac1_a_plain_line_before_the_answer_to_initialize_pushes_nothing_and_ends_mismatch_init() {
+    let rig = Rig::new(&[
+        ("before", b"{\"type\":\"assistant\",\"message\":{}}\n"),
+        ("spawn", b""),
+    ]);
+    let s = rig.start_ok(LAUNCH);
+    assert_eq!(rig.wait_ended(1), [format!("{s} mismatch(init)")]);
+    assert!(rig.items(&s).is_empty(), "{:?}", rig.items(&s));
+    let pid: i32 = rig.entries("PID")[0].parse().unwrap();
+    wait("the group to die", Duration::from_secs(10), || !alive(pid));
+}
+
+#[test]
+fn ac2_a_control_request_before_the_answer_is_denied_and_nothing_is_held() {
+    let before = br#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{}}}"#;
+    let rig = Rig::new(&[("before", &[before.as_slice(), b"\n"].concat())]);
+    let s = rig.start_ok(LAUNCH);
+    let items = rig.wait_items(&s, 2);
+    assert!(items[0].contains("initialized"), "{items:?}");
+    assert!(items[1].contains(r#""subtype":"init""#), "{items:?}");
+    rig.wait_log("the deny", |l| {
+        l.iter().any(|e| e.starts_with("IN ") && e.contains("r1"))
+    });
+}

@@ -418,7 +418,7 @@ impl Job {
         let request_id = self.session.request_id.clone();
         let mut reader = Reading {
             job: self,
-            held: Some(vec![]),
+            answered: false,
             request_id,
             workspace,
             awaiting_init: false,
@@ -443,8 +443,9 @@ impl Job {
 /// The state of reading the stdout of one run.
 struct Reading<'a> {
     job: &'a Job,
-    /// Lines that came before the answer to `initialize`: `initialized` is first (19.3, step 2).
-    held: Option<Vec<Vec<u8>>>,
+    /// The answer to `initialize` came: before it only control lines may come, and none is
+    /// pushed, so `initialized` is the first item (19.3, step 2).
+    answered: bool,
     request_id: String,
     workspace: String,
     /// The answer to `initialize` came and the `system/init` line has not: only control lines
@@ -469,13 +470,11 @@ impl Reading<'_> {
             }
         }
     }
-    fn item(&mut self, body: Vec<u8>) -> Result<(), Value> {
-        match &mut self.held {
-            Some(held) => {
-                held.push(body);
-                Ok(())
-            }
-            None => self.push(body),
+    fn item(&self, body: Vec<u8>) -> Result<(), Value> {
+        if self.answered {
+            self.push(body)
+        } else {
+            Ok(())
         }
     }
     /// Reads until the end of the output. `Some(outcome)` when the run must end with it.
@@ -505,7 +504,10 @@ impl Reading<'_> {
     }
     fn line(&mut self, raw: &[u8]) -> Result<(), Value> {
         let line = control::classify(raw);
-        if self.awaiting_init && !matches!(line, Line::Init(..)) && !control::is_control(&line) {
+        if (!self.answered || self.awaiting_init)
+            && !matches!(line, Line::Init(..))
+            && !control::is_control(&line)
+        {
             return Err(json!({"mismatch": "init"}));
         }
         match line {
@@ -515,6 +517,9 @@ impl Reading<'_> {
                 Ok(())
             }
             Line::Init(value, body) => {
+                if !self.answered {
+                    return Err(json!({"mismatch": "init"}));
+                }
                 self.awaiting_init = false;
                 if let Err(field) = init::check(&self.job.launch, &value) {
                     return Err(json!({"mismatch": field}));
@@ -522,7 +527,7 @@ impl Reading<'_> {
                 self.item(body)
             }
             Line::Response { request_id, ok } => {
-                if self.held.is_some() && request_id == self.request_id {
+                if !self.answered && request_id == self.request_id {
                     if !ok {
                         return Err(Job::failed("claude refused initialize"));
                     }
@@ -530,9 +535,7 @@ impl Reading<'_> {
                     self.push(
                         format!(r#"{{"type":"initialized","workspace":{workspace}}}"#).into_bytes(),
                     )?;
-                    for body in self.held.take().unwrap_or_default() {
-                        self.push(body)?;
-                    }
+                    self.answered = true;
                     self.awaiting_init = true;
                     Ok(())
                 } else {

@@ -2,6 +2,7 @@
 # host's own fake `claude` (TECHNICAL 19.9, 13.1): a POSIX sh script that tests copy into a
 # folder of their own with files beside it:
 #   version  text printed by `--version` (default `2.1.295 (Claude Code)`)
+#   before   raw lines to write before the answer to `initialize`
 #   init     the `system/init` line to write after the answer to `initialize`
 #   lines    raw lines to play after it
 #   exit     with this file the program exits with its content as status after the lines
@@ -25,6 +26,7 @@ fi
 IFS= read -r line
 printf 'IN %s\n' "$line" >> "$log"
 rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+[ -f "$dir/before" ] && cat "$dir/before"
 printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"hook_on_failure_supported":true}}}\n' "$rid"
 [ -f "$dir/init" ] && cat "$dir/init"
 [ -f "$dir/lines" ] && cat "$dir/lines"
