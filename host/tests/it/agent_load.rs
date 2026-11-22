@@ -159,9 +159,23 @@ fn print(name: &str, r: &Run) {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// Held for a whole measured run: the two load tests never overlap, so each budget is measured alone.
+static LOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
 #[ignore = "slow: stage A budgets and V8"]
-async fn ac13_stage_a_budgets_and_v8() {
+fn ac13_stage_a_budgets_and_v8() {
+    // Lock before building the runtime, so no worker blocks on it.
+    let _serial = LOAD.lock().unwrap_or_else(|e| e.into_inner());
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(stage_a_budgets_and_v8());
+}
+
+async fn stage_a_budgets_and_v8() {
     let seconds = std::env::var("WATANE_LOAD_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -392,6 +406,7 @@ mod stage_b {
     #[test]
     #[ignore = "slow: the stage B host budgets, 8 streams of 10 010 entries"]
     fn ac9_stage_b_host_budgets() {
+        let _serial = super::LOAD.lock().unwrap_or_else(|e| e.into_inner());
         let launch = r#"{"version":1,"workspace":"scratch","ask":true,"tools":["Read"]}"#;
         let rig = Rig::new(&[]);
         let turn1 = can_use("r@P@a", "t@P@a") + "\n" + &entries(1, SMALL);
