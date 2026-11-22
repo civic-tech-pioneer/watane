@@ -1182,6 +1182,30 @@ names the same interface in its sketch and fakes it until this one merges.
   `host-info` additions of agentic-harness TECHNICAL 2.1 as host 19 states them. Done when the story
   passes with S35's kernel. Touches: host, dev, pkg. Boundary: W39 (adversary). Cloud.
 - [x] **S101 (upkeep, cloud, routine `trig_01HEyZRTMir1EQSfMN8pKuw5`) [deputy, 2026-11-22: DONE, PR #14 merged with --admin at aa2b76fb, ~0.75 h in flight, 1 round. Bob's cloud agent's preview starts on 127.0.0.1 alone (stderr notice) when the container has no IPv6. User-sim ACCEPTED, adversary HELD, validator PASS round 1; implementer runs 2. Decisions: EAFNOSUPPORT also falls back; adversary RISK (root adds ::1 after bind) recorded in host 8.1 and 14 'Not protected' - deputy accepts it (root is outside the boundary). Host suite in the cloud: 295+28 pass, 0 fail (was 75 failing). Friction: `/usr/bin/time` missing in the cloud; dev `api::tests::ac5_search_timeout_is_thirty_seconds` (ignored, timing) red in the cloud; the ready line advertises `localhost` on a v4-only host.] A preview starts in a container without IPv6.** Bob's cloud agent runs `watane --preview` / `watane-dev serve` in a Linux container whose kernel has no IPv6, and the preview starts on 127.0.0.1 instead of refusing. host TECHNICAL 8.1: when binding `[::1]:<port>` fails with `AddrNotAvailable` (the machine has no `::1`; nobody else can bind it either), serve `127.0.0.1:<port>` alone and say so in the ready line or log; every other `[::1]` failure (in use, permission) stays `port_in_use`, and the 8-try clash loop for port 0 is unchanged. Tests: the error-kind decision as a unit test (AddrNotAvailable → v4 only; AddrInUse → port_in_use), plus the preview and serve tests that need IPv6 now running in the cloud container. Protects: host 8.1, no 14 check changes. Touches: `host/src/server.rs`, `host/TECHNICAL.md` 8.1, its tests. No adversary beyond the validator's look at the in-use branch.
+- [~] **S100 (cloud, builder claude: the Codex side is signed out tonight, rule 4) Stage B, end to end: Alice steers a turn (the watane half).** After S99.
+  One story in two repositories: agentic-harness S36 is the kernel and console half (its PLAN), handed
+  out after S35 merges. In a session on dev's fake `claude`, Claude asks to use a tool and Alice
+  answers it; she sends a second message while the first turn runs (the kernel queues it); she presses
+  Stop; she restarts `watane-dev serve` over the same home and the host reports a new generation.
+  Builds what S99 left out of H2, as host 19 and agentic-harness TECHNICAL 2.1, 4.5, 9.4 and 15 state it:
+  host-built `ask` items from `can_use_tool` and `check` items from `hook_callback` (never claude's bytes,
+  Q36), launch `ask: true` and `pre-tool-check` (lift "waits for S100"), `claude-session.answer` with
+  `ask-resolved {by: answered{outcome} | expired | cancelled}`, `control_cancel_request`, a check's
+  `expires-at`, `updatedPermissions` never forwarded, the file-tool ask's path with symlinks resolved,
+  `interrupt` resolving the asks it ends; dev's fake `claude` with a parameterised long turn that stops on
+  interrupt, a reply per `say`, an ask that resumes on the answer, and a load mode (stage B budgets: 8
+  sessions, 2 owners, 10 and 10 000 entries).
+  Outcomes (user-sim on `watane-dev serve` with a test mod over host's interfaces, no kernel needed):
+  1. A fake tool ask reaches the consumer as a host `ask` item; `answer` allow lets the turn go on, deny
+     ends it; `ask-resolved` follows each, and a wrong id says `unknown-ask`.
+  2. A check past its `expires-at` resolves `expired` and nothing is written to claude's stdin.
+  3. `interrupt` during a long turn ends it, resolves its open asks, and the stream stays usable for the
+     next `say`.
+  4. A restart over the same home raises `host-info.generation`.
+  5. The load script runs 8 fake sessions for 2 owners with 10 000 entries inside the stage B budgets.
+  Interface: `watane:host@0.1.0` H2 as host 19 states it (no WIT shape change expected; a change goes
+  to the deputy first). Touches: host, dev, pkg if a row needs it. Boundary: W39 (adversary). Cloud.
+  Protects: *core*.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
