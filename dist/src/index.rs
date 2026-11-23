@@ -516,7 +516,7 @@ impl Dist {
         (next, gone) = next
             .into_iter()
             .partition(|(k, r)| r.followed || r.index || r.kept || walk.bases.contains_key(k));
-        // Staged on a copy: published with the records once the save succeeds (4.4).
+        // Staged on a copy: published with the records when the rename installs the file (4.4).
         let mut tombs = self
             .tombs
             .lock()
