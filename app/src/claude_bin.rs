@@ -206,6 +206,15 @@ printf 'Claude Code 2.1.295-rc.1\n'"#,
             "Claude Code 2.1.294 is too old; watane needs 2.1.295 or later."
         );
 
+        std::fs::write(&program, "#!/bin/sh\nprintf '2.1.9\\n'\n").unwrap();
+        assert_eq!(
+            validate(&alias).unwrap_err().message,
+            "Claude Code 2.1.9 is too old; watane needs 2.1.295 or later."
+        );
+
+        std::fs::write(&program, "#!/bin/sh\nprintf '2.2.0\\n'\n").unwrap();
+        assert_eq!(validate(&alias).unwrap().version, "2.2.0");
+
         std::fs::write(&program, "#!/bin/sh\nprintf '10.0.0 (Claude Code)\\n'\n").unwrap();
         assert_eq!(validate(&alias).unwrap().version, "10.0.0");
     }
@@ -238,11 +247,11 @@ printf 'Claude Code 2.1.295-rc.1\n'"#,
         let program = program(
             dir.path(),
             "claude",
-            "printf '2.1.295\\n'; (sleep 1; touch \"$0.survived\") & wait",
+            "printf '2.1.295\\n'; (sleep 0.3; touch \"$0.survived\") & wait",
         );
         assert!(probe(&program, Duration::from_millis(100)).is_none());
         // The delayed marker would be created by the child if only the shell were killed.
-        std::thread::sleep(Duration::from_millis(1100));
+        std::thread::sleep(Duration::from_millis(400));
         assert!(!dir.path().join("claude.survived").exists());
     }
 }
