@@ -181,32 +181,22 @@ fn start_time(pid: i32) -> Option<String> {
     }
 }
 
-/// The standard output of a system tool, in the C locale.
+/// The standard output of a system tool, in the C locale: `/usr/sbin/sysctl`, `/bin/ps`.
 #[cfg(not(target_os = "linux"))]
 fn tool_output(program: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(format!("/usr/sbin/{program}"))
-        .args(args)
-        .env_clear()
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    let out = if out.status.success() {
-        out
-    } else {
-        Command::new(format!("/bin/{program}"))
+    ["/usr/sbin", "/bin"].iter().find_map(|dir| {
+        let out = Command::new(format!("{dir}/{program}"))
             .args(args)
             .env_clear()
             .env("LC_ALL", "C")
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
-            .ok()?
-    };
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    })
 }
 
 /// The line of `runs/pids` for the group `pgid`, led by the process of the same id:
@@ -822,13 +812,7 @@ fn take_stdin(
 ) -> Result<(std::process::Child, std::process::ChildStdin), Value> {
     let stdin = child.stdin.take().expect("piped");
     if let Err(failed) = setup(&stdin) {
-        killpg(pgid);
-        let (reaped, wait) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = child.wait();
-            let _ = reaped.send(());
-        });
-        let _ = wait.recv_timeout(EXIT_WAIT);
+        kill_then_reap(child, pgid, killpg);
         return Err(failed);
     }
     Ok((child, stdin))

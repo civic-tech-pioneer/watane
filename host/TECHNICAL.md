@@ -463,7 +463,10 @@ which `Host::open` creates (3.1 step 6).
    `runs/pids` that are still this home's runs, then delete `runs/` (19.3).
    A record is a pgid with the boot id and the process's start time (Linux:
    `/proc/sys/kernel/random/boot_id` and field 22 of `/proc/<pid>/stat`;
-   macOS: the boot time and `kp_proc.p_starttime` of `sysctl kern.proc.pid`).
+   macOS: `sysctl -n kern.boottime` and `ps -o lstart= -p <pid>`, both run in
+   the C locale, since `kp_proc.p_starttime` needs `unsafe`; `lstart` has a
+   one-second resolution, so a pid reused within the same second as the
+   recorded start is the limit of the check there).
    A group is killed only when the boot id matches and its leader still has
    that start time; a record without them, or with no live leader, is
    dropped unkilled (S100-CAP, item 5).
