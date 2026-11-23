@@ -1308,7 +1308,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      (up to 5 s) moves out of the default run (a `slow:` test).
   Touches: `pkg/` only. Remove the three items from Leftovers when it merges.
 - [x] **S109 (guard) the log's identity key is opened without a check-then-open.** DONE 2026-11-23: PR #21 merged with
-  --admin, ~2.5 h in flight, 2 rounds (2/3, then 0/3: approve, call merge). (Was: in flight, cloud, builder codex,
+  --admin at b09ddd6, ~2.5 h in flight, 2 rounds (2/3, then 0/3: approve, call merge). (Was: in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056;
   DELIVERED as PR #21 (+270 -25, log/ only; user-sim ACCEPTED, adversary HELD, both Linux); r1 to Claude under the new
   review-lead brief, 17:55 UTC; r1: 2/3 (blocking/polish), call: another round (an interrupted first creation locks
