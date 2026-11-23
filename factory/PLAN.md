@@ -1272,7 +1272,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      of S104 does without a record (`dist/src/fetch.rs` ~107-125).
   Touches: `dist/` only. Runs beside S100 (host/, dev/) and S102 (app/): no shared file. Remove the three items from
   Leftovers when it merges.
-- [~] **S106 (guard) the net pair test stops flaking on macOS.** (in flight, cloud, builder codex, reviewer claude;
+- [x] **S106 (guard) the net pair test stops flaking on macOS.** DONE 2026-11-23: PR #20 merged with --admin at b15c154,
+  ~2 h in flight, 2 rounds (r1 changes 2, r2 approve; macOS green after a re-run of a cancelled job). (Was: in flight, cloud, builder codex, reviewer claude;
   sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b045b02-1260-83eb-960d-5bddbca75041; DELIVERED as PR #20 (test-only:
   frobnicate on its own unknown key, the fixture's shared byte allowance raised to 16 MiB/s; 50 runs in a row on Linux);
   r1 to Claude, routine `trig_01NSUQhchSAyP6ZAGaPLUgUo`, 16:05 UTC; r1 `changes (2)` (validator PASS, user-sim ACCEPTED
