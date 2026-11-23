@@ -1527,7 +1527,11 @@ mod tests {
         let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
         let requests = w.a.count();
         *eve.test_fail_saves.lock().unwrap() = Some(0);
-        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
+        let err = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
+        assert!(
+            matches!(&err, DistError::Io { source, .. } if source.to_string() == "test: save fails"),
+            "the read fails with the save's error: {err:?}"
+        );
         assert_eq!(
             w.a.count(),
             requests,
@@ -1536,6 +1540,59 @@ mod tests {
         assert_eq!(eve.test_tomb_keys(), before);
         let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
         assert_eq!(after, file);
+    }
+
+    /// r7: a new tombstone for a channel in the `gone` filter starts `seen_full`, so noting
+    /// a provider base does not undo the fail-closed state (4.4, DD-48).
+    #[test]
+    fn provider_base_tombstone_of_a_gone_channel_starts_full() {
+        let w = world();
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&w.a), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        eve.test_add_tombstone(&w.key.to_string(), tomb(&[], 1));
+        for n in 0..1024 {
+            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+        }
+        assert!(eve.held_ungiven(w.key, &w.b.url), "the channel is gone");
+        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
+        let file = follows_file(dir.path());
+        assert_eq!(file["seen"][w.key.to_string()]["seen_full"], true);
+        assert!(
+            eve.held_ungiven(w.key, &w.b.url),
+            "the new tombstone forgot"
+        );
+    }
+
+    /// r7: a failed save while noting one provider base skips only that base; the read
+    /// ends with the other bases' result and the unnoted base gets no request.
+    #[test]
+    fn provider_base_a_failed_note_moves_to_the_next_base() {
+        let w = world();
+        let a2 = Host::serve(&w.publisher.site_dir());
+        let (_dir, eve) = w.eve(&[&w.a, &a2]);
+        w.a.redirect(
+            &format!("/{}", w.package),
+            &format!("{}{}", w.b.url, w.package),
+        );
+        eve.list(&w.link(&w.a), "first").unwrap();
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&a2), "second").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        let (a_before, a2_before) = (w.a.count(), a2.count());
+        // The first note (base `a`) saves; the second (base `a2`) fails.
+        *eve.test_fail_saves.lock().unwrap() = Some(1);
+        let err = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
+        assert!(matches!(err, DistError::BadUrl { .. }), "{err:?}");
+        assert!(w.a.count() > a_before, "the noted base is read");
+        assert_eq!(a2.count(), a2_before, "a base not noted is not read");
     }
 
     /// r8: `read_link` of a link for a channel with no record reads its base as listed
