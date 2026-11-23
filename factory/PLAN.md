@@ -1306,7 +1306,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056;
   DELIVERED as PR #21 (+270 -25, log/ only; user-sim ACCEPTED, adversary HELD, both Linux); r1 to Claude under the new
   review-lead brief, 17:55 UTC; r1: 2/3 (blocking/polish), call: another round (an interrupted first creation locks
-  the identity out; the owner check runs /usr/bin/id -u); answer round to Codex.) `log/src/identity.rs` does `symlink_metadata` and then
+  the identity out; the owner check runs /usr/bin/id -u); answered at 497d58a (both blocking and all three polish;
+  Cargo.lock for rustix allowed); r2 to Claude 19:52 UTC.) `log/src/identity.rs` does `symlink_metadata` and then
   `File::open` on the key path, and accepts a hard link (no nlink or uid check) and opens a device node before `fstat`
   (Leftovers [S57], S91 adversary). Outcomes: the key file is opened once with no-follow and checked on the open handle
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
