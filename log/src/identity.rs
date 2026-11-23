@@ -5,8 +5,11 @@ use crate::Error;
 use ed25519_dalek::SigningKey;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+#[cfg(target_os = "linux")]
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+use std::process::Command;
 use zeroize::Zeroizing;
 fn io_error(path: &Path, source: io::Error) -> Error {
     Error::Io {
@@ -38,14 +41,74 @@ fn check_dir(path: &Path) -> Result<(), Error> {
     }
     check_mode(path, &meta)
 }
-/// Opens the key without following a link and without blocking, then checks
-/// type and mode on that handle. A missing file is `Ok(None)`.
-fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
+fn key_metadata(path: &Path, file: &File) -> Result<fs::Metadata, Error> {
+    let meta = file.metadata().map_err(|e| io_error(path, e))?;
+    if !meta.is_file() {
+        return Err(not_plain(
+            path,
+            "regular file",
+            meta.file_type().is_symlink(),
+        ));
+    }
+    let links = meta.nlink();
+    if links != 1 {
+        return Err(Error::KeyLinks {
+            path: path.to_owned(),
+            links,
+        });
+    }
+    check_mode(path, &meta)?;
+    let mode = meta.mode() & 0o7777;
+    if mode != 0o600 {
+        return Err(Error::KeyMode {
+            path: path.to_owned(),
+            mode,
+        });
+    }
+    Ok(meta)
+}
+fn effective_uid(path: &Path) -> Result<u32, Error> {
+    let output = Command::new("/usr/bin/id")
+        .arg("-u")
+        .env_clear()
+        .output()
+        .map_err(|e| {
+            io_error(
+                path,
+                io::Error::other(format!("cannot determine the current user: {e}")),
+            )
+        })?;
+    if output.status.success()
+        && let Ok(text) = str::from_utf8(&output.stdout)
+        && let Ok(uid) = text.trim().parse()
     {
+        return Ok(uid);
+    }
+    Err(io_error(
+        path,
+        io::Error::other("cannot determine the current user with /usr/bin/id -u"),
+    ))
+}
+fn check_key_owner(path: &Path, meta: &fs::Metadata, current: u32) -> Result<(), Error> {
+    let owner = meta.uid();
+    if owner != current {
+        return Err(Error::KeyOwner {
+            path: path.to_owned(),
+            owner,
+            current,
+        });
+    }
+    Ok(())
+}
+/// Resolves the key path once without following its final component and
+/// validates the open handle before reading. A missing file is `Ok(None)`.
+fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
+    #[cfg(target_os = "linux")]
+    let flags = libc::O_NOFOLLOW | libc::O_PATH;
+    #[cfg(not(target_os = "linux"))]
+    let flags = libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY;
+
+    let file = match OpenOptions::new().read(true).custom_flags(flags).open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
@@ -58,11 +121,23 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
         }
         Err(e) => return Err(io_error(path, e)),
     };
-    let meta = file.metadata().map_err(|e| io_error(path, e))?;
-    if !meta.is_file() {
-        return Err(not_plain(path, "regular file", false));
-    }
-    check_mode(path, &meta)?;
+    let meta = key_metadata(path, &file)?;
+    let current = effective_uid(path)?;
+    check_key_owner(path, &meta, current)?;
+
+    #[cfg(target_os = "linux")]
+    let mut file = {
+        // O_PATH inspects the inode without triggering a device open. Follow
+        // the kernel's descriptor link to read that inode, never the key path.
+        let reader = File::open(format!("/proc/self/fd/{}", file.as_raw_fd()))
+            .map_err(|e| io_error(path, e))?;
+        let meta = key_metadata(path, &reader)?;
+        check_key_owner(path, &meta, current)?;
+        reader
+    };
+    #[cfg(not(target_os = "linux"))]
+    let mut file = file;
+
     let mut seed = Zeroizing::new([0; 32]);
     file.read_exact(&mut seed[..]).map_err(|e| {
         if e.kind() == io::ErrorKind::UnexpectedEof {
@@ -81,6 +156,47 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
     }
     Ok(Some(SigningKey::from_bytes(&seed)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{check_key_owner, read};
+    use crate::Error;
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
+
+    #[test]
+    fn s109_ac4_device_is_refused() {
+        // Use the system device so this runs without permission to create one.
+        let path = Path::new("/dev/null");
+        let result = read(path);
+        assert!(
+            matches!(
+                &result,
+                Err(Error::NotPlain { path: found, expected: "regular file", link: false })
+                    if found == path
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn s109_ac5_foreign_owner_is_refused() {
+        let file = tempfile::tempfile().expect("create key file");
+        let meta = file.metadata().expect("stat key handle");
+        let path = Path::new("identity.key");
+        let current = meta.uid() ^ 1;
+        let result = check_key_owner(path, &meta, current);
+        assert!(
+            matches!(
+                &result,
+                Err(Error::KeyOwner { path: found, owner, current: expected })
+                    if found == path && *owner == meta.uid() && *expected == current
+            ),
+            "{result:?}"
+        );
+    }
+}
+
 pub(crate) fn prepare_dir(dir: &Path) -> Result<(), Error> {
     if dir.as_os_str().is_empty() {
         return Err(Error::EmptyPath);
@@ -107,6 +223,14 @@ pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
 }
 pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     prepare_dir(dir)?;
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(dir)
+        .map_err(|e| io_error(dir, e))?;
+    // Publishing a new key temporarily gives it two names. Wait for another
+    // opener to remove its temporary name before testing the link count.
+    directory.lock().map_err(|e| io_error(dir, e))?;
     let path = dir.join("identity.key");
     if let Some(key) = read(&path)? {
         return Ok(key);
@@ -126,6 +250,8 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
         .open(&tmp)
         .map_err(|e| io_error(&tmp, e))?;
     let result = (|| {
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|e| io_error(&tmp, e))?;
         file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
         match fs::hard_link(&tmp, &path) {
@@ -138,9 +264,7 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     // Only remove the temporary file created by this call.
     fs::remove_file(&tmp).map_err(|e| io_error(&tmp, e))?;
     result?;
-    File::open(dir)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| io_error(dir, e))?;
+    directory.sync_all().map_err(|e| io_error(dir, e))?;
     read(&path)?.ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))
 }
 
@@ -159,6 +283,8 @@ pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
         .map_err(|e| io_error(&tmp, e))?;
     let result = (|| {
         let seed = Zeroizing::new(key.to_bytes());
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|e| io_error(&tmp, e))?;
         file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
         let path = dir.join("identity.key");

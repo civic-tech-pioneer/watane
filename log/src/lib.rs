@@ -39,6 +39,16 @@ pub enum Error {
         "exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)"
     )]
     Exposed { path: PathBuf, mode: u32 },
+    #[error("{path} has mode {mode:04o}; the identity key requires mode 0600")]
+    KeyMode { path: PathBuf, mode: u32 },
+    #[error("{path} has {links} hard links; the identity key requires exactly one link")]
+    KeyLinks { path: PathBuf, links: u64 },
+    #[error("{path} is owned by user {owner}; the identity key must be owned by user {current}")]
+    KeyOwner {
+        path: PathBuf,
+        owner: u32,
+        current: u32,
+    },
     #[error("{}", not_plain_text(path, expected, *link))]
     NotPlain {
         path: PathBuf,
