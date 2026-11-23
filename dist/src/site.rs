@@ -46,8 +46,16 @@ pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
 }
 #[cfg(test)]
 thread_local! {
-    /// Test seam: the next directory sync after a rename on this thread fails with EIO.
-    pub(crate) static TEST_FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Test seam: the next `n` directory syncs of `follows.json` on this thread fail with EIO.
+    pub(crate) static TEST_FAIL_DIR_SYNC: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+fn test_dir_sync_fails() -> bool {
+    TEST_FAIL_DIR_SYNC.with(|fail| {
+        let left = fail.get();
+        fail.set(left.saturating_sub(1));
+        left > 0
+    })
 }
 pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, DistError> {
     let (written, synced) = replace_equal(path, bytes, mode)?;
@@ -75,7 +83,7 @@ pub(crate) fn replace_equal(
     tmp.as_file().sync_all().map_err(|e| io(tmp.path(), e))?;
     tmp.persist(path).map_err(|e| io(path, e.error))?;
     #[cfg(test)]
-    if TEST_FAIL_DIR_SYNC.with(|fail| fail.replace(false)) {
+    if test_dir_sync_fails() {
         return Ok((true, Err(io(parent, std::io::Error::from_raw_os_error(5)))));
     }
     let synced = fs::File::open(parent)
