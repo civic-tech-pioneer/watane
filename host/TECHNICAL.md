@@ -1792,19 +1792,14 @@ grants are the participant's (W38, W39). The protected-reads answer rule
 between that check and the moment `claude` opens the file (by a sandboxed
 `Bash` under the shell grant, or another program) is not caught there, and
 the deny rules of the host's `--settings=` are the limit (S100's adversary;
-the product owner may decide otherwise). Resource use under a compromised
+accepted by the product owner, S100-CAP). Resource use under a compromised
 `claude` (S100's fifth adversary pass): a process that keeps `claude`'s
 stdout open and never ends it (a `setsid` grandchild) keeps that run's reader
 thread, pipes and run folder until it exits; the stream itself still ends at a
-cancel, disable or app quit. And `stop()` kills the recorded process group once
-more when the stream ends, after the child was reaped, so a new session leader
-that took that pid in the meantime (a pid wrap in milliseconds) would be killed;
-clearing the recorded group at the reap closes it, not yet built. Two more (S100's seventh pass, for the product owner): one stream's kept ask
-input (up to 64 asks of up to 4 MiB) can hold its origin client's whole 128 MiB
-budget, so the owner's other streams get `full` and end `lagging` (a per-stream
-cap on kept bytes, or keeping them out of the origin budget, would close it);
-and the kept size is the input's JSON length, while the host holds it parsed,
-which can take several times more memory than the 512 MiB host budget states. And
+cancel, disable or app quit (accepted by the product owner, S100-CAP). One
+stream's kept ask input (up to 64 asks of up to 4 MiB) can hold its origin
+client's whole 128 MiB budget, so the owner's other streams get `full` and end
+`lagging` (S100's seventh pass; accepted by the product owner, S100-CAP). And
 (S100's eighth pass): each `claude` stdout line takes the host's chains gate
 and sums the pending pushes of every chain in flight, so a mod that keeps many
 chains with many queued pushes makes every line slower, and an apply that holds
@@ -3125,6 +3120,16 @@ not keep a credential from a mod on their own. Three rules do:
    budgets is not denied: its open fails `full` and the run stops reading `claude`
    until it fits, as every host push waits (19.2, In flight); the lag clock bounds
    that wait, so a stream whose budget stays held ends `lagging` (19.2, Lag clock).
+   A refused push or open that later succeeds clears its refusal: the stream's
+   `full_since` and lag clock stop at that admission, so no earlier refusal can
+   end it `lagging` (review r5, F5.2). A close that frees budget bytes wakes a
+   waiting producer only when the producer's refused push fits with the pending
+   bytes of every chain in flight counted, as admission counts them (review r5,
+   F5.1). The input an open ask or check keeps is held as the bytes of its JSON
+   text, not as a parsed value, and counted by that length, so the count is what
+   the host holds; it is parsed again when needed (S100-CAP). When the reaper has
+   reaped `claude`, the recorded process group is cleared, so a later `stop()`
+   signals no group and a pid reused since is never killed (S100-CAP).
    Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
