@@ -1792,7 +1792,14 @@ grants are the participant's (W38, W39). The protected-reads answer rule
 between that check and the moment `claude` opens the file (by a sandboxed
 `Bash` under the shell grant, or another program) is not caught there, and
 the deny rules of the host's `--settings=` are the limit (S100's adversary;
-the product owner may decide otherwise).
+the product owner may decide otherwise). Resource use under a compromised
+`claude` (S100's fifth adversary pass): a process that keeps `claude`'s
+stdout open and never ends it (a `setsid` grandchild) keeps that run's reader
+thread, pipes and run folder until it exits; the stream itself still ends at a
+cancel, disable or app quit. And `stop()` kills the recorded process group once
+more when the stream ends, after the child was reaped, so a new session leader
+that took that pid in the meantime (a pid wrap in milliseconds) would be killed;
+clearing the recorded group at the reap closes it, not yet built.
 
 ## 15. Build plan
 
