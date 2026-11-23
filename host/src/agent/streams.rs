@@ -1518,3 +1518,39 @@ mod tests {
         assert!(host.hub.info(&id).is_none(), "a current cancel did nothing");
     }
 }
+
+/// Adversary step of S100, sixth pass (red): `push_as_host` checks the budgets under one lock
+/// and adds the close reserve under a second. When the stream ends and is removed between the
+/// two, the reserve is added to the origin and host budgets but to no stream, so nothing frees
+/// it: each such race leaks `CLOSE_RESERVE` bytes of the owner's and the host's budget for
+/// good. A `claude` that floods asks while its stream ends wins the race now and then.
+#[cfg(test)]
+mod adv_s100_reserve {
+    use super::*;
+
+    #[test]
+    fn adv_s100_reserve_leaks_when_the_stream_ends_between_check_and_reserve() {
+        let hub = Hub::new();
+        for _ in 0..20_000 {
+            let s = hub
+                .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap();
+            let pusher = {
+                let (hub, s) = (Arc::clone(&hub), s.clone());
+                std::thread::spawn(move || while hub.host_open_push(&s, b"a").is_ok() {})
+            };
+            std::thread::yield_now();
+            hub.test_close(&s, serde_json::json!("cancelled"));
+            hub.test_take(&s);
+            pusher.join().unwrap();
+            hub.test_take(&s);
+        }
+        let inner = hub.lock();
+        assert!(inner.streams.is_empty());
+        assert_eq!(
+            (inner.host_bytes, inner.origin_bytes.get("o").copied()),
+            (0, None),
+            "reserves left in the budgets after every stream ended"
+        );
+    }
+}
