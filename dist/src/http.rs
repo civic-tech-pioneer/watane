@@ -1537,4 +1537,26 @@ mod tests {
         let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
         assert_eq!(after, file);
     }
+
+    /// r8: `read_link` of a link for a channel with no record reads its base as listed
+    /// (5.11, A37) and returns it as `Fetched.link`, but notes it in no `seen` and no
+    /// tombstone, unlike a provider base (fix7). After a managed install (app
+    /// `read_managed_release`, a manager mod's link) the caller follows `Fetched.link`
+    /// (DD-29); that follow finds the base unseen and gives it, so the host's later
+    /// redirect into the local network is followed (A35, A37, DD-48).
+    #[test]
+    fn adv_s105_r8_read_link_fetched_link_gives_its_listed_base() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let got = eve.read_link(&w.link(&w.a)).unwrap();
+        let derived = got.link.expect("read_link names its base");
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let _ = eve.follow(&derived);
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(
+            w.b.count(),
+            0,
+            "a base read as listed by read_link led dist into the local network"
+        );
+    }
 }
