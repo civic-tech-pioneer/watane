@@ -314,8 +314,11 @@ its own local host.
   The same holds for `http://localhost./`, and when a listed base answers
   with a redirect to such an address: that target gets no request and the
   read fails with `BadUrl` ("local address"); a redirect to a non-local
-  host is followed, at most 5 times. A followed or chosen channel's base may
-  redirect anywhere. (DIST-F-49)
+  host is followed, at most 5 times. A base the participant gave by a link
+  (follow, choose, open) may redirect anywhere. A base of a followed or
+  chosen record that the participant never gave, such as one saved before
+  this rule or learned from a listing, is read like a listed base until a
+  link at it is given. (DIST-F-49)
 
 ### Step 5
 
@@ -332,7 +335,10 @@ its own local host.
   no request either. Given Eve has a listed record for Carol whose base is
   dead and the package is not cached, when Eve's own channel lists Carol at
   a live base, the fetch tries the record's base, then that base, and gives
-  the package; the record is unchanged. (DIST-F-51)
+  the package; the record is unchanged. A redirect target of a provider
+  base or of a `read_link` read gets the same address check as the base; a
+  refused redirect fails that base, and a provider fetch tries the next
+  eligible base. (DIST-F-51)
 - **A38 Derived.** Given Carol's `ratings` names
   `<Alice>/reading-list@0.1.0` as its origin, and Alice's own channel
   holds `reading-list` 0.2.0, when Eve searches with `origin` (Alice,

@@ -266,6 +266,7 @@ impl Dist {
             index: true,
             kept: false,
             bases: Vec::new(),
+            given: Vec::new(),
             _followed_at: time,
             _last_attempt: time,
             last_success: None,
@@ -359,6 +360,7 @@ impl Dist {
             index: false,
             kept: false,
             bases: Vec::new(),
+            given: Vec::new(),
             _followed_at: follow::now(),
             _last_attempt: 0,
             last_success: None,
@@ -398,17 +400,17 @@ impl Dist {
                 changes: Vec::new(),
             });
         }
-        let listed = !record.followed && !record.index;
         let bases = if record.bases.is_empty() {
-            vec![record.base]
+            vec![record.base.clone()]
         } else {
-            record.bases
+            record.bases.clone()
         };
         let mut best = None;
         let mut changes = Vec::new();
         let mut highest: Option<(u64, String)> = None;
         let mut any_current = false;
         for base in bases {
+            let listed = follow::listed_read(&record, &base);
             if listed && self.check_listed_base(&base).is_err() {
                 continue;
             }

@@ -240,6 +240,15 @@ impl Dist {
                         .base()
                         .into();
                 }
+                for base in &mut record.given {
+                    *base = Link::new(channel, base, None)
+                        .map_err(|e| DistError::Corrupt {
+                            path: path.clone(),
+                            cause: e.to_string(),
+                        })?
+                        .base()
+                        .into();
+                }
                 if !record.followed && !record.index && !record.base.is_empty() {
                     if record.bases.is_empty() {
                         record.bases.push(record.base.clone());
@@ -329,6 +338,9 @@ struct Follow {
     kept: bool,
     #[serde(default)]
     bases: Vec<String>,
+    /// The bases the participant named by a link (5.9, DD-47); any other is read as listed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    given: Vec<String>,
     #[serde(rename = "followed_at")]
     _followed_at: u64,
     #[serde(rename = "last_attempt")]

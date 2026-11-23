@@ -161,7 +161,7 @@ impl Dist {
         }
         let mut response = request.call().map_err(map)?;
         match response.status().as_u16() {
-            301 | 302 | 303 | 307 | 308 if by_hand => {
+            300 | 301 | 302 | 303 | 307 | 308 if by_hand => {
                 match response
                     .headers()
                     .get("location")
@@ -364,6 +364,117 @@ mod tests {
             .unwrap();
         assert_eq!(got, b"ok");
         assert_eq!(*seen.lock().unwrap(), ["/a", "/b"]);
+    }
+    #[test]
+    fn ac2_get_guarded_follows_a_300_with_a_location() {
+        let (base, seen) = serve(vec![("/a", 300, "/b"), ("/b", 200, "ok")]);
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let allow = |_: &str| Ok(());
+        let got = dist
+            .get_guarded(
+                &format!("{base}/a"),
+                100,
+                Duration::from_secs(5),
+                false,
+                Some(&allow),
+            )
+            .unwrap();
+        assert_eq!(got, b"ok");
+        assert_eq!(*seen.lock().unwrap(), ["/a", "/b"]);
+    }
+    #[test]
+    fn ac2_a_300_without_a_location_is_an_http_error() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+        std::thread::spawn(move || {
+            for request in server.incoming_requests() {
+                let _ = request
+                    .respond(tiny_http::Response::from_data(Vec::new()).with_status_code(300));
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let allow = |_: &str| Ok(());
+        let got = dist.get_guarded(
+            &format!("{base}/a"),
+            100,
+            Duration::from_secs(5),
+            false,
+            Some(&allow),
+        );
+        assert!(
+            matches!(got, Err(DistError::Http { status: 300, .. })),
+            "{got:?}"
+        );
+    }
+    /// A server that waits `delay` before each answer: `/h0` to `/h2` redirect to the next,
+    /// `/h3` answers 200 with `body`.
+    fn serve_slow(delay: Duration, body: &'static str) -> String {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+        std::thread::spawn(move || {
+            for request in server.incoming_requests() {
+                std::thread::sleep(delay);
+                let response = match request.url() {
+                    "/h0" | "/h1" | "/h2" => {
+                        let next = format!("/h{}", &request.url()[2..].parse::<u8>().unwrap() + 1);
+                        tiny_http::Response::from_data(Vec::new())
+                            .with_status_code(302)
+                            .with_header(tiny_http::Header::from_bytes("Location", next).unwrap())
+                    }
+                    _ => tiny_http::Response::from_string(body).with_status_code(200),
+                };
+                let _ = request.respond(response);
+            }
+        });
+        base
+    }
+    #[test]
+    fn ac3_one_deadline_covers_all_hops() {
+        // Four hops of 300 ms: each is under the 700 ms timeout, the chain is not.
+        let base = serve_slow(Duration::from_millis(300), "ok");
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let allow = |_: &str| Ok(());
+        let got = dist.get_guarded(
+            &format!("{base}/h0"),
+            100,
+            Duration::from_millis(700),
+            false,
+            Some(&allow),
+        );
+        assert!(matches!(got, Err(DistError::Timeout { .. })), "{got:?}");
+        // The same chain with room enough succeeds, so the delay is what timed out.
+        let got = dist.get_guarded(
+            &format!("{base}/h0"),
+            100,
+            Duration::from_secs(5),
+            false,
+            Some(&allow),
+        );
+        assert_eq!(got.unwrap(), b"ok");
+    }
+    #[test]
+    fn ac3_the_body_limit_binds_the_response_after_a_redirect() {
+        let base = serve_slow(Duration::ZERO, "0123456789abcdef");
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let allow = |_: &str| Ok(());
+        let get = |limit| {
+            dist.get_guarded(
+                &format!("{base}/h0"),
+                limit,
+                Duration::from_secs(5),
+                false,
+                Some(&allow),
+            )
+        };
+        assert!(matches!(
+            get(15),
+            Err(DistError::TooLarge { limit: 15, .. })
+        ));
+        assert_eq!(get(16).unwrap(), b"0123456789abcdef");
     }
     #[test]
     fn ac1_get_guarded_refuses_before_requesting_the_target() {
@@ -695,5 +806,36 @@ mod tests {
         assert_eq!(record["base"], c.url.as_str());
         assert!(record["bases"].as_array().is_none_or(|b| b.is_empty()));
         assert_eq!(w.a.count(), before, "the listing's base was read again");
+    }
+    /// AC1 (F1.1): a record without `given` (saved before S105) is read under the listed
+    /// rule, redirects included, until a link at that base is given.
+    #[test]
+    fn ac1_an_old_followed_record_base_is_unknown_until_given_by_a_link() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
+            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
+        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
+        exempt(&eve, &[&w.a]);
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        w.a.redirect(
+            &format!("/{}", w.package),
+            &format!("{}{}", w.b.url, w.package),
+        );
+        let report = eve.refresh_channel(&w.key).unwrap();
+        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+        let got = eve.fetch(&w.reference).map(|_| ()).err();
+        assert_refused(got, &format!("{}{}", w.b.url, w.package));
+        assert_eq!(w.b.count(), 0, "no request to a redirect target");
+        // The participant gives that base by a link: the redirect is followed.
+        eve.follow(&w.link(&w.a)).unwrap();
+        assert!(w.b.count() > 0);
+        let before = w.b.count();
+        eve.fetch(&w.reference).unwrap();
+        assert!(w.b.count() > before, "the package redirect was followed");
     }
 }

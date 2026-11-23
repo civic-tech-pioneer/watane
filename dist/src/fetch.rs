@@ -3,7 +3,7 @@
 
 use crate::{
     ChannelView, Dist, DistError, Fetched, Link, Outcome, Package, PackageError, PackageId,
-    PublicKey, RefreshReport, ReleaseInfo, ReleaseRef, Status, http, index, site, view,
+    PublicKey, RefreshReport, ReleaseInfo, ReleaseRef, Status, follow, http, index, site, view,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -75,6 +75,7 @@ impl Dist {
             .get(&key)
             .cloned();
         let stored = view.releases.iter().any(|r| r.reference == *reference);
+        let mut listed = false;
         let base = if Some(key) == self.identity()
             || record.as_ref().is_some_and(|r| r.kept && r.base.is_empty())
         {
@@ -142,9 +143,17 @@ impl Dist {
                 }
                 return self.fetch_from_providers(key, reference, &bases, false);
             }
-            (!record.base.is_empty()).then_some(record.base)
+            if record.base.is_empty() {
+                None
+            } else {
+                listed = follow::listed_read(&record, &record.base);
+                if listed {
+                    self.check_listed_base(&record.base)?;
+                }
+                Some(record.base)
+            }
         };
-        self.fetched(reference, base.as_deref(), false)
+        self.fetched(reference, base.as_deref(), listed)
     }
 
     fn fetch_from_providers(
@@ -423,10 +432,10 @@ impl Dist {
                 // Like open_link, a failed refresh can still use a verified stored release.
                 self.read_record(key)?;
                 // As open_link: the package comes from the record's base, never the link's.
-                if !record.base.is_empty() && !record.followed && !record.index {
+                listed = !record.base.is_empty() && follow::listed_read(&record, &record.base);
+                if listed {
                     self.check_listed_base(&record.base)?;
                 }
-                listed = !record.followed && !record.index;
                 base = (!record.base.is_empty()).then_some(record.base);
             } else {
                 self.check_listed_base(link.base())?;

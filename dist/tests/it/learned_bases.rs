@@ -190,7 +190,7 @@ fn ac9_a_step_3_record_reads_from_base_only() {
     let (key, a) = (w.key, w.a());
     drop(w.bob);
     let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
-        "base": a, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        "base": a, "given": [a], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
     std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
     let bob = open(&home);
     let reports = bob.refresh();
@@ -198,4 +198,42 @@ fn ac9_a_step_3_record_reads_from_base_only() {
     assert!(bases(&home, key).is_empty());
     assert_eq!(bob.channel(&key).unwrap().base, Some(a));
     assert!(bob.followed().unwrap()[0].followed);
+}
+
+fn given(home: &std::path::Path, key: PublicKey) -> Vec<String> {
+    record(home, key)["given"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|b| b.as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
+    let w = world();
+    w.bob.follow(&w.link(&w.a())).unwrap();
+    assert_eq!(given(w.bob_home.path(), w.key), [w.a()]);
+    w.bob.choose_index(&w.link(&w.b())).unwrap();
+    assert_eq!(given(w.bob_home.path(), w.key), [w.a(), w.b()]);
+
+    let w = world();
+    w.bob.choose_index(&w.link(&w.a())).unwrap();
+    assert_eq!(given(w.bob_home.path(), w.key), [w.a()]);
+
+    // open_link of a link at a base the record has but was never given.
+    let w = world();
+    w.bob.follow(&w.link(&w.a())).unwrap();
+    let home = w.bob_home.path().to_owned();
+    let (key, a, b) = (w.key, w.a(), w.b());
+    drop(w.bob);
+    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": a, "bases": [a, b], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
+    let bob = open(&home);
+    assert!(given(&home, key).is_empty());
+    let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
+    let _ = bob.open_link(&link);
+    assert_eq!(given(&home, key), [b]);
 }

@@ -138,6 +138,7 @@ impl Dist {
             index: false,
             kept: true,
             bases: Vec::new(),
+            given: Vec::new(),
             _followed_at: follow::now(),
             _last_attempt: 0,
             last_success: None,
