@@ -420,44 +420,17 @@ impl Hub {
         origin_pending: usize,
         host_pending: usize,
     ) -> Result<(), StreamError> {
-        self.check_push_in(id, len, chain, (origin, origin_pending, host_pending), 0)
+        self.check_push_in(id, len, chain, (origin, origin_pending, host_pending))
     }
-    /// `check_push`; `reserve` more bytes must fit the origin and host budgets (not the
-    /// stream's limit), for the close item of an ask that this push opens.
+    /// `check_push`, taking the lock itself.
     fn check_push_in(
         &self,
         id: &str,
         len: usize,
         chain: (usize, usize),
-        (origin, origin_pending, host_pending): (&str, usize, usize),
-        reserve: usize,
+        origin: (&str, usize, usize),
     ) -> Result<(), StreamError> {
-        let mut inner = self.lock();
-        let now = inner.clock.now();
-        let origin_now = inner.origin_bytes.get(origin).copied().unwrap_or(0);
-        let host_now = inner.host_bytes;
-        let Some(s) = inner.streams.get_mut(id) else {
-            return Ok(());
-        };
-        let refused =
-            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
-                Some(Refused::Stream)
-            } else if origin_now + origin_pending + len + reserve > ORIGIN_BUDGET {
-                Some(Refused::Origin(len + reserve))
-            } else if host_now + host_pending + len + reserve > HOST_BUDGET {
-                Some(Refused::Host(len + reserve))
-            } else {
-                None
-            };
-        let Some(refused) = refused else {
-            return Ok(());
-        };
-        if s.deferred.is_none() && s.full_since.is_none() {
-            s.full_since = Some(now);
-        }
-        s.needs_ready = Some(refused);
-        inner.waiting.insert(id.to_owned());
-        Err(StreamError::Full)
+        self.lock().check_in(id, len, chain, origin, 0)
     }
 
     // ---- applying effects (after the chain's commit) ------------------------------------
@@ -894,55 +867,73 @@ impl Hub {
     /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
     /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, 0, false)
+        self.push_as_host(id, body, 0, None)
     }
     /// A push of the item that opens an ask or check (19.3, step 5): the budgets must hold the
-    /// item and `CLOSE_RESERVE` more bytes, which stay reserved until its close is pushed.
+    /// item, `CLOSE_RESERVE` bytes and the `retained` input of the ask, which stay reserved
+    /// until its close is pushed or the stream ends. The check, the enqueue and the reserve
+    /// are one step under one lock.
+    pub fn host_open_keeping(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+    ) -> Result<(), StreamError> {
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(false))
+    }
+    /// `host_open_keeping` for an ask that keeps no input.
     pub fn host_open_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, CLOSE_RESERVE, false)
+        self.host_open_keeping(id, body, 0)
     }
     /// A push of an item that closes an ask or check: it takes the bytes reserved when the ask
-    /// opened and goes past the stream's in-flight limit, so it waits on neither the stream nor
-    /// a budget and the end of a run never waits on a consumer (19.2, In flight).
-    pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, 0, true)
+    /// opened (`CLOSE_RESERVE` and its `retained` input) and goes past the stream's in-flight
+    /// limit, so it waits on neither the stream nor a budget and the end of a run never waits
+    /// on a consumer (19.2, In flight).
+    pub fn host_close_keeping(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+    ) -> Result<(), StreamError> {
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(true))
     }
+    /// `host_close_keeping` for an ask that kept no input.
+    pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.host_close_keeping(id, body, 0)
+    }
+    /// `reserve` is what an open adds to the budgets, or what a close (`Some(true)`) takes
+    /// back; `close` is `None` for a plain push.
     fn push_as_host(
         &self,
         id: &str,
         body: &[u8],
         reserve: usize,
-        close: bool,
+        close: Option<bool>,
     ) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
         }
-        let origin = {
-            let inner = self.lock();
-            match inner.streams.get(id) {
-                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
-                _ => return Err(StreamError::UnknownStream),
-            }
+        let mut inner = self.lock();
+        let origin = match inner.streams.get(id) {
+            Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
+            _ => return Err(StreamError::UnknownStream),
         };
-        if close {
-            let mut inner = self.lock();
-            let reserved = inner
+        if close == Some(true) {
+            let taken = inner
                 .streams
                 .get_mut(id)
-                .filter(|s| s.reserved >= CLOSE_RESERVE)
-                .map(|s| {
-                    s.reserved -= CLOSE_RESERVE;
-                });
-            if reserved.is_some() {
-                inner.free(&origin, CLOSE_RESERVE);
+                .filter(|s| s.reserved >= reserve)
+                .map(|s| s.reserved -= reserve);
+            if taken.is_some() {
+                inner.free(&origin, reserve);
                 inner.enqueue(id, body.to_vec(), 0);
                 drop(inner);
                 self.cv.notify_all();
                 return Ok(());
             }
         }
-        self.check_push_in(id, body.len(), (0, 0), (&origin, 0, 0), reserve)?;
-        let mut inner = self.lock();
+        let reserve = if close == Some(true) { 0 } else { reserve };
+        inner.check_in(id, body.len(), (0, 0), (&origin, 0, 0), reserve)?;
         inner.enqueue(id, body.to_vec(), 0);
         if reserve > 0 {
             if let Some(s) = inner.streams.get_mut(id) {
@@ -1002,6 +993,16 @@ impl Hub {
     #[cfg(test)]
     pub(crate) fn test_fill_host_budget(&self) {
         self.lock().host_bytes = HOST_BUDGET;
+    }
+    /// The host and origin bytes held now for the stream's origin client.
+    #[cfg(test)]
+    pub(crate) fn test_budget(&self, id: &str) -> (usize, usize) {
+        let inner = self.lock();
+        let origin = inner.streams.get(id).map(|s| s.origin.clone());
+        (
+            inner.host_bytes,
+            origin.map_or(0, |o| inner.origin_bytes.get(&o).copied().unwrap_or(0)),
+        )
     }
     pub fn test_paused(&self, id: &str) -> bool {
         self.lock().streams.get(id).is_some_and(|s| {
@@ -1132,6 +1133,42 @@ impl Inner {
             }
             Consumer::Held { .. } => {}
         }
+    }
+    /// The push check under the caller's lock; `reserve` more bytes must fit the origin and host
+    /// budgets (not the stream's limit), for what an ask that this push opens keeps (19.3).
+    fn check_in(
+        &mut self,
+        id: &str,
+        len: usize,
+        chain: (usize, usize),
+        (origin, origin_pending, host_pending): (&str, usize, usize),
+        reserve: usize,
+    ) -> Result<(), StreamError> {
+        let now = self.clock.now();
+        let origin_now = self.origin_bytes.get(origin).copied().unwrap_or(0);
+        let host_now = self.host_bytes;
+        let Some(s) = self.streams.get_mut(id) else {
+            return Ok(());
+        };
+        let refused =
+            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
+                Some(Refused::Stream)
+            } else if origin_now + origin_pending + len + reserve > ORIGIN_BUDGET {
+                Some(Refused::Origin(len + reserve))
+            } else if host_now + host_pending + len + reserve > HOST_BUDGET {
+                Some(Refused::Host(len + reserve))
+            } else {
+                None
+            };
+        let Some(refused) = refused else {
+            return Ok(());
+        };
+        if s.deferred.is_none() && s.full_since.is_none() {
+            s.full_since = Some(now);
+        }
+        s.needs_ready = Some(refused);
+        self.waiting.insert(id.to_owned());
+        Err(StreamError::Full)
     }
     fn enqueue(&mut self, id: &str, body: Vec<u8>, hop: u8) {
         let Some(s) = self.streams.get_mut(id) else {
@@ -1435,6 +1472,40 @@ mod tests {
         hub.test_close(&other, json!("cancelled"));
         hub.test_take(&other);
         assert_eq!(budgets(&hub), (0, None));
+    }
+
+    /// 19.3 step 5: an open that finds its stream gone changes no budget; the input an ask
+    /// keeps counts while it is open and is freed once, by its close or the end.
+    #[test]
+    fn s100_fix14_kept_input_counts_while_open_and_is_freed_once() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        let b = 3 + CLOSE_RESERVE + 1000;
+        assert_eq!(budgets(&hub), (b, Some(b)));
+        hub.host_close_keeping(&s, b"close", 1000).unwrap();
+        assert_eq!(budgets(&hub), (8, Some(8)));
+        hub.test_close(&s, serde_json::json!("cancelled"));
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (0, None));
+        // The stream is gone: nothing is charged.
+        assert_eq!(
+            hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::UnknownStream)
+        );
+        assert_eq!(budgets(&hub), (0, None));
+        // An ask whose kept input would pass the origin budget is refused, with no item.
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        assert_eq!(
+            hub.host_open_keeping(&s, b"ask", ORIGIN_BUDGET),
+            Err(StreamError::Full)
+        );
+        assert_eq!(budgets(&hub), (0, None));
+        assert!(hub.test_take(&s).is_empty());
     }
 
     /// 19.3 step 5: an ask opens only when its item and its close's reserve fit the budget.

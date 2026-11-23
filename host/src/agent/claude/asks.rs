@@ -6,12 +6,15 @@ use super::control::{self, Fields};
 use super::{Out, Session, paths};
 use crate::agent::streams::{Hub, StreamError};
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How long an ask waits for an answer (19.3, step 4).
 pub(crate) const ASK_TTL: Duration = Duration::from_secs(600);
+
+/// Most asks and checks open on one stream at a time; the next is denied at once (19.3, step 5).
+pub(crate) const MAX_OPEN_ASKS: usize = 64;
 
 /// What an `answer` says (the WIT `decision`).
 #[derive(Clone, Debug, PartialEq)]
@@ -52,9 +55,12 @@ struct Open {
 pub(crate) struct Asks {
     next: u64,
     open: Vec<Open>,
-    /// `ask-resolved` items decided but not yet on the stream (it was full): they go before
-    /// any later item.
-    pending: VecDeque<Vec<u8>>,
+    /// The input bytes the host keeps of each ask whose close is not yet pushed, by ask id:
+    /// reserved in the budgets at open, freed with the close (19.2, Byte budgets).
+    kept: HashMap<String, usize>,
+    /// `ask-resolved` items decided but not yet on the stream (it was full), with their ask's
+    /// id: they go before any later item.
+    pending: VecDeque<(String, Vec<u8>)>,
     /// The run's stream has ended or is about to: no `answered` goes on it any more.
     sealed: bool,
     cwd: PathBuf,
@@ -94,8 +100,10 @@ impl Session {
 
     /// Pushes the closes that waited for room. Stops at the first that does not fit.
     fn flush(&self, hub: &Hub, asks: &mut Asks) -> Result<(), StreamError> {
-        while let Some(body) = asks.pending.front() {
-            hub.host_close_push(&self.id, body)?;
+        while let Some((id, body)) = asks.pending.front() {
+            let kept = asks.kept.get(id).copied().unwrap_or(0);
+            hub.host_close_keeping(&self.id, body, kept)?;
+            asks.kept.remove(id);
             asks.pending.pop_front();
         }
         Ok(())
@@ -107,8 +115,8 @@ impl Session {
             taken.push(asks.open.remove(i - n));
         }
         for open in taken {
-            asks.pending
-                .push_back(control::resolved_item(&open.id, by, outcome));
+            let item = control::resolved_item(&open.id, by, outcome);
+            asks.pending.push_back((open.id, item));
         }
         let _ = self.flush(hub, asks);
     }
@@ -133,6 +141,9 @@ impl Session {
     ) -> Result<(), StreamError> {
         let mut asks = self.asks();
         self.flush(hub, &mut asks)?;
+        if asks.kept.len() >= MAX_OPEN_ASKS {
+            return Err(StreamError::TooLarge);
+        }
         let id = (asks.next + 1).to_string();
         let path = paths::resolved(
             &fields.tool,
@@ -146,10 +157,16 @@ impl Session {
         let start = hub.now();
         let (ms, dropped) = now_ms();
         let expires_at = ms.saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
-        hub.host_open_push(
+        // What the host keeps of the ask counts in the budgets while it is open.
+        let kept = request_id.len()
+            + fields.tool.len()
+            + serde_json::to_vec(&fields.input).map_or(0, |v| v.len());
+        hub.host_open_keeping(
             &self.id,
             &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
+            kept,
         )?;
+        asks.kept.insert(id.clone(), kept);
         asks.next += 1;
         asks.open.push(Open {
             id,
@@ -248,8 +265,10 @@ impl Session {
         if asks.sealed {
             return;
         }
-        asks.pending
-            .push_back(control::resolved_item(id, "answered", Some(outcome)));
+        asks.pending.push_back((
+            id.to_owned(),
+            control::resolved_item(id, "answered", Some(outcome)),
+        ));
         let _ = self.flush(hub, &mut asks);
     }
 
@@ -366,6 +385,79 @@ mod tests {
             last.as_deref(),
             Some(&br#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#[..])
         );
+    }
+
+    #[test]
+    fn s100_fix14_ac3_asks_that_open_and_close_return_the_budgets_to_zero() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        let big = Fields {
+            tool_use_id: "t".into(),
+            tool: "Bash".into(),
+            input: json!({"command": "x".repeat(10_000)}),
+        };
+        for n in 1..=5 {
+            session
+                .open_request(&hub, &format!("r{n}"), false, &big, ASK_TTL)
+                .unwrap();
+        }
+        assert!(hub.test_budget(&s).0 > 5 * 10_000);
+        session.interrupt(&hub, b"{}".to_vec());
+        session.drain(&hub);
+        hub.test_take(&s);
+        let (host, origin) = hub.test_budget(&s);
+        assert!(host < 5 * 10_000 && origin < 5 * 10_000, "{host} {origin}");
+        hub.test_close(&s, json!("cancelled"));
+        hub.test_take(&s);
+        assert_eq!(hub.test_budget(&s), (0, 0));
+    }
+
+    #[test]
+    fn s100_fix14_ac3_an_ask_whose_input_passes_the_budget_opens_nothing() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        let huge = Fields {
+            tool_use_id: "t".into(),
+            tool: "Bash".into(),
+            input: json!({"command": "x"}),
+        };
+        hub.test_fill_host_budget();
+        assert_eq!(
+            session.open_request(&hub, "r1", false, &huge, ASK_TTL),
+            Err(StreamError::Full)
+        );
+        assert!(hub.test_take(&s).is_empty());
+        assert_eq!(session.asks().kept.len(), 0);
+    }
+
+    #[test]
+    fn s100_fix14_ac4_the_65th_open_ask_is_refused_and_pushes_nothing() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        for n in 0..MAX_OPEN_ASKS {
+            session
+                .open_request(&hub, &format!("r{n}"), n % 2 == 0, &bash(), ASK_TTL)
+                .unwrap();
+        }
+        let before = hub.test_budget(&s);
+        assert_eq!(
+            session.open_request(&hub, "r65", false, &bash(), ASK_TTL),
+            Err(StreamError::TooLarge)
+        );
+        assert_eq!(hub.test_budget(&s), before);
+        assert_eq!(hub.test_take(&s).len(), MAX_OPEN_ASKS);
     }
 
     #[test]
