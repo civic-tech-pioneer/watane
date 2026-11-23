@@ -209,7 +209,8 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     use cbor::*;
     let fx = fixture();
     let a = node(MemHoldings::anchor(fx), None);
-    // The raw requests share a byte bucket. Give them headroom so they reach op handling.
+    // Pairing and the raw unknown calls share a byte bucket. QUIC overhead can
+    // drain the default 64 KiB/s bucket, so give this fixture headroom for op handling.
     let limits = Limits {
         unknown_bytes_per_sec: 16 << 20,
         ..Limits::default()
