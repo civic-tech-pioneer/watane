@@ -1630,6 +1630,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+
+- 2026-11-23 (S100, H2 wire form, cross-project): a file-tool `ask`/`check` item carries a top-level `"path"` with the absolute path, symlinks resolved; `input` stays as `claude` sent it; absent when unresolvable or refused. This is the form agentic-harness TECHNICAL 9.6 left to stage B's first slice; the kernel (agentic-harness S36) reads it. A `can_use_tool`/`hook_callback` before `system/init` passed is denied at once, pushing nothing. Veto: an additive key, cheap to rename before S36 merges.
 - 2026-11-22 (the human's answer) Auto-merge is retired: the `codex-push` rulesets (watane 27841000,
   agentic-harness 27841001: only `slice/*` without bypass, for the Codex push App) block it, so the PO merges
   each green PR with `gh pr merge <n> --admin --rebase`. Foremen open their PR and do not arm it.
