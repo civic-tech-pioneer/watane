@@ -306,13 +306,12 @@ fn pack_error(root: &Path, part: String, e: std::io::Error) -> PackageError {
         io(&root.join(part), e)
     }
 }
-// A failed entry stat retains its name; a failure before enumeration names the directory.
+// A vanished child is named when its stat failed. Other listing errors name the directory.
 fn listing(root: &Path, relative: &str, e: crate::open::ListingError) -> PackageError {
-    let path = e.relative_path(relative);
     if e.source.kind() == std::io::ErrorKind::NotFound {
-        path_error(&path, crate::refusal::CHANGED)
+        path_error(&e.relative_path(relative), crate::refusal::CHANGED)
     } else {
-        io(&root.join(path), e.source)
+        io(&root.join(relative), e.source)
     }
 }
 fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
@@ -759,7 +758,7 @@ mod tests {
         );
         assert!(
             matches!(denied, PackageError::Io { ref path, .. }
-                if path == Path::new("/m/ui/entry")
+                if path == Path::new("/m/ui")
             ),
             "{denied:?}"
         );

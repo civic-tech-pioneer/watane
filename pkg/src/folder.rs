@@ -290,10 +290,10 @@ fn list_entries(
                 std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
             ) =>
         {
-            add(violations, Rule::Path, &e.relative_path(relative), CHANGED);
+            add(violations, Rule::Path, relative, CHANGED);
             Ok(None)
         }
-        Err(e) => Err(io(&root.join(e.relative_path(relative)), e.source)),
+        Err(e) => Err(io(&root.join(relative), e.source)),
     }
 }
 fn segment(s: &str) -> bool {
