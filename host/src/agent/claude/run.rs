@@ -229,10 +229,13 @@ fn clean_line<H>(
     signal: impl FnOnce(&H),
 ) {
     // The record is validated before any handle opens: a group id of 2 or more, then a boot id
-    // and a start time, and nothing else (review r7, F7.2).
+    // and a start time that parse (Linux: a decimal tick count), and nothing else (review r7,
+    // F7.2). A boot id is any one token.
     let fields: Vec<&str> = line.split_whitespace().collect();
     let pgid = match fields.as_slice() {
-        [pgid, _boot, _start] => pgid.parse::<i32>().ok().filter(|p| *p >= 2),
+        [pgid, _boot, start] if !cfg!(target_os = "linux") || start.parse::<u64>().is_ok() => {
+            pgid.parse::<i32>().ok().filter(|p| *p >= 2)
+        }
         _ => None,
     };
     let Some(pgid) = pgid else {
@@ -1349,6 +1352,10 @@ mod pids_tests {
             "7 b",
             "x b 1",
             "7 b 1 extra",
+            #[cfg(target_os = "linux")]
+            "7 b x",
+            #[cfg(target_os = "linux")]
+            "7 b -1",
         ] {
             clean_line(
                 bad,

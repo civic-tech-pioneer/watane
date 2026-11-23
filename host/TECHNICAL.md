@@ -3149,7 +3149,8 @@ not keep a credential from a mod on their own. Three rules do:
    cannot disagree; the deputy's ruling): whether a waiting producer is woken is decided by
    that check, run under the same lock, on the current pending bytes of every chain
    in flight, against both the origin's and the host's budget, so a woken producer's
-   retry is admitted. A stream's refusal and lag state change only when a push to it
+   retry is admitted. The scan's admission answer equals a retry's for every state; the
+   19.2 In flight rule (`ready` once the stream is below half) then gates the wake. A stream's refusal and lag state change only when a push to it
    commits (its refusal then clears and its lag clock stops); a tentative push in a
    chain that rolls back leaves them exactly as they were. A host close item
    (`ask-resolved`) is no producer push: it neither clears a refusal nor stops

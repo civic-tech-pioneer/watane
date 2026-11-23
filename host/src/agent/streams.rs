@@ -1363,6 +1363,20 @@ impl Inner {
             None => self.scan_owed = true,
         }
     }
+    /// The admission that a retry of the refused push `need` on stream `id` gets: `admits` with the
+    /// arguments a retry's `check_in` passes (the mod push path, agent/mod.rs), taken from the
+    /// pending of the chains in flight (19.3 step 5, review r7, F7.1).
+    fn ready_admits(
+        &self,
+        id: &str,
+        s: &Stream,
+        need: (usize, usize),
+        pending: &crate::agent::Pending,
+    ) -> bool {
+        let held = (pending.0.get(&s.origin).copied().unwrap_or(0), pending.1);
+        let chain = pending.2.get(id).copied().unwrap_or((0, 0));
+        self.admits(s, need, chain, held)
+    }
     /// `scan_ready` with the pending bytes of the chains in flight.
     fn scan_ready_in(&mut self, pending: &crate::agent::Pending) {
         self.scan_owed = false;
@@ -1379,10 +1393,7 @@ impl Inner {
             if s.deferred.is_some() || s.queue.len() * 2 >= MAX_ITEMS || s.bytes * 2 >= MAX_BYTES {
                 continue;
             }
-            // The same arguments a retry's `check_in` passes (the mod push path, agent/mod.rs).
-            let held = (pending.0.get(&s.origin).copied().unwrap_or(0), pending.1);
-            let chain = pending.2.get(&id).copied().unwrap_or((0, 0));
-            if !self.admits(s, need, chain, held) {
+            if !self.ready_admits(&id, s, need, pending) {
                 continue;
             }
             let (origin, origin_gen, producer) =
@@ -1798,8 +1809,9 @@ mod tests {
         hub.check_push(&id, 1024, (0, 0), 0, 0).unwrap();
     }
 
-    /// 19.3 step 5 (review r7, F7.1): for every state of a seeded table, the scan wakes a waiter
-    /// exactly when retry's admission admits it, with the same arguments.
+    /// 19.3 step 5 (review r7, F7.1): for every state of a seeded table, the scan's admission
+    /// answer equals retry's `check_in` answer, and the scan wakes the waiter exactly when that
+    /// answer admits and the stream is below half and not deferred (19.2, In flight).
     #[test]
     fn s100_fix19_ac1_the_scan_wakes_exactly_when_retry_admits() {
         let mut seed = 0x2545_f491_4f6c_dd1du64;
@@ -1817,8 +1829,8 @@ mod tests {
             6 => limit,
             _ => limit + 1,
         };
-        let (mut woke, mut kept) = (0, 0);
-        for _ in 0..400 {
+        let (mut woke, mut refused, mut held_by_half) = (0, 0, 0);
+        for _ in 0..1000 {
             let len = [1usize, 512, 1024, MAX_ITEM / 4][next(4)];
             let reserve = [0usize, 1000][next(2)];
             let chain = (next(3) * (MAX_ITEMS / 2), near(MAX_BYTES, next(8)));
@@ -1828,12 +1840,26 @@ mod tests {
                 near(ORIGIN_BUDGET, next(8)) / 2,
                 near(HOST_BUDGET, next(8)) / 2,
             );
+            let items = [0, 0, 1, MAX_ITEMS / 2 - 1, MAX_ITEMS / 2, MAX_ITEMS - 1][next(6)];
+            let bytes = [0, 0, 1, MAX_BYTES / 2 - 1, MAX_BYTES / 2, MAX_BYTES - 1024][next(6)];
+            let deferred = next(8) == 0;
+            let below_half = !deferred && items < MAX_ITEMS / 2 && bytes < MAX_BYTES / 2;
             let make = || {
                 let hub = Hub::new();
                 let id = hub
                     .test_open(Consumer::Held { origin: "o".into() }, "o".into())
                     .unwrap();
                 let mut inner = hub.lock();
+                let s = inner.streams.get_mut(&id).unwrap();
+                for seq in 0..items {
+                    s.queue.push_back(Item {
+                        seq: seq as u64,
+                        body: vec![],
+                        hop: 0,
+                    });
+                }
+                s.bytes = bytes;
+                s.deferred = deferred.then(Instant::now);
                 inner.origin_bytes.insert("o".into(), origin_now);
                 inner.host_bytes = host_now;
                 drop(inner);
@@ -1848,26 +1874,31 @@ mod tests {
             let mut inner = hub.lock();
             inner.streams.get_mut(&id).unwrap().needs_ready = Some((len, reserve));
             inner.waiting.insert(id.clone());
-            drop(inner);
-            let by_stream = std::collections::HashMap::from([(id.clone(), chain)]);
             let pending = (
                 std::collections::HashMap::from([("o".to_owned(), origin_pending)]),
                 host_pending,
-                by_stream,
+                std::collections::HashMap::from([(id.clone(), chain)]),
             );
+            let state = format!(
+                "len {len} reserve {reserve} chain {chain:?} pending {origin_pending}/{host_pending} now {origin_now}/{host_now} queue {items}/{bytes} deferred {deferred}"
+            );
+            let answer = inner.ready_admits(&id, &inner.streams[&id], (len, reserve), &pending);
+            assert_eq!(answer, admitted, "{state}");
+            drop(inner);
             hub.scan_ready_with(pending);
             let cleared = hub.lock().streams[&id].needs_ready.is_none();
-            assert_eq!(
-                cleared, admitted,
-                "len {len} reserve {reserve} chain {chain:?} pending {origin_pending}/{host_pending} now {origin_now}/{host_now}"
-            );
-            if admitted {
-                woke += 1;
-            } else {
-                kept += 1;
+            assert_eq!(cleared, below_half && admitted, "{state}");
+            match (below_half, admitted) {
+                (true, true) => woke += 1,
+                (true, false) => refused += 1,
+                (false, true) => held_by_half += 1,
+                (false, false) => {}
             }
         }
-        assert!(woke > 20 && kept > 20, "{woke} woke, {kept} kept");
+        assert!(
+            woke > 20 && refused > 20 && held_by_half > 20,
+            "{woke} woke, {refused} refused, {held_by_half} held by the half rule"
+        );
     }
 
     /// 19.3 step 5 (review r6, F6.1b): the origin has room but the host budget is still full: a
