@@ -595,16 +595,13 @@ mod tests {
         assert_eq!(w.b.count(), 0, "the redirect target gets no request");
     }
     /// A listed record for the publisher (through a chosen index that lists it at `a`).
-    fn listed_record(w: &World, eve: &Dist) -> tempfile::TempDir {
+    fn listed_record(w: &World, eve: &Dist) -> (tempfile::TempDir, Dist, Host) {
         let (dir, index) = home("Zed", true);
         index.list(&w.link(&w.a), "listed").unwrap();
         let host = Host::serve(&index.site_dir());
         eve.choose_index(&crate::Link::new(index.identity().unwrap(), &host.url, None).unwrap())
             .unwrap();
-        // Keep the index host alive for the rest of the process; it is only a test server.
-        std::mem::forget(host);
-        std::mem::forget(index);
-        dir
+        (dir, index, host)
     }
     /// AC1/AC3 wiring in `read_link`: a listed record's package redirect is checked, a
     /// followed record's is not, and a link with no record is checked.
@@ -629,6 +626,13 @@ mod tests {
         eve.follow(&w.link(&w.a)).unwrap();
         let got = eve.read_link(&w.link(&w.a)).unwrap();
         assert_eq!(got.package.id().to_string(), w.package["packages/".len()..]);
+        assert_eq!(w.b.count(), 1);
+        // No record: the channel read of the link's base is a listed read too.
+        let head = format!("{}head", w.b.url);
+        w.a.redirect("/head", &head);
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
+        assert_refused(got, &head);
         assert_eq!(w.b.count(), 1);
     }
     /// AC5 / 5.9: a listed record whose base is local, with no provider base, is
