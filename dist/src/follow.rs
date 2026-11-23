@@ -3,7 +3,7 @@
 
 use crate::{
     Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
-    RefreshReport, http, site, view,
+    RefreshReport, Tombstone, http, site, view,
 };
 use std::collections::BTreeMap;
 
@@ -13,22 +13,43 @@ pub(crate) fn now() -> u64 {
         .unwrap_or_default()
         .as_millis() as u64
 }
-/// Adds a base the participant gave to a record: appended after the known ones, at most
-/// 4 (the oldest learned base after the front one goes). True when the record changed
-/// its set of bases, so the caller reads them all (5.9).
+const MAX_SEEN: usize = 16;
+const MAX_TOMBS: usize = 1024;
+/// Remembers `base` in a `seen` or `given` list: at most 16, the oldest goes first (4.4).
+pub(crate) fn note_seen(list: &mut Vec<String>, base: &str) {
+    if base.is_empty() || list.iter().any(|b| b == base) {
+        return;
+    }
+    list.push(base.into());
+    if list.len() > MAX_SEEN {
+        list.remove(0);
+    }
+}
+/// Whether a link at `base` gives it: the record never saw it, or the participant gave it
+/// once (4.4, DD-48). A seen base never given may be a hit's link built from the record.
+pub(crate) fn link_gives(seen: &[String], given: &[String], base: &str) -> bool {
+    !seen.iter().any(|b| b == base) || given.iter().any(|b| b == base)
+}
+/// Keeps a removed record's `seen` and `given`: at most 1024, the oldest `at` goes first.
+pub(crate) fn add_tombstone(tombs: &mut BTreeMap<String, Tombstone>, key: String, tomb: Tombstone) {
+    tombs.insert(key, tomb);
+    while tombs.len() > MAX_TOMBS {
+        let oldest = tombs
+            .iter()
+            .min_by_key(|(_, t)| t.at)
+            .map(|(k, _)| k.clone());
+        tombs.remove(&oldest.expect("not empty"));
+    }
+}
+/// Adds a base a link names to a record: given when the link gives it, appended after the
+/// known ones, at most 4 (the oldest learned base after the front one goes). True when the
+/// record changed its set of bases, so the caller reads them all (5.9).
 pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
-    let held = record.base == base || record.bases.iter().any(|b| b == base);
-    if !held && !record.given.iter().any(|b| b == base) {
-        record.given.push(base.into());
+    if link_gives(&record.seen, &record.given, base) {
+        note_seen(&mut record.given, base);
     }
     let learned = add_base(record, base);
-    let Follow {
-        base: front,
-        bases,
-        given,
-        ..
-    } = record;
-    given.retain(|b| b == front || bases.contains(b));
+    note_seen(&mut record.seen, base);
     learned
 }
 fn add_base(record: &mut Follow, base: &str) -> bool {
@@ -57,9 +78,12 @@ pub(crate) fn listed_read(record: &Follow, base: &str) -> bool {
 /// gave (5.9): the listing's bases are dropped.
 pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
     if !record.followed && !record.index {
+        if link_gives(&record.seen, &record.given, base) {
+            note_seen(&mut record.given, base);
+        }
+        note_seen(&mut record.seen, base);
         record.base = base.into();
         record.bases.clear();
-        record.given = vec![base.into()];
     }
 }
 /// A link's base the record does not hold: the only kind a link can newly give (5.9).
@@ -67,35 +91,77 @@ fn follow_unseen(record: &Follow, base: &str) -> bool {
     record.base != base && !record.bases.iter().any(|b| b == base)
 }
 impl Dist {
-    /// A link's base a followed or chosen record holds but the participant has not given: its first read
-    /// uses the listed-address rule too, for the link may be built from the record (5.9).
+    /// A link's base a followed or chosen record (or a tombstone) saw but the participant has not given: its
+    /// first read uses the listed-address rule too, for the link may be built from the
+    /// record (5.9, DD-48).
     pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> bool {
-        self.follows
+        if let Some(r) = self
+            .follows
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
-            .is_some_and(|r| {
-                (r.followed || r.index)
-                    && !follow_unseen(r, base)
-                    && !r.given.iter().any(|b| b == base)
-            })
+        {
+            return (r.followed || r.index) && !link_gives(&r.seen, &r.given, base);
+        }
+        self.tombs
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .get(&key.to_string())
+            .is_some_and(|t| !link_gives(&t.seen, &t.given, base))
     }
+    /// A record with no base yet, starting from its channel's tombstone (4.4, DD-48).
+    pub(crate) fn new_record(
+        &self,
+        key: PublicKey,
+        followed: bool,
+        index: bool,
+        kept: bool,
+    ) -> Follow {
+        let tomb = self
+            .tombs
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .get(&key.to_string())
+            .cloned();
+        let time = now();
+        Follow {
+            base: String::new(),
+            followed,
+            index,
+            kept,
+            bases: Vec::new(),
+            given: tomb.as_ref().map(|t| t.given.clone()).unwrap_or_default(),
+            seen: tomb.map(|t| t.seen).unwrap_or_default(),
+            _followed_at: time,
+            _last_attempt: if kept { 0 } else { time },
+            last_success: None,
+        }
+    }
+    /// Saves `records`; a channel with a record has no tombstone (4.4).
     pub(crate) fn save_follows(
         &self,
         records: &BTreeMap<PublicKey, Follow>,
     ) -> Result<(), DistError> {
+        let mut tombs = self
+            .tombs
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let mut seen = tombs.clone();
+        seen.retain(|k, _| !records.keys().any(|key| key.to_string() == *k));
         let file = Follows {
             version: 1,
             channels: records
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
+            seen,
         };
         site::write_equal(
             &self.home.join("dist/follows.json"),
             &serde_json::to_vec(&file).expect("follows JSON"),
             0o600,
         )?;
+        *tombs = file.seen;
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
@@ -124,17 +190,9 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let time = now();
-        let record = next.entry(link.channel()).or_insert(Follow {
-            base: link.base().into(),
-            followed: true,
-            index: false,
-            kept: false,
-            bases: Vec::new(),
-            given: vec![link.base().into()],
-            _followed_at: time,
-            _last_attempt: time,
-            last_success: None,
-        });
+        let record = next
+            .entry(link.channel())
+            .or_insert_with(|| self.new_record(link.channel(), true, false, false));
         adopt_given_base(record, link.base());
         record.followed = true;
         let learned = learn_base(record, link.base());
@@ -165,7 +223,8 @@ impl Dist {
         if !unknown {
             return Ok(false);
         }
-        let Ok(report) = self.read_channel(key, link.base()) else {
+        let listed = self.held_ungiven(key, link.base());
+        let Ok(report) = self.read_channel_mode(key, link.base(), listed) else {
             return Ok(false);
         };
         if !matches!(
@@ -442,5 +501,70 @@ impl Dist {
             outcome,
             changes,
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ac5_seen_and_given_hold_sixteen_oldest_first_out() {
+        let mut list = Vec::new();
+        for n in 0..20 {
+            note_seen(&mut list, &format!("http://h{n}/"));
+        }
+        note_seen(&mut list, "http://h19/");
+        assert_eq!(list.len(), 16);
+        assert_eq!(list[0], "http://h4/");
+        assert_eq!(list[15], "http://h19/");
+    }
+    #[test]
+    fn ac5_a_thousand_and_twenty_four_tombstones_oldest_at_out() {
+        let mut tombs = BTreeMap::new();
+        for n in 0..1025u64 {
+            let tomb = Tombstone {
+                seen: Vec::new(),
+                given: Vec::new(),
+                at: 1000 - n % 1000 + n / 1000 * 5000,
+            };
+            add_tombstone(&mut tombs, format!("k{n}"), tomb);
+        }
+        assert_eq!(tombs.len(), 1024);
+        let oldest = (0..1025u64)
+            .min_by_key(|n| 1000 - n % 1000 + n / 1000 * 5000)
+            .unwrap();
+        assert!(!tombs.contains_key(&format!("k{oldest}")));
+    }
+    #[test]
+    fn ac3_a_given_base_evicted_by_the_cap_is_given_again() {
+        let mut r = Follow {
+            base: "http://a/".into(),
+            followed: true,
+            index: false,
+            kept: false,
+            bases: Vec::new(),
+            given: Vec::new(),
+            seen: Vec::new(),
+            _followed_at: 0,
+            _last_attempt: 0,
+            last_success: None,
+        };
+        for b in [
+            "http://a/",
+            "http://b/",
+            "http://c/",
+            "http://d/",
+            "http://e/",
+        ] {
+            learn_base(&mut r, b);
+        }
+        assert!(!r.bases.contains(&"http://b/".to_owned()), "b was evicted");
+        assert_eq!(r.given.len(), 5);
+        learn_base(&mut r, "http://b/");
+        assert!(r.bases.contains(&"http://b/".to_owned()));
+        assert!(r.given.contains(&"http://b/".to_owned()));
+        // A seen base never given gives nothing, held or evicted.
+        r.seen.push("http://x/".into());
+        learn_base(&mut r, "http://x/");
+        assert!(!r.given.contains(&"http://x/".to_owned()));
     }
 }

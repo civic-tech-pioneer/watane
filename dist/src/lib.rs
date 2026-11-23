@@ -115,6 +115,8 @@ pub struct Dist {
     base: Mutex<Option<String>>,
     options: Options,
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
+    /// `seen` and `given` of removed records, by channel text (4.4, DD-48). Lock after `follows`.
+    tombs: Mutex<std::collections::BTreeMap<String, Tombstone>>,
     read_mutex: Mutex<()>,
     agent: ureq::Agent,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
@@ -195,6 +197,7 @@ impl Dist {
             watane_log::Log::open(&home.join("log"))?
         };
         let mut follows = std::collections::BTreeMap::new();
+        let mut tombs = std::collections::BTreeMap::new();
         if let Some(file) = read_json::<Follows>(&dir.join("follows.json"))? {
             let path = dir.join("follows.json");
             if file.version != 1 {
@@ -240,7 +243,7 @@ impl Dist {
                         .base()
                         .into();
                 }
-                for base in &mut record.given {
+                for base in record.given.iter_mut().chain(&mut record.seen) {
                     *base = Link::new(channel, base, None)
                         .map_err(|e| DistError::Corrupt {
                             path: path.clone(),
@@ -248,6 +251,9 @@ impl Dist {
                         })?
                         .base()
                         .into();
+                }
+                for base in record.bases.clone().iter().chain([&record.base]) {
+                    follow::note_seen(&mut record.seen, base);
                 }
                 if !record.followed && !record.index && !record.base.is_empty() {
                     if record.bases.is_empty() {
@@ -257,6 +263,7 @@ impl Dist {
                 }
                 follows.insert(channel, record);
             }
+            tombs = file.seen;
         }
         let base = match read_json::<Site>(&dir.join("site.json"))? {
             None => None,
@@ -309,6 +316,7 @@ impl Dist {
                 .into(),
             options,
             follows: Mutex::new(follows),
+            tombs: Mutex::new(tombs),
             read_mutex: Mutex::new(()),
         })
     }
@@ -341,6 +349,9 @@ struct Follow {
     /// The bases the participant named by a link (5.9, DD-47); any other is read as listed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     given: Vec<String>,
+    /// Every base the record ever held, at most 16 (4.4, DD-48).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    seen: Vec<String>,
     #[serde(rename = "followed_at")]
     _followed_at: u64,
     #[serde(rename = "last_attempt")]
@@ -354,6 +365,15 @@ fn default_followed() -> bool {
 struct Follows {
     version: u64,
     channels: std::collections::BTreeMap<String, Follow>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    seen: std::collections::BTreeMap<String, Tombstone>,
+}
+/// What a removed record leaves: its `seen` and `given`, at most 1024 of them (4.4, DD-48).
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct Tombstone {
+    seen: Vec<String>,
+    given: Vec<String>,
+    at: u64,
 }
 #[derive(serde::Deserialize)]
 struct Site {

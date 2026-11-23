@@ -2,8 +2,7 @@
 //! that `node` serves to and stores from other machines. Takes no read lock.
 
 use crate::{
-    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, follow,
-    site, view,
+    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, site, view,
 };
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -132,17 +131,9 @@ impl Dist {
             });
         }
         let mut next = records.clone();
-        let record = next.entry(*channel).or_insert(Follow {
-            base: String::new(),
-            followed: false,
-            index: false,
-            kept: true,
-            bases: Vec::new(),
-            given: Vec::new(),
-            _followed_at: follow::now(),
-            _last_attempt: 0,
-            last_success: None,
-        });
+        let record = next
+            .entry(*channel)
+            .or_insert_with(|| self.new_record(*channel, false, false, true));
         record.kept = true;
         self.save_follows(&next)?;
         *records = next;

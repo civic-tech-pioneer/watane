@@ -505,7 +505,10 @@ fn ac3_failed_kept_ingest_leaves_earlier_record_as_it_was() {
             d.ingest(&key, vec![gap.clone()], Reason::Kept),
             Ingested::Failed(DistError::Gap { .. })
         ));
-        assert_eq!(follows_keys(h.path()).unwrap()[key.to_string()], record);
+        // Reading the file adds the held base to `seen` (DD-48); the rest is as it was.
+        let mut saved = follows_keys(h.path()).unwrap()[key.to_string()].clone();
+        saved.as_object_mut().unwrap().remove("seen");
+        assert_eq!(saved, record);
         assert_eq!(d.channel(&key).unwrap().kept, kept);
     }
 }

@@ -261,17 +261,9 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let time = follow::now();
-        let r = next.entry(link.channel()).or_insert(Follow {
-            base: link.base().into(),
-            followed: false,
-            index: true,
-            kept: false,
-            bases: Vec::new(),
-            given: vec![link.base().into()],
-            _followed_at: time,
-            _last_attempt: time,
-            last_success: None,
-        });
+        let r = next
+            .entry(link.channel())
+            .or_insert_with(|| self.new_record(link.channel(), false, true, false));
         follow::adopt_given_base(r, link.base());
         r.index = true;
         let learned = follow::learn_base(r, link.base());
@@ -355,16 +347,11 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
-        let record = next.entry(key).or_insert(Follow {
-            base: bases[0].clone(),
-            followed: false,
-            index: false,
-            kept: false,
-            bases: Vec::new(),
-            given: Vec::new(),
-            _followed_at: follow::now(),
-            _last_attempt: 0,
-            last_success: None,
+        let record = next.entry(key).or_insert_with(|| {
+            let mut r = self.new_record(key, false, false, false);
+            r._last_attempt = 0;
+            r.base = bases[0].clone();
+            r
         });
         if !record.followed && !record.index {
             let mut ordered: Vec<_> = record
@@ -376,6 +363,9 @@ impl Dist {
             ordered.extend(bases.iter().filter(|b| !record.bases.contains(b)).cloned());
             record.bases = ordered;
             record.base = record.bases[0].clone();
+            for base in &record.bases {
+                follow::note_seen(&mut record.seen, base);
+            }
         }
         self.save_follows(&next)?;
         *records = next;
@@ -513,7 +503,21 @@ impl Dist {
         let Some(channel) = channel else {
             return Ok(());
         };
+        let gone: Vec<_> = next
+            .iter()
+            .filter(|(k, r)| !(r.followed || r.index || r.kept || walk.bases.contains_key(k)))
+            .map(|(k, r)| (k.to_string(), r.seen.clone(), r.given.clone()))
+            .collect();
         next.retain(|k, r| r.followed || r.index || r.kept || walk.bases.contains_key(k));
+        let mut tombs = self
+            .tombs
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        for (key, seen, given) in gone {
+            let at = follow::now();
+            follow::add_tombstone(&mut tombs, key, crate::Tombstone { seen, given, at });
+        }
+        drop(tombs);
         for (key, record) in &mut next {
             if record.kept && !record.followed && !record.index && !walk.bases.contains_key(key) {
                 record.base.clear();
