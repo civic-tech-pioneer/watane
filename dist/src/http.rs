@@ -1458,4 +1458,83 @@ mod tests {
             "a hint base led dist into the local network"
         );
     }
+    fn follows_file(dir: &std::path::Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(dir.join("dist/follows.json")).unwrap()).unwrap()
+    }
+
+    /// r7 AC2: a provider fetch through a hint base for a channel with no record leaves a
+    /// tombstone for it that saw the base, and no record (A36).
+    #[test]
+    fn ac2_provider_fetch_notes_the_hint_base_in_a_tombstone() {
+        let w = world();
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&w.a), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
+        let file = follows_file(dir.path());
+        let key = w.key.to_string();
+        assert!(
+            file["channels"].get(&key).is_none(),
+            "a tombstone is no record"
+        );
+        assert_eq!(file["seen"][&key]["seen"], serde_json::json!([w.a.url]));
+        assert!(file["seen"][&key]["given"].as_array().unwrap().is_empty());
+    }
+
+    /// r7 AC2: with a listed record, the record's `seen` holds the hint base.
+    #[test]
+    fn ac2_provider_fetch_notes_the_hint_base_in_a_listed_record() {
+        let w = world();
+        let a2 = Host::serve(&w.publisher.site_dir());
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&a2), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (dir, eve) = w.eve(&[&w.a, &a2, &dave_host]);
+        let _z = listed_record(&w, &eve);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        w.a.redirect(
+            &format!("/{}", w.package),
+            &format!("{}{}", w.b.url, w.package),
+        );
+        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
+        let file = follows_file(dir.path());
+        let seen = file["channels"][w.key.to_string()]["seen"].clone();
+        assert!(
+            seen.as_array().unwrap().contains(&a2.url.clone().into()),
+            "{seen}"
+        );
+    }
+
+    /// r7 AC4: a failed save while noting the base makes no request to it, and the
+    /// tombstones stay as they were.
+    #[test]
+    fn ac4_a_failed_save_noting_a_hint_base_makes_no_request_to_it() {
+        let w = world();
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&w.a), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        let before = eve.test_tomb_keys();
+        let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
+        let requests = w.a.count();
+        *eve.test_fail_saves.lock().unwrap() = Some(0);
+        assert!(eve.fetch_for(&w.reference, Some(&dave_key)).is_err());
+        assert_eq!(
+            w.a.count(),
+            requests,
+            "the base was read before it was noted"
+        );
+        assert_eq!(eve.test_tomb_keys(), before);
+        let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
+        assert_eq!(after, file);
+    }
 }
