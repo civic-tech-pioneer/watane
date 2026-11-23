@@ -53,32 +53,13 @@ fn check_directory(path: &Path, directory: &File) -> Result<(), Error> {
     }
 }
 
-fn create_directory(path: &Path) -> io::Result<()> {
-    match winfs::create_dir(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            let parent = path
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .ok_or(e)?;
-            create_directory(parent)?;
-            match winfs::create_dir(path) {
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
-                result => result,
-            }
-        }
-        Err(e) => Err(e),
-    }
-}
-
 fn directory(path: &Path, create: bool) -> Result<File, Error> {
     if path.as_os_str().is_empty() {
         return Err(Error::EmptyPath);
     }
     let directory = match winfs::open_path(path, false) {
         Err(e) if create && e.kind() == io::ErrorKind::NotFound => {
-            create_directory(path).map_err(|e| io_error(path, e))?;
+            winfs::create_dir_all(path).map_err(|e| io_error(path, e))?;
             winfs::open_path(path, false)
         }
         result => result,
@@ -179,7 +160,7 @@ fn write_key(dir: &Path, path: &Path, seed: &[u8; 32]) -> Result<(), Error> {
         file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
         drop(file);
-        winfs::publish(&tmp, path).map_err(|e| io_error(path, e))
+        winfs::publish(&tmp, path, true).map_err(|e| io_error(path, e))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);

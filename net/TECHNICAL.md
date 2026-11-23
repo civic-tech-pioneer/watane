@@ -413,6 +413,14 @@ memory only.
 
 ## 5. Behaviour
 
+Windows uses the private Windows file operations in log TECHNICAL 4.7
+for the directory, node key and pairing records. It validates the node
+key's owner, DACL, link count and file type on the opened handle before
+reading it. The first creator publishes with a write-through rename that
+cannot overwrite a concurrent winner. The blob store inherits the
+private directory's access control and staging files have an owner-only
+DACL.
+
 ### 5.1 Open
 
 Create `<home>/net/` and the node key if missing (NET-F-1). Read the

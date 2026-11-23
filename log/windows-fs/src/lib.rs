@@ -152,6 +152,26 @@ pub fn create_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Create missing directories with the same private ACL as the final directory.
+pub fn create_dir_all(path: &Path) -> io::Result<()> {
+    match create_dir(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .ok_or(e)?;
+            create_dir_all(parent)?;
+            match create_dir(path) {
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+                result => result,
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Create an exclusive new file with a protected owner-only ACL.
 pub fn create_file(path: &Path) -> io::Result<File> {
     let path = absolute_wide(path)?;
@@ -272,18 +292,17 @@ pub fn check_owner_only(file: &File) -> io::Result<()> {
 }
 
 /// Publish the flushed temporary file and wait for Windows to complete the move.
-pub fn publish(tmp: &Path, key: &Path) -> io::Result<()> {
+pub fn publish(tmp: &Path, key: &Path, replace: bool) -> io::Result<()> {
     let tmp = absolute_wide(tmp)?;
     let key = absolute_wide(key)?;
+    let flags = MOVEFILE_WRITE_THROUGH
+        | if replace {
+            MOVEFILE_REPLACE_EXISTING
+        } else {
+            0
+        };
     // SAFETY: Both paths are nul-terminated buffers live for the call.
-    if unsafe {
-        MoveFileExW(
-            tmp.as_ptr(),
-            key.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    } == 0
-    {
+    if unsafe { MoveFileExW(tmp.as_ptr(), key.as_ptr(), flags) } == 0 {
         return Err(io::Error::last_os_error());
     }
     Ok(())

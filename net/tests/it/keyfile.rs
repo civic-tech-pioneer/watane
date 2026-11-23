@@ -2,6 +2,7 @@
 
 use crate::support;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use support::*;
@@ -10,6 +11,7 @@ use watane_net::{Net, NetError, Options};
 fn open(dir: &Path) -> Result<Net, NetError> {
     Net::open(dir, MemHoldings::empty(), Options::default())
 }
+#[cfg(unix)]
 fn set_mode(p: &Path, mode: u32) {
     fs::set_permissions(p, fs::Permissions::from_mode(mode)).unwrap();
 }
@@ -22,12 +24,14 @@ fn a_key_file_of_the_wrong_length_is_corrupt_and_not_changed() {
         open(&dir).unwrap();
         let bytes = vec![7u8; len];
         fs::write(dir.join("node.key"), &bytes).unwrap();
+        #[cfg(unix)] // Unix needs mode 0600 on the fixture key.
         set_mode(&dir.join("node.key"), 0o600);
         assert!(matches!(open(&dir), Err(NetError::Corrupt { .. })), "{len}");
         assert_eq!(fs::read(dir.join("node.key")).unwrap(), bytes);
     }
 }
 
+#[cfg(unix)] // Exposes the key through POSIX mode bits.
 #[test]
 fn a_key_file_others_can_read_is_corrupt_and_not_changed() {
     let home = tempfile::tempdir().unwrap();
@@ -47,6 +51,7 @@ fn a_key_file_others_can_read_is_corrupt_and_not_changed() {
     );
 }
 
+#[cfg(unix)] // Exposes the directory mode and creates a POSIX symlink.
 #[test]
 fn a_directory_others_can_enter_or_a_linked_key_is_corrupt() {
     let home = tempfile::tempdir().unwrap();
@@ -59,4 +64,26 @@ fn a_directory_others_can_enter_or_a_linked_key_is_corrupt() {
     fs::rename(dir.join("node.key"), &real).unwrap();
     std::os::unix::fs::symlink(&real, dir.join("node.key")).unwrap();
     assert!(matches!(open(&dir), Err(NetError::Corrupt { .. })));
+}
+
+#[cfg(windows)] // Uses a Windows owner-only DACL and the built-in ACL editor.
+#[test]
+fn windows_key_reopens_and_refuses_an_exposed_acl() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join("net");
+    let key = open(&dir).unwrap().node_key();
+    let path = dir.join("node.key");
+    let before = fs::read(&path).unwrap();
+    assert_eq!(open(&dir).unwrap().node_key(), key);
+    let status = std::process::Command::new("icacls.exe")
+        .arg(&path)
+        .args(["/grant", "*S-1-1-0:(R)"])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{status:?}");
+    let Err(NetError::Corrupt { cause, .. }) = open(&dir) else {
+        panic!("exposed key must be refused");
+    };
+    assert!(cause.contains("owner-only Windows ACL"), "{cause}");
+    assert_eq!(fs::read(&path).unwrap(), before);
 }
