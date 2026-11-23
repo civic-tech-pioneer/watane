@@ -315,7 +315,8 @@ fn kill_held(_held: &()) {}
 pub(crate) fn clean_runs(home: &Path) {
     let runs = home.join("runs");
     if let (Ok(bytes), Some(boot)) = (std::fs::read(runs.join("pids")), boot_id()) {
-        for line in bytes.split(|b| *b == b'\n') {
+        // An empty piece (after the last newline, or a blank line) is no record and not logged.
+        for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
             clean_line(line, &boot, hold_leader, start_time, kill_held);
         }
     }
