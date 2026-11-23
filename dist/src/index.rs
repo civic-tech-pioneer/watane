@@ -215,8 +215,10 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        // A retry of a drop whose prune was left finishes it here (4.4).
-        let done = self.settle(true)?;
+        // A retry of a drop whose prune was left finishes it here, or finds it finished
+        // by an earlier call (4.4).
+        self.settle(true)?;
+        let finished = self.take_drop_done(channel);
         let mut records = self
             .follows
             .lock()
@@ -226,7 +228,7 @@ impl Dist {
             .get_mut(channel)
             .filter(|r| r.index && Some(*channel) != self.identity())
         else {
-            if done.dropped.contains(channel) {
+            if finished {
                 return Ok(());
             }
             return Err(DistError::NotIndex { channel: *channel });
@@ -382,6 +384,8 @@ impl Dist {
         Ok(())
     }
     pub(crate) fn read_record(&self, key: PublicKey) -> Result<RefreshReport, DistError> {
+        // The gate first: a record a left prune removes is never read (4.4).
+        self.settle(true)?;
         let record = self
             .follows
             .lock()
@@ -449,13 +453,20 @@ impl Dist {
                 break;
             }
         }
+        // A read's own save can leave the store unsynced: its caller requests nothing more.
+        self.sync_pending()?;
         if highest.is_some() || any_current {
             let mut records = self
                 .follows
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it");
             let mut next = records.clone();
-            let r = next.get_mut(&key).expect("listed record");
+            let Some(r) = next.get_mut(&key) else {
+                return Err(DistError::NotFollowed {
+                    channel: key,
+                    local_only: false,
+                });
+            };
             if let Some((_, base)) = highest.filter(|_| !r.bases.is_empty()) {
                 r.bases.retain(|b| b != &base);
                 r.bases.insert(0, base.clone());

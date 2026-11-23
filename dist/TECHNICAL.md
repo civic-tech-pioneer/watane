@@ -663,7 +663,18 @@ fails the call returns its `Io` error and reads, fetches and writes nothing.
 When it succeeds the call first finishes the work recorded with the unsynced
 state, then goes on: the kept mark of a failed `ingest` that stored no head is
 taken back, and the prune of an `unfollow` or `drop_index` runs, so a retry of
-that call returns `Ok` instead of `NothingToUnfollow` or `NotIndex`. The holder
+that call returns `Ok` instead of `NothingToUnfollow` or `NotIndex`, also when
+another call finished that prune first (once per channel).
+These steps are one gate, `settle` (S105 r5, deputy ruling): each path that can
+make a request (`read_link`, `fetch`, `follow`, `choose_index`,
+`refresh_channel`, `refresh`, `open_link` and so `learn_link_base`) passes it
+before it reads a record. When the gate's own work fails, also when a take-back
+or prune save leaves the store unsynced again, the gate returns that error and
+leaves the work recorded. A record that is gone after the gate is `NotFollowed`.
+Within a call, a save of its own that leaves the store unsynced stops it before
+its next request: a channel read and a package request retry the directory
+sync first, and a channel read returns that error rather than folding it into
+`Outcome::Failed`. The holder
 methods take no read lock (5.12), so `keep` and `ingest` leave a recorded prune
 to the next call that does. The unsynced state lives in memory: a restart reads
 the installed file.

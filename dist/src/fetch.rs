@@ -387,6 +387,8 @@ impl Dist {
                         local_only: false,
                     });
                 }
+                // No request from an unsynced store, also after a save in this call (4.4).
+                self.sync_pending()?;
                 self.get(
                     &url,
                     info.release.size.min(self.options.max_package),
@@ -429,6 +431,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // The gate before any record is read (4.4).
+        self.settle(true)?;
         Self::check_channel(&self.channel(&key)?)?;
         if Some(key) != self.identity() {
             // A link a mod hands over is derived, not given: its base is seen before any
@@ -487,11 +491,18 @@ impl Dist {
             cause: "a release link needs a slug",
         })?;
         if Some(link.channel()) != self.identity() {
-            let followed = self
-                .follows
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it")
-                .contains_key(&link.channel());
+            let followed = {
+                let _guard = self
+                    .read_mutex
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it");
+                // The gate before the record is read: a left prune may remove it (4.4).
+                self.settle(true)?;
+                self.follows
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .contains_key(&link.channel())
+            };
             if followed {
                 if !self.learn_link_base(link)? {
                     self.refresh_channel(&link.channel())?;
