@@ -1,9 +1,6 @@
 //! install's integration tests as one test binary: each file of this folder is a module,
 //! so a change links one binary instead of one per file (factory/README.md, test kinds).
 
-#[cfg(unix)] // Installer fixtures use POSIX permissions and process APIs.
-#[path = "../support/mod.rs"]
-mod support;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod adv_s50b;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
@@ -38,6 +35,9 @@ mod s89;
 mod script;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod sim_s89;
+#[cfg(unix)] // Installer fixtures use POSIX permissions and process APIs.
+#[path = "../support/mod.rs"]
+mod support;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod unit;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
