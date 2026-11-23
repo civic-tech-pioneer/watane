@@ -9,6 +9,7 @@ fn run(dir: &Path, args: &[&str]) -> (i32, Value) {
     let cache = dir.join("cache");
     in_process::dev(dir, args, &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))])
 }
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac2_check_counter_mod_and_rejections() {
     let t = tempfile::tempdir().unwrap();
@@ -41,6 +42,7 @@ fn ac2_check_counter_mod_and_rejections() {
     assert_eq!(v["errors"][0]["code"], "mod.symlink");
     assert_eq!(v["errors"][0]["file"], "link");
 }
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn check_missing_dir_and_git_symlink() {
     let t = tempfile::tempdir().unwrap();

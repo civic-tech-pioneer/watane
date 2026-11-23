@@ -185,6 +185,7 @@ mod fake {
             &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))],
         )
     }
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac1_install_result_home_matches_explicit_and_default_symlink() {
         let root = tempfile::tempdir().unwrap();
@@ -629,6 +630,7 @@ fn ac1_no_host_next_quotes_dir_for_the_shell() {
     );
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_install_next_matches_explicit_and_default_missing_symlink_home() {
     let root = tempfile::tempdir().unwrap();

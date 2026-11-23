@@ -460,6 +460,7 @@ fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
     assert_eq!(releases(home.path()), expected);
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_publish_paths_match_explicit_and_default_symlink_home() {
     let root = tempfile::tempdir().unwrap();
@@ -532,6 +533,7 @@ fn ac4_accepted_fake_publish_completes_under_five_seconds() {
     }
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_default_home_and_publish_retry_paths_are_canonical() {
     let root = tempfile::tempdir().unwrap();
@@ -567,6 +569,7 @@ fn ac1_default_home_and_publish_retry_paths_are_canonical() {
     }
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
     for scenario in ["race", "publish_timeout", "releases_timeout"] {

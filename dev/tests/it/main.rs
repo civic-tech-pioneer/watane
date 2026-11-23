@@ -8,11 +8,14 @@ mod support;
 
 mod add;
 mod build_on;
+#[cfg(unix)] // Fixture toolchains use executable POSIX scripts.
 mod builder;
 mod check;
 mod contract;
+#[cfg(unix)] // Fixture programs use executable POSIX scripts.
 mod doctor;
 mod envelope;
+#[cfg(unix)] // Session fixtures use POSIX symlinks and signals.
 mod fake_claude;
 mod install;
 mod journey;
@@ -20,7 +23,10 @@ mod journey_s11;
 mod publish;
 mod regress_s78;
 mod search;
+#[cfg(unix)] // Preview start and stop depend on Unix process groups.
 mod serve;
+#[cfg(windows)] // Verifies both Windows preview commands fail before starting a process.
+mod serve_windows;
 mod share;
 mod unit_tests;
 mod vendor;
