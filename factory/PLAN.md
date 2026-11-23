@@ -1268,7 +1268,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   user-sim ACCEPTED); r2 `changes (5)` (adversary BREACHED: a race in the first-read classifier; user-sim
   REJECTED: follow reached a local first base), posted with the S105-CHURN fail-closed rule for the same round;
   answered at bad89cf (all five and S105-CHURN; adversary broke the fixes twice more, fixed, ninth pass HELD; user-sim
-  ACCEPTED twice); r3 to Codex under the review-lead brief.) Three Leftovers items, all in `dist/`:
+  ACCEPTED twice); r3 to Codex under the review-lead brief; r3: 3/2, call another round. Round 4 is worth it: blocking
+  went 5, 5, 3; what is left is two narrow persistence defects (a malformed `gone` value, memory after a failed dir
+  sync) and one red app test, each with a red test, and the adversary and user-sim now pass.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
