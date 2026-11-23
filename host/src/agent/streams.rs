@@ -1379,8 +1379,10 @@ impl Inner {
             if s.deferred.is_some() || s.queue.len() * 2 >= MAX_ITEMS || s.bytes * 2 >= MAX_BYTES {
                 continue;
             }
+            // The same arguments a retry's `check_in` passes (the mod push path, agent/mod.rs).
             let held = (pending.0.get(&s.origin).copied().unwrap_or(0), pending.1);
-            if !self.admits(s, need, (0, 0), held) {
+            let chain = pending.2.get(&id).copied().unwrap_or((0, 0));
+            if !self.admits(s, need, chain, held) {
                 continue;
             }
             let (origin, origin_gen, producer) =
@@ -1757,6 +1759,116 @@ mod tests {
         let _gate = host.chains.lock().unwrap();
         hub.host_close_keeping(&ask, b"close", 1000).unwrap();
         assert!(hub.lock().streams[&other].needs_ready.is_some());
+    }
+
+    /// 19.3 step 5 (review r7, F7.1): the reviewer's case. A valid pending push of `MAX_ITEM - 512`
+    /// bytes and a refused 1 024-byte push share a stream: the scan keeps the waiter, as retry
+    /// is `full` still.
+    #[test]
+    fn s100_fix19_ac1_a_scan_counts_the_streams_own_pending_bytes() {
+        let hub = Hub::new();
+        let id = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let pend = |n: usize| {
+            let mut by_stream = std::collections::HashMap::new();
+            by_stream.insert(id.clone(), (1, n));
+            (
+                std::collections::HashMap::from([("o".to_owned(), n)]),
+                n,
+                by_stream,
+            )
+        };
+        hub.lock().streams.get_mut(&id).unwrap().bytes = MAX_BYTES - MAX_ITEM;
+        let n = MAX_ITEM - 512;
+        assert_eq!(
+            hub.check_push(&id, 1024, (1, n), n, n),
+            Err(StreamError::Full)
+        );
+        assert!(hub.lock().streams[&id].needs_ready.is_some());
+        hub.scan_ready_with(pend(n));
+        assert!(hub.lock().streams[&id].needs_ready.is_some());
+        assert_eq!(
+            hub.check_push(&id, 1024, (1, n), n, n),
+            Err(StreamError::Full)
+        );
+        // With the pending push gone, the scan wakes it and retry admits.
+        hub.scan_ready_with(Default::default());
+        assert!(hub.lock().streams[&id].needs_ready.is_none());
+        hub.check_push(&id, 1024, (0, 0), 0, 0).unwrap();
+    }
+
+    /// 19.3 step 5 (review r7, F7.1): for every state of a seeded table, the scan wakes a waiter
+    /// exactly when retry's admission admits it, with the same arguments.
+    #[test]
+    fn s100_fix19_ac1_the_scan_wakes_exactly_when_retry_admits() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move |n: usize| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            usize::try_from(seed >> 33).unwrap() % n
+        };
+        let near = |limit: usize, r: usize| match r % 8 {
+            0..=2 => 0,
+            3 => limit / 2,
+            4 => limit.saturating_sub(1500),
+            5 => limit.saturating_sub(1024),
+            6 => limit,
+            _ => limit + 1,
+        };
+        let (mut woke, mut kept) = (0, 0);
+        for _ in 0..400 {
+            let len = [1usize, 512, 1024, MAX_ITEM / 4][next(4)];
+            let reserve = [0usize, 1000][next(2)];
+            let chain = (next(3) * (MAX_ITEMS / 2), near(MAX_BYTES, next(8)));
+            let origin_pending = near(ORIGIN_BUDGET, next(8));
+            let host_pending = near(HOST_BUDGET, next(8)).max(origin_pending);
+            let (origin_now, host_now) = (
+                near(ORIGIN_BUDGET, next(8)) / 2,
+                near(HOST_BUDGET, next(8)) / 2,
+            );
+            let make = || {
+                let hub = Hub::new();
+                let id = hub
+                    .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                    .unwrap();
+                let mut inner = hub.lock();
+                inner.origin_bytes.insert("o".into(), origin_now);
+                inner.host_bytes = host_now;
+                drop(inner);
+                (hub, id)
+            };
+            let (hub, id) = make();
+            let admitted = hub
+                .lock()
+                .check_in(&id, len, chain, (origin_pending, host_pending), reserve)
+                .is_ok();
+            let (hub, id) = make();
+            {
+                let mut inner = hub.lock();
+                inner.streams.get_mut(&id).unwrap().needs_ready = Some((len, reserve));
+                inner.waiting.insert(id.clone());
+            }
+            let by_stream = std::collections::HashMap::from([(id.clone(), chain)]);
+            let pending = (
+                std::collections::HashMap::from([("o".to_owned(), origin_pending)]),
+                host_pending,
+                by_stream,
+            );
+            hub.scan_ready_with(pending);
+            let cleared = hub.lock().streams[&id].needs_ready.is_none();
+            assert_eq!(
+                cleared, admitted,
+                "len {len} reserve {reserve} chain {chain:?} pending {origin_pending}/{host_pending} now {origin_now}/{host_now}"
+            );
+            if admitted {
+                woke += 1;
+            } else {
+                kept += 1;
+            }
+        }
+        assert!(woke > 20 && kept > 20, "{woke} woke, {kept} kept");
     }
 
     /// 19.3 step 5 (review r6, F6.1b): the origin has room but the host budget is still full: a

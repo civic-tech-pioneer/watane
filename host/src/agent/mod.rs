@@ -955,17 +955,32 @@ impl Host {
 }
 
 /// The bytes that chains in flight have queued, by origin and in all (19.2, Commit).
-pub(crate) type Pending = (std::collections::HashMap<String, usize>, usize);
+/// The third part is each stream's own pending items and bytes, as a push counts them.
+pub(crate) type Pending = (
+    std::collections::HashMap<String, usize>,
+    usize,
+    std::collections::HashMap<String, (usize, usize)>,
+);
 
 fn pending_of(log: &[Effect]) -> Pending {
-    let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
+    let (mut by_origin, mut all, mut by_stream) = (
+        std::collections::HashMap::new(),
+        0,
+        std::collections::HashMap::new(),
+    );
     for e in log {
-        if let Effect::Push { body, origin, .. } = e {
+        if let Effect::Push {
+            body, origin, id, ..
+        } = e
+        {
             *by_origin.entry(origin.clone()).or_insert(0) += body.len();
             all += body.len();
+            let c: &mut (usize, usize) = by_stream.entry(id.clone()).or_insert((0, 0));
+            c.0 += 1;
+            c.1 += body.len();
         }
     }
-    (by_origin, all)
+    (by_origin, all, by_stream)
 }
 /// The pending bytes of the chains in flight, under their gate.
 fn pending_in_flight(chains: &[std::sync::Weak<Chain>]) -> Pending {
@@ -984,14 +999,23 @@ fn pending_in_flight(chains: &[std::sync::Weak<Chain>]) -> Pending {
     )
 }
 fn sum_pending(logs: Vec<Pending>) -> Pending {
-    let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
-    for (o, a) in logs {
+    let (mut by_origin, mut all, mut by_stream) = (
+        std::collections::HashMap::new(),
+        0,
+        std::collections::HashMap::new(),
+    );
+    for (o, a, st) in logs {
         for (k, v) in o {
             *by_origin.entry(k).or_insert(0) += v;
         }
+        for (k, v) in st {
+            let c: &mut (usize, usize) = by_stream.entry(k).or_insert((0, 0));
+            c.0 += v.0;
+            c.1 += v.1;
+        }
         all += a;
     }
-    (by_origin, all)
+    (by_origin, all, by_stream)
 }
 
 #[cfg(test)]

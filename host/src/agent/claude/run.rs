@@ -228,7 +228,15 @@ fn clean_line<H>(
     start_of: impl Fn(i32) -> Option<String>,
     signal: impl FnOnce(&H),
 ) {
-    let Some(pgid) = line.split_whitespace().next().and_then(|p| p.parse().ok()) else {
+    // The record is validated before any handle opens: a group id of 2 or more, then a boot id
+    // and a start time, and nothing else (review r7, F7.2).
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    let pgid = match fields.as_slice() {
+        [pgid, _boot, _start] => pgid.parse::<i32>().ok().filter(|p| *p >= 2),
+        _ => None,
+    };
+    let Some(pgid) = pgid else {
+        eprintln!("watane: a bad record in runs/pids is dropped: {line:?}");
         return;
     };
     let held = hold(pgid);
@@ -1327,6 +1335,55 @@ mod pids_tests {
             |_: &Held| signalled.set(true),
         );
         assert!(!signalled.get());
+    }
+
+    /// 3.1 step 3 (review r7, F7.2): a record is validated before any handle is opened; a bad
+    /// one is dropped and the next line is still handled.
+    #[test]
+    fn s100_fix19_ac2_a_bad_record_is_dropped_before_any_handle_and_the_next_is_handled() {
+        let held = std::cell::RefCell::new(vec![]);
+        for bad in [
+            "-5 bogus 100",
+            "0 b 1",
+            "1 b 1",
+            "7 b",
+            "x b 1",
+            "7 b 1 extra",
+        ] {
+            clean_line(
+                bad,
+                "b",
+                |pgid| {
+                    held.borrow_mut().push(pgid);
+                    None::<Held>
+                },
+                |_| None,
+                |_: &Held| {},
+            );
+        }
+        assert!(held.borrow().is_empty(), "{:?}", held.borrow());
+        let home = tempfile::tempdir().unwrap();
+        let mut run = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(run.id()).unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let record = pid_record(pgid).expect("the leader is alive");
+        std::fs::write(
+            home.path().join("runs/pids"),
+            format!("-5 bogus 100\n{record}\n"),
+        )
+        .unwrap();
+        clean_runs(home.path());
+        if cfg!(target_os = "linux") {
+            assert_eq!(run.wait().unwrap().signal(), Some(9));
+        } else {
+            run.kill().unwrap();
+            run.wait().unwrap();
+        }
+        assert!(!home.path().join("runs").exists());
     }
 
     /// Linux: the leader is held with a pidfd and killed through it; another member of its group
