@@ -425,7 +425,7 @@ impl Job {
         let writer_session = Arc::clone(&self.session);
         let writer_hub = Arc::clone(&self.hub);
         let (release, held) = std::sync::mpsc::channel::<()>();
-        std::thread::spawn(move || {
+        let writer = std::thread::spawn(move || {
             use std::io::Write;
             let mut stdin = stdin;
             let mut released = false;
@@ -468,6 +468,12 @@ impl Job {
         };
         let ended = reader.read(&mut stdout);
         let status = waiter.join().ok().and_then(Result::ok);
+        // Before the stream ends: the writer reports every answer it wrote, then each waiting
+        // `ask-resolved` goes on the stream, so `ended` never overtakes one (19.3, step 5).
+        drop(reader);
+        self.session.close_queue();
+        let _ = writer.join();
+        self.session.drain(&self.hub);
         if let Some(outcome) = ended {
             return outcome;
         }

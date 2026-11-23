@@ -130,6 +130,13 @@ impl Session {
             answered: None,
         })
     }
+    /// Closes the queue: the writer ends after the lines already in it.
+    pub(crate) fn close_queue(&self) {
+        self.tx
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .take();
+    }
     fn enqueue(&self, out: Out) -> bool {
         let sent = self
             .tx

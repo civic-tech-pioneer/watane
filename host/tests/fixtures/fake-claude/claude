@@ -12,6 +12,8 @@
 #   exit     with this file the program exits with its content as status after the lines
 #   closein  with this file the program closes its stdin after the lines and waits for a file
 #            `go`, then exits (a write to it fails)
+#   exitafter  with this file the program exits after it read as many stdin lines as its content
+#            says (`initialize` is the first)
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
 # It logs its arguments, environment and stdin to `claude.log` beside it, one `ARG`, `ENV`,
 # `IN`, `PID`, `CHILD` or `CWD` entry per line.
@@ -49,5 +51,6 @@ n=1
 while IFS= read -r line; do
   printf 'IN %s\n' "$line" >> "$log"
   n=$((n + 1))
+  if [ -f "$dir/exitafter" ] && [ "$n" -ge "$(cat "$dir/exitafter")" ]; then exit 0; fi
   [ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"
 done

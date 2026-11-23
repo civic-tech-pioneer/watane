@@ -1749,6 +1749,22 @@ fn s100_ac5_an_ask_is_denied_and_a_check_is_dropped_at_its_expires_at() {
 }
 
 #[test]
+fn s100_fix4_ac5_a_written_answer_gets_its_answered_before_the_stream_ends() {
+    let lines = lines_of(&[can_use("r1", "t1", "Bash", json!({"command":"ls"}))]);
+    // The fake exits as soon as it has read the answer (its second stdin line).
+    let rig = Rig::new(&[("lines", &lines), ("exitafter", b"2")]);
+    let s = rig.start_ok(ASKING);
+    rig.wait_items(&s, 3);
+    assert_eq!(rig.decide(&s, "1", "allow"), "ok");
+    let items = rig.wait_items(&s, 4);
+    assert_eq!(
+        items[3],
+        r#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#
+    );
+    assert!(rig.wait_ended(1)[0].ends_with(" closed"));
+}
+
+#[test]
 fn s100_ac6_a_cancel_request_closes_its_ask_and_is_never_pushed() {
     let lines = lines_of(&[
         can_use("r1", "t1", "Read", json!({"file_path":"a.txt"})),

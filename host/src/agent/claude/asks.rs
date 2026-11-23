@@ -225,6 +225,23 @@ impl Session {
         });
     }
 
+    /// Pushes every close that waits, waiting while the stream is full; gives up when the
+    /// stream is gone or stopped.
+    pub(crate) fn drain(&self, hub: &Hub) {
+        loop {
+            let result = {
+                let mut asks = self.asks();
+                self.flush(hub, &mut asks)
+            };
+            match result {
+                Err(StreamError::Full) if !self.stopped() => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                _ => return,
+            }
+        }
+    }
+
     /// The writer wrote the line of an answer: now `answered` goes on the stream.
     pub(crate) fn answered(&self, hub: &Hub, id: &str, outcome: &str) {
         let mut asks = self.asks();
