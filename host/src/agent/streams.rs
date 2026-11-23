@@ -1845,11 +1845,10 @@ mod tests {
                 .check_in(&id, len, chain, (origin_pending, host_pending), reserve)
                 .is_ok();
             let (hub, id) = make();
-            {
-                let mut inner = hub.lock();
-                inner.streams.get_mut(&id).unwrap().needs_ready = Some((len, reserve));
-                inner.waiting.insert(id.clone());
-            }
+            let mut inner = hub.lock();
+            inner.streams.get_mut(&id).unwrap().needs_ready = Some((len, reserve));
+            inner.waiting.insert(id.clone());
+            drop(inner);
             let by_stream = std::collections::HashMap::from([(id.clone(), chain)]);
             let pending = (
                 std::collections::HashMap::from([("o".to_owned(), origin_pending)]),
