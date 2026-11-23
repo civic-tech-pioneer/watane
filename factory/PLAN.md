@@ -1256,7 +1256,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S105 (upkeep) a listed base cannot lead dist into the local network.** (in flight, cloud, builder claude,
   reviewer codex; sketched 2026-11-23 by the deputy from S104's review; routine `trig_01LmtxyjTdABbJfHbfWq8FqF`,
   13:10 UTC, branch `slice/s105`; DELIVERED as PR #19 (+950 -33, dist/ only); r1 to Codex,
-  https://chatgpt.com/local/6b044a3f-725c-83ed-9b8f-699e84a7b005.) Three Leftovers items, all in `dist/`:
+  https://chatgpt.com/local/6b044a3f-725c-83ed-9b8f-699e84a7b005; r1 `changes (5)` (adversary BREACHED: old records'
+  bases get unchecked redirects; F1.5 not a finding, deputy), posted; the foreman answers.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
@@ -1707,8 +1708,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 - 2026-11-23 (S105, the adversary's two RISKs) (1) dist's local ranges (5.9) grow to cover 100.64/10 (CGNAT), 198.18/15,
   0/8, fec0::/10, and NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses that wrap a local IPv4 address: an upkeep item,
-  not in S105. (2) A `follows.json` written before S105 may keep a listing's base on a followed record; accepted as a
-  known limit (only data from before the fix; a per-base origin would change the format).
+  not in S105. (2) A `follows.json` written before S105 may keep a listing's base on a followed record. First accepted as a
+  known limit; revised the same day after Codex's S105 r1 (F1.1): a base of unknown origin (any base in a record saved
+  before S105) gets the listed-address rule, redirects included, until the participant gives it again. No format change.
 - 2026-11-23 (S105) dist follows a redirect from a listed or hint base only to a target that passes the same local-address rule as the base (A35/A37); redirects are not left under "Not protected".
 - 2026-11-23 (S102 BLOCKED) A slice scoped to one folder may still change the root `Cargo.lock` and `workspace-hack` for its own dependencies: they are generated, and a rebase regenerates them.
 - 2026-11-23 (the human's answer, through the monitor: "Yes, tell it"; on throughput) Last night ran only two
