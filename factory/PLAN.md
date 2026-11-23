@@ -1340,8 +1340,12 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   waits for S105 to merge, since both touch dist/.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
   an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
   `choose_index`) does. dist gets a way to say which (e.g. `follow_derived(link)` or a `Given` flag), and the app calls it.
-  Outcomes: the adversary's S105 r3 and r4 routes and the prune route all fail with the 'seen' list removed. Touches:
-  `dist/`, `app/src/core.rs`. A security boundary: the adversary runs.
+  Outcomes: the adversary's S105 r3 and r4 routes and the prune route all fail with the 'seen' list removed; and (folded
+  in 2026-11-23 by deputy-2, a local-network guard from S105 r5) `list` and `include` read a link's base as listed, not
+  given, before `confirm` (`dist/src/own.rs:386-392`), so a link in a mod's publish request (`app/src/api.rs:346-363`)
+  never reaches a local address or skips `held_ungiven`, with a red test of that route first. Folded here, not a slice of
+  its own: the same question (which links may give a base), the same files, and S107 already goes out as soon as S105
+  merges. Touches: `dist/` (incl. `own.rs`), `app/src/core.rs`, `app/src/api.rs`. A security boundary: the adversary runs.
 - [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
   app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
@@ -1595,7 +1599,6 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### dist
 
-- (S105 r5, guard) `list` and `include` read a link's base in given mode before `confirm` (`dist/src/own.rs:386-392`), skipping `held_ungiven` and the local-address check; `app/src/api.rs:346-363` passes links from a mod's publish request. Should it read as listed, as `read_link` does?
 
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
