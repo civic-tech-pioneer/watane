@@ -1657,6 +1657,16 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- **S105-CHURN: a listing can still steer dist into the local network after tombstone overflow (PR #19, option B).**
+  An index listing up to 128 throwaway keys per refresh forces dist's 1024-tombstone limit in about 8 refreshes; the
+  oldest tombstone drops, and a stale search hit at that pruned record's base then gives the base. A given base is read as
+  the participant's choice, so its redirects skip the local-address check: the route S105 closes elsewhere. Options:
+  (a) fail closed: once tombstones have overflowed, refuse to give a base from a hit or fetched link whose record is gone
+  (rec: a dist-only rule, one task; the participant can still paste the link again to give it); (b) cap tombstone
+  creation per index or per refresh (slows the churn, does not stop it); (c) accept until S107 closes the root cause
+  (the deputy first did; it crosses the boundary S105 exists for). Meanwhile S105's r2 answer round builds (a).
+  Undo: (a) one rule and its test.
+
 - **S100-CAP: PR #15 hit the round cap (5 Codex reviews, no approve).** Rounds: 10, 8, 6, 3, 2 findings. Open: F5.1
   (`host/src/agent/streams.rs:989, :1335`): a close wakes a waiting producer by charged bytes alone, though admission also
   counts pending pushes, so the producer is told ready and then gets `full` again; F5.2 (`streams.rs:1003, :1374`): a
@@ -1727,9 +1737,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
-- 2026-11-23 (S105, two RISKs of option B, both closed by S107) Accepted until S107: (1) tombstone churn: an index
-  listing throwaway keys can force DD-48's 1024-tombstone limit in minutes, after which a stale hit gives a pruned base;
-  (2) the seen_full lock: a channel churned past 16 bases keeps a new mirror the participant gives as a listed read
+- 2026-11-23 (S105, two RISKs of option B, both closed by S107) (1) tombstone churn: NOT accepted by the deputy after
+  all (the monitor's question): a pruned listing base that a stale hit gives is then read as given, and a given base's
+  redirects are not checked, so it can lead dist into the local network. Under Waiting on the human (S105-CHURN);
+  meanwhile the builder fails closed in the r2 answer round. (2) the seen_full lock: accepted until S107: a channel churned past 16 bases keeps a new mirror the participant gives as a listed read
   (availability only: it cannot reach the local network).
 - 2026-11-23 (S105 BLOCKED: how dist knows the participant gave a base) Option B now, in dist/ only: each record keeps a
   capped 'seen' list of every base it ever held (kept across eviction, a tombstone after prune); a link at a seen base
