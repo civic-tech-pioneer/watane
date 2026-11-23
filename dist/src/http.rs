@@ -1291,7 +1291,7 @@ mod tests {
         zed.unlist(&id).unwrap();
         eve.refresh_channel(&zed_key).unwrap();
         assert!(!eve.test_tomb_keys().contains(&w.key.to_string()));
-        crate::site::TEST_FAIL_DIR_SYNC.with(|fail| fail.set(true));
+        crate::site::TEST_FAIL_DIR_SYNC.with(|fail| fail.set(1));
         let err = eve.prune_listed().unwrap_err();
         assert!(
             matches!(&err, DistError::Io { source, .. } if source.raw_os_error() == Some(5)),
@@ -1735,5 +1735,100 @@ mod tests {
         );
         *w.publisher.test_fail_saves.lock().unwrap() = Some(0);
         w.publisher.read_link(&w.link(&w.a)).unwrap();
+    }
+
+    fn sync_fails(n: u32) {
+        crate::site::TEST_FAIL_DIR_SYNC.with(|fail| fail.set(n));
+    }
+    fn assert_eio(result: Result<(), DistError>) {
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, DistError::Io { source, .. } if source.raw_os_error() == Some(5)),
+            "{err:?}"
+        );
+    }
+
+    /// F4.1 (Codex r4): after a rename whose directory sync failed, a retry that reads
+    /// provenance first retries the sync; while it fails, the call makes no request.
+    #[test]
+    fn f4_1_a_retry_reads_no_provenance_while_the_dir_sync_fails() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let before = w.a.count();
+        sync_fails(u32::MAX);
+        for _ in 0..2 {
+            assert_eio(eve.read_link(&w.link(&w.a)).map(|_| ()));
+        }
+        assert_eq!(w.a.count(), before, "a request while the store is unsynced");
+        sync_fails(0);
+        eve.read_link(&w.link(&w.a)).unwrap();
+        assert!(w.a.count() > before);
+    }
+
+    /// F4.2 (Codex r4): a failed kept ingest whose kept mark was installed by a rename with
+    /// a failed directory sync takes the mark back.
+    #[test]
+    fn f4_2_a_failed_ingest_takes_back_a_mark_whose_dir_sync_failed() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        // Entries from seq 1 on, with no seq 0 stored: the ingest has a gap and fails.
+        let entries = w.publisher.entries(&w.key, 1, 100, usize::MAX).unwrap();
+        sync_fails(1);
+        let got = eve.ingest(&w.key, entries, crate::Reason::Kept);
+        assert!(matches!(got, crate::Ingested::Failed(_)), "{got:?}");
+        assert!(eve.log.head(&w.key).unwrap().is_none());
+        assert!(!eve.follows.lock().unwrap().contains_key(&w.key));
+        let file = follows_file(dir.path());
+        assert!(file["channels"].get(w.key.to_string()).is_none(), "{file}");
+    }
+
+    /// F4.2 under a directory sync that keeps failing: the take back is recorded and done
+    /// by the first call after the sync succeeds.
+    #[test]
+    fn f4_2_a_pending_take_back_is_finished_once_the_sync_succeeds() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        let entries = w.publisher.entries(&w.key, 1, 100, usize::MAX).unwrap();
+        sync_fails(u32::MAX);
+        let got = eve.ingest(&w.key, entries, crate::Reason::Kept);
+        assert!(matches!(got, crate::Ingested::Failed(_)), "{got:?}");
+        sync_fails(0);
+        eve.refresh();
+        assert!(!eve.follows.lock().unwrap().contains_key(&w.key));
+        let file = follows_file(dir.path());
+        assert!(file["channels"].get(w.key.to_string()).is_none(), "{file}");
+    }
+
+    /// F4.3 (Codex r4): `unfollow` whose flag change was installed by a rename with a
+    /// failed directory sync; a retry finishes the prune instead of NothingToUnfollow.
+    #[test]
+    fn f4_3_a_retried_unfollow_finishes_the_prune() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        sync_fails(1);
+        assert_eio(eve.unfollow(&w.key));
+        eve.unfollow(&w.key).unwrap();
+        let file = follows_file(dir.path());
+        let key = w.key.to_string();
+        assert!(file["channels"].get(&key).is_none(), "{file}");
+        assert!(file["seen"].get(&key).is_some(), "{file}");
+    }
+
+    /// F4.3 (Codex r4): the same for `drop_index`.
+    #[test]
+    fn f4_3_a_retried_drop_index_finishes_the_prune() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        let (_zdir, zed, _zhost) = listed_record(&w, &eve);
+        let zed_key = zed.identity().unwrap();
+        sync_fails(1);
+        assert_eio(eve.drop_index(&zed_key));
+        eve.drop_index(&zed_key).unwrap();
+        let file = follows_file(dir.path());
+        for key in [zed_key.to_string(), w.key.to_string()] {
+            assert!(file["channels"].get(&key).is_none(), "{key}: {file}");
+            assert!(file["seen"].get(&key).is_some(), "{key}: {file}");
+        }
     }
 }
