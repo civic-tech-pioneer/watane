@@ -845,7 +845,7 @@ fn record(pid: i32) -> String {
 }
 
 #[test]
-fn ac11_open_kills_the_recorded_groups_and_empties_runs() {
+fn ac11_open_kills_the_recorded_leaders_and_empties_runs() {
     let mut rig = Rig::new(&[]);
     rig.close();
     let runs = rig.home.path().join("runs");
@@ -861,7 +861,8 @@ fn ac11_open_kills_the_recorded_groups_and_empties_runs() {
     assert!(alive(pid));
     rig.open();
     if cfg!(target_os = "linux") {
-        wait("the group to die", Duration::from_secs(10), || !alive(pid));
+        // Through its pidfd: the leader only, never the group's number (3.1 step 3).
+        wait("the leader to die", Duration::from_secs(10), || !alive(pid));
     } else {
         // No pidfd on macOS: the group is left alone and logged (3.1 step 3).
         std::thread::sleep(Duration::from_millis(300));
