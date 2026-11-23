@@ -428,6 +428,11 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         Self::check_channel(&self.channel(&key)?)?;
+        if Some(key) != self.identity() {
+            // A link a mod hands over is derived, not given: its base is seen before any
+            // request, so `Fetched.link` gives nothing later (4.4, DD-48).
+            self.note_provider_base(key, link.base())?;
+        }
         let record = self
             .follows
             .lock()
