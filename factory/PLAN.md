@@ -1253,7 +1253,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `dist/` only (code, tests, `dist/TECHNICAL.md` where a rule changes). Runs beside S100 (host/,
   dev/) and S102 (app/): no shared file. Remove the three items from Leftovers when it merges.
 - [~] **S105 (upkeep) a listed base cannot lead dist into the local network.** (in flight, cloud, builder claude,
-  reviewer codex; sketched 2026-11-23 by the deputy from S104's review.) Three Leftovers items, all in `dist/`:
+  reviewer codex; sketched 2026-11-23 by the deputy from S104's review; routine `trig_01LmtxyjTdABbJfHbfWq8FqF`,
+  13:10 UTC, branch `slice/s105`.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
