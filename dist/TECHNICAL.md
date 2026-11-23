@@ -628,7 +628,25 @@ stays as it is: a link at it, such as a hit's link, gives nothing, since dist
 cannot tell it from a link built out of the record. A file saved before S105
 has none, and then every base in it is unknown. The participant gives such a
 base again by making the record listed-only or removing it (`unfollow`, and
-`drop_index` for a chosen index), then following or choosing it by a link.
+`drop_index` for a chosen index), then following or choosing it by a link,
+but only a base the record never saw (below, DD-48).
+
+Every record also has `"seen": [text]` (S105, DD-48; default `[]`, omitted
+when empty, so the version stays 1): every base the record ever held, as
+`base`, in `bases` or from a listing, also one that the 4-base cap or a
+listing change dropped; at most 16, the oldest goes first. A record read
+from a file adds its held bases to `seen`, so in a file saved before S105
+every held base is seen and none given. `given` then keeps every base the
+participant ever gave, also one no longer held, at most 16. A link gives
+its base only when the base is not in `seen`, or is in `given`: a link at a
+seen base that was never given (by `follow`, `choose_index` or `open_link`,
+also when a listed-only record turns followed or chosen, DD-46) gives
+nothing, and its first read is a listed one. When `prune_listed` removes a
+record, its `seen` and `given` stay as a tombstone in the top-level
+`"seen": {channel: {"seen": [text], "given": [text], "at": ms}}` of
+`follows.json` (default `{}`, omitted when empty), at most 1024 tombstones,
+the oldest `at` goes first; a new record of that channel starts from its
+tombstone, which is then removed.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
@@ -941,7 +959,7 @@ nor chosen has a listed record (`followed: false`, `index: false`). Its
 `bases` are the distinct bases of the listings that name it, at most 4:
 first learned in the order of the walk (own channel first, then chosen
 indexes in key order), then reordered by the read below. A listing never changes the `bases` or `base` of a followed or chosen
-channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46). The decision "listed read" is per base: a read of a base is listed when the record is listed-only or the base is not in `given` (DD-47). It covers the channel read, `refresh`, and the package GET of `fetch` and `read_link`: the base is skipped or refused when local (unless `listed_local`), and every redirect target is checked; as for a listed record, `fetch` still gives a cached package. dist creates a listed record when the walk first
+channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46); the link gives that base only when the record never saw it (`seen`, DD-48). The decision "listed read" is per base: a read of a base is listed when the record is listed-only or the base is not in `given` (DD-47, DD-48). It covers the channel read, `refresh`, and the package GET of `fetch` and `read_link`: the base is skipped or refused when local (unless `listed_local`), and every redirect target is checked; as for a listed record, `fetch` still gives a cached package. dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
 
@@ -1304,7 +1322,7 @@ sets the site URL again.
 | An index cannot hide a withdrawal | the release of a hit is the newest that the publisher's channel does not withdraw | A24 |
 | An index cannot make dist read without bound | one level of includes; at most `max_listed` listed channels, `max_listed_per_index` per index, `max_listed_entries` per read; each read has the limits of 4.5 | A26, A31 |
 | A stale mirror cannot hide a withdrawal | a listed channel is read from each listed base until one is `Current`; only `Current` counts as checked | A34 |
-| A listing cannot reach the local network | listed bases on `localhost` (also `localhost.`) or local IP literals are skipped, and so is every redirect target of a listed read, also a base of unknown origin (4.5, DD-43, DD-47) | A35 |
+| A listing cannot reach the local network | listed bases on `localhost` (also `localhost.`) or local IP literals are skipped, and so is every redirect target of a listed read, also a base of unknown origin (4.5, DD-43, DD-47, DD-48) | A35 |
 | The own channel is never read from a listing | the own key is skipped in every read set | `index_own_skipped` |
 | A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
@@ -1579,3 +1597,4 @@ are `list` and `include` statements of 4.1.
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all), without changing the record. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
 | DD-47 | A base of a followed or chosen record that the participant did not give by a link (not in `given`, 4.4) is read as listed until the participant unfollows the channel (and drops it, for a chosen index) and follows or chooses it again by a link at that base (a repeated link at a held base gives nothing, S105 r3; the first read of such a link is listed too): the local-address rule, redirect targets included, and the limits of a listed read (5.9: `max_listed_entries`, `TooManyEntries`); a cached package is still given. Every base in a record saved before S105 is unknown. `given` is an additive serde-default field. Deputy decision S105 r1, tightened S105 r3. | An old home could hold a listing-learned base as a followed one and follow its redirects unchecked (A35). The alternative, trusting old records, leaves that hole open for every existing home. Undo: cheap (follow.rs, index.rs, fetch.rs). |
+| DD-48 | Every record keeps `seen`, each base it ever held (at most 16), across the 4-base cap and a listing change, and as a tombstone in `follows.json` after `prune_listed` removes the record (at most 1024). A link at a seen base that was never given gives nothing (4.4). So a base of unknown origin, from a listing or a file saved before S105, is never given by a link, while a base the participant gave once is given again. Interim, deputy decision S105 (option B of the BLOCKED question). Accepted limit: until the root fix, a participant cannot give a seen base that was never given at all, so a pre-S105 follow of a local base stays a listed read; and more than 1024 removed records drop the oldest tombstone. The root fix (option A, its own slice after S102): a follow from a derived link (a search hit's install, `Fetched.link`, DD-29) never gives its base and only a link the participant opens or pastes does, a dist<->app interface change. | dist cannot tell a link the participant gave from a link built out of a record's own base: the 4-base cap (S105 r4) and `prune_listed` made such a base look new, and a hit's install then gave it, so its redirects into the local network were followed (A35). Undo: cheap (follow.rs, index.rs, lib.rs); option A replaces it. |
