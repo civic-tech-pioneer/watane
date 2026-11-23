@@ -1214,6 +1214,32 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
+- [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
+  cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy.) Settings gets the groups
+  `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
+  use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
+  1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
+     answer arrives on the loopback address, and Settings reads `Signed in with ChatGPT` with the plan.
+  2. S57: she chooses `Sign out`; Settings reads `Not signed in` and `<home>/app/accounts/openai.json` is gone.
+  3. S61: a stand-in `claude` below the minimum version is refused with `Claude Code <found> is too old;
+     watane needs <need> or later.` and nothing is kept; one at the minimum is kept and shown by its path.
+  4. The sign-in listener answers only its own path, closes after one matching request or 5 minutes, and a
+     second sign-in while one runs is `unavailable` (19.1).
+  Touches: `app/` only (`src/chatgpt.rs`, `src/accounts.rs`, `src/claude_bin.rs`, the Settings UI, `tests/it/`).
+  Constraints: no host change: the host's `AccountSource` (A4) and `Confirm::consent` (A3) are not built yet,
+  so the stored account and program are read by app tests and Settings only; wiring them to the host comes
+  with A3/A4. Q12 (the registered client) stays open: `CLIENT_ID`, the issuer and `SCOPES` are constants the
+  tests replace with a stand-in issuer (app 18, Q12). Consents (19.2) and the judge key (19.4) are left for
+  the slices that build host A3 and A5. A security boundary (an OAuth flow, tokens on disk): the adversary
+  rule applies. Runs beside S100 (host/, dev/): no shared file.
+- [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
+  app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
+  stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
+  withdrawal ending dependent streams and closing handles, H4 agent tools (host 19.5), `consent-pending`.
+  Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
+  session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. The
+  agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
@@ -1631,6 +1657,12 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (the human's answer, through the monitor: "Yes, tell it"; on throughput) Last night ran only two
+  slices, one per project, with nothing sketched ahead; earlier nights merged 10 to 17 a day. Follow deputy
+  section 1 strictly: as many slices in flight as can run without sharing files, across both projects, plus
+  one sketched ahead per project; look past the stage B chain for independent work (upkeep slices from
+  Upkeep and Leftovers once about 3 items wait, spikes, other subsystems the vision orders next); Codex builds
+  two in three, spread over the builds. This does not approve agentic-harness S35-MERGE.
 - 2026-11-23 (the human's answer, S101 accepted risk: root adding `::1` after bind, host 8.1 and 14 'Not protected'): "Let's park this one as a non-security risk, not something that I want to regularly revisit, so no need for it to be confronting me with this every report. I will revisit it myself at some point; it's good to keep in general certain decisions in logs that are known limitations or risks." Stays logged where it is; not in reports or status lists. The same holds for every accepted risk or limit: log it once where it belongs, never re-surface it in reports.
 - 2026-11-23 (S100, H2 wire form, cross-project): a file-tool `ask`/`check` item carries a top-level `"path"` with the absolute path, symlinks resolved; `input` stays as `claude` sent it; absent when unresolvable or refused. This is the form agentic-harness TECHNICAL 9.6 left to stage B's first slice; the kernel (agentic-harness S36) reads it. A `can_use_tool`/`hook_callback` before `system/init` passed is denied at once, pushing nothing. Approved by the human 2026-11-23: "Sounds good. Approved." No longer a pending veto.
 - 2026-11-22 (the human's answer) Auto-merge is retired: the `codex-push` rulesets (watane 27841000,
