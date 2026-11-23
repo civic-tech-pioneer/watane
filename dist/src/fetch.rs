@@ -110,7 +110,7 @@ impl Dist {
             let (bases, local_only) = self.provider_bases(key, consumer)?;
             if bases.is_empty() {
                 return if stored {
-                    self.fetched(reference, None)
+                    self.fetched(reference, None, false)
                 } else {
                     Err(DistError::NotFollowed {
                         channel: key,
@@ -122,11 +122,29 @@ impl Dist {
         } else {
             let record = record.expect("record selected");
             if !record.followed && !record.index {
-                self.check_listed_base(&record.base)?;
+                // A listed record on a cache miss: its base first, then the 5.11 bases.
+                let (provided, _) = self.provider_bases(key, consumer)?;
+                let mut bases = Vec::new();
+                if !record.base.is_empty() && self.check_listed_base(&record.base).is_ok() {
+                    bases.push(record.base.clone());
+                }
+                for base in provided {
+                    if !bases.contains(&base) {
+                        bases.push(base);
+                    }
+                }
+                bases.truncate(MAX_PROVIDER_BASES);
+                if bases.is_empty() {
+                    if !record.base.is_empty() {
+                        self.check_listed_base(&record.base)?;
+                    }
+                    return self.fetched(reference, None, false);
+                }
+                return self.fetch_from_providers(key, reference, &bases, false);
             }
             (!record.base.is_empty()).then_some(record.base)
         };
-        self.fetched(reference, base.as_deref())
+        self.fetched(reference, base.as_deref(), false)
     }
 
     fn fetch_from_providers(
@@ -155,10 +173,11 @@ impl Dist {
                 }
                 Ok(_) => answered += 1,
             }
-            match self.fetched(reference, Some(base)) {
+            match self.fetched(reference, Some(base), true) {
                 Err(DistError::UnknownRelease { .. }) => continue,
                 Err(
                     cause @ (DistError::NotFound { .. }
+                    | DistError::BadUrl { .. }
                     | DistError::Timeout { .. }
                     | DistError::Network { .. }),
                 ) => {
@@ -168,7 +187,7 @@ impl Dist {
             }
         }
         if cached {
-            return self.fetched(reference, None);
+            return self.fetched(reference, None, false);
         }
         if let Some(cause) = package_failure {
             return Err(cause);
@@ -205,7 +224,7 @@ impl Dist {
         Ok(())
     }
 
-    fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
+    pub(crate) fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
         if !self.options.listed_local && index::local_base(base) {
             return Err(DistError::BadUrl {
                 url: base.into(),
@@ -269,7 +288,12 @@ impl Dist {
         Ok((bases, local_only))
     }
 
-    fn fetched(&self, reference: &ReleaseRef, base: Option<&str>) -> Result<Fetched, DistError> {
+    fn fetched(
+        &self,
+        reference: &ReleaseRef,
+        base: Option<&str>,
+        listed: bool,
+    ) -> Result<Fetched, DistError> {
         let key = PublicKey::from_bytes(reference.publisher.as_bytes()).map_err(|cause| {
             DistError::BadKey {
                 key: reference.publisher.clone(),
@@ -291,7 +315,7 @@ impl Dist {
                 reason: withdrawn.reason.clone(),
             });
         }
-        let package = self.fetch_package(&info, base)?;
+        let package = self.fetch_package(&info, base, listed)?;
         let entry = self.log.entries(&key, info.seq, 1)?.remove(0);
         Ok(Fetched {
             link: base
@@ -308,6 +332,7 @@ impl Dist {
         &self,
         info: &ReleaseInfo,
         base: Option<&str>,
+        listed: bool,
     ) -> Result<Package, DistError> {
         let id = &info.release.package;
         let path = self.cache_path(id);
@@ -337,6 +362,7 @@ impl Dist {
                     info.release.size.min(self.options.max_package),
                     self.options.package_timeout,
                     false,
+                    listed,
                 )?
             }
         };
@@ -381,6 +407,7 @@ impl Dist {
             .get(&key)
             .cloned();
         let mut base = (Some(key) != self.identity()).then(|| link.base().to_owned());
+        let mut listed = true;
         if Some(key) != self.identity() {
             if let Some(record) = record {
                 // Like open_link, a failed refresh can still use a verified stored release.
@@ -389,6 +416,7 @@ impl Dist {
                 if !record.base.is_empty() && !record.followed && !record.index {
                     self.check_listed_base(&record.base)?;
                 }
+                listed = !record.followed && !record.index;
                 base = (!record.base.is_empty()).then_some(record.base);
             } else {
                 self.check_listed_base(link.base())?;
@@ -407,7 +435,7 @@ impl Dist {
                 channel: key,
                 slug: slug.clone(),
             })?;
-        self.fetched(&info.reference, base.as_deref())
+        self.fetched(&info.reference, base.as_deref(), listed)
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
         let slug = link.slug().ok_or(DistError::BadLink {
@@ -475,7 +503,7 @@ mod tests {
             withdrawn: None,
         };
         assert!(matches!(
-            dist.fetch_package(&info, None),
+            dist.fetch_package(&info, None, false),
             Err(DistError::PackageMismatch {
                 cause: ReleaseError::Mismatch { field: "name" },
                 ..

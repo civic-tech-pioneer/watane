@@ -574,7 +574,11 @@ pub(crate) fn local_base(base: &str) -> bool {
         .ok()
         .and_then(|u| u.host().map(|h| h.to_owned()))
     {
-        Some(url::Host::Domain(name)) => name == "localhost" || name.ends_with(".localhost"),
+        Some(url::Host::Domain(name)) => {
+            // `localhost.` is the same name: trailing dots do not make a host non-local.
+            let name = name.trim_end_matches('.');
+            name == "localhost" || name.ends_with(".localhost")
+        }
         Some(url::Host::Ipv4(ip)) => local_v4(ip),
         Some(url::Host::Ipv6(ip)) => {
             ip.is_loopback()
@@ -604,10 +608,14 @@ mod tests {
             "[fc00::1]",
             "[fe80::1]",
             "169.254.1.1",
+            "localhost.",
+            "a.localhost.",
+            "localhost..",
+            "127.0.0.1.",
         ] {
             assert!(local_base(&format!("http://{host}/")), "{host}");
         }
-        for host in ["example.org", "8.8.8.8", "172.32.0.1"] {
+        for host in ["example.org", "example.org.", "8.8.8.8", "172.32.0.1"] {
             assert!(!local_base(&format!("http://{host}/")), "{host}");
         }
     }

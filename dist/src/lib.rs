@@ -117,6 +117,8 @@ pub struct Dist {
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
     read_mutex: Mutex<()>,
     agent: ureq::Agent,
+    /// Never follows a redirect; `http::follow_hops` does, checking each target.
+    listed_agent: ureq::Agent,
 }
 // The confirm callback has no Debug, and the rest is lock and cache state.
 impl std::fmt::Debug for Dist {
@@ -277,7 +279,15 @@ impl Dist {
             base: Mutex::new(base),
             agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
-                .max_redirects(5)
+                .max_redirects(http::MAX_REDIRECTS as u32)
+                .timeout_connect(Some(options.connect_timeout))
+                .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .into(),
+            listed_agent: ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .max_redirects(0)
+                .max_redirects_will_error(false)
                 .timeout_connect(Some(options.connect_timeout))
                 .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
                 .build()
