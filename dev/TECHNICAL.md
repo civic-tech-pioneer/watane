@@ -1095,6 +1095,10 @@ All cargo runs use one command builder, `builder::cargo(...)`:
   build scripts of allowlisted crates). Thus `RUSTFLAGS`, `RUSTC_WRAPPER`,
   proxies and every secret of the maker stay out (DEV-F-15). If cargo needs
   `HOME`, set `HOME=<cache>/cargo-home`.
+  On Windows, `PATH` contains the Rust toolchain directory. `USERPROFILE`
+  points at the disposable Cargo home, and `TEMP` and `TMP` point at the
+  cache temporary directory. `SystemRoot` is forwarded for system libraries.
+
 - Arguments common to every run (`<x>` is a canonical absolute path; each
   `--config` value is TOML, quoted with `toml::Value::String(..).to_string()`):
 
