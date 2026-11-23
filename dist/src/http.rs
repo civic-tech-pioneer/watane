@@ -924,4 +924,50 @@ mod tests {
             "no request to the local redirect target"
         );
     }
+
+    /// Adversary S105 r4: the 4-base cap drops an unknown (listing-learned) base after a
+    /// search named it; installing that stale hit then finds the base "new to the record"
+    /// and marks it given, so its local redirects are followed (DD-47, 5.9).
+    #[test]
+    fn adv_s105_r4_cap_evicts_unknown_base_then_hit_install_gives_it() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let e = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a, &c, &e]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        // A home saved before S105: four bases, none given; `a` is a listing-learned one.
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
+            "base": w.a.url, "bases": [w.a.url, c.url, "http://127.0.0.1:9/", "http://127.0.0.1:8/"],
+            "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
+        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
+        exempt(&eve, &[&w.a, &c, &e]);
+        let hits = eve
+            .search(&crate::Query {
+                text: String::new(),
+                publisher: Some(w.key),
+                origin: None,
+                interface: None,
+            })
+            .unwrap();
+        let hit = hits[0].link.clone().expect("hit link");
+        assert_eq!(hit.base(), w.a.url, "the hit names the unknown base");
+        // `a` fails one refresh, so `c` moves to the front and `a` to index 1.
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let _ = eve.refresh_channel(&w.key);
+        w.a.redirects.lock().unwrap().clear();
+        // The participant opens a link at a new base: the cap drops `a`.
+        let _ = eve.open_link(&w.link(&e));
+        // The app installs the hit it showed earlier: follow(hit.link) (5.10).
+        let _ = eve.follow(&hit);
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let before = w.b.count();
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(
+            w.b.count(),
+            before,
+            "no request to the local redirect target of a listing-learned base"
+        );
+    }
 }
