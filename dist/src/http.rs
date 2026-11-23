@@ -1208,7 +1208,11 @@ mod tests {
         let before = w.a.count();
         let got = eve.read_link(&w.link(&w.a)).unwrap();
         assert_eq!(got.package.id().to_string(), w.package["packages/".len()..]);
-        assert!(got.link.is_none(), "a cached read names no base: {:?}", got.link);
+        assert!(
+            got.link.is_none(),
+            "a cached read names no base: {:?}",
+            got.link
+        );
         assert_eq!(w.a.count(), before, "no request to the unknown local base");
         let package = w.package.trim_start_matches("packages/").to_owned();
         std::fs::remove_file(eve.cache_path(&package.parse().unwrap())).unwrap();
@@ -1298,7 +1302,10 @@ mod tests {
             .as_object()
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default();
-        assert!(on_disk.contains(&w.key.to_string()), "the prune was installed: {file}");
+        assert!(
+            on_disk.contains(&w.key.to_string()),
+            "the prune was installed: {file}"
+        );
         assert_eq!(eve.test_tomb_keys(), on_disk, "tombstones in memory");
         let records: Vec<String> = eve
             .follows
@@ -1307,7 +1314,12 @@ mod tests {
             .keys()
             .map(ToString::to_string)
             .collect();
-        let in_file: Vec<String> = file["channels"].as_object().unwrap().keys().cloned().collect();
+        let in_file: Vec<String> = file["channels"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
         assert_eq!(records, in_file, "records in memory");
     }
 

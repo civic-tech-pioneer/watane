@@ -339,11 +339,8 @@ async fn ac1_fetch_link_verified_without_follow_or_consent() {
     let dist = open(home.path(), Arc::clone(&confirm), true);
     let follows = home.path().join("dist/follows.json");
     let link = published.link.unwrap();
-    let (status, headers, bytes) = fetch(
-        Some(Arc::clone(&dist)),
-        json!({"link":link.to_string()}),
-    )
-    .await;
+    let (status, headers, bytes) =
+        fetch(Some(Arc::clone(&dist)), json!({"link":link.to_string()})).await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
     assert_eq!(headers["content-type"], "application/octet-stream");
     assert_eq!(
