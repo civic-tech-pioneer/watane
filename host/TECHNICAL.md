@@ -2932,7 +2932,9 @@ not keep a credential from a mod on their own. Three rules do:
   folder, or whose pattern input (`Glob`'s `pattern`, `Grep`'s `glob`)
   starts with `/` or `~` or has a `..` segment, after the
   host resolves it as `claude` would (relative to the workspace, symlinks
-  resolved), is refused `not-allowed-here`; nothing is written to stdin, and
+  resolved; only a component that does not exist counts as a new name, and
+  any other error while resolving, such as a file used as a folder, a loop or
+  no permission, refuses it: review r2 of S100, F2.1), is refused `not-allowed-here`; nothing is written to stdin, and
   the ask is denied at its `expires-at`.
   Read as `claude` reads it, fail-closed (S100's adversary; foreman's
   decision): a path input with leading or trailing white space (what
@@ -3051,15 +3053,27 @@ not keep a credential from a mod on their own. Three rules do:
    answer, or an answer to an ask or check that is closed, is `unknown-ask`.
    No ask or check is opened before the `system/init` line has passed step 3
    (review r1 of S100): a `can_use_tool` or `hook_callback` that comes before it is
-   answered deny at once and pushes nothing. An ask or check whose `expires-at` has
+   answered deny at once and pushes nothing. Before the answer to `initialize` has
+   passed step 2 nothing is written to stdin, so the deny for a request that comes
+   then is queued and written first, before any other line, once step 2 passes; if
+   step 2 fails, the stream ends and nothing is written (review r2 of S100, F2.8; the
+   deputy's ruling). An ask or check whose `expires-at` has
    come is closed at that instant, whether or not the host's sweep has run: an
    `answer` at or after it is `unknown-ask` at the call, and one whose apply comes at
-   or after it writes nothing (the expiry's deny, for an ask, is written once). An
+   or after it writes nothing (the expiry's deny, for an ask, is written once). A
+   `control_cancel_request` or an `interrupt` that acts at or after an ask's or
+   check's `expires-at` finds it expired first: the ask gets its single expiry deny
+   and `ask-resolved {by: expired}`, never the interrupt's deny or `cancelled`
+   (review r2, F2.2). An
    `ask-resolved {by: answered}` is pushed only after its line was written to
    `claude`'s stdin; a write that fails (stdin closed) pushes no `answered`, and
-   the stream ends as the process does. At the end of a run the host waits at most
-   2 s for its stdin writer, then ends the stream anyway (a process outside the
-   group that holds stdin cannot hold the stream; S100's third adversary pass).
+   the stream ends as the process does. The end of a run is bounded (review r2,
+   F2.3 and F2.4): once `claude`'s stdout reaches its end, the host waits at most
+   2 s for the process to exit and then kills its group; it then closes its own
+   handle on `claude`'s stdin, so a write still blocked fails, and waits at most 2 s
+   more for the stdin writer. Every line the writer reported written has its
+   `ask-resolved {by: answered}` pushed before `ended`; a write that did not
+   complete pushes none. No thread of the run outlives that second bound.
    The checks of an `answer` are made at the call against the asks open then
    (`unknown-ask` for an id that is not open on `s`); one that closes between the
    call and its apply (expired, cancelled, a second answer applied first) writes
