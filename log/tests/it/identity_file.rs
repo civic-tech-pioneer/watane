@@ -82,6 +82,7 @@ fn ac3_identity_from_rfc_seed() {
 #[test]
 fn s109_ac3_refuse_hard_link_to_valid_seed() {
     let temp = tempfile::tempdir().unwrap();
+    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let seed = temp.path().join("seed");
     let path = temp.path().join("identity.key");
     fs::write(&seed, oracle::SEED).unwrap();
@@ -96,6 +97,7 @@ fn s109_ac3_refuse_hard_link_to_valid_seed() {
 #[test]
 fn s109_ac5_refuse_other_private_key_mode() {
     let temp = tempfile::tempdir().unwrap();
+    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let path = temp.path().join("identity.key");
     fs::write(&path, oracle::SEED).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -109,6 +111,7 @@ fn s109_ac5_refuse_other_private_key_mode() {
 #[test]
 fn s109_ac6_simultaneous_opens_share_the_new_key() {
     let temp = tempfile::tempdir().unwrap();
+    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let start = std::sync::Barrier::new(8);
     std::thread::scope(|scope| {
         let readers: Vec<_> = (0..8)
