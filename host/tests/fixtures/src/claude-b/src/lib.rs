@@ -88,7 +88,7 @@ fn micros() -> u128 {
 /// `last` (when the latest one came, in microseconds), `h<ms>` (how many stamped lines took that
 /// many milliseconds from the stamp `"t"` to the sink, 101 for 101 or more), `batches` (the
 /// writes), `ask<id>` and `res<id>` (when that `ask` or `ask-resolved` came), `tu<id>` (the
-/// ask's tool use id), `result` (when the turn's `result` came) and `ended`.
+/// ask's tool use id), `result` (when the turn's `result` came) and `rsub` (its subtype), `ended`, and per kind `d` (stream_event) and `e` (assistant): `n<k>` the count, `<k>first` and `<k>last` the first and last stamp, `<k>min` and `<k>max` the smallest and largest body in bytes.
 fn tally_read(s: &str) -> std::collections::BTreeMap<String, String> {
     get(&format!("tally/{s}"))
         .unwrap_or_default()
@@ -119,6 +119,8 @@ fn tally_items(s: &str, items: &[Item]) {
             map.insert(format!("res{id}"), now.to_string());
         } else if body.starts_with(r#"{"type":"result""#) {
             map.insert("result".into(), now.to_string());
+            let sub = body.split(r#""subtype":""#).nth(1).and_then(|r| r.split('"').next());
+            map.insert("rsub".into(), sub.unwrap_or("").to_owned());
         } else if let Some(rest) = body
             .strip_prefix(r#"{"type":"assistant","n":"#)
             .or_else(|| body.strip_prefix(r#"{"type":"stream_event","n":"#))
@@ -129,6 +131,18 @@ fn tally_items(s: &str, items: &[Item]) {
             }
             next = n + 1;
             map.insert("last".into(), now.to_string());
+            // Per kind (`d` deltas, `e` entries): the count, the first and last stamp, and the
+            // smallest and largest line.
+            let k = if body.starts_with(r#"{"type":"assistant""#) { "e" } else { "d" };
+            map.insert(format!("n{k}"), (num(&map, &format!("n{k}"), 0) + 1).to_string());
+            if let Some(t) = rest.split(r#""t":"#).nth(1).and_then(|r| r.split(',').next()) {
+                map.entry(format!("{k}first")).or_insert_with(|| t.to_owned());
+                map.insert(format!("{k}last"), t.to_owned());
+            }
+            let len = item.body.len() as u64;
+            let (lo, hi) = (num(&map, &format!("{k}min"), u64::MAX), num(&map, &format!("{k}max"), 0));
+            map.insert(format!("{k}min"), lo.min(len).to_string());
+            map.insert(format!("{k}max"), hi.max(len).to_string());
             if let Some(t) = rest.split(r#""t":"#).nth(1).and_then(|r| r.split(',').next()) {
                 let t: u128 = t.parse().unwrap_or(0);
                 let ms = (now.saturating_sub(t) / 1000).min(101);

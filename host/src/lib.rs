@@ -626,6 +626,10 @@ pub enum TestConsumer {
 pub struct TestStats {
     pub commits: u64,
     pub commit_time: std::time::Duration,
+    /// The part of `commits` and `commit_time` that the host's own writes made (timers); the
+    /// rest is the mods' transactions.
+    pub host_commits: u64,
+    pub host_commit_time: std::time::Duration,
     pub state_bytes_read: u64,
     pub state_bytes_written: u64,
 }
@@ -686,6 +690,8 @@ impl Host {
         TestStats {
             commits: s.commits.load(Relaxed),
             commit_time: std::time::Duration::from_nanos(s.commit_nanos.load(Relaxed)),
+            host_commits: s.host_commits.load(Relaxed),
+            host_commit_time: std::time::Duration::from_nanos(s.host_commit_nanos.load(Relaxed)),
             state_bytes_read: s.bytes_read.load(Relaxed),
             state_bytes_written: s.bytes_written.load(Relaxed),
         }

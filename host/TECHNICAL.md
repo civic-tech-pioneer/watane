@@ -2081,23 +2081,31 @@ the consumers'). Every line arrives once and in order. dev's `fake-claude` `load
 produces the same load for S36 (dev 18.2).
 
 **Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
-x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
-0.0 to 2.1; `cd host && cargo test --test it agent_load:: -- --include-ignored` three passes in
-a row, every budget met in each). The load of `tests/it/agent_load.rs::stage_b::ac1_stage_b_load`:
-8 sessions, 4 on each of the consumer mods `claude` and `claude-b`, on the fixture fake
-`claude` in its rate mode (50 deltas and 5 entries of 4 KiB a second, each line stamped with
-its write time; 10.6 s before the interrupt, 4 650 lines each time, none out of order or
-missing, every one once); one `ask` answered and one left open for the `interrupt`; the
-turn's `result`, then `cancel`. All p95 over the 8 sessions (the 95th percentile of 8 is the
-worst), pass 1 / 2 / 3: item delay host to consumer 3 / 4 / 2 ms (budget 100); `ask` taken
-2.7 / 2.9 / 1.7 ms (100); `answer` to the fake's stdin 0.9 / 2.0 / 0.9 ms (50); `interrupt` to
-`ask-resolved` 22.6 / 34.5 / 21.1 ms and to the turn's `result` the same ms (1 000);
-`cancel` to `ended` 23.4 / 61.9 / 26.9 ms (250); writer busy 16.4 / 17.8 / 18.3% (50), of
-which the host's own 0.03 / 0.03 / 0.03% and the consumers' (one small tally write per batch,
-mean commit 0.41 / 0.45 / 0.46 ms) the rest: the commits that the consumers made are their
-batches, the host's are the others. With another build running (load average 5 to 9 on the
-4 cores) the same load took the writer to 53 to 59% (a commit took 1.4 ms, not 0.4), all
-else within budget: the writer budget needs a quiet machine.
+x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running except the
+other worktree's builds, load average 1.4 to 2.7; `cd host && cargo test --test it
+agent_load:: -- --include-ignored` three passes in a row, every budget met in each). The load of
+`tests/it/agent_load.rs::stage_b::ac1_stage_b_load`: 8 sessions, 4 on each of the consumer mods
+`claude` and `claude-b`, on the fixture fake `claude` in its rate mode (50 deltas and 5 entries
+of 4 096 bytes a second, each line stamped with its write time; 10.6 s before the interrupt,
+about 4 660 lines, none out of order or missing, every one once). The test asserts, per stream,
+the delta rate and the entry rate (counts over the run, first to last stamp, within 10% of 50
+and 5 a second; measured 50.0 and 5.00), the size of every entry (4 096 bytes), that the turn's
+`result` is the interrupted one (subtype `error_during_execution`, written by the fake after it
+read the interrupt) and that `ended` came after the `cancel` that it times; the workload
+`55 0 4096 10.2` fails it. One `ask` answered and one left open for the `interrupt`; the turn's
+`result`, then `cancel`. Figures, pass 1 / 2 / 3 of the final runs (the p95 over the 8
+sessions is the worst, one value per kind): item delay host to consumer, the worst session's
+p95, 4 / 4 / 4 ms (budget 100; the histogram's ms upper edge, each session's p95 over its own
+580 lines); `ask` taken 5.4 / 5.6 / 2.1 ms (100); `answer` to the fake's stdin 4.0 / 6.4 / 4.2
+ms (50); `interrupt` to `ask-resolved` 6.4 / 4.9 / 10.2 ms and to the turn's `result` 8.1 / 7.2 /
+10.2 ms (1 000); `cancel` to `ended` 11.4 / 7.7 / 10.0 ms (250); writer busy 22.9 / 22.3 / 22.2%
+(50), measured by owner on the
+commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits (timer
+writes) 0 of about 4 260, so 0.0% of the share, and the mods' (the consumers' one small tally
+write per batch, mean commit 0.56 to 0.57 ms) all of it. With another build running (load
+average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit took 1.4
+ms, not 0.4), and a busy machine alone has taken the first `ask` to 260 ms: the budgets need a
+quiet machine.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -3608,7 +3616,9 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
     timers of 19.6, which tests wait for in real time); `TestClock::advance`
     moves it, and the host checks the stream clocks at each advance.
   - `Host::test_stats()` reads the counters of the state writer (7) since
-    open: commits, the wall time spent in them (redb commit, fsync included),
+    open: commits, the wall time spent in them (redb commit, fsync included), and
+    the part of both that the host's own writes made (timer writes; the rest are
+    the mods' transactions),
     and the state bytes read and written by calls (keys and values through
     `state`, host tables excluded). The load test of A1 takes the writer
     busy share and the state bytes written per item from two readings.
@@ -3650,5 +3660,5 @@ pub struct Delivery { pub seqs: Vec<u64>, pub answer: DeliveryAnswer }
 pub enum DeliveryAnswer { Taken, Deferred, Failed }
 #[cfg(feature = "test-streams")]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TestStats { pub commits: u64, pub commit_time: Duration, pub state_bytes_read: u64, pub state_bytes_written: u64 }
+pub struct TestStats { pub commits: u64, pub commit_time: Duration, pub host_commits: u64, pub host_commit_time: Duration, pub state_bytes_read: u64, pub state_bytes_written: u64 }
 ```

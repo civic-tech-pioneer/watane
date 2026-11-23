@@ -304,6 +304,35 @@ mod stage_b {
     fn stamped(rig: &Rig, pid: &str, kind: &str, key: &str) -> Option<u128> {
         stamps(rig, pid, kind, key).map(|v| v[0])
     }
+    /// The time of the fake's entry `kind` that has no key (`interrupt`, `result`).
+    fn stamp_of(rig: &Rig, pid: &str, kind: &str) -> Option<u128> {
+        let text = std::fs::read_to_string(rig.fake.path().join(format!("stamps.{pid}"))).ok()?;
+        text.lines().find_map(|l| {
+            let f: Vec<&str> = l.split(' ').collect();
+            (f[0] == kind).then(|| f.last().unwrap().parse().unwrap())
+        })
+    }
+    /// The delay histogram of a tally (`h<ms>` keys) and its count.
+    fn delay_buckets(tally: &BTreeMap<String, String>) -> ([u64; 102], u64) {
+        let mut buckets = [0u64; 102];
+        for (k, v) in tally {
+            if let Some(ms) = k.strip_prefix('h') {
+                buckets[ms.parse::<usize>().unwrap()] += v.parse::<u64>().unwrap();
+            }
+        }
+        (buckets, buckets.iter().sum())
+    }
+    /// The upper edge, in ms, of the bucket that holds the 95th percentile.
+    fn bucket_p95(buckets: &[u64; 102], count: u64) -> usize {
+        let mut seen = 0;
+        for (ms, n) in buckets.iter().enumerate() {
+            seen += n;
+            if seen as f64 >= count as f64 * 0.95 {
+                return ms + 1;
+            }
+        }
+        buckets.len()
+    }
     fn p95(mut v: Vec<f64>) -> f64 {
         v.sort_by(f64::total_cmp);
         v[((v.len() as f64 * 0.95) as usize).min(v.len() - 1)]
@@ -320,6 +349,15 @@ mod stage_b {
         written: u64,
         taken: u64,
         batches: u64,
+        /// Per stream: the delta rate and the entry rate per second as the consumer read them,
+        /// and the smallest and largest entry (bytes).
+        delta_rate: f64,
+        entry_rate: f64,
+        entries: u64,
+        entry_size: (u64, u64),
+        /// The 95th percentile of the stream's item delay (ms, upper edge).
+        delay_p95: usize,
+        delay_count: u64,
     }
 
     fn one(rig: &Rig, side: &Side, s: &str) -> Marks {
@@ -362,16 +400,43 @@ mod stage_b {
         let resolved = wait_for("ask-resolved", 30, 20, || side.at(s, "res2"));
         m.interrupt_resolved = ms(t, resolved);
         let result = wait_for("the result", 30, 20, || side.at(s, "result"));
+        // The result is the one the interrupt caused: an interrupted turn's subtype, and the
+        // fake wrote it after it read the interrupt (its stamps), which came after the call.
+        let tl = side.tally(s);
+        assert_eq!(tl["rsub"], "error_during_execution", "stale result of {s}");
+        let interrupted = stamp_of(rig, &pid, "interrupt").expect("the fake stamped the interrupt");
+        let wrote = stamp_of(rig, &pid, "result").expect("the fake stamped the result");
+        assert!(
+            t <= interrupted && interrupted <= wrote,
+            "{t} {interrupted} {wrote}"
+        );
+        assert!(interrupted <= result, "result of {s} before the interrupt");
         m.interrupt_result = ms(t, result);
         // Every line the fake wrote arrived, once and in order.
         let tl = side.tally(s);
         m.written = lines_written(rig, &pid);
         m.taken = tl["next"].parse::<u64>().unwrap() - 1;
         m.bad = tl["bad"].parse().unwrap();
-        // `cancel` to `ended`.
+        // The load itself, per stream: the rate of each kind over the run (the first to the last
+        // stamp of the fake's own clock) and the size of each entry.
+        let num = |k: &str| tl[k].parse::<u64>().unwrap();
+        let rate = |k: &str| {
+            let n = num(&format!("n{k}"));
+            (n - 1) as f64 * 1e6 / (num(&format!("{k}last")) - num(&format!("{k}first"))) as f64
+        };
+        m.delta_rate = rate("d");
+        m.entry_rate = rate("e");
+        m.entries = num("ne");
+        m.entry_size = (num("emin"), num("emax"));
+        let (buckets, count) = delay_buckets(&tl);
+        m.delay_p95 = bucket_p95(&buckets, count);
+        m.delay_count = count;
+        // `cancel` to `ended`: the stream had not ended, and the `ended` is the cancel's.
+        assert!(side.at(s, "ended").is_none(), "{s} ended before the cancel");
         let t = micros();
         side.call("api.cancel", json!({"s": s}));
         let ended = wait_for("ended", 30, 20, || side.at(s, "ended"));
+        assert!(ended >= t, "ended of {s} before the cancel");
         m.cancel = ms(t, ended);
         assert!(
             side.call("api.ended", Value::Null)
@@ -432,34 +497,21 @@ mod stage_b {
         });
         let wall = started.elapsed();
         let after = rig.host().test_stats();
-        // Item delay, the stamp of the fake's write to the sink's read, over every stamped line.
-        let mut buckets = [0u64; 102];
-        for (side, s) in &streams {
-            for (k, v) in side.tally(s) {
-                if let Some(ms) = k.strip_prefix('h') {
-                    buckets[ms.parse::<usize>().unwrap()] += v.parse::<u64>().unwrap();
-                }
-            }
-        }
-        let count: u64 = buckets.iter().sum();
-        let mut seen = 0;
-        let mut delay_p95 = 0;
-        for (ms, n) in buckets.iter().enumerate() {
-            seen += n;
-            if seen as f64 >= count as f64 * 0.95 {
-                // The upper edge of the millisecond.
-                delay_p95 = ms + 1;
-                break;
-            }
-        }
-        // The consumers commit once per batch (the fixture's tally); the rest is the host's.
+        // Item delay, the stamp of the fake's write to the sink's read: the p95 of each session,
+        // and the worst of them is the figure of the budget. `count` is every stamped line.
+        let delay_p95 = marks.iter().map(|m| m.delay_p95).max().unwrap();
+        let count: u64 = marks.iter().map(|m| m.delay_count).sum();
+        // The writer's commits by owner: the host's own (timer writes) and the mods' (the
+        // consumers' tally, one write per batch), counted on the commit path.
         let commits = after.commits - before.commits;
-        let consumer_commits: u64 = marks.iter().map(|m| m.batches).sum();
+        let host_commits = after.host_commits - before.host_commits;
+        let consumer_commits = commits - host_commits;
         let commit_time = (after.commit_time - before.commit_time).as_secs_f64();
+        let host_time = (after.host_commit_time - before.host_commit_time).as_secs_f64();
         let mean = commit_time / commits.max(1) as f64;
         let busy = commit_time / wall.as_secs_f64();
-        let host_commits = commits.saturating_sub(consumer_commits);
-        let host_busy = mean * host_commits as f64 / wall.as_secs_f64();
+        let host_busy = host_time / wall.as_secs_f64();
+        let batches: u64 = marks.iter().map(|m| m.batches).sum();
         let col = |f: fn(&Marks) -> f64| p95(marks.iter().map(f).collect());
         let written: u64 = marks.iter().map(|m| m.written).sum();
         println!(
@@ -467,8 +519,8 @@ mod stage_b {
              over {count} lines, ask taken p95 {:.1} ms, answer to stdin p95 {:.1} ms, \
              interrupt to ask-resolved p95 {:.1} ms, interrupt to result p95 {:.1} ms, \
              cancel to ended p95 {:.1} ms, writer busy {busy:.4} (host {host_busy:.4}, \
-             consumers {:.4}; {commits} commits, {consumer_commits} of the consumers, mean \
-             {:.3} ms), wall {:.1} s, load average before {load_before} after {}",
+             consumers {:.4}; {commits} commits, {host_commits} of the host, mean \
+             {:.3} ms, {batches} batches), delta rate {:.1}-{:.1}/s entry rate {:.2}-{:.2}/s, wall {:.1} s, load average before {load_before} after {}",
             col(|m| m.ask_taken),
             col(|m| m.answer),
             col(|m| m.interrupt_resolved),
@@ -476,12 +528,37 @@ mod stage_b {
             col(|m| m.cancel),
             busy - host_busy,
             mean * 1000.0,
+            marks.iter().map(|m| m.delta_rate).fold(f64::MAX, f64::min),
+            marks.iter().map(|m| m.delta_rate).fold(0.0, f64::max),
+            marks.iter().map(|m| m.entry_rate).fold(f64::MAX, f64::min),
+            marks.iter().map(|m| m.entry_rate).fold(0.0, f64::max),
             wall.as_secs_f64(),
             loadavg(),
         );
         assert!(marks.iter().all(|m| m.bad == 0), "{marks:?}");
         assert!(marks.iter().all(|m| m.taken == m.written), "{marks:?}");
+        // The workload, per stream: 50 deltas and 5 entries of 4096 bytes a second, each within
+        // 10%, and a turn that the interrupt (not its end) stopped.
+        assert!(
+            marks.iter().all(|m| (45.0..=55.0).contains(&m.delta_rate)),
+            "{marks:?}"
+        );
+        assert!(
+            marks.iter().all(|m| (4.5..=5.5).contains(&m.entry_rate)),
+            "{marks:?}"
+        );
+        assert!(marks.iter().all(|m| m.entries >= 45), "{marks:?}");
+        assert!(
+            marks.iter().all(|m| m.entry_size == (4096, 4096)),
+            "{marks:?}"
+        );
         assert!(marks.iter().all(|m| m.written > 10 * 55), "{marks:?}");
+        // The mods' commits are at least the consumers' batches (a call that writes state, such
+        // as `api.say`, adds its own).
+        assert!(
+            consumer_commits >= batches,
+            "commits by owner: {consumer_commits} {batches}"
+        );
         assert_eq!(count, written, "every line has a delay");
         assert!(delay_p95 <= 100, "item delay p95 {delay_p95} ms");
         assert!(col(|m| m.ask_taken) <= 100.0, "{marks:?}");

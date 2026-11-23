@@ -28,6 +28,9 @@ const SCRATCH: TableDefinition<&str, &str> = TableDefinition::new("scratch");
 pub(crate) struct Stats {
     pub commits: AtomicU64,
     pub commit_nanos: AtomicU64,
+    /// The commits of the host's own timer writes, and their time (part of the two above).
+    pub host_commits: AtomicU64,
+    pub host_commit_nanos: AtomicU64,
     pub bytes_read: AtomicU64,
     pub bytes_written: AtomicU64,
 }
@@ -252,7 +255,7 @@ impl State {
         apply_timer_ops(&txn, ops)?;
         let started = Instant::now();
         txn.commit().map_err(CallError::internal)?;
-        self.stats.record(started);
+        self.stats.record_host(started);
         Ok(())
     }
     /// Like `timer_write`, with the operations chosen inside the write transaction, after
@@ -265,7 +268,7 @@ impl State {
         apply_timer_ops(&txn, &ops())?;
         let started = Instant::now();
         txn.commit().map_err(CallError::internal)?;
-        self.stats.record(started);
+        self.stats.record_host(started);
         Ok(())
     }
     /// Removal of a mod (4.4, 19.6): deletes its timers; every other timer that carries it as
@@ -354,6 +357,15 @@ impl State {
     }
 }
 impl Stats {
+    /// A commit of the host's own (a timer write), counted apart as well.
+    fn record_host(&self, started: Instant) {
+        self.host_commits.fetch_add(1, Ordering::Relaxed);
+        self.host_commit_nanos.fetch_add(
+            u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        self.record(started);
+    }
     fn record(&self, started: Instant) {
         self.commits.fetch_add(1, Ordering::Relaxed);
         self.commit_nanos.fetch_add(
