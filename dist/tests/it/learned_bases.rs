@@ -285,7 +285,19 @@ fn follow_after_tombstone(w: World, tombs: serde_json::Value, base: &str) -> ser
     let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tombs}});
     std::fs::create_dir_all(home.join("dist")).unwrap();
     std::fs::write(home.join("dist/follows.json"), file.to_string()).unwrap();
-    let bob = open(&home);
+    // The test hosts are local: `listed_local` lets the listed first read reach them (F2.1).
+    let bob = Dist::open(
+        &home,
+        std::sync::Arc::new(RecordingConfirm::new(std::iter::repeat_n(
+            Decision::Approve,
+            20,
+        ))),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
+    )
+    .unwrap();
     let _ = bob.follow(&link);
     record(&home, key)
 }

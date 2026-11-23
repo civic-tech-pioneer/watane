@@ -436,6 +436,10 @@ impl Dist {
         base: &str,
         listed: bool,
     ) -> Result<RefreshReport, DistError> {
+        // A listed read checks its first base as it checks a redirect target (5.9).
+        if listed {
+            self.check_listed_base(base)?;
+        }
         let entry_limit = if listed {
             self.options
                 .max_listed_entries
