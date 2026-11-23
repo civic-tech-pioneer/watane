@@ -27,7 +27,7 @@ Each subsystem is one folder beside `spec/`, in one git repository.
 | `log` | Makes statements that others can verify: the identity and the signed channel. | none | none | 3 |
 | `dist` | Moves releases between people: publish, follow, find. | `log`, `pkg` | none | 3, 4 |
 | `net` | Connects machines directly: node keys, classes, the wire, pairing, sync (`PEERS.md`). | `log` | none | 8 |
-| `node` | Joins `dist` and `net`: the holder, the sync loops, the always-on program. | `dist`, `net` | `watane-node` | 8 |
+| `node` | Joins `dist` and `net`: the holder, the calls to `net`, the always-on program. | `dist`, `net` | `watane-node` | 8 |
 | `install` | Puts watane on a machine: a script, a packer, a release workflow and their documents. | none (it packs the programs of `host`, `dev`, `node` and `app`) | `install.sh` | 7 |
 
 ```text
@@ -47,7 +47,7 @@ Rules:
 - `log` is opened only by `dist`. `dist` passes the backup and the restore
   of the identity through to `app`.
 - `dist` and `net` do not know each other. `net` defines the holder trait;
-  `node` implements it over `dist` and runs the loops between them (step 8).
+  `node` implements it over `dist` and makes the calls between them (step 8).
   `app` reaches `dist` and `net` through `node` from step 8.
 - `install` owns a script, a packer, a workflow and documents, and no code
   that another subsystem calls; its one crate (`watane-install`) holds
@@ -60,7 +60,7 @@ Rules:
   and the shared root `target/`; S1 members are `pkg`, `host`, and `dev`.
   A dependency on a sibling is a path dependency
   (`{ path = "../pkg" }`).
-  One version of Wasmtime (48.0.8) and of each wasm-tools crate is in the build.
+  One version of Wasmtime (48.0.10) and of each wasm-tools crate is in the build.
 
 ## 3. The mod
 
@@ -250,9 +250,12 @@ Not protected in the first version:
   `install`, `add`, `ci`, `uv pip`, `sync`, ...) runs the project's own scripts, and an
   allowed command's own options (`git -c`, GNU `sed`'s `e`) or a first word
   that the allow list misses can run others, inside the shell grant's
-  sandbox only, whose loopback reach is still to be probed (V27), and only for
+  sandbox only, which does not keep them off loopback, LAN or link-local
+  addresses that an allowlisted name names or resolves to (agentic-harness
+  probe V27, slice S1: a breach; its rule waits on the human), and only for
   a profile the participant made or adopted with that allow rule; whether a
-  subagent prompt that starts with `/` runs a skill (not probed, V26); a
+  subagent prompt that starts with `/` runs a skill (agentic-harness probe
+  V26, slice S1: it runs none); a
   duplicate key nested in an ask's `input` is read last-wins, so the ask
   shows the call that will run only while the host serializes the item
   itself rather than passing `claude`'s bytes (host 19.3); the plan usage of
@@ -260,8 +263,8 @@ Not protected in the first version:
   answers (host 18): a workspace or account consent kept without its provider
   is reused by another provider or a mod in the middle with its own grant
   (Q38); under the shell grant, a `Bash` child reading
-  `CLAUDE_CODE_OAUTH_TOKEN`, and `WebFetch` reaching loopback (Q39, probe
-  V28); one session reading another's scratch or run folder (Q40); a
+  `CLAUDE_CODE_OAUTH_TOKEN`, and `WebFetch` reaching loopback (Q39, host
+  probe V28); one session reading another's scratch or run folder (Q40); a
   symlink planted in a workspace past the deny rules (Q41); login files the
   closed deny list misses under the shell grant (Q42); `say` content
   shape and lookalikes of `/` (Q43).
@@ -272,7 +275,7 @@ Each one closes a gap of the old specification. Veto any of them.
 
 | # | Decision |
 |---|---|
-| W1 | Six subsystems (eight from step 8: `net`, `node`). `host` is one subsystem; its inner modules need no cross-subsystem contract. |
+| W1 | Six subsystems (eight from step 8: `net`, `node`; nine with `install`, step 7). `host` is one subsystem; its inner modules need no cross-subsystem contract. |
 | W2 | The WIT world is the contract. `mod.toml` holds only what WIT cannot say. Grants come from the world. Consents (workspace, account, toolset) are stored with the grants (host 4.4; W38). |
 | W3 | An installed mod has one model: a verified folder in the home. A mod has at most one logic part. |
 | W4 | A local mod installs unsigned and is marked local. |
@@ -291,10 +294,10 @@ Each one closes a gap of the old specification. Veto any of them.
 | W17 | The slug and the version are in the WIT package line `mods:<slug>@<version>`, not in `mod.toml`. |
 | W18 | After a restore of the identity, nothing is signed until the newest statement of the own channel is known. |
 | W19 | A confirmation with no answer is a no: closing the consent view, quitting the app, or 10 minutes without an answer. |
-| W20 | An index is a channel, not a new thing: any channel may hold `list`, `include` and `unlist` statements, and it is an index for a participant who chooses it from its link. The own channel always counts. A listing names a mod, never a version or bytes: those come only from the publisher's channel. (step 4, S26 draft) |
-| W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads a bounded number of channels because of listings (dist 5.9), and never a listed address on its own device or network. (step 4, S26 draft) |
-| W22 | Search is local: a filter over the channels already read and verified, by words in the text, by publisher key and by interface (offered, sent as events, or used). No network, no global ranking; the order uses only the participant's own choices. (step 4, S26 draft) |
-| W23 | watane ships with no index and no default channel. The participant adds the first index from a link that a person gave them. (step 4, S26 draft) |
+| W20 | An index is a channel, not a new thing: any channel may hold `list`, `include` and `unlist` statements, and it is an index for a participant who chooses it from its link. The own channel always counts. A listing names a mod, never a version or bytes: those come only from the publisher's channel. (step 4, S26) |
+| W21 | Includes go one level deep: the listings of an included index count, its includes do not. A home reads a bounded number of channels because of listings (dist 5.9), and never a listed address on its own device or network. (step 4, S26) |
+| W22 | Search is local: a filter over the channels already read and verified, by words in the text, by publisher key and by interface (offered, sent as events, or used). No network, no global ranking; the order uses only the participant's own choices. (step 4, S26) |
+| W23 | watane ships with no index and no default channel. The participant adds the first index from a link that a person gave them. (step 4, S26) |
 | W24 | A derived mod names the release it was made from in `mod.toml` `[origin]`; the release body carries it (pkg 7, since step 3). It is the publisher's claim: watane shows it as such and never checks it against the origin's channel. The origin is the direct parent, not the first ancestor. (step 5, S32) |
 | W25 | A provider's channel that this home has no record of is read from the bases of the live `list` and `include` statements that name its key in the channels the home already reads (dist 5.11). When a release depends on a provider of another publisher, the publish asks the participant to `list` that provider in the own channel, so the consumer's channel says where its providers live. No new format. (step 5, S32) |
 | W26 | A mod **fits** in place of a named provider when it has the same slug and satisfies every interface that the consumer calls or subscribes to from it (pkg 5.2), whatever its publisher. It binds only after the participant picks it in the consent view; the host keeps the pick as a bind of that consumer, asks for each new bind, and deletes the bind when the picked mod is removed (host 4.5). (step 5, S32) |
@@ -306,8 +309,9 @@ Each one closes a gap of the old specification. Veto any of them.
 | W32 | `net` is off until the participant turns it on. No relay, DHT, bootstrap host or public peer is on by default; each is one choice, named in its consent. A personal node serves strangers nothing in step 8. (step 8) |
 | W33 | A replica holds no participant key: `log` and `dist` open a home with no identity, which can read, verify and store but never sign. Own machines are bound by a device list that the anchor's node key signs, never by a public statement. (step 8) |
 | W34 | **Collect** (step 9): an own-package import whose function returns `list<T>` asks every granted subscriber and returns their answers concatenated, in local-name order; a function with no result stays an event; any other result is refused. It reuses the subscription link and the `Subscribe` grant: no new grant kind, no new file, no new host interface. A collect link is a cycle edge from collector to subscriber; event links stay no edges. A failing subscriber is skipped, not fatal, except when it spends the chain's shared fuel or time; the collector does not learn who answered. Answers carry no source: a collector that must address one answerer later says so in the answer type (for example a command id), and reaches it with an event. |
-| W35 | **Management interface** (step 10): the host offers the management of mods through `watane:host/manage`; importing it is the grant `Manage`, the fifth kind, shown in the plan like any other. What a manager may do follows the direction of authority. It reads (the installed mods, their grants, links and origins) and reduces (disable, withdraw a grant, close a page) directly, because a hostile manager can then only make things do less. It asks for each addition (install, update, give a grant, pick a provider) and for a removal that deletes data; the request goes to the consent view, which decides it as if the participant had started it (F-AGENT-4). It never signs, answers a consent or reaches the identity. The app's own manager is a native view on the same functions. Designed in S73: the WIT and the effects in host 6.4 and 6.10, the grant in pkg 4.5 and 5.1, the consent words and requests in app 17. |
+| W35 | **Management interface** (step 10): the host offers the management of mods through `watane:host/manage`; importing it is the grant `Manage`, the fifth kind, shown in the plan like any other. What a manager may do follows the direction of authority. It reads (the installed mods, their grants, links and origins) and reduces (disable, withdraw a grant, close a page) directly, because a hostile manager can then only make things do less. It asks for each addition (install, update, give a grant, pick a provider), for each enable and for each removal, with or without its data (host 18, Q28 and Q29, answered 2026-11-16); the request goes to the consent view, which decides it as if the participant had started it (F-AGENT-4). It never signs, answers a consent or reaches the identity. The app's own manager is a native view on the same functions. Designed in S73: the WIT and the effects in host 6.4 and 6.10, the grant in pkg 4.5 and 5.1, the consent words and requests in app 17. |
 | W36 | **Main mod**: at start the app opens the main mod, else its manager (F-APP-1, F-APP-7). The choice is the participant's and lives in the app's part of the home; the host knows nothing of it. A mod proposes itself with `main = true` in `mod.toml` (pkg 4.2), and only a mod with a page may; the app takes the proposal at install when no main mod is set. A shell is a mod like any other: there is no application level above mods. |
+| W37 | **The manager's look** (S83, the human 2026-11-16): the human's design in `spec/design/manager/` is the look of the app's manager, specified in `app/TECHNICAL.md` 5.3 and 5.4. |
 | W38 | **The agent layer** (step 11; agentic-harness TECHNICAL, N3 accepted 2026-11-20): mods run agent sessions on the participant's own Claude or ChatGPT plan. It is a layer of mods on the host: the kernel `mods:agent` and the two providers `mods:claude-code` (unchecked, and checked by a judge) live in their own repositories. watane gives them the host interfaces of host 19 (streams, the launch of `claude`, HTTPS streams with accounts, agent tools, requests and timers, consents, errors), the two grants `ClaudeCode` and `ClaudeCodeShell` of pkg 5.1, the app's accounts and consents of app 19, and dev's fakes of dev 18 (the binary `fake-claude`, the test server `ScriptedResponses` with its judge origin). Consents (workspace, account `openai`, toolset) are kept by the host with the grants, per origin client, and withdrawn like grants. The host reaches tokens, keys and the `claude` path only through the in-process trait `AccountSource` that the app implements; with no app, or no entry, it fails `no-app` or `no-account`. watane holds no key and runs no service. |
 | W39 | **The agent layer's boundary** (agentic-harness 14): a mod cannot widen `claude` past its launch, a failing check cannot let a tool run, no mod sees a credential, a token and a judge key go only to the endpoints they are bound to, a mod in the middle gains no authority (consent per origin client), a session is private to its owner, and the confirmation floor (F-AGENT-4) holds: no agent installs, grants or signs. The security row and its "Not protected" lines are in section 6. The host and app files that hold each property are named in agentic-harness 14; a slice that changes one gets the adversary step. |
 
@@ -320,7 +324,7 @@ Each one closes a gap of the old specification. Veto any of them.
 | 3 Publish | `log`; `dist` (own channel, publish folder, follow); the confirmation in `app`; `watane-dev publish` | J3 passes |
 | 4 Find | `dist` (index, search, updates, withdrawals); the views in `app` | J4 passes |
 | 5 Build on | `dev` (derive, depend on a release); `host` (binds); `dist` (provider bases, derived search); `app` (fetch, pick, derived view) | J5 passes |
-| 6 Share on GitHub | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
+| 6 Share on GitHub (the build plan's own step; VISION's step 6 is the factory) | `pkg` (`repository`); `dev` (`publish --push`, `new --from` forks the repository) | J3 and J5 pass with GitHub as the host (in tests, local git remotes and `fake-gh`, dev 15.4) |
 | 7 The real world | `install` (a person can get watane: J7); then nothing new: each fake of the journeys gives way to the real thing (`factory/PLAN.md`) | J7 passes on a clean Mac; the journeys pass on real hosts and machines |
 | 8 Own machines | `log` and `dist` (a keyless open; the holder methods); `net` (stage D1 of `PEERS.md`); `node` (`watane-node`); `app` (turn on, pair, devices, relay, DHT switch) | J8 passes |
 | 9 Extension points | `pkg` (the event or collect rule of an outlet function); `host` (collect in the linker and the call algorithm; collect edges in the cycle check; fakes for collects in `Harness`); `dev` (collect fakes and answers in contract tests, the template text); `app` (the words of a subscription) | J9 passes |
@@ -339,7 +343,7 @@ allowlist and the contract test form in `dev`, the grant words in `app`,
 the local name in `host`, the published folder, the link and the statement
 bodies in `dist`, the backup format in `log`. These wait for their step:
 
-Step 4 is designed (S26 draft, W20 to W23): the statements of an index,
+Step 4 is designed (S26, W20 to W23): the statements of an index,
 the read set and the search in `dist/TECHNICAL.md` 4.1, 5.9 and 5.10; the
 find view and `/api/search` in `app/TECHNICAL.md` 7, 8.2 and 9.6;
 `watane-dev search` in `dev/TECHNICAL.md` 10.

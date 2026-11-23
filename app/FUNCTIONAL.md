@@ -3,8 +3,8 @@
 What the app does, free of implementation. "The app" is the desktop
 application of FUNCTIONAL.md section 1. Ids `APP-F-<n>`. Each `Traces:`
 line cites spec/FUNCTIONAL.md. Step 1 needs nothing from the app (J1 uses a
-preview). Steps 4 and 5 are sketched only, so that no design blocks them.
-The main mod and the manager (stage I, W36) are designed and not built.
+preview). Steps 2 to 5, 8 and 10 and the main mod and the manager (stage I, W36) are
+built; step 11 (stage L) is built in part (S102).
 
 ## Step 2: Run together
 
@@ -137,7 +137,7 @@ holds none (W33). A machine is named by its short key (8 characters).
 
 ## Acceptance scenarios
 
-Each scenario is a test (TECHNICAL.md section 9 names the test).
+Each scenario is a test (TECHNICAL.md section 11, with 17.5 and 19.6, names the test).
 
 **S1 Empty start** (APP-F-1, APP-F-3, APP-F-4). Given a new home, when the
 app starts, then the library shows no mod entry, the header shows two mark
