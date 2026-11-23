@@ -237,10 +237,10 @@ fn ac5_a_scratch_launch_runs_the_fake_with_the_fixed_arguments_and_environment()
         [scratch.canonicalize().unwrap().display().to_string()]
     );
     let pid = rig.entries("PID")[0].clone();
-    assert_eq!(
-        std::fs::read_to_string(home.join("runs/pids")).unwrap(),
-        format!("{pid}\n")
-    );
+    let record = std::fs::read_to_string(home.join("runs/pids")).unwrap();
+    let fields: Vec<&str> = record.split_whitespace().collect();
+    assert_eq!(fields.len(), 3, "pgid boot-id start-time: {record:?}");
+    assert_eq!(fields[0], pid);
     // The group: the program is its own leader.
     let pgid = std::process::Command::new("ps")
         .args(["-o", "pgid=", "-p", &pid])
@@ -822,6 +822,28 @@ fn ac11_cancel_and_disable_kill_the_group_and_keep_the_scratch_folder() {
     assert!(scratch.is_dir());
 }
 
+/// The `runs/pids` line of a live group leader: `pgid boot-id start-time` (19.3, The run).
+fn record(pid: i32) -> String {
+    let underscored = |text: String| text.trim().replace(char::is_whitespace, "_");
+    let tool = |program: &str, args: &[&str]| {
+        let out = std::process::Command::new(program)
+            .args(args)
+            .output()
+            .unwrap();
+        underscored(String::from_utf8(out.stdout).unwrap())
+    };
+    if cfg!(target_os = "linux") {
+        let boot = underscored(std::fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap());
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+        let rest = &stat[stat.rfind(')').unwrap() + 1..];
+        format!("{pid} {boot} {}", rest.split_whitespace().nth(19).unwrap())
+    } else {
+        let boot = tool("sysctl", &["-n", "kern.boottime"]);
+        let start = tool("ps", &["-o", "lstart=", "-p", &pid.to_string()]);
+        format!("{pid} {boot} {start}")
+    }
+}
+
 #[test]
 fn ac11_open_kills_the_recorded_groups_and_empties_runs() {
     let mut rig = Rig::new(&[]);
@@ -835,7 +857,7 @@ fn ac11_open_kills_the_recorded_groups_and_empties_runs() {
         .spawn()
         .unwrap();
     let pid = i32::try_from(child.id()).unwrap();
-    std::fs::write(runs.join("pids"), format!("{pid}\n")).unwrap();
+    std::fs::write(runs.join("pids"), format!("{}\n", record(pid))).unwrap();
     assert!(alive(pid));
     rig.open();
     wait("the group to die", Duration::from_secs(10), || !alive(pid));

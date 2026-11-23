@@ -145,15 +145,112 @@ fn random_hex() -> String {
     crate::agent::streams::random_id()
 }
 
-/// Kills the groups that a crashed host left in `runs/pids` and empties `runs/` (3.1 step 3).
+/// The boot id of this machine, one token (19.3, The run: Process).
+fn boot_id() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    let text = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+    #[cfg(not(target_os = "linux"))]
+    let text = tool_output("sysctl", &["-n", "kern.boottime"])?;
+    let token: String = text
+        .trim()
+        .chars()
+        .map(|c| if c.is_whitespace() { '_' } else { c })
+        .collect();
+    (!token.is_empty()).then_some(token)
+}
+
+/// The start time of process `pid`, one token: field 22 of `/proc/<pid>/stat` on Linux, the
+/// `lstart` that `ps` prints on macOS (no `unsafe`: `kp_proc.p_starttime` needs a raw `sysctl`).
+fn start_time(pid: i32) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // The comm field may hold spaces and `)`: count from the last `)`; field 3 comes next.
+        let rest = stat.get(stat.rfind(')')? + 1..)?;
+        rest.split_whitespace().nth(19).map(str::to_owned)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let text = tool_output("ps", &["-o", "lstart=", "-p", &pid.to_string()])?;
+        let token: String = text
+            .trim()
+            .chars()
+            .map(|c| if c.is_whitespace() { '_' } else { c })
+            .collect();
+        (!token.is_empty()).then_some(token)
+    }
+}
+
+/// The standard output of a system tool, in the C locale.
+#[cfg(not(target_os = "linux"))]
+fn tool_output(program: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(format!("/usr/sbin/{program}"))
+        .args(args)
+        .env_clear()
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let out = if out.status.success() {
+        out
+    } else {
+        Command::new(format!("/bin/{program}"))
+            .args(args)
+            .env_clear()
+            .env("LC_ALL", "C")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?
+    };
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The line of `runs/pids` for the group `pgid`, led by the process of the same id:
+/// `pgid boot-id start-time`. `None` when the leader is gone.
+pub(crate) fn pid_record(pgid: i32) -> Option<String> {
+    Some(format!("{pgid} {} {}", boot_id()?, start_time(pgid)?))
+}
+
+/// The group that a `runs/pids` line records, when it is still that run: the boot id is this
+/// boot's and the leader has the recorded start time. Anything else is `None`.
+fn recorded_group(line: &str, boot: &str, start_of: impl Fn(i32) -> Option<String>) -> Option<i32> {
+    let mut fields = line.split_whitespace();
+    let pgid = fields.next()?.parse::<i32>().ok().filter(|p| *p > 1)?;
+    let (recorded_boot, recorded_start) = (fields.next()?, fields.next()?);
+    if fields.next().is_some() || recorded_boot != boot {
+        return None;
+    }
+    (start_of(pgid)? == recorded_start).then_some(pgid)
+}
+
+/// Kills the groups that a crashed host left in `runs/pids` and are still its runs, and empties
+/// `runs/` (3.1 step 3).
 pub(crate) fn clean_runs(home: &Path) {
     let runs = home.join("runs");
-    if let Ok(text) = std::fs::read_to_string(runs.join("pids")) {
-        for pgid in text.lines().filter_map(|l| l.trim().parse::<i32>().ok()) {
-            killpg(pgid);
+    if let (Ok(text), Some(boot)) = (std::fs::read_to_string(runs.join("pids")), boot_id()) {
+        for line in text.lines() {
+            if let Some(pgid) = recorded_group(line, &boot, start_time) {
+                killpg(pgid);
+            }
         }
     }
     let _ = std::fs::remove_dir_all(&runs);
+}
+
+/// Kills the group of `child`, then reaps the child: the pid is held until the kill is sent, so
+/// no kill reaches a reused pid (19.3 step 5). Waits at most `EXIT_WAIT` for the reap.
+fn kill_then_reap(mut child: std::process::Child, pgid: i32, kill: impl FnOnce(i32)) {
+    kill(pgid);
+    let (reaped, wait) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        let _ = reaped.send(());
+    });
+    let _ = wait.recv_timeout(EXIT_WAIT);
 }
 
 /// `<program> --version` with the fixed environment, at most 15 s.
@@ -174,11 +271,11 @@ fn probe(program: &Path) -> Result<String, String> {
     std::thread::spawn(move || {
         let mut text = String::new();
         let _ = out.by_ref().take(4096).read_to_string(&mut text);
-        let _ = child.wait();
         let _ = tx.send(text);
     });
     let result = rx.recv_timeout(Duration::from_secs(15));
-    killpg(pgid);
+    // The child is still unreaped here, so its pid cannot belong to anyone else.
+    kill_then_reap(child, pgid, killpg);
     result.map_err(|_| "it did not answer".to_owned())
 }
 /// `x.y.z` from the first word of `2.1.295 (Claude Code)`.
@@ -1108,5 +1205,148 @@ mod tests {
             .collect();
         assert!(left.is_empty(), "scratch folders left: {left:?}");
         assert_eq!(host.state.scratch_removed("owner").unwrap(), ["kept"]);
+    }
+}
+
+/// Item 5 of S100: a `runs/pids` record names a run by its boot id and start time, and the
+/// version probe signals its group before its child is reaped.
+#[cfg(test)]
+mod pids_tests {
+    use super::*;
+
+    fn start(map: &'static [(i32, &'static str)]) -> impl Fn(i32) -> Option<String> {
+        move |p| {
+            map.iter()
+                .find(|(q, _)| *q == p)
+                .map(|(_, t)| (*t).to_owned())
+        }
+    }
+
+    #[test]
+    fn ac2_a_matching_line_is_killed() {
+        let got = recorded_group("4242 boot-a 99", "boot-a", start(&[(4242, "99")]));
+        assert_eq!(got, Some(4242));
+    }
+
+    #[test]
+    fn ac2_other_lines_are_dropped() {
+        let live = start(&[(4242, "99")]);
+        for line in [
+            "4242",
+            "4242 boot-a",
+            "4242 boot-a 99 extra",
+            "4242 boot-b 99",
+            "4242 boot-a 100",
+            "4243 boot-a 99",
+            "abc boot-a 99",
+            "1 boot-a 99",
+            "-5 boot-a 99",
+            "",
+        ] {
+            assert_eq!(recorded_group(line, "boot-a", &live), None, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn ac2_a_recorded_run_is_killed_at_open() {
+        let home = tempfile::tempdir().unwrap();
+        let mut run = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(run.id()).unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let record = pid_record(pgid).expect("the leader is alive");
+        assert_eq!(record.split(' ').count(), 3);
+        std::fs::write(home.path().join("runs/pids"), format!("{record}\n")).unwrap();
+        clean_runs(home.path());
+        let status = run.wait().unwrap();
+        assert_eq!(status.signal(), Some(9));
+        assert!(!home.path().join("runs").exists());
+    }
+
+    #[test]
+    fn ac2_an_old_format_line_is_not_killed_at_open() {
+        let home = tempfile::tempdir().unwrap();
+        let mut run = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        std::fs::write(home.path().join("runs/pids"), format!("{}\n", run.id())).unwrap();
+        clean_runs(home.path());
+        std::thread::sleep(Duration::from_millis(100));
+        let alive = run.try_wait().unwrap().is_none();
+        let _ = run.kill();
+        let _ = run.wait();
+        assert!(alive);
+    }
+
+    #[test]
+    fn ac3_the_group_is_killed_before_the_child_is_reaped() {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+        let child = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let mut order = vec![];
+        kill_then_reap(child, pid, |pgid| {
+            let own = rustix::process::Pid::from_raw(pid).unwrap();
+            let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
+            // Reaped would be ECHILD: the pid is still held when the kill goes out.
+            let held = waitid(WaitId::Pid(own), options).is_ok();
+            order.push(if held {
+                "kill, unreaped"
+            } else {
+                "kill, reaped"
+            });
+            killpg(pgid);
+        });
+        assert_eq!(order, ["kill, unreaped"]);
+        let own = rustix::process::Pid::from_raw(pid).unwrap();
+        assert!(
+            rustix::process::test_kill_process(own).is_err(),
+            "reaped after"
+        );
+    }
+}
+
+/// Adversary step of S100, ninth pass (red): `clean_runs` signals every pgid in `runs/pids` at
+/// open with no check that the group is still a run of this home. After a crash the recorded
+/// `claude` is reaped by init and its pid can be reused (always so after a reboot), so the open
+/// kills an unrelated process group of the participant: a signal to a reaped pid (19.3 step 5,
+/// S100-CAP "no kill reaches a pid reused since").
+#[cfg(test)]
+mod adv_s100_clean_runs {
+    use super::*;
+
+    #[test]
+    fn adv_s100_open_kills_a_group_that_reused_a_recorded_pid() {
+        let home = tempfile::tempdir().unwrap();
+        // A group the host never started, whose id a crashed run had recorded.
+        let mut unrelated = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        std::fs::write(
+            home.path().join("runs/pids"),
+            format!("{}\n", unrelated.id()),
+        )
+        .unwrap();
+        clean_runs(home.path());
+        std::thread::sleep(Duration::from_millis(200));
+        let alive = unrelated.try_wait().unwrap().is_none();
+        let _ = unrelated.kill();
+        let _ = unrelated.wait();
+        assert!(
+            alive,
+            "the open killed a process group that is not a run of this home"
+        );
     }
 }

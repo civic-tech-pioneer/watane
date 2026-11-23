@@ -214,15 +214,19 @@ impl Sessions {
             session.stop();
         }
     }
-    /// Adds a process group to `<home>/runs/pids` (19.3, The run).
+    /// Adds a process group to `<home>/runs/pids` as `pgid boot-id start-time` (19.3, The run).
     pub(crate) fn record_pid(&self, home: &Path, pgid: i32) {
         let _guard = self
             .pids
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let file = home.join("runs/pids");
+        // No record when the leader is gone: there is no run to find again.
+        let Some(record) = run::pid_record(pgid) else {
+            return;
+        };
         let mut text = std::fs::read_to_string(&file).unwrap_or_default();
-        text.push_str(&format!("{pgid}\n"));
+        text.push_str(&format!("{record}\n"));
         let _ = std::fs::write(file, text);
     }
     pub(crate) fn forget_pid(&self, home: &Path, pgid: i32) {
@@ -234,7 +238,7 @@ impl Sessions {
         if let Ok(text) = std::fs::read_to_string(&file) {
             let kept: String = text
                 .lines()
-                .filter(|l| l.trim() != pgid.to_string())
+                .filter(|l| l.split_whitespace().next() != Some(pgid.to_string().as_str()))
                 .map(|l| format!("{l}\n"))
                 .collect();
             let _ = std::fs::write(file, kept);
