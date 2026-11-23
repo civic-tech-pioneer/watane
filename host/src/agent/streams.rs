@@ -882,6 +882,7 @@ impl Hub {
         self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(false))
     }
     /// `host_open_keeping` for an ask that keeps no input.
+    #[cfg(test)]
     pub fn host_open_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         self.host_open_keeping(id, body, 0)
     }
@@ -898,6 +899,7 @@ impl Hub {
         self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(true))
     }
     /// `host_close_keeping` for an ask that kept no input.
+    #[cfg(test)]
     pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         self.host_close_keeping(id, body, 0)
     }
