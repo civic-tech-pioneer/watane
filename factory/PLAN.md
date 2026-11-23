@@ -1636,6 +1636,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-22 (the human's answer) Auto-merge is retired: the `codex-push` rulesets (watane 27841000,
   agentic-harness 27841001: only `slice/*` without bypass, for the Codex push App) block it, so the PO merges
   each green PR with `gh pr merge <n> --admin --rebase`. Foremen open their PR and do not arm it.
+- 2026-11-23 Main went red on RUSTSEC-2026-0594 (`cookie` 0.18.2): the deputy cherry-picked S100's lockfile bump to 0.18.3 (PR #16, 749fdfa) so other PRs' lint is green before S100 merges.
 - 2026-11-22 Main went red on RUSTSEC-2026-0592 (`url` 2.5.8): the PO bumped `url` to 2.5.9 (PR #12).
 - S96 (2026-11-22): Q46 confirmed: a mod stream depends on the consumer's `Call` grant and the link `open`
   ran through; a side disabled and enabled again while an `open` is in flight keeps the stream (host
