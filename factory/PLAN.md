@@ -1284,6 +1284,22 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
   runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
+- [~] **S108 (upkeep) pkg names what it refuses at the right path.** (in flight, cloud, builder codex, reviewer claude;
+  sketched 2026-11-23 by the deputy.) Leftovers items, all in `pkg/`; each outcome is its item's check:
+  1. [S15] a link inside a hidden folder (`ui/.git/x`) is named as the hidden folder's rule, not rule `path` at the link
+     (pkg/TECHNICAL.md:288; `ac1_s46_hidden_link_named` changes to match).
+  2. [S57] `pack` has no list-then-stat window (as `Mod::read` was fixed): a directory swapped in for a file is named as
+     such, not with the FIFO/socket text that every `InvalidInput` gets today.
+  3. [S91] a pack entry gone during listing is named at its own path, not at its parent; `pkg/tests/it/s91.rs`'s race test
+     (up to 5 s) moves out of the default run (a `slow:` test).
+  Touches: `pkg/` only. Remove the three items from Leftovers when it merges.
+- [~] **S109 (guard) the log's identity key is opened without a check-then-open.** (in flight, cloud, builder codex,
+  reviewer claude; sketched 2026-11-23 by the deputy.) `log/src/identity.rs` does `symlink_metadata` and then
+  `File::open` on the key path, and accepts a hard link (no nlink or uid check) and opens a device node before `fstat`
+  (Leftovers [S57], S91 adversary). Outcomes: the key file is opened once with no-follow and checked on the open handle
+  (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
+  refused with a clear error and the key is never read from it; each has a test. Unix only: the Windows design waits on
+  the human (factory/README "Windows"). A security boundary (spec/TECHNICAL.md 6): the adversary runs. Touches: `log/`.
 - [ ] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (sketch ahead; after S102
   merges: it touches app/src/core.rs.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
   an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
