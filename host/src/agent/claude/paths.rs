@@ -146,7 +146,8 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
 /// The absolute path that an ask or check of `tool` with `input` reaches, symlinks resolved, as
 /// the item's `path` (19.3, step 4): the tool's own key (`file_path` for Read, Edit and Write,
 /// `path` for Glob and Grep, `notebook_path` for NotebookEdit), resolved as `claude` does. Absent
-/// with no other path key: the working folder; another path key present: `None`. `None` for a
+/// (Glob and Grep only): the working folder; Read, Edit, Write and NotebookEdit without their key,
+/// or another path key present: `None`. `None` for a
 /// tool that is not a file tool, a path that the answer rule refuses, or one that cannot be
 /// resolved or is not UTF-8.
 pub(crate) fn resolved(
@@ -174,7 +175,8 @@ pub(crate) fn resolved(
         Some(v) => Some(v.as_str()?),
     };
     let real = match text {
-        None => resolve(cwd, Path::new("/"), &mut 0)?,
+        None if own == "path" => resolve(cwd, Path::new("/"), &mut 0)?,
+        None => return None,
         Some(text) => {
             let joined = cwd.join(expand(text, home.as_deref())?);
             resolve(&lexical(&joined), Path::new("/"), &mut 0)?
@@ -601,6 +603,24 @@ mod ac2_own_key {
             Some(format!("{w}/d"))
         );
         assert_eq!(got("Read", json!({"file_path": 1})), None);
+    }
+
+    #[test]
+    fn s100_fix8_ac1_only_glob_and_grep_fall_back_to_the_working_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().canonicalize().unwrap().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let roots = [work.clone()];
+        let run = PathBuf::from("/nonexistent-run");
+        let got = |tool: &str, input: Value| resolved(tool, &input, &work, &roots, &run);
+        for tool in ["Read", "Edit", "Write", "NotebookEdit"] {
+            assert_eq!(got(tool, json!({})), None, "{tool}");
+        }
+        assert_eq!(got("Read", json!({"offset": 1})), None);
+        assert_eq!(got("NotebookEdit", json!({"new_source": ""})), None);
+        let w = work.to_str().unwrap().to_owned();
+        assert_eq!(got("Glob", json!({"pattern": "x"})), Some(w.clone()));
+        assert_eq!(got("Grep", json!({"pattern": "x"})), Some(w));
     }
 }
 
