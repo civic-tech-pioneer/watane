@@ -1299,7 +1299,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      (up to 5 s) moves out of the default run (a `slow:` test).
   Touches: `pkg/` only. Remove the three items from Leftovers when it merges.
 - [~] **S109 (guard) the log's identity key is opened without a check-then-open.** (in flight, cloud, builder codex,
-  reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056.) `log/src/identity.rs` does `symlink_metadata` and then
+  reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056;
+  DELIVERED as PR #21 (+270 -25, log/ only; user-sim ACCEPTED, adversary HELD, both Linux); r1 to Claude under the new
+  review-lead brief, 17:55 UTC.) `log/src/identity.rs` does `symlink_metadata` and then
   `File::open` on the key path, and accepts a hard link (no nlink or uid check) and opens a device node before `fstat`
   (Leftovers [S57], S91 adversary). Outcomes: the key file is opened once with no-follow and checked on the open handle
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
