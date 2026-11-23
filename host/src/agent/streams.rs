@@ -1006,7 +1006,12 @@ impl Hub {
             (origin_pending, host_pending),
             reserve,
         )?;
-        inner.commit_push(id, body.to_vec(), 0);
+        if close {
+            // A close item is no producer push: the refusal and the lag clock stay (19.3 step 5).
+            inner.enqueue(id, body.to_vec(), 0);
+        } else {
+            inner.commit_push(id, body.to_vec(), 0);
+        }
         if reserve > 0 {
             if let Some(s) = inner.streams.get_mut(id) {
                 s.reserved += reserve;
@@ -1798,6 +1803,10 @@ mod tests {
         assert_eq!(hub.host_push(&s, &[0; 100_000]), Err(StreamError::Full));
         let refused_at = hub.lock().streams[&s].full_since;
         hub.host_close_keeping(&s, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        // A close whose reserve is not held is admitted as an item: still no producer push.
+        hub.host_close_keeping(&s, b"close", 0).unwrap();
         assert!(hub.lock().streams[&s].needs_ready.is_some());
         assert_eq!(hub.lock().streams[&s].full_since, refused_at);
         clock.advance(LAG + Duration::from_secs(1));
