@@ -402,7 +402,9 @@ impl Job {
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
         let stdin = child.stdin.take().expect("piped");
-        let _ = rustix::fs::fcntl_setfl(&stdin, rustix::fs::OFlags::NONBLOCK);
+        if let Err(failed) = make_non_blocking(&stdin) {
+            return failed;
+        }
         self.session.set_roots(cwd.clone(), roots, run_root);
         let ticker = Arc::clone(&self.session);
         let hub = Arc::clone(&self.hub);
@@ -673,16 +675,17 @@ fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup
     use rustix::event::{PollFd, PollFlags, poll};
     use rustix::io::Errno;
     while !line.is_empty() {
+        // Before every write call, whatever the last one returned (19.3, step 5).
+        if giveup
+            .get()
+            .is_some_and(|d| std::time::Instant::now() >= *d)
+        {
+            return false;
+        }
         match rustix::io::write(stdin, line) {
             Ok(n) => line = &line[n..],
             Err(Errno::INTR) => {}
             Err(Errno::AGAIN) => {
-                if giveup
-                    .get()
-                    .is_some_and(|d| std::time::Instant::now() >= *d)
-                {
-                    return false;
-                }
                 let slice = rustix::fs::Timespec {
                     tv_sec: 0,
                     tv_nsec: 20_000_000,
@@ -694,6 +697,11 @@ fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup
         }
     }
     true
+}
+
+/// Makes the write end of stdin non-blocking; the start ends `failed("stdin")` when it cannot.
+fn make_non_blocking(stdin: &impl std::os::fd::AsFd) -> Result<(), Value> {
+    rustix::fs::fcntl_setfl(stdin, rustix::fs::OFlags::NONBLOCK).map_err(|_| Job::failed("stdin"))
 }
 
 /// The writer thread: the one place that writes to stdin; a line goes through its queue.
@@ -819,6 +827,108 @@ mod join_tests {
                 .map(|(_, b)| String::from_utf8(b).unwrap())
                 .collect()
         }
+    }
+
+    fn pipe() -> (std::io::PipeReader, std::io::PipeWriter) {
+        let (reader, writer) = std::io::pipe().unwrap();
+        rustix::fs::fcntl_setfl(&writer, rustix::fs::OFlags::NONBLOCK).unwrap();
+        (reader, writer)
+    }
+
+    #[test]
+    fn s100_fix12_ac1_an_expired_deadline_rejects_a_write_on_a_writable_pipe() {
+        let (mut reader, writer) = pipe();
+        let giveup = Giveup::new();
+        giveup.set(std::time::Instant::now()).unwrap();
+        assert!(!write_all_by(&writer, b"line\n", &giveup));
+        drop(writer);
+        let mut left = vec![];
+        std::io::Read::read_to_end(&mut reader, &mut left).unwrap();
+        assert!(left.is_empty());
+    }
+
+    #[test]
+    fn s100_fix12_ac1_a_partial_write_checks_the_deadline_before_the_next_call() {
+        // 200 KB into an unread pipe: the first call writes part of it (the pipe holds 64 KB),
+        // the reader frees room, and the deadline that passed meanwhile stops the rest.
+        let (mut reader, writer) = pipe();
+        let giveup = Arc::new(Giveup::new());
+        let g = Arc::clone(&giveup);
+        let t = std::thread::spawn(move || write_all_by(&writer, &vec![b'x'; 200_000], &g));
+        std::thread::sleep(Duration::from_millis(100));
+        giveup.set(std::time::Instant::now()).unwrap();
+        let mut total = 0;
+        let mut buf = vec![0; 8192];
+        // Drain what is in the pipe until the writer reports; it must be false.
+        while !t.is_finished() {
+            total += std::io::Read::read(&mut reader, &mut buf).unwrap();
+        }
+        assert!(!t.join().unwrap());
+        assert!(total < 200_000, "{total}");
+    }
+
+    #[test]
+    fn s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline() {
+        let mut rig = rig();
+        rig.release.as_ref().unwrap().send(vec![]).unwrap();
+        let mut reader = rig.reader.take().unwrap();
+        giveup_now(&rig);
+        rig.out(b"first".to_vec());
+        rig.out(b"second".to_vec());
+        rig.end(Duration::from_secs(5));
+        drop(rig.release.take());
+        let mut left = vec![];
+        let _ = std::io::Read::read_to_end(&mut reader, &mut left);
+        assert!(left.is_empty(), "{:?}", String::from_utf8_lossy(&left));
+    }
+    fn giveup_now(rig: &Rig) {
+        let _ = rig.giveup.set(std::time::Instant::now());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn s100_fix12_ac2_a_write_end_that_cannot_be_made_non_blocking_fails_the_start_stdin() {
+        let fd = rustix::fs::open(
+            "/dev/null",
+            rustix::fs::OFlags::PATH,
+            rustix::fs::Mode::empty(),
+        )
+        .unwrap();
+        assert_eq!(
+            make_non_blocking(&fd).unwrap_err(),
+            serde_json::json!({"failed": "stdin"})
+        );
+        let (_reader, writer) = std::io::pipe().unwrap();
+        make_non_blocking(&writer).unwrap();
+    }
+
+    #[test]
+    fn s100_fix12_ac3_a_close_waits_on_no_consumer_and_goes_before_ended_in_order() {
+        let rig = rig();
+        for _ in 0..crate::agent::streams::MAX_ITEMS {
+            rig.hub.test_push(&rig.stream, b"{}").unwrap();
+        }
+        assert!(rig.hub.test_push(&rig.stream, b"{}").is_err());
+        rig.session.answered(&rig.hub, "7", "allow");
+        rig.session.answered(&rig.hub, "8", "deny");
+        let start = std::time::Instant::now();
+        rig.session.drain(&rig.hub);
+        assert!(start.elapsed() < Duration::from_secs(1));
+        rig.session.seal();
+        let items: Vec<String> = rig
+            .hub
+            .test_take(&rig.stream)
+            .into_iter()
+            .map(|(_, b)| String::from_utf8(b).unwrap())
+            .collect();
+        assert_eq!(items.len(), crate::agent::streams::MAX_ITEMS + 2);
+        assert_eq!(
+            items[crate::agent::streams::MAX_ITEMS..],
+            [
+                r#"{"type":"ask-resolved","id":"7","by":"answered","outcome":"allow"}"#,
+                r#"{"type":"ask-resolved","id":"8","by":"answered","outcome":"deny"}"#
+            ]
+        );
     }
 
     #[test]

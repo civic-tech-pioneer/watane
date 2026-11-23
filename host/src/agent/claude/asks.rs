@@ -95,7 +95,7 @@ impl Session {
     /// Pushes the closes that waited for room. Stops at the first that does not fit.
     fn flush(&self, hub: &Hub, asks: &mut Asks) -> Result<(), StreamError> {
         while let Some(body) = asks.pending.front() {
-            hub.host_push(&self.id, body)?;
+            hub.host_close_push(&self.id, body)?;
             asks.pending.pop_front();
         }
         Ok(())
@@ -419,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn ac5_drain_waits_for_room_so_a_waiting_answered_goes_before_the_end() {
+    fn ac5_drain_puts_a_waiting_answered_on_a_full_stream_before_the_end() {
         use crate::agent::streams::Consumer;
         let hub = Hub::new();
         let s = hub
@@ -427,17 +427,9 @@ mod tests {
             .unwrap();
         let session = Session::new(s.clone(), "o".into(), None);
         while hub.test_push(&s, b"{}").is_ok() {}
-        // The stream is full: the writer's `answered` waits.
+        // The stream is full: a close goes past the limit and nothing waits (review r3, F3.2).
         session.answered(&hub, "1", "allow");
-        let taker = {
-            let (hub, s) = (std::sync::Arc::clone(&hub), s.clone());
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(50));
-                hub.test_take(&s).len()
-            })
-        };
         session.drain(&hub);
-        assert!(taker.join().unwrap() > 0);
         // On the stream when `drain` returns, so before the run's `finish`.
         let last = hub.test_take(&s).pop().map(|(_, body)| body);
         assert_eq!(

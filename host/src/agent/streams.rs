@@ -414,6 +414,23 @@ impl Hub {
         origin_pending: usize,
         host_pending: usize,
     ) -> Result<(), StreamError> {
+        self.check_push_in(
+            id,
+            len,
+            chain,
+            (origin, origin_pending, host_pending),
+            false,
+        )
+    }
+    /// `check_push`; `close` skips the stream's own in-flight limit, not the budgets.
+    fn check_push_in(
+        &self,
+        id: &str,
+        len: usize,
+        chain: (usize, usize),
+        (origin, origin_pending, host_pending): (&str, usize, usize),
+        close: bool,
+    ) -> Result<(), StreamError> {
         let mut inner = self.lock();
         let now = inner.clock.now();
         let origin_now = inner.origin_bytes.get(origin).copied().unwrap_or(0);
@@ -421,16 +438,17 @@ impl Hub {
         let Some(s) = inner.streams.get_mut(id) else {
             return Ok(());
         };
-        let refused =
-            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
-                Some(Refused::Stream)
-            } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
-                Some(Refused::Origin(len))
-            } else if host_now + host_pending + len > HOST_BUDGET {
-                Some(Refused::Host(len))
-            } else {
-                None
-            };
+        let refused = if !close
+            && (s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES)
+        {
+            Some(Refused::Stream)
+        } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
+            Some(Refused::Origin(len))
+        } else if host_now + host_pending + len > HOST_BUDGET {
+            Some(Refused::Host(len))
+        } else {
+            None
+        };
         let Some(refused) = refused else {
             return Ok(());
         };
@@ -876,6 +894,14 @@ impl Hub {
     /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
     /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.push_as_host(id, body, false)
+    }
+    /// A push of an item that closes an ask or check (19.3, step 5): past the stream's in-flight
+    /// limit, so the end of a run never waits on a consumer; the budgets still count it.
+    pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.push_as_host(id, body, true)
+    }
+    fn push_as_host(&self, id: &str, body: &[u8], close: bool) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
         }
@@ -886,7 +912,7 @@ impl Hub {
                 _ => return Err(StreamError::UnknownStream),
             }
         };
-        self.check_push(id, body.len(), (0, 0), &origin, 0, 0)?;
+        self.check_push_in(id, body.len(), (0, 0), (&origin, 0, 0), close)?;
         self.lock().enqueue(id, body.to_vec(), 0);
         self.cv.notify_all();
         Ok(())
