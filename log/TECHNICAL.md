@@ -151,6 +151,12 @@ pub enum Error {
     Io { path: PathBuf, source: std::io::Error },
     #[error("exposed: {path} has mode {mode:04o}; group and others must have no access (chmod 700 for the directory, 600 for the key)")]
     Exposed { path: PathBuf, mode: u32 },
+    #[error("{path} has mode {mode:04o}; the identity key requires mode 0600")]
+    KeyMode { path: PathBuf, mode: u32 },
+    #[error("{path} has {links} hard links; the identity key requires exactly one link")]
+    KeyLinks { path: PathBuf, links: u64 },
+    #[error("{path} is owned by user {owner}; the identity key must be owned by user {current}")]
+    KeyOwner { path: PathBuf, owner: u32, current: u32 },
     #[error("{path} is not a {expected}")]           // link: "{path} is a symbolic link; a {expected} is required (a link is refused)"
     NotPlain { path: PathBuf, expected: &'static str, link: bool }, // expected: "directory" or "regular file"
     #[error("the log directory path is empty")]
@@ -339,22 +345,36 @@ later hardening.
    (`DirBuilder::recursive(true).mode(0o700)`).
 3. `symlink_metadata(dir)`: not a directory is `NotPlain { expected: "directory", link }` (`link` is true for a symbolic link); `mode & 0o077 != 0`
    is `Exposed`.
-4. Open `dir/identity.key` once for reading with `O_NOFOLLOW | O_NONBLOCK` (so
-   a link is not followed and a FIFO cannot hang), then check the handle with
-   `fstat`, never the path:
+4. Take an exclusive lock on the directory handle across key lookup and
+   creation. Open the key path once with `O_NOFOLLOW` and check the handle
+   with `fstat`:
    - missing: create the key (below);
-   - a link (the open fails with `ELOOP`): `NotPlain { expected: "regular file", link: true }`;
-   - not a regular file (a FIFO, a directory, or a socket, whose open fails with `ENXIO` on Linux and `EOPNOTSUPP` on macOS): `NotPlain { expected: "regular file", link: false }`;
-   - `mode & 0o077 != 0`: `Exposed`, and the file is not changed;
-   - else read it from that handle. A length other than 32 is `CorruptKey`.
+   - a symbolic link: `NotPlain { expected: "regular file", link: true }`;
+   - a FIFO, device, directory, or socket: `NotPlain { expected: "regular file", link: false }`;
+   - a link count other than 1: `KeyLinks`;
+   - `mode & 0o077 != 0`: `Exposed`;
+   - other modes besides 0600: `KeyMode`;
+   - an owner different from the process's effective user ID: `KeyOwner`.
+
+   The effective UID comes from `/usr/bin/id -u`. Linux uses `O_PATH` to
+   inspect the inode without opening a device for I/O. After the checks,
+   open the held descriptor through `/proc/self/fd` and check the read
+   handle again. macOS uses `O_NONBLOCK | O_NOCTTY` and checks the opened
+   handle before reading any bytes. A device driver can still receive an
+   open request on macOS.
+
+   Read the seed from the validated handle. A length other than 32 is
+   `CorruptKey`.
 5. Open the store (section 4.8).
 
 Create the key: 32 bytes from `getrandom::fill`. Write them to
-`.identity.key.<32 hex random>.tmp` with `create_new` and mode 0600, then
+`.identity.key.<32 hex random>.tmp` with `create_new`. Set mode 0600 on the
+open file, then
 `sync_all`, then `fs::hard_link` to `identity.key`, which fails if the name
 exists. On `AlreadyExists` another opener won: remove the temporary file and
 read the winner's file. Then remove the temporary file and `sync_all` the
-directory. Hold the seed in `zeroize::Zeroizing`.
+directory. The directory lock keeps concurrent openers from observing the
+temporary second link. Hold the seed in `zeroize::Zeroizing`.
 
 Replace the key (restore only): write the temporary file in the same way,
 then `fs::rename` it over `identity.key`, then `sync_all` the directory.

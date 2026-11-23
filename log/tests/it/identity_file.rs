@@ -80,6 +80,53 @@ fn ac3_identity_from_rfc_seed() {
 }
 
 #[test]
+fn s109_ac3_refuse_hard_link_to_valid_seed() {
+    let temp = tempfile::tempdir().unwrap();
+    let seed = temp.path().join("seed");
+    let path = temp.path().join("identity.key");
+    fs::write(&seed, oracle::SEED).unwrap();
+    fs::set_permissions(&seed, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::hard_link(&seed, &path).unwrap();
+
+    let error = Log::open(temp.path()).unwrap_err().to_string();
+    assert!(error.contains(path.to_str().unwrap()), "{error}");
+    assert!(error.contains("hard link"), "{error}");
+}
+
+#[test]
+fn s109_ac5_refuse_other_private_key_mode() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("identity.key");
+    fs::write(&path, oracle::SEED).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let error = Log::open(temp.path()).unwrap_err().to_string();
+    assert!(error.contains(path.to_str().unwrap()), "{error}");
+    assert!(error.contains("0700"), "{error}");
+    assert!(error.contains("0600"), "{error}");
+}
+
+#[test]
+fn s109_ac6_simultaneous_opens_share_the_new_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let start = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    Log::open(temp.path()).unwrap().identity().unwrap()
+                })
+            })
+            .collect();
+        let mut identities = readers.into_iter().map(|reader| reader.join().unwrap());
+        let identity = identities.next().expect("at least one opener");
+        assert!(identities.all(|other| other == identity));
+    });
+    assert_eq!(mode(&temp.path().join("identity.key")), 0o600);
+}
+
+#[test]
 fn ac2_directory_refusals() {
     let temp = tempfile::tempdir().unwrap();
     fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o750)).unwrap();
