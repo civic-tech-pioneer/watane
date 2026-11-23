@@ -226,6 +226,7 @@ impl Dist {
                     let tomb = crate::Tombstone {
                         seen: r.seen.clone(),
                         given: r.given.clone(),
+                        seen_full: r.seen_full,
                         at: follow::now(),
                     };
                     let mut tombs = self

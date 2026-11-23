@@ -15,8 +15,9 @@ pub(crate) fn now() -> u64 {
 }
 const MAX_SEEN: usize = 16;
 const MAX_TOMBS: usize = 1024;
-/// Remembers `base` in a `seen` or `given` list: at most 16, the oldest goes first (4.4).
-pub(crate) fn note_seen(list: &mut Vec<String>, base: &str) {
+/// Remembers `base` in `given`: at most 16, the oldest goes first (4.4). Dropping a given
+/// base only makes its reads stricter.
+pub(crate) fn note_given(list: &mut Vec<String>, base: &str) {
     if base.is_empty() || list.iter().any(|b| b == base) {
         return;
     }
@@ -25,10 +26,23 @@ pub(crate) fn note_seen(list: &mut Vec<String>, base: &str) {
         list.remove(0);
     }
 }
-/// Whether a link at `base` gives it: the record never saw it, or the participant gave it
-/// once (4.4, DD-48). A seen base never given may be a hit's link built from the record.
-pub(crate) fn link_gives(seen: &[String], given: &[String], base: &str) -> bool {
-    !seen.iter().any(|b| b == base) || given.iter().any(|b| b == base)
+/// Remembers `base` in `seen`: at most 16 and none dropped. A 17th is not added and
+/// `full` is set, so a link gives no new base from then on (4.4, DD-48).
+pub(crate) fn note_seen(list: &mut Vec<String>, full: &mut bool, base: &str) {
+    if base.is_empty() || list.iter().any(|b| b == base) {
+        return;
+    }
+    if list.len() >= MAX_SEEN {
+        *full = true;
+        return;
+    }
+    list.push(base.into());
+}
+/// Whether a link at `base` gives it: the participant gave it once, or the record never
+/// saw it and its `seen` is not full (4.4, DD-48). A seen base never given may be a hit's
+/// link built from the record.
+pub(crate) fn link_gives(seen: &[String], seen_full: bool, given: &[String], base: &str) -> bool {
+    given.iter().any(|b| b == base) || (!seen_full && !seen.iter().any(|b| b == base))
 }
 /// Keeps a removed record's `seen` and `given`: at most 1024, the oldest `at` goes first.
 pub(crate) fn add_tombstone(tombs: &mut BTreeMap<String, Tombstone>, key: String, tomb: Tombstone) {
@@ -45,11 +59,11 @@ pub(crate) fn add_tombstone(tombs: &mut BTreeMap<String, Tombstone>, key: String
 /// known ones, at most 4 (the oldest learned base after the front one goes). True when the
 /// record changed its set of bases, so the caller reads them all (5.9).
 pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
-    if link_gives(&record.seen, &record.given, base) {
-        note_seen(&mut record.given, base);
+    if link_gives(&record.seen, record.seen_full, &record.given, base) {
+        note_given(&mut record.given, base);
     }
     let learned = add_base(record, base);
-    note_seen(&mut record.seen, base);
+    note_seen(&mut record.seen, &mut record.seen_full, base);
     learned
 }
 fn add_base(record: &mut Follow, base: &str) -> bool {
@@ -78,10 +92,10 @@ pub(crate) fn listed_read(record: &Follow, base: &str) -> bool {
 /// gave (5.9): the listing's bases are dropped.
 pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
     if !record.followed && !record.index {
-        if link_gives(&record.seen, &record.given, base) {
-            note_seen(&mut record.given, base);
+        if link_gives(&record.seen, record.seen_full, &record.given, base) {
+            note_given(&mut record.given, base);
         }
-        note_seen(&mut record.seen, base);
+        note_seen(&mut record.seen, &mut record.seen_full, base);
         record.base = base.into();
         record.bases.clear();
     }
@@ -101,13 +115,13 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
         {
-            return !link_gives(&r.seen, &r.given, base);
+            return !link_gives(&r.seen, r.seen_full, &r.given, base);
         }
         self.tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key.to_string())
-            .is_some_and(|t| !link_gives(&t.seen, &t.given, base))
+            .is_some_and(|t| !link_gives(&t.seen, t.seen_full, &t.given, base))
     }
     /// A record with no base yet, starting from its channel's tombstone (4.4, DD-48).
     pub(crate) fn new_record(
@@ -131,6 +145,7 @@ impl Dist {
             kept,
             bases: Vec::new(),
             given: tomb.as_ref().map(|t| t.given.clone()).unwrap_or_default(),
+            seen_full: tomb.as_ref().is_some_and(|t| t.seen_full),
             seen: tomb.map(|t| t.seen).unwrap_or_default(),
             _followed_at: time,
             _last_attempt: if kept { 0 } else { time },
@@ -509,15 +524,93 @@ impl Dist {
 mod tests {
     use super::*;
     #[test]
-    fn ac5_seen_and_given_hold_sixteen_oldest_first_out() {
+    fn ac5_given_holds_sixteen_oldest_first_out() {
         let mut list = Vec::new();
         for n in 0..20 {
-            note_seen(&mut list, &format!("http://h{n}/"));
+            note_given(&mut list, &format!("http://h{n}/"));
         }
-        note_seen(&mut list, "http://h19/");
+        note_given(&mut list, "http://h19/");
         assert_eq!(list.len(), 16);
         assert_eq!(list[0], "http://h4/");
         assert_eq!(list[15], "http://h19/");
+    }
+    /// AC2 (DD-48 r5): a full `seen` drops nothing; the 17th base is not noted, `seen_full` is set.
+    #[test]
+    fn ac2_a_full_seen_keeps_its_sixteen_and_sets_seen_full() {
+        let mut list = Vec::new();
+        let mut full = false;
+        for n in 0..16 {
+            note_seen(&mut list, &mut full, &format!("http://h{n}/"));
+        }
+        assert!(!full, "sixteen fit");
+        note_seen(&mut list, &mut full, "http://h0/");
+        assert!(!full, "a known base is not a 17th");
+        note_seen(&mut list, &mut full, "http://h16/");
+        assert!(full);
+        assert_eq!(list.len(), 16);
+        assert_eq!(list[0], "http://h0/");
+        assert_eq!(list[15], "http://h15/");
+        assert!(!list.contains(&"http://h16/".to_owned()));
+    }
+    #[test]
+    fn ac2_a_link_at_an_unseen_base_of_a_seen_full_record_gives_nothing() {
+        let mut r = record_at("http://a/");
+        for n in 0..16 {
+            note_seen(&mut r.seen, &mut r.seen_full, &format!("http://h{n}/"));
+        }
+        r.seen_full = true;
+        assert!(!link_gives(&r.seen, r.seen_full, &r.given, "http://new/"));
+        learn_base(&mut r, "http://new/");
+        assert!(r.given.is_empty(), "the link gave nothing");
+        assert!(
+            r.bases.contains(&"http://new/".to_owned()),
+            "it is still held"
+        );
+        // Held, not given: its first read is listed (held_ungiven).
+        assert!(!link_gives(&r.seen, r.seen_full, &r.given, "http://new/"));
+    }
+    #[test]
+    fn ac2_a_link_at_a_given_base_of_a_seen_full_record_still_gives_it() {
+        let mut r = record_at("http://a/");
+        r.given.push("http://g/".into());
+        r.seen_full = true;
+        assert!(link_gives(&r.seen, r.seen_full, &r.given, "http://g/"));
+        learn_base(&mut r, "http://g/");
+        assert_eq!(r.given, ["http://g/"]);
+        // A not-full record still gives an unseen base.
+        r.seen_full = false;
+        assert!(link_gives(&r.seen, r.seen_full, &r.given, "http://u/"));
+    }
+    /// AC3: `seen_full` defaults to false, is not written when false, on records and tombstones.
+    #[test]
+    fn ac3_seen_full_defaults_false_and_is_skipped_when_false() {
+        let text = r#"{"version":1,"channels":{"k":{"base":"","kept":true,"followed_at":1,"last_attempt":0}},"seen":{"k":{"seen":[],"given":[],"at":1}}}"#;
+        let file: Follows = serde_json::from_str(text).unwrap();
+        assert!(!file.channels["k"].seen_full && !file.seen["k"].seen_full);
+        let out = serde_json::to_value(&file).unwrap();
+        assert!(out["channels"]["k"].get("seen_full").is_none());
+        assert!(out["seen"]["k"].get("seen_full").is_none());
+        let mut file = file;
+        file.channels.get_mut("k").unwrap().seen_full = true;
+        file.seen.get_mut("k").unwrap().seen_full = true;
+        let out = serde_json::to_value(&file).unwrap();
+        assert_eq!(out["channels"]["k"]["seen_full"], true);
+        assert_eq!(out["seen"]["k"]["seen_full"], true);
+    }
+    fn record_at(base: &str) -> Follow {
+        Follow {
+            base: base.into(),
+            followed: true,
+            index: false,
+            kept: false,
+            bases: Vec::new(),
+            given: Vec::new(),
+            seen: Vec::new(),
+            seen_full: false,
+            _followed_at: 0,
+            _last_attempt: 0,
+            last_success: None,
+        }
     }
     #[test]
     fn ac5_a_thousand_and_twenty_four_tombstones_oldest_at_out() {
@@ -526,6 +619,7 @@ mod tests {
             let tomb = Tombstone {
                 seen: Vec::new(),
                 given: Vec::new(),
+                seen_full: false,
                 at: 1000 - n % 1000 + n / 1000 * 5000,
             };
             add_tombstone(&mut tombs, format!("k{n}"), tomb);
@@ -550,18 +644,7 @@ mod tests {
     }
     #[test]
     fn ac3_a_given_base_evicted_by_the_cap_is_given_again() {
-        let mut r = Follow {
-            base: "http://a/".into(),
-            followed: true,
-            index: false,
-            kept: false,
-            bases: Vec::new(),
-            given: Vec::new(),
-            seen: Vec::new(),
-            _followed_at: 0,
-            _last_attempt: 0,
-            last_success: None,
-        };
+        let mut r = record_at("http://a/");
         for b in [
             "http://a/",
             "http://b/",
