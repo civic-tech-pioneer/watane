@@ -1873,13 +1873,14 @@ fn s100_fix9_ac5_a_request_before_the_answer_gets_its_deny_written_first_once_in
         can_use("r1", "t1", "Read", json!({"file_path":"a"})),
         hook("r2", "t2", "Bash", json!({"command":"ls"})),
     ]);
-    let rig = Rig::new(&[("before", &before), ("after.2", b"")]);
+    let rig = Rig::new(&[("before", &before), ("holdbefore", b"")]);
     let s = rig.start_ok(ASKING);
+    // A `say` queued by the mod before the requests come must not pass their denies.
+    rig.call("api.say", json!({"s": s, "text": "hello"}));
+    rig.put("go", b"");
     let items = rig.wait_items(&s, 2);
     assert!(items[0].contains("initialized"), "{items:?}");
     assert!(items[1].contains(r#""subtype":"init""#), "{items:?}");
-    // A `say` queued by the mod right after the start must not pass the denies.
-    rig.call("api.say", json!({"s": s, "text": "hello"}));
     let ins = rig
         .wait_log("the denies and the say", |l| {
             l.iter().filter(|e| e.starts_with("IN ")).count() >= 4
@@ -1890,10 +1891,11 @@ fn s100_fix9_ac5_a_request_before_the_answer_gets_its_deny_written_first_once_in
         .collect::<Vec<_>>();
     assert_eq!(ins[1], envelope("r1", deny_body(REFUSED)));
     assert_eq!(ins[2], envelope("r2", check_deny_body(REFUSED)));
+    assert_eq!(ins[3]["message"]["content"], "hello", "{ins:?}");
     assert_eq!(
-        items.len(),
-        2,
-        "no item for a request before the answer: {items:?}"
+        rig.items(&s),
+        items,
+        "no item for a request before the answer"
     );
 }
 

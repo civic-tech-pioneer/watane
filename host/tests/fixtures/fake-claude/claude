@@ -3,6 +3,7 @@
 # folder of their own with files beside it:
 #   version  text printed by `--version` (default `2.1.295 (Claude Code)`)
 #   before   raw lines to write before the answer to `initialize`
+#   holdbefore  with this file the program waits for a file `go` before it writes `before`
 #   init     the `system/init` line to write after the answer to `initialize`
 #   lines    raw lines to play after it
 #   reply    the `response` object of the answer to `initialize` (default
@@ -47,6 +48,9 @@ fi
 IFS= read -r line
 printf 'IN %s\n' "$line" >> "$log"
 rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+if [ -f "$dir/holdbefore" ]; then
+  while [ ! -f "$dir/go" ]; do sleep 0.05; done
+fi
 [ -f "$dir/before" ] && cat "$dir/before"
 reply='{"hook_on_failure_supported":true}'
 [ -f "$dir/reply" ] && reply=$(cat "$dir/reply")
