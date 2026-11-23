@@ -214,6 +214,11 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     let addr = b.net.addrs()[0];
     let before = b.holdings.calls();
 
+    // Check the made-up op with a fresh key before the other raw requests.
+    let request = array(&[text("frobnicate")]);
+    let (code, _) = answer_err(&raw_call([39u8; 32], &b.key, addr, &request));
+    assert_eq!(code, "unknown_op");
+
     // hello: no devices_seq, and no participant key anywhere in the bytes
     let answer = raw_call(seed, &b.key, addr, &hello_request());
     assert_eq!(*answer.last().unwrap(), NULL);
@@ -254,9 +259,6 @@ fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     }
     assert_eq!(b.net.class_of(&unknown), Class::Unknown);
     assert_eq!(b.holdings.calls(), before);
-    // made-up ops stay unknown
-    let (code, _) = answer_err(&raw_call(seed, &b.key, addr, &array(&[text("frobnicate")])));
-    assert_eq!(code, "unknown_op");
 }
 
 #[test]
