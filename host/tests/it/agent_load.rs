@@ -352,6 +352,8 @@ mod stage_b {
         /// Per stream: the delta rate and the entry rate per second as the consumer read them,
         /// and the smallest and largest entry (bytes).
         delta_rate: f64,
+        /// The turn window (s): the first to the last item, one for both rates.
+        window: f64,
         entry_rate: f64,
         entries: u64,
         entry_size: (u64, u64),
@@ -420,10 +422,16 @@ mod stage_b {
         // The load itself, per stream: the rate of each kind over the run (the first to the last
         // stamp of the fake's own clock) and the size of each entry.
         let num = |k: &str| tl[k].parse::<u64>().unwrap();
-        let rate = |k: &str| {
-            let n = num(&format!("n{k}"));
-            (n - 1) as f64 * 1e6 / (num(&format!("{k}last")) - num(&format!("{k}first"))) as f64
-        };
+        // Both rates over one window: the turn's first to last item of either kind, on the
+        // fake's clock.
+        let (first, last) = ["d", "e"].iter().fold((u64::MAX, 0), |(lo, hi), k| {
+            (
+                lo.min(num(&format!("{k}first"))),
+                hi.max(num(&format!("{k}last"))),
+            )
+        });
+        m.window = (last - first) as f64 / 1e6;
+        let rate = |k: &str| num(&format!("n{k}")) as f64 / m.window;
         m.delta_rate = rate("d");
         m.entry_rate = rate("e");
         m.entries = num("ne");
@@ -482,7 +490,17 @@ mod stage_b {
             assert_eq!(s.len(), 32, "{s}");
             streams.push((side, s));
         }
+        // The starts have settled (each stream's `initialized` reached its consumer, after the
+        // scratch workspace's row), so the window below holds the load and no start commit.
+        for (side, s) in &streams {
+            wait_for("initialized", 30, 20, || side.at(s, "init"));
+        }
         let load_before = loadavg();
+        // The batches that the settled starts already wrote are not in the window.
+        let batches_before: u64 = streams
+            .iter()
+            .map(|(side, s)| side.tally(s)["batches"].parse::<u64>().unwrap())
+            .sum();
         let before = rig.host().test_stats();
         let started = Instant::now();
         let marks: Vec<Marks> = std::thread::scope(|scope| {
@@ -511,7 +529,7 @@ mod stage_b {
         let mean = commit_time / commits.max(1) as f64;
         let busy = commit_time / wall.as_secs_f64();
         let host_busy = host_time / wall.as_secs_f64();
-        let batches: u64 = marks.iter().map(|m| m.batches).sum();
+        let batches: u64 = marks.iter().map(|m| m.batches).sum::<u64>() - batches_before;
         let col = |f: fn(&Marks) -> f64| p95(marks.iter().map(f).collect());
         let written: u64 = marks.iter().map(|m| m.written).sum();
         println!(
@@ -520,7 +538,7 @@ mod stage_b {
              interrupt to ask-resolved p95 {:.1} ms, interrupt to result p95 {:.1} ms, \
              cancel to ended p95 {:.1} ms, writer busy {busy:.4} (host {host_busy:.4}, \
              consumers {:.4}; {commits} commits, {host_commits} of the host, mean \
-             {:.3} ms, {batches} batches), delta rate {:.1}-{:.1}/s entry rate {:.2}-{:.2}/s, wall {:.1} s, load average before {load_before} after {}",
+             {:.3} ms, {batches} batches), delta rate {:.1}-{:.1}/s entry rate {:.2}-{:.2}/s over the turn window {:.1}-{:.1} s (first to last item), counters from after every `initialized`, wall {:.1} s, load average before {load_before} after {}",
             col(|m| m.ask_taken),
             col(|m| m.answer),
             col(|m| m.interrupt_resolved),
@@ -532,6 +550,8 @@ mod stage_b {
             marks.iter().map(|m| m.delta_rate).fold(0.0, f64::max),
             marks.iter().map(|m| m.entry_rate).fold(f64::MAX, f64::min),
             marks.iter().map(|m| m.entry_rate).fold(0.0, f64::max),
+            marks.iter().map(|m| m.window).fold(f64::MAX, f64::min),
+            marks.iter().map(|m| m.window).fold(0.0, f64::max),
             wall.as_secs_f64(),
             loadavg(),
         );

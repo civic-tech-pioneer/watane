@@ -22,7 +22,7 @@
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
 # Rate mode (the load of S100): the first `user` line starts a turn of `seconds`; each second it
 # writes `deltas` lines `{"type":"stream_event","n":N,"t":T,..}` and `entries` lines
-# `{"type":"assistant","n":N,"t":T,..}` of `bytes` bytes (the line without its newline), N counting both from 1 and T the
+# `{"type":"assistant","n":N,"t":T,"message":{"content":[{"type":"text","text":..}]}}` whose text is `bytes` bytes, N counting both from 1 and T the
 # microseconds since the epoch at the moment of the write; a `can_use_tool` request with the
 # tool use id `t<pid>a` 1 s into the turn and `t<pid>b` at 2.5 s; an `interrupt` ends the turn
 # at once with its `control_response` and a `result` line; at the end, a `result` of success.
@@ -123,10 +123,7 @@ while (1) {
   } elsif ($kind eq 'e') {
     $ke++;
     $n++;
-    my $head = qq({"type":"assistant","n":$n,"t":) . us() . qq(,"pad":");
-    my $tail = qq("});
-    my $fill = $bytes - length($head) - length($tail);
-    print $head . ('x' x ($fill > 0 ? $fill : 0)) . $tail . "\n";
+    print qq({"type":"assistant","n":$n,"t":) . us() . qq(,"message":{"content":[{"type":"text","text":") . ('x' x $bytes) . qq("}]}}\n);
   } elsif ($kind eq 'a') {
     my $id = (shift @asks)->[1];
     stamp('ask', "t${pid}$id");

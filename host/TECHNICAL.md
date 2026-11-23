@@ -2083,16 +2083,21 @@ produces the same load for S36 (dev 18.2).
 **Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
 x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
 0.5 to 0.7; `cd host && cargo test --test it agent_load::stage_b:: -- --include-ignored` three
-passes in a row, every budget met in each). The load of
+passes in a row, every budget met in each; re-run 2026-11-23 after review r3, F3.3 to F3.5,
+with another build running, load average 1.3 to 2.0). The load of
 `tests/it/agent_load.rs::stage_b::ac1_stage_b_load`: 8 sessions, 4 on each of the consumer mods
 `claude` and `claude-b`, on the fixture fake `claude` in its rate mode (50 deltas and 5 entries
 of 4 096 bytes a second, each line stamped with its write time; 10.6 s before the interrupt,
 about 4 660 lines, none out of order or missing, every one once). The test asserts, per stream,
-the delta rate and the entry rate (counts over the run, first to last stamp, within 10% of 50
-and 5 a second; measured 50.0 and 5.00), the size of every entry (4 096 bytes), that the turn's
+the delta rate and the entry rate (counts of each kind over one window, the turn's first to last item of either kind on
+the fake's clock, within 10% of 50 and 5 a second; measured 50.1 and 5.00 over 10.6 s), the size of every entry (the
+length of its `message.content[0].text`, which the fake pads to 4 096 bytes, read by the consumer), that the turn's
 `result` is the interrupted one (subtype `error_during_execution`, written by the fake after it
 read the interrupt) and that `ended` came after the `cancel` that it times; the workload
-`55 0 4096 10.2` fails it. One `ask` answered and one left open for the `interrupt`; the turn's
+`55 0 4096 10.2` fails it, and so does one whose first entry comes late. The counters (`before`) are read
+only after every stream's `initialized` reached its consumer, so the scratch row commits of the starts
+are outside the window; the host counter counts every host-owned commit (scratch add, delete,
+remove, the generation, timers), and the figures cover the window from that reading to the last `cancel`. One `ask` answered and one left open for the `interrupt`; the turn's
 `result`, then `cancel`. Figures, pass 1 / 2 / 3 (the p95 over the 8 sessions is the worst,
 one value per kind): item delay host to consumer, the worst session's p95, 4 / 3 / 4 ms (budget
 100; the histogram's ms upper edge, each session's p95 over its own 580 lines); `ask` taken 5.1 /
@@ -2100,7 +2105,7 @@ one value per kind): item delay host to consumer, the worst session's p95, 4 / 3
 `ask-resolved` 10.2 / 6.1 / 9.6 ms and to the turn's `result` 15.3 / 11.0 / 9.6 ms (1 000);
 `cancel` to `ended` 8.7 / 8.2 / 7.7 ms (250); writer busy 24.6 / 23.4 / 25.3% (50), measured by
 owner on the commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits
-(timer writes) 0 of about 4 260, so 0.0% of the share, and the mods' (the consumers' one small
+(timer and scratch writes) 0 of about 4 240, so 0.0% of the share, and the mods' (the consumers' one small
 tally write per batch, mean commit 0.59 to 0.64 ms) all of it. Three busy loops beside it (load
 average 2) left every figure within budget (interrupt and cancel up to 24 ms). With another build
 running (load average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit
@@ -3628,8 +3633,9 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
     moves it, and the host checks the stream clocks at each advance.
   - `Host::test_stats()` reads the counters of the state writer (7) since
     open: commits, the wall time spent in them (redb commit, fsync included), and
-    the part of both that the host's own writes made (timer writes; the rest are
-    the mods' transactions),
+    the part of both that the host's own writes made (every commit of `state.rs` that is not a
+    mod's transaction: timer writes, the scratch rows added, deleted or removed, the generation;
+    the rest are the mods' transactions),
     and the state bytes read and written by calls (keys and values through
     `state`, host tables excluded). The load test of A1 takes the writer
     busy share and the state bytes written per item from two readings.

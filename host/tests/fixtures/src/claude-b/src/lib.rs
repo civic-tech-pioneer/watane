@@ -88,7 +88,7 @@ fn micros() -> u128 {
 /// `last` (when the latest one came, in microseconds), `h<ms>` (how many stamped lines took that
 /// many milliseconds from the stamp `"t"` to the sink, 101 for 101 or more), `batches` (the
 /// writes), `ask<id>` and `res<id>` (when that `ask` or `ask-resolved` came), `tu<id>` (the
-/// ask's tool use id), `result` (when the turn's `result` came) and `rsub` (its subtype), `ended`, and per kind `d` (stream_event) and `e` (assistant): `n<k>` the count, `<k>first` and `<k>last` the first and last stamp, `<k>min` and `<k>max` the smallest and largest body in bytes.
+/// ask's tool use id), `result` (when the turn's `result` came) and `rsub` (its subtype), `ended`, and per kind `d` (stream_event) and `e` (assistant): `n<k>` the count, `<k>first` and `<k>last` the first and last stamp, `<k>min` and `<k>max` the smallest and largest body in bytes (for an entry, the length of its `message.content[0].text`), `init` (when `initialized` came).
 fn tally_read(s: &str) -> std::collections::BTreeMap<String, String> {
     get(&format!("tally/{s}"))
         .unwrap_or_default()
@@ -117,6 +117,8 @@ fn tally_items(s: &str, items: &[Item]) {
         } else if let Some(rest) = body.strip_prefix(r#"{"type":"ask-resolved","id":""#) {
             let id = rest.split('"').next().unwrap_or("");
             map.insert(format!("res{id}"), now.to_string());
+        } else if body.starts_with(r#"{"type":"initialized""#) {
+            map.insert("init".into(), now.to_string());
         } else if body.starts_with(r#"{"type":"result""#) {
             map.insert("result".into(), now.to_string());
             let sub = body.split(r#""subtype":""#).nth(1).and_then(|r| r.split('"').next());
@@ -139,7 +141,12 @@ fn tally_items(s: &str, items: &[Item]) {
                 map.entry(format!("{k}first")).or_insert_with(|| t.to_owned());
                 map.insert(format!("{k}last"), t.to_owned());
             }
-            let len = item.body.len() as u64;
+            // An entry's size is its text (`message.content[0].text`), not its line.
+            let len = if k == "e" {
+                body.split(r#""text":""#).nth(1).and_then(|r| r.split('"').next()).map_or(0, str::len) as u64
+            } else {
+                item.body.len() as u64
+            };
             let (lo, hi) = (num(&map, &format!("{k}min"), u64::MAX), num(&map, &format!("{k}max"), 0));
             map.insert(format!("{k}min"), lo.min(len).to_string());
             map.insert(format!("{k}max"), hi.max(len).to_string());
