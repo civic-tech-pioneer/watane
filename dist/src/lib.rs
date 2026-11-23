@@ -116,7 +116,7 @@ pub struct Dist {
     options: Options,
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
     /// `seen` and `given` of removed records, by channel text (4.4, DD-48). Lock after `follows`.
-    tombs: Mutex<std::collections::BTreeMap<String, Tombstone>>,
+    tombs: Mutex<Tombs>,
     read_mutex: Mutex<()>,
     agent: ureq::Agent,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
@@ -203,7 +203,7 @@ impl Dist {
             watane_log::Log::open(&home.join("log"))?
         };
         let mut follows = std::collections::BTreeMap::new();
-        let mut tombs = std::collections::BTreeMap::new();
+        let mut tombs = Tombs::default();
         if let Some(file) = read_json::<Follows>(&dir.join("follows.json"))? {
             let path = dir.join("follows.json");
             if file.version != 1 {
@@ -269,8 +269,11 @@ impl Dist {
                 }
                 follows.insert(channel, record);
             }
-            tombs = file.seen;
-            for (key, tomb) in &mut tombs {
+            tombs = Tombs {
+                map: file.seen,
+                gone: follow::Gone::from_text(file.gone.as_deref()),
+            };
+            for (key, tomb) in &mut tombs.map {
                 let channel = key.parse().map_err(|e: KeyTextError| DistError::Corrupt {
                     path: path.clone(),
                     cause: e.to_string(),
@@ -395,6 +398,16 @@ struct Follows {
     channels: std::collections::BTreeMap<String, Follow>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     seen: std::collections::BTreeMap<String, Tombstone>,
+    /// Filter of the channels whose tombstone was evicted: lower-case hex of 4096 bytes
+    /// (4.4, DD-48). Absent while none was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gone: Option<String>,
+}
+/// The tombstones with the filter of the evicted ones; one lock covers both.
+#[derive(Clone, Default)]
+struct Tombs {
+    map: std::collections::BTreeMap<String, Tombstone>,
+    gone: follow::Gone,
 }
 /// What a removed record leaves: its `seen` and `given`, at most 1024 of them (4.4, DD-48).
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

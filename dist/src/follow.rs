@@ -3,7 +3,7 @@
 
 use crate::{
     Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
-    RefreshReport, Tombstone, http, site, view,
+    RefreshReport, Tombs, Tombstone, http, site, view,
 };
 use std::collections::BTreeMap;
 
@@ -45,14 +45,84 @@ pub(crate) fn link_gives(seen: &[String], seen_full: bool, given: &[String], bas
     given.iter().any(|b| b == base) || (!seen_full && !seen.iter().any(|b| b == base))
 }
 /// Keeps a removed record's `seen` and `given`: at most 1024, the oldest `at` goes first.
-pub(crate) fn add_tombstone(tombs: &mut BTreeMap<String, Tombstone>, key: String, tomb: Tombstone) {
-    tombs.insert(key, tomb);
-    while tombs.len() > MAX_TOMBS {
+/// An evicted channel goes into the `gone` filter (4.4, DD-48).
+pub(crate) fn add_tombstone(tombs: &mut Tombs, key: String, tomb: Tombstone) {
+    tombs.map.insert(key, tomb);
+    while tombs.map.len() > MAX_TOMBS {
         let oldest = tombs
+            .map
             .iter()
             .min_by_key(|(_, t)| t.at)
-            .map(|(k, _)| k.clone());
-        tombs.remove(&oldest.expect("not empty"));
+            .map(|(k, _)| k.clone())
+            .expect("not empty");
+        tombs.map.remove(&oldest);
+        tombs.gone.add(&key_bytes(&oldest));
+    }
+}
+/// The 32 bytes of a channel text. A text that is no key (never stored by dist) hashes
+/// as its own bytes.
+fn key_bytes(text: &str) -> Vec<u8> {
+    text.parse::<PublicKey>()
+        .map_or_else(|_| text.as_bytes().to_vec(), |k| k.as_bytes().to_vec())
+}
+const GONE_BYTES: usize = 4096;
+const GONE_BITS: usize = GONE_BYTES * 8;
+/// A fixed-size filter of the channels whose tombstone was evicted (4.4, DD-48, S105-CHURN
+/// "(a) fail closed"). `None`: nothing was ever evicted. A key sets 3 bits; a false
+/// positive only makes a channel fail closed.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Gone(Option<Vec<u8>>);
+impl Gone {
+    /// The 3 bits of a key: u16 little-endian of bytes 0..2, 2..4, 4..6 of its BLAKE3.
+    fn bits(key: &[u8]) -> [usize; 3] {
+        let hash = blake3::hash(key);
+        let h = hash.as_bytes();
+        [0, 2, 4].map(|i| u16::from_le_bytes([h[i], h[i + 1]]) as usize % GONE_BITS)
+    }
+    pub(crate) fn add(&mut self, key: &[u8]) {
+        let bytes = self.0.get_or_insert_with(|| vec![0; GONE_BYTES]);
+        for bit in Self::bits(key) {
+            bytes[bit / 8] |= 1 << (bit % 8);
+        }
+    }
+    /// All 3 bits of the key are set.
+    pub(crate) fn may_be_gone(&self, key: &PublicKey) -> bool {
+        self.0.as_ref().is_some_and(|bytes| {
+            Self::bits(key.as_bytes())
+                .iter()
+                .all(|bit| bytes[bit / 8] & (1 << (bit % 8)) != 0)
+        })
+    }
+    pub(crate) fn to_text(&self) -> Option<String> {
+        self.0.as_ref().map(|bytes| {
+            bytes
+                .iter()
+                .flat_map(|b| [b >> 4, b & 15])
+                .map(|n| char::from_digit(u32::from(n), 16).expect("a nibble"))
+                .collect()
+        })
+    }
+    /// A malformed text, or one of the wrong length, reads as all bits set: fail closed.
+    pub(crate) fn from_text(text: Option<&str>) -> Self {
+        let Some(text) = text else {
+            return Self(None);
+        };
+        let digits: Option<Vec<u8>> = text
+            .chars()
+            .map(|c| {
+                c.is_ascii_digit()
+                    .then_some(c)
+                    .or(('a'..='f').contains(&c).then_some(c))
+                    .and_then(|c| c.to_digit(16))
+                    .map(|n| n as u8)
+            })
+            .collect();
+        match digits {
+            Some(d) if d.len() == GONE_BYTES * 2 => {
+                Self(Some(d.chunks(2).map(|p| p[0] << 4 | p[1]).collect()))
+            }
+            _ => Self(Some(vec![0xff; GONE_BYTES])),
+        }
     }
 }
 /// Adds a base a link names to a record: given when the link gives it, appended after the
@@ -116,6 +186,7 @@ impl Dist {
         self.tombs
             .lock()
             .expect("test tombs")
+            .map
             .keys()
             .cloned()
             .collect()
@@ -140,11 +211,15 @@ impl Dist {
         if let Some(hook) = self.test_held_gap.lock().expect("test hook").as_ref() {
             hook();
         }
-        self.tombs
+        let tombs = self
+            .tombs
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .get(&key.to_string())
-            .is_some_and(|t| !link_gives(&t.seen, t.seen_full, &t.given, base))
+            .expect("lock poisoned: another thread panicked while holding it");
+        match tombs.map.get(&key.to_string()) {
+            Some(t) => !link_gives(&t.seen, t.seen_full, &t.given, base),
+            // No record, no tombstone: a channel whose tombstone was evicted fails closed.
+            None => tombs.gone.may_be_gone(&key),
+        }
     }
     /// A record with no base yet, starting from its channel's tombstone (4.4, DD-48).
     pub(crate) fn new_record(
@@ -154,12 +229,15 @@ impl Dist {
         index: bool,
         kept: bool,
     ) -> Follow {
-        let tomb = self
-            .tombs
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .get(&key.to_string())
-            .cloned();
+        let (tomb, gone) = {
+            let tombs = self
+                .tombs
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            let tomb = tombs.map.get(&key.to_string()).cloned();
+            let gone = tomb.is_none() && tombs.gone.may_be_gone(&key);
+            (tomb, gone)
+        };
         let time = now();
         Follow {
             base: String::new(),
@@ -168,7 +246,7 @@ impl Dist {
             kept,
             bases: Vec::new(),
             given: tomb.as_ref().map(|t| t.given.clone()).unwrap_or_default(),
-            seen_full: tomb.as_ref().is_some_and(|t| t.seen_full),
+            seen_full: gone || tomb.as_ref().is_some_and(|t| t.seen_full),
             seen: tomb.map(|t| t.seen).unwrap_or_default(),
             _followed_at: time,
             _last_attempt: if kept { 0 } else { time },
@@ -188,7 +266,7 @@ impl Dist {
     pub(crate) fn save_staged(
         &self,
         records: &BTreeMap<PublicKey, Follow>,
-        staged: Option<BTreeMap<String, Tombstone>>,
+        staged: Option<Tombs>,
     ) -> Result<(), DistError> {
         #[cfg(test)]
         {
@@ -208,9 +286,9 @@ impl Dist {
             .tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let mut seen = staged.unwrap_or_else(|| tombs.clone());
+        let mut next = staged.unwrap_or_else(|| tombs.clone());
         for key in records.keys() {
-            seen.remove(&key.to_string());
+            next.map.remove(&key.to_string());
         }
         let file = Follows {
             version: 1,
@@ -218,14 +296,15 @@ impl Dist {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
-            seen,
+            seen: next.map.clone(),
+            gone: next.gone.to_text(),
         };
         site::write_equal(
             &self.home.join("dist/follows.json"),
             &serde_json::to_vec(&file).expect("follows JSON"),
             0o600,
         )?;
-        *tombs = file.seen;
+        *tombs = next;
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
@@ -665,7 +744,7 @@ mod tests {
     }
     #[test]
     fn ac5_a_thousand_and_twenty_four_tombstones_oldest_at_out() {
-        let mut tombs = BTreeMap::new();
+        let mut tombs = Tombs::default();
         for n in 0..1025u64 {
             let tomb = Tombstone {
                 seen: Vec::new(),
@@ -675,11 +754,11 @@ mod tests {
             };
             add_tombstone(&mut tombs, format!("k{n}"), tomb);
         }
-        assert_eq!(tombs.len(), 1024);
+        assert_eq!(tombs.map.len(), 1024);
         let oldest = (0..1025u64)
             .min_by_key(|n| 1000 - n % 1000 + n / 1000 * 5000)
             .unwrap();
-        assert!(!tombs.contains_key(&format!("k{oldest}")));
+        assert!(!tombs.map.contains_key(&format!("k{oldest}")));
     }
     /// AC6: empty `seen` and `given` (record and top level) are not written, and a file
     /// without them reads.
@@ -714,5 +793,101 @@ mod tests {
         r.seen.push("http://x/".into());
         learn_base(&mut r, "http://x/");
         assert!(!r.given.contains(&"http://x/".to_owned()));
+    }
+    /// The `n`-th valid key of a deterministic stream of hashes.
+    fn key_of(n: u8) -> PublicKey {
+        (0u32..)
+            .map(|i| *blake3::hash(&[&[n][..], &i.to_le_bytes()].concat()).as_bytes())
+            .find_map(|bytes| PublicKey::from_bytes(&bytes).ok())
+            .unwrap()
+    }
+    /// S105-CHURN (a): a key sets 3 bits, read from its BLAKE3 as three little-endian u16.
+    #[test]
+    fn churn_a_key_sets_three_bits_of_its_blake3() {
+        let key = key_of(1);
+        let hash = blake3::hash(key.as_bytes());
+        let h = hash.as_bytes();
+        let mut gone = Gone::default();
+        assert!(!gone.may_be_gone(&key));
+        gone.add(key.as_bytes());
+        let bytes = gone.0.as_ref().unwrap();
+        assert_eq!(bytes.len(), 4096);
+        let set: usize = bytes.iter().map(|b| b.count_ones() as usize).sum();
+        let mut want: Vec<usize> = [0, 2, 4]
+            .iter()
+            .map(|i| u16::from_le_bytes([h[*i], h[i + 1]]) as usize % 32768)
+            .collect();
+        want.sort_unstable();
+        want.dedup();
+        assert_eq!(set, want.len());
+        for bit in want {
+            assert!(bytes[bit / 8] & (1 << (bit % 8)) != 0);
+        }
+        assert!(gone.may_be_gone(&key));
+    }
+    #[test]
+    fn churn_membership_needs_all_three_bits() {
+        let mut gone = Gone::default();
+        for n in 0..50 {
+            gone.add(key_of(n).as_bytes());
+        }
+        assert!((0..50).all(|n| gone.may_be_gone(&key_of(n))));
+        let hits = (100..200).filter(|n| gone.may_be_gone(&key_of(*n))).count();
+        assert!(hits < 3, "{hits} false positives of 100");
+    }
+    #[test]
+    fn churn_hex_round_trip_and_default_absent() {
+        assert_eq!(Gone::default().to_text(), None);
+        assert_eq!(Gone::from_text(None), Gone::default());
+        let mut gone = Gone::default();
+        gone.add(key_of(2).as_bytes());
+        let text = gone.to_text().unwrap();
+        assert_eq!(text.len(), 8192);
+        assert!(text.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
+        assert_eq!(Gone::from_text(Some(&text)), gone);
+    }
+    #[test]
+    fn churn_a_malformed_filter_reads_as_full() {
+        let good = {
+            let mut g = Gone::default();
+            g.add(key_of(3).as_bytes());
+            g.to_text().unwrap()
+        };
+        let upper = format!("A{}", &good[1..]);
+        for bad in ["", "zz", "ab", &good[1..], &upper, &format!("{good}00")] {
+            let gone = Gone::from_text(Some(bad));
+            assert!(
+                (0..20).all(|n| gone.may_be_gone(&key_of(n))),
+                "{bad:.8} reads as full"
+            );
+        }
+    }
+    #[test]
+    fn churn_an_eviction_adds_the_key_and_the_file_keeps_it() {
+        let mut tombs = Tombs::default();
+        let victim = key_of(9);
+        let tomb = |at| Tombstone {
+            seen: Vec::new(),
+            given: Vec::new(),
+            seen_full: false,
+            at,
+        };
+        add_tombstone(&mut tombs, victim.to_string(), tomb(1));
+        assert!(tombs.gone.to_text().is_none(), "nothing evicted yet");
+        for n in 0..1024u64 {
+            add_tombstone(&mut tombs, format!("k{n}"), tomb(10 + n));
+        }
+        assert!(!tombs.map.contains_key(&victim.to_string()));
+        assert!(tombs.gone.may_be_gone(&victim));
+        let file = Follows {
+            version: 1,
+            channels: BTreeMap::new(),
+            seen: BTreeMap::new(),
+            gone: tombs.gone.to_text(),
+        };
+        let back: Follows = serde_json::from_slice(&serde_json::to_vec(&file).unwrap()).unwrap();
+        assert!(Gone::from_text(back.gone.as_deref()).may_be_gone(&victim));
+        let none = Follows { gone: None, ..file };
+        assert!(serde_json::to_value(&none).unwrap().get("gone").is_none());
     }
 }
