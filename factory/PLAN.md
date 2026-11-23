@@ -1215,7 +1215,8 @@ serious thing built on watane, and is the sharpest test of the premise: if the s
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
 - [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
-  cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy.) Settings gets the groups
+  cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy; Codex task
+  https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~10:55 UTC.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
