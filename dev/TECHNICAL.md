@@ -2775,7 +2775,7 @@ control protocol, as `claude` does:
 | `crash` | kill itself with `SIGKILL`, with nothing flushed |
 | `hang` | stop reading and writing, until the host kills it |
 | `long-turn` | (S100) a turn of `entries` `assistant` messages (default 100), one every `every-ms` (default 0), each with the text `entry <i> ` (from 1) padded with `x` to `bytes` bytes (default 32); then `result` and `idle`. An `interrupt` that arrives during it is answered, the rest is not written, and the turn ends with a `result` of subtype `error_during_execution` and `idle`. A `user` message that arrives during it is kept for the next step |
-| `load` | (S100) the load mode for the stage B budgets (host 15): `long-turn` with `every-ms` 0 and `bytes` 1024 by default, written in bursts of 64 lines per flush |
+| `load` | (S100) the load mode for the stage B budgets (agentic-harness TECHNICAL 17, row B; host 15): without `rate`, `long-turn` with `every-ms` 0 and `bytes` 1024 by default, written in bursts of 64 lines per flush. With `rate: {deltas: 50, entries: 5, bytes: 4096, seconds: N}` (review r1 of S100): for `seconds` (default 10), each second 50 `stream_event` text deltas and 5 finished `assistant` entries of `bytes` text each, spread evenly; an `interrupt` ends it as it ends `long-turn`; then `result` and `idle` |
 | `reply-per-say` | (S100) for each `user` message, up to `turns` (default: until standard input closes): write a `delta` and a `message` with the text `<text><what was said>` (`text` default `you said: `), a `result` and `idle`. An `interrupt` while it waits is answered |
 
 `ask` with `await: true` resumes on the answer (S100): an allow goes on with the

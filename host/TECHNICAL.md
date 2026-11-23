@@ -2056,22 +2056,22 @@ the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
 percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 0, read per item 103 (the routing keys, see above). All within the budgets.
 
-**Budgets of stage B, the host part** (review r1 of S100, 2026-11-23, after
-agentic-harness TECHNICAL 15's stage B contract; the numbers are the stage A
-budgets, which hold for the host's share). A slow test,
-`tests/it/agent_load.rs::stage_b`: 8 `claude-code` streams on host's fixture fake,
-4 started by each of 2 consumer mods (the owners), each mod forwarding its items to a
-page connection as `relay` does in stage A. Each fake writes, for at least 10 s, 50
-`stream_event` deltas and 5 finished `assistant` entries of 4 KiB per second, and
-stamps each line with its write time on the host's clock, so delay is measured source
-to page. The run is made twice: once after a transcript of 10 entries and once after
-one of 10 000 entries already went through the same streams. Budgets, all p95 over the
-8 streams: a line, source to page, at most 50 ms; an `ask` written to its item taken
-by the consumer at most 50 ms; `answer` to the `control_response` on the fake's stdin
-at most 50 ms; `interrupt` to the fake's idle line at the page at most 250 ms;
-`cancel` to `ended` at most 250 ms; writer busy share at most 10%; state bytes the
-host reads and writes per item, recorded for both transcript sizes (the host writes
-none; the consumer's own are recorded apart). Every line arrives once and in order.
+**Budgets of stage B, the host part** (deputy's ruling on review r1 of S100,
+2026-11-23, after agentic-harness TECHNICAL 17's stage B row: 8 fake `claude`
+sessions, 2 owners, each 50 deltas/s and 5 finished entries/s of 4 KiB; item delay
+source to page at most 100 ms, `interrupt` to `idle {interrupted}` at the page at most
+1 s, writer busy share at most 50%, state bytes per finished entry at most 2 MiB within
+10% between transcripts of 10 and 10 000 entries). That row is a kernel-plus-host
+budget, measured end to end in agentic-harness S36; source to page, interrupt to idle
+at the page and the state bytes per entry are S36's. The host's share, a slow test
+`tests/it/agent_load.rs::stage_b`, at that load (8 streams on host's fixture fake, 4
+started and consumed by each of 2 consumer mods, each line stamped with its write time
+on the host's clock): item delay host to consumer at most 100 ms; an `ask` taken at
+most 100 ms; `answer` to the `control_response` on stdin at most 50 ms; `interrupt` to
+its `ask-resolved` and to the turn's `result` taken at most 1 s; `cancel` to `ended` at
+most 250 ms; writer busy share at most 50% (the host's own share recorded apart from
+the consumers'). Every line arrives once and in order. dev's `fake-claude` `load` step
+produces the same load for S36 (dev 18.2).
 
 **Stage B host record, superseded** (the burst load before review r1; S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
 PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs, every budget met): 80 080 entries each,
