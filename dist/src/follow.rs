@@ -126,12 +126,14 @@ impl Dist {
     /// first read is a listed one, also when it turns a listed-only record followed or
     /// chosen, for the link may be built from the record (4.4, 5.9, DD-48).
     pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> bool {
-        if let Some(r) = self
+        // One snapshot: the `follows` lock is held through the tombstone lookup, so a
+        // `keep` or a follow cannot move a tombstone into a record between the two. The
+        // order is `follows`, then `tombs`, as `save_follows` takes them.
+        let records = self
             .follows
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .get(&key)
-        {
+            .expect("lock poisoned: another thread panicked while holding it");
+        if let Some(r) = records.get(&key) {
             return !link_gives(&r.seen, r.seen_full, &r.given, base);
         }
         #[cfg(test)]
