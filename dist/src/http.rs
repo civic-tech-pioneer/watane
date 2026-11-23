@@ -1237,7 +1237,7 @@ mod tests {
             done_rx.lock().unwrap().recv().unwrap();
         }));
         let (locked, held) = std::thread::scope(|s| {
-            let classify = s.spawn(|| eve.held_ungiven(w.key, &w.a.url));
+            let classify = s.spawn(|| eve.held_ungiven(w.key, &w.a.url).unwrap());
             gap_rx.recv().unwrap();
             let locked = matches!(
                 eve.follows.try_lock(),
@@ -1250,7 +1250,7 @@ mod tests {
         assert!(held, "a seen, never-given base was classified as given");
         eve.keep(&w.key).unwrap();
         assert!(
-            eve.held_ungiven(w.key, &w.a.url),
+            eve.held_ungiven(w.key, &w.a.url).unwrap(),
             "the kept record forgot the tombstone"
         );
     }
@@ -1424,7 +1424,7 @@ mod tests {
         std::fs::write(&path, file.to_string()).unwrap();
         let eve = strict(dir.path());
         assert!(
-            eve.held_ungiven(w.key, &w.a.url),
+            eve.held_ungiven(w.key, &w.a.url).unwrap(),
             "the reopened filter forgot"
         );
     }
@@ -1615,12 +1615,15 @@ mod tests {
         for n in 0..1024 {
             eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
         }
-        assert!(eve.held_ungiven(w.key, &w.b.url), "the channel is gone");
+        assert!(
+            eve.held_ungiven(w.key, &w.b.url).unwrap(),
+            "the channel is gone"
+        );
         eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
         let file = follows_file(dir.path());
         assert_eq!(file["seen"][w.key.to_string()]["seen_full"], true);
         assert!(
-            eve.held_ungiven(w.key, &w.b.url),
+            eve.held_ungiven(w.key, &w.b.url).unwrap(),
             "the new tombstone forgot"
         );
     }

@@ -66,6 +66,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // The record's bases are provenance: an unsynced store reads none (4.4).
+        self.settle(true)?;
         let view = self.channel(&key)?;
         Self::check_channel(&view)?;
         let record = self
