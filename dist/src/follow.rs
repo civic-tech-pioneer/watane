@@ -91,9 +91,9 @@ fn follow_unseen(record: &Follow, base: &str) -> bool {
     record.base != base && !record.bases.iter().any(|b| b == base)
 }
 impl Dist {
-    /// A link's base a followed or chosen record (or a tombstone) saw but the participant has not given: its
-    /// first read uses the listed-address rule too, for the link may be built from the
-    /// record (5.9, DD-48).
+    /// A link's base the record (or a tombstone) saw but the participant has not given: its
+    /// first read is a listed one, also when it turns a listed-only record followed or
+    /// chosen, for the link may be built from the record (4.4, 5.9, DD-48).
     pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> bool {
         if let Some(r) = self
             .follows
@@ -101,7 +101,7 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
         {
-            return (r.followed || r.index) && !link_gives(&r.seen, &r.given, base);
+            return !link_gives(&r.seen, &r.given, base);
         }
         self.tombs
             .lock()
@@ -533,6 +533,18 @@ mod tests {
             .min_by_key(|n| 1000 - n % 1000 + n / 1000 * 5000)
             .unwrap();
         assert!(!tombs.contains_key(&format!("k{oldest}")));
+    }
+    /// AC6: empty `seen` and `given` (record and top level) are not written, and a file
+    /// without them reads.
+    #[test]
+    fn ac6_empty_seen_and_given_are_not_written() {
+        let text = r#"{"version":1,"channels":{"k":{"base":"","kept":true,"followed_at":1,"last_attempt":0}}}"#;
+        let file: Follows = serde_json::from_str(text).unwrap();
+        assert!(file.seen.is_empty() && file.channels["k"].seen.is_empty());
+        let out = serde_json::to_value(&file).unwrap();
+        assert!(out.get("seen").is_none());
+        let r = &out["channels"]["k"];
+        assert!(r.get("seen").is_none() && r.get("given").is_none());
     }
     #[test]
     fn ac3_a_given_base_evicted_by_the_cap_is_given_again() {

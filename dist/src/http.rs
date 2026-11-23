@@ -807,6 +807,37 @@ mod tests {
         assert!(record["bases"].as_array().is_none_or(|b| b.is_empty()));
         assert_eq!(w.a.count(), before, "the listing's base was read again");
     }
+    /// AC4 (DD-48): a listed-only record that a link at the listing's base turns followed
+    /// or chosen takes that base but does not give it; the first read is listed too.
+    #[test]
+    fn ac4_a_link_at_the_listed_base_gives_nothing() {
+        for choose in [false, true] {
+            let w = world();
+            let (dir, eve) = w.eve(&[&w.a]);
+            let _z = listed_record(&w, &eve);
+            let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
+            let take = |eve: &Dist| match choose {
+                true => eve.choose_index(&link).map(|_| ()),
+                false => eve.follow(&w.link(&w.a)).map(|_| ()),
+            };
+            w.a.redirect("/head", &format!("{}head", w.b.url));
+            assert_refused(take(&eve).err(), &format!("{}head", w.b.url));
+            assert_eq!(w.b.count(), 0, "the first read was not listed");
+            w.a.redirects.lock().unwrap().clear();
+            take(&eve).unwrap();
+            let file: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(dir.path().join("dist/follows.json")).unwrap(),
+            )
+            .unwrap();
+            let record = &file["channels"][w.key.to_string()];
+            assert_eq!(record["base"], w.a.url.as_str());
+            assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
+            w.a.redirect("/head", &format!("{}head", w.b.url));
+            let report = eve.refresh_channel(&w.key).unwrap();
+            assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+            assert_eq!(w.b.count(), 0, "the listing's base was given");
+        }
+    }
     /// AC1 (F1.1): a record without `given` (saved before S105) is read under the listed
     /// rule, redirects included; no link gives its seen base (DD-48).
     #[test]

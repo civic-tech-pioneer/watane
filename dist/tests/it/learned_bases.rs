@@ -247,3 +247,31 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     let _ = bob.open_link(&link);
     assert_eq!(given(&home, key), [b]);
 }
+
+/// AC6 (DD-48): a file without `seen` reads unchanged and its held bases become seen, so
+/// a link at one of them gives nothing; the top level gets no `seen` without a tombstone.
+#[test]
+fn ac6_a_file_without_seen_marks_its_held_bases_seen() {
+    let w = world();
+    w.bob.follow(&w.link(&w.a())).unwrap();
+    let home = w.bob_home.path().to_owned();
+    let (key, a, b) = (w.key, w.a(), w.b());
+    drop(w.bob);
+    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": a, "bases": [a, b], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
+    let bob = open(&home);
+    assert_eq!(bob.channel(&key).unwrap().base, Some(a.clone()));
+    bob.refresh();
+    let file: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join("dist/follows.json")).unwrap()).unwrap();
+    assert_eq!(file["version"], 1);
+    assert!(
+        file.get("seen").is_none(),
+        "no tombstone, no top-level seen"
+    );
+    let r = &file["channels"][key.to_string()];
+    assert_eq!(r["seen"], serde_json::json!([a, b]));
+    assert!(r.get("given").is_none(), "an empty given is not written");
+    assert_eq!(bases(&home, key), [a, b]);
+}
