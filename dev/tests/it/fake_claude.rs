@@ -414,7 +414,7 @@ fn ac6_ask_check_cancel_and_answers() {
     // Nothing more until the host answers.
     s.rx.recv_timeout(Duration::from_millis(200)).unwrap_err();
     let deny = json!({"type":"control_response","response":{"subtype":"success",
-        "request_id":ask["request_id"],"response":{"behavior":"deny","message":"no"}}});
+        "request_id":ask["request_id"],"response":{"behavior":"allow","updatedInput":{}}}});
     let denied = deny.to_string();
     s.send(&deny);
     let check = s.line();
@@ -443,6 +443,89 @@ fn ac6_ask_check_cancel_and_answers() {
             .any(|l| l["stdin"].as_str() == Some(denied.as_str())),
         "the answer is logged"
     );
+}
+
+#[test]
+fn ac1_expect_interrupt_consumes_earlier_answer() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"a"},{"do":"expect-interrupt"},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = s.line();
+    let reply = answer(
+        &ask["request_id"],
+        &json!({"behavior":"allow","updatedInput":{}}),
+    );
+    s.send(&reply);
+    s.send(&json!({"type":"control_request","request_id":"x9","request":{"subtype":"interrupt"}}));
+    assert_eq!(s.line()["response"]["request_id"], "x9");
+    assert_eq!(s.line()["state"], "idle");
+    let log = f.log();
+    assert!(
+        log.iter()
+            .any(|l| l["stdin"].as_str() == Some(reply.to_string().as_str()))
+    );
+    assert!(log.iter().all(|l| l.get("error").is_none()));
+}
+
+#[test]
+fn ac2_awaited_ask_takes_only_its_own_answer() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"a"},
+        {"do":"ask","tool":"Edit","tool_use_id":"b","await":true},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let a = s.line();
+    let b = s.line();
+    let allow = json!({"behavior":"allow","updatedInput":{}});
+    let first = answer(&a["request_id"], &allow);
+    s.send(&first);
+    s.rx.recv_timeout(Duration::from_millis(300)).unwrap_err();
+    s.send(&answer(&b["request_id"], &allow));
+    assert_eq!(s.line()["state"], "idle");
+    assert!(
+        f.log()
+            .iter()
+            .any(|l| l["stdin"].as_str() == Some(first.to_string().as_str()))
+    );
+}
+
+#[test]
+fn ac2_answer_naming_no_ask_exits_70() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"b","await":true},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let _ = s.line();
+    s.send(&answer(
+        &json!("nope"),
+        &json!({"behavior":"allow","updatedInput":{}}),
+    ));
+    assert_eq!(s.child.wait().unwrap().code(), Some(70));
+}
+
+#[test]
+fn ac3_deny_ends_the_turn_at_the_end_of_the_script() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","await":true},{"do":"message","text":"after"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = s.line();
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"no"}),
+    ));
+    assert_eq!(s.line()["message"]["content"][0]["text"], "denied: no");
+    assert_eq!(s.line()["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.rx.recv_timeout(Duration::from_millis(300)).unwrap_err();
+    s.stdin.take();
+    assert_eq!(s.child.wait().unwrap().code(), Some(0));
+    assert!(!f.log().iter().any(|l| l.to_string().contains("after")));
 }
 
 #[test]
@@ -843,6 +926,58 @@ fn s100_ac5_load_writes_ten_thousand_entries() {
     let took = start.elapsed();
     println!("load of 10000 entries took {took:?}");
     assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn s100_fix5_ac5_load_rate_counts_and_interrupt() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"load","rate":{"deltas":50,"entries":5,"bytes":4096,"seconds":2}}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let start = std::time::Instant::now();
+    let (mut deltas, mut entries) = (0, 0);
+    loop {
+        let v: Value = s.line();
+        match v["type"].as_str().unwrap() {
+            "stream_event" => deltas += 1,
+            "assistant" => {
+                assert_eq!(text_of(&v).len(), 4096);
+                assert_eq!(
+                    deltas,
+                    entries * 10 + 10,
+                    "entries follow every tenth delta"
+                );
+                entries += 1;
+            }
+            "result" => {
+                assert_eq!(v["subtype"], "success");
+                break;
+            }
+            other => panic!("{other}"),
+        }
+    }
+    assert_eq!((deltas, entries), (100, 10));
+    assert_eq!(s.line()["state"], "idle");
+    let took = start.elapsed();
+    assert!(
+        took > Duration::from_millis(1500) && took < Duration::from_millis(2500),
+        "{took:?}"
+    );
+
+    let f = Folder::new(r#"{"steps":[{"do":"load","rate":{"seconds":10}}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    std::thread::sleep(Duration::from_secs(1));
+    interrupt(&mut s, "i1");
+    loop {
+        let v = s.line();
+        if v["type"] == "result" {
+            assert_eq!(v["subtype"], "error_during_execution");
+            break;
+        }
+    }
+    assert_eq!(s.line()["state"], "idle");
 }
 
 #[test]
