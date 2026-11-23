@@ -1606,6 +1606,32 @@ mod tests {
         host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
     }
 
+    /// 19.2 (Byte budgets): a host push or ask admitted under the gate is `too-large` past one
+    /// item's limit, and an item at the limit is not.
+    #[test]
+    fn s100_fix15_a_host_push_or_ask_under_the_gate_is_too_large_past_max_item() {
+        let hub = Hub::new();
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (s, t) = (open(), open());
+        let big = vec![0; MAX_ITEM + 1];
+        assert_eq!(
+            hub.host_push_in(&s, &big, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        assert_eq!(
+            hub.host_open_keeping_in(&s, &big, 0, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        assert_ne!(
+            hub.host_open_keeping_in(&t, &vec![0; MAX_ITEM], 0, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        hub.host_push_in(&s, &vec![0; MAX_ITEM], (0, 0)).unwrap();
+    }
+
     /// 19.2 (In flight): a close takes its ask's reserve once; the stream's end frees the rest.
     #[test]
     fn s100_fix12_a_close_reserve_is_freed_once_by_its_close_or_the_end() {

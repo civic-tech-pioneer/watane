@@ -696,6 +696,17 @@ mod tests {
         );
     }
 
+    /// A line of `claude` over one item's limit is `too-large` for the session's push.
+    #[test]
+    fn s100_fix15_a_session_push_past_max_item_is_too_large() {
+        let (hub, session, _rx, _clock) = rig();
+        assert_eq!(
+            session.push(&hub, &vec![0; crate::agent::streams::MAX_ITEM + 1]),
+            Err(StreamError::TooLarge)
+        );
+        session.push(&hub, b"{}").unwrap();
+    }
+
     /// 19.2 (Commit): an apply (chains gate held, as `take_and_apply` does) of an answer and a
     /// reader that opens an ask take the gate and the asks lock in one order: no deadlock.
     #[test]
