@@ -17,7 +17,8 @@ pub(crate) fn now() -> u64 {
 /// 4 (the oldest learned base after the front one goes). True when the record changed
 /// its set of bases, so the caller reads them all (5.9).
 pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
-    if !record.given.iter().any(|b| b == base) {
+    let held = record.base == base || record.bases.iter().any(|b| b == base);
+    if !held && !record.given.iter().any(|b| b == base) {
         record.given.push(base.into());
     }
     let learned = add_base(record, base);
@@ -58,15 +59,27 @@ pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
     if !record.followed && !record.index {
         record.base = base.into();
         record.bases.clear();
-        record.given.clear();
+        record.given = vec![base.into()];
     }
 }
-/// A link's base never given by a link; `given` is a subset of the record's bases, so
-/// this covers a base the record does not have.
+/// A link's base the record does not hold: the only kind a link can newly give (5.9).
 fn follow_unseen(record: &Follow, base: &str) -> bool {
-    !record.given.iter().any(|b| b == base)
+    record.base != base && !record.bases.iter().any(|b| b == base)
 }
 impl Dist {
+    /// A link's base a followed or chosen record holds but the participant has not given: its first read
+    /// uses the listed-address rule too, for the link may be built from the record (5.9).
+    pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> bool {
+        self.follows
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .get(&key)
+            .is_some_and(|r| {
+                (r.followed || r.index)
+                    && !follow_unseen(r, base)
+                    && !r.given.iter().any(|b| b == base)
+            })
+    }
     pub(crate) fn save_follows(
         &self,
         records: &BTreeMap<PublicKey, Follow>,
@@ -93,7 +106,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let report = self.read_channel(link.channel(), link.base())?;
+        let listed = self.held_ungiven(link.channel(), link.base());
+        let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
             Outcome::Compromised { seq } => {
@@ -116,7 +130,7 @@ impl Dist {
             index: false,
             kept: false,
             bases: Vec::new(),
-            given: Vec::new(),
+            given: vec![link.base().into()],
             _followed_at: time,
             _last_attempt: time,
             last_success: None,

@@ -810,7 +810,7 @@ mod tests {
     /// AC1 (F1.1): a record without `given` (saved before S105) is read under the listed
     /// rule, redirects included, until a link at that base is given.
     #[test]
-    fn ac1_an_old_followed_record_base_is_unknown_until_given_by_a_link() {
+    fn ac2_ac3_an_old_followed_record_base_is_given_only_by_unfollow_then_follow() {
         let w = world();
         let c = Host::serve(&w.publisher.site_dir());
         let (dir, eve) = w.eve(&[&w.a]);
@@ -831,7 +831,14 @@ mod tests {
         let got = eve.fetch(&w.reference).map(|_| ()).err();
         assert_refused(got, &format!("{}{}", w.b.url, w.package));
         assert_eq!(w.b.count(), 0, "no request to a redirect target");
-        // The participant gives that base by a link: the redirect is followed.
+        // AC2: a follow at the held base gives nothing; the redirect is still refused.
+        let got = eve.follow(&w.link(&w.a)).map(|_| ());
+        assert!(got.is_err(), "the listed rule refuses the local redirect");
+        let report = eve.refresh_channel(&w.key).unwrap();
+        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+        assert_eq!(w.b.count(), 0, "a repeated link gives no base");
+        // AC3: unfollow, then follow by a link gives it: the redirect is followed.
+        eve.unfollow(&w.key).unwrap();
         eve.follow(&w.link(&w.a)).unwrap();
         assert!(w.b.count() > 0);
         let before = w.b.count();

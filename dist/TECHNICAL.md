@@ -621,8 +621,13 @@ gave by links, learned as in 5.9, at most 4, and `base` equals the first
 element when `bases` is not empty. Every record has `"given": [text]` (S105,
 DD-47; default `[]`, omitted when empty, so the version stays 1): the bases
 the participant named by a link (`follow`, `choose_index`, or `open_link`
-of a link at a base), a subset of `base` and `bases`. A file saved before
-S105 has none, and then every base in it is unknown.
+of a link at a base), a subset of `base` and `bases`. A link marks a base given
+only when the base is new to the record, or when it is the base a listed-only
+record takes on turning followed or chosen. A base the record already holds
+stays as it is: a link at it, such as a hit's link, gives nothing, since dist
+cannot tell it from a link built out of the record. A file saved before S105
+has none, and then every base in it is unknown. The participant gives such a
+base again by unfollowing the channel and following it by a link.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
@@ -1572,4 +1577,4 @@ are `list` and `include` statements of 4.1.
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all), without changing the record. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
-| DD-47 | A base of a followed or chosen record that the participant did not give by a link (not in `given`, 4.4) is read as listed until a link at that base is given: the local-address rule, redirect targets included, and the limits of a listed read (5.9: `max_listed_entries`, `TooManyEntries`); a cached package is still given. Every base in a record saved before S105 is unknown. `given` is an additive serde-default field. Deputy decision S105 r1. | An old home could hold a listing-learned base as a followed one and follow its redirects unchecked (A35). The alternative, trusting old records, leaves that hole open for every existing home. Undo: cheap (follow.rs, index.rs, fetch.rs). |
+| DD-47 | A base of a followed or chosen record that the participant did not give by a link (not in `given`, 4.4) is read as listed until the participant unfollows the channel and follows it again by a link at that base (a repeated link at a held base gives nothing, S105 r3; the first read of such a link is listed too): the local-address rule, redirect targets included, and the limits of a listed read (5.9: `max_listed_entries`, `TooManyEntries`); a cached package is still given. Every base in a record saved before S105 is unknown. `given` is an additive serde-default field. Deputy decision S105 r1, tightened S105 r3. | An old home could hold a listing-learned base as a followed one and follow its redirects unchecked (A35). The alternative, trusting old records, leaves that hole open for every existing home. Undo: cheap (follow.rs, index.rs, fetch.rs). |

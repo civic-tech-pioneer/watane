@@ -243,7 +243,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let report = self.read_channel(link.channel(), link.base())?;
+        let listed = self.held_ungiven(link.channel(), link.base());
+        let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
             Outcome::Compromised { seq } => {
@@ -266,7 +267,7 @@ impl Dist {
             index: true,
             kept: false,
             bases: Vec::new(),
-            given: Vec::new(),
+            given: vec![link.base().into()],
             _followed_at: time,
             _last_attempt: time,
             last_success: None,
