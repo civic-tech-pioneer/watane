@@ -45,7 +45,7 @@ pub(crate) struct Out {
 
 #[derive(Debug, Default)]
 struct Running {
-    pgid: i32,
+    pgid: Option<i32>,
     stopped: bool,
 }
 
@@ -99,17 +99,23 @@ impl Session {
             state.stopped = true;
             state.pgid
         };
-        run::kill_group(pgid);
+        if let Some(pgid) = pgid {
+            run::kill_group(pgid);
+        }
         self.tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .take();
     }
+    /// The reaper has reaped `claude`: the group is no longer recorded.
+    pub(crate) fn reaped(&self) {
+        self.running().pgid = None;
+    }
     /// The process started: its group, and the queue of its stdin.
     pub(crate) fn started(&self, pgid: i32) -> Receiver<Out> {
         let stopped = {
             let mut state = self.running();
-            state.pgid = pgid;
+            state.pgid = Some(pgid);
             state.stopped
         };
         if stopped {
@@ -457,5 +463,35 @@ impl Host {
             }
             Write::Answer { ask, decision } => session.apply_answer(&self.hub, &ask, &decision),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+    use std::time::Duration;
+
+    /// 19.3 step 5 (S100-CAP): once the reaper has reaped `claude`, the recorded group is
+    /// cleared and a later `stop()` signals none (a pid reused since is never killed).
+    #[test]
+    fn s100_fix16_ac3_stop_after_the_reap_signals_no_group() {
+        // A stand-in for a process whose pid was reused: alive, leader of its own group.
+        let mut other = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(other.id()).unwrap();
+        let session = Session::new("s".into(), "o".into(), None);
+        let _rx = session.started(pgid);
+        session.reaped();
+        assert_eq!(session.running().pgid, None);
+        session.stop();
+        std::thread::sleep(Duration::from_millis(200));
+        let alive = other.try_wait().unwrap().is_none();
+        let _ = other.kill();
+        let _ = other.wait();
+        assert!(alive, "stop() signalled the group of a reaped process");
     }
 }

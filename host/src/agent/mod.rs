@@ -848,6 +848,23 @@ impl Host {
         }
         f((origin_pending, host_pending))
     }
+    /// The pending bytes of the chains in flight, by origin and in all, without waiting for their
+    /// gate: `None` when the gate or a chain's log is busy. The hub lock is held by the caller,
+    /// which is after the gate in the lock order, so it may only try (19.2, Commit).
+    pub(crate) fn try_pending(&self) -> Option<(std::collections::HashMap<String, usize>, usize)> {
+        let chains = self.chains.try_lock().ok()?;
+        let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
+        for chain in chains.iter().filter_map(std::sync::Weak::upgrade) {
+            let log = chain.log.try_lock().ok()?;
+            for e in log.iter() {
+                if let Effect::Push { body, origin, .. } = e {
+                    *by_origin.entry(origin.clone()).or_insert(0) += body.len();
+                    all += body.len();
+                }
+            }
+        }
+        Some((by_origin, all))
+    }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
         // A `claude` process starts after the whole chain is applied, so that a `cancel` of the

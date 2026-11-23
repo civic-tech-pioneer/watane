@@ -46,7 +46,8 @@ struct Open {
     request_id: String,
     hook: bool,
     tool: String,
-    input: Value,
+    /// The JSON text of the input, not a parsed value: the budgets count these bytes.
+    input: Box<[u8]>,
     deadline: Instant,
 }
 
@@ -81,6 +82,11 @@ fn now_ms() -> (u64, Duration) {
                 Duration::from_nanos(u64::from(d.subsec_nanos() % 1_000_000)),
             )
         })
+}
+
+/// The input of an ask, parsed again from the bytes the host kept.
+fn parsed(input: &[u8]) -> Value {
+    serde_json::from_slice(input).unwrap_or(Value::Null)
 }
 
 impl Session {
@@ -175,9 +181,10 @@ impl Session {
         let (ms, dropped) = now_ms();
         let expires_at = ms.saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
         // What the host keeps of the ask counts in the budgets while it is open.
-        let kept = request_id.len()
-            + fields.tool.len()
-            + serde_json::to_vec(&fields.input).map_or(0, |v| v.len());
+        let input: Box<[u8]> = serde_json::to_vec(&fields.input)
+            .unwrap_or_default()
+            .into_boxed_slice();
+        let kept = request_id.len() + fields.tool.len() + input.len();
         hub.host_open_keeping_in(
             &self.id,
             &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
@@ -191,7 +198,7 @@ impl Session {
             request_id: request_id.to_owned(),
             hook,
             tool: fields.tool.clone(),
-            input: fields.input.clone(),
+            input,
             deadline: start + ttl - dropped,
         });
         Ok(())
@@ -213,7 +220,7 @@ impl Session {
                 Decision::Deny(_) => true,
                 Decision::Allow(None) => !paths::refused_for_answer(
                     &open.tool,
-                    &open.input,
+                    &parsed(&open.input),
                     &asks.cwd,
                     &asks.roots,
                     &asks.run,
@@ -249,7 +256,7 @@ impl Session {
                 let input = changed
                     .as_deref()
                     .and_then(|j| serde_json::from_str::<Value>(j).ok())
-                    .unwrap_or_else(|| open.input.clone());
+                    .unwrap_or_else(|| parsed(&open.input));
                 (control::allow(&open.request_id, &input), "allow")
             }
             _ => return,
@@ -402,6 +409,49 @@ mod tests {
         assert_eq!(
             last.as_deref(),
             Some(&br#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#[..])
+        );
+    }
+
+    /// 19.3 step 5 (S100-CAP): the input an open ask keeps is its JSON bytes, counted by that
+    /// length; the answer parses it again.
+    #[test]
+    fn s100_fix16_ac4_an_open_ask_keeps_its_input_as_json_bytes_and_counts_that_length() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        let rx = session.started(0);
+        rx.try_recv().unwrap(); // `initialize`
+        let text = format!("{{\"a\":[{}0]}}", "0,".repeat(512 * 1024 - 1));
+        assert_eq!(text.len(), 1_048_583);
+        let fields = Fields {
+            tool_use_id: "t".into(),
+            tool: "Bash".into(),
+            input: serde_json::from_str(&text).unwrap(),
+        };
+        session
+            .open_request(&hub, "r1", false, &fields, Duration::from_secs(10))
+            .unwrap();
+        // The stored form is bytes, the compact JSON text.
+        let asks = session.asks();
+        let kept: &[u8] = &asks.open[0].input;
+        assert_eq!(kept, text.as_bytes());
+        drop(asks);
+        let charged = hub.test_budget(&s).0;
+        let item = hub.test_take(&s).pop().unwrap().1.len();
+        assert_eq!(
+            charged,
+            item + crate::agent::streams::CLOSE_RESERVE + "r1".len() + "Bash".len() + 1_048_583
+        );
+        // The answer parses it again: `updatedInput` is the same JSON.
+        session.apply_answer(&hub, "1", &Decision::Allow(None));
+        let line = rx.try_recv().unwrap().line;
+        let written: Value = serde_json::from_slice(&line).unwrap();
+        assert_eq!(
+            written["response"]["response"]["updatedInput"],
+            fields.input
         );
     }
 

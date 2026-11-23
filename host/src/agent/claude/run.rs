@@ -433,8 +433,11 @@ impl Job {
         // The waiter reaps the child and then kills what is left of its group, so that a
         // grandchild cannot keep the pipe open.
         let (exited, exit) = std::sync::mpsc::channel();
+        let reaped = Arc::clone(&self.session);
         let waiter = std::thread::spawn(move || {
             let status = child.wait();
+            // The leader is reaped: its pid may be reused, so `stop` signals no group any more.
+            reaped.reaped();
             killpg(pgid);
             let _ = exited.send(status);
         });

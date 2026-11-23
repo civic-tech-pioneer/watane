@@ -97,8 +97,10 @@ enum State {
 #[derive(Clone, Copy, Debug)]
 enum Refused {
     Stream,
-    Origin(usize),
-    Host(usize),
+    /// The bytes the push needed, and the pending bytes of the chains in flight when it was
+    /// refused.
+    Origin(usize, usize),
+    Host(usize, usize),
 }
 #[derive(Debug)]
 struct Stream {
@@ -277,6 +279,8 @@ struct Inner {
     clock: Clock,
     ended_host: HashMap<String, Value>,
     deliveries: HashMap<String, Vec<Delivery>>,
+    /// The host, once `start` ran: the chains in flight whose pending bytes a ready scan counts.
+    host: Option<Weak<Host>>,
     /// Run when a host stream ends: the claude session kills its process group (19.3).
     on_end: HashMap<String, Box<dyn FnOnce() + Send>>,
 }
@@ -338,6 +342,7 @@ impl Hub {
         let hub = Arc::clone(self);
         let weak = Arc::downgrade(host);
         let _ = self.host.set(Weak::clone(&weak));
+        self.lock().host = Some(Weak::clone(&weak));
         std::thread::Builder::new()
             .name("watane-streams".into())
             .spawn(move || hub.run(&weak))
@@ -1225,13 +1230,17 @@ impl Inner {
             if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
                 Some(Refused::Stream)
             } else if origin_now + origin_pending + len + reserve > ORIGIN_BUDGET {
-                Some(Refused::Origin(len + reserve))
+                Some(Refused::Origin(len + reserve, origin_pending))
             } else if host_now + host_pending + len + reserve > HOST_BUDGET {
-                Some(Refused::Host(len + reserve))
+                Some(Refused::Host(len + reserve, host_pending))
             } else {
                 None
             };
         let Some(refused) = refused else {
+            // An admission ends the refusal before it, and its lag timer (19.2, Lag clock).
+            s.needs_ready = None;
+            s.full_since = None;
+            self.waiting.remove(id);
             return Ok(());
         };
         if s.deferred.is_none() && s.full_since.is_none() {
@@ -1317,8 +1326,19 @@ impl Inner {
         }
         self.host_bytes = self.host_bytes.saturating_sub(bytes);
     }
-    /// `ready` for each producer whose refused push would now fit (19.2, In flight).
+    /// `ready` for each producer whose refused push would now fit, with the pending bytes of the
+    /// chains in flight counted as admission counts them (19.2, In flight).
     fn scan_ready(&mut self) {
+        if self.waiting.is_empty() {
+            return;
+        }
+        // The hub lock is held, so the chains gate is only tried: a gate that is busy leaves the
+        // pending bytes seen at the refusal in place.
+        let pending = self
+            .host
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .and_then(|h| h.try_pending());
         let waiting: Vec<String> = self.waiting.iter().cloned().collect();
         for id in waiting {
             let Some(s) = self.streams.get(&id) else {
@@ -1334,10 +1354,17 @@ impl Inner {
             }
             let room = match refused {
                 Refused::Stream => true,
-                Refused::Origin(n) => {
-                    self.origin_bytes.get(&s.origin).copied().unwrap_or(0) + n <= ORIGIN_BUDGET
+                Refused::Origin(n, seen) => {
+                    let held = pending
+                        .as_ref()
+                        .map_or(seen, |p| p.0.get(&s.origin).copied().unwrap_or(0));
+                    self.origin_bytes.get(&s.origin).copied().unwrap_or(0) + held + n
+                        <= ORIGIN_BUDGET
                 }
-                Refused::Host(n) => self.host_bytes + n <= HOST_BUDGET,
+                Refused::Host(n, seen) => {
+                    let held = pending.as_ref().map_or(seen, |p| p.1);
+                    self.host_bytes + held + n <= HOST_BUDGET
+                }
             };
             if !room {
                 continue;
@@ -1531,6 +1558,70 @@ mod tests {
         assert!(hub.lock().streams[&other].needs_ready.is_some());
         hub.host_close_keeping(&ask, b"close", 1000).unwrap();
         assert!(hub.lock().streams[&other].needs_ready.is_none());
+    }
+
+    fn pending_push(len: usize) -> Effect {
+        Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; len],
+            hop: 0,
+            by: modref("m"),
+            origin: "o".into(),
+        }
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a close wakes a waiting producer only when its refused push
+    /// fits with the pending bytes of the chains in flight counted.
+    #[test]
+    fn s100_fix16_ac1_a_close_wakes_a_producer_only_when_its_push_fits_with_pending_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (ask1, ask2, other) = (open(), open(), open());
+        hub.host_open_keeping(&ask1, b"ask", 1000).unwrap();
+        hub.host_open_keeping(&ask2, b"ask", 1000).unwrap();
+        let chain =
+            crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 100)]);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // The close frees bytes, but the push still does not fit beside the pending chain.
+        hub.host_close_keeping(&ask1, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // The chain rolls back: the next close that frees bytes finds the room there.
+        drop(chain);
+        hub.host_close_keeping(&ask2, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+        hub.host_push(&other, &[0; 512]).unwrap();
+    }
+
+    /// 19.3 step 5 (review r5, F5.2): an admission after a refusal clears the refusal and its lag
+    /// timer, so the stream does not end `lagging`.
+    #[test]
+    fn s100_fix16_ac2_a_successful_admission_clears_the_refusal_and_its_lag_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let chain = crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 10)]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        assert!(host.hub.lock().streams[&s].full_since.is_some());
+        drop(chain);
+        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        assert!(host.hub.lock().streams[&s].needs_ready.is_none());
+        assert!(host.hub.lock().streams[&s].full_since.is_none());
+        clock.advance(LAG + Duration::from_secs(1));
+        assert_eq!(host.hub.test_ended(&s), None);
     }
 
     /// 19.2 (Commit, Byte budgets): a host ask counts the bytes that admitted mod pushes still
