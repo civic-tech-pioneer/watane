@@ -460,7 +460,13 @@ which `Host::open` creates (3.1 step 6).
    package and `mods/<local>` does not. Delete each `mods/<x>` that
    `installed.json` does not name, and each remaining `mods/*.new` and
    `mods/*.old`. Step 11 (A2): kill the process groups recorded in
-   `runs/pids`, then delete `runs/` (19.3).
+   `runs/pids` that are still this home's runs, then delete `runs/` (19.3).
+   A record is a pgid with the boot id and the process's start time (Linux:
+   `/proc/sys/kernel/random/boot_id` and field 22 of `/proc/<pid>/stat`;
+   macOS: the boot time and `kp_proc.p_starttime` of `sysctl kern.proc.pid`).
+   A group is killed only when the boot id matches and its leader still has
+   that start time; a record without them, or with no live leader, is
+   dropped unkilled (S100-CAP, item 5).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
@@ -1804,12 +1810,7 @@ client's whole 128 MiB budget, so the owner's other streams get `full` and end
 and sums the pending pushes of every chain in flight, so a mod that keeps many
 chains with many queued pushes makes every line slower, and an apply that holds
 the gate delays them; a running per-origin total of pending push bytes would
-make it constant time. A cost, not a wrong decision; not built. Open after a crash (S100's ninth adversary pass, for the product owner): `clean_runs` (3.1
-step 3) kills every pgid recorded in `<home>/runs/pids` with no check that the group is still a
-run of this home, so after a reboot or a pid wrap it can kill an unrelated process group of the
-participant; `probe()` (`claude --version`) also kills its group after its thread reaped the child.
-Not built in S100 (its last round was limited to four items); the red test and a fix direction are
-in factory/tasks/s100-followup-clean-runs.md.
+make it constant time. A cost, not a wrong decision; not built.
 
 ## 15. Build plan
 
@@ -2991,7 +2992,7 @@ not keep a credential from a mod on their own. Three rules do:
   `initialize` with `hook_on_failure_supported` and has the protected-path
   symlink fixes (2.1.295 or later). None: the stream ends `no-binary`; too old:
   `version {found, need}`; no app: `no-app`.
-- Process: its own process group; the pid is recorded in `<home>/runs/pids`.
+- Process: its own process group; the pid is recorded in `<home>/runs/pids` with the boot id and its start time (3.1 step 3); the record is removed when the run ends.
   The consent of 19.7 is held first: the host starts the process only then.
 - Environment: only `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TMPDIR`,
   `SHELL`, a fixed `PATH` (`/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`), `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
@@ -3138,7 +3139,9 @@ not keep a credential from a mod on their own. Three rules do:
    reaped (its pid still held), clears the recorded group, and only then reaps it;
    every other kill of the group (`stop()`, the end of the run) goes through that
    record under one lock, so no kill follows the reap and a pid reused since is
-   never killed (S100-CAP).
+   never killed (S100-CAP). The same holds for the version probe (`claude
+   --version`): its group is killed, if at all, before its child is reaped, never
+   after (S100-CAP, item 5).
    Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
