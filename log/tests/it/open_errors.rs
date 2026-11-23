@@ -106,16 +106,24 @@ fn s91_2_ac1_dangling_key_link_is_not_plain() {
     let path = d.path().join("log");
     std::fs::create_dir(&path).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-    symlink(d.path().join("none"), path.join("identity.key")).unwrap();
+    let key = path.join("identity.key");
+    symlink(d.path().join("none"), &key).unwrap();
     let err = Log::open(&path).err().unwrap();
     assert!(matches!(
-        err,
+        &err,
         Error::NotPlain {
             expected: "regular file",
             link: true,
             ..
         }
     ));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "{} is a symbolic link; a regular file is required (a link is refused)",
+            key.display()
+        )
+    );
 }
 
 #[test]
