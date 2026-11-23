@@ -1307,7 +1307,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   3. [S91] a pack entry gone during listing is named at its own path, not at its parent; `pkg/tests/it/s91.rs`'s race test
      (up to 5 s) moves out of the default run (a `slow:` test).
   Touches: `pkg/` only. Remove the three items from Leftovers when it merges.
-- [~] **S109 (guard) the log's identity key is opened without a check-then-open.** (in flight, cloud, builder codex,
+- [x] **S109 (guard) the log's identity key is opened without a check-then-open.** DONE 2026-11-23: PR #21 merged with
+  --admin, ~2.5 h in flight, 2 rounds (2/3, then 0/3: approve, call merge). (Was: in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056;
   DELIVERED as PR #21 (+270 -25, log/ only; user-sim ACCEPTED, adversary HELD, both Linux); r1 to Claude under the new
   review-lead brief, 17:55 UTC; r1: 2/3 (blocking/polish), call: another round (an interrupted first creation locks
@@ -1421,6 +1422,13 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 ## Leftovers
 
+Upkeep (polish from S109's review r2, 2026-11-23):
+- [S109 P2.1] `log/TECHNICAL.md:594`: the Libraries line for rustix omits `default-features = false` (log/Cargo.toml:22).
+- [S109 P2.2] `log/src/identity.rs:1`: the `//!` line should cite TECHNICAL 4.7 too.
+- [S109 P2.3] `log/src/identity.rs:165`: `publish_key` wraps `fs::rename` only for a test that mostly tests rename.
+- [S109 review] a crash before the rename leaves a stray `.identity.key.<hex>.tmp`; `replace` keeps the old key in memory
+  when the folder fsync fails after the rename (older than S109).
+
 Upkeep (polish from S108's review r2, 2026-11-23):
 - [S108 P2.1] `pkg/src/folder.rs:287, :291` (`list_entries`): the new error classification has no test.
 - [S108 P2.2] `pkg/TECHNICAL.md:356-357` repeats lines 346-348.
@@ -1480,9 +1488,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### log
 
-- From S91's adversary: a hard link at identity.key is accepted (no nlink or uid check); a device node at identity.key is opened before fstat (same user only).
-- [S57] log/src/identity.rs still does `symlink_metadata` and then `File::open` on the key path: a
-  check-then-open, inside a 0700 dir.
 
 ### host
 
