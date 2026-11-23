@@ -399,4 +399,253 @@ mod tests {
         assert_eq!(got.unwrap(), b"ok");
         assert_eq!(*seen.lock().unwrap(), ["/a", "/b"]);
     }
+
+    // The wiring tests below use real signed channels. Two kinds of local test server:
+    // a "listed" host (exempted from the local rule through `test_local_ok`, so its
+    // first hop is allowed) and a redirect target (local and not exempt, so refused).
+
+    struct Yes;
+    impl crate::Confirm for Yes {
+        fn confirm(&self, _: &crate::SignRequest) -> crate::Decision {
+            crate::Decision::Approve
+        }
+    }
+    struct Host {
+        url: String,
+        requests: Arc<std::sync::Mutex<Vec<String>>>,
+        redirects: Arc<std::sync::Mutex<std::collections::BTreeMap<String, String>>>,
+    }
+    impl Host {
+        /// Serves `dir`; a path with an entry in `redirects` answers 302 to it.
+        fn serve(dir: &std::path::Path) -> Self {
+            let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/", server.server_addr().to_ip().unwrap());
+            let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let redirects = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
+            let (log, map, dir) = (
+                Arc::clone(&requests),
+                Arc::clone(&redirects),
+                dir.to_owned(),
+            );
+            std::thread::spawn(move || {
+                for request in server.incoming_requests() {
+                    let path = request.url().to_owned();
+                    log.lock().unwrap().push(path.clone());
+                    let target = map.lock().unwrap().get(&path).cloned();
+                    let response = if let Some(target) = target {
+                        tiny_http::Response::from_data(Vec::new())
+                            .with_status_code(302)
+                            .with_header(tiny_http::Header::from_bytes("Location", target).unwrap())
+                    } else {
+                        match std::fs::read(dir.join(path.trim_start_matches('/'))) {
+                            Ok(bytes) => {
+                                tiny_http::Response::from_data(bytes).with_status_code(200)
+                            }
+                            Err(_) => {
+                                tiny_http::Response::from_data(Vec::new()).with_status_code(404)
+                            }
+                        }
+                    };
+                    let _ = request.respond(response);
+                }
+            });
+            Self {
+                url,
+                requests,
+                redirects,
+            }
+        }
+        fn redirect(&self, path: &str, to: &str) {
+            self.redirects
+                .lock()
+                .unwrap()
+                .insert(path.to_owned(), to.to_owned());
+        }
+        fn count(&self) -> usize {
+            self.requests.lock().unwrap().len()
+        }
+    }
+    fn home(name: &str, listed_local: bool) -> (tempfile::TempDir, Dist) {
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(Yes),
+            Options {
+                listed_local,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        dist.set_name(name).unwrap();
+        (dir, dist)
+    }
+    fn exempt(dist: &Dist, hosts: &[&Host]) {
+        *dist.test_local_ok.lock().unwrap() = hosts.iter().map(|h| h.url.clone()).collect();
+    }
+    struct World {
+        _dirs: Vec<tempfile::TempDir>,
+        publisher: Dist,
+        key: crate::PublicKey,
+        reference: crate::ReleaseRef,
+        slug: crate::Slug,
+        package: String,
+        a: Host,
+        b: Host,
+        served: u64,
+    }
+    /// A publisher with one release, host `a` serving its site, host `b` a second copy.
+    fn world() -> World {
+        let (dir, publisher) = home("Carol", true);
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reading-list");
+        let bytes = watane_pkg::pack(&fixture, false).unwrap().into_bytes();
+        publisher.publish(bytes).unwrap();
+        let key = publisher.identity().unwrap();
+        let info = publisher.channel(&key).unwrap().releases.remove(0);
+        let site = publisher.site_dir();
+        let served = std::fs::read_dir(site.join("entries")).unwrap().count() as u64 - 1;
+        World {
+            a: Host::serve(&site),
+            b: Host::serve(&site),
+            package: format!("packages/{}", info.release.package),
+            slug: info.reference.slug.clone(),
+            reference: info.reference,
+            key,
+            served,
+            publisher,
+            _dirs: vec![dir],
+        }
+    }
+    impl World {
+        fn link(&self, host: &Host) -> crate::Link {
+            crate::Link::new(self.key, &host.url, Some(&self.slug)).unwrap()
+        }
+        /// A strict consumer (listed_local false) that trusts only `hosts` as first hops.
+        fn eve(&self, hosts: &[&Host]) -> (tempfile::TempDir, Dist) {
+            let (dir, eve) = home("Eve", false);
+            exempt(&eve, hosts);
+            (dir, eve)
+        }
+    }
+    fn failure(result: Result<crate::RefreshReport, DistError>) -> Option<DistError> {
+        match result {
+            Err(cause)
+            | Ok(crate::RefreshReport {
+                outcome: crate::Outcome::Failed { cause },
+                ..
+            }) => Some(cause),
+            Ok(_) => None,
+        }
+    }
+    fn assert_refused(cause: Option<DistError>, target: &str) {
+        match cause {
+            Some(DistError::BadUrl { url, cause }) => {
+                assert_eq!(url, target);
+                assert_eq!(cause, "local address");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// AC1 wiring: each GET of `read_channel_entries` passes its `listed` flag.
+    #[test]
+    fn ac1_listed_channel_read_refuses_a_local_redirect_at_each_get() {
+        let w = world();
+        let cases = [
+            "head".to_owned(),
+            "entries/0".to_owned(),
+            format!("entries/{}", w.served),
+        ];
+        for path in cases {
+            let (_dir, eve) = w.eve(&[&w.a]);
+            let target = format!("{}{path}", w.b.url);
+            w.a.redirects.lock().unwrap().clear();
+            w.a.redirect(&format!("/{path}"), &target);
+            let before = w.b.count();
+            let got = failure(eve.read_channel_entries(w.key, &w.a.url, true));
+            assert_refused(got, &target);
+            assert_eq!(w.b.count(), before, "{path}: no request to the target");
+            // The same redirect of an unlisted (followed or chosen) base is followed.
+            let (_dir, eve) = w.eve(&[&w.a]);
+            let got = failure(eve.read_channel_entries(w.key, &w.a.url, false));
+            assert!(got.is_none(), "{path}: {got:?}");
+            assert!(w.b.count() > before, "{path}: the redirect was followed");
+        }
+    }
+    /// AC2 wiring: the package GET of a provider base is a listed read, and a refused
+    /// redirect moves to the next base.
+    #[test]
+    fn ac2_provider_package_redirect_local_falls_to_next_base() {
+        let w = world();
+        let a2 = Host::serve(&w.publisher.site_dir());
+        let (_dir, eve) = w.eve(&[&w.a, &a2]);
+        let target = format!("{}{}", w.b.url, w.package);
+        w.a.redirect(&format!("/{}", w.package), &target);
+        eve.list(&w.link(&w.a), "first").unwrap();
+        // The second base comes from the consumer's channel, which Eve follows.
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&a2), "second").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_link = crate::Link::new(dave.identity().unwrap(), &dave_host.url, None).unwrap();
+        eve.follow(&dave_link).unwrap();
+        let got = eve
+            .fetch_for(&w.reference, Some(&dave.identity().unwrap()))
+            .unwrap();
+        assert_eq!(got.link, Some(w.link(&a2)));
+        assert_eq!(w.b.count(), 0, "the redirect target gets no request");
+    }
+    /// A listed record for the publisher (through a chosen index that lists it at `a`).
+    fn listed_record(w: &World, eve: &Dist) -> tempfile::TempDir {
+        let (dir, index) = home("Zed", true);
+        index.list(&w.link(&w.a), "listed").unwrap();
+        let host = Host::serve(&index.site_dir());
+        eve.choose_index(&crate::Link::new(index.identity().unwrap(), &host.url, None).unwrap())
+            .unwrap();
+        // Keep the index host alive for the rest of the process; it is only a test server.
+        std::mem::forget(host);
+        std::mem::forget(index);
+        dir
+    }
+    /// AC1/AC3 wiring in `read_link`: a listed record's package redirect is checked, a
+    /// followed record's is not, and a link with no record is checked.
+    #[test]
+    fn ac1_read_link_package_redirect_by_record_kind() {
+        let w = world();
+        let target = format!("{}{}", w.b.url, w.package);
+        w.a.redirect(&format!("/{}", w.package), &target);
+        // Listed record.
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let _z = listed_record(&w, &eve);
+        let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
+        assert_refused(got, &target);
+        assert_eq!(w.b.count(), 0);
+        // No record.
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
+        assert_refused(got, &target);
+        assert_eq!(w.b.count(), 0);
+        // Followed record: the participant's own base may redirect anywhere.
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        let got = eve.read_link(&w.link(&w.a)).unwrap();
+        assert_eq!(got.package.id().to_string(), w.package["packages/".len()..]);
+        assert_eq!(w.b.count(), 1);
+    }
+    /// AC5 / 5.9: a listed record whose base is local, with no provider base, is
+    /// `BadUrl` and the base gets no request.
+    #[test]
+    fn ac5_listed_record_local_base_without_providers_is_refused() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let _z = listed_record(&w, &eve);
+        // The index still lists the publisher at `a`, but `a` is no longer exempt.
+        exempt(&eve, &[]);
+        let before = w.a.count();
+        let got = eve.fetch(&w.reference).map(|_| ()).err();
+        match got {
+            Some(DistError::BadUrl { cause, .. }) => assert_eq!(cause, "local address"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(w.a.count(), before);
+    }
 }

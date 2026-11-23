@@ -146,7 +146,7 @@ impl Dist {
         if records.get(&key).is_some_and(|r| r.followed || r.index) {
             return true;
         }
-        if !self.options.listed_local && local_base(l.listing.link.base()) {
+        if self.check_listed_base(l.listing.link.base()).is_err() {
             return skip("local address");
         }
         if (!all.contains(&key) && all.len() >= self.options.max_listed)
@@ -408,7 +408,7 @@ impl Dist {
         let mut highest: Option<(u64, String)> = None;
         let mut any_current = false;
         for base in bases {
-            if listed && !self.options.listed_local && local_base(&base) {
+            if listed && self.check_listed_base(&base).is_err() {
                 continue;
             }
             let mut report = self
