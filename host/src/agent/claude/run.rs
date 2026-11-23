@@ -472,7 +472,7 @@ impl Job {
         // `ask-resolved` goes on the stream, so `ended` never overtakes one (19.3, step 5).
         drop(reader);
         self.session.close_queue();
-        let _ = writer.join();
+        join_within(writer, WRITER_WAIT);
         self.session.drain(&self.hub);
         if let Some(outcome) = ended {
             return outcome;
@@ -653,6 +653,42 @@ impl Reading<'_> {
 /// `claude-code-shell.start`: its launch is checked, then its stream ends (19.3, Grants).
 pub(crate) fn shell_waits() -> Value {
     Job::failed(SHELL_WAITS)
+}
+
+/// How long the end of a run waits for the writer thread (19.3, step 5).
+const WRITER_WAIT: Duration = Duration::from_secs(2);
+
+/// Joins `handle`, but gives up after `limit` and detaches it: a writer blocked on a stdin that a
+/// stray process keeps open cannot hold the stream's end.
+fn join_within(handle: std::thread::JoinHandle<()>, limit: Duration) {
+    let (done, wait) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        let _ = handle.join();
+        let _ = done.send(());
+    });
+    let _ = wait.recv_timeout(limit);
+}
+
+#[cfg(test)]
+mod join_tests {
+    use super::*;
+
+    #[test]
+    fn ac3_a_blocked_writer_is_detached_after_the_limit() {
+        let (hold, held) = std::sync::mpsc::channel::<()>();
+        let blocked = std::thread::spawn(move || {
+            let _ = held.recv();
+        });
+        let start = std::time::Instant::now();
+        join_within(blocked, Duration::from_millis(200));
+        let took = start.elapsed();
+        assert!(took >= Duration::from_millis(200) && took < Duration::from_secs(2));
+        drop(hold);
+        let quick = std::thread::spawn(|| {});
+        let start = std::time::Instant::now();
+        join_within(quick, Duration::from_secs(5));
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
 }
 
 #[cfg(test)]

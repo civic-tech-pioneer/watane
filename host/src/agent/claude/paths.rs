@@ -144,8 +144,9 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
 }
 
 /// The absolute path that an ask or check of `tool` with `input` reaches, symlinks resolved, as
-/// the item's `path` (19.3, step 4): the first of `file_path`, `path`, `notebook_path` (absent:
-/// the working folder), resolved as `claude` does. `None` for a tool that is not a file tool,
+/// the item's `path` (19.3, step 4): the tool's own key (`file_path` for Read, Edit and Write,
+/// `path` for Glob and Grep, `notebook_path` for NotebookEdit), resolved as `claude` does. Absent
+/// with no other path key: the working folder; another path key present: `None`. `None` for a tool that is not a file tool,
 /// a path that the answer rule refuses, or one that cannot be resolved or is not UTF-8.
 pub(crate) fn resolved(
     tool: &str,
@@ -158,9 +159,19 @@ pub(crate) fn resolved(
         return None;
     }
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let text = ["file_path", "path", "notebook_path"]
-        .iter()
-        .find_map(|key| input.get(*key)?.as_str());
+    let own = match tool {
+        "Glob" | "Grep" => "path",
+        "NotebookEdit" => "notebook_path",
+        _ => "file_path",
+    };
+    let keys = ["file_path", "path", "notebook_path"];
+    if keys.iter().any(|k| *k != own && input.get(*k).is_some()) {
+        return None;
+    }
+    let text = match input.get(own) {
+        None => None,
+        Some(v) => Some(v.as_str()?),
+    };
     let real = match text {
         None => resolve(cwd, Path::new("/"), &mut 0)?,
         Some(text) => {
@@ -543,6 +554,44 @@ mod resolved_tests {
         assert_eq!(got("Read", json!({"file_path":"/etc/passwd"})), None);
         assert_eq!(got("Glob", json!({"pattern":"/etc/*"})), None);
         assert_eq!(got("Bash", json!({"command":"ls"})), None);
+    }
+}
+
+#[cfg(test)]
+mod ac2_own_key {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ac2_only_the_tools_own_key_gives_a_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().canonicalize().unwrap().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let roots = [work.clone()];
+        let run = PathBuf::from("/nonexistent-run");
+        let got = |tool: &str, input: Value| resolved(tool, &input, &work, &roots, &run);
+        let w = work.to_str().unwrap().to_owned();
+        assert_eq!(got("Read", json!({"path": "a"})), None);
+        assert_eq!(got("Grep", json!({"pattern": "x", "file_path": "a"})), None);
+        assert_eq!(
+            got(
+                "Grep",
+                json!({"pattern": "x", "file_path": "a", "path": "b"})
+            ),
+            None
+        );
+        assert_eq!(
+            got(
+                "NotebookEdit",
+                json!({"file_path": "a", "notebook_path": "b"})
+            ),
+            None
+        );
+        assert_eq!(got("Glob", json!({"pattern": "x"})), Some(w));
+        assert_eq!(
+            got("Read", json!({"file_path": "a"})),
+            Some(format!("{}/a", work.display()))
+        );
     }
 }
 
