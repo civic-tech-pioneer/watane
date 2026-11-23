@@ -1616,4 +1616,46 @@ mod tests {
             "a base read as listed by read_link led dist into the local network"
         );
     }
+
+    /// r8 AC2: `read_link` of a link for a channel with no record leaves no record and a
+    /// tombstone whose `seen` holds the link's base (DD-48).
+    #[test]
+    fn ac2_read_link_notes_its_base_in_a_tombstone() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.read_link(&w.link(&w.a)).unwrap();
+        let file = follows_file(dir.path());
+        assert!(file["channels"].get(w.key.to_string()).is_none(), "{file}");
+        let seen = file["seen"][w.key.to_string()]["seen"].clone();
+        assert!(
+            seen.as_array().unwrap().contains(&w.a.url.clone().into()),
+            "{seen}"
+        );
+    }
+
+    /// r8 AC3: a failed save while `read_link` notes its base makes no request.
+    #[test]
+    fn ac3_read_link_with_a_failed_note_makes_no_request() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        let requests = w.a.count();
+        let before = eve.test_tomb_keys();
+        *eve.test_fail_saves.lock().unwrap() = Some(0);
+        let err = eve.read_link(&w.link(&w.a)).unwrap_err();
+        assert!(
+            matches!(&err, DistError::Io { source, .. } if source.to_string() == "test: save fails"),
+            "{err:?}"
+        );
+        assert_eq!(
+            w.a.count(),
+            requests,
+            "the base was read before it was noted"
+        );
+        assert_eq!(eve.test_tomb_keys(), before);
+        assert!(
+            follows_file(dir.path())["seen"]
+                .get(w.key.to_string())
+                .is_none()
+        );
+    }
 }
