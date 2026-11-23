@@ -1278,7 +1278,11 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   ACCEPTED twice); r3 to Codex under the review-lead brief; r3: 3/2, call another round. Round 4 is worth it: blocking
   went 5, 5, 3; what is left is two narrow persistence defects (a malformed `gone` value, memory after a failed dir
   sync) and one red app test, each with a red test, and the adversary and user-sim now pass; r3 answered at fee41b8
-  (all three blocking and both polish); r4 to Codex.) Three Leftovers items, all in `dist/`:
+  (all three blocking and both polish); r4 to Codex; r4 (~20:05 UTC) 3/1, call another round: F4.1 (a retry reads
+  provenance before a failed dir sync succeeded: the other side of the F3.2 fix), F4.2 kept mark left by a failed
+  ingest, F4.3 prune skipped after a failed sync; posted with a deputy ruling (an unsynced state: every later read or
+  change retries the sync first, fails closed, then finishes the recorded pending work); r4 answer through the routine,
+  20:31 UTC, session cse_01LxwP91BTERFGtyj13B1Xys.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
@@ -1339,7 +1343,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
 - [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
-  2 in 3; dispatched ~20:45 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
+  2 in 3; dispatched ~20:27 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
   `log`'s key-file open, then whatever comes next. Outcomes: (1) `test (windows-latest)` is green on the PR's head, twice
   (a re-run), with `continue-on-error` removed from `.github/workflows/ci.yml`; (2) `log`'s identity key file on Windows
   keeps the same guarantees as on Unix: no-follow (`FILE_FLAG_OPEN_REPARSE_POINT`, a reparse point is refused) and an
