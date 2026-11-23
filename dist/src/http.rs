@@ -876,4 +876,42 @@ mod tests {
         eve.open_link(&w.link(&w.a)).unwrap();
         assert_eq!(heads(), before + 1);
     }
+    /// Adversary S105 r3: "Install a hit" (5.10) follows `hit.link`, whose base is the
+    /// record's front base. For a record saved before S105 that base is unknown (DD-47);
+    /// the install marks it `given` though the participant never gave a link at it, and
+    /// its redirects to a local address are then followed unchecked.
+    #[test]
+    fn adv_s105_r3_hit_install_gives_an_unknown_base() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
+            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
+        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
+        exempt(&eve, &[&w.a]);
+        let hits = eve
+            .search(&crate::Query {
+                text: String::new(),
+                publisher: Some(w.key),
+                origin: None,
+                interface: None,
+            })
+            .unwrap();
+        let link = hits[0].link.clone().expect("hit link");
+        assert_eq!(link.base(), w.a.url, "the hit names the unknown base");
+        // The app installs the hit: follow(hit.link), then fetch (5.10).
+        let _ = eve.follow(&link);
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let before = w.b.count();
+        let report = eve.refresh_channel(&w.key).unwrap();
+        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+        assert_eq!(
+            w.b.count(),
+            before,
+            "no request to the local redirect target"
+        );
+    }
 }
