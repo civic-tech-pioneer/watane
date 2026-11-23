@@ -174,11 +174,11 @@ impl From<watane_log::Error> for DistError {
 /// The text of `DistError::StaleBases` (DD-34, S92).
 fn stale_bases_text(release: &ReleaseRef, bases: usize, slug_held: bool) -> String {
     let read = if bases == 1 {
-        "1 base read holds".to_owned()
+        "1 base holds".to_owned()
     } else {
-        format!("{bases} bases read hold")
+        format!("{bases} bases hold")
     };
-    let head = format!("release {release} is not on any base that serves its channel: the {read}");
+    let head = format!("release {release} is not on any base that serves its channel: {read}");
     if slug_held {
         format!(
             "{head} an older copy of the channel; follow the publisher's own link, or try again \
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!(
-                "release {release} is not on any base that serves its channel: the 1 base read \
+                "release {release} is not on any base that serves its channel: 1 base \
                  holds an older copy of the channel; follow the publisher's own link, or try \
                  again when the mirrors catch up"
             )
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!(
-                "release {release} is not on any base that serves its channel: the 2 bases read \
+                "release {release} is not on any base that serves its channel: 2 bases \
                  hold an older copy of the channel; follow the publisher's own link, or try \
                  again when the mirrors catch up"
             )
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                "release {release} is not on any base that serves its channel: the 1 base read \
+                "release {release} is not on any base that serves its channel: 1 base \
                  holds no release of ratings; it may be newer than their copy (follow the \
                  publisher's own link), or the name may be wrong"
             )

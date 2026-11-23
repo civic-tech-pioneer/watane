@@ -8,6 +8,8 @@ use crate::{
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+const MAX_PROVIDER_BASES: usize = 4;
+
 impl Dist {
     pub(crate) fn unpacked(
         &self,
@@ -90,87 +92,36 @@ impl Dist {
                 .transpose()?
                 .unwrap_or(false)
         {
-            // Cached providers keep the hint trust order, even with a listed record.
-            let base = self
-                .provider_bases(key, consumer)?
-                .0
-                .into_iter()
-                .next()
-                .or_else(|| {
-                    record
-                        .as_ref()
-                        .filter(|r| !r.base.is_empty())
-                        .map(|r| r.base.clone())
-                });
-            if let Some(base) = &base {
-                self.check_listed_base(base)?;
+            let (mut bases, _) = self.provider_bases(key, consumer)?;
+            if bases.len() < MAX_PROVIDER_BASES
+                && let Some(base) = record
+                    .as_ref()
+                    .map(|r| &r.base)
+                    .filter(|base| !base.is_empty() && !bases.contains(base))
+            {
+                match self.check_listed_base(base) {
+                    Ok(()) => bases.push(base.clone()),
+                    Err(error) if bases.is_empty() => return Err(error),
+                    Err(_) => {}
+                }
             }
-            base
+            return self.fetch_from_providers(key, reference, &bases, true);
         } else if record
             .as_ref()
             .is_none_or(|r| !r.followed && !r.index && !stored)
         {
             let (bases, local_only) = self.provider_bases(key, consumer)?;
-            if bases.is_empty() && !stored {
-                return Err(DistError::NotFollowed {
-                    channel: key,
-                    local_only,
-                });
-            }
-            let mut served = None;
-            let mut failure = None;
-            let mut answered = 0usize;
-            for base in &bases {
-                match self.read_channel_entries(key, base, true) {
-                    Ok(RefreshReport {
-                        outcome: Outcome::Compromised { seq },
-                        ..
-                    }) => {
-                        return Err(DistError::Compromised { channel: key, seq });
-                    }
-                    Ok(RefreshReport {
-                        outcome: Outcome::Failed { cause },
-                        ..
+            if bases.is_empty() {
+                return if stored {
+                    self.fetched(reference, None)
+                } else {
+                    Err(DistError::NotFollowed {
+                        channel: key,
+                        local_only,
                     })
-                    | Err(cause) => {
-                        if failure.is_none() {
-                            failure = Some(cause);
-                        }
-                    }
-                    Ok(_) => {
-                        // 5.11 step 3 (DD-32, DD-34): a base ends the reads only when the
-                        // stored view then holds the release; a stale mirror does not.
-                        answered += 1;
-                        if self
-                            .channel(&key)?
-                            .releases
-                            .iter()
-                            .any(|r| r.reference == *reference)
-                        {
-                            served = Some(base.clone());
-                            break;
-                        }
-                    }
-                }
+                };
             }
-            // Every base that served was stale: say so (DD-34).
-            if served.is_none() && answered > 0 {
-                let slug_held = self
-                    .channel(&key)?
-                    .releases
-                    .iter()
-                    .any(|r| r.reference.slug == reference.slug);
-                return Err(DistError::StaleBases {
-                    release: reference.clone(),
-                    bases: answered,
-                    slug_held,
-                });
-            }
-            if served.is_none() && !stored {
-                return Err(failure.expect("every provider base failed"));
-            }
-            // 5.7 step 8: a stored release with no base left is served from the cache only.
-            served.or_else(|| bases.first().cloned())
+            return self.fetch_from_providers(key, reference, &bases, false);
         } else {
             let record = record.expect("record selected");
             if !record.followed && !record.index {
@@ -179,6 +130,72 @@ impl Dist {
             (!record.base.is_empty()).then_some(record.base)
         };
         self.fetched(reference, base.as_deref())
+    }
+
+    fn fetch_from_providers(
+        &self,
+        key: PublicKey,
+        reference: &ReleaseRef,
+        bases: &[String],
+        cached: bool,
+    ) -> Result<Fetched, DistError> {
+        let mut channel_failure = None;
+        let mut package_failure = None;
+        let mut answered = 0;
+        for base in bases {
+            match self.read_channel_entries(key, base, true) {
+                Ok(RefreshReport {
+                    outcome: Outcome::Compromised { seq },
+                    ..
+                }) => return Err(DistError::Compromised { channel: key, seq }),
+                Ok(RefreshReport {
+                    outcome: Outcome::Failed { cause },
+                    ..
+                })
+                | Err(cause) => {
+                    channel_failure.get_or_insert(cause);
+                    continue;
+                }
+                Ok(_) => answered += 1,
+            }
+            match self.fetched(reference, Some(base)) {
+                Err(DistError::UnknownRelease { .. }) => continue,
+                Err(
+                    cause @ (DistError::NotFound { .. }
+                    | DistError::Timeout { .. }
+                    | DistError::Network { .. }),
+                ) if !cached => {
+                    package_failure.get_or_insert(cause);
+                }
+                result => return result,
+            }
+        }
+        if cached {
+            return self.fetched(reference, None);
+        }
+        if let Some(cause) = package_failure {
+            return Err(cause);
+        }
+        if answered == 0 {
+            return Err(channel_failure.expect("every provider base failed"));
+        }
+        if self
+            .channel(&key)?
+            .releases
+            .iter()
+            .any(|r| r.reference.slug == reference.slug)
+        {
+            Err(DistError::StaleBases {
+                release: reference.clone(),
+                bases: answered,
+                slug_held: true,
+            })
+        } else {
+            Err(DistError::NoRelease {
+                channel: key,
+                slug: reference.slug.clone(),
+            })
+        }
     }
 
     fn check_channel(view: &ChannelView) -> Result<(), DistError> {
@@ -245,7 +262,7 @@ impl Dist {
                     skipped_local = true;
                 } else if !bases.iter().any(|b| b == base) {
                     bases.push(base.to_owned());
-                    if bases.len() == 4 {
+                    if bases.len() == MAX_PROVIDER_BASES {
                         return Ok((bases, false));
                     }
                 }

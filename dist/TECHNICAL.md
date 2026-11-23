@@ -820,17 +820,16 @@ small, and one derivation keeps one rule.
    first from its provider bases (5.11), so that step 2 sees its entries.
    That read changes no record (a listed record keeps its bases and times).
 2. Derive the view. The release statement with this slug and version (rule
-   4 of 4.1: at most one): none gives `UnknownRelease` (after a provider
-   base read where every base that served lacks it: `StaleBases`, DD-34);
-   withdrawn gives
-   `Withdrawn { reason }`.
+   4 of 4.1: at most one): none gives `UnknownRelease` outside the provider
+   path (5.11 step 4). A withdrawal gives `Withdrawn { reason }`.
 3. Cache: if `packages/<id>` exists and its `PackageId::of` equals
-   `release.package`, use it (no request). If it differs, delete the file.
+   `release.package`, use it without a package request. If it differs,
+   delete the file.
 4. Else the channel must have a record in `follows.json` (followed, a
    chosen index, or listed), or a provider base (5.11; step 5); else
-   `NotFollowed`. GET the package from the base of 5.11 step 5 when step 1
-   read provider bases and one served, else from the record's `base`, with its limit
-   (`release.size`, at most `max_package`) and timeout.
+   `NotFollowed`. GET the package with its limit (`release.size`, at most
+   `max_package`) and timeout. Use the record's `base` or, on the provider
+   path, the eligible bases in the order in 5.11.
 5. `PackageId::of(&bytes) != release.package`: `HashMismatch`.
 6. `Package::from_bytes`, then `unpacked` (`BadPackage`).
 7. `release.check(&m, &package)`: pkg confirms that the release body and
@@ -838,12 +837,16 @@ small, and one derivation keeps one rule.
    `PackageMismatch { cause }`.
 8. Write the cache file. Return `Fetched` with the stored release entry.
    `Fetched.link` is `Link::new(channel, base, Some(slug))` with the base
-   of step 4. On a cache hit: a followed or chosen channel gives its
-   record's `base`; any other channel (a listed record or none) gives the
-   first provider base in the trust order of 5.11 step 2, else its listed
-   record's front base, else `None`. So a listed record that an index
-   created never outranks the consumer's own listing (5.11 step 5).
-   `None` for the own channel.
+   that served the package. On a cache hit, a followed or chosen channel
+   gives its record's `base` without a request. For a listed channel or
+   one with no record, read provider bases in the trust order of 5.11
+   step 2 to choose the link. Add a listed record's eligible front base
+   after those hints if distinct and within the four-base limit. Give
+   the first base that serves a verified channel read, or `None` when
+   none does. These reads can ingest verified entries and detect a
+   withdrawal or compromise. The link reflects channel availability.
+   A cached package is still usable offline. The own channel gives
+   `None`.
 
 Nothing reaches the caller before step 7. `host` checks the signature of
 the entry and the package id again (its own SPEC); that is a second check,
@@ -1074,29 +1077,28 @@ already holds (W25, DD-28):
    (4.1) of a hint channel whose link key is the wanted key, in seq order;
    distinct, at most 4. A base on a local address (5.9) is skipped unless
    `listed_local` is set, also when the own channel gives it (one rule).
-3. **Read**: `read_channel` from each base, in order, exactly as a listed
-   channel is read (5.9: every base, the best outcome, at most
-   `max_listed_entries` entry files per base, the limits of 4.5). Reads
-   stop at the first base after whose read (`Current` or `Behind`) the
-   stored view holds the wanted release; a base that serves without it
-   (a stale mirror) does not stop them (DD-32, DD-34). dist
-   creates **no record**: the entries stay in `<home>/log/`, as for the
-   check before a `list` (5.9), and a search gives no hit for them. A fork
-   gives `Compromised`.
-4. No base: `NotFollowed { channel, local_only }` (DD-31); its message says
-   that no followed channel, chosen index or listing names a base for it,
-   or, when every named base was skipped as local, that those listings
-   point at a local address. Every base that served lacks the release
-   (stale mirrors): `StaleBases { release, bases, slug_held }` (DD-34). Every base
-   failed: the cause of the first base's failure (for example
-   `WrongChannel`); but when the stored view already holds the release
-   (an earlier read), a failed read is no error, as for `open_link`, and
-   the fetch goes on (offline with a cached package). Otherwise the app
-   then offers a pick (app 9.7).
-5. **The base of `Fetched.link`** is the first base, in the order of step
-   2 (trust), whose read gave `Current` or `Behind` and after which the
-   stored view holds the wanted release (DD-34); the package is read
-   from it too. So a consumer's own listing wins over a third party's.
+3. **Read**: Read each base in order with the listed-channel limits
+   (5.9, 4.5). A failed channel read or a read (`Current` or `Behind`)
+   after which the stored view lacks the release moves to the next base.
+   After a successful read with the release in the stored view, try
+   5.7 steps 2 to 8. Package `NotFound` (404 or 410), `Network` and `Timeout`
+   move to the next base. Package verification failures, withdrawals
+   and compromises end the fetch with their cause. A provider read
+   creates no record and changes no existing record. The verified entries
+   stay in `<home>/log/` as for the check before a `list` (5.9).
+4. **Exhausted bases**: If package requests failed, return the first package
+   error. If all channel reads failed, return the first channel error.
+   If a channel read succeeded and the stored view holds the slug at another
+   version, return `StaleBases { release, bases, slug_held: true }` with the
+   count of successful reads. Otherwise, if a channel read succeeded and the
+   slug is absent, return `NoRelease { channel, slug }`. When no base was
+   eligible and the release was already stored, try the cache with no link.
+   With no eligible base or stored release, return
+   `NotFollowed { channel, local_only }` (DD-31). The cached path in 5.7
+   step 8 still succeeds without a link when all its channel reads fail.
+5. **The base of `Fetched.link`** is the first base whose channel read was
+   successful and from which the package was verified. On a cache hit,
+   choose the link as in 5.7 step 8.
 
 **`read_link(link)`** (for `/api/fetch`, app 8.3): a link with no slug is
 `BadLink`. The own key: cache only, as `open_link`. A channel with a
@@ -1525,9 +1527,9 @@ are `list` and `include` statements of 4.1.
 | DD-29 | A channel read through a provider base or `read_link` gets no record; the caller follows `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
 | DD-30 | The derived mods of F-BUILD-4 are a search filter on `Release.origin` (publisher and slug, any version) over the channels already read. | Offline and bounded like search (DD-23); "as far as the chosen indexes list them". Undo: cheap, reader-only. |
 | DD-31 | `NotFollowed { channel, local_only }`: `local_only` is true only in 5.11 step 4 when a live listing named a base for the channel and every such base was skipped as a local address (5.9); every other construction sets it false. The text is "channel K is not followed; no followed channel, chosen index or listing names a base for it; follow the publisher's link to settle it", or, when `local_only`, "...; the listings that name a base for it point at a local address; follow the publisher's link to settle it". | Eve must learn which mods are involved and which step settles it; "no listing" was false when listings were skipped. Undo: cheap (one field, one message). |
-| DD-32 | Provider hint bases (5.11 step 3, "from each base") are read in trust order until the first gives `Current` or `Behind` and the stored view then holds the wanted release (DD-34); later bases get no request. A failing base still falls through. | A fetch stops contacting further hosts once one serves. Undo: cheap. |
-| DD-33 | With no record and the package cached, `Fetched.link` is the first provider base in trust order, as on every other cache hit (5.7 step 8, S35); no base is read and no package is requested. | One rule for every cache hit. Undo: cheap. |
-| DD-34 | A provider base ends the reads (5.11 step 3, DD-32) only when, after its read (`Current` or `Behind`), the stored view holds the wanted release; a base that serves without it is a stale mirror and the next base is read. When no base has it but at least one served the channel, the answer is `StaleBases { release, bases, slug_held }` (the count of bases that served), naming the cause and the next step; `slug_held` says whether the stored view holds the slug at any version: only then does the text call the copy older (S92), otherwise it says no release of the slug was seen, newer than the copy or a wrong name; `UnknownRelease` stays for a followed or index record whose stored view lacks the release. `unfollow` of a channel with no `followed: true` record is the new `NothingToUnfollow { channel }`, not `NotFollowed`. | A stale mirror ahead in trust order hid a good base behind it; "follow the publisher's link" was no help for a channel Eve never followed. Undo: cheap. |
+| DD-32 | Read provider hint bases in trust order (5.11 step 3). After a successful channel read, a missing release or an unavailable package falls through. A verified package ends the reads. Later bases receive no request. | A mirror can serve the signed channel and lack the package. The next eligible base can supply it. Undo: cheap. |
+| DD-33 | For a cached release from a listed channel or one with no record, choose the first eligible base that gives a verified channel read (5.7 step 8). When no such base responds, use the verified cache with no link. Fetching the cached package requires no package request. | A link needs a working channel base. Offline fetch can still use the cached package. Undo: cheap. |
+| DD-34 | When all serving provider bases lack the release and the stored view holds the slug, return `StaleBases { release, bases, slug_held: true }` (5.11 step 4), with “1 base” or “2 bases” in the message. When the stored view lacks the slug, return `NoRelease { channel, slug }`. A followed or chosen channel whose stored view lacks the release still gives `UnknownRelease`. Unfollow of a channel with no `followed: true` record gives `NothingToUnfollow { channel }`. | Dist can distinguish a missing slug from a mirror that has a different version. Undo: cheap. |
 | DD-35 | A link's base is a URI of any scheme (W31); `http` and `https` are the only resolvers. Another scheme parses, keeps its listing live, and fails a read with `NoResolver`. | Links are published in `list` and `include` statements and cannot be recalled; a reader that refused a new scheme at parse would mark the statement bad, and its later `unlist` too. Undo: cheap now, costly once a second scheme is published. |
 | DD-36 | A keyless home is a `Dist` like any other, opened with `open_keyless`; every signing path is `NoIdentity`, and `identity()` is an `Option`. | One type and one store for both kinds of home; the type tells each caller that a home may hold no key. Undo: cheap (workspace callers only). |
 | DD-37 | A full replica's copy is a record reason `kept` (the anchor ingests as `Asked`, `node` NO-8) in `follows.json`, with no base, beside `followed`, `index` and the listed state. | The record already carries the reasons a channel is held; a kept channel must survive refresh and unfollow like the others. Additive: the version stays 1, as in step 4. |

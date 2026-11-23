@@ -307,21 +307,28 @@ fn ac6_read_link_no_follow() {
 }
 #[test]
 fn ac7_provider_offline() {
-    let (mut carol, mut dave, mut eve, id) = setup();
+    let (mut carol, dave, eve, id) = setup();
     let reference = reference(&carol, "ratings");
-    let link = carol.link(Some("ratings"));
     eve.dist
         .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
-    carol.host.take();
-    dave.host.take();
-    eve.host.take();
-    let got = eve
-        .dist
+    drop(eve.dist);
+    drop(carol.host.take());
+    let offline = Dist::open(
+        eve.dir.path(),
+        std::sync::Arc::new(RecordingConfirm::new([])),
+        Options {
+            listed_local: true,
+            entry_timeout: std::time::Duration::from_millis(200),
+            ..fast_options()
+        },
+    )
+    .unwrap();
+    let got = offline
         .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
     assert_eq!(got.package.id(), id);
-    assert_eq!(got.link, Some(link));
+    assert_eq!(got.link, None);
 }
 #[test]
 fn ac9_fetch_compatibility() {
@@ -447,9 +454,88 @@ fn ac3_provider_stops_at_first_serving_base() {
     assert_eq!(got.link, Some(carol.link(Some("ratings"))));
     assert_eq!(second.count(), before);
 }
-/// 5.7 step 8 as amended in S35: a cache hit with no record links the first base in trust order.
+fn preferred_provider_mirror(
+    carol: &SearchHome,
+    eve: &SearchHome,
+    path: &std::path::Path,
+) -> TestHost {
+    copy_dir(&carol.dist.site_dir(), path);
+    let mirror = TestHost::serve(path);
+    let mirror_link = Link::new(
+        carol.dist.identity().unwrap(),
+        &mirror.url,
+        Some(&"ratings".parse().unwrap()),
+    )
+    .unwrap();
+    eve.dist.list(&mirror_link, "preferred mirror").unwrap();
+    mirror
+}
+
 #[test]
-fn ac4_cache_hit_no_record_links_first_base() {
+fn ac1_package_not_found_tries_next_provider_base() {
+    let (carol, dave, eve, id) = setup();
+    let mirror_dir = tempfile::tempdir().unwrap();
+    let mirror = preferred_provider_mirror(&carol, &eve, mirror_dir.path());
+    std::fs::remove_file(mirror_dir.path().join("packages").join(id.to_string())).unwrap();
+
+    let got = eve
+        .dist
+        .fetch_for(
+            &reference(&carol, "ratings"),
+            Some(&dave.dist.identity().unwrap()),
+        )
+        .unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert!(
+        mirror
+            .requests
+            .lock()
+            .unwrap()
+            .contains(&format!("/packages/{id}"))
+    );
+}
+
+#[test]
+fn ac1_package_hash_mismatch_stops_provider_fetch() {
+    let (carol, dave, eve, id) = setup();
+    let mirror_dir = tempfile::tempdir().unwrap();
+    let mirror = preferred_provider_mirror(&carol, &eve, mirror_dir.path());
+    std::fs::write(
+        mirror_dir.path().join("packages").join(id.to_string()),
+        b"changed",
+    )
+    .unwrap();
+
+    let live = carol.host.as_ref().unwrap();
+    let before = live.count();
+    let error = eve
+        .dist
+        .fetch_for(
+            &reference(&carol, "ratings"),
+            Some(&dave.dist.identity().unwrap()),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            DistError::HashMismatch { url, expected, .. }
+                if url == &format!("{}packages/{id}", mirror.url) && expected == &id
+        ),
+        "{error}"
+    );
+    assert_eq!(live.count(), before);
+    assert!(
+        !eve.dir
+            .path()
+            .join("dist/packages")
+            .join(id.to_string())
+            .exists()
+    );
+}
+
+#[test]
+fn ac4_cache_hit_no_record_skips_dead_base() {
     let (carol, dave, eve, _id) = setup();
     let reference = reference(&carol, "ratings");
     eve.dist.fetch(&reference).unwrap();
@@ -464,14 +550,15 @@ fn ac4_cache_hit_no_record_links_first_base() {
     eve.dist
         .list(&dead_link, "own, first in trust order")
         .unwrap();
-    let count = carol.host.as_ref().unwrap().count();
+    let live = carol.host.as_ref().unwrap();
+    let count = live.count();
     let got = eve
         .dist
         .fetch_for(&reference, Some(&dave.dist.identity().unwrap()))
         .unwrap();
-    assert_eq!(got.link, Some(dead_link));
-    assert_eq!(carol.host.as_ref().unwrap().count(), count);
-    assert_eq!(dead.count(), 0);
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert_eq!(&dead.requests.lock().unwrap()[..], ["/head"]);
+    assert_eq!(&live.requests.lock().unwrap()[count..], ["/head"]);
 }
 fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
     std::fs::create_dir_all(to).unwrap();
@@ -549,7 +636,7 @@ fn ac3_stale_first_base_falls_through() {
     );
 }
 #[test]
-fn ac3_all_bases_stale_is_stale_bases() {
+fn ac3_missing_slug_is_not_found_after_all_bases_are_read() {
     let (carol, dave, eve, mirror, old) = stale_setup();
     // A second stale mirror of the same old head, named by Dave's listing.
     let second = TestHost::serve(old.path());
@@ -565,29 +652,20 @@ fn ac3_all_bases_stale_is_stale_bases() {
     let error = eve
         .dist
         .fetch_for(
-            &reference(&carol, "ratings"),
+            &reference(&carol, "nowhere"),
             Some(&dave.dist.identity().unwrap()),
         )
         .unwrap_err();
     assert!(
         matches!(
-            error,
-            DistError::StaleBases {
-                bases: 2,
-                slug_held: false,
-                ..
-            }
+            &error,
+            DistError::NoRelease { channel, slug }
+                if Some(*channel) == carol.dist.identity() && slug.as_str() == "nowhere"
         ),
         "{error}"
     );
-    let text = error.to_string();
-    assert!(
-        text.contains("2 bases read hold no release of ratings"),
-        "{text}"
-    );
-    assert!(!text.contains("older copy"), "{text}");
-    assert!(text.contains("follow the publisher's own link"), "{text}");
-    // DD-34: both stale bases were read, neither got a package request.
+    assert!(error.to_string().contains("has no release of nowhere"));
+    // Both bases were read, and neither received a package request.
     for (host, before) in [&mirror, &second].into_iter().zip(before) {
         assert!(host.count() > before);
         let paths = host.requests.lock().unwrap();
@@ -618,7 +696,7 @@ fn ac3_stale_base_holding_slug_says_older_copy() {
     );
     let text = error.to_string();
     assert!(
-        text.contains("1 base read holds an older copy of the channel"),
+        text.contains("1 base holds an older copy of the channel"),
         "{text}"
     );
 }
