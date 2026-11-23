@@ -1287,7 +1287,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
   runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
-- [~] **S108 (upkeep) pkg names what it refuses at the right path.** (in flight, cloud, builder codex, reviewer claude;
+- [x] **S108 (upkeep) pkg names what it refuses at the right path.** DONE 2026-11-23: PR #22 merged with --admin at a49e9f8,
+  ~1.5 h in flight, 2 rounds (1/2, then 0/2: approve, call merge). (Was: in flight, cloud, builder codex, reviewer claude;
   sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047765-d63c-83ed-aded-e08349b8d06a;
   DELIVERED as PR #22 (+300 -88, pkg/ only; user-sim ACCEPTED, boundary HELD); r1 to Claude, routine
   `trig_01GeQd1KUiKu71BDnQJHHQfT`, 17:48 UTC; r1: 1/2 (blocking/polish; the deputy's triage: F1.1 blocking, the user-sim
@@ -1411,6 +1412,12 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+
+Upkeep (polish from S108's review r2, 2026-11-23):
+- [S108 P2.1] `pkg/src/folder.rs:287, :291` (`list_entries`): the new error classification has no test.
+- [S108 P2.2] `pkg/TECHNICAL.md:356-357` repeats lines 346-348.
+- [S108 review] after one vanish, a read's other violations are hidden, and churn in hidden files keeps refusing reads
+  (older than S108; spec questions).
 - (guard, 4 cloud runs: S96, S97, S99, agentic-harness S32) The host refuses to start without an IPv6 loopback
   (`host/src/server.rs:76`); cloud containers have none, so each cloud slice patches it by hand. Now S101 (Slices).
 - A watane release with host 19 (past v0.1.0), so agentic-harness CI's watane-dev can link the kernel's world.
@@ -1434,8 +1441,6 @@ deps.json self entry in S33 and S39; the 52-character consent key in S29 and S44
 These are true but are now what the specs say. Acting on any of them is a spec change, not a fix.
 
   Delivered (894275d, merged rebased): a maker's agent writing S65's `menu` and `item` gets all four right on the first try (user-sim ACCEPTED). Fake function names come from `logic.wasm`'s imports; `collects` beside `events` in `check --json`. Verified on the Mac: dev green with its 18 server tests, J2 and J4 green; dev's `ac10_endless...` deadline test failed again (see Friction). Later (user-sim): the guide does not say to change `generate!(world: ...)` after renaming the world; a misspelled `deliver` name does not list the real functions; a misspelled fake of an imported-but-uncalled interface is not refused.
-- [S15] a link in a hidden folder (`ui/.git/x`) is rule `path` at the link's own path
-  (pkg/TECHNICAL.md:288, pinned by `ac1_s46_hidden_link_named`).
 - [S12b] `--wait` does not count the test pipeline; it is the time the participant has to answer
   (dev/TECHNICAL.md:131).
 - [S39] a killed run's `<id>.<pid>.tmp` folder is never swept; `store` removes only its own pid's
@@ -1461,8 +1466,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - From S91: `watane-dev add` on a provider with invalid WIT says only "is not a mod folder"; a pack entry gone during listing is sometimes named at its parent; pkg/tests/it/s91.rs is a race test of up to 5 s in the default run.
 - [S57] under a live swap race `add_provider` refuses safely, but with plain I/O text ("wit/deps: File
   exists", "No such file or directory").
-- [S57] `pack` has the same list-then-stat window `Mod::read` had (`pack_error` gives `Io`), and
-  maps every `InvalidInput` to the FIFO/socket text, so a directory swapped in for a file is misnamed.
 
 ### log
 
