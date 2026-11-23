@@ -696,10 +696,10 @@ mod tests {
         );
     }
 
-    /// Validator probe: an apply (chains gate held, as take_and_apply does) of an answer, racing
-    /// a reader that opens an ask (asks lock held, then host admission takes the chains gate).
+    /// 19.2 (Commit): an apply (chains gate held, as `take_and_apply` does) of an answer and a
+    /// reader that opens an ask take the gate and the asks lock in one order: no deadlock.
     #[test]
-    fn probe_lock_order_apply_answer_vs_open_request() {
+    fn s100_fix15_an_apply_of_an_answer_and_a_reader_ask_take_the_locks_in_one_order() {
         use crate::agent::streams::Consumer;
         use std::sync::Arc;
         let dir = tempfile::tempdir().unwrap();
