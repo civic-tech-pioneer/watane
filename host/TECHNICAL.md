@@ -2838,7 +2838,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
 | Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46), or at apply for an `open` of a chain still in flight (19.6, At apply); a side disabled and enabled again while that `open` was in flight keeps the stream, which did not exist at the disable; none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
 | Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
-| Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
+| Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it or when a producer's push to it commits (19.3 step 5; an `ask-resolved` close item is no producer push and changes nothing); after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
 | Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
 | Restart | streams are memory only; old ids are `unknown-stream` |
 | Byte budgets | queued items (in flight and kept by a deferral), and the close reserve and kept input of each open ask or check (19.3 step 5), count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does; its `ready` then waits until the stream is below half and the budget that refused it has room for the refused push again (Q44). A page connection past its 16 MiB ends; its streams end `lagging` |
@@ -3147,7 +3147,13 @@ not keep a credential from a mod on their own. Three rules do:
    in flight, against both the origin's and the host's budget, so a woken producer's
    retry is admitted. A stream's refusal and lag state change only when a push to it
    commits (its refusal then clears and its lag clock stops); a tentative push in a
-   chain that rolls back leaves them exactly as they were. A close and a chain's end
+   chain that rolls back leaves them exactly as they were. A host close item
+   (`ask-resolved`) is no producer push: it neither clears a refusal nor stops
+   the lag clock. When the check cannot run at once because the chains gate or a
+   chain's log is held, the wake is owed, not dropped: the hub's own worker runs
+   the check as soon as it can take the gate (holding no other lock first), so a
+   drained stream's producer is woken within that wait, never only at the
+   holder chain's end (review r6, validator). A close and a chain's end
    (commit or rollback) run that check for the waiting producers (review r5 and r6). The input an open ask or check keeps is held as the bytes of its JSON
    text, not as a parsed value, and counted by that length, so the count is what
    the host holds; it is parsed again when needed (S100-CAP). When `claude` exits,
