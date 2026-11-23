@@ -418,14 +418,10 @@ pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), Stre
     };
     gate.each(&mut queued);
     log.iter().for_each(&mut queued);
-    inv.chain.host.hub.check_push(
-        id,
-        body.len(),
-        (count, bytes),
-        &view.origin,
-        origin_pending,
-        host_pending,
-    )?;
+    inv.chain
+        .host
+        .hub
+        .check_push(id, body.len(), (count, bytes), origin_pending, host_pending)?;
     if view.in_chain && (count + 1 > streams::MAX_ITEMS || bytes + body.len() > streams::MAX_BYTES)
     {
         return Err(StreamError::Full);
@@ -822,31 +818,17 @@ impl Host {
         self.hub.end_gone(&lost);
     }
     /// Runs `f` with the bytes that the chains in flight have queued for `origin` and in all,
-    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does.
+    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does. A
+    /// scan runs before the gate is let go, for a close that found it busy.
     pub(crate) fn with_pending<R>(&self, origin: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
         let chains = self
             .chains
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let (mut origin_pending, mut host_pending) = (0, 0);
-        for chain in chains.iter().filter_map(std::sync::Weak::upgrade) {
-            let log = chain
-                .log
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it");
-            for e in log.iter() {
-                if let Effect::Push {
-                    body, origin: o, ..
-                } = e
-                {
-                    if o == origin {
-                        origin_pending += body.len();
-                    }
-                    host_pending += body.len();
-                }
-            }
-        }
-        f((origin_pending, host_pending))
+        let pending = pending_in_flight(&chains);
+        let result = f((pending.0.get(origin).copied().unwrap_or(0), pending.1));
+        self.hub.scan_ready_with(pending);
+        result
     }
     /// The pending bytes of the chains in flight, by origin and in all, without waiting for their
     /// gate: `None` when the gate or a chain's log is busy. The hub lock is held by the caller,
@@ -867,14 +849,7 @@ impl Host {
             .chains
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let logs = chains.iter().filter_map(std::sync::Weak::upgrade).map(|c| {
-            pending_of(
-                &c.log
-                    .lock()
-                    .expect("lock poisoned: another thread panicked while holding it"),
-            )
-        });
-        self.hub.scan_ready_with(sum_pending(logs.collect()));
+        self.hub.scan_ready_with(pending_in_flight(&chains));
     }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
@@ -994,6 +969,22 @@ fn pending_of(log: &[Effect]) -> Pending {
         }
     }
     (by_origin, all)
+}
+/// The pending bytes of the chains in flight, under their gate.
+fn pending_in_flight(chains: &[std::sync::Weak<Chain>]) -> Pending {
+    sum_pending(
+        chains
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .map(|c| {
+                pending_of(
+                    &c.log
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it"),
+                )
+            })
+            .collect(),
+    )
 }
 fn sum_pending(logs: Vec<Pending>) -> Pending {
     let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);

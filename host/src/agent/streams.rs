@@ -94,14 +94,6 @@ enum State {
     Queued,
     Running,
 }
-#[derive(Clone, Copy, Debug)]
-enum Refused {
-    Stream,
-    /// The bytes the push needed, and the pending bytes of the chains in flight when it was
-    /// refused.
-    Origin(usize, usize),
-    Host(usize, usize),
-}
 #[derive(Debug)]
 struct Stream {
     consumer: Consumer,
@@ -119,7 +111,8 @@ struct Stream {
     failed_once: bool,
     deferred: Option<Instant>,
     full_since: Option<Instant>,
-    needs_ready: Option<Refused>,
+    /// The refused push or open: its item bytes, and the reserve it asked for (19.2, In flight).
+    needs_ready: Option<(usize, usize)>,
     closing: Option<Value>,
     producer_told: bool,
     handed_off: bool,
@@ -425,21 +418,11 @@ impl Hub {
         id: &str,
         len: usize,
         chain: (usize, usize),
-        origin: &str,
         origin_pending: usize,
         host_pending: usize,
     ) -> Result<(), StreamError> {
-        self.check_push_in(id, len, chain, (origin, origin_pending, host_pending))
-    }
-    /// `check_push`, taking the lock itself.
-    fn check_push_in(
-        &self,
-        id: &str,
-        len: usize,
-        chain: (usize, usize),
-        origin: (&str, usize, usize),
-    ) -> Result<(), StreamError> {
-        self.lock().check_in(id, len, chain, origin, 0)
+        self.lock()
+            .check_in(id, len, chain, (origin_pending, host_pending), 0)
     }
 
     // ---- applying effects (after the chain's commit) ------------------------------------
@@ -971,7 +954,7 @@ impl Hub {
     /// (19.2, In flight).
     pub(crate) fn scan_ready_with(&self, pending: crate::agent::Pending) {
         let mut inner = self.lock();
-        inner.scan_ready_in(Some(&pending));
+        inner.scan_ready_in(&pending);
         drop(inner);
         self.cv.notify_all();
     }
@@ -1010,7 +993,7 @@ impl Hub {
             id,
             body.len(),
             (0, 0),
-            (&origin, origin_pending, host_pending),
+            (origin_pending, host_pending),
             reserve,
         )?;
         inner.enqueue(id, body.to_vec(), 0);
@@ -1218,43 +1201,46 @@ impl Inner {
             Consumer::Held { .. } => {}
         }
     }
+    /// The one admission check, on the stream `s`: `len` item bytes and `reserve` more must fit
+    /// the stream's limits beside what `chain` has queued in it, and the origin's and host's
+    /// budgets beside `pending` (origin, host), the bytes of the chains in flight (19.2).
+    fn admits(
+        &self,
+        s: &Stream,
+        (len, reserve): (usize, usize),
+        chain: (usize, usize),
+        pending: (usize, usize),
+    ) -> bool {
+        let origin_now = self.origin_bytes.get(&s.origin).copied().unwrap_or(0);
+        s.queue.len() + chain.0 < MAX_ITEMS
+            && s.bytes + chain.1 + len <= MAX_BYTES
+            && origin_now + pending.0 + len + reserve <= ORIGIN_BUDGET
+            && self.host_bytes + pending.1 + len + reserve <= HOST_BUDGET
+    }
     /// The push check under the caller's lock; `reserve` more bytes must fit the origin and host
-    /// budgets (not the stream's limit), for what an ask that this push opens keeps (19.3).
+    /// budgets (not the stream's limit), for what an ask that this push opens keeps (19.3). An
+    /// admission changes nothing: the refusal ends when the push commits (`enqueue`). A refusal is
+    /// remembered for the lag clock and `ready`.
     fn check_in(
         &mut self,
         id: &str,
         len: usize,
         chain: (usize, usize),
-        (origin, origin_pending, host_pending): (&str, usize, usize),
+        (origin_pending, host_pending): (usize, usize),
         reserve: usize,
     ) -> Result<(), StreamError> {
         let now = self.clock.now();
-        let origin_now = self.origin_bytes.get(origin).copied().unwrap_or(0);
-        let host_now = self.host_bytes;
-        let Some(s) = self.streams.get_mut(id) else {
+        let Some(s) = self.streams.get(id) else {
             return Ok(());
         };
-        let refused =
-            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
-                Some(Refused::Stream)
-            } else if origin_now + origin_pending + len + reserve > ORIGIN_BUDGET {
-                Some(Refused::Origin(len + reserve, origin_pending))
-            } else if host_now + host_pending + len + reserve > HOST_BUDGET {
-                Some(Refused::Host(len + reserve, host_pending))
-            } else {
-                None
-            };
-        let Some(refused) = refused else {
-            // An admission ends the refusal before it, and its lag timer (19.2, Lag clock).
-            s.needs_ready = None;
-            s.full_since = None;
-            self.waiting.remove(id);
+        if self.admits(s, (len, reserve), chain, (origin_pending, host_pending)) {
             return Ok(());
-        };
+        }
+        let s = self.streams.get_mut(id).expect("checked above");
         if s.deferred.is_none() && s.full_since.is_none() {
             s.full_since = Some(now);
         }
-        s.needs_ready = Some(refused);
+        s.needs_ready = Some((len, reserve));
         self.waiting.insert(id.to_owned());
         Err(StreamError::Full)
     }
@@ -1270,6 +1256,10 @@ impl Inner {
         s.next_seq += 1;
         s.bytes += len;
         s.queue.push_back(Item { seq, body, hop });
+        // A commit ends the refusal before it and its lag timer (19.2, Lag clock).
+        s.needs_ready = None;
+        s.full_since = None;
+        self.waiting.remove(id);
         let origin = s.origin.clone();
         let consumer = s.consumer.clone();
         *self.origin_bytes.entry(origin).or_default() += len;
@@ -1334,50 +1324,39 @@ impl Inner {
         }
         self.host_bytes = self.host_bytes.saturating_sub(bytes);
     }
-    /// `ready` for each producer whose refused push would now fit, with the pending bytes of the
-    /// chains in flight counted as admission counts them (19.2, In flight).
+    /// `ready` for each producer whose refused push the admission check now admits, on the
+    /// current pending bytes of the chains in flight (19.2, In flight).
     fn scan_ready(&mut self) {
         if self.waiting.is_empty() {
             return;
         }
-        // The hub lock is held, so the chains gate is only tried: a gate that is busy leaves the
-        // pending bytes seen at the refusal in place; the chain's end scans again (19.2, In flight).
-        let pending = self
-            .host
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .and_then(|h| h.try_pending());
-        self.scan_ready_in(pending.as_ref());
+        // The hub lock is held, so the chains gate is only tried: a gate that is busy wakes no
+        // one now; the holder scans again when it lets go (19.2, In flight).
+        let pending = match self.host.as_ref().and_then(Weak::upgrade) {
+            Some(host) => host.try_pending(),
+            None => Some(Default::default()),
+        };
+        if let Some(pending) = pending {
+            self.scan_ready_in(&pending);
+        }
     }
-    /// `scan_ready` with the pending bytes of the chains in flight, or `None` for those seen at
-    /// each refusal.
-    fn scan_ready_in(&mut self, pending: Option<&crate::agent::Pending>) {
+    /// `scan_ready` with the pending bytes of the chains in flight.
+    fn scan_ready_in(&mut self, pending: &crate::agent::Pending) {
         let waiting: Vec<String> = self.waiting.iter().cloned().collect();
         for id in waiting {
             let Some(s) = self.streams.get(&id) else {
                 self.waiting.remove(&id);
                 continue;
             };
-            let Some(refused) = s.needs_ready else {
+            let Some(need) = s.needs_ready else {
                 self.waiting.remove(&id);
                 continue;
             };
             if s.deferred.is_some() || s.queue.len() * 2 >= MAX_ITEMS || s.bytes * 2 >= MAX_BYTES {
                 continue;
             }
-            let room = match refused {
-                Refused::Stream => true,
-                Refused::Origin(n, seen) => {
-                    let held = pending.map_or(seen, |p| p.0.get(&s.origin).copied().unwrap_or(0));
-                    self.origin_bytes.get(&s.origin).copied().unwrap_or(0) + held + n
-                        <= ORIGIN_BUDGET
-                }
-                Refused::Host(n, seen) => {
-                    let held = pending.map_or(seen, |p| p.1);
-                    self.host_bytes + held + n <= HOST_BUDGET
-                }
-            };
-            if !room {
+            let held = (pending.0.get(&s.origin).copied().unwrap_or(0), pending.1);
+            if !self.admits(s, need, (0, 0), held) {
                 continue;
             }
             let (origin, origin_gen, producer) =
@@ -1729,6 +1708,85 @@ mod tests {
         assert!(host.hub.lock().streams[&s].full_since.is_none());
         clock.advance(LAG + Duration::from_secs(1));
         assert_eq!(host.hub.test_ended(&s), None);
+    }
+
+    /// 19.3 step 5 (review r6, F6.1a): a close does not wake a producer while the chains gate is
+    /// held, even though the pending bytes seen at its refusal would leave room: a chain admitted
+    /// a new reservation since, and the retry would return `full`.
+    #[test]
+    fn s100_fix18_ac1_a_close_does_not_wake_with_the_gate_held_after_a_new_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (ask, other) = (open(), open());
+        hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // A chain admits a new reservation after the refusal and keeps the gate.
+        let _chain = crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET)]);
+        let _gate = host.chains.lock().unwrap();
+        hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+    }
+
+    /// 19.3 step 5 (review r6, F6.1b): the origin has room but the host budget is still full: a
+    /// scan does not wake the producer the origin budget refused, as its retry would be `full`.
+    #[test]
+    fn s100_fix18_ac1_a_scan_checks_both_budgets_for_a_push_the_origin_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+        {
+            let mut inner = hub.lock();
+            inner.origin_bytes.clear();
+            inner.host_bytes = HOST_BUDGET - 100
+        };
+        let idle = crate::runtime::call::test_chain(&host, vec![]);
+        crate::runtime::call::test_rollback(&host, &idle);
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+    }
+
+    /// 19.3 step 5 (review r6, F6.2): a refusal and its lag timer survive a smaller tentative push
+    /// that was admitted in a chain that rolled back.
+    #[test]
+    fn s100_fix18_ac2_a_rolled_back_tentative_push_leaves_the_refusal_and_the_lag_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+        let refused_at = hub.lock().streams[&s].full_since;
+        assert!(refused_at.is_some());
+        // The smaller push is admitted tentatively; its chain rolls back.
+        hub.check_push(&s, 10, (0, 0), 0, 0).unwrap();
+        let chain = crate::runtime::call::test_chain(&host, vec![pending_push(10)]);
+        crate::runtime::call::test_rollback(&host, &chain);
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        clock.advance(LAG + Duration::from_secs(1));
+        hub.lock().check_clocks();
+        assert_eq!(hub.test_ended(&s), Some(json!("lagging")));
     }
 
     /// 19.2 (Commit, Byte budgets): a host ask counts the bytes that admitted mod pushes still

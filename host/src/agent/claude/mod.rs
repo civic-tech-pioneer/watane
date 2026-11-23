@@ -214,22 +214,24 @@ impl Sessions {
             session.stop();
         }
     }
-    /// Adds a process group to `<home>/runs/pids` as `pgid boot-id start-time` (19.3, The run).
-    pub(crate) fn record_pid(&self, home: &Path, pgid: i32) {
+    /// Adds a process group to `<home>/runs/pids` as `pgid boot-id start-time` (19.3, The run),
+    /// and gives the line, for `forget_pid`. `None` when the leader is gone: nothing is recorded.
+    pub(crate) fn record_pid(&self, home: &Path, pgid: i32) -> Option<String> {
         let _guard = self
             .pids
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let file = home.join("runs/pids");
         // No record when the leader is gone: there is no run to find again.
-        let Some(record) = run::pid_record(pgid) else {
-            return;
-        };
+        let record = run::pid_record(pgid)?;
         let mut text = std::fs::read_to_string(&file).unwrap_or_default();
         text.push_str(&format!("{record}\n"));
         let _ = std::fs::write(file, text);
+        Some(record)
     }
-    pub(crate) fn forget_pid(&self, home: &Path, pgid: i32) {
+    /// Removes the lines of `runs/pids` that are `record`, the whole line (pgid, boot id, start
+    /// time): a newer run that reused the pgid keeps its own (19.3 step 5, review r6, F6.4).
+    pub(crate) fn forget_pid(&self, home: &Path, record: &str) {
         let _guard = self
             .pids
             .lock()
@@ -238,7 +240,7 @@ impl Sessions {
         if let Ok(text) = std::fs::read_to_string(&file) {
             let kept: String = text
                 .lines()
-                .filter(|l| l.split_whitespace().next() != Some(pgid.to_string().as_str()))
+                .filter(|l| *l != record)
                 .map(|l| format!("{l}\n"))
                 .collect();
             let _ = std::fs::write(file, kept);
@@ -483,6 +485,19 @@ impl Host {
 
 #[cfg(test)]
 mod tests {
+    /// 3.1 step 3, 19.3 step 5 (review r6, F6.4): a run removes only its own line of `runs/pids`.
+    #[test]
+    fn s100_fix18_ac4_a_run_removes_its_own_record_and_not_a_newer_one_of_the_same_pgid() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let (old, new) = ("4242 boot-a 100", "4242 boot-a 200");
+        std::fs::write(home.path().join("runs/pids"), format!("{old}\n{new}\n")).unwrap();
+        Sessions::default().forget_pid(home.path(), old);
+        assert_eq!(
+            std::fs::read_to_string(home.path().join("runs/pids")).unwrap(),
+            format!("{new}\n")
+        );
+    }
     use super::*;
     use std::os::unix::process::{CommandExt, ExitStatusExt};
     use std::time::Duration;

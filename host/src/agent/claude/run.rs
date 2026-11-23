@@ -216,15 +216,51 @@ fn recorded_group(line: &str, boot: &str, start_of: impl Fn(i32) -> Option<Strin
     (start_of(pgid)? == recorded_start).then_some(pgid)
 }
 
+/// What startup does with one line of `runs/pids`: the leader is held first (`hold`), its
+/// identity is checked while it is held, and the group is signalled before the hold is let go.
+/// Without a hold, nothing is signalled: a recorded group that still matches is only logged as a
+/// leftover (3.1 step 3, review r6, F6.3).
+fn clean_line<H>(
+    line: &str,
+    boot: &str,
+    hold: impl FnOnce(i32) -> Option<H>,
+    start_of: impl Fn(i32) -> Option<String>,
+    kill: impl FnOnce(i32),
+) {
+    let Some(pgid) = line.split_whitespace().next().and_then(|p| p.parse().ok()) else {
+        return;
+    };
+    let held = hold(pgid);
+    match (recorded_group(line, boot, start_of), held) {
+        (Some(pgid), Some(_held)) => kill(pgid),
+        (Some(pgid), None) => {
+            eprintln!("watane: a claude group (pgid {pgid}) of an earlier run may be left running")
+        }
+        (None, _) => {}
+    }
+}
+
+/// Holds the leader of a group: a pidfd, open while the identity is checked and the group is
+/// signalled and closed after. An open pidfd pins the leader's pid, so the group's number is not
+/// reused by another process between the check and the signal.
+#[cfg(target_os = "linux")]
+fn hold_leader(pgid: i32) -> Option<std::os::fd::OwnedFd> {
+    let pid = rustix::process::Pid::from_raw(pgid)?;
+    rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).ok()
+}
+/// macOS has no pidfd and `lstart` resolves to a second: no leader is held, no group signalled.
+#[cfg(not(target_os = "linux"))]
+fn hold_leader(_pgid: i32) -> Option<()> {
+    None
+}
+
 /// Kills the groups that a crashed host left in `runs/pids` and are still its runs, and empties
 /// `runs/` (3.1 step 3).
 pub(crate) fn clean_runs(home: &Path) {
     let runs = home.join("runs");
     if let (Ok(text), Some(boot)) = (std::fs::read_to_string(runs.join("pids")), boot_id()) {
         for line in text.lines() {
-            if let Some(pgid) = recorded_group(line, &boot, start_time) {
-                killpg(pgid);
-            }
+            clean_line(line, &boot, hold_leader, start_time, killpg);
         }
     }
     let _ = std::fs::remove_dir_all(&runs);
@@ -300,13 +336,17 @@ struct Cleanup {
     home: PathBuf,
     folder: Option<PathBuf>,
     pgid: Option<i32>,
+    /// The line of `runs/pids` that this run wrote.
+    record: Option<String>,
 }
 impl Drop for Cleanup {
     fn drop(&mut self) {
-        if let Some(pgid) = self.pgid {
+        if self.pgid.is_some() {
             // Through the session: a group whose leader was reaped is cleared there.
             self.session.kill_group();
-            self.sessions.forget_pid(&self.home, pgid);
+        }
+        if let Some(record) = &self.record {
+            self.sessions.forget_pid(&self.home, record);
         }
         if let Some(folder) = &self.folder {
             let _ = std::fs::remove_dir_all(folder);
@@ -452,6 +492,7 @@ impl Job {
             home: self.home.clone(),
             folder: None,
             pgid: None,
+            record: None,
         };
         let folder = self.home.join("runs").join(random_hex());
         let plugin = folder.join("watane-run");
@@ -489,7 +530,7 @@ impl Job {
         };
         let pgid = i32::try_from(child.id()).unwrap_or(0);
         cleanup.pgid = Some(pgid);
-        self.sessions.record_pid(&self.home, pgid);
+        cleanup.record = self.sessions.record_pid(&self.home, pgid);
         let (mut child, stdin) = match take_stdin(child, pgid, make_non_blocking) {
             Ok(taken) => taken,
             Err(failed) => return failed,
@@ -1230,8 +1271,57 @@ mod pids_tests {
         }
     }
 
+    /// A guard that notes in `events` when it is closed.
+    struct Held<'a>(&'a std::cell::RefCell<Vec<&'static str>>);
+    impl Drop for Held<'_> {
+        fn drop(&mut self) {
+            self.0.borrow_mut().push("close");
+        }
+    }
+
+    /// 3.1 step 3 (review r6, F6.3): the leader is held before its identity is checked, and
+    /// stays held through the signal.
     #[test]
-    fn ac2_a_recorded_run_is_killed_at_open() {
+    fn s100_fix18_ac3_the_signal_goes_out_only_while_the_leader_is_held_and_checked() {
+        let events = std::cell::RefCell::new(vec![]);
+        clean_line(
+            "4242 boot-a 99",
+            "boot-a",
+            |_| {
+                events.borrow_mut().push("open");
+                Some(Held(&events))
+            },
+            |_| {
+                events.borrow_mut().push("check");
+                Some("99".to_owned())
+            },
+            |pgid| {
+                assert_eq!(pgid, 4242);
+                events.borrow_mut().push("kill");
+            },
+        );
+        assert_eq!(*events.borrow(), ["open", "check", "kill", "close"]);
+    }
+
+    /// 3.1 step 3 (review r6, F6.3): with no hold on the leader (macOS, or a leader that is gone)
+    /// nothing is signalled, whatever the record says.
+    #[test]
+    fn s100_fix18_ac3_a_leader_that_cannot_be_held_is_never_signalled() {
+        let signalled = std::cell::Cell::new(false);
+        clean_line(
+            "4242 boot-a 99",
+            "boot-a",
+            |_| None::<Held>,
+            |_| Some("99".to_owned()),
+            |_| signalled.set(true),
+        );
+        assert!(!signalled.get());
+    }
+
+    /// Linux: the leader is held with a pidfd, so the recorded run is killed. On macOS the group
+    /// is left alone and logged (3.1 step 3).
+    #[test]
+    fn ac2_a_recorded_run_is_killed_at_open_on_linux_and_left_alone_elsewhere() {
         let home = tempfile::tempdir().unwrap();
         let mut run = Command::new("sleep")
             .arg("30")
@@ -1244,8 +1334,14 @@ mod pids_tests {
         assert_eq!(record.split(' ').count(), 3);
         std::fs::write(home.path().join("runs/pids"), format!("{record}\n")).unwrap();
         clean_runs(home.path());
-        let status = run.wait().unwrap();
-        assert_eq!(status.signal(), Some(9));
+        if cfg!(target_os = "linux") {
+            assert_eq!(run.wait().unwrap().signal(), Some(9));
+        } else {
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(run.try_wait().unwrap().is_none(), "no group is signalled");
+            run.kill().unwrap();
+            run.wait().unwrap();
+        }
         assert!(!home.path().join("runs").exists());
     }
 

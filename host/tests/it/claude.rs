@@ -860,7 +860,16 @@ fn ac11_open_kills_the_recorded_groups_and_empties_runs() {
     std::fs::write(runs.join("pids"), format!("{}\n", record(pid))).unwrap();
     assert!(alive(pid));
     rig.open();
-    wait("the group to die", Duration::from_secs(10), || !alive(pid));
+    if cfg!(target_os = "linux") {
+        wait("the group to die", Duration::from_secs(10), || !alive(pid));
+    } else {
+        // No pidfd on macOS: the group is left alone and logged (3.1 step 3).
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(alive(pid));
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &format!("-{pid}")])
+            .status();
+    }
     assert!(!runs.join("old").exists());
     assert!(
         !runs.join("pids").exists()
