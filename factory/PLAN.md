@@ -1339,7 +1339,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
 - [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
-  2 in 3.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
+  2 in 3; dispatched ~20:45 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
   `log`'s key-file open, then whatever comes next. Outcomes: (1) `test (windows-latest)` is green on the PR's head, twice
   (a re-run), with `continue-on-error` removed from `.github/workflows/ci.yml`; (2) `log`'s identity key file on Windows
   keeps the same guarantees as on Unix: no-follow (`FILE_FLAG_OPEN_REPARSE_POINT`, a reparse point is refused) and an
