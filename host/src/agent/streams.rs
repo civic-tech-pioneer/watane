@@ -877,6 +877,7 @@ impl Hub {
     /// item, `CLOSE_RESERVE` bytes and the `retained` input of the ask, which stay reserved
     /// until its close is pushed or the stream ends. The check, the enqueue and the reserve
     /// are one step under one lock.
+    #[cfg(test)]
     pub fn host_open_keeping(
         &self,
         id: &str,
@@ -921,21 +922,45 @@ impl Hub {
         if close {
             return self.push_as_host_in(id, body, reserve, close, (0, 0));
         }
-        // An admission counts what the chains in flight have queued, as a mod's push does, and
-        // holds their gate until the item is queued (19.2, Commit).
-        let origin = {
-            let inner = self.lock();
-            match inner.streams.get(id) {
-                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
-                _ => return Err(StreamError::UnknownStream),
-            }
-        };
-        match self.host.get().and_then(Weak::upgrade) {
-            Some(host) => host.with_pending(&origin, |pending| {
-                self.push_as_host_in(id, body, reserve, close, pending)
-            }),
-            None => self.push_as_host_in(id, body, reserve, close, (0, 0)),
+        self.with_pending(id, |pending| {
+            self.push_as_host_in(id, body, reserve, close, pending)
+        })
+    }
+    /// Runs `f` with the bytes that chains in flight have queued for the stream's origin and in
+    /// all, holding their gate (19.2, Commit): a host admission counts them as a mod's push does.
+    /// The gate comes before any lock of a session, as at an apply: take it here first, then
+    /// admit with `host_push_in` or `host_open_keeping_in`.
+    pub fn with_pending<R>(&self, id: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
+        let origin = self.lock().streams.get(id).map(|s| s.origin.clone());
+        match (origin, self.host.get().and_then(Weak::upgrade)) {
+            (Some(origin), Some(host)) => host.with_pending(&origin, f),
+            _ => f((0, 0)),
         }
+    }
+    /// `host_push` under a `with_pending` of the caller.
+    pub fn host_push_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        pending: (usize, usize),
+    ) -> Result<(), StreamError> {
+        if body.len() > MAX_ITEM {
+            return Err(StreamError::TooLarge);
+        }
+        self.push_as_host_in(id, body, 0, false, pending)
+    }
+    /// `host_open_keeping` under a `with_pending` of the caller.
+    pub fn host_open_keeping_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+        pending: (usize, usize),
+    ) -> Result<(), StreamError> {
+        if body.len() > MAX_ITEM {
+            return Err(StreamError::TooLarge);
+        }
+        self.push_as_host_in(id, body, CLOSE_RESERVE + retained, false, pending)
     }
     /// `push_as_host` with the bytes (`origin`, `host`) that chains in flight have queued.
     fn push_as_host_in(

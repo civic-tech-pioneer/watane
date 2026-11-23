@@ -124,9 +124,12 @@ impl Session {
     /// Pushes one item of the run's stream, behind the closes that wait. Never waits: `Full`
     /// is for the caller to retry.
     pub(crate) fn push(&self, hub: &Hub, body: &[u8]) -> Result<(), StreamError> {
-        let mut asks = self.asks();
-        self.flush(hub, &mut asks)?;
-        hub.host_push(&self.id, body)
+        // The chains gate comes before the asks lock, as at an apply (19.2, Commit).
+        hub.with_pending(&self.id, |pending| {
+            let mut asks = self.asks();
+            self.flush(hub, &mut asks)?;
+            hub.host_push_in(&self.id, body, pending)
+        })
     }
 
     /// Opens an ask or a check of `claude` and pushes its item. `Full` and `TooLarge` are for
@@ -138,6 +141,20 @@ impl Session {
         hook: bool,
         fields: &Fields,
         ttl: Duration,
+    ) -> Result<(), StreamError> {
+        // The chains gate comes before the asks lock, as at an apply (19.2, Commit).
+        hub.with_pending(&self.id, |pending| {
+            self.open_request_in(hub, request_id, hook, fields, ttl, pending)
+        })
+    }
+    fn open_request_in(
+        &self,
+        hub: &Hub,
+        request_id: &str,
+        hook: bool,
+        fields: &Fields,
+        ttl: Duration,
+        pending: (usize, usize),
     ) -> Result<(), StreamError> {
         let mut asks = self.asks();
         self.flush(hub, &mut asks)?;
@@ -161,10 +178,11 @@ impl Session {
         let kept = request_id.len()
             + fields.tool.len()
             + serde_json::to_vec(&fields.input).map_or(0, |v| v.len());
-        hub.host_open_keeping(
+        hub.host_open_keeping_in(
             &self.id,
             &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
             kept,
+            pending,
         )?;
         asks.kept.insert(id.clone(), kept);
         asks.next += 1;
@@ -676,5 +694,38 @@ mod tests {
             taken(&hub, &s),
             [br#"{"type":"ask-resolved","id":"2","by":"expired"}"#]
         );
+    }
+
+    /// Validator probe: an apply (chains gate held, as take_and_apply does) of an answer, racing
+    /// a reader that opens an ask (asks lock held, then host admission takes the chains gate).
+    #[test]
+    fn probe_lock_order_apply_answer_vs_open_request() {
+        use crate::agent::streams::Consumer;
+        use std::sync::Arc;
+        let dir = tempfile::tempdir().unwrap();
+        let host =
+            crate::Host::open(dir.path(), crate::Mode::Preview, crate::Limits::default()).unwrap();
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Arc::new(Session::new(s, "o".into(), None));
+        let (done, rx) = std::sync::mpsc::channel();
+        let (h2, s2, d2) = (Arc::clone(&host), Arc::clone(&session), done.clone());
+        std::thread::spawn(move || {
+            let _gate = h2.chains.lock().unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            s2.apply_answer(&h2.hub, "1", &Decision::Deny("no".into()));
+            let _ = d2.send("apply");
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        let (h3, s3) = (Arc::clone(&host), Arc::clone(&session));
+        std::thread::spawn(move || {
+            let _ = s3.open_request(&h3.hub, "r1", false, &bash(), Duration::from_secs(10));
+            let _ = done.send("open");
+        });
+        let a = rx.recv_timeout(Duration::from_secs(5));
+        let b = rx.recv_timeout(Duration::from_secs(5));
+        assert!(a.is_ok() && b.is_ok(), "deadlock: {a:?} {b:?}");
     }
 }
