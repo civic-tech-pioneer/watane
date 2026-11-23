@@ -152,3 +152,17 @@ fn ac2_directory_refusals() {
         Err(Error::EmptyPath)
     ));
 }
+
+#[test]
+fn regress_s109_interrupted_creation_still_opens() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let first = Log::open(temp.path()).unwrap().identity().unwrap();
+    // A crash between hard_link and remove_file leaves the temporary name.
+    fs::hard_link(
+        temp.path().join("identity.key"),
+        temp.path().join(".identity.key.00000000000000000000000000000000.tmp"),
+    )
+    .unwrap();
+    assert_eq!(Log::open(temp.path()).unwrap().identity().unwrap(), first);
+}
