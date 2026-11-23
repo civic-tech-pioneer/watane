@@ -677,4 +677,23 @@ mod tests {
             "a listing's base was read as a followed base: redirects into the local network were followed"
         );
     }
+    /// AC2: a listed-only record that is chosen as an index keeps only the base given.
+    #[test]
+    fn ac2_choose_index_drops_listed_bases() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a]);
+        let _z = listed_record(&w, &eve);
+        let before = w.a.count();
+        let link = crate::Link::new(w.key, &c.url, None).unwrap();
+        eve.choose_index(&link).unwrap();
+        eve.refresh();
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["base"], c.url.as_str());
+        assert!(record["bases"].as_array().is_none_or(|b| b.is_empty()));
+        assert_eq!(w.a.count(), before, "the listing's base was read again");
+    }
 }

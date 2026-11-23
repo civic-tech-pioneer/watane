@@ -33,6 +33,14 @@ pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
     }
     true
 }
+/// A listed-only record that turns followed or chosen holds only the base the participant
+/// gave (5.9): the listing's bases are dropped.
+pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
+    if !record.followed && !record.index {
+        record.base = base.into();
+        record.bases.clear();
+    }
+}
 impl Dist {
     pub(crate) fn save_follows(
         &self,
@@ -87,6 +95,7 @@ impl Dist {
             _last_attempt: time,
             last_success: None,
         });
+        adopt_given_base(record, link.base());
         record.followed = true;
         let learned = learn_base(record, link.base());
         record._last_attempt = time;
