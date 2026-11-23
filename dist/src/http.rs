@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 pub(crate) const MAX_REDIRECTS: usize = 5;
 
 /// The local-address rule applied to one redirect target.
-pub(crate) type Check = dyn Fn(&str) -> Result<(), DistError>;
+pub(crate) type Check<'a> = dyn Fn(&str) -> Result<(), DistError> + 'a;
 
 /// What one hop of a listed read answers: the bytes, or the next URL.
 pub(crate) enum Hop<T> {
@@ -20,7 +20,7 @@ pub(crate) enum Hop<T> {
 /// the current URL and passes `check` before any request to it (TECHNICAL 4.5).
 pub(crate) fn follow_hops<T>(
     first: &str,
-    check: &Check,
+    check: &Check<'_>,
     mut step: impl FnMut(&str) -> Result<Hop<T>, DistError>,
 ) -> Result<T, DistError> {
     let mut current = first.to_owned();
@@ -81,7 +81,7 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        check: Option<&Check>,
+        check: Option<&Check<'_>>,
     ) -> Result<Vec<u8>, DistError> {
         let deadline = Instant::now() + timeout;
         let mut waits = RETRY_WAITS.iter();
@@ -111,7 +111,7 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        check: Option<&Check>,
+        check: Option<&Check<'_>>,
     ) -> Result<Vec<u8>, DistError> {
         let Some(check) = check else {
             return match self.get_hop(url, limit, timeout, head, &self.agent)? {
